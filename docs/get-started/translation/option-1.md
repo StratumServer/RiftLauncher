@@ -1,6 +1,6 @@
 ---
 description: Easy to setup, hard to translate.
-icon: '1'
+icon: "1"
 ---
 
 # Option 1
@@ -11,12 +11,14 @@ If you want to use this option just follow the next steps:
 
 {% stepper %}
 {% step %}
+
 ### **Download the en-US.json**
 
 You can download this file from this link: [en-US.json](../../../src/renderer/src/locales/en-US.json). This one is the base language so it'll contain all the keys.
 {% endstep %}
 
 {% step %}
+
 ### **Translate it**
 
 Open the file with [Visual Studio Code](https://code.visualstudio.com/) or any other editor, like Notepad++ or Windows file editor, and translate the keys as you need.
@@ -31,6 +33,7 @@ Don't translate things like \`\{{name\}}\`, \<button /> and things like that. Th
 {% endstep %}
 
 {% step %}
+
 ### **Send it on Discord**
 
 Once you've finished the translation just send it to me on the mod forum post on the [official Vintage Story Discord server](https://discordapp.com/channels/302152934249070593/1314991001571557488) with this info:
@@ -41,6 +44,7 @@ Name for credits: Your name or Anonymous
 Lang code: es-ES, en-US, fr-FR...
 Lang name: Español (España), English, Français...
 ```
+
 {% endstep %}
 {% endstepper %}
 

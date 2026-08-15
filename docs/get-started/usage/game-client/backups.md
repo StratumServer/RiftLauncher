@@ -48,4 +48,3 @@ On that page you can delete the backups by clicking the trash can button.
 {% embed url="https://www.youtube.com/watch?v=5x1BR58xHKQ" %}
 Delete Installation Backups | VS Launcher Guides
 {% endembed %}
-

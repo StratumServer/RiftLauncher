@@ -11,4 +11,3 @@ Currently working on both Windows and Linux but I'll port it to MacOS soon!
 {% hint style="warning" %}
 VS Launcher uses the official game files so you need an official account to play!
 {% endhint %}
-

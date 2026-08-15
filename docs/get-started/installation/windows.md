@@ -9,12 +9,14 @@ The first thing you've to do is download the `.exe` from the Github Releases Pag
 
 {% stepper %}
 {% step %}
+
 ### Go to the [GitHub Releases Page](https://github.com/StratumServer/RiftLauncher/releases)
 
 On that page you'll see all the available versions to download.
 {% endstep %}
 
 {% step %}
+
 ### Download the Windows version
 
 On the releases page, the first version is always the last one. There you'll see a table with the different files to download. Just click on the Windows one like on the next image:
@@ -23,12 +25,14 @@ On the releases page, the first version is always the last one. There you'll see
 {% endstep %}
 
 {% step %}
+
 ### Install the downloaded file
 
 Double click the downloaded file and VS Launcher will be automátically installed and opened.
 {% endstep %}
 
 {% step %}
+
 ### Install .NET 7, 8 and 10
 
 If you already played Vintage Story before this will be already installed so, you can skip this process. If you didn't played it before go to e next link to download .NET 7, 8 and 10:

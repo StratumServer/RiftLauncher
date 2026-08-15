@@ -15,7 +15,7 @@ Uninstalling a **VS Version** is as easy as clicking a button. Just check this v
 Uninstall a Vintage Story Version | VS Launcher Guides
 {% endembed %}
 
-***
+---
 
 ## Delete an Installation
 

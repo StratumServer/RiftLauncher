@@ -90,8 +90,9 @@ function LookForAVersion(): JSX.Element {
                   <FormButton
                     onClick={async () => {
                       const path = await window.api.utils.selectFolderDialog()
-                      if (path && path.length > 0 && path[0].length > 0) {
-                        const res = await window.api.gameManager.lookForAGameVersion(path[0])
+                      const selectedPath = path[0]
+                      if (selectedPath && selectedPath.length > 0) {
+                        const res = await window.api.gameManager.lookForAGameVersion(selectedPath)
 
                         if (!res.exists) {
                           setFolder("")
@@ -99,7 +100,7 @@ function LookForAVersion(): JSX.Element {
                           return addNotification(t("features.versions.noVersionFoundOnThatFolder"), "error")
                         }
 
-                        setFolder(path[0])
+                        setFolder(selectedPath)
                         setVersionFound(res.installedGameVersion as string)
                       }
                     }}

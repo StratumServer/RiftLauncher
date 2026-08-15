@@ -48,7 +48,7 @@ function EditInslallation(): JSX.Element {
 
   const [icon, setIcon] = useState<IconType>(INSTALLATION_ICONS[0])
   const [name, setName] = useState<string>("")
-  const [version, setVersion] = useState<GameVersionType>([...config.gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0])
+  const [version, setVersion] = useState<GameVersionType | undefined>([...config.gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0])
   const [startParams, setStartParams] = useState<string>("")
   const [backupsLimit, setBackupsLimit] = useState<number>(0)
   const [backupsAuto, setBackupsAuto] = useState<boolean>(false)

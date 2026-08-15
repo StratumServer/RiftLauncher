@@ -17,11 +17,7 @@ function HomePage(): JSX.Element {
         title={t("features.home.watchTrailer")}
         onClick={() => window.api.utils.openOnBrowser(`https://www.youtube.com/watch?v=${VIDEO_ID}`)}
       >
-        <img
-          src={`https://img.youtube.com/vi/${VIDEO_ID}/maxresdefault.jpg`}
-          alt={t("features.home.watchTrailer")}
-          className="w-full h-full object-cover"
-        />
+        <img src={`https://img.youtube.com/vi/${VIDEO_ID}/maxresdefault.jpg`} alt={t("features.home.watchTrailer")} className="w-full h-full object-cover" />
         <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/30 group-hover:bg-zinc-950/50 duration-200">
           <PiPlayCircleDuotone className="text-7xl text-white/80 group-hover:text-white group-hover:scale-110 duration-200" />
         </div>

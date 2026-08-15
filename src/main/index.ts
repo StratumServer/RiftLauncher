@@ -275,8 +275,7 @@ app.on("before-quit", (event) => {
 async function saveCurrentWindowState(): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) return
 
-  const { width, height } = mainWindow.getBounds()
-  const [x, y] = mainWindow.getPosition()
+  const { width, height, x, y } = mainWindow.getBounds()
   const maximized = mainWindow.isMaximized()
 
   const config = await getConfig()

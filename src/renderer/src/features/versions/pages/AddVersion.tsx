@@ -252,10 +252,11 @@ function AddVersion(): JSX.Element {
                   <FormButton
                     onClick={async () => {
                       const path = await window.api.utils.selectFolderDialog()
-                      if (path && path.length > 0 && path[0].length > 0) {
-                        if (!(await window.api.pathsManager.checkPathEmpty(path[0]))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
+                      const selectedPath = path[0]
+                      if (selectedPath && selectedPath.length > 0) {
+                        if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
 
-                        setFolder(path[0])
+                        setFolder(selectedPath)
                         setFolderByUser(true)
                       }
                     }}

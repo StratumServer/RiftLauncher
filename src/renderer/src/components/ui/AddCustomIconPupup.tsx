@@ -34,9 +34,10 @@ export function AddCustomIconPupup({ open, setOpen }: { open: boolean; setOpen: 
                   onClick={async (e) => {
                     e.stopPropagation()
                     const path = await window.api.utils.selectFolderDialog({ type: "file", extensions: ["png"] })
-                    if (path && path.length > 0 && path[0].length > 0) {
+                    const selectedPath = path[0]
+                    if (selectedPath && selectedPath.length > 0) {
                       const id = uuidv4()
-                      const filePath = await window.api.pathsManager.copyToIcons(path[0], id)
+                      const filePath = await window.api.pathsManager.copyToIcons(selectedPath, id)
 
                       if (!filePath.status) return addNotification(t("notifications.body.coulndtCopyIcon"), "error")
                       setFile(filePath.file)
