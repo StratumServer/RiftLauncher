@@ -14,6 +14,14 @@ export interface BackupRecord {
   path: string
 }
 
+/** The backup state a decision about one archive needs, copied out of wherever it lives. */
+export interface BackupSnapshot {
+  id: string
+  path: string
+  isRestoring: boolean
+  isDeleting: boolean
+}
+
 /** The installation state a backup decision needs, copied out of wherever it lives. */
 export interface InstallationSnapshot {
   id: string

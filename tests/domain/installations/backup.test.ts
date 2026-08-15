@@ -20,6 +20,10 @@ function fakeFileSystem(options: { exists?: boolean; removals?: Record<string, b
     remove: async (path: string): Promise<boolean> => {
       trace.push(`remove:${path}`)
       return removals[path] ?? true
+    },
+    move: async (from: string, to: string): Promise<boolean> => {
+      trace.push(`move:${from}->${to}`)
+      return true
     }
   }
 }
