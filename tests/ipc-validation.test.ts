@@ -2,7 +2,17 @@ import assert from "node:assert/strict"
 import { resolve } from "node:path"
 import { describe, it } from "vitest"
 
-import { assertAllowedApiUrl, assertAllowedBrowserUrl, assertInteger, assertSafeFileName, assertSafeTaskId, isArchiveSymlink, isSafeArchiveEntry, resolveContainedPath } from "../src/ipc/validation"
+import {
+  assertAllowedApiUrl,
+  assertAllowedBrowserUrl,
+  assertInteger,
+  assertSafeFileName,
+  assertSafeTaskId,
+  isArchiveSymlink,
+  isRestoreWorkspaceName,
+  isSafeArchiveEntry,
+  resolveContainedPath
+} from "../src/ipc/validation"
 import { redactSensitiveText } from "../src/utils/logManager"
 
 describe("IPC boundary validators", () => {
@@ -39,6 +49,21 @@ describe("IPC boundary validators", () => {
     assert.throws(() => assertSafeTaskId("../escape"), /Invalid task id/)
     assert.throws(() => assertSafeFileName("../escape"), /Invalid file name/)
     assert.throws(() => assertInteger(10, "compression level", 0, 9), /Invalid compression level/)
+  })
+
+  it("admits only the two generated restore workspace names beside an installation", () => {
+    const token = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+    assert.equal(isRestoreWorkspaceName("My Install", `My Install-restoring-${token}`), true)
+    assert.equal(isRestoreWorkspaceName("My Install", `My Install-replaced-${token}`), true)
+
+    assert.equal(isRestoreWorkspaceName("My Install", "My Install"), false)
+    assert.equal(isRestoreWorkspaceName("My Install", "Other Install-restoring-" + token), false)
+    assert.equal(isRestoreWorkspaceName("My Install", "My Install-restoring-notauuid"), false)
+    assert.equal(isRestoreWorkspaceName("My Install", `My Install-restoring-${token}-extra`), false)
+    assert.equal(isRestoreWorkspaceName("My Install", `My Install-removed-${token}`), false)
+    assert.equal(isRestoreWorkspaceName("My Install", `My Install Saves-restoring-${token}`), false)
+    assert.equal(isRestoreWorkspaceName("", `-restoring-${token}`), false)
   })
 
   it("redacts credentials and absolute paths from diagnostics", () => {

@@ -7,10 +7,10 @@ export default defineConfig({
       provider: "v8",
       include: ["src/domain/**", "src/ipc/**", "src/utils/**", "src/config/**"],
       thresholds: {
-        lines: 10,
-        statements: 10,
-        functions: 13,
-        branches: 15
+        lines: 12,
+        statements: 13,
+        functions: 15,
+        branches: 18
       }
     }
   }
