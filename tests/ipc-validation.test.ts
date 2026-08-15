@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
-import { describe, it } from "node:test"
 import { resolve } from "node:path"
+import { describe, it } from "vitest"
 
 import { assertAllowedApiUrl, assertAllowedBrowserUrl, assertInteger, assertSafeFileName, assertSafeTaskId, isArchiveSymlink, isSafeArchiveEntry, resolveContainedPath } from "../src/ipc/validation"
 import { redactSensitiveText } from "../src/utils/logManager"

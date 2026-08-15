@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
-import { describe, it } from "node:test"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
+import { describe, it } from "vitest"
 
 import { parseLegacyAccount, parseLoginAccount } from "../src/ipc/accountTypes"
 import { isAllowedRendererUrl, parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "../src/ipc/validation"
