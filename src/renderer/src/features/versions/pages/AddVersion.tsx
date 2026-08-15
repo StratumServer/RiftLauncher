@@ -5,9 +5,11 @@ import { useNavigate } from "react-router-dom"
 import { FiLoader } from "react-icons/fi"
 import { PiDownloadDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
 
+import { installGameVersion } from "@domain/versions/install"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import { createInstallPorts, describeInstallFailure, toDownloadableGameVersion } from "@renderer/features/versions/adapters/install"
 import { compareVersions } from "@renderer/utils/semver"
 
 import {
@@ -32,6 +34,8 @@ import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuB
 type RawPlatform = { urls: { cdn: string; local: string } }
 type RawVersions = Record<string, Record<string, RawPlatform>>
 const VS_API = "https://api.vintagestory.at"
+
+const LOG_TAG = "[front] [versions] [features/versions/pages/AddVersion.tsx]"
 
 function deriveType(version: string): DownloadableGameVersionTypeType["type"] {
   if (version.includes("-rc")) return "rc"
@@ -93,62 +97,44 @@ function AddVersion(): JSX.Element {
   const handleInstallVersion = async (): Promise<void> => {
     if (!version) return addNotification(t("features.versions.noVersionSelected"), "error")
 
-    if (config.gameVersions.some((igv) => igv.version === version.version)) return addNotification(t("features.versions.versionAlreadyInstalled", { version: version.version }), "error")
+    const ports = createInstallPorts({
+      startDownload,
+      startExtract,
+      startInstall,
+      taskName: t("features.versions.gameVersionTaskName", { version: version.version }),
+      downloadDescription: t("features.versions.gameVersionDownloadDesc", { version: version.version }),
+      unpackDescription: t("features.versions.gameVersionExtractDesc", { version: version.version })
+    })
 
-    if (folder === config.backupsFolder || config.gameVersions.some((gv) => gv.path === folder) || config.installations.some((i) => i.path === folder))
-      return addNotification(t("features.versions.folderAlreadyInUse"), "error")
-
-    const os = await window.api.utils.getOs()
-    const url = os === "win32" ? version.windows : os === "darwin" ? version.mac : version.linux
-
-    const newGameVersion: GameVersionType = {
-      version: version.version,
-      path: folder,
-      _installing: true
-    }
-
-    configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: newGameVersion })
-    navigate("/versions")
-
-    const onUnpacked = (status: boolean): void => {
-      if (!status) return configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: newGameVersion.version } })
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: newGameVersion.version, updates: { _installing: undefined } } })
-    }
-
-    startDownload(
-      t("features.versions.gameVersionTaskName", { version: newGameVersion.version }),
-      t("features.versions.gameVersionDownloadDesc", { version: newGameVersion.version }),
-      "all",
-      url,
-      folder,
-      version.version,
-      (status, path) => {
-        if (!status) return configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: newGameVersion.version } })
-
-        // Windows ships an Inno Setup installer (run silently); Linux/Mac ship a portable archive (extract).
-        if (os === "win32") {
-          startInstall(
-            t("features.versions.gameVersionTaskName", { version: newGameVersion.version }),
-            t("features.versions.gameVersionExtractDesc", { version: newGameVersion.version }),
-            "all",
-            path,
-            folder,
-            true,
-            onUnpacked
-          )
-        } else {
-          startExtract(
-            t("features.versions.gameVersionTaskName", { version: newGameVersion.version }),
-            t("features.versions.gameVersionExtractDesc", { version: newGameVersion.version }),
-            "all",
-            path,
-            folder,
-            true,
-            onUnpacked
-          )
-        }
+    const result = await installGameVersion(
+      ports,
+      {
+        platform: await window.api.utils.getOs(),
+        version: toDownloadableGameVersion(version),
+        targetFolder: folder,
+        installedVersions: config.gameVersions.map((gv) => gv.version),
+        foldersInUse: [config.backupsFolder, ...config.gameVersions.map((gv) => gv.path), ...config.installations.map((i) => i.path)]
+      },
+      {
+        onRegistered: () => {
+          configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: { version: version.version, path: folder, _installing: true } })
+          navigate("/versions")
+        },
+        onInstalled: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: version.version, updates: { _installing: undefined } } }),
+        onDiscarded: () => configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: version.version } })
       }
     )
+
+    if (result.ok) return
+
+    const { messageKey, logged } = describeInstallFailure(result.reason)
+
+    if (logged) {
+      window.api.utils.logMessage("error", `${LOG_TAG} [handleInstallVersion] Error installing VS Version ${version.version}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [handleInstallVersion] Error installing VS Version ${version.version} on ${folder}: ${result.reason}.`)
+    }
+
+    addNotification(t(messageKey, { version: version.version, folder }), "error")
   }
 
   return (

@@ -115,7 +115,11 @@
       "versionPlaying": "You're already playing that VS Version!",
       "deleteWhilePlaying": "You can't delete a VS Version while you're playing it!",
       "installNewVersion": "Install a new VS Version",
-      "deleteVersion": "Delete Version"
+      "deleteVersion": "Delete Version",
+      "noDownloadForYourSystem": "VS Version {{version}} has no download for your operating system. Pick another version.",
+      "installDownloadFailed": "VS Version {{version}} couldn't be downloaded. Check your connection and install it again.",
+      "installUnpackFailed": "VS Version {{version}} was downloaded but couldn't be unpacked. Install it again.",
+      "installGameNotInFolder": "VS Version {{version}} didn't end up in {{folder}}. Install it again into an empty folder."
     },
     "installations": {
       "noInstallationsFound": "No Installations found!",
