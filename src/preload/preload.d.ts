@@ -34,6 +34,7 @@ declare global {
       formatPath: (parts: string[]) => Promise<string>
       removeFileFromPath(path: string): Promise<string>
       deletePath: (path: string) => Promise<boolean>
+      movePath: (fromPath: string, toPath: string) => Promise<boolean>
       checkPathEmpty: (path: string) => Promise<boolean>
       checkPathExists: (path: string) => Promise<boolean>
       ensurePathExists: (path: string) => Promise<boolean>

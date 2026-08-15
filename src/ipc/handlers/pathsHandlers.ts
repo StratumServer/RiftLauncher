@@ -298,6 +298,27 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH, async (event, pathValue: 
   }
 })
 
+ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.MOVE_PATH, async (event, fromPath: string, toPath: string): Promise<boolean> => {
+  assertTrustedIpcSender(event)
+
+  try {
+    // The source disappears, so it goes through the deletion grade assertion.
+    const safeFromPath = await assertManagedDeletionPath(fromPath)
+    const safeToPath = await assertManagedPath(toPath, "destination path", { allowMissing: true })
+
+    if (safeFromPath === safeToPath) throw new TypeError("Source and destination paths must differ")
+    if (await fse.pathExists(safeToPath)) throw new TypeError("Destination path already exists")
+
+    logMessage("info", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] Moving an approved path.")
+    await fse.move(safeFromPath, safeToPath)
+    return true
+  } catch (err) {
+    logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] Error moving path.")
+    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] ${getErrorMessage(err)}`)
+    return false
+  }
+})
+
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.FORMAT_PATH, (event, parts: string[]): string => {
   assertTrustedIpcSender(event)
   if (!Array.isArray(parts) || parts.length === 0 || parts.length > 32) throw new TypeError("Invalid path parts")
