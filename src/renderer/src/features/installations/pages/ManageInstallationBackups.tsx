@@ -2,9 +2,12 @@ import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 import { PiArrowCounterClockwiseDuotone, PiFolderOpenDuotone, PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
-import { v4 as uuidv4 } from "uuid"
 
+import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
+import { restoreInstallationBackup } from "@domain/installations/restore"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
+import { toBackupSnapshot, toInstallationSnapshot } from "@renderer/features/installations/adapters/backup"
+import { createBackupDeletionPorts, createRestorePorts, describeBackupDeletionFailure, describeRestoreFailure } from "@renderer/features/installations/adapters/restore"
 
 import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -17,6 +20,8 @@ import { NormalButton } from "@renderer/components/ui/Buttons"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
+
+const LOG_TAG = "[front] [backups] [features/installations/pages/ManageInstallationBackups.tsx]"
 
 function ManageInstallationBackups(): JSX.Element {
   const { id } = useParams()
@@ -38,76 +43,68 @@ function ManageInstallationBackups(): JSX.Element {
 
   async function RestoreBackupHandler(backup: BackupType | null): Promise<void> {
     if (!backup) return addNotification(t("features.backups.noBackupSelected"), "error")
-
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
-    if (installation._backuping) return addNotification(t("features.backups.backupInProgress"), "error")
-    if (installation._playing) return addNotification(t("features.installations.editWhilePlaying"), "error")
-    if (installation._restoringBackup) return addNotification(t("features.backups.restoreInProgress"), "error")
 
-    const id = uuidv4()
+    const ports = createRestorePorts({
+      startExtract,
+      taskName: t("features.backups.extractTaskName", { name: installation.name }),
+      taskDescription: t("features.backups.extractingBackupDescription", { name: installation.name })
+    })
 
-    try {
-      window.api.utils.setPreventAppClose("add", id, "Starting backup restoration...")
-      configDispatch({
-        type: CONFIG_ACTIONS.EDIT_INSTALLATION,
-        payload: { id: installation.id, updates: { _restoringBackup: true } }
-      })
-      configDispatch({
-        type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP,
-        payload: { id: installation.id, backupId: backup.id, updates: { _restoring: true } }
-      })
+    let started = false
 
-      const deletedPath = await window.api.pathsManager.deletePath(installation.path)
-      if (!deletedPath) throw new Error("Error while deleting the installation path")
+    const result = await restoreInstallationBackup(
+      ports,
+      { installation: toInstallationSnapshot(installation), backup },
+      {
+        onStarted: () => {
+          started = true
+          configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _restoringBackup: true } } })
+          configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _restoring: true } } })
+        },
+        onTemporaryFolderLeft: (path) => window.api.utils.logMessage("error", `${LOG_TAG} [RestoreBackupHandler] Could not remove the temporary folder ${path}.`)
+      }
+    )
 
-      await startExtract(
-        t("features.backups.extractTaskName", { name: installation.name }),
-        t("features.backups.extractingBackupDescription", { name: installation.name }),
-        "all",
-        backup.path,
-        installation.path,
-        false,
-        async (completed) => {
-          if (!completed) throw new Error("There was an error extracting the backup")
-        }
-      )
-    } catch (err) {
-      window.api.utils.logMessage("error", `[front] [backups] [features/installations/pages/RestoreInstallationBackup.tsx] [RestoreBackupHandler] Error restoring a backup.`)
-      window.api.utils.logMessage("debug", `[front] [backups] [features/installations/pages/RestoreInstallationBackup.tsx] [RestoreBackupHandler] Error restoring a backup: ${err}`)
-    } finally {
-      setBackupToRestore(null)
-      window.api.utils.setPreventAppClose("remove", id, "Finished backup restoration...")
-
+    if (started) {
       const mods = await getInstalledMods({ path: installation.path })
       const totalMods = mods.mods.length + mods.errors.length
 
-      configDispatch({
-        type: CONFIG_ACTIONS.EDIT_INSTALLATION,
-        payload: { id: installation.id, updates: { _restoringBackup: false, _modsCount: totalMods } }
-      })
-      configDispatch({
-        type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP,
-        payload: { id: installation.id, backupId: backup.id, updates: { _restoring: false } }
-      })
+      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _restoringBackup: false, _modsCount: totalMods } } })
+      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _restoring: false } } })
     }
+
+    if (result.ok) return
+
+    const { messageKey, logged } = describeRestoreFailure(result.reason)
+
+    if (logged) {
+      window.api.utils.logMessage("error", `${LOG_TAG} [RestoreBackupHandler] Error restoring a backup.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [RestoreBackupHandler] Error restoring a backup: ${result.reason}.`)
+    }
+
+    addNotification(t(messageKey, { path: result.strandedPath ?? "" }), "error")
   }
 
   async function DeleteBackupHandler(backup: BackupType | null): Promise<void> {
-    try {
-      if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
+    if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
+    if (!backup) return addNotification(t("features.backups.cantDeleteWhileinUse"), "error")
 
-      if (!backup || backup._restoring || backup._deleting) return addNotification(t("features.backups.cantDeleteWhileinUse"), "error")
+    const result = await deleteInstallationBackup(createBackupDeletionPorts(), { backup: toBackupSnapshot(backup) })
 
-      const deleted = await window.api.pathsManager.deletePath(backup.path)
-      if (!deleted) throw new Error("There was an error deleting backup file.")
-
-      configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION_BACKUP, payload: { id: installation!.id, backupId: backup.id } })
-      addNotification(t("features.backups.backupDeletedSuccesfully"), "success")
-    } catch (err) {
-      addNotification(t("features.backups.errorDeletingBackup"), "error")
-    } finally {
-      setBackupToDelete(null)
+    if (result.ok) {
+      configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id } })
+      return addNotification(t("features.backups.backupDeletedSuccesfully"), "success")
     }
+
+    const { messageKey, logged } = describeBackupDeletionFailure(result.reason)
+
+    if (logged) {
+      window.api.utils.logMessage("error", `${LOG_TAG} [DeleteBackupHandler] Error deleting a backup.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [DeleteBackupHandler] Error deleting the backup file ${backup.path}.`)
+    }
+
+    addNotification(t(messageKey), "error")
   }
 
   return (
