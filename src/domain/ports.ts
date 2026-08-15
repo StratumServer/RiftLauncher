@@ -75,6 +75,63 @@ export interface Extractor {
   extract(request: ExtractRequest, onComplete: (outcome: ExtractOutcome) => void): Promise<void>
 }
 
+/** Everything the host needs to fetch one file. */
+export interface DownloadRequest {
+  /** Where the file is fetched from. */
+  url: string
+  /** Folder the file is written into. The host creates it when missing. */
+  outputFolder: string
+  /** Name the downloaded file is saved under. */
+  fileName: string
+}
+
+/** How a download attempt ended. */
+export interface DownloadOutcome {
+  ok: boolean
+  /** Where the file landed. Only meaningful when `ok` is true. */
+  filePath?: string
+  error?: string
+}
+
+/** Fetches files. Progress reporting and task UI stay on the host side. */
+export interface Downloader {
+  /**
+   * Downloads `request` and reports the result through `onComplete`, which the
+   * host calls once before the returned promise settles. Like the archiver it
+   * never rejects, it signals failure through its completion callback.
+   */
+  download(request: DownloadRequest, onComplete: (outcome: DownloadOutcome) => void): Promise<void>
+}
+
+/** Everything the host needs to turn one downloaded file into a game folder. */
+export interface UnpackRequest {
+  /** The downloaded archive or installer. */
+  sourcePath: string
+  /** Folder the game ends up in. The host creates it when missing. */
+  outputFolder: string
+}
+
+/** How an unpacking attempt ended. */
+export interface UnpackOutcome {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * The two ways a downloaded game build becomes an installed folder.
+ *
+ * Both live on one port because one service picks between them: which mechanism
+ * a platform needs is a domain decision, running it is not. {@link Extractor}
+ * stays separate because a restore only ever unpacks a backup archive and never
+ * runs an installer.
+ */
+export interface Unpacker {
+  /** Unpacks a portable archive. Consumes the source file. */
+  extractArchive(request: UnpackRequest, onComplete: (outcome: UnpackOutcome) => void): Promise<void>
+  /** Runs a platform installer against the output folder. Consumes the source file. */
+  runInstaller(request: UnpackRequest, onComplete: (outcome: UnpackOutcome) => void): Promise<void>
+}
+
 /** Wall clock, so services never read the ambient time. */
 export interface Clock {
   now(): number
