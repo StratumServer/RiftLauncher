@@ -8,13 +8,13 @@ description: Small index of terms used in the launcher.
 
 **Versions** are the base game files like assets, code, executables... This is what you download on the VS Launcher `VS Versions` page.
 
-***
+---
 
 ## **Installations**
 
 **Installations** are "folders" where the data for each Installation is stored. These contains worlds, configs, mods, maps...
 
-***
+---
 
 ## **Servers**
 
@@ -24,6 +24,3 @@ description: Small index of terms used in the launcher.
 {% hint style="info" %}
 Servers are under development. They will be available in the future.
 {% endhint %}
-
-
-

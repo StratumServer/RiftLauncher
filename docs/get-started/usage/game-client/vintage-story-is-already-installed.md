@@ -11,12 +11,13 @@ If you already have the game installed you just need to tell VS Launcher where i
 
 {% stepper %}
 {% step %}
+
 ### Add the VS Version
 
 **VS Versions** are the base game files like assets, code, executables... By default this ones can be found on the next folder:
 
-* **Windows:** `C:/Users/YourUsername/AppData/Roaming/Vintagestory`
-* **Linux:** The folder where you extracted the `.tat.gz` or `/home/YourUsername/.local/share/Vintagestory/`
+- **Windows:** `C:/Users/YourUsername/AppData/Roaming/Vintagestory`
+- **Linux:** The folder where you extracted the `.tat.gz` or `/home/YourUsername/.local/share/Vintagestory/`
 
 {% hint style="warning" %}
 Don't confuse it with `VintagestoryData`, that's the Installation(data) folder.
@@ -28,12 +29,13 @@ Add an already installed Vintage Story Version | VS Launcher Guides
 {% endstep %}
 
 {% step %}
+
 ### Add the Installation
 
 If you already played the game before then you'll have a data folder with all your worlds, configs, maps, mods... if don't the continue the guide [here](https://vsldocs.xurxomf.xyz/get-started/usage/game-client/install-vintage-story#add-an-installation). By default this ones can be found on the next folder:
 
-* **Windows:** `C:/Users/YourUsername/AppData/Roaming/VintagestoryData`
-* **Linux:** `/home/YourUsername/.config/VintagestoryData/`
+- **Windows:** `C:/Users/YourUsername/AppData/Roaming/VintagestoryData`
+- **Linux:** `/home/YourUsername/.config/VintagestoryData/`
 
 {% hint style="warning" %}
 Don't confuse it with `Vintagestory`, that's the Version(base game files) folder.
@@ -55,6 +57,7 @@ Note: VS Launcher's replacement, Rustory, will handle this automatically.
 {% endstep %}
 
 {% step %}
+
 ### Play the game
 
 Check the next guide on how to play Vintage Story:
@@ -62,4 +65,3 @@ Check the next guide on how to play Vintage Story:
 [play-vintage-story.md](play-vintage-story.md "mention")
 {% endstep %}
 {% endstepper %}
-

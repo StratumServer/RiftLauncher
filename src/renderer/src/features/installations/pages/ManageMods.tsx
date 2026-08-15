@@ -184,12 +184,7 @@ function ListMods(): JSX.Element {
                   <p>{t("features.mods.updateAllButton")}</p>
                 </FormButton>
 
-                <FormButton
-                  title={t("features.mods.exportModpack")}
-                  className="p-1 w-fit h-8"
-                  onClick={() => exportModpack({ installedMods, installation })}
-                  disabled={installedMods.length === 0}
-                >
+                <FormButton title={t("features.mods.exportModpack")} className="p-1 w-fit h-8" onClick={() => exportModpack({ installedMods, installation })} disabled={installedMods.length === 0}>
                   <PiBoxArrowUpDuotone className="text-xl" />
                   <p>{t("features.mods.exportModpackButton")}</p>
                 </FormButton>

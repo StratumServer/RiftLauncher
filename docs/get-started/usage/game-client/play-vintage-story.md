@@ -9,6 +9,7 @@ Playing Vintage Story using VS Launcher is as easy as pressing a button but ther
 
 {% stepper %}
 {% step %}
+
 ### Log in with Vintage Story
 
 One cool feature of VS Launcher is the ability to log in with your Vintage Story account so you don't have to do it manually every time you change Installations.
@@ -21,6 +22,7 @@ Log In with Vintage Story | VS Launcher Guides
 {% endstep %}
 
 {% step %}
+
 ### Play Vintage Story
 
 Now you only have to select the **Installation** you want to play on and press **Play**!

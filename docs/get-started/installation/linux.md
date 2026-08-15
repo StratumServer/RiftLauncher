@@ -62,6 +62,7 @@ This should be done by default by sometimes you've to manually do it.
 ```sh
 chmod +x ./vs-launcher-X.X.X.AppImage
 ```
+
 {% endstep %}
 
 {% step %}
@@ -77,7 +78,7 @@ VS Launcher does not need any dependecy to work but Vintage Story does so follow
 {% endstep %}
 {% endstepper %}
 
-***
+---
 
 ## Vintage Story Dependencies
 
@@ -89,6 +90,7 @@ To help you with this process we've made a few guide explaining how to install e
 
 {% stepper %}
 {% step %}
+
 #### Install .NET 7, 8 and 10
 
 ```sh
@@ -110,28 +112,34 @@ sudo ./dotnet-install.sh --channel 8.0 --install-dir /usr/lib/dotnet
 ```sh
 sudo ./dotnet-install.sh --channel 10.0 --install-dir /usr/lib/dotnet
 ```
+
 {% endstep %}
 
 {% step %}
+
 #### Install your graphics driver
 
 You'll have to look up how to do this for your graphics card and your Linux distribution as the combinations are almost endless!
 {% endstep %}
 
 {% step %}
+
 #### Install OpenAL and mono-complete
 
 ```sh
 sudo apt install libopenal-dev mono-complete
 ```
+
 {% endstep %}
 
 {% step %}
+
 #### Fix RAM limits
 
 ```sh
 sudo sysctl -w vm.max_map_count=262144
 ```
+
 {% endstep %}
 {% endstepper %}
 
@@ -139,17 +147,20 @@ sudo sysctl -w vm.max_map_count=262144
 
 {% stepper %}
 {% step %}
+
 #### Install your graphics driver
 
 You'll have to look up how to do this for your graphics card and your Linux distribution as the combinations are almost endless!
 {% endstep %}
 
 {% step %}
+
 #### Install all the dependencies
 
 ```sh
 sudo pacman -S dotnet-runtime-7.0 dotnet-runtime-8.0 dotnet-runtime glibc openal opengl-driver mono
 ```
+
 {% endstep %}
 {% endstepper %}
 
@@ -157,6 +168,7 @@ sudo pacman -S dotnet-runtime-7.0 dotnet-runtime-8.0 dotnet-runtime glibc openal
 
 {% stepper %}
 {% step %}
+
 #### Disable readonly mode
 
 SteamOS is protected so you can't make changes by accident. To install the dependencies you need to disable this:
@@ -164,9 +176,11 @@ SteamOS is protected so you can't make changes by accident. To install the depen
 ```sh
 sudo steamos-readonly disable
 ```
+
 {% endstep %}
 
 {% step %}
+
 #### Configure pacman
 
 Sometimes you'll need to do some steps to configure everything:
@@ -176,22 +190,27 @@ sudo pacman-key --init
 sudo pacman-key --populate archlinux
 sudo pacman-key --populate holo
 ```
+
 {% endstep %}
 
 {% step %}
+
 #### Install all the dependencies
 
 ```sh
 sudo pacman -S dotnet-runtime-7.0 dotnet-runtime-8.0 dotnet-runtime glibc openal opengl-driver mono
 ```
+
 {% endstep %}
 
 {% step %}
+
 #### Enable readonly mode again
 
 ```sh
 sudo steamos-readonly enable
 ```
+
 {% endstep %}
 {% endstepper %}
 
@@ -203,6 +222,7 @@ This SteamOS guide was sent by an user that got it working with this. I don't kn
 
 {% stepper %}
 {% step %}
+
 #### Enable appimages, and add dotnet as an extra package
 
 Appimages require a couple of options to be enabled in order to load, and they cannot see system libraries such as dotnet. Simply add this to your config to enable appimage support, and reveal the missing dotnet library:
@@ -214,6 +234,7 @@ Appimages require a couple of options to be enabled in order to load, and they c
     pkgs.dotnet-runtime
   ]; };
 ```
+
 {% endstep %}
 {% endstepper %}
 
@@ -221,7 +242,7 @@ Appimages require a couple of options to be enabled in order to load, and they c
 Note, that this will enable appimages system-wide, and all appimages will have dotnet available to them.
 {% endhint %}
 
-***
+---
 
 ## Migrating from AppImage to Flatpak
 
@@ -231,30 +252,35 @@ To restore the config you've to move the config file to the new location manuall
 
 {% stepper %}
 {% step %}
+
 #### Find the old config file
 
 This one will be at `/home/username/.config/VSLauncher/config.json` and copy it or move it to a save location.
 {% endstep %}
 
 {% step %}
+
 #### Open the Flatpak installed VS Launcher
 
 Open the VS Launcher copy you've installed using Flatpak and wait one or two seconds for it to generate the config file.
 {% endstep %}
 
 {% step %}
+
 #### Go to the new config file location
 
 This one should be at `/home/username/.var/app/xyz.xurxomf.vslauncher/config/VSLauncher/config.json` . If it's not there go to the setting page on VS Launcher and you'll have the 3 default folders. Just copy one of them as seen on the next video and open it.
 {% endstep %}
 
 {% step %}
+
 #### Replace the config.json with the old one.
 
 Just paste or move the old config file to the new location.
 {% endstep %}
 
 {% step %}
+
 #### Restart VS Launcher
 
 Close and open VS Launcher and magic, all your installations and versions are back!
@@ -265,7 +291,7 @@ Close and open VS Launcher and magic, all your installations and versions are ba
 Migrate to Flatpak | VS Launcher Guides
 {% endembed %}
 
-***
+---
 
 {% hint style="info" %}
 If you find any issue report it on the [GitHub Issue Tracker](https://github.com/StratumServer/RiftLauncher/issues) and if you need help ask us on the [GitHub Discussions](https://github.com/StratumServer/RiftLauncher/discussions) or on the [Official Vintage Story Discord Server](https://discord.com/channels/302152934249070593/1314991001571557488).

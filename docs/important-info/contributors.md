@@ -10,40 +10,40 @@ I started this project as a freelance developer, but after a few days many playe
 
 This page is the Hall of Fame with the name of all the contributors this project has and had!
 
-***
+---
 
 ## Developers & Code contributors
 
-* [**Zaldaryon**](https://github.com/Zaldaryon) - Current maintainer and developer.
-* [**XurxoMF**](https://github.com/XurxoMF) - Original author and main developer.
-* [**scgm0**](https://github.com/scgm0) - Reverse engineering VS to learn how to log in with the VS account.
-* [**Tipsy The Cat**](https://github.com/TipsyTheCat) - Backups compression level code contribution.
+- [**Zaldaryon**](https://github.com/Zaldaryon) - Current maintainer and developer.
+- [**XurxoMF**](https://github.com/XurxoMF) - Original author and main developer.
+- [**scgm0**](https://github.com/scgm0) - Reverse engineering VS to learn how to log in with the VS account.
+- [**Tipsy The Cat**](https://github.com/TipsyTheCat) - Backups compression level code contribution.
 
-***
+---
 
 ## Translators
 
-* [**XurxoMF**](https://github.com/XurxoMF)**,** [**SkyFoxCoder**](https://github.com/SkyFoxCoder) - English
-* [**XurxoMF**](https://github.com/XurxoMF) **-** Spanish (Spain)
-* [**megabezdelnik**](https://github.com/megabezdelnik) - Russian
-* [**liuyujielol**](https://github.com/liuyujielol) - Simplified Chinese
-* [**LorIlcs**](https://github.com/LorIlcs)**,** [**SkyFoxCoder**](https://github.com/SkyFoxCoder) - French
-* **DejFidOFF** - Czech
-* [**BradyThe**](https://github.com/BradyThe)**,** [**GrimFred**](https://github.com/GrimFred) - German
-* [**bruno-cabrita**](https://github.com/bruno-cabrita) - Portuguese
-* **Dennisjeee** - Dutch (Netherlands)
-* [**Runo Hawk**](https://github.com/RunoHawk), [**Zsuatem**](https://github.com/zsuatem) **-** Polish
-* [**Pingoda**](https://github.com/Pingoda) - Italian
-* **magyar** - Hungarian
+- [**XurxoMF**](https://github.com/XurxoMF)**,** [**SkyFoxCoder**](https://github.com/SkyFoxCoder) - English
+- [**XurxoMF**](https://github.com/XurxoMF) **-** Spanish (Spain)
+- [**megabezdelnik**](https://github.com/megabezdelnik) - Russian
+- [**liuyujielol**](https://github.com/liuyujielol) - Simplified Chinese
+- [**LorIlcs**](https://github.com/LorIlcs)**,** [**SkyFoxCoder**](https://github.com/SkyFoxCoder) - French
+- **DejFidOFF** - Czech
+- [**BradyThe**](https://github.com/BradyThe)**,** [**GrimFred**](https://github.com/GrimFred) - German
+- [**bruno-cabrita**](https://github.com/bruno-cabrita) - Portuguese
+- **Dennisjeee** - Dutch (Netherlands)
+- [**Runo Hawk**](https://github.com/RunoHawk), [**Zsuatem**](https://github.com/zsuatem) **-** Polish
+- [**Pingoda**](https://github.com/Pingoda) - Italian
+- **magyar** - Hungarian
 
-***
+---
 
 ## Documentation
 
-* [**XurxoMF**](https://github.com/XurxoMF) - Original author and main editor.
-* [**asleeves**](https://github.com/asleeves), 𝕸𝖆𝖝𝖊𝖓𝖈𝖊 - Linux contributions.
+- [**XurxoMF**](https://github.com/XurxoMF) - Original author and main editor.
+- [**asleeves**](https://github.com/asleeves), 𝕸𝖆𝖝𝖊𝖓𝖈𝖊 - Linux contributions.
 
-***
+---
 
 ## Letter of love!
 

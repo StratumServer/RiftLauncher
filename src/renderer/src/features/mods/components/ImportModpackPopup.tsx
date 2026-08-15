@@ -173,9 +173,7 @@ function ImportModpackPopup({
             <p>{t("features.mods.importModpackDesc", { name: manifest.name })}</p>
 
             {manifest.gameVersion !== installation.version && (
-              <p className="text-yellow-400 text-sm">
-                {t("features.mods.importModpackVersionWarning", { packVersion: manifest.gameVersion, installVersion: installation.version })}
-              </p>
+              <p className="text-yellow-400 text-sm">{t("features.mods.importModpackVersionWarning", { packVersion: manifest.gameVersion, installVersion: installation.version })}</p>
             )}
 
             {downgradedMods.length > 0 && (
@@ -206,21 +204,23 @@ function ImportModpackPopup({
               </TableHead>
 
               <TableBody className="max-h-[18rem]">
-                {[...manifest.mods].sort((a, b) => a.modid.localeCompare(b.modid)).map((mod) => {
-                  const status = modStatuses[mod.modid] || "pending"
-                  return (
-                    <TableBodyRow key={mod.modid}>
-                      <TableCell className="w-5/12 overflow-hidden whitespace-nowrap text-ellipsis">{mod.modid}</TableCell>
-                      <TableCell className="w-3/12">{mod.version}</TableCell>
-                      <TableCell className="w-4/12">
-                        <span className={clsx("flex items-center justify-center gap-1 text-sm", statusColor(status))}>
-                          <StatusIcon status={status} />
-                          {statusLabel(status, t)}
-                        </span>
-                      </TableCell>
-                    </TableBodyRow>
-                  )
-                })}
+                {[...manifest.mods]
+                  .sort((a, b) => a.modid.localeCompare(b.modid))
+                  .map((mod) => {
+                    const status = modStatuses[mod.modid] || "pending"
+                    return (
+                      <TableBodyRow key={mod.modid}>
+                        <TableCell className="w-5/12 overflow-hidden whitespace-nowrap text-ellipsis">{mod.modid}</TableCell>
+                        <TableCell className="w-3/12">{mod.version}</TableCell>
+                        <TableCell className="w-4/12">
+                          <span className={clsx("flex items-center justify-center gap-1 text-sm", statusColor(status))}>
+                            <StatusIcon status={status} />
+                            {statusLabel(status, t)}
+                          </span>
+                        </TableCell>
+                      </TableBodyRow>
+                    )
+                  })}
               </TableBody>
             </TableWrapper>
 
@@ -238,13 +238,7 @@ function ImportModpackPopup({
 
             <div className="flex gap-2 justify-center">
               {!importing ? (
-                <FormButton
-                  title={t("features.mods.importModpackButton")}
-                  className="p-1 px-4 h-8"
-                  onClick={handleImport}
-                  type="success"
-                  disabled={manifest.mods.length === 0}
-                >
+                <FormButton title={t("features.mods.importModpackButton")} className="p-1 px-4 h-8" onClick={handleImport} type="success" disabled={manifest.mods.length === 0}>
                   <PiDownloadDuotone className="text-xl" />
                   <p>{t("features.mods.importModpackButton")}</p>
                 </FormButton>

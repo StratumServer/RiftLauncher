@@ -15,6 +15,7 @@ If with this option the game is not working try installing it manually the first
 
 {% stepper %}
 {% step %}
+
 ### Install a VS Version
 
 The first thing you need is the **VS Version** so let's install it:
@@ -25,6 +26,7 @@ Install a new Vintage Story Version | VS Launcher Guides
 {% endstep %}
 
 {% step %}
+
 ### Add an Installation
 
 Now that you have the **VS Version** installed you need to create an **Installation** (data folder) to save the world, configs, maps... so let's create one:
@@ -35,6 +37,7 @@ Add a new Installation | VS Launcher Guides
 {% endstep %}
 
 {% step %}
+
 ### Play the game
 
 Check the next guide on how to play Vintage Story:
@@ -53,18 +56,21 @@ However, you may want to install it the old way or if you're using Linux you may
 
 {% stepper %}
 {% step %}
+
 ### Download a VS Version
 
 Go to the [Vintage Story Client Area](https://account.vintagestory.at/) and download `.exe` of the version you want.
 {% endstep %}
 
 {% step %}
+
 ### Install it
 
 Install the downloaded \`.exe\` as any other program choosing the folder where you want to install it.
 {% endstep %}
 
 {% step %}
+
 ### Add it to VS Launcher
 
 Now you just have to add it to VS Launcher so follow the [Vintage Story is already installed](vintage-story-is-already-installed.md) guide to do so.
@@ -75,6 +81,7 @@ Now you just have to add it to VS Launcher so follow the [Vintage Story is alrea
 
 {% stepper %}
 {% step %}
+
 ### Download a VS Version
 
 Go to the [Vintage Story Client Area](https://account.vintagestory.at/) and download `.tar.gz` of the version you want.
@@ -83,12 +90,14 @@ You can also install it using Flatpak or any other package manager where Vintage
 {% endstep %}
 
 {% step %}
+
 ### Extract it
 
 Extract the `.tar.gz` on the folder you want. You should not delete or move this folder later so make sure to place it where it doesn't bother while working or using the file explorer. A good location for it is the `/usr/share/vintagestory` folder.
 {% endstep %}
 
 {% step %}
+
 ### Add execution perms
 
 If you downloaded it from the Client Area make sure to change the `Vintagestory` executable permissions to allow execution:
@@ -96,9 +105,11 @@ If you downloaded it from the Client Area make sure to change the `Vintagestory`
 ```sh
 sudo chmod -x ./Vintagestory
 ```
+
 {% endstep %}
 
 {% step %}
+
 ### Add it to VS Launcher
 
 Now you just have to add it to VS Launcher so follow the [Vintage Story is already installed](vintage-story-is-already-installed.md) guide to do so.
@@ -109,6 +120,7 @@ Now you just have to add it to VS Launcher so follow the [Vintage Story is alrea
 
 {% stepper %}
 {% step %}
+
 ### Download a VS Version
 
 Go to the [Vintage Story Client Area](https://account.vintagestory.at/) and download `.tar.gz` of the version you want.
@@ -118,15 +130,18 @@ You can also install it using the Arch User Repository (AUR) with the [vintagest
 ```sh
 yay -S vintagestory
 ```
+
 {% endstep %}
 
 {% step %}
+
 ### Extract it
 
 Extract the `.tar.gz` on the folder you want. You should not delete or move this folder later so make sure to place it where it doesn't bother while working or using the file explore. A good location for it is the `/usr/share/vintagestory` folder.
 {% endstep %}
 
 {% step %}
+
 ### Add execution perms
 
 If you downloaded it from the Client Area make sure to change the `Vintagestory` executable permissions to allow execution:
@@ -134,9 +149,11 @@ If you downloaded it from the Client Area make sure to change the `Vintagestory`
 ```sh
 sudo chmod -x ./Vintagestory
 ```
+
 {% endstep %}
 
 {% step %}
+
 ### Add it to VS Launcher
 
 Now you just have to add it to VS Launcher so follow the [Vintage Story is already installed](vintage-story-is-already-installed.md) guide to do so.

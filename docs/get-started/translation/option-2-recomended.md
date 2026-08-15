@@ -1,6 +1,6 @@
 ---
 description: Tedious to setup, easier to translate.
-icon: '2'
+icon: "2"
 ---
 
 # Option 2 (recomended)
@@ -13,6 +13,7 @@ If you choose this option just follow the next steps:
 
 {% stepper %}
 {% step %}
+
 ### **Donwload and install VSCode**
 
 The first thing you need is to install Visual Studio Code. This is a text editor made by Microsoft and it's compatible with Windows, Linux and MacOS. It's used by most developers around the world and it counts with a lot of plugins to improve the experience, one of those is i18n Ally, the one we'll use.
@@ -23,6 +24,7 @@ Just download it and install it like any other app.
 {% endstep %}
 
 {% step %}
+
 ### **Download and install GIT**
 
 Git is the version control system used by most devs around the world. It's the "app" used to download and upload code changed to GitHub to explain it the easy way ^^
@@ -37,6 +39,7 @@ During the installation you'll see a lot of options with checks and so on. Ignor
 {% endstep %}
 
 {% step %}
+
 ### **Install i18n Ally**
 
 This is the Visual Studio Code Plugin I've mentioned before. To install it just go to the left panel, to the 4 cubes icon, and search `i18n Ally` on the search bar and install it like in the image:
@@ -45,6 +48,7 @@ This is the Visual Studio Code Plugin I've mentioned before. To install it just 
 {% endstep %}
 
 {% step %}
+
 ### **Create a GitHub account**
 
 GitHub is used for storing code, collaboration on coding projects, and is also used as a version control system, among other things. It's used by most devs and companies around the world.
@@ -55,6 +59,7 @@ Just press the Sign In button and follow the steps.
 {% endstep %}
 
 {% step %}
+
 ### **Configure GitHub username and email locally**
 
 You've installed Git on your PC but now you have to configure the account to use.
@@ -65,9 +70,11 @@ To do this just copy-paste the next commands one by one and execute them on your
 git config --global user.email <email>
 git config --global user.name <username>
 ```
+
 {% endstep %}
 
 {% step %}
+
 ### **Fork the VS Launcher repository**
 
 You can't directly make changes on another user repository on GitHub, to do this you've to "copy" that repository to your account and edit it there. That's what a fork is, a copy of the original repository.
@@ -82,6 +89,7 @@ Now change the name to `vs-launcher-xx-XX` depending on the language you'll tran
 {% endstep %}
 
 {% step %}
+
 ### **Clone the repository and "link" it to the original repository**
 
 Now you've a copy of the vs-launcher repository on your account but, you've to download it to your computer.
@@ -97,9 +105,11 @@ git clone <repository>
 cd vs-launcher-xx-XX
 git remote add upstream https://github.com/XurxoMF/vs-launcher
 ```
+
 {% endstep %}
 
 {% step %}
+
 ### **Open the cloned folder on Visual Studio Code**
 
 Open Visual Studio Code and open the folder you've cloned, it should be on your user folder like `C:/Users/YourUsername/vs-launcher-xx-XX` on Windows and `/home/YourUsername/vs-launcher-xx-XX` on Linux, if you cloned it elsewhere just select that folder:
@@ -112,6 +122,7 @@ Sometimes it'll ask you to trust the author of that folder, you in this case, ju
 {% endstep %}
 
 {% step %}
+
 ### **Select the main language to use**
 
 i18n Ally doesn't know by default which language to use as default, you've to specify it. For that just click the bottom right 🌐 button and select `en-US` like in the image:
@@ -120,6 +131,7 @@ i18n Ally doesn't know by default which language to use as default, you've to sp
 {% endstep %}
 
 {% step %}
+
 ### **Open the editor and translate**
 
 On the left menu you'll see a localization icon, if this one does not appear just click to open a few files from the left menu and wait a few seconds/a minute and it'll appear, it'll search for the lang files and do everything itself. Here you've a little video showing how to translate:
@@ -128,6 +140,7 @@ VÍDEO
 {% endstep %}
 
 {% step %}
+
 ### **Commit and push changes**
 
 Now that you've translated everything you needed you just have to upload changes to you repository to later sync then with vs-launcher oficial repository.
@@ -146,6 +159,7 @@ the first time it'll ask you to login with your GitHub account. Just press yes o
 {% endstep %}
 
 {% step %}
+
 ### **Send changes to the VS Launcher official repository | Pull Request**
 
 Now you've translated and uploaded the translations to your repository but you've to send them to the official repository.
@@ -160,6 +174,7 @@ Now change the title of the Pull Request and add a little description. Then just
 {% endstep %}
 
 {% step %}
+
 ### **Sync the official repository with yours**
 
 When changes are uploaded to the official repository you have to "copy" them to your repository. This can be done on GitHub. Go to your account, enter your repository and press `Sync fork` and then the green button:
@@ -172,6 +187,7 @@ There is no button on the image because I could not make changes to take the scr
 {% endstep %}
 
 {% step %}
+
 ### **Download the changes from GitHub to your pc**
 
 Now, the new changes are synced with your repository on GitHub but not on your computes, you've to download them.
@@ -182,6 +198,7 @@ To do this just press the sync button on the bottom left corner of Visual Studio
 {% endstep %}
 
 {% step %}
+
 ### **Translate, commit, push and make a Pull Request again**
 
 Now you just have to repeat the same process to translate and send your changes.
@@ -192,12 +209,13 @@ When a new release is published check out if there are new keys to translate ^^
 {% endstep %}
 {% endstepper %}
 
-***
+---
 
 ## How to add a new language
 
 {% stepper %}
 {% step %}
+
 ### **Create the lang file**
 
 To add a new language you just need to add a new `.json` and link it with the app.
@@ -208,6 +226,7 @@ Go to the folder `src\renderer\src\locales` and create a new `xx-XX.json` with t
 {% endstep %}
 
 {% step %}
+
 ### **Add it to the languages menu**
 
 On the `src\renderer\src\` folder there is a `i18n.ts` file.
@@ -218,6 +237,7 @@ If you open it you'll see how the other languages are set up, just add the impor
 {% endstep %}
 
 {% step %}
+
 ### **Translate**
 
 Now just close those files, go to the translation menu on the left bar and you'll see the new language you've added!
