@@ -12,6 +12,11 @@ export interface FileSystem {
   exists(path: string): Promise<boolean>
   /** Deletes `path`. Resolves false when the deletion did not happen. */
   remove(path: string): Promise<boolean>
+  /**
+   * Renames `from` to `to`. Resolves false when the move did not happen, which
+   * includes the host refusing to overwrite an existing `to`.
+   */
+  move(from: string, to: string): Promise<boolean>
 }
 
 /** Everything the host needs to produce one archive. */
@@ -41,6 +46,33 @@ export interface Archiver {
    * its completion callback.
    */
   compress(request: CompressRequest, onComplete: (outcome: CompressOutcome) => void): Promise<void>
+}
+
+/** Everything the host needs to unpack one archive. */
+export interface ExtractRequest {
+  /** Archive to unpack. */
+  archivePath: string
+  /** Folder the contents are written into. The host creates it when missing. */
+  outputFolder: string
+}
+
+/** How an extraction attempt ended. */
+export interface ExtractOutcome {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Unpacks archives. Kept apart from {@link Archiver} because no service does
+ * both: a backup only ever compresses, a restore only ever extracts.
+ */
+export interface Extractor {
+  /**
+   * Unpacks `request` and reports the result through `onComplete`, which the
+   * host calls once before the returned promise settles. Like the archiver it
+   * never rejects, it signals failure through its completion callback.
+   */
+  extract(request: ExtractRequest, onComplete: (outcome: ExtractOutcome) => void): Promise<void>
 }
 
 /** Wall clock, so services never read the ambient time. */

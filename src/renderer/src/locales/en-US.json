@@ -277,6 +277,8 @@
       "areYouSureDelete": "Are you sure you want to delete this Backup?",
       "deletingNotReversible": "Deletion is not reversible so you'll not be able to restore your worlds, data and other info using this Backup anymore.",
       "errorMakingBackup": "There was an error making a backup!",
+      "errorRestoringBackup": "The Backup could not be restored, so your Installation was left as it was.",
+      "restoreLeftDataAside": "The Backup could not be restored and your old Installation data is now in {{path}}. Move that folder back yourself before playing.",
       "backupsAmount": "Backups limit",
       "folderDoesntExists": "This Installation has no data, please, play on it at least one time to generate the base data!",
       "compressionLevel": "Compression level",

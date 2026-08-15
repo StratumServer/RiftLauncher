@@ -1,9 +1,9 @@
 import { app } from "electron"
 import fse from "fs-extra"
-import { dirname, isAbsolute, relative, resolve, sep } from "path"
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "path"
 
 import { getConfig } from "@src/config/configManager"
-import { assertNonRootPath } from "@src/ipc/validation"
+import { assertNonRootPath, isRestoreWorkspaceName } from "@src/ipc/validation"
 
 type ApprovedPath = {
   path: string
@@ -78,6 +78,19 @@ function getConfiguredRoots(config: ConfigType): string[] {
   ].filter((pathValue): pathValue is string => typeof pathValue === "string" && pathValue.length > 0)
 }
 
+/**
+ * The backup restore stages the archive next to the installation and sets the
+ * live folder aside beside it, so both temporary folders are siblings of a
+ * managed installation rather than children of a configured root. They are
+ * admitted by name only, and the name carries the installation folder name plus
+ * a generated token, so nothing that already exists on disk can be reached.
+ */
+function isRestoreWorkspaceOf(installationPath: string, candidate: string): boolean {
+  const root = comparablePath(installationPath)
+  const target = comparablePath(candidate)
+  return dirname(root) === dirname(target) && isRestoreWorkspaceName(basename(root), basename(target))
+}
+
 function getProtectedPaths(config: ConfigType): string[] {
   return [
     app.getPath("userData"),
@@ -120,7 +133,8 @@ export async function assertManagedPath(value: unknown, name = "path", options: 
   const roots = getConfiguredRoots(config)
   const isConfiguredPath = roots.some((root) => isPathWithin(root, pathValue))
   const isApprovedPath = options.allowApprovedSelection !== false && isUserApprovedPath(pathValue)
-  if (!isConfiguredPath && !isApprovedPath) throw new TypeError(`Unmanaged ${name}`)
+  const isRestoreWorkspace = config.installations.some((installation) => isRestoreWorkspaceOf(installation.path, pathValue))
+  if (!isConfiguredPath && !isApprovedPath && !isRestoreWorkspace) throw new TypeError(`Unmanaged ${name}`)
 
   if (!options.allowMissing && !fse.existsSync(pathValue)) throw new TypeError(`Missing ${name}`)
   assertNoSymlinkComponents(pathValue)

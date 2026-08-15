@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid"
 
-import type { InstallationSnapshot, MakeInstallationBackupFailure, MakeInstallationBackupPorts } from "@domain/installations/backup"
+import type { BackupSnapshot, InstallationSnapshot, MakeInstallationBackupFailure, MakeInstallationBackupPorts } from "@domain/installations/backup"
+import { createFileSystemPort } from "@renderer/features/installations/adapters/fileSystem"
 import type { TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
 export interface BackupPortsOptions {
@@ -18,10 +19,7 @@ export interface BackupPortsOptions {
  */
 export function createBackupPorts({ startCompress, taskName, taskDescription }: BackupPortsOptions): MakeInstallationBackupPorts {
   return {
-    fileSystem: {
-      exists: (path) => window.api.pathsManager.checkPathExists(path),
-      remove: (path) => window.api.pathsManager.deletePath(path)
-    },
+    fileSystem: createFileSystemPort(),
     archiver: {
       compress: (request, onComplete) =>
         startCompress(
@@ -60,6 +58,16 @@ export function toInstallationSnapshot(installation: InstallationType): Installa
     isBackingUp: installation._backuping ?? false,
     isPlaying: installation._playing ?? false,
     isRestoringBackup: installation._restoringBackup ?? false
+  }
+}
+
+/** Copies the config-owned backup into the plain shape the services read. */
+export function toBackupSnapshot(backup: BackupType): BackupSnapshot {
+  return {
+    id: backup.id,
+    path: backup.path,
+    isRestoring: backup._restoring ?? false,
+    isDeleting: backup._deleting ?? false
   }
 }
 
