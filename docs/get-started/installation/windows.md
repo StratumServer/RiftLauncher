@@ -9,7 +9,7 @@ The first thing you've to do is download the `.exe` from the Github Releases Pag
 
 {% stepper %}
 {% step %}
-### Go to the [GitHub Releases Page](https://github.com/XurxoMF/vs-launcher/releases)
+### Go to the [GitHub Releases Page](https://github.com/StratumServer/RiftLauncher/releases)
 
 On that page you'll see all the available versions to download.
 {% endstep %}

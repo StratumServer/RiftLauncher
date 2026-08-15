@@ -72,7 +72,7 @@ git config --global user.name <username>
 
 You can't directly make changes on another user repository on GitHub, to do this you've to "copy" that repository to your account and edit it there. That's what a fork is, a copy of the original repository.
 
-To do this just go to the [VS Launcher repository](https://github.com/XurxoMF/vs-launcher) and press the `fork` button ad the top, like in the image:
+To do this just go to the [Rift Launcher repository](https://github.com/StratumServer/RiftLauncher) and press the `fork` button at the top, like in the image:
 
 <figure><img src="../../.gitbook/assets/fork-EDITED.png" alt=""><figcaption><p>Fork the VS Launcher GitHub repository</p></figcaption></figure>
 
@@ -225,4 +225,3 @@ Now just close those files, go to the translation menu on the left bar and you'l
 Translate, commit, push and make a pull request... like if the language already existed.
 {% endstep %}
 {% endstepper %}
-

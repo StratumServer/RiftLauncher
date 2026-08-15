@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Input } from "@headlessui/react"
 import { useNavigate } from "react-router-dom"
-import axios from "axios"
 import { FiLoader } from "react-icons/fi"
 import { PiDownloadDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
 
@@ -70,8 +69,10 @@ function AddVersion(): JSX.Element {
   useEffect(() => {
     ;(async (): Promise<void> => {
       try {
-        const [stable, unstable] = await Promise.all([axios<RawVersions>(`${VS_API}/stable.json`), axios<RawVersions>(`${VS_API}/unstable.json`)])
-        setGameVersions(parseGameVersions(stable.data, unstable.data))
+        const [stableResponse, unstableResponse] = await Promise.all([fetch(`${VS_API}/stable.json`), fetch(`${VS_API}/unstable.json`)])
+        if (!stableResponse.ok || !unstableResponse.ok) throw new Error("Game version API request failed")
+        const [stable, unstable] = (await Promise.all([stableResponse.json(), unstableResponse.json()])) as [RawVersions, RawVersions]
+        setGameVersions(parseGameVersions(stable, unstable))
       } catch (err) {
         window.api.utils.logMessage("error", `[front] [mods] [features/versions/pages/AddVersion.tsx] [AddVersion] Error fetching game versions.`)
         window.api.utils.logMessage("debug", `[front] [mods] [features/versions/pages/AddVersion.tsx] [AddVersion] Error fetching game versions: ${err}`)

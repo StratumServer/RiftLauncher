@@ -104,24 +104,30 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
 
   const [tasks, tasksDispatch] = useReducer(taskReducer, initialState)
 
-  useEffect(() => {
+  useEffect((): (() => void) => {
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for download progress.`)
-    window.api.pathsManager.onDownloadProgress((_event, id, progress) => {
+    const removeDownloadProgressListener = window.api.pathsManager.onDownloadProgress(({ id, progress }) => {
       if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "completed" } } })
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
 
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for extract progress.`)
-    window.api.pathsManager.onExtractProgress((_event, id, progress) => {
+    const removeExtractProgressListener = window.api.pathsManager.onExtractProgress(({ id, progress }) => {
       if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "completed" } } })
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
 
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for compress progress.`)
-    window.api.pathsManager.onCompressProgress((_event, id, progress) => {
+    const removeCompressProgressListener = window.api.pathsManager.onCompressProgress(({ id, progress }) => {
       if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "completed" } } })
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
+
+    return () => {
+      removeDownloadProgressListener()
+      removeExtractProgressListener()
+      removeCompressProgressListener()
+    }
   }, [])
 
   async function startDownload(

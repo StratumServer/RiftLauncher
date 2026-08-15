@@ -46,7 +46,8 @@
     "client": "Kliens",
     "tags": "Címkék",
     "totalTime": "Összesen: {{total}}",
-    "notPlayedYet": "Még nem játszott"
+    "notPlayedYet": "Még nem játszott",
+    "discordContact": "Discord (@zaldaryon)"
   },
   "features": {
     "generic": {

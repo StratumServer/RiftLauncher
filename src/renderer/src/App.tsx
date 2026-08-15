@@ -1,45 +1,40 @@
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { HashRouter as Router, Route, Routes, useLocation } from "react-router-dom"
 import { FiLoader } from "react-icons/fi"
 import { useTranslation } from "react-i18next"
 import { AnimatePresence, motion } from "motion/react"
-import "./i18n"
 import clsx from "clsx"
 
 import { ConfigProvider } from "@renderer/features/config/contexts/ConfigContext"
 import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
-import i18n from "./i18n"
+import { changeLanguage } from "./i18n"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 
 import MainMenu from "@renderer/components/layout/MainMenu"
 import GlobalActionsWrapper from "@renderer/components/layout/GlobalActionsWrapper"
+import DeferredGlobalModUpdateChecker from "@renderer/components/layout/DeferredGlobalModUpdateChecker"
 
-import HomePage from "@renderer/features/home/pages/HomePage"
-
-import ListInslallations from "@renderer/features/installations/pages/ListInstallations"
-import AddInslallation from "@renderer/features/installations/pages/AddInstallation"
-import EditInslallation from "@renderer/features/installations/pages/EditInstallation"
-import ManageInstallationBackups from "@renderer/features/installations/pages/ManageInstallationBackups"
-import ManageInstallationMods from "@renderer/features/installations/pages/ManageMods"
-
-import ListVersions from "@renderer/features/versions/pages/ListVersions"
-import AddVersion from "@renderer/features/versions/pages/AddVersion"
-import LookForAVersion from "@renderer/features/versions/pages/LookForAVersion"
-
-import ListMods from "@renderer/features/mods/pages/ListMods"
-
-import ConfigPage from "@renderer/features/config/pages/ConfigPage"
-
-import InfoAndHelpPage from "./features/info/pages/InfoAndHelpPage"
+const HomePage = lazy(() => import("@renderer/features/home/pages/HomePage"))
+const ListInslallations = lazy(() => import("@renderer/features/installations/pages/ListInstallations"))
+const AddInslallation = lazy(() => import("@renderer/features/installations/pages/AddInstallation"))
+const EditInslallation = lazy(() => import("@renderer/features/installations/pages/EditInstallation"))
+const ManageInstallationBackups = lazy(() => import("@renderer/features/installations/pages/ManageInstallationBackups"))
+const ManageInstallationMods = lazy(() => import("@renderer/features/installations/pages/ManageMods"))
+const ListVersions = lazy(() => import("@renderer/features/versions/pages/ListVersions"))
+const AddVersion = lazy(() => import("@renderer/features/versions/pages/AddVersion"))
+const LookForAVersion = lazy(() => import("@renderer/features/versions/pages/LookForAVersion"))
+const ListMods = lazy(() => import("@renderer/features/mods/pages/ListMods"))
+const ConfigPage = lazy(() => import("@renderer/features/config/pages/ConfigPage"))
+const InfoAndHelpPage = lazy(() => import("./features/info/pages/InfoAndHelpPage"))
 
 function App(): JSX.Element {
   useEffect(() => {
     document.documentElement.setAttribute("data-uiscale", window.localStorage.getItem("uiScale") || "100")
 
     const lang = window.localStorage.getItem("lang")
-    if (lang) i18n.changeLanguage(lang)
+    if (lang) void changeLanguage(lang)
   }, [])
 
   return (
@@ -48,6 +43,7 @@ function App(): JSX.Element {
         <TaskProvider>
           <Router>
             <GlobalActionsWrapper>
+              <DeferredGlobalModUpdateChecker />
               <div
                 className={clsx(
                   "relative w-screen h-screen select-none bg-image-vs bg-center bg-cover",
@@ -60,7 +56,9 @@ function App(): JSX.Element {
                   <MainMenu />
 
                   <main className="relative w-full h-full flex-1">
-                    <AnimatedRoutes />
+                    <Suspense fallback={<RouteLoader />}>
+                      <AnimatedRoutes />
+                    </Suspense>
                   </main>
 
                   <NotificationsOverlay />
@@ -142,6 +140,14 @@ function Loader(): JSX.Element {
         </motion.div>
       )}
     </AnimatePresence>
+  )
+}
+
+function RouteLoader(): JSX.Element {
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-zinc-950/20">
+      <FiLoader className="animate-spin text-4xl text-zinc-400" />
+    </div>
   )
 }
 

@@ -55,7 +55,8 @@
     "addIcon": "Symbol hinzufügen",
     "selectIcon": "Symbol auswählen",
     "icon": "Symbol",
-    "iconName": "Symbolname"
+    "iconName": "Symbolname",
+    "discordContact": "Discord (@zaldaryon)"
   },
   "features": {
     "generic": {

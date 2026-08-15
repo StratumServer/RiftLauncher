@@ -28,18 +28,23 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   const { t } = useTranslation()
   const [notifications, setNotifications] = useState<NotificationType[]>([])
 
-  useEffect(() => {
-    window.api.appUpdater.onUpdateAvailable(() => {
+  useEffect((): (() => void) => {
+    const removeUpdateAvailableListener = window.api.appUpdater.onUpdateAvailable(() => {
       setTimeout(() => {
         addNotification(t("notifications.body.updateAvailable"), "info")
       }, 2_000)
     })
 
-    window.api.appUpdater.onUpdateDownloaded(() => {
+    const removeUpdateDownloadedListener = window.api.appUpdater.onUpdateDownloaded(() => {
       setTimeout(() => {
         addNotification(t("notifications.body.updateDownloaded"), "success", { onClick: () => window.api.appUpdater.updateAndRestart(), duration: 60_000 })
       }, 2_000)
     })
+
+    return () => {
+      removeUpdateAvailableListener()
+      removeUpdateDownloadedListener()
+    }
   }, [])
 
   const addNotification = (body: string, type: NotificationTypes, options?: { duration?: number; onClick?: () => void }): void => {

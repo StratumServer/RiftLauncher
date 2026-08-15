@@ -17,16 +17,16 @@ declare global {
     maximized: boolean
   }
 
-  type AccountType = {
+  type AccountPublicType = {
     email: string
     playerName: string
     playerUid: string
     playerEntitlements: string
-    sessionKey: string
-    sessionSignature: string
-    mptoken: string | null
     hostGameServer: boolean
   }
+
+  // Renderer-visible account data. Session credentials are main-process only.
+  type AccountType = AccountPublicType
 
   type GameVersionType = {
     version: string
@@ -68,7 +68,7 @@ declare global {
 
   type ConfigType = BasicConfigType & {
     window: WindowType
-    account: AccountType | null
+    account: AccountPublicType | null
     installations: InstallationType[]
     gameVersions: GameVersionType[]
     customIcons: IconType[]

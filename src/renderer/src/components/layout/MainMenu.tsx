@@ -69,7 +69,7 @@ function MainMenu(): JSX.Element {
       }
 
       const startedPlaying = Date.now()
-      const closeStatus = await window.api.gameManager.executeGame(gameVersionToRun, selectedInstallation, config.account)
+      const closeStatus = await window.api.gameManager.executeGame(gameVersionToRun, selectedInstallation)
       const finishedPlaying = Date.now()
       const ttp = finishedPlaying - startedPlaying + selectedInstallation.totalTimePlayed
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: selectedInstallation.id, updates: { _playing: false, lastTimePlayed: finishedPlaying, totalTimePlayed: ttp } } })

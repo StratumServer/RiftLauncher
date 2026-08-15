@@ -1,54 +1,20 @@
-import { ipcMain, net } from "electron"
+import { ipcMain } from "electron"
+
 import { IPC_CHANNELS } from "../ipcChannels"
-import { logMessage } from "@src/utils/logManager"
+import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
+import { requestBoundedText } from "@src/ipc/network"
+import { assertAllowedApiUrl } from "@src/ipc/validation"
+import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
-ipcMain.handle(IPC_CHANNELS.NET_MANAGER.QUERY_URL, async (_event, url): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    try {
-      const request = net.request(url)
+ipcMain.handle(IPC_CHANNELS.NET_MANAGER.QUERY_URL, async (event, url: unknown): Promise<string> => {
+  assertTrustedIpcSender(event)
 
-      let data = ""
-
-      request.on("response", (response) => {
-        response.on("data", (chunk) => {
-          data += chunk
-        })
-        response.on("end", () => {
-          resolve(data)
-        })
-      })
-
-      request.on("error", (err) => {
-        logMessage("error", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] Error with the ${url} query.`)
-        logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] Error with the ${url} query: ${err}`)
-        reject(err)
-      })
-
-      request.end()
-    } catch (err) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL > catch] Error with the ${url} query.`)
-      logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL > catch] Error with the ${url} query: ${err}`)
-      reject(err)
-    }
-  })
-})
-
-ipcMain.handle(IPC_CHANNELS.NET_MANAGER.VS_LOGIN, async (_event, url, body: { email: string; password: string; twofacode?: string; preLoginToken?: string }): Promise<string> => {
-  const reqData = new URLSearchParams()
-  reqData.append("email", body.email)
-  reqData.append("password", body.password)
-  reqData.append("totpcode", body.twofacode ?? "")
-  reqData.append("prelogintoken", body.preLoginToken ?? "")
-
-  const request = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: reqData
-  })
-
-  const res = await request.json()
-
-  return res
+  try {
+    const safeUrl = assertAllowedApiUrl(url)
+    return await requestBoundedText(safeUrl)
+  } catch (err) {
+    logMessage("error", "[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] Network request failed.")
+    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] ${getErrorMessage(err)}`)
+    throw err
+  }
 })

@@ -18,7 +18,8 @@
     "version": "版本",
     "releaseDate": "发布日期",
     "type": "类型",
-    "install": "安装"
+    "install": "安装",
+    "discordContact": "Discord (@zaldaryon)"
   },
   "features": {
     "generic": {

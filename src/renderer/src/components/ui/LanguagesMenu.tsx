@@ -7,6 +7,7 @@ import clsx from "clsx"
 import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from "@headlessui/react"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
+import { changeLanguage } from "../../i18n"
 
 function LanguagesMenu(): JSX.Element {
   const { i18n, t } = useTranslation()
@@ -17,16 +18,16 @@ function LanguagesMenu(): JSX.Element {
     if (!resources) return []
     return Object.keys(resources).map((code) => ({
       code,
-      name: resources[code]?.name.toString() || code,
-      credits: resources[code]?.credits.toString() || t("generic.byAnonymous")
+      name: typeof resources[code]?.name === "string" ? resources[code].name : code,
+      credits: typeof resources[code]?.credits === "string" ? resources[code].credits : t("generic.byAnonymous")
     }))
   }
 
   const languages = getLanguages()
 
-  const handleLanguageChange = (lang: string): void => {
+  const handleLanguageChange = async (lang: string): Promise<void> => {
     window.api.utils.logMessage("info", `[front] [localization] [components/ui/LanguagesMenu.tsx] [handleLanguageChange] Changing language to ${lang}.`)
-    i18n.changeLanguage(lang)
+    if (!(await changeLanguage(lang))) return
     localStorage.setItem("lang", lang)
     setSelectedLanguage(lang)
   }

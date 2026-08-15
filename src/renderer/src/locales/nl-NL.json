@@ -18,7 +18,8 @@
     "version": "Versie",
     "releaseDate": "Release Datum",
     "type": "Type",
-    "install": "Installeren"
+    "install": "Installeren",
+    "discordContact": "Discord (@zaldaryon)"
   },
   "features": {
     "generic": {

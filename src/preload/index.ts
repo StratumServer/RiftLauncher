@@ -1,8 +1,17 @@
 import { contextBridge, ipcRenderer } from "electron"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 
-import { electronAPI } from "@electron-toolkit/preload"
-import { logMessage } from "@src/utils/logManager"
+function subscribe<T>(channel: string, callback: (payload: T) => void): Unsubscribe {
+  const listener = (_event: Electron.IpcRendererEvent, payload: T): void => callback(payload)
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
+
+function subscribeWithoutPayload(channel: string, callback: () => void): Unsubscribe {
+  const listener = (): void => callback()
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
 
 // Custom APIs for renderer
 const api: BridgeAPI = {
@@ -14,11 +23,11 @@ const api: BridgeAPI = {
     openOnBrowser: (url: string): void => ipcRenderer.send(IPC_CHANNELS.UTILS.OPEN_ON_BROWSER, url),
     selectFolderDialog: (options?: { type?: "file" | "folder"; mode?: "single" | "multi"; extensions?: string[] }): Promise<string[]> =>
       ipcRenderer.invoke(IPC_CHANNELS.UTILS.SELECT_FOLDER_DIALOG, options),
-    onPreventedAppClose: (callback: (event: Electron.IpcRendererEvent, desc: string) => void) => ipcRenderer.on(IPC_CHANNELS.UTILS.PREVENTED_APP_CLOSE, callback)
+    onPreventedAppClose: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.UTILS.PREVENTED_APP_CLOSE, callback)
   },
   appUpdater: {
-    onUpdateAvailable: (callback) => ipcRenderer.on(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE, callback),
-    onUpdateDownloaded: (callback) => ipcRenderer.on(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED, callback),
+    onUpdateAvailable: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE, callback),
+    onUpdateDownloaded: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED, callback),
     updateAndRestart: () => ipcRenderer.send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART)
   },
   configManager: {
@@ -38,7 +47,7 @@ const api: BridgeAPI = {
     checkPathEmpty: (path: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EMPTY, path),
     checkPathExists: (path: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS, path),
     ensurePathExists: (path: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, path),
-    openPathOnFileExplorer: (path: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER, path),
+    openPathOnFileExplorer: (path: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER, path),
     downloadOnPath: (id: string, url: string, outputPath: string, fileName: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, id, url, outputPath, fileName),
     extractOnPath: (id: string, filePath: string, outputPath: string, deleteZip: boolean): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, id, filePath, outputPath, deleteZip),
@@ -46,43 +55,41 @@ const api: BridgeAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, id, filePath, outputPath, deleteInstaller),
     compressOnPath: (id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel?: number): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH, id, inputPath, outputPath, outputFileName, compressionLevel),
-    onDownloadProgress: (callback: ProgressCallback) => ipcRenderer.on(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS, callback),
-    onExtractProgress: (callback: ProgressCallback) => ipcRenderer.on(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, callback),
-    onCompressProgress: (callback: ProgressCallback) => ipcRenderer.on(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS, callback),
+    onDownloadProgress: (callback: ProgressCallback): Unsubscribe => subscribe(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS, callback),
+    onExtractProgress: (callback: ProgressCallback): Unsubscribe => subscribe(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, callback),
+    onCompressProgress: (callback: ProgressCallback): Unsubscribe => subscribe(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS, callback),
     changePerms: (paths: string[], perms: number): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS, paths, perms),
     copyToIcons: (path: string, name: string): Promise<{ status: true; file: string } | { status: false }> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, path, name)
   },
   gameManager: {
-    executeGame: (version: GameVersionType, installation: InstallationType, account: AccountType | null): Promise<boolean> =>
-      ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation, account),
+    executeGame: (version: GameVersionType, installation: InstallationType): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation),
     lookForAGameVersion: (path: string): Promise<{ exists: boolean; installedGameVersion: string | undefined }> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, path)
   },
   netManager: {
-    queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url),
-    postUrl: (url: string, body: { email: string; password: string; twofacode?: string; preLoginToken?: string }): Promise<object> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.VS_LOGIN, url, body)
+    queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url)
+  },
+  accountManager: {
+    login: (
+      email: string,
+      password: string,
+      twoFactorCode?: string
+    ): Promise<{ status: "success"; account: AccountPublicType } | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, email, password, twoFactorCode),
+    logout: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGOUT)
   }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
 // just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld("electron", electronAPI)
-    contextBridge.exposeInMainWorld("api", api)
-    logMessage("info", `[back] [index] [preload/index.ts] Exposed Electron's API.`)
-  } catch (err) {
-    logMessage("error", `[back] [index] [preload/index.ts] Error exposing Electron's API.`)
-    logMessage("error", `[back] [index] [preload/index.ts] Error exposing Electron's API: ${err}`)
-    console.error(err)
-  }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
+if (!process.contextIsolated) throw new Error("Context isolation is required")
 
-  logMessage("info", `[back] [index] [preload/index.ts] Exposed Electron's API.`)
+try {
+  contextBridge.exposeInMainWorld("api", api)
+  console.info("[preload] Exposed the launcher API.")
+} catch (err) {
+  console.error("[preload] Failed to expose the launcher API.")
+  throw err
 }
 
 export type ApiType = typeof api
