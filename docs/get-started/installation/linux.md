@@ -15,7 +15,7 @@ If you're using Arch Linux you can install it from AUR with `yay -S vs-launcher`
 
 {% stepper %}
 {% step %}
-**Go to the** [**GitHub Releases Page**](https://github.com/XurxoMF/vs-launcher/releases)
+**Go to the** [**GitHub Releases Page**](https://github.com/StratumServer/RiftLauncher/releases)
 
 On that page you'll see all the available versions to download.
 {% endstep %}
@@ -268,5 +268,5 @@ Migrate to Flatpak | VS Launcher Guides
 ***
 
 {% hint style="info" %}
-If you find any issue report it on the [GitHub Issue Tracker](https://github.com/XurxoMF/vs-launcher/issues) and if you need help as us on the [GitHub Discussions](https://github.com/XurxoMF/vs-launcher/discussions) or on the [Official Vintage Story Discord Server](https://discord.com/channels/302152934249070593/1314991001571557488).
+If you find any issue report it on the [GitHub Issue Tracker](https://github.com/StratumServer/RiftLauncher/issues) and if you need help ask us on the [GitHub Discussions](https://github.com/StratumServer/RiftLauncher/discussions) or on the [Official Vintage Story Discord Server](https://discord.com/channels/302152934249070593/1314991001571557488).
 {% endhint %}

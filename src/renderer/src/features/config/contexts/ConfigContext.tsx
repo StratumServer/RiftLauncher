@@ -316,11 +316,24 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
 
   useEffect(() => {
     if (!isConfigLoaded) return
-    config.installations.forEach(async (i) => {
-      const mods = await getInstalledMods({ path: i.path })
-      const totalMods = mods.errors.length + mods.mods.length
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: i.id, updates: { _modsCount: totalMods } } })
-    })
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void (async (): Promise<void> => {
+        for (const installation of config.installations) {
+          if (cancelled) return
+          const mods = await getInstalledMods({ path: installation.path })
+          if (cancelled) return
+          const totalMods = mods.errors.length + mods.mods.length
+          configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _modsCount: totalMods } } })
+        }
+      })()
+    }, 2_500)
+
+    return (): void => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
   }, [isConfigLoaded])
 
   useEffect(() => {

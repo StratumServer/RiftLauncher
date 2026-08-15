@@ -1,18 +1,17 @@
-> [!WARN]
-> VS Launcher will not be updated anymore! It'll abandoned in favor of a new improved version that's under development.
-> The new launcher has no ETA sadly. I'm trying to finish it asap but it'll take time, I've a few hours a week to work on it.
-> If you have any issue join our Discord and ask anything you need there, we'll help you if we can.
-> This repo is now archived to avoid getting PRs that will remain open forever.
+> [!NOTE]
+> This fork is maintained by [Zaldaryon](https://github.com/Zaldaryon).
+> For general support, contact `@zaldaryon` on the project Discord server.
+> Donations are available at [Ko-fi](https://ko-fi.com/zaldaryon).
 
 # Welcome to VS Launcher
 
 ## What's VS Launcher?
 
-VS Launcher is the unoficial launcher for Vintage Story.
+VS Launcher is an independent launcher for Vintage Story.
 With this launcher you can easily install multiple version of Vintage Story, create multiple installations with different configs, mods, worlds, etc... with just a few clicks!
 Currently working on both Windows and Linux but I'll try to make it work on MacOS too, it should work, but I can't test it.
 
-## What do VS Launcher have?
+## What does VS Launcher provide?
 
 - Install multiple Vintage Story version with one click.
 - Create multiple Installations (data paths) with one click to have different mods, worlds and so on on each one.
@@ -27,7 +26,7 @@ You can find a guide explaining how to download it on this link: [How to install
 
 ## How do I use VS Launcher?
 
-We've made a little tutorial en how to download VS Launcher here: [How to use VS Launcher](https://vsldocs.xurxomf.xyz/get-started/usage).
+We've made a little tutorial on how to use VS Launcher here: [How to use VS Launcher](https://vsldocs.xurxomf.xyz/get-started/usage).
 
 ## Can I translate VS Launcher to another language?
 
@@ -35,12 +34,16 @@ Yes, thanks to i18n you can translate it to any language. Here is the guide: [Ho
 
 ## Where can I ask for help?
 
-You can ask anything you need on our [Discord server](https://discord.gg/RtWpYBRRUz)
+You can ask anything you need on our [Discord server](https://discord.gg/RtWpYBRRUz), or contact `@zaldaryon` there.
 
 ## Where can I report bugs?
 
-You can report any bug on the [VS Launcher GitHub Issues](https://github.com/XurxoMF/vs-launcher/issues) or our [Discord server](https://discord.gg/RtWpYBRRUz).
+You can report any bug on the [VS Launcher GitHub Issues](https://github.com/StratumServer/RiftLauncher/issues) or our [Discord server](https://discord.gg/RtWpYBRRUz).
 
 ## Can I make a suggestion?
 
 Yes, you can do so on our [Discord server](https://discord.gg/RtWpYBRRUz).
+
+## How can I support the maintainer?
+
+You can support Zaldaryon through [Ko-fi](https://ko-fi.com/zaldaryon).

@@ -13,5 +13,5 @@ version.
 
 ## Reporting a Vulnerability
 
-If you find any bug or vinerability create a new issue on the Issues tab
-or report it to the Launcher creator at xurxomf@xurxomf.xyz.
+If you find a vulnerability, do not publish exploit details in a public issue.
+Use the repository's [private security advisory channel](https://github.com/StratumServer/RiftLauncher/security/advisories/new) when available. If it is unavailable, contact `@zaldaryon` privately through the project Discord server and ask for a private channel.

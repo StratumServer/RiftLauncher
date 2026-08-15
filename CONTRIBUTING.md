@@ -43,9 +43,8 @@ This project follows a [Code of Conduct](./CODE_OF_CONDUCT.md). By contributing,
 
 ## Contact
 
-If you have any questions, you can reach out to the maintainers via email xurxomf@xurxomf.xyz or open an issue.
+If you have any questions, contact `@zaldaryon` on the project Discord server or open an issue.
 
 ---
 
 We look forward to your contributions!
-

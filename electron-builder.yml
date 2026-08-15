@@ -40,7 +40,7 @@ linux:
     - AppImage
     - deb
     - flatpak
-  maintainer: XurxoMF
+  maintainer: Zaldaryon
   category: Game
   icon: resources/icon.icns
 appImage:
@@ -55,9 +55,18 @@ flatpak:
 deb:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  loadBrowserProcessSpecificV8Snapshot: false
+  grantFileProtocolExtraPrivileges: false
 publish:
   provider: github
-  owner: XurxoMF
-  repo: vs-launcher
+  owner: StratumServer
+  repo: RiftLauncher
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

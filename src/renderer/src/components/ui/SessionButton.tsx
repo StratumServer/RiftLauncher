@@ -43,45 +43,32 @@ function SessionButton(): JSX.Element {
     // Thanks a lot to https://github.com/scgm0 for teaching me how to login using the Vintage Story Game Account
     // If you're reading this, make sure to check out MVL https://github.com/scgm0/MVL
 
-    const preLogin = await window.api.netManager.postUrl("https://auth3.vintagestory.at/v2/gamelogin", { email, password })
+    try {
+      const result = await window.api.accountManager.login(email, password, twofacode || undefined)
+      if (result.status === "wrong-two-factor") return addNotification(t("features.config.wrongtwofa"), "error")
+      if (result.status === "invalid-credentials") return addNotification(t("features.config.invalidEmailPass"), "error")
+      if (result.status === "requires-two-factor") return addNotification(t("features.config.wrongtwofa"), "error")
+      if (result.status !== "success") return
 
-    if (preLogin["valid"] == 0) {
-      const reason = preLogin["reason"]
-
-      if (reason == "requiretotpcode") {
-        const fullLogin = await window.api.netManager.postUrl("https://auth3.vintagestory.at/v2/gamelogin", { email, password, preLoginToken: preLogin["prelogintoken"], twofacode })
-
-        if (fullLogin["valid"] == 0 && fullLogin["reason"] == "wrongtotpcode") return addNotification(t("features.config.wrongtwofa"), "error")
-
-        await saveLogin(fullLogin)
-      } else if (reason == "invalidemailorpassword") {
-        addNotification(t("features.config.invalidEmailPass"), "error")
-      }
-    } else {
-      await saveLogin(preLogin)
+      await saveLogin(result.account)
+    } catch {
+      addNotification(t("features.config.invalidEmailPass"), "error")
+    } finally {
+      setPassword("")
+      setTwofacode("")
+      setLoggingIn(false)
     }
-
-    setLoggingIn(false)
   }
 
   async function handleLogout(): Promise<void> {
+    const loggedOut = await window.api.accountManager.logout()
+    if (!loggedOut) return addNotification(t("features.config.invalidEmailPass"), "error")
     configDispatch({ type: CONFIG_ACTIONS.SET_ACCOUNT, payload: null })
     addNotification(t("features.config.loggedout"), "success")
     setLogOutOpen(false)
   }
 
-  async function saveLogin(data: object): Promise<void> {
-    const newAccount: AccountType = {
-      email: email,
-      playerName: data["playername"],
-      playerUid: data["uid"],
-      playerEntitlements: data["entitlements"],
-      sessionKey: data["sessionkey"],
-      sessionSignature: data["sessionsignature"],
-      mptoken: data["mptoken"],
-      hostGameServer: data["hasgameserver"]
-    }
-
+  async function saveLogin(newAccount: AccountPublicType): Promise<void> {
     configDispatch({ type: CONFIG_ACTIONS.SET_ACCOUNT, payload: newAccount })
 
     addNotification(t("features.config.loggedin", { user: newAccount.playerName }), "success")

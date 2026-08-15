@@ -46,7 +46,10 @@ export const IPC_CHANNELS = {
     LOOK_FOR_A_GAME_VERSION: "look-for-a-game-version"
   },
   NET_MANAGER: {
-    QUERY_URL: "query-url",
-    VS_LOGIN: "vs-login"
+    QUERY_URL: "query-url"
+  },
+  ACCOUNT_MANAGER: {
+    LOGIN: "account-login",
+    LOGOUT: "account-logout"
   }
 }

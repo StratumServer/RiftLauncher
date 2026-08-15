@@ -5,15 +5,29 @@ import { join } from "path"
 import os from "os"
 import { logMessage } from "@src/utils/logManager"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
+import { assertManagedPath } from "@src/ipc/pathPolicy"
+import { parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
+import { getAccountSecrets } from "@src/ipc/accountStore"
+import { getConfig } from "@src/config/configManager"
 
-ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (_event, version: GameVersionType, installation: InstallationType, account: AccountType | null): Promise<boolean> => {
-  logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Trying to run Vintage Story ${version.version} from ${version.path} on ${installation.path}.`)
+async function assertExecutable(pathValue: string): Promise<string> {
+  const stats = await fse.lstat(pathValue)
+  if (!stats.isFile() || stats.isSymbolicLink()) throw new Error("Invalid game executable")
+  return pathValue
+}
 
-  const processEnv = installation.envVars.split(",").reduce((acc, entry) => {
-    const [key, value] = entry.trim().split("=")
-    if (key && value) acc[key] = value
-    return acc
-  }, {})
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: unknown, installation: unknown): Promise<boolean> => {
+  assertTrustedIpcSender(event)
+  const safeVersion = validateGameVersion(version)
+  const safeInstallation = validateGameInstallation(installation)
+  safeVersion.path = await assertManagedPath(safeVersion.path, "game version path")
+  safeInstallation.path = await assertManagedPath(safeInstallation.path, "installation path")
+  const account = (await getConfig()).account
+  const accountSecrets = account ? await getAccountSecrets() : null
+  logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Trying to run Vintage Story ${safeVersion.version}.`)
+
+  const processEnv = parseSafeEnvironment(safeInstallation.envVars)
 
   let command: string
   let params: string[]
@@ -23,17 +37,17 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (_event, version: G
     logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Linux platform detected.`)
 
     try {
-      const files = fse.readdirSync(version.path)
+      const files = await fse.readdir(safeVersion.path)
 
       if (files.includes("Vintagestory")) {
         logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintagestory found.`)
-        command = join(version.path, "Vintagestory")
-        params = [`--dataPath=${installation.path}`, installation.startParams]
-        if (installation.mesaGlThread) env = { ...env, MESA_GLTHREAD: "true" }
+        command = await assertExecutable(join(safeVersion.path, "Vintagestory"))
+        params = [`--dataPath=${safeInstallation.path}`, safeInstallation.startParams]
+        if (safeInstallation.mesaGlThread) env = { ...env, MESA_GLTHREAD: "true" }
       } else if (files.includes("Vintagestory.exe")) {
         logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintagestory.exe found.`)
         command = "mono"
-        params = [join(version.path, "Vintagestory.exe"), `--dataPath=${installation.path}`, installation.startParams]
+        params = [await assertExecutable(join(safeVersion.path, "Vintagestory.exe")), `--dataPath=${safeInstallation.path}`, safeInstallation.startParams]
       } else {
         logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Couldn't find a way to run Vintage Story, aborting...`)
         return false
@@ -47,12 +61,12 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (_event, version: G
     logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Windows platform detected.`)
 
     try {
-      const files = fse.readdirSync(version.path)
+      const files = await fse.readdir(safeVersion.path)
 
       if (files.includes("Vintagestory.exe")) {
         logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintagestory found.`)
-        command = join(version.path, "Vintagestory.exe")
-        params = [`--dataPath=${installation.path}`, installation.startParams]
+        command = await assertExecutable(join(safeVersion.path, "Vintagestory.exe"))
+        params = [`--dataPath=${safeInstallation.path}`, safeInstallation.startParams]
       } else {
         logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Couldn't find a way to run Vintage Story, aborting...`)
         return false
@@ -71,60 +85,48 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (_event, version: G
   }
 
   if (command && params) {
-    return new Promise((resolve, reject) => {
-      if (account) {
-        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Logged in. Setting session keys.`)
+    if (account && accountSecrets) {
+      logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Logged in. Setting session keys.`)
 
-        !(async (): Promise<void> => {
-          try {
-            const clientsettingsPath = join(installation.path, "clientsettings.json")
+      try {
+        const clientsettingsPath = await assertManagedPath(join(safeInstallation.path, "clientsettings.json"), "client settings", { allowMissing: true })
+        const clientsettings = (await fse.pathExists(clientsettingsPath)) ? await fse.readJSON(clientsettingsPath, "utf-8") : {}
+        const stringSettings =
+          clientsettings && typeof clientsettings === "object" && !Array.isArray(clientsettings) && typeof clientsettings.stringSettings === "object" && clientsettings.stringSettings !== null
+            ? clientsettings.stringSettings
+            : {}
 
-            if (!fse.existsSync(clientsettingsPath)) {
-              fse.ensureFileSync(clientsettingsPath)
-              fse.writeJSONSync(clientsettingsPath, {
-                stringSettings: {
-                  mptoken: account.mptoken,
-                  sessionkey: account.sessionKey,
-                  sessionsignature: account.sessionSignature,
-                  useremail: account.email,
-                  entitlements: account.playerEntitlements,
-                  playeruid: account.playerUid,
-                  playername: account.playerName,
-                  hostgameserver: account.hostGameServer
-                }
-              })
-            } else {
-              const clientsettings = fse.readJSONSync(clientsettingsPath, "utf-8")
-
-              clientsettings["stringSettings"]["mptoken"] = account.mptoken
-              clientsettings["stringSettings"]["sessionkey"] = account.sessionKey
-              clientsettings["stringSettings"]["sessionsignature"] = account.sessionSignature
-              clientsettings["stringSettings"]["useremail"] = account.email
-              clientsettings["stringSettings"]["entitlements"] = account.playerEntitlements
-              clientsettings["stringSettings"]["playeruid"] = account.playerUid
-              clientsettings["stringSettings"]["playername"] = account.playerName
-              clientsettings["stringSettings"]["hostgameserver"] = account.hostGameServer
-
-              fse.writeJSONSync(clientsettingsPath, clientsettings)
-            }
-          } catch (err) {
-            logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
-            logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${err}`)
+        await fse.writeJSON(clientsettingsPath, {
+          ...clientsettings,
+          stringSettings: {
+            ...stringSettings,
+            mptoken: accountSecrets.mptoken,
+            sessionkey: accountSecrets.sessionKey,
+            sessionsignature: accountSecrets.sessionSignature,
+            useremail: account.email,
+            entitlements: account.playerEntitlements,
+            playeruid: account.playerUid,
+            playername: account.playerName,
+            hostgameserver: account.hostGameServer
           }
-        })()
+        })
+      } catch (err) {
+        logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
+        logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${err}`)
+        return false
       }
+    }
 
-      logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with ${command} + ${params.join(" + ")}.`)
+    logMessage("info", "[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable.")
 
-      const externalApp = spawn(command, params, { env })
+    return new Promise((resolve, reject) => {
+      const externalApp = spawn(command, params, { env, cwd: safeVersion.path, shell: false, windowsHide: true })
 
-      externalApp.stdout.on("data", (data) => {
-        logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${data}`)
-      })
+      externalApp.stdout.resume()
 
       externalApp.stderr.on("data", (data) => {
         logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story threw an error! Check verbose logs for more info.`)
-        logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${data}`)
+        logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${data.toString().slice(0, 2_048)}`)
       })
 
       externalApp.on("close", (code) => {
@@ -144,8 +146,10 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (_event, version: G
   }
 })
 
-ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (_event, path: string) => {
-  logMessage("info", `[component] [look-for-a-game-version] Looking for the game at ${path}`)
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, path: unknown) => {
+  assertTrustedIpcSender(event)
+  const safePath = await assertManagedPath(path, "game version path", { allowMissing: true })
+  logMessage("info", `[component] [look-for-a-game-version] Looking for the game at ${safePath}`)
 
   let command: string
   let params: string[]
@@ -156,16 +160,16 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (_event,
     logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Linux platform detected.`)
 
     try {
-      const files = fse.readdirSync(path)
+      const files = await fse.readdir(safePath)
 
       if (files.includes("Vintagestory")) {
         logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintagestory found.`)
-        command = join(path, "Vintagestory")
+        command = await assertExecutable(join(safePath, "Vintagestory"))
         params = [`-v`]
       } else if (files.includes("Vintagestory.exe")) {
         logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintagestory.exe found.`)
         command = "mono"
-        params = [join(path, "Vintagestory.exe"), `-v`]
+        params = [await assertExecutable(join(safePath, "Vintagestory.exe")), `-v`]
       } else {
         logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Couldn't find Vintage Story on that folder.`)
         return false
@@ -179,11 +183,11 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (_event,
     logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Windows platform detected.`)
 
     try {
-      const files = fse.readdirSync(path)
+      const files = await fse.readdir(safePath)
 
       if (files.includes("Vintagestory.exe")) {
         logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintagestory found.`)
-        command = join(path, "Vintagestory.exe")
+        command = await assertExecutable(join(safePath, "Vintagestory.exe"))
         params = [`-v`]
       } else {
         logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Couldn't find Vintage Story on that folder.`)
@@ -204,9 +208,9 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (_event,
 
   if (command && params) {
     const checkGameVersion = await new Promise<string | undefined>((resolve, reject) => {
-      logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Checking Vintage Story version with ${command} + ${params.join(" + ")}.`)
+      logMessage("info", "[back] [ipc] [ipc/handlers/gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Checking Vintage Story with a validated executable.")
 
-      const externalApp = spawn(command, params)
+      const externalApp = spawn(command, params, { shell: false, windowsHide: true })
       let versionResult: string
 
       externalApp.stdout.on("data", (data) => {

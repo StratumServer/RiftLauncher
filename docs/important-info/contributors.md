@@ -4,6 +4,8 @@ description: List of contributors and a letter of love.
 
 # 👤 Contributors
 
+This fork is currently maintained by [**Zaldaryon**](https://github.com/Zaldaryon). General support is available through Discord at `@zaldaryon`, and donations can be made through [Ko-fi](https://ko-fi.com/zaldaryon).
+
 I started this project as a freelance developer, but after a few days many players started contributing to the project by translating it into new languages, suggesting features, bug hunting...
 
 This page is the Hall of Fame with the name of all the contributors this project has and had!
@@ -12,7 +14,8 @@ This page is the Hall of Fame with the name of all the contributors this project
 
 ## Developers & Code contributors
 
-* [**XurxoMF**](https://github.com/XurxoMF) - Owner and main developer.
+* [**Zaldaryon**](https://github.com/Zaldaryon) - Current maintainer and developer.
+* [**XurxoMF**](https://github.com/XurxoMF) - Original author and main developer.
 * [**scgm0**](https://github.com/scgm0) - Reverse engineering VS to learn how to log in with the VS account.
 * [**Tipsy The Cat**](https://github.com/TipsyTheCat) - Backups compression level code contribution.
 
@@ -37,7 +40,7 @@ This page is the Hall of Fame with the name of all the contributors this project
 
 ## Documentation
 
-* [**XurxoMF**](https://github.com/XurxoMF) - Owner and main editor.
+* [**XurxoMF**](https://github.com/XurxoMF) - Original author and main editor.
 * [**asleeves**](https://github.com/asleeves), 𝕸𝖆𝖝𝖊𝖓𝖈𝖊 - Linux contributions.
 
 ***
