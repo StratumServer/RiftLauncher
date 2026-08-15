@@ -32,7 +32,8 @@ export function isPathWithin(root: string, candidate: string, allowRoot = true):
 function pruneApprovals(): void {
   const now = Date.now()
   for (let index = approvedPaths.length - 1; index >= 0; index--) {
-    if (approvedPaths[index].expiresAt <= now) approvedPaths.splice(index, 1)
+    const approved = approvedPaths[index]
+    if (approved && approved.expiresAt <= now) approvedPaths.splice(index, 1)
   }
 }
 

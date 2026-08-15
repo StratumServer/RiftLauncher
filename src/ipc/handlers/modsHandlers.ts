@@ -110,6 +110,10 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<
     }
 
     const filePath = result.filePaths[0]
+    if (!filePath) {
+      logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Import cancelled.`)
+      return { success: false }
+    }
     registerUserSelectedPaths([filePath])
     const safeFilePath = await assertManagedPath(filePath, "modpack path")
     if ((await fse.stat(safeFilePath)).size > 2 * 1024 * 1024) throw new Error("Modpack file is too large")

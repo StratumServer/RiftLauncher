@@ -6,7 +6,7 @@ import rusty from "@renderer/assets/rusty.png"
 import temporal from "@renderer/assets/temporal.png"
 import soil from "@renderer/assets/soil.png"
 
-export const INSTALLATION_ICONS: IconType[] = [
+export const INSTALLATION_ICONS: [IconType, ...IconType[]] = [
   { id: "basalt", name: "Basalt", icon: basalt },
   { id: "bookshelf", name: "Book shelf", icon: bookshelf },
   { id: "crystal", name: "Crystal", icon: crystal },

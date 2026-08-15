@@ -33,9 +33,11 @@ const languageDefinitions: Record<string, LanguageDefinition> = {
 const resources: Record<string, LanguageResource> = Object.fromEntries(
   Object.entries(languageDefinitions).map(([language, definition]) => [language, { name: definition.name, credits: definition.credits }])
 )
+const enUSDefinition = languageDefinitions["en-US"]
+if (!enUSDefinition) throw new Error("Missing en-US language definition")
 resources["en-US"] = {
-  name: languageDefinitions["en-US"].name,
-  credits: languageDefinitions["en-US"].credits,
+  name: enUSDefinition.name,
+  credits: enUSDefinition.credits,
   translation: enUS as TranslationResource
 }
 

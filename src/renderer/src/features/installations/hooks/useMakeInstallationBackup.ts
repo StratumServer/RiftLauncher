@@ -53,6 +53,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
 
         while (backupsLength > 0 && backupsLength >= installation.backupsLimit) {
           const backupToDelete = installation.backups[backupsLength - 1]
+          if (!backupToDelete) break
           const res = await window.api.pathsManager.deletePath(backupToDelete.path)
           if (!res) throw new Error("There was an error deleting old backups!")
           configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backupToDelete.id } })

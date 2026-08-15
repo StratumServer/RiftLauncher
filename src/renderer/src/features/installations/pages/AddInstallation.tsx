@@ -49,7 +49,7 @@ function AddInslallation(): JSX.Element {
   const [name, setName] = useState<string>(t("features.installations.defaultName"))
   const [path, setPath] = useState<string>("")
   const [folderByUser, setFolderByUser] = useState<boolean>(false)
-  const [version, setVersion] = useState<GameVersionType>([...config.gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0])
+  const [version, setVersion] = useState<GameVersionType | undefined>([...config.gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0])
   const [startParams, setStartParams] = useState<string>("")
   const [backupsLimit, setBackupsLimit] = useState<number>(3)
   const [backupsAuto, setBackupsAuto] = useState<boolean>(false)
@@ -284,10 +284,11 @@ function AddInslallation(): JSX.Element {
                   <FormButton
                     onClick={async () => {
                       const path = await window.api.utils.selectFolderDialog()
-                      if (path && path.length > 0 && path[0].length > 0) {
-                        if (!(await window.api.pathsManager.checkPathEmpty(path[0]))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
+                      const selectedPath = path[0]
+                      if (selectedPath && selectedPath.length > 0) {
+                        if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
 
-                        setPath(path[0])
+                        setPath(selectedPath)
                         setFolderByUser(true)
                       }
                     }}

@@ -11,6 +11,8 @@
   "compilerOptions": {
     "composite": true,
     "jsx": "react-jsx",
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
     "baseUrl": ".",
     "paths": {
       "@renderer/*": [
