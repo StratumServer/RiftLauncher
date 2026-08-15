@@ -1,6 +1,8 @@
 import { isAbsolute, relative, resolve } from "path"
 import { fileURLToPath } from "url"
 
+import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
+
 export const MAX_IPC_STRING_LENGTH = 8_192
 export const MAX_PATH_LENGTH = 4_096
 export const MAX_URL_LENGTH = 2_048
@@ -272,6 +274,22 @@ export function isSafeArchiveEntry(entryName: unknown): entryName is string {
   if (normalizedName.startsWith("/") || /^[A-Za-z]:\//.test(normalizedName)) return false
 
   return !normalizedName.split("/").some((part) => part === "..")
+}
+
+const RESTORE_WORKSPACE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * True when `candidateName` is one of the two temporary folders the backup
+ * restore puts beside an installation folder named `installationName`.
+ *
+ * Folder names only, no path parts. The caller is the one that checks both
+ * names live in the same parent folder.
+ */
+export function isRestoreWorkspaceName(installationName: string, candidateName: string): boolean {
+  if (!installationName || !candidateName.startsWith(installationName)) return false
+
+  const remainder = candidateName.slice(installationName.length)
+  return [RESTORE_STAGING_SUFFIX, RESTORE_REPLACED_SUFFIX].some((suffix) => remainder.startsWith(suffix) && RESTORE_WORKSPACE_TOKEN_PATTERN.test(remainder.slice(suffix.length)))
 }
 
 export function isArchiveSymlink(externalFileAttributes: unknown): boolean {
