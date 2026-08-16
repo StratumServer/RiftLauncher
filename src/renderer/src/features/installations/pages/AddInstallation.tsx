@@ -12,7 +12,7 @@ import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@re
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useGameVersions, useCustomIcons, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useCleanFolderName } from "@renderer/hooks/useCleanFolderName"
 import { createCreateInstallationPorts, describeCreateInstallationFailure, toFoldersInUse, toInstallationType } from "@renderer/features/installations/adapters/create"
 
@@ -42,7 +42,11 @@ import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuB
 function AddInslallation(): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
-  const { config, configDispatch } = useConfigContext()
+  const installations = useInstallations()
+  const gameVersions = useGameVersions()
+  const customIcons = useCustomIcons()
+  const settings = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
   const cleanFolderName = useCleanFolderName()
 
@@ -50,7 +54,7 @@ function AddInslallation(): JSX.Element {
   const [name, setName] = useState<string>(t("features.installations.defaultName"))
   const [path, setPath] = useState<string>("")
   const [folderByUser, setFolderByUser] = useState<boolean>(false)
-  const [version, setVersion] = useState<GameVersionType | undefined>([...config.gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0])
+  const [version, setVersion] = useState<GameVersionType | undefined>([...gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0])
   const [startParams, setStartParams] = useState<string>("")
   const [backupsLimit, setBackupsLimit] = useState<number>(3)
   const [backupsAuto, setBackupsAuto] = useState<boolean>(false)
@@ -64,7 +68,7 @@ function AddInslallation(): JSX.Element {
 
   useEffect(() => {
     ;(async (): Promise<void> => {
-      if (name && !folderByUser) setPath(await window.api.pathsManager.formatPath([config.defaultInstallationsFolder, await cleanFolderName({ folderName: name })]))
+      if (name && !folderByUser) setPath(await window.api.pathsManager.formatPath([settings.defaultInstallationsFolder, await cleanFolderName({ folderName: name })]))
     })()
   }, [name])
 
@@ -82,7 +86,7 @@ function AddInslallation(): JSX.Element {
       compressionLevel,
       mesaGlThread,
       envVars,
-      foldersInUse: toFoldersInUse(config)
+      foldersInUse: toFoldersInUse({ backupsFolder: settings.backupsFolder, installations, gameVersions })
     })
 
     if (!result.ok) {
@@ -187,7 +191,7 @@ function AddInslallation(): JSX.Element {
                                   <p>{t("generic.addIcon")}</p>
                                 </div>
                               </ListboxOption>
-                              {config.customIcons.map((current) => (
+                              {customIcons.map((current) => (
                                 <ListboxOption
                                   key={current.id}
                                   value={current}
@@ -239,7 +243,7 @@ function AddInslallation(): JSX.Element {
                   </TableHead>
 
                   <TableBody className="max-h-[14rem]">
-                    {config.gameVersions.length < 1 && (
+                    {gameVersions.length < 1 && (
                       <div className="w-full p-1 flex flex-col items-center justify-center">
                         <p>{t("features.versions.noVersionsFound")}</p>
                         <p className="text-zinc-400 text-sm flex gap-1 items-center flex-wrap justify-center">
@@ -256,7 +260,7 @@ function AddInslallation(): JSX.Element {
                         </p>
                       </div>
                     )}
-                    {config.gameVersions
+                    {gameVersions
                       .slice()
                       .sort((a, b) => semver.rcompare(a.version, b.version))
                       .map((gv) => (

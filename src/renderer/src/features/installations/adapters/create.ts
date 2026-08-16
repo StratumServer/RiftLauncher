@@ -7,9 +7,16 @@ export function createCreateInstallationPorts(): CreateInstallationPorts {
   return { ids: { newId: () => uuidv4() } }
 }
 
+/** The three config slices a folder collision can come from. Narrower than the whole config on purpose. */
+export interface FoldersInUse {
+  backupsFolder: string
+  installations: readonly { path: string }[]
+  gameVersions: readonly { path: string }[]
+}
+
 /** Folders the launcher already treats as spoken for: backups, installations, versions. */
-export function toFoldersInUse(config: ConfigType): string[] {
-  return [config.backupsFolder, ...config.installations.map((i) => i.path), ...config.gameVersions.map((gv) => gv.path)]
+export function toFoldersInUse({ backupsFolder, installations, gameVersions }: FoldersInUse): string[] {
+  return [backupsFolder, ...installations.map((i) => i.path), ...gameVersions.map((gv) => gv.path)]
 }
 
 /** Turns the built record into the full config shape, with the runtime flags a fresh installation starts without. */

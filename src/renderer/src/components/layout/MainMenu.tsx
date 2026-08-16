@@ -5,7 +5,7 @@ import { PiBoxArrowDownDuotone, PiFolderOpenDuotone, PiGearDuotone, PiWrenchDuot
 import { v4 as uuidv4 } from "uuid"
 import clsx from "clsx"
 
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useGameVersions, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
@@ -26,7 +26,10 @@ interface MainMenuLinkProps {
 
 function MainMenu(): JSX.Element {
   const { t } = useTranslation()
-  const { config, configDispatch } = useConfigContext()
+  const installations = useInstallations()
+  const gameVersions = useGameVersions()
+  const { lastUsedInstallation } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
   const makeInstallationBackup = useMakeInstallationBackup()
@@ -34,9 +37,9 @@ function MainMenu(): JSX.Element {
   const [selectedInstallation, setSelectedInstallation] = useState<InstallationType | undefined>(undefined)
 
   useEffect(() => {
-    const si = config.installations.find((i) => i.id === config.lastUsedInstallation)
+    const si = installations.find((i) => i.id === lastUsedInstallation)
     setSelectedInstallation(si)
-  }, [config.lastUsedInstallation, config.installations])
+  }, [lastUsedInstallation, installations])
 
   const GROUP_1: MainMenuLinkProps[] = [
     { icon: <PiHouseLineDuotone />, text: t("components.mainMenu.homeTitle"), desc: t("components.mainMenu.homeDesc"), to: "/" },
@@ -62,7 +65,7 @@ function MainMenu(): JSX.Element {
       if (!selectedInstallation) return addNotification(t("features.installations.noInstallationSelected"), "error")
       if (selectedInstallation._playing) return addNotification(t("features.installations.gameAlreadyRunning"), "error")
 
-      const gameVersionToRun = config.gameVersions.find((gv) => gv.version === selectedInstallation.version)
+      const gameVersionToRun = gameVersions.find((gv) => gv.version === selectedInstallation.version)
       if (!gameVersionToRun) return addNotification(t("features.versions.versionNotInstalled", { version: selectedInstallation.version }), "error")
       if (gameVersionToRun._installing) return addNotification(t("features.versions.versionInstalling", { version: selectedInstallation.version }), "error")
       if (gameVersionToRun._deleting) return addNotification(t("features.versions.versionDeleting", { version: selectedInstallation.version }), "error")

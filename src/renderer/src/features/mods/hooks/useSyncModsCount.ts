@@ -1,5 +1,5 @@
 import { installedModsTotal } from "@domain/mods/scanInstalled"
-import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 
 /** What a mod scan came back with, whichever flow ran it. */
 export interface ScannedModsCount {
@@ -14,7 +14,7 @@ export interface ScannedModsCount {
  * had already started to disagree about whether unreadable archives count. They do.
  */
 export function useSyncModsCount(): (installationId: string, scan: ScannedModsCount) => number {
-  const { configDispatch } = useConfigContext()
+  const configDispatch = useConfigDispatch()
 
   return function syncModsCount(installationId: string, scan: ScannedModsCount): number {
     const total = installedModsTotal(scan)

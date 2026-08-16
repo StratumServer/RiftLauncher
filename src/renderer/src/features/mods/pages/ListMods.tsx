@@ -4,7 +4,7 @@ import { PiDownloadDuotone, PiStarDuotone, PiChatCenteredTextDuotone, PiEraserDu
 import { FiExternalLink, FiLoader } from "react-icons/fi"
 import clsx from "clsx"
 
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
 import { useQueryMods } from "@renderer/features/mods/hooks/useQueryMods"
@@ -26,7 +26,10 @@ import InstalledFilter from "@renderer/features/mods/components/InstalledFilter"
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
-  const { config, configDispatch } = useConfigContext()
+  const installations = useInstallations()
+  const favMods = useFavMods()
+  const { lastUsedInstallation } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
   const DEFAULT_LOADED_MODS = 45
@@ -87,8 +90,8 @@ function ListMods(): JSX.Element {
   }, [textFilter, authorFilter, versionsFilter, tagsFilter, sideFilter, installedFilter, onlyFav, orderBy, orderByOrder])
 
   useEffect(() => {
-    setInstallation(config.installations.find((i) => i.id === config.lastUsedInstallation))
-  }, [config.lastUsedInstallation])
+    setInstallation(installations.find((i) => i.id === lastUsedInstallation))
+  }, [lastUsedInstallation])
 
   useEffect(() => {
     if (!installation) return setInstallationInstalledMods([])
@@ -132,7 +135,7 @@ function ListMods(): JSX.Element {
     if (installedFilter === "not-installed")
       mods = mods.filter((mod) => !installationInstalledMods.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid)))
 
-    if (onlyFav) mods = mods.filter((mod) => config.favMods.some((fm) => fm === mod.modid))
+    if (onlyFav) mods = mods.filter((mod) => favMods.some((fm) => fm === mod.modid))
 
     setModsList(mods)
     setSearching(false)
@@ -237,14 +240,14 @@ function ListMods(): JSX.Element {
                         title={t("generic.favorite")}
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (config.favMods.some((modid) => modid === mod.modid)) {
+                          if (favMods.some((modid) => modid === mod.modid)) {
                             configDispatch({ type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: mod.modid } })
                           } else {
                             configDispatch({ type: CONFIG_ACTIONS.ADD_FAV_MOD, payload: { modid: mod.modid } })
                           }
                         }}
-                        className={clsx("p-1 text-lg", !config.favMods.some((modid) => modid === mod.modid) && "opacity-0 group-hover:opacity-100 duration-200")}
-                        type={config.favMods.some((modid) => modid === mod.modid) ? "warn" : "normal"}
+                        className={clsx("p-1 text-lg", !favMods.some((modid) => modid === mod.modid) && "opacity-0 group-hover:opacity-100 duration-200")}
+                        type={favMods.some((modid) => modid === mod.modid) ? "warn" : "normal"}
                       >
                         <PiStarDuotone />
                       </FormButton>

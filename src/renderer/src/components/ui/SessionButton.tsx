@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiTrashDuotone, PiUserDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useAccount, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 
 import {
   ButtonsWrapper,
@@ -24,7 +24,8 @@ import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 
 function SessionButton(): JSX.Element {
   const { t } = useTranslation()
-  const { config, configDispatch } = useConfigContext()
+  const account = useAccount()
+  const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
   // Log In states
@@ -80,18 +81,18 @@ function SessionButton(): JSX.Element {
     <>
       <FormButton
         onClick={() => {
-          if (!config.account) {
+          if (!account) {
             setLogInOpen(true)
           } else {
             setLogOutOpen(true)
           }
         }}
-        title={!config.account ? t("features.config.loginTitle") : t("features.config.logoutTitle")}
+        title={!account ? t("features.config.loginTitle") : t("features.config.logoutTitle")}
         className="w-full h-8"
       >
         <PiUserDuotone />
 
-        <p className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">{!config.account ? t("features.config.loginTitle") : config.account.playerName}</p>
+        <p className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">{!account ? t("features.config.loginTitle") : account.playerName}</p>
       </FormButton>
 
       <PopupDialogPanel title={t("features.config.loginTitle")} isOpen={logInOpen} close={() => setLogInOpen(false)}>

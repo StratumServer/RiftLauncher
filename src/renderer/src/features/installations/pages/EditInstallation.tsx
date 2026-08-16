@@ -12,7 +12,7 @@ import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { describeInstallationFieldsFailure } from "@renderer/features/installations/adapters/create"
 
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
@@ -41,16 +41,19 @@ import { AddCustomIconPupup } from "@renderer/components/ui/AddCustomIconPupup"
 function EditInslallation(): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
-  const { config, configDispatch } = useConfigContext()
+  const installations = useInstallations()
+  const gameVersions = useGameVersions()
+  const customIcons = useCustomIcons()
+  const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
 
   const { id } = useParams()
 
-  const [installation, setInstallation] = useState<InstallationType | undefined>(config.installations.find((igv) => igv.id === id))
+  const [installation, setInstallation] = useState<InstallationType | undefined>(installations.find((igv) => igv.id === id))
 
   const [icon, setIcon] = useState<IconType>(INSTALLATION_ICONS[0])
   const [name, setName] = useState<string>("")
-  const [version, setVersion] = useState<GameVersionType | undefined>([...config.gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0])
+  const [version, setVersion] = useState<GameVersionType | undefined>([...gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0])
   const [startParams, setStartParams] = useState<string>("")
   const [backupsLimit, setBackupsLimit] = useState<number>(0)
   const [backupsAuto, setBackupsAuto] = useState<boolean>(false)
@@ -63,13 +66,13 @@ function EditInslallation(): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    setInstallation(config.installations.find((igv) => igv.id === id))
+    setInstallation(installations.find((igv) => igv.id === id))
   }, [id])
 
   useEffect(() => {
-    setIcon(INSTALLATION_ICONS.find((ii) => ii.id === installation?.icon) ?? config.customIcons.find((ii) => ii.id === installation?.icon) ?? INSTALLATION_ICONS[0])
+    setIcon(INSTALLATION_ICONS.find((ii) => ii.id === installation?.icon) ?? customIcons.find((ii) => ii.id === installation?.icon) ?? INSTALLATION_ICONS[0])
     setName(installation?.name ?? "")
-    setVersion(config.gameVersions.find((gv) => gv.version === installation?.version) ?? config.gameVersions[0])
+    setVersion(gameVersions.find((gv) => gv.version === installation?.version) ?? gameVersions[0])
     setStartParams(installation?.startParams ?? "")
     setBackupsLimit(installation?.backupsLimit ?? 0)
     setBackupsAuto(installation?.backupsAuto ?? false)
@@ -189,7 +192,7 @@ function EditInslallation(): JSX.Element {
                                     <p>{t("generic.addIcon")}</p>
                                   </div>
                                 </ListboxOption>
-                                {config.customIcons.map((current) => (
+                                {customIcons.map((current) => (
                                   <ListboxOption
                                     key={current.id}
                                     value={current}
@@ -240,7 +243,7 @@ function EditInslallation(): JSX.Element {
                       </TableHead>
 
                       <TableBody className="max-h-[14rem]">
-                        {config.gameVersions.length < 1 && (
+                        {gameVersions.length < 1 && (
                           <div className="w-full p-1 flex flex-col items-center justify-center">
                             <p>{t("features.versions.noVersionsFound")}</p>
                             <p className="text-zinc-400 text-sm flex gap-1 items-center flex-wrap justify-center">
@@ -257,7 +260,7 @@ function EditInslallation(): JSX.Element {
                             </p>
                           </div>
                         )}
-                        {config.gameVersions
+                        {gameVersions
                           .slice()
                           .sort((a, b) => semver.rcompare(a.version, b.version))
                           .map((gv) => (

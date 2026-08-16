@@ -5,7 +5,7 @@ import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiTrashDuotone, PiXCircle
 import { FiExternalLink, FiLoader } from "react-icons/fi"
 import clsx from "clsx"
 
-import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useInstallations, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
 
@@ -35,7 +35,8 @@ function isServerMod(side: string | undefined): boolean {
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
-  const { config, configDispatch } = useConfigContext()
+  const installations = useInstallations()
+  const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
   const getCompleteInstalledMods = useGetCompleteInstalledMods()
@@ -45,7 +46,7 @@ function ListMods(): JSX.Element {
 
   const { id } = useParams()
 
-  const installation = config.installations.find((i) => i.id === id)
+  const installation = installations.find((i) => i.id === id)
 
   const [installedMods, setInstalledMods] = useState<InstalledModType[]>([])
   const [installedModsWithErrors, setInstalledModsWithErrors] = useState<ErrorInstalledModType[]>([])
