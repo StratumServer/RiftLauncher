@@ -5,14 +5,14 @@ icon: play
 
 # Play Vintage Story
 
-Playing Vintage Story using VS Launcher is as easy as pressing a button but there are a few things you should do before playing:
+Playing Vintage Story using RiftLauncher is as easy as pressing a button but there are a few things you should do before playing:
 
 {% stepper %}
 {% step %}
 
 ### Log in with Vintage Story
 
-One cool feature of VS Launcher is the ability to log in with your Vintage Story account so you don't have to do it manually every time you change Installations.
+One cool feature of RiftLauncher is the ability to log in with your Vintage Story account so you don't have to do it manually every time you change Installations.
 
 Check out this little guide explaining how to do it:
 

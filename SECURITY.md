@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-VS Launcher will be updated frequently to add new features, fix issues and
+RiftLauncher will be updated frequently to add new features, fix issues and
 add compatibility with the latest Vintage Story versions.
 
 To make everything work as expected users will need the latest version so
