@@ -1,12 +1,17 @@
 name: Windows install conformance
 
-# Manual only. This proves the Windows half of PR #28's fix (issue #8's
-# "old version detected" MsgBox) on a real, disposable Windows machine: no
-# local machine can safely seed the Inno Setup uninstall registry key, so
-# this never runs anywhere except a runner that gets thrown away afterward.
+# Manual only. This proves, on a real disposable Windows machine, the Windows
+# half of PR #28's fix (issue #8's "old version detected" MsgBox) and the
+# Windows half of PR #88's payload extraction path (Linux already has the
+# exhaustive proof, 20,084 files by SHA-256, but never against a real
+# Windows runner): no local machine can safely seed the Inno Setup uninstall
+# registry key, so this never runs anywhere except a runner that gets thrown
+# away afterward.
 #
 # Not wired into ci.yml and not a required check. See tests/e2e/windows-install.ts
-# for what each scenario does and why the second one cannot fail the job.
+# for what each of the three scenarios does. Scenarios 1 and 3 fail the job;
+# scenario 2 never does, because an unresolved dialog or a redirected install
+# is its documented, expected-bad outcome, not a bug in this script.
 on:
   workflow_dispatch:
     inputs:
@@ -50,11 +55,11 @@ jobs:
           ./dotnet-install.ps1 -Channel 10.0 -Runtime windowsdesktop
       - name: Typecheck the conformance script
         run: npx tsc --noEmit -p tests/e2e/tsconfig.json
-      - name: Run the conformance script
+      - name: Run the conformance script (clean install, seeded-key uninstall, our extraction)
         run: npx tsx tests/e2e/windows-install.ts
         env:
           RIFT_WINDOWS_VERSION: ${{ inputs.game_version }}
-      - name: Upload conformance report
+      - name: Upload conformance report (scenario 1, 2 and 3 verdicts)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -64,8 +69,10 @@ jobs:
           # this file after every phase, not just on a clean exit (see
           # persistReport in tests/e2e/windows-install.ts), so if:always()
           # here can recover evidence even from a run that scenario 1's own
-          # 10-minute timeout could not prevent from needing a job-level
-          # cancellation.
+          # 10-minute timeout, or scenario 3's extraction, could not prevent
+          # from needing a job-level cancellation. report.scenario3.verdict
+          # is the record of whether our extractor stayed immune to the
+          # uninstall key scenario 2 seeded.
           path: ${{ runner.temp }}\rift-e2e\report
           if-no-files-found: warn
           retention-days: 14

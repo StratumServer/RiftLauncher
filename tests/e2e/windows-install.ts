@@ -5,7 +5,7 @@
  * pass against the live catalog and a real disposable machine, driven with
  * `tsx` instead of the test runner.
  *
- * Two scenarios:
+ * Three scenarios:
  *
  * 1. Clean install. Download the real Windows installer the catalog
  *    publishes, run it silently with the exact flags RUN_INSTALLER uses
@@ -25,6 +25,20 @@
  *    expected-bad outcome it exists to put on the record, not a bug in this
  *    script.
  *
+ * 3. Our extraction, immune to the seeded key. PR #88 added a payload
+ *    extractor (src/ipc/workers/innoExtraction.ts, reading the format through
+ *    src/domain/inno) that reads the installer's own archive instead of
+ *    running it, so InitializeSetup's MsgBox never gets a chance to fire.
+ *    That is proven on Linux already (20,084 files, exhaustive SHA-256), but
+ *    never on the Windows runner this workflow throws away after every run.
+ *    This scenario reuses scenario 1's already-downloaded installer (no
+ *    second download), runs the extractor while scenario 2's registry key is
+ *    still seeded, and asserts Vintagestory.exe and the version marker land
+ *    regardless: the key stays in place across the whole scenario, which is
+ *    the point, not an oversight. Failing this fails the job, same as
+ *    scenario 1: unlike scenario 2, there is no documented-bad outcome here
+ *    to fall back on.
+ *
  * The report is written after every phase (not just at the end): see
  * persistReport() in main(). The first run of this workflow lost all
  * evidence of the hang because the report was only written on a clean exit,
@@ -43,6 +57,7 @@ import { join, relative } from "node:path"
 
 import { assertAllowedApiUrl, assertAllowedDownloadUrl, assertSafeFileName, isRecord, MAX_RESPONSE_BYTES } from "../../src/ipc/validation"
 import { buildInstallerTreeKillCommand, shouldKillInstallerTree } from "../../src/ipc/handlers/installerTimeoutOutcome"
+import { runInnoExtraction } from "../../src/ipc/workers/innoExtraction"
 
 if (!process.env.CI) {
   console.error("Refusing to run outside CI: this script writes to HKCU\\...\\Uninstall to reproduce issue #8. Run it only through the windows-conformance workflow.")
@@ -352,7 +367,9 @@ async function runScenario2(installerPath: string, workDir: string, version: str
   const targetExecutableLanded = existsSync(join(targetDir, "Vintagestory.exe"))
   const sentinelExecutableLanded = existsSync(join(sentinelOldLocation, "Vintagestory.exe"))
   const keyPresentAfterRun = uninstallKeyExists()
-  removeUninstallKey()
+  // Left seeded on purpose: scenario 3 runs next, while it is still in
+  // place, to prove our extractor is immune to it. main() removes the key
+  // once scenario 3 is done, not here.
 
   const verdict = result.timedOut
     ? `Installer did not exit within the timeout (orphans killed: ${result.orphansKilled ? "yes" : "no"}): consistent with issue #8, InitializeSetup's MsgBox is not answered by /SUPPRESSMSGBOXES and blocks a silent run.`
@@ -383,6 +400,69 @@ async function runScenario2(installerPath: string, workDir: string, version: str
   }
 }
 
+/**
+ * Runs OUR payload extractor (runInnoExtraction, src/ipc/workers/innoExtraction.ts)
+ * against the same downloaded installer scenario 1 already fetched, no second
+ * download. Driven the same way tests/ipc/innoExtraction.test.ts drives it
+ * against a real installer: filePath/outputPath/deleteInstaller straight in,
+ * no ports to wire up by hand, since runInnoExtraction assembles its own
+ * file handle, digest and sink adapters internally.
+ *
+ * Called while scenario 2's seeded uninstall key is still in the registry
+ * (main() only removes it after this returns): the extractor never spawns
+ * the installer, so InitializeSetup's MsgBox never gets a chance to fire,
+ * and this is where that immunity gets proven on a real Windows machine
+ * instead of asserted from the Linux-only proof. `failed` on the returned
+ * record tells main() whether to fail the job, the same way scenario 1 does:
+ * unlike scenario 2, there is no documented-bad outcome to fall back on here.
+ */
+async function runScenario3(installerPath: string, workDir: string, version: string, fileName: string): Promise<Record<string, unknown>> {
+  const targetDir = join(workDir, "scenario-3-extraction")
+  const versionMarkerRelativePath = join("assets", `version-${version}.txt`)
+
+  console.log("\nScenario 3: run our payload extractor against the already-downloaded installer while the seeded uninstall key is still present.")
+  const keyPresentBeforeExtraction = uninstallKeyExists()
+
+  const startedAt = Date.now()
+  const outcome = await runInnoExtraction({ filePath: installerPath, outputPath: targetDir, deleteInstaller: false })
+  const durationMs = Date.now() - startedAt
+
+  const keyPresentAfterExtraction = uninstallKeyExists()
+  const extracted = outcome.verdict === "extracted"
+  const executableLanded = existsSync(join(targetDir, "Vintagestory.exe"))
+  const versionMarkerLanded = existsSync(join(targetDir, versionMarkerRelativePath))
+  const failed = !extracted || !executableLanded || !versionMarkerLanded
+
+  const verdict = !extracted
+    ? `Extraction refused the installer's format (${outcome.reason ?? "no reason given"}) instead of writing anything.`
+    : !executableLanded
+      ? "Extraction reported success but Vintagestory.exe did not land at the target root."
+      : !versionMarkerLanded
+        ? `Extraction reported success but ${versionMarkerRelativePath} did not land.`
+        : `Extraction succeeded with the seeded uninstall key present throughout (before: ${keyPresentBeforeExtraction ? "present" : "missing"}, after: ${keyPresentAfterExtraction ? "present" : "missing"}): our reader never runs Inno Setup and is immune to issue #8 by construction.`
+
+  return {
+    scenario: "our-extraction",
+    version,
+    fileName,
+    targetDir,
+    uninstallKeyPath: UNINSTALL_KEY_PATH,
+    keyPresentBeforeExtraction,
+    keyPresentAfterExtraction,
+    outcomeVerdict: outcome.verdict,
+    reason: outcome.reason,
+    filesWritten: outcome.filesWritten,
+    bytesWritten: outcome.bytesWritten,
+    durationMs,
+    executableLanded,
+    versionMarkerRelativePath,
+    versionMarkerLanded,
+    targetListing: safeListDir(targetDir),
+    failed,
+    verdict
+  }
+}
+
 async function main(): Promise<void> {
   const requestedVersion = process.env.RIFT_WINDOWS_VERSION?.trim()
   const workDir = join(process.env.RUNNER_TEMP ?? tmpdir(), "rift-e2e")
@@ -393,12 +473,13 @@ async function main(): Promise<void> {
   // nothing was written until a clean exit, and the job's 30-minute ceiling
   // killed the process first. `phase` records how far the run got even if
   // the next step is what hangs.
-  const report: { phase: string; version: string | null; fileName: string | null; scenario1: unknown; scenario2: unknown } = {
+  const report: { phase: string; version: string | null; fileName: string | null; scenario1: unknown; scenario2: unknown; scenario3: unknown } = {
     phase: "starting",
     version: requestedVersion ?? null,
     fileName: null,
     scenario1: null,
-    scenario2: null
+    scenario2: null,
+    scenario3: null
   }
   const persistReport = (): string => writeReport(report, workDir)
   persistReport()
@@ -487,8 +568,35 @@ async function main(): Promise<void> {
   }
   console.log(JSON.stringify(scenario2Report, null, 2))
   report.scenario2 = scenario2Report
-  report.phase = "done"
+  report.phase = "scenario-3"
+  persistReport()
+
+  // scenario 2 leaves the uninstall key seeded on purpose: scenario 3 needs
+  // to run while it is still there to prove our extractor is immune to it.
+  // The key comes out in `finally` no matter how scenario 3 ends, same as
+  // scenario 2's own best-effort cleanup on a disposable runner.
+  let scenario3Report: Record<string, unknown>
+  let scenario3Failed: boolean
+  try {
+    scenario3Report = await runScenario3(installerPath, workDir, version, fileName)
+    scenario3Failed = scenario3Report.failed === true
+  } catch (error) {
+    scenario3Report = { scenario: "our-extraction", error: error instanceof Error ? error.message : String(error) }
+    scenario3Failed = true
+  } finally {
+    removeUninstallKey()
+  }
+  console.log(JSON.stringify(scenario3Report, null, 2))
+  report.scenario3 = scenario3Report
+  report.phase = scenario3Failed ? "scenario-3-failed" : "done"
   const reportDir = persistReport()
+
+  if (scenario3Failed) {
+    console.error(`\nFAIL: scenario 3 (our extraction) did not succeed. Report at ${reportDir}.`)
+    process.exitCode = 1
+    return
+  }
+
   console.log(`\nReport written to ${reportDir}`)
 }
 
