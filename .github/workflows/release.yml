@@ -1,0 +1,43 @@
+name: Release
+
+# Builds and uploads installers when a version tag is pushed. electron-builder
+# publishes both platforms onto a single DRAFT GitHub release for the tag, so
+# nothing goes public until a human reviews the draft and publishes it (marked
+# as a prerelease for -beta/-rc tags). The auto-updater feed files
+# (latest.yml, latest-linux.yml) are uploaded alongside the installers, which
+# is what lets installed copies discover the next release.
+#
+# Linux builds AppImage and deb only: the flatpak target in
+# electron-builder.yml needs flatpak-builder and runtimes the runner does not
+# have, and auto-update on Linux only works through AppImage anyway. macOS is
+# absent for the same reason it is manual-only in ci.yml: 10x billing and the
+# launcher cannot launch the game there yet.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-draft:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - if: runner.os == 'Linux'
+        run: npx electron-builder --linux AppImage deb --publish always
+      - if: runner.os == 'Windows'
+        run: npx electron-builder --win --x64 --publish always

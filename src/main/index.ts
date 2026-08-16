@@ -207,7 +207,7 @@ app.whenReady().then(async () => {
   await ensureConfig()
 
   // Set app user model id for windows
-  electronApp.setAppUserModelId("xyz.xurxomf")
+  electronApp.setAppUserModelId("net.stratumserver.riftlauncher")
   Menu.setApplicationMenu(null)
 
   // Default open or close DevTools by F12 in development and ignore CommandOrControl + R in production.
