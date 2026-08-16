@@ -1,4 +1,8 @@
-appId: xyz.xurxomf.vslauncher
+# Stratum identity (issue #16): a different NSIS identity than the archived
+# VS Launcher, so installing RiftLauncher never overwrites or uninstalls an
+# existing VS Launcher setup. User data continuity is handled separately by
+# the userData pin in src/main/index.ts, which is appId-independent.
+appId: net.stratumserver.riftlauncher
 productName: RiftLauncher
 directories:
   buildResources: build

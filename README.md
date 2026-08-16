@@ -1,5 +1,5 @@
 > [!WARNING]
-> **RiftLauncher is in active development.** There is no release yet: expect missing pieces, breaking changes and rough edges while the team rebuilds the launcher. Follow the issues and the Discord for progress, and hold off on daily use until the first release lands.
+> **RiftLauncher is in active development.** A beta prerelease is available on the [releases page](https://github.com/StratumServer/RiftLauncher/releases) for early testing: expect rough edges and breaking changes while the team keeps rebuilding the launcher. Back up your worlds before pointing it at an existing installation, and report anything odd on the issues page or the Discord.
 
 > [!NOTE]
 > This fork is maintained by [Zaldaryon](https://github.com/Zaldaryon) and the [Stratum](https://github.com/StratumServer) team.
