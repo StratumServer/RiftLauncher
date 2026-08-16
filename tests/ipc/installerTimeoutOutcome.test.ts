@@ -1,7 +1,18 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { attemptInstallerTreeKill, buildInstallerTreeKillCommand, shouldKillInstallerTree } from "../../src/ipc/handlers/installerTimeoutOutcome"
+import {
+  attemptInstallerTreeKill,
+  buildInstallerTreeKillCommand,
+  extractionOutcomeToResult,
+  installerFailedResult,
+  installerMissingResult,
+  installerOkResult,
+  installerTimedOutResult,
+  notWindowsResult,
+  shouldKillInstallerTree,
+  spawnInstallerOutcomeToResult
+} from "../../src/ipc/handlers/installerTimeoutOutcome"
 
 describe("buildInstallerTreeKillCommand", () => {
   it("builds a taskkill command that walks and forces the whole process tree", () => {
@@ -102,5 +113,51 @@ describe("attemptInstallerTreeKill", () => {
     assert.equal(calls.length, 2)
     assert.equal(calls[0]?.[0], "error")
     assert.equal(calls[1]?.[0], "debug")
+  })
+})
+
+describe("the named RUN_INSTALLER verdicts", () => {
+  it("notWindowsResult", () => {
+    assert.deepEqual(notWindowsResult(), { ok: false, reason: "not-windows" })
+  })
+
+  it("installerMissingResult", () => {
+    assert.deepEqual(installerMissingResult(), { ok: false, reason: "installer-missing" })
+  })
+
+  it("installerOkResult", () => {
+    assert.deepEqual(installerOkResult(), { ok: true })
+  })
+
+  it("installerFailedResult", () => {
+    assert.deepEqual(installerFailedResult(), { ok: false, reason: "installer-failed" })
+  })
+
+  it("installerTimedOutResult", () => {
+    assert.deepEqual(installerTimedOutResult(), { ok: false, reason: "installer-timed-out" })
+  })
+})
+
+describe("extractionOutcomeToResult", () => {
+  it("maps a successful extraction to ok", () => {
+    assert.deepEqual(extractionOutcomeToResult("extracted"), { ok: true })
+  })
+
+  it("maps a failed extraction to installer-failed, not a distinct reason", () => {
+    assert.deepEqual(extractionOutcomeToResult("failed"), { ok: false, reason: "installer-failed" })
+  })
+})
+
+describe("spawnInstallerOutcomeToResult", () => {
+  it("maps a clean install to ok", () => {
+    assert.deepEqual(spawnInstallerOutcomeToResult("installed"), { ok: true })
+  })
+
+  it("maps a timeout to installer-timed-out", () => {
+    assert.deepEqual(spawnInstallerOutcomeToResult("timed-out"), { ok: false, reason: "installer-timed-out" })
+  })
+
+  it("maps any other failure (launch error, non-zero exit, setup exception) to installer-failed", () => {
+    assert.deepEqual(spawnInstallerOutcomeToResult("failed"), { ok: false, reason: "installer-failed" })
   })
 })

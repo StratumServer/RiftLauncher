@@ -14,7 +14,7 @@ import { validateArchive } from "@src/ipc/archiveValidation"
 import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
-import { attemptInstallerTreeKill } from "@src/ipc/handlers/installerTimeoutOutcome"
+import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
 
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
@@ -309,14 +309,15 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
   return true
 })
 
-ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: string, filePath: string, outputPath: string, deleteInstaller: boolean): Promise<boolean> => {
+ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: string, filePath: string, outputPath: string, deleteInstaller: boolean): Promise<InstallerRunResult> => {
   assertTrustedIpcSender(event)
   const safeId = assertSafeTaskId(id)
   const safeFilePath = await assertManagedPath(filePath, "installer path")
   const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
   const shouldDeleteInstaller = assertBoolean(deleteInstaller, "delete installer flag")
 
-  if (process.platform !== "win32" || !(await fse.pathExists(safeFilePath))) return false
+  if (process.platform !== "win32") return notWindowsResult()
+  if (!(await fse.pathExists(safeFilePath))) return installerMissingResult()
 
   const extension = extname(safeFilePath).toLowerCase()
   if (extension !== ".exe") throw new TypeError("Invalid installer file")
@@ -324,7 +325,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: strin
 
   if (EXTRACT_INSTALLER_PAYLOAD) {
     const verdict = await extractInstallerPayload(event, safeId, safeFilePath, safeOutputPath, shouldDeleteInstaller)
-    if (verdict !== "format-refused") return verdict === "extracted"
+    if (verdict !== "format-refused") return extractionOutcomeToResult(verdict)
   }
 
   return spawnInstaller(event, safeId, safeFilePath, safeOutputPath, shouldDeleteInstaller)
@@ -379,7 +380,7 @@ async function extractInstallerPayload(
  * here when the uninstall key is already set, so this is the fallback and not
  * the way in.
  */
-function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath: string, safeOutputPath: string, shouldDeleteInstaller: boolean): Promise<boolean> {
+function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath: string, safeOutputPath: string, shouldDeleteInstaller: boolean): Promise<InstallerRunResult> {
   return new Promise((resolvePromise) => {
     const exePath = safeFilePath
     let settled = false
@@ -389,15 +390,6 @@ function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath:
       const installer = spawn(exePath, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/NOICONS", `/DIR=${safeOutputPath}`], { shell: false, windowsHide: true })
 
       const timeoutHandle = setTimeout(() => {
-        // The wire contract for RUN_INSTALLER stays a plain boolean (the
-        // renderer's TaskManagerContext reads it as `if (!result) throw`),
-        // so a timeout resolves `false` the same as any other install
-        // failure rather than a distinct "installer-timed-out" reason.
-        // Threading that reason onto the wire would mean widening
-        // GameExecutionResult-style plumbing through global.d.ts,
-        // preload.d.ts and the renderer's install adapter, all outside this
-        // handler's surface; the log line below carries the distinction for
-        // diagnosis instead.
         logMessage(
           "error",
           `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Timed out after ${RUN_INSTALLER_TIMEOUT_MS}ms waiting on the installer; killing its process tree. reason=installer-timed-out`
@@ -408,28 +400,28 @@ function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath:
           (command, args) => spawn(command, args, { shell: false, windowsHide: true }),
           (level, message) => logMessage(level, `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${message}`)
         )
-        finish(false)
+        finish("timed-out")
       }, RUN_INSTALLER_TIMEOUT_MS)
 
-      const finish = (success: boolean): void => {
+      const finish = (outcome: "installed" | "timed-out" | "failed"): void => {
         if (settled) return
         settled = true
         clearTimeout(timeoutHandle)
         if (shouldDeleteInstaller) void fse.remove(exePath).catch(() => {})
-        if (success) sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 100)
-        resolvePromise(success)
+        if (outcome === "installed") sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 100)
+        resolvePromise(spawnInstallerOutcomeToResult(outcome))
       }
 
       installer.on("error", (error) => {
         logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Error launching installer.`)
         logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(error)}`)
-        finish(false)
+        finish("failed")
       })
-      installer.on("close", (code) => finish(code === 0))
+      installer.on("close", (code) => finish(code === 0 ? "installed" : "failed"))
     } catch (err) {
       logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Installer setup failed.`)
       logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
-      resolvePromise(false)
+      resolvePromise(spawnInstallerOutcomeToResult("failed"))
     }
   })
 }
