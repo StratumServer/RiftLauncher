@@ -149,7 +149,7 @@
       "openOnTheModDB": "Apri nel ModDB!",
       "cantUpdateWhileinUse": "Non puoi aggiornare una Mod mentre la stai usando!",
       "errorUpdatingMods": "C'è stato un errore nell'aggiornare le Mods!",
-      "errorUpdatingMod": "C'è stato un errore nell'aggiornare la Mod {mod}!",
+      "errorUpdatingMod": "C'è stato un errore nell'aggiornare la Mod {{mod}}!",
       "listWithUpdatesTitle": "Mods con aggiornamenti",
       "listWithIncompatibleUpdatesTitle": "Mods con aggiornamenti incompatibili",
       "modsWithIncompatibleUpdatesDescription": "Le prossime Mods hanno aggiornamenti disponibili incompatibili al 90% con la Versione di Vintage Story selezionata!",
