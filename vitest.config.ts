@@ -7,6 +7,12 @@ export default defineConfig({
     projects: [
       {
         extends: true,
+        resolve: {
+          alias: {
+            "@src": resolve(__dirname, "src"),
+            "@domain": resolve(__dirname, "src/domain")
+          }
+        },
         test: {
           name: "node",
           environment: "node",
