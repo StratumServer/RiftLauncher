@@ -1,7 +1,6 @@
 > [!NOTE]
-> This fork is maintained by [Zaldaryon](https://github.com/Zaldaryon).
-> For general support, contact `@zaldaryon` on the project Discord server.
-> Donations are available at [Ko-fi](https://ko-fi.com/zaldaryon).
+> This fork is maintained by [Zaldaryon](https://github.com/Zaldaryon) and the [Stratum](https://github.com/StratumServer) team.
+> For general support, join the [Stratum Discord server](https://discord.gg/vQm6z2urZs).
 
 # Welcome to RiftLauncher
 
@@ -38,16 +37,12 @@ Yes, thanks to i18n you can translate it to any language. Here is the guide: [Ho
 
 ## Where can I ask for help?
 
-You can ask anything you need on our [Discord server](https://discord.gg/RtWpYBRRUz), or contact `@zaldaryon` there.
+You can ask anything you need on our [Discord server](https://discord.gg/vQm6z2urZs).
 
 ## Where can I report bugs?
 
-You can report any bug on the [RiftLauncher GitHub Issues](https://github.com/StratumServer/RiftLauncher/issues) or our [Discord server](https://discord.gg/RtWpYBRRUz).
+You can report any bug on the [RiftLauncher GitHub Issues](https://github.com/StratumServer/RiftLauncher/issues) or our [Discord server](https://discord.gg/vQm6z2urZs).
 
 ## Can I make a suggestion?
 
-Yes, you can do so on our [Discord server](https://discord.gg/RtWpYBRRUz).
-
-## How can I support the maintainer?
-
-You can support Zaldaryon through [Ko-fi](https://ko-fi.com/zaldaryon).
+Yes, you can do so on our [Discord server](https://discord.gg/vQm6z2urZs).

@@ -5,7 +5,7 @@ import { useOpenExternalLink } from "@renderer/features/installations/hooks/useO
 import { NormalButton } from "@renderer/components/ui/Buttons"
 
 const ISSUES_URL = "https://github.com/StratumServer/RiftLauncher/issues"
-const DISCORD_URL = "https://discord.gg/RtWpYBRRUz"
+const DISCORD_URL = "https://discord.gg/vQm6z2urZs"
 
 /**
  * The heading of one installed-Mods section: what the list is, and where to report it when the

@@ -36,7 +36,7 @@ Don't translate things like \`\{{name\}}\`, \<button /> and things like that. Th
 
 ### **Send it**
 
-Once you've finished the translation, open a pull request against the [RiftLauncher repository](https://github.com/StratumServer/RiftLauncher) with your translated file, or send it to `@zaldaryon` on the project Discord server with this info:
+Once you've finished the translation, open a pull request against the [RiftLauncher repository](https://github.com/StratumServer/RiftLauncher) with your translated file, or share it on the [Stratum Discord server](https://discord.gg/vQm6z2urZs) with this info:
 
 ```
 Name for credits: Your name or Anonymous

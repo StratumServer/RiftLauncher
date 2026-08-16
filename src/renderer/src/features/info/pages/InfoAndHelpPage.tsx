@@ -1,6 +1,6 @@
 import { useRef } from "react"
 import { Trans, useTranslation } from "react-i18next"
-import { PiDiscordLogoDuotone, PiCoinsDuotone, PiInfoDuotone, PiCodeDuotone, PiUsersThreeDuotone, PiGithubLogoDuotone } from "react-icons/pi"
+import { PiDiscordLogoDuotone, PiInfoDuotone, PiCodeDuotone, PiUsersThreeDuotone, PiGithubLogoDuotone } from "react-icons/pi"
 
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import { FormButton } from "@renderer/components/ui/FormComponents"
@@ -40,8 +40,7 @@ function InfoAndHelpPage(): JSX.Element {
           <div className="w-full shrink-0 flex flex-wrap items-center justify-center gap-2">
             <SocialButtons icon={<PiGithubLogoDuotone />} to="https://github.com/StratumServer/RiftLauncher/issues" text={t("generic.issues")} />
             <SocialButtons icon={<PiInfoDuotone />} to="https://vsldocs.xurxomf.xyz/" text={t("generic.guides")} />
-            <SocialButtons icon={<PiDiscordLogoDuotone />} to="https://discord.gg/RtWpYBRRUz" text={t("generic.discordContact")} />
-            <SocialButtons icon={<PiCoinsDuotone />} to="https://ko-fi.com/zaldaryon" text={t("generic.donate")} />
+            <SocialButtons icon={<PiDiscordLogoDuotone />} to="https://discord.gg/vQm6z2urZs" text={t("generic.discordContact")} />
             <SocialButtons icon={<PiUsersThreeDuotone />} to="https://github.com/StratumServer/RiftLauncher/blob/main/docs/important-info/contributors.md" text={t("generic.contributors")} />
             <SocialButtons icon={<PiCodeDuotone />} to="https://github.com/StratumServer/RiftLauncher" text={t("generic.source")} />
           </div>

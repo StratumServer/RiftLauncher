@@ -43,7 +43,7 @@ This project follows a [Code of Conduct](./CODE_OF_CONDUCT.md). By contributing,
 
 ## Contact
 
-If you have any questions, contact `@zaldaryon` on the project Discord server or open an issue.
+If you have any questions, join the [Stratum Discord server](https://discord.gg/vQm6z2urZs) or open an issue.
 
 ---
 
