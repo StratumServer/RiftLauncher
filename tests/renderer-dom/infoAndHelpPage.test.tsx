@@ -24,7 +24,7 @@ describe("InfoAndHelpPage", () => {
     const api = installMockWindowApi({
       utils: {
         getAppVersion: vi.fn(async () => "9.9.9"),
-        getOs: vi.fn(async () => "win32")
+        getOs: vi.fn(async () => "win32" as NodeJS.Platform)
       }
     })
 

@@ -5,11 +5,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import * as tar from "tar"
+import { path7za } from "7zip-bin"
 
-import { runnableSevenZip } from "../helpers/sevenZip"
 import { validateArchive } from "../../src/ipc/archiveValidation"
 
-const sevenZipBin = runnableSevenZip()
+const sevenZipBin = path7za
 
 let workspace: string
 

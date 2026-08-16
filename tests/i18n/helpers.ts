@@ -78,9 +78,12 @@ export function collectTranslationCalls(dir: string): TranslationCall[] {
 
     T_CALL_RE.lastIndex = 0
     while ((match = T_CALL_RE.exec(content))) {
-      const key = match[1]
+      // Group 1 is a mandatory capturing group in T_CALL_RE (not `(...)?`), so it
+      // is always defined whenever the overall match succeeds.
+      const key = match[1]!
       let cursor = T_CALL_RE.lastIndex
-      while (cursor < content.length && /\s/.test(content[cursor])) cursor++
+      // `cursor < content.length` guards the indexed access from being out of bounds.
+      while (cursor < content.length && /\s/.test(content[cursor]!)) cursor++
       calls.push({ file, key, hasInterpolationArg: content[cursor] === "," })
     }
   }

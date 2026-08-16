@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
-import type { IncomingMessage, Server, ServerResponse, Socket } from "node:http"
+import type { IncomingMessage, Server, ServerResponse } from "node:http"
+import type { Socket } from "node:net"
 import { afterEach, describe, it } from "vitest"
 
 import "./helpers/electronMock"

@@ -5,8 +5,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import * as tar from "tar"
+import { path7za } from "7zip-bin"
 
-import { runnableSevenZip } from "../helpers/sevenZip"
 import { contentRoot, runExtraction, validateTree } from "../../src/ipc/workers/extraction"
 
 /**
@@ -16,7 +16,7 @@ import { contentRoot, runExtraction, validateTree } from "../../src/ipc/workers/
  * RIFT_E2E_ARCHIVE at a downloaded game tar.gz to run it. CI never does.
  */
 
-const sevenZipBin = runnableSevenZip()
+const sevenZipBin = path7za
 
 let workspace: string
 
@@ -24,8 +24,13 @@ function workspacePath(...parts: string[]): string {
   return join(workspace, ...parts)
 }
 
+/** A folder tree of arbitrary depth: a string is a file body, an object is a folder. */
+interface FileTree {
+  [name: string]: string | FileTree
+}
+
 /** Writes a folder tree, where a string is a file body and an object is a folder. */
-function writeTree(root: string, tree: Record<string, string | Record<string, string>>): void {
+function writeTree(root: string, tree: FileTree): void {
   mkdirSync(root, { recursive: true })
   for (const [name, value] of Object.entries(tree)) {
     if (typeof value === "string") writeFileSync(join(root, name), value)
