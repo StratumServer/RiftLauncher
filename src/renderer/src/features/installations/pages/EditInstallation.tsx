@@ -14,6 +14,7 @@ import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@re
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { describeInstallationFieldsFailure } from "@renderer/features/installations/adapters/create"
+import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
 
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -46,6 +47,7 @@ function EditInslallation(): JSX.Element {
   const customIcons = useCustomIcons()
   const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
+  const openExternalLink = useOpenExternalLink()
 
   const { id } = useParams()
 
@@ -344,7 +346,7 @@ function EditInslallation(): JSX.Element {
                             i18nKey="features.installations.startParamsDesc"
                             components={{
                               link: (
-                                <Button onClick={() => window.api.utils.openOnBrowser("https://wiki.vintagestory.at/Client_startup_parameters")} className="text-vsl">
+                                <Button onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")} className="text-vsl">
                                   {t("features.installations.startParamsLink")}
                                 </Button>
                               )
