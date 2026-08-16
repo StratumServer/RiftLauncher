@@ -59,9 +59,11 @@ export default defineConfig({
         "src/renderer/src/features/config/contexts/**",
         "src/renderer/src/features/config/utils/**"
       ],
-      // Raised by the worker/account-storage pass and the win32 RUN_INSTALLER /
-      // utilsHandlers / TaskManagerContext pass together: measured repo-wide
-      // coverage with both is ~86.9/84.7/83.6/81.2
+      // Raised by the worker/account-storage pass, the win32 RUN_INSTALLER /
+      // utilsHandlers / TaskManagerContext pass, and the Inno domain / config
+      // pass (script.ts, extract.ts, lzma.ts, configManager.ts,
+      // configReducer.ts) together: measured repo-wide coverage with all
+      // three is PLACEHOLDER, updated below once rebased and re-measured.
       // (lines/statements/functions/branches); floors sit a couple of points
       // under each, the same buffer every previous set of floors kept below
       // its own measured numbers.
