@@ -2,13 +2,18 @@ import assert from "node:assert/strict"
 import { beforeEach, describe, it } from "vitest"
 
 import { uninstallGameVersion } from "../../../src/domain/versions/uninstall"
-import type { GameVersionSnapshot, UninstallGameVersionEvents, UninstallGameVersionPorts } from "../../../src/domain/versions/uninstall"
+import type { GameVersionSnapshot, UninstallGameVersionEvents, UninstallGameVersionInput, UninstallGameVersionPorts } from "../../../src/domain/versions/uninstall"
 
 /** Everything the fakes wrote down, in the order it happened. */
 let trace: string[] = []
 
 function version(overrides: Partial<GameVersionSnapshot> = {}): GameVersionSnapshot {
   return { version: "1.20.4", path: "/games/1.20.4", isPlaying: false, isDeleting: false, ...overrides }
+}
+
+function input(overrides: Partial<Omit<UninstallGameVersionInput, "version">> & { version?: GameVersionSnapshot } = {}): UninstallGameVersionInput {
+  const { version: versionOverride, ...rest } = overrides
+  return { version: versionOverride ?? version(), usedByInstallations: [], confirmedInUse: false, ...rest }
 }
 
 function ports(options: { removed?: boolean } = {}): UninstallGameVersionPorts {
@@ -39,23 +44,46 @@ beforeEach(() => {
 
 describe("uninstallGameVersion preconditions", () => {
   it("refuses a version that is being played", async () => {
-    const result = await uninstallGameVersion(ports(), { version: version({ isPlaying: true }) }, recordingEvents())
+    const result = await uninstallGameVersion(ports(), input({ version: version({ isPlaying: true }) }), recordingEvents())
 
     assert.deepEqual(result, { ok: false, reason: "version-playing" })
     assert.deepEqual(trace, [])
   })
 
   it("refuses a version that is already being deleted", async () => {
-    const result = await uninstallGameVersion(ports(), { version: version({ isDeleting: true }) }, recordingEvents())
+    const result = await uninstallGameVersion(ports(), input({ version: version({ isDeleting: true }) }), recordingEvents())
 
     assert.deepEqual(result, { ok: false, reason: "version-busy" })
     assert.deepEqual(trace, [])
   })
 
   it("checks isPlaying before isDeleting", async () => {
-    const result = await uninstallGameVersion(ports(), { version: version({ isPlaying: true, isDeleting: true }) })
+    const result = await uninstallGameVersion(ports(), input({ version: version({ isPlaying: true, isDeleting: true }) }))
 
     assert.equal(result.ok === false && result.reason, "version-playing")
+  })
+})
+
+describe("uninstallGameVersion in-use confirmation", () => {
+  it("needs no confirmation when no installation uses the version", async () => {
+    const result = await uninstallGameVersion(ports(), input({ usedByInstallations: [], confirmedInUse: false }), recordingEvents())
+
+    assert.deepEqual(result, { ok: true })
+    assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
+  })
+
+  it("refuses before any deletion when installations use it and that isn't confirmed", async () => {
+    const result = await uninstallGameVersion(ports(), input({ usedByInstallations: ["Survival World", "Creative Sandbox"], confirmedInUse: false }), recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "version-in-use" })
+    assert.deepEqual(trace, [])
+  })
+
+  it("proceeds once the in-use warning is confirmed", async () => {
+    const result = await uninstallGameVersion(ports(), input({ usedByInstallations: ["Survival World"], confirmedInUse: true }), recordingEvents())
+
+    assert.deepEqual(result, { ok: true })
+    assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
   })
 })
 
@@ -63,27 +91,27 @@ describe("uninstallGameVersion", () => {
   it("removes the version folder and reports success", async () => {
     const hosts = ports()
 
-    const result = await uninstallGameVersion(hosts, { version: version() }, recordingEvents())
+    const result = await uninstallGameVersion(hosts, input(), recordingEvents())
 
     assert.deepEqual(result, { ok: true })
     assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
   })
 
   it("reports a failed folder deletion so the version stays on the list", async () => {
-    const result = await uninstallGameVersion(ports({ removed: false }), { version: version() }, recordingEvents())
+    const result = await uninstallGameVersion(ports({ removed: false }), input(), recordingEvents())
 
     assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
     assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
   })
 
   it("fires onFinished even when the deletion fails", async () => {
-    await uninstallGameVersion(ports({ removed: false }), { version: version() }, recordingEvents())
+    await uninstallGameVersion(ports({ removed: false }), input(), recordingEvents())
 
     assert.equal(trace.includes("finished"), true)
   })
 
   it("works without events", async () => {
-    const result = await uninstallGameVersion(ports(), { version: version() })
+    const result = await uninstallGameVersion(ports(), input())
 
     assert.deepEqual(result, { ok: true })
   })
