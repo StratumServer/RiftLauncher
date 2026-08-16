@@ -120,7 +120,14 @@ describe("buildGameLaunchPlan environment", () => {
     assert.deepEqual(plan.env, {})
   })
 
-  it("sets the Mesa GL thread variable for the native Linux launcher", async () => {
+  it("sets the Mesa GL thread variable for the native Linux launcher, spelled the way Mesa reads it", async () => {
+    // Pinned against the literal, not just the imported constant: asserting
+    // `{ [MESA_GL_THREAD_VARIABLE]: "true" }` alone would pass no matter what
+    // the constant said, uppercase included, since both sides would still be
+    // the same symbol. Issue #60 found exactly that: the constant spelled
+    // MESA_GLTHREAD, Mesa reads mesa_glthread, and this test never noticed.
+    assert.equal(MESA_GL_THREAD_VARIABLE, "mesa_glthread")
+
     const plan = await planFor({ mesaGlThread: true })
 
     assert.deepEqual(plan.env, { [MESA_GL_THREAD_VARIABLE]: "true" })
