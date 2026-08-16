@@ -50,7 +50,7 @@ function InfoAndHelpPage(): JSX.Element {
             <p>{t("features.infoAndHelp.debugInfoDesc")}</p>
 
             <div className="select-all p-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 enabled:shadow-sm enabled:shadow-zinc-950/50 enabled:hover:shadow-none enabled:cursor-pointer disabled:opacity-50">
-              <p>VS Launcher Version - v{vslVersion}</p>
+              <p>RiftLauncher Version - v{vslVersion}</p>
               <p>OS Type - {os}</p>
             </div>
 

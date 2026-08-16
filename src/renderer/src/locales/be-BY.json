@@ -38,7 +38,7 @@
     "authors": "Аўтары",
     "contributors": "Суаўтары",
     "update": "Абнавіць",
-    "tryMVL": "Не падабаецца VS Launcher? Паспрабуйце лаўнчар <link />!",
+    "tryMVL": "Не падабаецца RiftLauncher? Паспрабуйце лаўнчар <link />!",
     "favorite": "Абраныя",
     "any": "Любы",
     "both": "Абодва",
@@ -78,7 +78,7 @@
       "notImplementedDesc": "Зайдзіце ў наступнай версіі, магчыма, яна будзе гатовая!"
     },
     "home": {
-      "title": "Сардэчна запрашаем у VS Launcher",
+      "title": "Сардэчна запрашаем у RiftLauncher",
       "description": "Неафіцыйны лаўнчар Vintage Story з (амаль) усімі неабходнымі функцыямі."
     },
     "versions": {
@@ -137,7 +137,7 @@
       "labelStartParams": "Параметры запуску",
       "startParams": "Параметры запуску",
       "startParamsDesc": "Спіс усіх даступных параметраў запуску: <link />",
-      "cantUseDataPath": "Параметр запуску --dataPath не можа быць выкарыстаны, бо яго выкарыстоўвае VS Launcher. Калі хочаце іншую папку, змяніце яе ва усталёўцы.",
+      "cantUseDataPath": "Параметр запуску --dataPath не можа быць выкарыстаны, бо яго выкарыстоўвае RiftLauncher. Калі хочаце іншую папку, змяніце яе ва усталёўцы.",
       "startParamsLink": "Vintage Story Wiki",
       "gameAlreadyRunning": "Ужо гуляеце ў гэтую усталёўку!",
       "editWhilePlaying": "Вы не можаце рэдагаваць усталёўку, пакуль гуляеце ў яе!",
@@ -177,7 +177,7 @@
       "deletingNotReversible": "Выдаленне незваротнае, таму вы не зможаце аднавіць моды, але заўсёды зможаце спампаваць іх зноў!",
       "openOnTheModDB": "Адкрыць на ModDB!",
       "listWithErrorsTitle": "Моды з памылкамі",
-      "modsWithErrorsDescription": "Наступныя моды маюць памылкі, і VS Launcher не можа іх ідэнтыфікаваць!",
+      "modsWithErrorsDescription": "Наступныя моды маюць памылкі, і RiftLauncher не можа іх ідэнтыфікаваць!",
       "modsWithErrorsDescriptionReport": "Паведаміце пра гэта на старонцы <issues /> ці на нашым серверы <discord />!",
       "noModSelected": "Мод не выбраны!",
       "onlyFavMods": "Паказваць толькі выбраныя моды",
@@ -251,7 +251,7 @@
       "manageBackups": "Кіраванне копіямі"
     },
     "infoAndHelp": {
-      "title": "Інфармацыя і дапамога VS Launcher",
+      "title": "Інфармацыя і дапамога RiftLauncher",
       "debugInfoTitle": "Адладачная інфармацыя",
       "includeLogs": "Дашліце нам файлы логаў з <folderlink />, каб дапамагчы нам яшчэ больш!",
       "logsFolderTitle": "Папка логаў",
@@ -270,9 +270,9 @@
       "installationsTitle": "Усталёўкі",
       "installationsDesc": "Кіраванне усталёўкамі",
       "configTitle": "Налады",
-      "configDesc": "Наладзіць VS Launcher",
+      "configDesc": "Наладзіць RiftLauncher",
       "infoAndHelpTitle": "Дапамога",
-      "infoAndHelpDesc": "Дапамога і інфа па VS Launcher"
+      "infoAndHelpDesc": "Дапамога і інфа па RiftLauncher"
     },
     "tasksMenu": {
       "downloading": "Спамвоўванне",
@@ -282,7 +282,7 @@
       "noTasksAvailable": "Няма задач у чарзе!"
     },
     "loader": {
-      "title": "Сардэчна запрашаем у VS Launcher!",
+      "title": "Сардэчна запрашаем у RiftLauncher!",
       "desc": "Мы рыхтуем усё для вас!"
     }
   },
