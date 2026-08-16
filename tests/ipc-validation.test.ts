@@ -9,6 +9,8 @@ import {
   assertSafeFileName,
   assertSafeTaskId,
   isArchiveSymlink,
+  isPathGranted,
+  isPathWithin,
   isRestoreWorkspaceName,
   isSafeArchiveEntry,
   isSafeTarEntryType,
@@ -94,6 +96,35 @@ describe("IPC boundary validators", () => {
     assert.equal(isRestoreWorkspaceName("My Install", `My Install-removed-${token}`), false)
     assert.equal(isRestoreWorkspaceName("My Install", `My Install Saves-restoring-${token}`), false)
     assert.equal(isRestoreWorkspaceName("", `-restoring-${token}`), false)
+  })
+
+  it("contains a path to its root, and never to a sibling or a parent", () => {
+    const root = resolve("/games/Installations")
+
+    assert.equal(isPathWithin(root, root), true)
+    assert.equal(isPathWithin(root, resolve(root, "Main/Mods/amod.zip")), true)
+    assert.equal(isPathWithin(root, root, false), false)
+
+    assert.equal(isPathWithin(root, resolve("/games")), false)
+    assert.equal(isPathWithin(root, resolve("/games/InstallationsBackup")), false)
+    assert.equal(isPathWithin(root, resolve(root, "../escape")), false)
+  })
+
+  it("reaches under a folder grant and stops at the path of a file grant", () => {
+    const folder = resolve("/games/Installations")
+    const archive = resolve("/archives/Main_2026.zip")
+    const grants = [
+      { path: folder, descendants: true },
+      { path: archive, descendants: false }
+    ]
+
+    assert.equal(isPathGranted(grants, folder), true)
+    assert.equal(isPathGranted(grants, resolve(folder, "Main")), true)
+    assert.equal(isPathGranted(grants, archive), true)
+
+    assert.equal(isPathGranted(grants, resolve(archive, "payload")), false)
+    assert.equal(isPathGranted(grants, resolve("/archives")), false)
+    assert.equal(isPathGranted([], folder), false)
   })
 
   it("redacts credentials and absolute paths from diagnostics", () => {
