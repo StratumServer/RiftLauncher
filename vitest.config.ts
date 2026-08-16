@@ -57,11 +57,16 @@ export default defineConfig({
         "src/renderer/src/features/config/contexts/**",
         "src/renderer/src/features/config/utils/**"
       ],
+      // Raised by the main-process handler branch-coverage campaign: measured
+      // repo-wide coverage after that pass was ~78.3/75.8/77.3/70.2
+      // (lines/statements/functions/branches); floors sit a couple of points
+      // under each, the same buffer the previous floors kept below their own
+      // measured numbers.
       thresholds: {
-        lines: 64,
-        statements: 63,
-        functions: 67,
-        branches: 60
+        lines: 77,
+        statements: 74,
+        functions: 76,
+        branches: 69
       }
     }
   }
