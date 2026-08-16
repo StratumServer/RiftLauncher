@@ -1,0 +1,45 @@
+name: Windows install conformance
+
+# Manual only. This proves the Windows half of PR #28's fix (issue #8's
+# "old version detected" MsgBox) on a real, disposable Windows machine: no
+# local machine can safely seed the Inno Setup uninstall registry key, so
+# this never runs anywhere except a runner that gets thrown away afterward.
+#
+# Not wired into ci.yml and not a required check. See tests/e2e/windows-install.ts
+# for what each scenario does and why the second one cannot fail the job.
+on:
+  workflow_dispatch:
+    inputs:
+      game_version:
+        description: "Vintage Story version to install (defaults to the smallest known-good win-x64 installer)"
+        required: false
+        default: "1.18.15"
+        type: string
+
+jobs:
+  windows-install-conformance:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck the conformance script
+        run: npx tsc --noEmit -p tests/e2e/tsconfig.json
+      - name: Run the conformance script
+        run: npx tsx tests/e2e/windows-install.ts
+        env:
+          RIFT_WINDOWS_VERSION: ${{ inputs.game_version }}
+      - name: Upload conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-conformance-report
+          # Only the small report the script writes, never the downloaded
+          # installer or the installed game files.
+          path: ${{ runner.temp }}\rift-e2e\report
+          if-no-files-found: warn
+          retention-days: 14
