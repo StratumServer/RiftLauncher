@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next"
 import { FiExternalLink } from "react-icons/fi"
 import { PiArrowRightDuotone, PiCheckCircleDuotone, PiMinusCircleDuotone } from "react-icons/pi"
 
-import { compareVersions } from "@renderer/utils/semver"
+import { compareVersions } from "@domain/versionNumbers"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { FormButton } from "@renderer/components/ui/FormComponents"
