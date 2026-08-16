@@ -51,7 +51,7 @@ declare global {
     }
     gameManager: {
       executeGame: (version: GameVersionType, installation: InstallationType) => Promise<boolean>
-      lookForAGameVersion: (path: string) => Promise<{ exists: boolean; installedGameVersion: string | undefined }>
+      lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }>
     }
     netManager: {
       queryURL: (url: string) => Promise<string>

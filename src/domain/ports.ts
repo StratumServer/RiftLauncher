@@ -211,6 +211,37 @@ export interface PathBuilder {
   join(parts: string[]): Promise<string>
 }
 
+/** One command to run and read the stdout of. */
+export interface ProcessProbeRequest {
+  /** Executable to run, already resolved to a real path or a name the host can find on its own. */
+  command: string
+  /** Arguments passed to the command, in order. */
+  args: string[]
+}
+
+/** How a probed process ended. */
+export interface ProcessProbeOutcome {
+  /** True when the process was spawned and produced an outcome, timeout included. */
+  ok: boolean
+  /** Everything the process wrote to stdout. Empty when nothing was captured. */
+  stdout: string
+  error?: string
+}
+
+/**
+ * Runs a short-lived command and hands back what it printed, so the domain
+ * can read the answer without any part of the domain touching child_process.
+ */
+export interface ProcessProbe {
+  /**
+   * Spawns `request` and resolves once it closes, never rejecting: a spawn
+   * failure is reported through `ok: false` instead. The host is expected to
+   * bound how long it waits, since the command being probed is a game binary
+   * that answers to nothing forcing it to exit.
+   */
+  run(request: ProcessProbeRequest): Promise<ProcessProbeOutcome>
+}
+
 /** Releases a close guard acquired earlier. Safe to call once. */
 export type ReleaseCloseGuard = () => void
 

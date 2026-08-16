@@ -101,7 +101,7 @@ function LookForAVersion(): JSX.Element {
                         }
 
                         setFolder(selectedPath)
-                        setVersionFound(res.installedGameVersion as string)
+                        setVersionFound(res.installedGameVersion)
                       }
                     }}
                     title={t("generic.browse")}

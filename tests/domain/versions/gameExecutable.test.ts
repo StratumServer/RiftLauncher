@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { expectedGameExecutables, toGameOs } from "../../../src/domain/versions/gameExecutable"
+import { expectedGameExecutables, gameExecutableCandidates, toGameOs } from "../../../src/domain/versions/gameExecutable"
 
 describe("toGameOs", () => {
   it("keeps the two platforms the launcher treats specially", () => {
@@ -34,5 +34,31 @@ describe("expectedGameExecutables", () => {
 
   it("has no expectation on macOS, which the launcher cannot run yet", () => {
     assert.deepEqual(expectedGameExecutables("darwin"), [])
+  })
+})
+
+describe("gameExecutableCandidates", () => {
+  it("runs the Windows executable directly", () => {
+    assert.deepEqual(gameExecutableCandidates("win32"), [{ fileName: "Vintagestory.exe", launchMode: "direct" }])
+  })
+
+  it("runs the native Linux launcher directly and the mono fallback through mono", () => {
+    assert.deepEqual(gameExecutableCandidates("linux"), [
+      { fileName: "Vintagestory", launchMode: "direct" },
+      { fileName: "Vintagestory.exe", launchMode: "mono" }
+    ])
+  })
+
+  it("has no candidates on macOS, matching expectedGameExecutables", () => {
+    assert.deepEqual(gameExecutableCandidates("darwin"), [])
+  })
+
+  it("names the exact same files and order as expectedGameExecutables", () => {
+    for (const os of ["win32", "linux", "darwin"] as const) {
+      assert.deepEqual(
+        gameExecutableCandidates(os).map((candidate) => candidate.fileName),
+        expectedGameExecutables(os)
+      )
+    }
   })
 })
