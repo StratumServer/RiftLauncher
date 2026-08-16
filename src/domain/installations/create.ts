@@ -4,7 +4,7 @@ import type { IdGenerator } from "../ports"
 export const INSTALLATION_NAME_MIN_LENGTH = 5
 export const INSTALLATION_NAME_MAX_LENGTH = 50
 
-/** Start param VS Launcher injects itself; an installation may not claim it as its own. */
+/** Start param the launcher injects itself; an installation may not claim it as its own. */
 export const RESERVED_START_PARAM = "--dataPath"
 
 /** Why the name or start params of an installation don't hold up, shared by create and edit. */

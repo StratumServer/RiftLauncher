@@ -237,7 +237,7 @@ export async function runExtraction(options: ExtractionOptions): Promise<void> {
     fse.ensureDirSync(outputPath)
     if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
 
-    temporaryRoot = mkdtempSync(join(tmpdir(), "vs-launcher-extract-"))
+    temporaryRoot = mkdtempSync(join(tmpdir(), "riftlauncher-extract-"))
     const extractionRoot = join(temporaryRoot, "payload")
     fse.ensureDirSync(extractionRoot)
 
