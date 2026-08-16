@@ -6,6 +6,7 @@ import { PiCaretDownDuotone } from "react-icons/pi"
 import { Combobox, ComboboxButton, ComboboxInput, ComboboxOption, ComboboxOptions } from "@headlessui/react"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
+import { parseAuthorsResponse } from "@domain/mods/moddb"
 
 function AuthorFilter({
   authorFilter,
@@ -28,8 +29,14 @@ function AuthorFilter({
   async function queryAuthors(): Promise<void> {
     try {
       const res = await window.api.netManager.queryURL("https://mods.vintagestory.at/api/authors")
-      const data = await JSON.parse(res)
-      setAuthorsList(data["authors"])
+      const parsed = parseAuthorsResponse(res)
+
+      if (!parsed.ok) {
+        window.api.utils.logMessage("debug", `[front] [mods] [features/mods/components/AuthorFilter.tsx] [AuthorFilter > queryAuthors] Authors query failed: ${parsed.reason}.`)
+        return
+      }
+
+      setAuthorsList(parsed.payload as unknown as DownloadableModAuthorType[])
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [mods] [features/mods/pages/ListMods.tsx] [AuthorFilter > queryAuthors] Error fetching authors.`)
       window.api.utils.logMessage("debug", `[front] [mods] [features/mods/pages/ListMods.tsx] [AuthorFilter > queryAuthors] Error fetching authors: ${err}`)
