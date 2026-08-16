@@ -1,7 +1,6 @@
-import { ReactNode, useEffect } from "react"
-import { useTranslation } from "react-i18next"
+import { ReactNode } from "react"
 
-import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useNotifyOnPreventedAppClose } from "@renderer/features/launch/hooks/useNotifyOnPreventedAppClose"
 
 /**
  * This is a little workaround to execute hooks that need to acces configs, notifications... but need to be execute globally and not
@@ -14,13 +13,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
  * @returns {JSX.Element} Wrapper with NOTHING. Literally nothing. Just children. return <>{children}</>
  */
 function GlobalActionsWrapper({ children }: { children: ReactNode }): JSX.Element {
-  const { t } = useTranslation()
-  const { addNotification } = useNotificationsContext()
-
-  useEffect(() => {
-    const removePreventedAppCloseListener = window.api.utils.onPreventedAppClose(() => addNotification(t("notifications.body.appClosePrevented"), "warning"))
-    return removePreventedAppCloseListener
-  }, [])
+  useNotifyOnPreventedAppClose()
 
   return <>{children}</>
 }

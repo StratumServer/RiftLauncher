@@ -11,7 +11,20 @@ import { createHash } from "crypto"
 const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 30_000
 const { url, outputPath, fileName, expectedMd5 } = workerData
-const pathToDownload = join(outputPath, `${fileName}.zip`)
+
+/**
+ * The download is saved under exactly the name the caller asked for.
+ *
+ * It used to gain a `.zip` suffix here whatever the format really was, which is
+ * how a Linux `.tar.gz` and a Windows `.exe` both ended up on disk as
+ * `<version>.zip` and broke extraction and the installer alike.
+ */
+function assertSafeFileName(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 255 || value === "." || value === ".." || /[\\/\0]/.test(value)) throw new Error("Invalid download file name")
+  return value
+}
+
+const pathToDownload = join(outputPath, assertSafeFileName(fileName))
 const temporaryPath = `${pathToDownload}.${process.pid}.${Date.now()}.part`
 
 let settled = false

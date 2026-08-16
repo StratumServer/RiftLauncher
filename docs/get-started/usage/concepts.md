@@ -6,7 +6,7 @@ description: Small index of terms used in the launcher.
 
 ## VS **Versions**
 
-**Versions** are the base game files like assets, code, executables... This is what you download on the VS Launcher `VS Versions` page.
+**Versions** are the base game files like assets, code, executables... This is what you download on the RiftLauncher `VS Versions` page.
 
 ---
 

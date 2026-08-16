@@ -19,7 +19,7 @@
     "releaseDate": "Release Datum",
     "type": "Type",
     "install": "Installeren",
-    "discordContact": "Discord (@zaldaryon)"
+    "discordContact": "Discord"
   },
   "features": {
     "generic": {
@@ -27,7 +27,7 @@
       "notImplementedDesc": "Kom terug bij de volgende versie"
     },
     "home": {
-      "title": "Welkom bij VS Launcher",
+      "title": "Welkom bij RiftLauncher",
       "description": "De onofficiele Vintage Story Launcher met alle opties die je nodig hebt."
     },
     "versions": {
@@ -77,7 +77,7 @@
       "labelStartParams": "Start params",
       "startParams": "Start params",
       "startParamsDesc": "Lijst met alle beschikbare startparameters: <link />",
-      "cantUseDataPath": "Start param --dataPad kan niet worden gebruikt omdat het door VS Launcher wordt gebruikt. Als u een andere map wilt, wijzigt u deze tijdens de installatie.",
+      "cantUseDataPath": "Start param --dataPad kan niet worden gebruikt omdat het door RiftLauncher wordt gebruikt. Als u een andere map wilt, wijzigt u deze tijdens de installatie.",
       "startParamsLink": "Vintage Story Wiki"
     },
     "mods": {
@@ -113,7 +113,7 @@
       "noTasksAvailable": "Er staan ​​geen taken in de wachtrij!"
     },
     "loader": {
-      "title": "Welkom bij de VS Launcher",
+      "title": "Welkom bij de RiftLauncher",
       "desc": "We maken alles klaar voor je!"
     }
   },
@@ -121,7 +121,7 @@
     "body": {
       "folderDoesntExists": "De folder die je probeert te openen bestaat niet!",
       "updateAvailable": "Nieuwe update beschikbaar! Downloaden...",
-      "updateDownloaded": "Update downloaded succesvol! Herstart VS Launcher om te updaten.",
+      "updateDownloaded": "Update downloaded succesvol! Herstart RiftLauncher om te updaten.",
       "downloading": "Download starten: {{downloadName}}!",
       "downloaded": "Downloaden voltooid: {{downloadName}}!",
       "downloadError": "Fout downloaden: {{downloadName}}!",

@@ -1,73 +1,66 @@
 import { useTranslation } from "react-i18next"
 
+import { installMod } from "@domain/mods/install"
+import type { InstallModResult, ModReleaseToInstall, InstalledModCopy } from "@domain/mods/install"
+import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import { createModInstallPorts, describeModInstallFailure } from "@renderer/features/mods/adapters/install"
+import { logMods } from "@renderer/features/moddb/adapters/log"
 
-export function useInstallMod(): ({
-  path,
-  mod,
-  release,
-  outName,
-  oldMod,
-  onFinish
-}: {
-  path: string
-  mod: DownloadableModType
-  release: DownloadableModReleaseType
+const LOG_TAG = "[front] [mods] [features/mods/hooks/useInstallMod.ts]"
+
+export interface InstallModOptions {
+  /** The installation folder. Its Mods subfolder is where the archive lands. */
+  installationPath: string
+  /** Name of the installation, shown in the task list. */
   outName: string
-  oldMod?: InstalledModType
-  onFinish?: () => void
-}) => Promise<void> {
+  /** Mod name as the ModDB publishes it, shown in the task list. */
+  modName: string
+  release: ModReleaseToInstall
+  /** The copy this install replaces, absent for a first install. */
+  existing?: InstalledModCopy
+  /** True while a backup or a restore holds the installation's folder. */
+  installationBusy?: boolean
+}
+
+/**
+ * Installs one mod, notifying and logging whatever went wrong.
+ *
+ * The returned promise settles when the archive is on disk or the attempt has failed, never when the
+ * download is merely queued. It used to resolve on enqueue while carrying no result, which is how
+ * the bulk updater ended up waiting on a callback that a failed download never fired: one dead
+ * download left the whole update spinning with no way out. Callers that do not want to wait can drop
+ * the promise, but they can no longer mistake one moment for the other.
+ */
+export function useInstallMod(): (options: InstallModOptions) => Promise<InstallModResult> {
   const { t } = useTranslation()
+  const { addNotification } = useNotificationsContext()
   const { startDownload } = useTaskContext()
 
-  /**
-   * Installs a mod. If there is an old mod it'll delete that one first.
-   *
-   * @param {Object} props
-   * @param {string} [props.path] Where to download the mod. /Mods will be added at the end.
-   * @param {DownloadableModType} [props.mod] Mod to download.
-   * @param {DownloadableModReleaseType} [props.release] Release to download.
-   * @param {string} [props.outName] Name of the Server or Installations where it'll be downloaded. Shown on the notification.
-   * @param {InstalledModType} [props.oldMod] Old mod to delete first.
-   * @param {() => void} [props.onFinish] Function to be calles before returning.
-   * @returns {Promise<void>}
-   */
-  async function installMod({
-    path,
-    mod,
-    release,
-    outName,
-    oldMod,
-    onFinish
-  }: {
-    path: string
-    mod: DownloadableModType
-    release: DownloadableModReleaseType
-    outName: string
-    oldMod?: InstalledModType
-    onFinish?: () => void
-  }): Promise<void> {
-    const installPath = await window.api.pathsManager.formatPath([path, "Mods"])
+  return async function runInstallMod(options: InstallModOptions): Promise<InstallModResult> {
+    const { installationPath, outName, modName, release, existing, installationBusy } = options
 
-    if (oldMod) await window.api.pathsManager.deletePath(oldMod.path)
+    const labels = { name: modName, version: `v${release.modversion}`, out: outName }
 
-    startDownload(
-      t("features.mods.modTaskName", { name: mod.name, version: `v${release.modversion}`, out: outName }),
-      t("features.mods.modDownloadDesc", { name: mod.name, version: `v${release.modversion}`, out: outName }),
-      "end",
-      release.mainfile,
-      installPath,
-      `${release.modidstr}-${release.modversion}`,
-      async (status, _path, error) => {
-        if (!status) {
-          window.api.utils.logMessage("error", `[front] [mods] [features/mods/hooks/useInstallMod.ts] [useInstallMod > installMod] Error downloading mod.`)
-          window.api.utils.logMessage("debug", `[front] [mods] [features/mods/hooks/useInstallMod.ts] [useInstallMod > installMod] Error downloading mod: ${error}`)
-          return
-        }
-        if (onFinish) onFinish()
-      }
-    )
+    const ports = createModInstallPorts({
+      startDownload,
+      taskName: t("features.mods.modTaskName", labels),
+      taskDescription: t("features.mods.modDownloadDesc", labels)
+    })
+
+    const result = await installMod(ports, { installationPath, release, existing, installationBusy })
+
+    if (result.ok) return result
+
+    const { messageKey, logged } = describeModInstallFailure(result.reason)
+
+    if (logged) {
+      logMods("error", `${LOG_TAG} [runInstallMod] Could not install the ${modName} Mod on ${outName}.`)
+      logMods("debug", `${LOG_TAG} [runInstallMod] Could not install ${release.modidstr} v${release.modversion} on ${installationPath}: ${result.reason}.`)
+    }
+
+    if (messageKey) addNotification(t(messageKey, { mod: modName }), "error")
+
+    return result
   }
-
-  return installMod
 }

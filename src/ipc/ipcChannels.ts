@@ -25,6 +25,7 @@ export const IPC_CHANNELS = {
   PATHS_MANAGER: {
     GET_CURRENT_USER_DATA_PATH: "get-current-user-data-path",
     DELETE_PATH: "delete-path",
+    MOVE_PATH: "move-path",
     FORMAT_PATH: "format-path",
     REMOVE_FILE_FROM_PATH: "remove-file-from-path",
     CHECK_PATH_EMPTY: "check-empty-path",

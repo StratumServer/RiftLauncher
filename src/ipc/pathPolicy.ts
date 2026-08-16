@@ -1,13 +1,12 @@
 import { app } from "electron"
 import fse from "fs-extra"
-import { dirname, isAbsolute, relative, resolve, sep } from "path"
+import { basename, dirname, resolve } from "path"
 
 import { getConfig } from "@src/config/configManager"
-import { assertNonRootPath } from "@src/ipc/validation"
+import type { PathGrant } from "@src/ipc/validation"
+import { assertNonRootPath, comparablePath, isPathGranted, isRestoreWorkspaceName } from "@src/ipc/validation"
 
-type ApprovedPath = {
-  path: string
-  descendants: boolean
+type ApprovedPath = PathGrant & {
   expiresAt: number
 }
 
@@ -19,16 +18,6 @@ type PathPolicyOptions = {
 const approvedPaths: ApprovedPath[] = []
 const APPROVAL_TTL_MS = 10 * 60 * 1_000
 
-function comparablePath(value: string): string {
-  const resolved = resolve(value)
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved
-}
-
-export function isPathWithin(root: string, candidate: string, allowRoot = true): boolean {
-  const relativePath = relative(comparablePath(root), comparablePath(candidate))
-  return (allowRoot && relativePath === "") || (relativePath !== "" && relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath))
-}
-
 function pruneApprovals(): void {
   const now = Date.now()
   for (let index = approvedPaths.length - 1; index >= 0; index--) {
@@ -37,6 +26,14 @@ function pruneApprovals(): void {
   }
 }
 
+/**
+ * Records what the user just picked in a native dialog, for ten minutes.
+ *
+ * A folder grants its subtree, since that is where the launcher will put an
+ * installation or a game version. Anything else grants the one path: a file the
+ * open dialog returned, or a file the save dialog named and that therefore does
+ * not exist yet.
+ */
 export function registerUserSelectedPaths(paths: readonly string[]): void {
   pruneApprovals()
   for (const pathValue of paths) {
@@ -61,36 +58,84 @@ export function registerUserSelectedPaths(paths: readonly string[]): void {
 
 export function isUserApprovedPath(pathValue: string): boolean {
   pruneApprovals()
-  return approvedPaths.some((approved) => isPathWithin(approved.path, pathValue, approved.descendants))
+  return isPathGranted(approvedPaths, pathValue)
 }
 
-function getConfiguredRoots(config: ConfigType): string[] {
+function toGrants(paths: readonly (string | undefined)[], descendants: boolean): PathGrant[] {
+  return paths.filter((pathValue): pathValue is string => typeof pathValue === "string" && pathValue.length > 0).map((pathValue) => ({ path: pathValue, descendants }))
+}
+
+/** The three folders the user points the launcher at. Everything under them is managed. */
+function getConfiguredFolders(config: ConfigType): string[] {
+  return [config.defaultInstallationsFolder, config.defaultVersionsFolder, config.backupsFolder]
+}
+
+/** The folders the launcher writes to inside its own user data folder. */
+function getLauncherFolders(): string[] {
+  return [resolve(app.getPath("userData"), "Logs"), resolve(app.getPath("userData"), "Cache"), resolve(app.getPath("userData"), "Icons")]
+}
+
+/**
+ * The individual entries the config names, as opposed to the folders they
+ * usually live in.
+ *
+ * Installations and game versions grant their subtree: the launcher reads and
+ * writes mods, saves, client settings and game files under them, and an
+ * installation the user put outside every configured folder still has to work.
+ * A backup grants its own path only. Every archive the launcher makes is a
+ * single `.zip` file (see makeInstallationBackup), so a path *under* one is
+ * never a path the launcher meant to reach.
+ */
+function getEntryGrants(config: ConfigType): PathGrant[] {
   return [
-    config.defaultInstallationsFolder,
-    config.defaultVersionsFolder,
-    config.backupsFolder,
-    ...config.installations.map((installation) => installation.path),
-    ...config.installations.flatMap((installation) => installation.backups.map((backup) => backup.path)),
-    ...config.gameVersions.map((gameVersion) => gameVersion.path),
-    resolve(app.getPath("userData"), "Logs"),
-    resolve(app.getPath("userData"), "Cache"),
-    resolve(app.getPath("userData"), "Icons")
-  ].filter((pathValue): pathValue is string => typeof pathValue === "string" && pathValue.length > 0)
+    ...toGrants(
+      config.installations.map((installation) => installation.path),
+      true
+    ),
+    ...toGrants(
+      config.gameVersions.map((gameVersion) => gameVersion.path),
+      true
+    ),
+    ...toGrants(
+      config.installations.flatMap((installation) => installation.backups.map((backup) => backup.path)),
+      false
+    )
+  ]
+}
+
+/** What `assertManagedPath` admits: the managed folders plus the entries the config names. */
+function getManagedPathGrants(config: ConfigType): PathGrant[] {
+  return [...toGrants([...getConfiguredFolders(config), ...getLauncherFolders()], true), ...getEntryGrants(config)]
+}
+
+/**
+ * What a *saved config* may declare an installation, game version or backup
+ * under, without the user having picked the place in a native dialog first.
+ *
+ * Narrower than `getManagedPathGrants` by the launcher's own folders: Logs,
+ * Cache and Icons are places the launcher writes, never places game data is
+ * declared to live, and leaving them in let a config save move an installation
+ * into them with no dialog at all.
+ */
+function getConfigDeclarationGrants(config: ConfigType): PathGrant[] {
+  return [...toGrants(getConfiguredFolders(config), true), ...getEntryGrants(config)]
+}
+
+/**
+ * The backup restore stages the archive next to the installation and sets the
+ * live folder aside beside it, so both temporary folders are siblings of a
+ * managed installation rather than children of a configured root. They are
+ * admitted by name only, and the name carries the installation folder name plus
+ * a generated token, so nothing that already exists on disk can be reached.
+ */
+function isRestoreWorkspaceOf(installationPath: string, candidate: string): boolean {
+  const root = comparablePath(installationPath)
+  const target = comparablePath(candidate)
+  return dirname(root) === dirname(target) && isRestoreWorkspaceName(basename(root), basename(target))
 }
 
 function getProtectedPaths(config: ConfigType): string[] {
-  return [
-    app.getPath("userData"),
-    app.getPath("appData"),
-    app.getPath("home"),
-    app.getAppPath(),
-    config.defaultInstallationsFolder,
-    config.defaultVersionsFolder,
-    config.backupsFolder,
-    resolve(app.getPath("userData"), "Logs"),
-    resolve(app.getPath("userData"), "Cache"),
-    resolve(app.getPath("userData"), "Icons")
-  ]
+  return [app.getPath("userData"), app.getPath("appData"), app.getPath("home"), app.getAppPath(), ...getConfiguredFolders(config), ...getLauncherFolders()]
 }
 
 function assertNoSymlinkComponents(pathValue: string): void {
@@ -117,10 +162,10 @@ function assertNoSymlinkComponents(pathValue: string): void {
 export async function assertManagedPath(value: unknown, name = "path", options: PathPolicyOptions = {}): Promise<string> {
   const pathValue = resolve(assertNonRootPath(value, name))
   const config = await getConfig()
-  const roots = getConfiguredRoots(config)
-  const isConfiguredPath = roots.some((root) => isPathWithin(root, pathValue))
+  const isConfiguredPath = isPathGranted(getManagedPathGrants(config), pathValue)
   const isApprovedPath = options.allowApprovedSelection !== false && isUserApprovedPath(pathValue)
-  if (!isConfiguredPath && !isApprovedPath) throw new TypeError(`Unmanaged ${name}`)
+  const isRestoreWorkspace = config.installations.some((installation) => isRestoreWorkspaceOf(installation.path, pathValue))
+  if (!isConfiguredPath && !isApprovedPath && !isRestoreWorkspace) throw new TypeError(`Unmanaged ${name}`)
 
   if (!options.allowMissing && !fse.existsSync(pathValue)) throw new TypeError(`Missing ${name}`)
   assertNoSymlinkComponents(pathValue)
@@ -135,7 +180,7 @@ export async function assertManagedDeletionPath(value: unknown): Promise<string>
 }
 
 export async function assertConfigPathsAuthorized(nextConfig: ConfigType, currentConfig: ConfigType): Promise<boolean> {
-  const existingRoots = getConfiguredRoots(currentConfig)
+  const existingGrants = getConfigDeclarationGrants(currentConfig)
   const candidatePaths = [
     nextConfig.defaultInstallationsFolder,
     nextConfig.defaultVersionsFolder,
@@ -147,6 +192,6 @@ export async function assertConfigPathsAuthorized(nextConfig: ConfigType, curren
 
   return candidatePaths.every((candidatePath) => {
     if (!candidatePath) return false
-    return existingRoots.some((existingRoot) => isPathWithin(existingRoot, candidatePath)) || isUserApprovedPath(candidatePath)
+    return isPathGranted(existingGrants, candidatePath) || isUserApprovedPath(candidatePath)
   })
 }

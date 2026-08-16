@@ -22,7 +22,7 @@ declare global {
     }
     configManager: {
       getConfig: () => Promise<ConfigType>
-      saveConfig: (configJson: ConfigType) => Promise<boolean>
+      saveConfig: (configJson: ConfigType) => Promise<SaveConfigResult>
     }
     modsManager: {
       getInstalledMods: (path: string) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }>
@@ -34,13 +34,14 @@ declare global {
       formatPath: (parts: string[]) => Promise<string>
       removeFileFromPath(path: string): Promise<string>
       deletePath: (path: string) => Promise<boolean>
+      movePath: (fromPath: string, toPath: string) => Promise<boolean>
       checkPathEmpty: (path: string) => Promise<boolean>
       checkPathExists: (path: string) => Promise<boolean>
       ensurePathExists: (path: string) => Promise<boolean>
       openPathOnFileExplorer: (path: string) => Promise<void>
       downloadOnPath: (id: string, url: string, outputPath: string, fileName: string) => Promise<string>
       extractOnPath: (id: string, filePath: string, outputPath: string, deleteZip: boolean) => Promise<boolean>
-      runInstaller: (id: string, filePath: string, outputPath: string, deleteInstaller: boolean) => Promise<boolean>
+      runInstaller: (id: string, filePath: string, outputPath: string, deleteInstaller: boolean) => Promise<InstallerRunResult>
       compressOnPath: (id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel?: number) => Promise<boolean>
       onDownloadProgress: (callback: ProgressCallback) => Unsubscribe
       onExtractProgress: (callback: ProgressCallback) => Unsubscribe
@@ -49,18 +50,14 @@ declare global {
       copyToIcons: (path: string, name: string) => Promise<{ status: true; file: string } | { status: false }>
     }
     gameManager: {
-      executeGame: (version: GameVersionType, installation: InstallationType) => Promise<boolean>
-      lookForAGameVersion: (path: string) => Promise<{ exists: boolean; installedGameVersion: string | undefined }>
+      executeGame: (version: GameVersionType, installation: InstallationType) => Promise<GameExecutionResult>
+      lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }>
     }
     netManager: {
       queryURL: (url: string) => Promise<string>
     }
     accountManager: {
-      login: (
-        email: string,
-        password: string,
-        twoFactorCode?: string
-      ) => Promise<{ status: "success"; account: AccountPublicType } | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" }>
+      login: (email: string, password: string, twoFactorCode?: string) => Promise<AccountLoginResult>
       logout: () => Promise<boolean>
     }
   }

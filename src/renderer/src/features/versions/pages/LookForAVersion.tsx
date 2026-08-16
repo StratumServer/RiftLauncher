@@ -1,10 +1,8 @@
-import { useRef, useState } from "react"
+import { useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router-dom"
 import { PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
 
-import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
+import { useLookForAVersion } from "@renderer/features/versions/hooks/useLookForAVersion"
 
 import {
   ButtonsWrapper,
@@ -24,37 +22,9 @@ import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuB
 
 function LookForAVersion(): JSX.Element {
   const { t } = useTranslation()
-  const { addNotification } = useNotificationsContext()
-  const { config, configDispatch } = useConfigContext()
-  const navigate = useNavigate()
-
-  const [folder, setFolder] = useState<string>("")
-  const [versionFound, setVersionFound] = useState<string>("")
+  const { folder, versionFound, detectFolder, addVersion } = useLookForAVersion()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
-
-  const handleAddVersion = async (): Promise<void> => {
-    try {
-      if (!folder || !versionFound) return addNotification(t("features.versions.missingFolderOrVersion"), "error")
-
-      if (config.gameVersions.some((gv) => gv.version === versionFound)) return addNotification(t("features.versions.versionAlreadyInstalled", { version: versionFound }), "error")
-
-      const newGameVersion: GameVersionType = {
-        version: versionFound,
-        path: folder
-      }
-
-      configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: newGameVersion })
-      addNotification(t("features.versions.versionSuccessfullyAdded", { version: versionFound }), "success")
-      navigate("/versions")
-    } catch (err) {
-      window.api.utils.logMessage("error", `[front] [mods] [features/versions/pages/LookForAVersion.tsx] [LookForAVersion > handleAddVersion] Error looking for a version.`)
-      window.api.utils.logMessage("debug", `[front] [mods] [features/versions/pages/LookForAVersion.tsx] [LookForAVersion> handleAddVersion] Error looking for a version: ${err}`)
-    } finally {
-      setFolder("")
-      setVersionFound("")
-    }
-  }
 
   return (
     <ScrollableContainer ref={scrollRef}>
@@ -87,26 +57,7 @@ function LookForAVersion(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton
-                    onClick={async () => {
-                      const path = await window.api.utils.selectFolderDialog()
-                      const selectedPath = path[0]
-                      if (selectedPath && selectedPath.length > 0) {
-                        const res = await window.api.gameManager.lookForAGameVersion(selectedPath)
-
-                        if (!res.exists) {
-                          setFolder("")
-                          setVersionFound("")
-                          return addNotification(t("features.versions.noVersionFoundOnThatFolder"), "error")
-                        }
-
-                        setFolder(selectedPath)
-                        setVersionFound(res.installedGameVersion as string)
-                      }
-                    }}
-                    title={t("generic.browse")}
-                    className="px-2 py-1"
-                  >
+                  <FormButton onClick={detectFolder} title={t("generic.browse")} className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText value={folder} placeholder={t("generic.folder")} readOnly className="w-full" />
@@ -129,7 +80,7 @@ function LookForAVersion(): JSX.Element {
             <FormLinkButton to="/versions" title={t("generic.cancel")} type="error" className="p-2">
               <PiXCircleDuotone />
             </FormLinkButton>
-            <FormButton onClick={handleAddVersion} title={t("generic.add")} type="success" className="p-2">
+            <FormButton onClick={addVersion} title={t("generic.add")} type="success" className="p-2">
               <PiFloppyDiskBackDuotone />
             </FormButton>
           </ButtonsWrapper>

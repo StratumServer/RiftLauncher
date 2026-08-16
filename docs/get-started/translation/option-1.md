@@ -34,12 +34,11 @@ Don't translate things like \`\{{name\}}\`, \<button /> and things like that. Th
 
 {% step %}
 
-### **Send it on Discord**
+### **Send it**
 
-Once you've finished the translation just send it to me on the mod forum post on the [official Vintage Story Discord server](https://discordapp.com/channels/302152934249070593/1314991001571557488) with this info:
+Once you've finished the translation, open a pull request against the [RiftLauncher repository](https://github.com/StratumServer/RiftLauncher) with your translated file, or share it on the [Stratum Discord server](https://discord.gg/vQm6z2urZs) with this info:
 
 ```
-<@556249326951727115>
 Name for credits: Your name or Anonymous
 Lang code: es-ES, en-US, fr-FR...
 Lang name: Español (España), English, Français...
@@ -48,6 +47,6 @@ Lang name: Español (España), English, Français...
 {% endstep %}
 {% endstepper %}
 
-And that's it! I'll download and add the file on the next update.
+And that's it! The file will be reviewed and added on the next update.
 
-If I find something wrong with translations I'll ping you back on the same channel.
+If something is wrong with the translation, you'll be contacted back on the same channel.

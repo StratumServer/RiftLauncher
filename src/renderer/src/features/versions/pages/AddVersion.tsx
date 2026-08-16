@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Input } from "@headlessui/react"
-import { useNavigate } from "react-router-dom"
 import { FiLoader } from "react-icons/fi"
 import { PiDownloadDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
 
-import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
-import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
-import { compareVersions } from "@renderer/utils/semver"
+import { useGameVersions, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
+import { useGameVersionCatalog } from "@renderer/features/versions/hooks/useGameVersionCatalog"
+import { useVersionInstallFolder } from "@renderer/features/versions/hooks/useVersionInstallFolder"
+import { useInstallVersion } from "@renderer/features/versions/hooks/useInstallVersion"
 
 import {
   FormBody,
@@ -25,131 +24,26 @@ import {
 } from "@renderer/components/ui/FormComponents"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
-
-// Official public API: https://api.vintagestory.at/{stable,unstable}.json
-// Shape: { [version]: { [platform]: { urls: { cdn, local }, ... } } }
-type RawPlatform = { urls: { cdn: string; local: string } }
-type RawVersions = Record<string, Record<string, RawPlatform>>
-const VS_API = "https://api.vintagestory.at"
-
-function deriveType(version: string): DownloadableGameVersionTypeType["type"] {
-  if (version.includes("-rc")) return "rc"
-  if (version.includes("-pre")) return "pre"
-  return "stable"
-}
-
-function parseGameVersions(stable: RawVersions, unstable: RawVersions): DownloadableGameVersionTypeType[] {
-  return Object.entries({ ...unstable, ...stable })
-    .map(([version, p]) => ({
-      version,
-      type: deriveType(version),
-      windows: p.windows?.urls.cdn ?? "",
-      linux: p.linux?.urls.cdn ?? "",
-      mac: (p["mac-arm64"] ?? p["mac-x64"])?.urls.cdn ?? ""
-    }))
-    .sort((a, b) => compareVersions(b.version, a.version))
-}
+import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 function AddVersion(): JSX.Element {
   const { t } = useTranslation()
-  const { addNotification } = useNotificationsContext()
-  const { config, configDispatch } = useConfigContext()
-  const { startDownload, startExtract, startInstall } = useTaskContext()
-  const navigate = useNavigate()
+  const installedGameVersions = useGameVersions()
+  const settings = useSettingsConfig()
 
-  const [gameVersions, setGameVersions] = useState<DownloadableGameVersionTypeType[]>([])
+  const { gameVersions, loading, failed, retry } = useGameVersionCatalog()
   const [version, setVersion] = useState<DownloadableGameVersionTypeType | undefined>()
-  const [folder, setFolder] = useState<string>("")
-  const [folderByUser, setFolderByUser] = useState<boolean>(false)
   const [versionFilters, setVersionFilters] = useState({ stable: true, rc: false, pre: false })
+  const { folder, setFolder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder)
+  const installVersion = useInstallVersion()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    ;(async (): Promise<void> => {
-      try {
-        const [stableResponse, unstableResponse] = await Promise.all([fetch(`${VS_API}/stable.json`), fetch(`${VS_API}/unstable.json`)])
-        if (!stableResponse.ok || !unstableResponse.ok) throw new Error("Game version API request failed")
-        const [stable, unstable] = (await Promise.all([stableResponse.json(), unstableResponse.json()])) as [RawVersions, RawVersions]
-        setGameVersions(parseGameVersions(stable, unstable))
-      } catch (err) {
-        window.api.utils.logMessage("error", `[front] [mods] [features/versions/pages/AddVersion.tsx] [AddVersion] Error fetching game versions.`)
-        window.api.utils.logMessage("debug", `[front] [mods] [features/versions/pages/AddVersion.tsx] [AddVersion] Error fetching game versions: ${err}`)
-      }
-    })()
-  }, [])
-
-  useEffect(() => {
-    ;(async (): Promise<void> => {
-      if (version && !folderByUser) setFolder(await window.api.pathsManager.formatPath([config.defaultVersionsFolder, version.version]))
-    })()
-  }, [version])
-
-  useEffect(() => {
-    setVersion(gameVersions.find((gv) => versionFilters[gv.type] && !config.gameVersions.some((igv) => igv.version === gv.version)))
+    setVersion(gameVersions.find((gv) => versionFilters[gv.type] && !installedGameVersions.some((igv) => igv.version === gv.version)))
   }, [gameVersions, versionFilters])
 
-  const handleInstallVersion = async (): Promise<void> => {
-    if (!version) return addNotification(t("features.versions.noVersionSelected"), "error")
-
-    if (config.gameVersions.some((igv) => igv.version === version.version)) return addNotification(t("features.versions.versionAlreadyInstalled", { version: version.version }), "error")
-
-    if (folder === config.backupsFolder || config.gameVersions.some((gv) => gv.path === folder) || config.installations.some((i) => i.path === folder))
-      return addNotification(t("features.versions.folderAlreadyInUse"), "error")
-
-    const os = await window.api.utils.getOs()
-    const url = os === "win32" ? version.windows : os === "darwin" ? version.mac : version.linux
-
-    const newGameVersion: GameVersionType = {
-      version: version.version,
-      path: folder,
-      _installing: true
-    }
-
-    configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: newGameVersion })
-    navigate("/versions")
-
-    const onUnpacked = (status: boolean): void => {
-      if (!status) return configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: newGameVersion.version } })
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: newGameVersion.version, updates: { _installing: undefined } } })
-    }
-
-    startDownload(
-      t("features.versions.gameVersionTaskName", { version: newGameVersion.version }),
-      t("features.versions.gameVersionDownloadDesc", { version: newGameVersion.version }),
-      "all",
-      url,
-      folder,
-      version.version,
-      (status, path) => {
-        if (!status) return configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: newGameVersion.version } })
-
-        // Windows ships an Inno Setup installer (run silently); Linux/Mac ship a portable archive (extract).
-        if (os === "win32") {
-          startInstall(
-            t("features.versions.gameVersionTaskName", { version: newGameVersion.version }),
-            t("features.versions.gameVersionExtractDesc", { version: newGameVersion.version }),
-            "all",
-            path,
-            folder,
-            true,
-            onUnpacked
-          )
-        } else {
-          startExtract(
-            t("features.versions.gameVersionTaskName", { version: newGameVersion.version }),
-            t("features.versions.gameVersionExtractDesc", { version: newGameVersion.version }),
-            "all",
-            path,
-            folder,
-            true,
-            onUnpacked
-          )
-        }
-      }
-    )
-  }
+  const handleInstallVersion = (): Promise<void> => installVersion(version, folder)
 
   return (
     <ScrollableContainer ref={scrollRef}>
@@ -216,7 +110,12 @@ function AddVersion(): JSX.Element {
                     </TableHeadRow>
                   </TableHead>
 
-                  {gameVersions.length === 0 ? (
+                  {failed ? (
+                    <div className="flex flex-col items-center justify-center gap-2 py-10">
+                      <p className="text-sm text-zinc-400">{t("features.versions.catalogLoadFailed")}</p>
+                      <ReloadButton onClick={retry} reloading={loading} />
+                    </div>
+                  ) : gameVersions.length === 0 ? (
                     <div className="flex items-center justify-center py-10">
                       <FiLoader className="animate-spin text-3xl text-zinc-400" />
                     </div>
@@ -228,8 +127,8 @@ function AddVersion(): JSX.Element {
                             <TableBodyRow
                               key={gv.version}
                               selected={version?.version === gv.version}
-                              disabled={config.gameVersions.some((igv) => igv.version === gv.version)}
-                              onClick={() => !config.gameVersions.find((igv) => igv.version === gv.version) && setVersion(gv)}
+                              disabled={installedGameVersions.some((igv) => igv.version === gv.version)}
+                              onClick={() => !installedGameVersions.find((igv) => igv.version === gv.version) && setVersion(gv)}
                             >
                               <TableCell className="w-1/2">{gv.version}</TableCell>
                               <TableCell className="w-1/2">{gv.type}</TableCell>
@@ -249,20 +148,7 @@ function AddVersion(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton
-                    onClick={async () => {
-                      const path = await window.api.utils.selectFolderDialog()
-                      const selectedPath = path[0]
-                      if (selectedPath && selectedPath.length > 0) {
-                        if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
-
-                        setFolder(selectedPath)
-                        setFolderByUser(true)
-                      }
-                    }}
-                    title={t("generic.browse")}
-                    className="px-2 py-1"
-                  >
+                  <FormButton onClick={browseFolder} title={t("generic.browse")} className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText placeholder={t("features.versions.versionFolder")} value={folder} onChange={(e) => setFolder(e.target.value)} className="w-full" />

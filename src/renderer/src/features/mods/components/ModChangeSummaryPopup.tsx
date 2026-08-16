@@ -2,11 +2,12 @@ import { useTranslation } from "react-i18next"
 import { FiExternalLink } from "react-icons/fi"
 import { PiArrowRightDuotone, PiCheckCircleDuotone, PiMinusCircleDuotone } from "react-icons/pi"
 
-import { compareVersions } from "@renderer/utils/semver"
+import { compareVersions } from "@domain/versionNumbers"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { NormalButton } from "@renderer/components/ui/Buttons"
+import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
 
 function toVersionColor(entry: ModChangeSummaryEntry): string {
   if (!entry.toVersion) return "text-red-400"
@@ -16,6 +17,7 @@ function toVersionColor(entry: ModChangeSummaryEntry): string {
 
 function ModChangeSummaryPopup({ isOpen, close, title, entries }: { isOpen: boolean; close: () => void; title: string; entries: ModChangeSummaryEntry[] }): JSX.Element {
   const { t } = useTranslation()
+  const { openModOnModDb } = useExternalLinks()
 
   return (
     <PopupDialogPanel title={title} isOpen={isOpen} close={close} fixedWidth={false}>
@@ -49,7 +51,7 @@ function ModChangeSummaryPopup({ isOpen, close, title, entries }: { isOpen: bool
                   </TableCell>
                   <TableCell className="w-2/12 flex justify-center">
                     {entry.assetid && (
-                      <NormalButton className="p-1" title={t("features.mods.openOnTheModDB")} onClick={() => window.api.utils.openOnBrowser(`https://mods.vintagestory.at/show/mod/${entry.assetid}`)}>
+                      <NormalButton className="p-1" title={t("features.mods.openOnTheModDB")} onClick={() => entry.assetid && openModOnModDb(entry.assetid)}>
                         <FiExternalLink />
                       </NormalButton>
                     )}

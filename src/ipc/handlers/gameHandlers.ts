@@ -3,13 +3,36 @@ import { spawn } from "child_process"
 import fse from "fs-extra"
 import { join } from "path"
 import os from "os"
-import { logMessage } from "@src/utils/logManager"
+import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
 import { parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
 import { getAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
+import { detectInstalledGameVersion } from "@domain/versions/detect"
+import { buildGameLaunchPlan } from "@domain/versions/launch"
+import { CLIENT_SETTINGS_FILE_NAME, writeClientSettingsSession } from "@domain/account/clientSettings"
+import {
+  gameProcessOutcomeToResult,
+  invalidExecutableResult,
+  invalidRequestResult,
+  launchPlanFailureResult,
+  noExecutableResult,
+  sessionWriteFailedResult
+} from "@src/ipc/handlers/gameExecutionOutcome"
+import type {
+  GameProcess,
+  GameProcessOutcome,
+  GameProcessRequest,
+  JsonFile,
+  JsonFileReadResult,
+  JsonFileWriteResult,
+  PathBuilder,
+  ProcessProbe,
+  ProcessProbeOutcome,
+  ProcessProbeRequest
+} from "@domain/ports"
 
 async function assertExecutable(pathValue: string): Promise<string> {
   const stats = await fse.lstat(pathValue)
@@ -17,7 +40,90 @@ async function assertExecutable(pathValue: string): Promise<string> {
   return pathValue
 }
 
-ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: unknown, installation: unknown): Promise<boolean> => {
+const paths: PathBuilder = { join: async (parts: string[]): Promise<string> => join(...parts) }
+
+/**
+ * Whole-document JSON reads and writes, with a missing file reported as an
+ * absent document rather than as a failure.
+ *
+ * The split matters for the game's settings file: no file means the launcher
+ * writes a fresh one, a file that exists but holds no readable JSON means it
+ * writes nothing at all.
+ */
+function realJsonFile(): JsonFile {
+  return {
+    read: async (path: string): Promise<JsonFileReadResult> => {
+      try {
+        if (!(await fse.pathExists(path))) return { ok: true, document: undefined }
+        return { ok: true, document: await fse.readJSON(path, "utf-8") }
+      } catch (err) {
+        return { ok: false, error: getErrorMessage(err) }
+      }
+    },
+    write: async (path: string, document: unknown): Promise<JsonFileWriteResult> => {
+      try {
+        await fse.writeJSON(path, document)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: getErrorMessage(err) }
+      }
+    }
+  }
+}
+
+/**
+ * Runs the game and resolves when the player closes it.
+ *
+ * Stdout is drained and thrown away so a chatty game can never fill its pipe
+ * and block on it, stderr is logged in verbose truncated to 2 KiB, and the exit
+ * code is reported without being judged: Vintage Story exits non-zero often
+ * enough that reading that as a failed launch would tell a player their session
+ * went wrong after they closed it themselves.
+ */
+function realGameProcess(): GameProcess {
+  return {
+    run: async (request: GameProcessRequest): Promise<GameProcessOutcome> =>
+      new Promise<GameProcessOutcome>((resolve) => {
+        let settled = false
+
+        const settle = (outcome: GameProcessOutcome): void => {
+          if (settled) return
+          settled = true
+          resolve(outcome)
+        }
+
+        const externalApp = spawn(request.command, request.args, { env: { ...request.env }, cwd: request.cwd, shell: false, windowsHide: true })
+
+        externalApp.stdout.resume()
+
+        externalApp.stderr.on("data", (data) => {
+          logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story threw an error! Check verbose logs for more info.`)
+          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${data.toString().slice(0, 2_048)}`)
+        })
+
+        externalApp.on("close", (code) => settle({ started: true, exitCode: code }))
+
+        externalApp.on("error", (error) => {
+          logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error running Vintage Story.`)
+          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${error}`)
+          settle({ started: false, error: getErrorMessage(error) })
+        })
+      })
+  }
+}
+
+/**
+ * Starts a game version with an installation and resolves when the player quits.
+ *
+ * Resolves a typed {@link GameExecutionResult}: `ok: true` once the game
+ * exits, whatever exit code it exits with, `ok: false` with a reason when it
+ * never ran. Every refusal below is a flow a player can reach through normal
+ * use, so all of them resolve rather than reject. The checks ahead of them
+ * (trusted sender, request shape, managed paths) stay throws: those guard
+ * against a hostile renderer, not against a player whose game would not
+ * start, and turning them into reasons would blur that line.
+ */
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: unknown, installation: unknown): Promise<GameExecutionResult> => {
   assertTrustedIpcSender(event)
   const safeVersion = validateGameVersion(version)
   const safeInstallation = validateGameInstallation(installation)
@@ -27,220 +133,193 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   const accountSecrets = account ? await getAccountSecrets() : null
   logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Trying to run Vintage Story ${safeVersion.version}.`)
 
-  const processEnv = parseSafeEnvironment(safeInstallation.envVars)
-
-  let command: string
-  let params: string[]
-  let env: NodeJS.ProcessEnv = { ...process.env, ...processEnv }
-
-  if (os.platform() === "linux") {
-    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Linux platform detected.`)
-
-    try {
-      const files = await fse.readdir(safeVersion.path)
-
-      if (files.includes("Vintagestory")) {
-        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintagestory found.`)
-        command = await assertExecutable(join(safeVersion.path, "Vintagestory"))
-        params = [`--dataPath=${safeInstallation.path}`, safeInstallation.startParams]
-        if (safeInstallation.mesaGlThread) env = { ...env, MESA_GLTHREAD: "true" }
-      } else if (files.includes("Vintagestory.exe")) {
-        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintagestory.exe found.`)
-        command = "mono"
-        params = [await assertExecutable(join(safeVersion.path, "Vintagestory.exe")), `--dataPath=${safeInstallation.path}`, safeInstallation.startParams]
-      } else {
-        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Couldn't find a way to run Vintage Story, aborting...`)
-        return false
-      }
-    } catch (err) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story.`)
-      logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story: ${err}`)
-      return false
-    }
-  } else if (os.platform() === "win32") {
-    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Windows platform detected.`)
-
-    try {
-      const files = await fse.readdir(safeVersion.path)
-
-      if (files.includes("Vintagestory.exe")) {
-        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintagestory found.`)
-        command = await assertExecutable(join(safeVersion.path, "Vintagestory.exe"))
-        params = [`--dataPath=${safeInstallation.path}`, safeInstallation.startParams]
-      } else {
-        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Couldn't find a way to run Vintage Story, aborting...`)
-        return false
-      }
-    } catch (err) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story.`)
-      logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story: ${err}`)
-      return false
-    }
-  } else if (os.platform() === "darwin") {
-    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] MacOS platform detected. Not yet supported.`)
-    return false
-  } else {
-    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Not platform detected.`)
-    return false
+  let processEnv: Record<string, string>
+  try {
+    processEnv = parseSafeEnvironment(safeInstallation.envVars)
+  } catch (err) {
+    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused invalid environment variables for this installation.`)
+    logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
+    return invalidRequestResult()
   }
 
-  if (command && params) {
-    if (account && accountSecrets) {
-      logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Logged in. Setting session keys.`)
+  let fileNames: string[]
+  try {
+    fileNames = await fse.readdir(safeVersion.path)
+  } catch (err) {
+    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story.`)
+    logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story: ${getErrorMessage(err)}`)
+    return noExecutableResult()
+  }
 
-      try {
-        const clientsettingsPath = await assertManagedPath(join(safeInstallation.path, "clientsettings.json"), "client settings", { allowMissing: true })
-        const clientsettings = (await fse.pathExists(clientsettingsPath)) ? await fse.readJSON(clientsettingsPath, "utf-8") : {}
-        const stringSettings =
-          clientsettings && typeof clientsettings === "object" && !Array.isArray(clientsettings) && typeof clientsettings.stringSettings === "object" && clientsettings.stringSettings !== null
-            ? clientsettings.stringSettings
-            : {}
+  const planned = await buildGameLaunchPlan(
+    { paths },
+    {
+      platform: os.platform(),
+      versionFolder: safeVersion.path,
+      fileNames,
+      installationPath: safeInstallation.path,
+      startParams: safeInstallation.startParams,
+      mesaGlThread: safeInstallation.mesaGlThread
+    }
+  )
 
-        await fse.writeJSON(clientsettingsPath, {
-          ...clientsettings,
-          stringSettings: {
-            ...stringSettings,
-            mptoken: accountSecrets.mptoken,
-            sessionkey: accountSecrets.sessionKey,
-            sessionsignature: accountSecrets.sessionSignature,
-            useremail: account.email,
-            entitlements: account.playerEntitlements,
-            playeruid: account.playerUid,
-            playername: account.playerName,
-            hostgameserver: account.hostGameServer
-          }
-        })
-      } catch (err) {
-        logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
-        logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${err}`)
-        return false
-      }
+  if (!planned.ok) {
+    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Couldn't find a way to run Vintage Story on ${os.platform()} (${planned.reason}), aborting...`)
+    return launchPlanFailureResult(planned.reason)
+  }
+
+  const plan = planned.plan
+
+  try {
+    await assertExecutable(plan.executablePath)
+  } catch (err) {
+    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused to run an invalid game executable.`)
+    logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
+    return invalidExecutableResult()
+  }
+
+  if (account && accountSecrets) {
+    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Logged in. Setting session keys.`)
+
+    let settingsPath: string
+    try {
+      settingsPath = await assertManagedPath(join(safeInstallation.path, CLIENT_SETTINGS_FILE_NAME), "client settings", { allowMissing: true })
+    } catch (err) {
+      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
+      logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused the client settings path: ${getErrorMessage(err)}`)
+      return sessionWriteFailedResult()
     }
 
-    logMessage("info", "[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable.")
+    const written = await writeClientSettingsSession(
+      { jsonFile: realJsonFile() },
+      {
+        settingsPath,
+        session: {
+          mptoken: accountSecrets.mptoken,
+          sessionKey: accountSecrets.sessionKey,
+          sessionSignature: accountSecrets.sessionSignature,
+          email: account.email,
+          playerEntitlements: account.playerEntitlements,
+          playerUid: account.playerUid,
+          playerName: account.playerName,
+          hostGameServer: account.hostGameServer
+        }
+      }
+    )
 
-    return new Promise((resolve, reject) => {
-      const externalApp = spawn(command, params, { env, cwd: safeVersion.path, shell: false, windowsHide: true })
-
-      externalApp.stdout.resume()
-
-      externalApp.stderr.on("data", (data) => {
-        logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story threw an error! Check verbose logs for more info.`)
-        logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${data.toString().slice(0, 2_048)}`)
-      })
-
-      externalApp.on("close", (code) => {
-        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story closed: ${code}`)
-        resolve(true)
-      })
-
-      externalApp.on("error", (error) => {
-        logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error running Vintage Story.`)
-        logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${error}`)
-        reject(false)
-      })
-    })
-  } else {
-    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] No command or params found.`)
-    return false
+    if (!written.ok) {
+      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
+      logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${written.reason}.`)
+      return sessionWriteFailedResult()
+    }
   }
+
+  logMessage("info", "[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable.")
+
+  const outcome = await realGameProcess().run({ command: plan.command, args: plan.args, env: { ...process.env, ...processEnv, ...plan.env }, cwd: plan.cwd })
+
+  if (!outcome.started) logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Failed to run Vintage Story: ${outcome.error ?? "unknown error"}.`)
+  else logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
+
+  return gameProcessOutcomeToResult(outcome)
 })
 
-ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, path: unknown) => {
+type LookForAGameVersionResult = { exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }
+
+const NOT_FOUND: LookForAGameVersionResult = { exists: false }
+
+/** How long a probed executable is given to print its version before it is treated as hung. */
+const LOOK_FOR_A_GAME_VERSION_PROBE_TIMEOUT_MS = 10_000
+
+/**
+ * Spawns one process and reports what it printed to stdout, bounded by
+ * {@link LOOK_FOR_A_GAME_VERSION_PROBE_TIMEOUT_MS}.
+ *
+ * The timeout is the one deliberate behavior change from the handler this
+ * replaced: the previous implementation had nothing stopping it from waiting
+ * on a hung game binary forever, which meant the "look for a version" dialog
+ * could hang with it. Everything else here mirrors what that handler did:
+ * the executable is validated with the same {@link assertExecutable} check
+ * EXECUTE_GAME uses, stderr is logged but never fails the probe on its own,
+ * and the process is run with `shell: false` and `windowsHide: true`.
+ */
+function realProcessProbe(): ProcessProbe {
+  return {
+    run: async (request: ProcessProbeRequest): Promise<ProcessProbeOutcome> => {
+      try {
+        await assertExecutable(request.command === "mono" ? (request.args[0] ?? "") : request.command)
+      } catch (err) {
+        logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Refused to probe an invalid executable.`)
+        logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
+        return { ok: false, stdout: "", error: getErrorMessage(err) }
+      }
+
+      return new Promise<ProcessProbeOutcome>((resolve) => {
+        logMessage("info", "[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Checking Vintage Story with a validated executable.")
+
+        let stdout = ""
+        let settled = false
+
+        const settle = (outcome: ProcessProbeOutcome): void => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve(outcome)
+        }
+
+        const externalApp = spawn(request.command, request.args, { shell: false, windowsHide: true })
+
+        const timer = setTimeout(() => {
+          logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Timed out waiting for Vintage Story to report its version.`)
+          externalApp.kill()
+          settle({ ok: false, stdout, error: "Timed out waiting for a response." })
+        }, LOOK_FOR_A_GAME_VERSION_PROBE_TIMEOUT_MS)
+
+        externalApp.stdout.on("data", (data) => {
+          stdout += data.toString()
+        })
+
+        externalApp.stderr.on("data", (data) => {
+          logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintage Story threw an error! Check verbose logs for more info.`)
+          logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${data}`)
+        })
+
+        externalApp.on("close", (code) => {
+          logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintage Story closed: ${code}`)
+          settle({ ok: true, stdout })
+        })
+
+        externalApp.on("error", (error) => {
+          logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for the Vintage Story version.`)
+          logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${error}`)
+          settle({ ok: false, stdout, error: getErrorMessage(error) })
+        })
+      })
+    }
+  }
+}
+
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, path: unknown): Promise<LookForAGameVersionResult> => {
   assertTrustedIpcSender(event)
   const safePath = await assertManagedPath(path, "game version path", { allowMissing: true })
-  logMessage("info", `[component] [look-for-a-game-version] Looking for the game at ${safePath}`)
+  logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Looking for the game at ${safePath}`)
 
-  let command: string
-  let params: string[]
-
-  const res: { exists: boolean; installedGameVersion: string | undefined } = { exists: false, installedGameVersion: undefined }
-
-  if (os.platform() === "linux") {
-    logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Linux platform detected.`)
-
-    try {
-      const files = await fse.readdir(safePath)
-
-      if (files.includes("Vintagestory")) {
-        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintagestory found.`)
-        command = await assertExecutable(join(safePath, "Vintagestory"))
-        params = [`-v`]
-      } else if (files.includes("Vintagestory.exe")) {
-        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintagestory.exe found.`)
-        command = "mono"
-        params = [await assertExecutable(join(safePath, "Vintagestory.exe")), `-v`]
-      } else {
-        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Couldn't find Vintage Story on that folder.`)
-        return false
-      }
-    } catch (err) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for Vintage Story.`)
-      logMessage("verbose", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for Vintage Story: ${err}`)
-      return false
-    }
-  } else if (os.platform() === "win32") {
-    logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Windows platform detected.`)
-
-    try {
-      const files = await fse.readdir(safePath)
-
-      if (files.includes("Vintagestory.exe")) {
-        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintagestory found.`)
-        command = await assertExecutable(join(safePath, "Vintagestory.exe"))
-        params = [`-v`]
-      } else {
-        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Couldn't find Vintage Story on that folder.`)
-        return false
-      }
-    } catch (err) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for Vintage Story.`)
-      logMessage("verbose", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for Vintage Story: ${err}`)
-      return false
-    }
-  } else if (os.platform() === "darwin") {
-    logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] MacOS platform detected. Not yet supported.`)
-    return false
-  } else {
-    logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Not platform detected.`)
-    return false
+  let fileNames: string[]
+  try {
+    fileNames = await fse.readdir(safePath)
+  } catch (err) {
+    logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error reading the folder.`)
+    logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
+    return NOT_FOUND
   }
 
-  if (command && params) {
-    const checkGameVersion = await new Promise<string | undefined>((resolve, reject) => {
-      logMessage("info", "[back] [ipc] [ipc/handlers/gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Checking Vintage Story with a validated executable.")
+  const result = await detectInstalledGameVersion({ paths, processProbe: realProcessProbe() }, { platform: os.platform(), folder: safePath, fileNames })
 
-      const externalApp = spawn(command, params, { shell: false, windowsHide: true })
-      let versionResult: string
-
-      externalApp.stdout.on("data", (data) => {
-        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${data}`)
-        versionResult = data.toString().trim()
-        resolve(versionResult)
-      })
-
-      externalApp.stderr.on("data", (data) => {
-        logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintage Story threw an error! Check verbose logs for more info.`)
-        logMessage("verbose", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${data}`)
-      })
-
-      externalApp.on("close", (code) => {
-        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintage Story closed: ${code}`)
-        resolve(versionResult)
-      })
-
-      externalApp.on("error", (error) => {
-        logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for the Vintage Story version.`)
-        logMessage("verbose", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${error}`)
-        reject(undefined)
-      })
-    })
-
-    res.exists = true
-    res.installedGameVersion = checkGameVersion
-    return res
-  } else {
-    logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [LOOK_FOR_A_GAME_VERSION] No command or params found.`)
-    return res
+  if (!result.ok) {
+    logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] No version found: ${result.reason}.`)
+    return NOT_FOUND
   }
+
+  logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Found Vintage Story ${result.version}.`)
+  return { exists: true, installedGameVersion: result.version }
 })

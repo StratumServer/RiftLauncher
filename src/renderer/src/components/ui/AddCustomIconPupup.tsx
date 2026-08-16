@@ -1,10 +1,10 @@
 import { Dispatch, SetStateAction, useState } from "react"
-import { v4 as uuidv4 } from "uuid"
 import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiPlusCircleDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useAddCustomIcon } from "@renderer/features/config/hooks/useAddCustomIcon"
 
 import PopupDialogPanel from "./PopupDialogPanel"
 import { ButtonsWrapper, FormBody, FormButton, FormFieldGroup, FormGroupWrapper, FormHead, FormInputText, FormLabel, FromGroup, FromWrapper } from "./FormComponents"
@@ -12,7 +12,8 @@ import { ButtonsWrapper, FormBody, FormButton, FormFieldGroup, FormGroupWrapper,
 export function AddCustomIconPupup({ open, setOpen }: { open: boolean; setOpen: Dispatch<SetStateAction<boolean>> }): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
-  const { configDispatch } = useConfigContext()
+  const configDispatch = useConfigDispatch()
+  const pickAndCopyIcon = useAddCustomIcon()
 
   const [id, setId] = useState<string | undefined>(undefined)
   const [file, setFile] = useState<string | undefined>(undefined)
@@ -33,17 +34,10 @@ export function AddCustomIconPupup({ open, setOpen }: { open: boolean; setOpen: 
                   title={t("generic.selectIcon")}
                   onClick={async (e) => {
                     e.stopPropagation()
-                    const path = await window.api.utils.selectFolderDialog({ type: "file", extensions: ["png"] })
-                    const selectedPath = path[0]
-                    if (selectedPath && selectedPath.length > 0) {
-                      const id = uuidv4()
-                      const filePath = await window.api.pathsManager.copyToIcons(selectedPath, id)
-
-                      if (!filePath.status) return addNotification(t("notifications.body.coulndtCopyIcon"), "error")
-                      setFile(filePath.file)
-                      setId(id)
-                    } else {
-                      addNotification(t("notifications.body.noFileSelected"), "error")
+                    const picked = await pickAndCopyIcon()
+                    if (picked) {
+                      setFile(picked.file)
+                      setId(picked.id)
                     }
                   }}
                   className="w-14 h-14 p-1 shrink-0"

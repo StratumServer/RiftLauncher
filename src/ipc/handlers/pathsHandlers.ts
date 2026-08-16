@@ -1,7 +1,6 @@
 import { ipcMain, app, shell } from "electron"
 import { path7za } from "7zip-bin"
 import fse from "fs-extra"
-import yauzl from "yauzl"
 import { basename, extname, join, resolve, sep } from "path"
 import os from "os"
 import { spawn } from "child_process"
@@ -11,46 +10,69 @@ import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { createTrackedWorker, disposeTrackedWorker } from "@src/ipc/workerManager"
-import {
-  assertAllowedDownloadUrl,
-  assertBoolean,
-  assertInteger,
-  assertPath,
-  assertSafeFileName,
-  assertSafeTaskId,
-  isArchiveSymlink,
-  isRecord,
-  isSafeArchiveEntry,
-  MAX_ARCHIVE_ENTRY_BYTES,
-  MAX_ARCHIVE_TOTAL_BYTES
-} from "@src/ipc/validation"
+import { validateArchive } from "@src/ipc/archiveValidation"
+import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
+import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
 
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
+import innoExtractWorker from "@src/ipc/workers/innoExtractWorker?modulePath"
 import changePermsWorker from "@src/ipc/workers/changePermsWorker?modulePath"
 import downloadWorkerPath from "@src/ipc/workers/downloadWorker?modulePath"
 
 const sevenZipBin = app.isPackaged ? path7za.replace("app.asar", "app.asar.unpacked") : path7za
-const MAX_ARCHIVE_ENTRIES = 100_000
 const WORKER_TIMEOUTS_MS: Record<string, number> = {
   DOWNLOAD_ON_PATH: 45 * 60 * 1_000,
   EXTRACT_ON_PATH: 30 * 60 * 1_000,
   COMPRESS_ON_PATH: 30 * 60 * 1_000,
-  CHANGE_PERMS: 10 * 60 * 1_000
+  CHANGE_PERMS: 10 * 60 * 1_000,
+  // Reading the payload out of the Windows installer. Measured at 41 seconds
+  // for the 598 MB installer of 1.22.6 on a developer machine, so this leaves
+  // room for a slow disk without leaving a stuck worker running for an hour.
+  RUN_INSTALLER: 30 * 60 * 1_000
 }
 
-function comparableArchiveEntry(entryName: string): string {
-  const normalizedName = entryName.replace(/\\/g, "/")
-  return process.platform === "win32" ? normalizedName.toLowerCase() : normalizedName
-}
+/**
+ * Whether a Windows install reads the game out of the installer instead of
+ * running it.
+ *
+ * Running it is what issue #8 is about: a pre-existing uninstall key makes
+ * `InitializeSetup` show a MsgBox that `/SUPPRESSMSGBOXES` cannot answer, the
+ * silent run hangs on it, and every run writes that key back for the next
+ * install to trip over. Reading the payload plays none of the script, so the
+ * dialog, the registry write and the redirect all stop existing at once.
+ *
+ * The constant is here so the conformance workflow can exercise both paths
+ * against a real machine later. It stays true: the extraction is what a player
+ * gets, and the installer is only run for a file the reader declines.
+ */
+const EXTRACT_INSTALLER_PAYLOAD = true
+
+/**
+ * RUN_INSTALLER spawns a real installer process directly rather than going
+ * through a tracked worker, so it sits outside WORKER_TIMEOUTS_MS above; this
+ * bound mirrors that table's spirit (generous but finite) instead of joining
+ * its shape. 15 minutes covers the silent Inno installer plus a bundled
+ * runtime sub-installer under normal conditions (the .NET 7 Desktop Runtime
+ * that 1.18.15 pulls in), while still failing a genuinely hung sub-installer
+ * well inside a CI job's ceiling. Issue #55: on a clean windows-latest
+ * runner that sub-installer hung outright, and the job died at its 30-minute
+ * ceiling with the installer still alive as an orphan because RUN_INSTALLER
+ * had no bound of its own.
+ */
+const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
 
 type WorkerMessage = {
   type: unknown
   progress?: unknown
   path?: unknown
   message?: unknown
+  verdict?: unknown
+  reason?: unknown
+  filesWritten?: unknown
+  bytesWritten?: unknown
 }
 
 function sendProgress(event: IpcMainInvokeEvent, channel: string | undefined, id: string, progress: number): void {
@@ -147,137 +169,6 @@ function runTrackedWorker<T>(
   })
 }
 
-function validateZipArchive(filePath: string): Promise<void> {
-  return new Promise((resolvePromise, rejectPromise) => {
-    let settled = false
-    let totalUncompressedBytes = 0
-    let entryCount = 0
-    const entryNames = new Set<string>()
-
-    const finish = (error?: Error): void => {
-      if (settled) return
-      settled = true
-      if (error) rejectPromise(error)
-      else resolvePromise()
-    }
-
-    yauzl.open(filePath, { lazyEntries: true }, (error, zipFile) => {
-      if (error || !zipFile) {
-        finish(new Error("Archive could not be read"))
-        return
-      }
-
-      zipFile.on("entry", (entry) => {
-        const entrySize = entry.uncompressedSize
-        entryCount++
-        const normalizedEntryName = typeof entry.fileName === "string" ? comparableArchiveEntry(entry.fileName) : ""
-        if (
-          entryCount > MAX_ARCHIVE_ENTRIES ||
-          !isSafeArchiveEntry(entry.fileName) ||
-          entryNames.has(normalizedEntryName) ||
-          isArchiveSymlink(entry.externalFileAttributes) ||
-          !Number.isFinite(entrySize) ||
-          entrySize < 0 ||
-          entrySize > MAX_ARCHIVE_ENTRY_BYTES ||
-          totalUncompressedBytes + entrySize > MAX_ARCHIVE_TOTAL_BYTES
-        ) {
-          try {
-            zipFile.close()
-          } catch {
-            // The archive may already be closed after a parse error.
-          }
-          finish(new Error("Archive contains an unsafe entry"))
-          return
-        }
-
-        entryNames.add(normalizedEntryName)
-        totalUncompressedBytes += entrySize
-        zipFile.readEntry()
-      })
-
-      zipFile.once("end", () => finish())
-      zipFile.once("error", () => finish(new Error("Archive could not be read")))
-      zipFile.readEntry()
-    })
-  })
-}
-
-function validateSevenZipArchive(filePath: string): Promise<void> {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const archiveLister = spawn(sevenZipBin, ["l", "-slt", "-bb0", filePath], { windowsHide: true })
-    let output = ""
-    let settled = false
-
-    const finish = (error?: Error): void => {
-      if (settled) return
-      settled = true
-      if (error) rejectPromise(error)
-      else resolvePromise()
-    }
-
-    archiveLister.stdout.on("data", (chunk) => {
-      output += chunk.toString()
-      if (Buffer.byteLength(output, "utf8") > 4 * 1024 * 1024) {
-        archiveLister.kill()
-        finish(new Error("Archive listing is too large"))
-      }
-    })
-    archiveLister.stderr.on("data", () => {})
-    archiveLister.on("error", (error) => finish(error))
-    archiveLister.on("close", (code) => {
-      if (settled) return
-      if (code !== 0) {
-        finish(new Error("Archive could not be listed"))
-        return
-      }
-
-      const records = output.split(/\r?\n\s*\r?\n/)
-      let entryCount = 0
-      let totalUncompressedBytes = 0
-      let firstRecord = true
-      const entryNames = new Set<string>()
-      for (const record of records) {
-        const pathLine = record.split(/\r?\n/).find((line) => line.startsWith("Path = "))
-        if (!pathLine) continue
-        if (firstRecord) {
-          firstRecord = false
-          continue
-        }
-
-        const entryName = pathLine.slice("Path = ".length)
-        const sizeLine = record.split(/\r?\n/).find((line) => line.startsWith("Size = "))
-        const folderLine = record.split(/\r?\n/).find((line) => line.startsWith("Folder = "))
-        const isFolder = folderLine?.slice("Folder = ".length).trim() === "+"
-        const attributesLine = record.split(/\r?\n/).find((line) => line.startsWith("Attributes = "))
-        const entrySize = sizeLine ? Number(sizeLine.slice("Size = ".length)) : 0
-        entryCount++
-        totalUncompressedBytes += Number.isFinite(entrySize) && entrySize >= 0 ? entrySize : 0
-
-        if (
-          entryCount > MAX_ARCHIVE_ENTRIES ||
-          !isSafeArchiveEntry(entryName) ||
-          entryNames.has(comparableArchiveEntry(entryName)) ||
-          (attributesLine !== undefined && /(^|\s)L(\s|$)/.test(attributesLine)) ||
-          (!isFolder && (!sizeLine || !Number.isFinite(entrySize) || entrySize < 0)) ||
-          entrySize > MAX_ARCHIVE_ENTRY_BYTES ||
-          totalUncompressedBytes > MAX_ARCHIVE_TOTAL_BYTES
-        ) {
-          finish(new Error("Archive contains an unsafe entry"))
-          return
-        }
-        entryNames.add(comparableArchiveEntry(entryName))
-      }
-
-      finish()
-    })
-  })
-}
-
-async function validateArchive(filePath: string): Promise<void> {
-  if (filePath.toLowerCase().endsWith(".zip")) return validateZipArchive(filePath)
-  return validateSevenZipArchive(filePath)
-}
-
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.GET_CURRENT_USER_DATA_PATH, (event): string => {
   assertTrustedIpcSender(event)
   return app.getPath("userData")
@@ -294,6 +185,27 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH, async (event, pathValue: 
   } catch (err) {
     logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DELETE_PATH] Error deleting path.")
     logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DELETE_PATH] ${getErrorMessage(err)}`)
+    return false
+  }
+})
+
+ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.MOVE_PATH, async (event, fromPath: string, toPath: string): Promise<boolean> => {
+  assertTrustedIpcSender(event)
+
+  try {
+    // The source disappears, so it goes through the deletion grade assertion.
+    const safeFromPath = await assertManagedDeletionPath(fromPath)
+    const safeToPath = await assertManagedPath(toPath, "destination path", { allowMissing: true })
+
+    if (safeFromPath === safeToPath) throw new TypeError("Source and destination paths must differ")
+    if (await fse.pathExists(safeToPath)) throw new TypeError("Destination path already exists")
+
+    logMessage("info", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] Moving an approved path.")
+    await fse.move(safeFromPath, safeToPath)
+    return true
+  } catch (err) {
+    logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] Error moving path.")
+    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] ${getErrorMessage(err)}`)
     return false
   }
 })
@@ -382,7 +294,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
   const shouldDeleteZip = assertBoolean(deleteZip, "delete archive flag")
 
   if (resolve(safeFilePath) === resolve(safeOutputPath)) throw new TypeError("Archive and output paths must differ")
-  await validateArchive(safeFilePath)
+  await validateArchive(safeFilePath, sevenZipBin)
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
   await runTrackedWorker(
@@ -397,19 +309,78 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
   return true
 })
 
-ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: string, filePath: string, outputPath: string, deleteInstaller: boolean): Promise<boolean> => {
+ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: string, filePath: string, outputPath: string, deleteInstaller: boolean): Promise<InstallerRunResult> => {
   assertTrustedIpcSender(event)
   const safeId = assertSafeTaskId(id)
   const safeFilePath = await assertManagedPath(filePath, "installer path")
   const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
   const shouldDeleteInstaller = assertBoolean(deleteInstaller, "delete installer flag")
 
-  if (process.platform !== "win32" || !(await fse.pathExists(safeFilePath))) return false
+  if (process.platform !== "win32") return notWindowsResult()
+  if (!(await fse.pathExists(safeFilePath))) return installerMissingResult()
 
   const extension = extname(safeFilePath).toLowerCase()
   if (extension !== ".exe") throw new TypeError("Invalid installer file")
   await assertVerifiedArtifact(safeFilePath)
 
+  if (EXTRACT_INSTALLER_PAYLOAD) {
+    const verdict = await extractInstallerPayload(event, safeId, safeFilePath, safeOutputPath, shouldDeleteInstaller)
+    if (verdict !== "format-refused") return extractionOutcomeToResult(verdict)
+  }
+
+  return spawnInstaller(event, safeId, safeFilePath, safeOutputPath, shouldDeleteInstaller)
+})
+
+/**
+ * Reads the game out of the installer instead of running it.
+ *
+ * @returns `extracted` or `failed` once the attempt is over, or `format-refused`
+ * when the reader declined the file and the caller should run the installer.
+ */
+async function extractInstallerPayload(
+  event: IpcMainInvokeEvent,
+  safeId: string,
+  safeFilePath: string,
+  safeOutputPath: string,
+  shouldDeleteInstaller: boolean
+): Promise<"extracted" | "failed" | "format-refused"> {
+  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracting the installer payload instead of running it.`)
+  sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
+
+  try {
+    return await runTrackedWorker(
+      event,
+      safeId,
+      IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
+      innoExtractWorker,
+      { filePath: safeFilePath, outputPath: safeOutputPath, deleteInstaller: shouldDeleteInstaller },
+      "RUN_INSTALLER",
+      (message) => {
+        if (message.verdict === "format-refused") {
+          const reason = typeof message.reason === "string" ? message.reason : "no reason given"
+          logMessage("warn", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
+          return "format-refused"
+        }
+        if (message.verdict !== "extracted") throw new Error("Installer payload extraction returned an unknown verdict")
+        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
+        return "extracted"
+      }
+    )
+  } catch (err) {
+    logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Installer payload extraction failed.`)
+    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
+    return "failed"
+  }
+}
+
+/**
+ * The original path: run the installer silently and hope no dialog is waiting.
+ *
+ * Kept for the file this reader cannot follow. Issue #8 is exactly what happens
+ * here when the uninstall key is already set, so this is the fallback and not
+ * the way in.
+ */
+function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath: string, safeOutputPath: string, shouldDeleteInstaller: boolean): Promise<InstallerRunResult> {
   return new Promise((resolvePromise) => {
     const exePath = safeFilePath
     let settled = false
@@ -418,27 +389,42 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: strin
       sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
       const installer = spawn(exePath, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/NOICONS", `/DIR=${safeOutputPath}`], { shell: false, windowsHide: true })
 
-      const finish = (success: boolean): void => {
+      const timeoutHandle = setTimeout(() => {
+        logMessage(
+          "error",
+          `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Timed out after ${RUN_INSTALLER_TIMEOUT_MS}ms waiting on the installer; killing its process tree. reason=installer-timed-out`
+        )
+        attemptInstallerTreeKill(
+          installer.pid,
+          process.platform,
+          (command, args) => spawn(command, args, { shell: false, windowsHide: true }),
+          (level, message) => logMessage(level, `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${message}`)
+        )
+        finish("timed-out")
+      }, RUN_INSTALLER_TIMEOUT_MS)
+
+      const finish = (outcome: "installed" | "timed-out" | "failed"): void => {
         if (settled) return
         settled = true
+        clearTimeout(timeoutHandle)
         if (shouldDeleteInstaller) void fse.remove(exePath).catch(() => {})
-        if (success) sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 100)
-        resolvePromise(success)
+        if (outcome === "installed") sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 100)
+        resolvePromise(spawnInstallerOutcomeToResult(outcome))
       }
 
       installer.on("error", (error) => {
         logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Error launching installer.`)
         logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(error)}`)
-        finish(false)
+        finish("failed")
       })
-      installer.on("close", (code) => finish(code === 0))
+      installer.on("close", (code) => finish(code === 0 ? "installed" : "failed"))
     } catch (err) {
       logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Installer setup failed.`)
       logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
-      resolvePromise(false)
+      resolvePromise(spawnInstallerOutcomeToResult("failed"))
     }
   })
-})
+}
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH, async (event, id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel = 4): Promise<boolean> => {
   assertTrustedIpcSender(event)

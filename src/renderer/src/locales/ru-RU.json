@@ -20,7 +20,6 @@
     "type": "Тип",
     "install": "Установить",
     "minMaxAmmount": "Число от {{min}} до {{max}}",
-    "donate": "Пожертвования",
     "restore": "Восстановить",
     "text": "Текст",
     "author": "Автор",
@@ -38,7 +37,7 @@
     "authors": "Авторы",
     "contributors": "Авторы",
     "update": "Обновить",
-    "tryMVL": "Не нравится VS Launcher? Попробуйте <link /> лаунчер!",
+    "tryMVL": "Не нравится RiftLauncher? Попробуйте <link /> лаунчер!",
     "favorite": "Избранное",
     "any": "Любой",
     "both": "Оба",
@@ -63,7 +62,7 @@
     "backups": "Резервные копии",
     "advanced": "Дополнительно",
     "discord": "Discord",
-    "discordContact": "Discord (@zaldaryon)",
+    "discordContact": "Discord",
     "source": "Источник",
     "all": "Все",
     "installed": "Установлено",
@@ -78,7 +77,7 @@
       "notImplementedDesc": "Зайдите в следующей версии, возможно, она будет готова!"
     },
     "home": {
-      "title": "Добро пожаловать в VS Launcher",
+      "title": "Добро пожаловать в RiftLauncher",
       "description": "Неофициальный лаунчер Vintage Story со (почти) всеми необходимыми функциями."
     },
     "versions": {
@@ -137,7 +136,7 @@
       "labelStartParams": "Параметры запуска",
       "startParams": "Параметры запуска",
       "startParamsDesc": "Список всех доступных параметров запуска: <link />",
-      "cantUseDataPath": "Параметр запуска --dataPath не может быть использован, так как он используется VS Launcher. Если вы хотите использовать другую папку, измените её в установке.",
+      "cantUseDataPath": "Параметр запуска --dataPath не может быть использован, так как он используется RiftLauncher. Если вы хотите использовать другую папку, измените её в установке.",
       "startParamsLink": "Vintage Story Wiki",
       "gameAlreadyRunning": "Уже играете в эту установку!",
       "editWhilePlaying": "Вы не можете редактировать установку, пока играете в неё!",
@@ -177,7 +176,7 @@
       "deletingNotReversible": "Удаление необратимо, поэтому вы не сможете восстановить моды, но всегда сможете загрузить их снова!",
       "openOnTheModDB": "Открыть на ModDB!",
       "listWithErrorsTitle": "Моды с ошибками",
-      "modsWithErrorsDescription": "Следующие моды имеют некоторые ошибки, и VS Launcher не может их идентифицировать!",
+      "modsWithErrorsDescription": "Следующие моды имеют некоторые ошибки, и RiftLauncher не может их идентифицировать!",
       "modsWithErrorsDescriptionReport": "Пожалуйста, сообщите об этом инциденте на странице <issues /> или на нашем сервере <discord />!",
       "noModSelected": "Мод не выбран!",
       "onlyFavMods": "Показывать только избранные моды",
@@ -199,7 +198,7 @@
       "cantUpdateWhileinUse": "Вы не можете обновить мод, пока он используется!",
       "updateAll": "Обновить все моды с доступными обновлениями",
       "updatingInstalledMods": "Обновление установленных модов!",
-      "errorUpdatingMod": "Произошла ошибка при обновлении мода {mod}!",
+      "errorUpdatingMod": "Произошла ошибка при обновлении мода {{mod}}!",
       "errorUpdatingMods": "Произошла ошибка при обновлении модов!",
       "updateAllButton": "Обновить все",
       "modsUpdatedSuccessfully": "Все моды успешно обновлены!"
@@ -251,7 +250,7 @@
       "manageBackups": "Управление резервными копиями"
     },
     "infoAndHelp": {
-      "title": "Информация и помощь VS Launcher",
+      "title": "Информация и помощь RiftLauncher",
       "debugInfoTitle": "Отладочная информация",
       "includeLogs": "Отправьте нам файлы журналов, которые вы можете найти в <folderlink />, чтобы помочь нам ещё больше!",
       "logsFolderTitle": "Папка журналов",
@@ -270,9 +269,9 @@
       "installationsTitle": "Установки",
       "installationsDesc": "Управление установками",
       "configTitle": "Настройки",
-      "configDesc": "Настройка VS Launcher",
+      "configDesc": "Настройка RiftLauncher",
       "infoAndHelpTitle": "Информация и помощь",
-      "infoAndHelpDesc": "Помощь и информация по VS Launcher"
+      "infoAndHelpDesc": "Помощь и информация по RiftLauncher"
     },
     "tasksMenu": {
       "downloading": "Загрузка",
@@ -282,7 +281,7 @@
       "noTasksAvailable": "Задачи в очереди отсутствуют!"
     },
     "loader": {
-      "title": "Добро пожаловать в VS Launcher!",
+      "title": "Добро пожаловать в RiftLauncher!",
       "desc": "Мы всё для вас готовим!"
     }
   },
@@ -290,7 +289,7 @@
     "body": {
       "folderDoesntExists": "Папка, которую вы пытаетесь открыть, не существует!",
       "updateAvailable": "Доступно новое обновление! Загрузка...",
-      "updateDownloaded": "Обновление успешно загружено! Нажмите здесь, чтобы перезапустить VS Launcher и обновить его!",
+      "updateDownloaded": "Обновление успешно загружено! Нажмите здесь, чтобы перезапустить RiftLauncher и обновить его!",
       "downloading": "Начинается загрузка: {{downloadName}}!",
       "downloaded": "Загрузка завершена: {{downloadName}}!",
       "downloadError": "Ошибка загрузки: {{downloadName}}!",
@@ -306,7 +305,7 @@
       "folderNotEmpty": "Выбранная папка не пуста! Убедитесь, что там нет ничего важного.",
       "noFileSelected": "Файл не выбран!",
       "coulndtCopyIcon": "Эту иконку не удалось скопировать в папку иконок!",
-      "appClosePrevented": "Вы не можете закрыть VS Launcher либо потому, что вы играете в Vintage Story, либо потому, что выполняется задача!"
+      "appClosePrevented": "Вы не можете закрыть RiftLauncher либо потому, что вы играете в Vintage Story, либо потому, что выполняется задача!"
     },
     "discard": "Отказаться от уведомления"
   },

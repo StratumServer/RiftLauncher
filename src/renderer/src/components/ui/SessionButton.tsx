@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiTrashDuotone, PiUserDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useAccount, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
+import { useAccountSession } from "@renderer/features/account/hooks/useAccountSession"
 
 import {
   ButtonsWrapper,
@@ -24,8 +25,10 @@ import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 
 function SessionButton(): JSX.Element {
   const { t } = useTranslation()
-  const { config, configDispatch } = useConfigContext()
+  const account = useAccount()
+  const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
+  const { login, logout } = useAccountSession()
 
   // Log In states
   const [email, setEmail] = useState("")
@@ -44,10 +47,11 @@ function SessionButton(): JSX.Element {
     // If you're reading this, make sure to check out MVL https://github.com/scgm0/MVL
 
     try {
-      const result = await window.api.accountManager.login(email, password, twofacode || undefined)
+      const result = await login(email, password, twofacode || undefined)
       if (result.status === "wrong-two-factor") return addNotification(t("features.config.wrongtwofa"), "error")
       if (result.status === "invalid-credentials") return addNotification(t("features.config.invalidEmailPass"), "error")
       if (result.status === "requires-two-factor") return addNotification(t("features.config.wrongtwofa"), "error")
+      if (result.status === "unexpected-response") return addNotification(t("features.config.unexpectedResponse"), "error")
       if (result.status !== "success") return
 
       await saveLogin(result.account)
@@ -61,7 +65,7 @@ function SessionButton(): JSX.Element {
   }
 
   async function handleLogout(): Promise<void> {
-    const loggedOut = await window.api.accountManager.logout()
+    const loggedOut = await logout()
     if (!loggedOut) return addNotification(t("features.config.invalidEmailPass"), "error")
     configDispatch({ type: CONFIG_ACTIONS.SET_ACCOUNT, payload: null })
     addNotification(t("features.config.loggedout"), "success")
@@ -80,18 +84,18 @@ function SessionButton(): JSX.Element {
     <>
       <FormButton
         onClick={() => {
-          if (!config.account) {
+          if (!account) {
             setLogInOpen(true)
           } else {
             setLogOutOpen(true)
           }
         }}
-        title={!config.account ? t("features.config.loginTitle") : t("features.config.logoutTitle")}
+        title={!account ? t("features.config.loginTitle") : t("features.config.logoutTitle")}
         className="w-full h-8"
       >
         <PiUserDuotone />
 
-        <p className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">{!config.account ? t("features.config.loginTitle") : config.account.playerName}</p>
+        <p className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">{!account ? t("features.config.loginTitle") : account.playerName}</p>
       </FormButton>
 
       <PopupDialogPanel title={t("features.config.loginTitle")} isOpen={logInOpen} close={() => setLogInOpen(false)}>

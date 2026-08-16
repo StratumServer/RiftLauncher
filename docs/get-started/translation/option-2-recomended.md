@@ -75,15 +75,15 @@ git config --global user.name <username>
 
 {% step %}
 
-### **Fork the VS Launcher repository**
+### **Fork the RiftLauncher repository**
 
 You can't directly make changes on another user repository on GitHub, to do this you've to "copy" that repository to your account and edit it there. That's what a fork is, a copy of the original repository.
 
-To do this just go to the [Rift Launcher repository](https://github.com/StratumServer/RiftLauncher) and press the `fork` button at the top, like in the image:
+To do this just go to the [RiftLauncher repository](https://github.com/StratumServer/RiftLauncher) and press the `fork` button at the top, like in the image:
 
-<figure><img src="../../.gitbook/assets/fork-EDITED.png" alt=""><figcaption><p>Fork the VS Launcher GitHub repository</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/fork-EDITED.png" alt=""><figcaption><p>Fork the RiftLauncher GitHub repository</p></figcaption></figure>
 
-Now change the name to `vs-launcher-xx-XX` depending on the language you'll translate to. For Spanish is `vs-launcher-es-ES` and for English is `vs-launcher-en-US` for example. You can also add a description but this is optional:
+Now change the name to `riftlauncher-xx-XX` depending on the language you'll translate to. For Spanish is `riftlauncher-es-ES` and for English is `riftlauncher-en-US` for example. You can also add a description but this is optional:
 
 <figure><img src="../../.gitbook/assets/new-fork-EDITED.png" alt=""><figcaption><p>Edit fork details</p></figcaption></figure>
 {% endstep %}
@@ -92,9 +92,9 @@ Now change the name to `vs-launcher-xx-XX` depending on the language you'll tran
 
 ### **Clone the repository and "link" it to the original repository**
 
-Now you've a copy of the vs-launcher repository on your account but, you've to download it to your computer.
+Now you've a copy of the RiftLauncher repository on your account but, you've to download it to your computer.
 
-To do this just go the your repository on `profile` (top right corner) > `repositories` > `vs-launcher-xx-XX`, click on the green `Code` button and copy the link like in the image:
+To do this just go the your repository on `profile` (top right corner) > `repositories` > `riftlauncher-xx-XX`, click on the green `Code` button and copy the link like in the image:
 
 <figure><img src="../../.gitbook/assets/copy-clone-EDITED.png" alt=""><figcaption><p>Copy the repository URL</p></figcaption></figure>
 
@@ -102,8 +102,8 @@ Now open your CMD, if you're using Windows, or Console, if you're using Linux, a
 
 ```
 git clone <repository>
-cd vs-launcher-xx-XX
-git remote add upstream https://github.com/XurxoMF/vs-launcher
+cd riftlauncher-xx-XX
+git remote add upstream https://github.com/StratumServer/RiftLauncher
 ```
 
 {% endstep %}
@@ -112,7 +112,7 @@ git remote add upstream https://github.com/XurxoMF/vs-launcher
 
 ### **Open the cloned folder on Visual Studio Code**
 
-Open Visual Studio Code and open the folder you've cloned, it should be on your user folder like `C:/Users/YourUsername/vs-launcher-xx-XX` on Windows and `/home/YourUsername/vs-launcher-xx-XX` on Linux, if you cloned it elsewhere just select that folder:
+Open Visual Studio Code and open the folder you've cloned, it should be on your user folder like `C:/Users/YourUsername/riftlauncher-xx-XX` on Windows and `/home/YourUsername/riftlauncher-xx-XX` on Linux, if you cloned it elsewhere just select that folder:
 
 <figure><img src="../../.gitbook/assets/open-on-vscode-EDITED.png" alt=""><figcaption><p>Open the folder on VSCode</p></figcaption></figure>
 
@@ -143,7 +143,7 @@ VÍDEO
 
 ### **Commit and push changes**
 
-Now that you've translated everything you needed you just have to upload changes to you repository to later sync then with vs-launcher oficial repository.
+Now that you've translated everything you needed you just have to upload changes to you repository to later sync then with the RiftLauncher official repository.
 
 To do this just go to the Git icon on the left menu, press stage files (➕ button), write a little text with the changes you've made (it can be "Translated" or "Updated translations") and commit:
 
@@ -160,7 +160,7 @@ the first time it'll ask you to login with your GitHub account. Just press yes o
 
 {% step %}
 
-### **Send changes to the VS Launcher official repository | Pull Request**
+### **Send changes to the RiftLauncher official repository | Pull Request**
 
 Now you've translated and uploaded the translations to your repository but you've to send them to the official repository.
 

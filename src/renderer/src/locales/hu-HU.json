@@ -20,7 +20,6 @@
     "type": "Típus",
     "install": "Telepít",
     "minMaxAmmount": "Egy szám {{min}} és {{max}} között",
-    "donate": "Adományok",
     "restore": "Visszaállítás",
     "text": "Szöveg",
     "author": "Készítő",
@@ -38,7 +37,7 @@
     "authors": "Készítők",
     "contributors": "Hozzájárulók",
     "update": "Frissít",
-    "tryMVL": "Nem tetszik a VS Launcher? Próbáld ki az <link /> launcher-t!",
+    "tryMVL": "Nem tetszik a RiftLauncher? Próbáld ki az <link /> launcher-t!",
     "favorite": "Kedvenc",
     "any": "Bármely",
     "both": "Mindkettő",
@@ -47,7 +46,7 @@
     "tags": "Címkék",
     "totalTime": "Összesen: {{total}}",
     "notPlayedYet": "Még nem játszott",
-    "discordContact": "Discord (@zaldaryon)"
+    "discordContact": "Discord"
   },
   "features": {
     "generic": {
@@ -55,7 +54,7 @@
       "notImplementedDesc": "Nézz be egy frissítést követően és talán akkor már készen lesz!"
     },
     "home": {
-      "title": "Üdvözöl a VS Launcher",
+      "title": "Üdvözöl a RiftLauncher",
       "description": "A nem hivatalos Vintage Story Launcher (majdnem) minden funkcióval amire szükséged van."
     },
     "versions": {
@@ -112,7 +111,7 @@
       "labelStartParams": "Indítási paraméterek",
       "startParams": "Indítási paraméterek",
       "startParamsDesc": "Az indítási paraméterek listája: <link />",
-      "cantUseDataPath": "A --dataPath indítási paraméter nem használható mert a VS Launcher használja a játék indításához. Ha másik mappát szeretnél használni módosítsd a Telepítést.",
+      "cantUseDataPath": "A --dataPath indítási paraméter nem használható mert a RiftLauncher használja a játék indításához. Ha másik mappát szeretnél használni módosítsd a Telepítést.",
       "startParamsLink": "Vintage Story Wiki",
       "gameAlreadyRunning": "A Telepítés jelenleg is fut!",
       "editWhilePlaying": "Nem módosíthatsz egy Telepítést miközben az fut!",
@@ -145,7 +144,7 @@
       "deletingNotReversible": "A törlés végleges! A törölt modot nem tudod majd visszaállítani de bármikor újra letöltheted !",
       "openOnTheModDB": "Nyisd meg a ModDB-n!",
       "listWithErrorsTitle": "Hibás modok",
-      "modsWithErrorsDescription": "Az alábbi modokkal kapcsolatban valamilyen hiba lépett fel így a VS Launcher nem tudja azonosítani ezeket!",
+      "modsWithErrorsDescription": "Az alábbi modokkal kapcsolatban valamilyen hiba lépett fel így a RiftLauncher nem tudja azonosítani ezeket!",
       "modsWithErrorsDescriptionReport": "Kérlek jelezd a hibát a <issues /> oldalon vagy a <discord /> szerverünkön!",
       "noModSelected": "Nincsenek kiválasztva modok!",
       "onlyFavMods": "Csak a kedvenc modok mutatása",
@@ -217,7 +216,7 @@
       "noTasksAvailable": "Nincsnek sorbaállítva feladatok!"
     },
     "loader": {
-      "title": "Üdvözöl a VS Launcher!",
+      "title": "Üdvözöl a RiftLauncher!",
       "desc": "Mindent előkészítünk neked!"
     }
   },
@@ -225,7 +224,7 @@
     "body": {
       "folderDoesntExists": "A könyvtár amit meg szeretnél nyitni, nem létezik!",
       "updateAvailable": "Új frissítés érhető el! Letöltés...",
-      "updateDownloaded": "A frissítés sikeresen letöltve! Kattints ide a VS Launcher újraindításához!",
+      "updateDownloaded": "A frissítés sikeresen letöltve! Kattints ide a RiftLauncher újraindításához!",
       "downloading": "Letöltés kezdése: {{downloadName}}!",
       "downloaded": "Letöltés befejezve: {{downloadName}}!",
       "downloadError": "Letöltési hiba: {{downloadName}}!",

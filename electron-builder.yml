@@ -1,5 +1,5 @@
 appId: xyz.xurxomf.vslauncher
-productName: VS Launcher
+productName: RiftLauncher
 directories:
   buildResources: build
 files:
@@ -13,7 +13,7 @@ asarUnpack:
   - resources/**
   - node_modules/7zip-bin/**
 win:
-  executableName: VS Launcher
+  executableName: RiftLauncher
   icon: resources/icon.ico
 nsis:
   artifactName: ${name}-${version}-setup.${ext}

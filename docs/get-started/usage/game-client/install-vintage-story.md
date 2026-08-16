@@ -5,11 +5,11 @@ description: If you don't have the game installed check out this guide.
 
 # Install Vintage Story
 
-Installing Vintage Story using VS Launcher is the easies way to do it. It's just a few clicks and play. Let's see how it's done:
+Installing Vintage Story using RiftLauncher is the easies way to do it. It's just a few clicks and play. Let's see how it's done:
 
 ## Automatic installation
 
-If you're using VS Launcher if to make things easier so this is the best way to install Vintage Story as it'll do everything automatically.
+RiftLauncher exists to make things easier so this is the best way to install Vintage Story as it'll do everything automatically.
 
 If with this option the game is not working try installing it manually the first time following the guide below.
 
@@ -48,9 +48,9 @@ Check the next guide on how to play Vintage Story:
 
 ## Manual installation
 
-The idea is to install Vintage Story using VS Launcher install sections as this will automatically add everything to the launcher settings so you don't have to do the job 2 times.
+The idea is to install Vintage Story using RiftLauncher's install sections as this will automatically add everything to the launcher settings so you don't have to do the job 2 times.
 
-However, you may want to install it the old way or if you're using Linux you may have to do it this way the first time for the game dependencies to work properly and then add it to VS Launcher. To do so follow the next steps:
+However, you may want to install it the old way or if you're using Linux you may have to do it this way the first time for the game dependencies to work properly and then add it to RiftLauncher. To do so follow the next steps:
 
 ### Windows
 
@@ -71,9 +71,9 @@ Install the downloaded \`.exe\` as any other program choosing the folder where y
 
 {% step %}
 
-### Add it to VS Launcher
+### Add it to RiftLauncher
 
-Now you just have to add it to VS Launcher so follow the [Vintage Story is already installed](vintage-story-is-already-installed.md) guide to do so.
+Now you just have to add it to RiftLauncher so follow the [Vintage Story is already installed](vintage-story-is-already-installed.md) guide to do so.
 {% endstep %}
 {% endstepper %}
 
@@ -110,9 +110,9 @@ sudo chmod -x ./Vintagestory
 
 {% step %}
 
-### Add it to VS Launcher
+### Add it to RiftLauncher
 
-Now you just have to add it to VS Launcher so follow the [Vintage Story is already installed](vintage-story-is-already-installed.md) guide to do so.
+Now you just have to add it to RiftLauncher so follow the [Vintage Story is already installed](vintage-story-is-already-installed.md) guide to do so.
 {% endstep %}
 {% endstepper %}
 
@@ -154,8 +154,8 @@ sudo chmod -x ./Vintagestory
 
 {% step %}
 
-### Add it to VS Launcher
+### Add it to RiftLauncher
 
-Now you just have to add it to VS Launcher so follow the [Vintage Story is already installed](vintage-story-is-already-installed.md) guide to do so.
+Now you just have to add it to RiftLauncher so follow the [Vintage Story is already installed](vintage-story-is-already-installed.md) guide to do so.
 {% endstep %}
 {% endstepper %}

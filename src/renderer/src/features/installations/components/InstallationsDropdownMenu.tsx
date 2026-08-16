@@ -7,18 +7,21 @@ import clsx from "clsx"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 import { DROPUP_MENU_ITEM_VARIANTS, DROPUP_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useCustomIcons, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 
 import { LinkButton } from "@renderer/components/ui/Buttons"
 
 function InstallationsDropdownMenu(): JSX.Element {
   const { t } = useTranslation()
 
-  const { config, configDispatch } = useConfigContext()
+  const installations = useInstallations()
+  const customIcons = useCustomIcons()
+  const { lastUsedInstallation } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
 
   return (
     <div className="w-full">
-      {config.installations.length < 1 ? (
+      {installations.length < 1 ? (
         <div className="w-full flex flex-col items-center justify-between rounded-sm backdrop-blur-xs bg-zinc-950/50 border border-zinc-400/5 group overflow-hidden shadow-sm shadow-zinc-950/50 px-4 py-2 text-center">
           <p className="font-bold">{t("features.installations.noInstallationsFound")}</p>
           <p className="text-zinc-400 text-xs flex gap-1 items-center flex-wrap justify-center">
@@ -36,7 +39,7 @@ function InstallationsDropdownMenu(): JSX.Element {
         </div>
       ) : (
         <Listbox
-          value={config.lastUsedInstallation}
+          value={lastUsedInstallation}
           onChange={(selectedInstallation: string) => {
             configDispatch({
               type: CONFIG_ACTIONS.SET_LAST_USED_INSTALLATION,
@@ -46,8 +49,8 @@ function InstallationsDropdownMenu(): JSX.Element {
         >
           {({ open }) => (
             <>
-              {config.installations
-                .filter((i) => i.id === config.lastUsedInstallation)
+              {installations
+                .filter((i) => i.id === lastUsedInstallation)
                 .map((current) => (
                   <ListboxButton
                     key={current.id}
@@ -57,8 +60,8 @@ function InstallationsDropdownMenu(): JSX.Element {
                       src={
                         INSTALLATION_ICONS.some((ii) => ii.id === current.icon)
                           ? INSTALLATION_ICONS.find((ii) => ii.id === current.icon)?.icon
-                          : config.customIcons.some((ii) => ii.id === current.icon)
-                            ? `icons:${config.customIcons.find((ii) => ii.id === current.icon)?.icon}`
+                          : customIcons.some((ii) => ii.id === current.icon)
+                            ? `icons:${customIcons.find((ii) => ii.id === current.icon)?.icon}`
                             : INSTALLATION_ICONS[0].icon
                       }
                       alt={t("generic.icon")}
@@ -87,7 +90,7 @@ function InstallationsDropdownMenu(): JSX.Element {
                       exit="exit"
                       className="max-h-80 flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm overflow-y-scroll text-sm"
                     >
-                      {config.installations.toReversed().map((current) => (
+                      {installations.toReversed().map((current) => (
                         <ListboxOption
                           key={current.id}
                           value={current.id}
@@ -99,8 +102,8 @@ function InstallationsDropdownMenu(): JSX.Element {
                             src={
                               INSTALLATION_ICONS.some((ii) => ii.id === current.icon)
                                 ? INSTALLATION_ICONS.find((ii) => ii.id === current.icon)?.icon
-                                : config.customIcons.some((ii) => ii.id === current.icon)
-                                  ? `icons:${config.customIcons.find((ii) => ii.id === current.icon)?.icon}`
+                                : customIcons.some((ii) => ii.id === current.icon)
+                                  ? `icons:${customIcons.find((ii) => ii.id === current.icon)?.icon}`
                                   : INSTALLATION_ICONS[0].icon
                             }
                             alt={t("generic.icon")}

@@ -20,7 +20,6 @@
     "type": "Typ",
     "install": "Installieren",
     "minMaxAmmount": "Zahl zwischen {{min}} und {{max}}",
-    "donate": "Spenden",
     "restore": "Wiederherstellen",
     "text": "Text",
     "author": "Autor",
@@ -38,7 +37,7 @@
     "authors": "Autoren",
     "contributors": "Mitwirkende",
     "update": "Aktulsieren",
-    "tryMVL": "Dir gefällt VS Launcher nicht? Teste den <link /> Starter!",
+    "tryMVL": "Dir gefällt RiftLauncher nicht? Teste den <link /> Starter!",
     "favorite": "Favorisieren",
     "any": "Jegliche",
     "both": "Beide",
@@ -56,7 +55,7 @@
     "selectIcon": "Symbol auswählen",
     "icon": "Symbol",
     "iconName": "Symbolname",
-    "discordContact": "Discord (@zaldaryon)"
+    "discordContact": "Discord"
   },
   "features": {
     "generic": {
@@ -64,7 +63,7 @@
       "notImplementedDesc": "Schau bei der nächsten Aktualisierung vorbei, möglicherweise ist dieser dann bereits benutzbar!"
     },
     "home": {
-      "title": "Willkommen zum VS Launcher",
+      "title": "Willkommen zum RiftLauncher",
       "description": "Der inoffizielle Vintage Story Launcher mit allen Funktionen, die du benötigst."
     },
     "versions": {
@@ -122,7 +121,7 @@
       "labelStartParams": "Startparameter",
       "startParams": "Startparameter",
       "startParamsDesc": "Liste aller verfügbaren Startparameter: <link />",
-      "cantUseDataPath": "Startparameter --dataPath kann nicht genutzt werden, da dieser bereits von VS Launcher genutzt wird. Wenn du einen anderen Ordner möchtest, ändere dies während der Installation.",
+      "cantUseDataPath": "Startparameter --dataPath kann nicht genutzt werden, da dieser bereits von RiftLauncher genutzt wird. Wenn du einen anderen Ordner möchtest, ändere dies während der Installation.",
       "startParamsLink": "Vintage Story Wiki",
       "gameAlreadyRunning": "Diese Installation wird bereits gespielt!",
       "editWhilePlaying": "Du kannst eine Installation nicht bearbeiten, während du sie spielst!",
@@ -157,7 +156,7 @@
       "deletingNotReversible": "Das Löschen kann nicht rückgängig gemacht werden, so dass du die Mod nicht wiederherstellen kannst. Allerdings kannst du sie jederzeit erneut herunterladen.!",
       "openOnTheModDB": "Auf ModDB öffnen!",
       "listWithErrorsTitle": "Mod mit Fehlern",
-      "modsWithErrorsDescription": "Die nächsten Mod weisen einige Fehler auf, welche von VS Launcher nicht identifiziert werden können!",
+      "modsWithErrorsDescription": "Die nächsten Mod weisen einige Fehler auf, welche von RiftLauncher nicht identifiziert werden können!",
       "modsWithErrorsDescriptionReport": "Bitte melde diesen Vorfall auf der <issues />-Seite oder auf unserem <discord />-Server!",
       "noModSelected": "Keine Mod ausgewählt!",
       "onlyFavMods": "Zeige nur favorisierte Mod",
@@ -239,7 +238,7 @@
       "noTasksAvailable": "Es gibt keine anstehenden Aufgaben!"
     },
     "loader": {
-      "title": "Willkommen zum VS Launcher!",
+      "title": "Willkommen zum RiftLauncher!",
       "desc": "Wir bereiten alles für dich vor!"
     }
   },
@@ -247,7 +246,7 @@
     "body": {
       "folderDoesntExists": "Der zu öffnende Ordner existiert nicht!",
       "updateAvailable": "Eine Aktualisierung ist verfügbar und wird im Hintergrund heruntergeladen.",
-      "updateDownloaded": "Aktualisierung erfolgreich heruntergeladen. Starte den VS Launcher neu, um diese zu installieren.",
+      "updateDownloaded": "Aktualisierung erfolgreich heruntergeladen. Starte den RiftLauncher neu, um diese zu installieren.",
       "downloading": "Herunterladen begonnen: {{downloadName}}!",
       "downloaded": "Erfolgreich heruntergeladen: {{downloadName}}!",
       "downloadError": "Fehler beim Herunterladen: {{downloadName}}!",

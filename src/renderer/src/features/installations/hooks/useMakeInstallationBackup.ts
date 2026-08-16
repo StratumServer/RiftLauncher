@@ -1,109 +1,87 @@
 import { useTranslation } from "react-i18next"
-import { v4 as uuidv4 } from "uuid"
 
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { makeInstallationBackup as runBackup } from "@domain/installations/backup"
+import type { MakeInstallationBackupFailure } from "@domain/installations/backup"
+import { useInstallations, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { useCleanFolderName } from "@renderer/hooks/useCleanFolderName"
+import { createBackupPorts, describeBackupFailure, toInstallationSnapshot } from "@renderer/features/installations/adapters/backup"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
+
+const LOG_TAG = "[front] [backups] [features/installations/hooks/useMakeInstallationBackup.ts] [useMakeInstallationBackup > makeInstallationBackup]"
+
+/**
+ * Reasons that mean "there was nothing to back up", not "backing up broke".
+ *
+ * MainMenu's auto-backup-before-play reads this hook's return value to decide
+ * whether to launch the game at all (`if (!backupMade) return`, before
+ * executeGame runs). These three used to be silent and always returned true;
+ * they now speak, but they must keep returning true, or turning on automatic
+ * backups with, say, an empty Backups folder would silently stop the launcher
+ * from ever launching anything. A real failure (compress-failed, prune-failed)
+ * still returns false and still blocks the launch, unchanged.
+ */
+const NON_BLOCKING_REASONS: readonly MakeInstallationBackupFailure[] = ["installation-path-missing", "no-backups-folder", "backups-disabled"]
 
 export function useMakeInstallationBackup(): (installationId: string) => Promise<boolean> {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
-  const { config, configDispatch } = useConfigContext()
+  const installations = useInstallations()
+  const settings = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
   const { startCompress } = useTaskContext()
-  const cleanFolderName = useCleanFolderName()
 
   /**
    * Make a backup of the selected Installation.
    *
    * @param {string} installationId - The ID of the Installation to backup.
-   * @returns {Promise<boolen>} - If the backup was made or not.
+   * @returns {Promise<boolean>} - If the backup was made or not.
    */
   async function makeInstallationBackup(installationId: string): Promise<boolean> {
-    const installation = config.installations.find((i) => i.id === installationId)
+    const installation = installations.find((i) => i.id === installationId)
 
     if (!installation) {
       addNotification(t("features.installations.noInstallationFound"), "error")
       return false
     }
 
-    if (installation._backuping) {
-      addNotification(t("features.backups.backupInProgress"), "error")
-      return false
+    const setBackuping = (backuping: boolean): void => {
+      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _backuping: backuping } } })
     }
 
-    if (installation._playing) {
-      addNotification(t("features.backups.backupWhilePlaying"), "error")
-      return false
-    }
+    const ports = createBackupPorts({
+      startCompress,
+      taskName: t("features.backups.cmpressTaskName", { name: installation.name }),
+      taskDescription: t("features.backups.compressingBackupDescription", { name: installation.name })
+    })
 
-    if (installation._restoringBackup) {
-      addNotification(t("features.backups.restoreInProgress"), "error")
-      return false
-    }
-
-    if ((await window.api.pathsManager.checkPathExists(installation.path)) && config.backupsFolder && installation.backupsLimit > 0) {
-      const id = uuidv4()
-      window.api.utils.setPreventAppClose("add", id, "Making and installation backup.")
-
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _backuping: true } } })
-
-      try {
-        let backupsLength = installation.backups.length
-
-        while (backupsLength > 0 && backupsLength >= installation.backupsLimit) {
-          const backupToDelete = installation.backups[backupsLength - 1]
-          if (!backupToDelete) break
-          const res = await window.api.pathsManager.deletePath(backupToDelete.path)
-          if (!res) throw new Error("There was an error deleting old backups!")
-          configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backupToDelete.id } })
-          backupsLength--
-          window.api.utils.logMessage(
-            "info",
-            `[front] [backups] [features/installations/hooks/useMakeInstallationBackup.ts] [useMakeInstallationBackup > makeInstallationBackup] Deleted old backup ${backupToDelete.path}.`
-          )
+    const result = await runBackup(
+      ports,
+      { installation: toInstallationSnapshot(installation), backupsFolder: settings.backupsFolder },
+      {
+        onStarted: () => setBackuping(true),
+        onFinished: () => setBackuping(false),
+        onBackupDeleted: (deleted) => {
+          configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: deleted.id } })
+          window.api.utils.logMessage("info", `${LOG_TAG} Deleted old backup ${deleted.path}.`)
         }
-
-        const backupDate = Date.now()
-        const cleanInstallationName = await cleanFolderName({ folderName: installation.name })
-        const cleanDateName = await cleanFolderName({ folderName: backupDate.toLocaleString("es") })
-
-        const fileName = `${cleanInstallationName}_${cleanDateName}.zip`
-        const backupPath = await window.api.pathsManager.formatPath([config.backupsFolder, "Installations", cleanInstallationName])
-        const outBackupPath = await window.api.pathsManager.formatPath([backupPath, fileName])
-
-        await startCompress(
-          t("features.backups.cmpressTaskName", { name: installation.name }),
-          t("features.backups.compressingBackupDescription", { name: installation.name }),
-          "all",
-          installation.path,
-          backupPath,
-          fileName,
-          (status) => {
-            if (!status) throw new Error("Error compressing installation!")
-
-            configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION_BACKUP, payload: { id: installation.id, backup: { date: backupDate, id: uuidv4(), path: outBackupPath } } })
-          },
-          installation.compressionLevel
-        )
-      } catch (err) {
-        window.api.utils.logMessage(
-          "error",
-          `[front] [backups] [features/installations/hooks/useMakeInstallationBackup.ts] [useMakeInstallationBackup > makeInstallationBackup] Error creating backup.`
-        )
-        window.api.utils.logMessage(
-          "debug",
-          `[front] [backups] [features/installations/hooks/useMakeInstallationBackup.ts] [useMakeInstallationBackup > makeInstallationBackup] Error creating backup: ${err}`
-        )
-        addNotification(t("features.backups.errorMakingBackup"), "error")
-        return false
-      } finally {
-        window.api.utils.setPreventAppClose("remove", id, "Finished installation backup.")
-        configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _backuping: false } } })
       }
+    )
+
+    if (result.ok) {
+      configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION_BACKUP, payload: { id: installation.id, backup: result.backup } })
+      return true
     }
 
-    return true
+    const { messageKey, logged } = describeBackupFailure(result.reason)
+
+    if (logged) {
+      window.api.utils.logMessage("error", `${LOG_TAG} Error creating backup.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Error creating backup: ${result.reason}`)
+    }
+
+    if (messageKey) addNotification(t(messageKey), "error")
+
+    return NON_BLOCKING_REASONS.includes(result.reason)
   }
 
   return makeInstallationBackup

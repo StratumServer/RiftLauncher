@@ -1,11 +1,12 @@
 import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
-import { Dispatch, SetStateAction, useEffect, useState } from "react"
+import { Dispatch, SetStateAction, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { PiCaretDownDuotone } from "react-icons/pi"
 import { Combobox, ComboboxButton, ComboboxInput, ComboboxOption, ComboboxOptions } from "@headlessui/react"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
+import { useAuthorsLookup } from "@renderer/features/mods/hooks/useModDbLookups"
 
 function AuthorFilter({
   authorFilter,
@@ -18,23 +19,8 @@ function AuthorFilter({
 }): JSX.Element {
   const { t } = useTranslation()
 
-  const [authorsList, setAuthorsList] = useState<DownloadableModAuthorType[]>([])
+  const authorsList = useAuthorsLookup()
   const [authorsQuery, setAuthorsQuery] = useState<string>("")
-
-  useEffect(() => {
-    queryAuthors()
-  }, [])
-
-  async function queryAuthors(): Promise<void> {
-    try {
-      const res = await window.api.netManager.queryURL("https://mods.vintagestory.at/api/authors")
-      const data = await JSON.parse(res)
-      setAuthorsList(data["authors"])
-    } catch (err) {
-      window.api.utils.logMessage("error", `[front] [mods] [features/mods/pages/ListMods.tsx] [AuthorFilter > queryAuthors] Error fetching authors.`)
-      window.api.utils.logMessage("debug", `[front] [mods] [features/mods/pages/ListMods.tsx] [AuthorFilter > queryAuthors] Error fetching authors: ${err}`)
-    }
-  }
 
   const filteredAuthors =
     authorsQuery === ""

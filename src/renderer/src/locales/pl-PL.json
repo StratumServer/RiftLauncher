@@ -9,7 +9,7 @@
     },
     "loader": {
       "desc": "Przygotowujemy wszystko dla Ciebie!",
-      "title": "Witaj w VS Launcher!"
+      "title": "Witaj w RiftLauncher!"
     },
     "mainMenu": {
       "homeDesc": "Strona główna",
@@ -20,9 +20,9 @@
       "modsTitle": "Mody",
       "versionsDesc": "Zarządzaj wersjami VS",
       "versionsTitle": "Wersje VS",
-      "configDesc": "Konfiguracja VS Launcher",
+      "configDesc": "Konfiguracja RiftLauncher",
       "configTitle": "Konfiguracja",
-      "infoAndHelpDesc": "Pomoc i informacje o VS Launcher",
+      "infoAndHelpDesc": "Pomoc i informacje o RiftLauncher",
       "infoAndHelpTitle": "Informacje i pomoc"
     }
   },
@@ -79,12 +79,12 @@
     },
     "home": {
       "description": "Nieoficjalny Launcher do Vintage Story z (prawie) wszystkimi funkcjami, których możesz potrzebować.",
-      "title": "Witaj w VS Launcher"
+      "title": "Witaj w RiftLauncher"
     },
     "installations": {
       "areYouSureDelete": "Czy na pewno chcesz usunąć tę instancję?",
       "cantDeleteWhileinUse": "Nie możesz usunąć tej instancji kiedy jest uruchomiona!",
-      "cantUseDataPath": "Parametr startowy --dataPath nie może być użyty, ponieważ jest używany przez VS Launcher. Jeśli chcesz użyć innego folderu, zmień go podczas tworzenia instancji.",
+      "cantUseDataPath": "Parametr startowy --dataPath nie może być użyty, ponieważ jest używany przez RiftLauncher. Jeśli chcesz użyć innego folderu, zmień go podczas tworzenia instancji.",
       "defaultName": "Moja nowa instancja",
       "deleteData": "Usuń dane",
       "deleteInstallation": "Usuń instancję",
@@ -143,7 +143,7 @@
       "modDownloadDesc": "Pobieranie moda {{name}} {{version}} do {{out}}!",
       "modSuccessfullyDeleted": "Mod usunięty pomyślnie!",
       "modTaskName": "{{name}} {{version}} do {{out}}",
-      "modsWithErrorsDescription": "Następujące mody zawierają błędy i VS Launcher nie może ich zidentyfikować!",
+      "modsWithErrorsDescription": "Następujące mody zawierają błędy i RiftLauncher nie może ich zidentyfikować!",
       "modsWithErrorsDescriptionReport": "Prosimy o zgłoszenie tego problemu na stronie <issues /> lub na naszym serwerze <discord />!",
       "modsWithIncompatibleUpdatesDescription": "Następujące mody mają dostępne aktualizacje, które są na 90% niekompatybilne z wybraną wersją Vinatge Story!",
       "modsWithUpdatesDescription": "Następujące mody mają dostępne aktualizacje, które są na 95% kompatybilne z wybraną wersją Vintage Story!",
@@ -169,7 +169,7 @@
       "updatingInstalledMods": "Aktualizowanie zainstalowanych modów!",
       "modsUpdatedSuccessfully": "Wszystkie mody zostały pomyślnie zaktualizowane!",
       "errorUpdatingMods": "Wystąpił błąd podczas aktualizacji modów!",
-      "errorUpdatingMod": "Wystąpił błąd podczas aktualizacji moda {mod}!"
+      "errorUpdatingMod": "Wystąpił błąd podczas aktualizacji moda {{mod}}!"
     },
     "versions": {
       "areYouSureUninstall": "Czy na pewno chcesz odinstalować tę wersję VS?",
@@ -209,7 +209,7 @@
       "includeLogs": "Aby jeszcze bardziej nam pomóc, prześlij pliki logów znajdujące się w <folderlink />.",
       "logsFolderTitle": "Folder logów",
       "thisFolder": "tym folderze",
-      "title": "Pomoc i informacje o VS Launcher",
+      "title": "Pomoc i informacje o RiftLauncher",
       "debugInfoDesc": "Skopiuj poniższe informacje i wyślij je wraz ze zgłoszeniem błędu, aby pomóc nam znaleźć problem!"
     }
   },
@@ -220,7 +220,6 @@
     "cancel": "Anuluj",
     "delete": "Usuń",
     "discard": "Odrzuć",
-    "donate": "Darowizny",
     "folder": "Folder",
     "goBack": "Wstecz",
     "guides": "Poradniki",
@@ -260,7 +259,7 @@
     "text": "Tekst",
     "totalTime": "{{total}} łącznie",
     "trending": "Popularność",
-    "tryMVL": "Nie podoba ci się VS Launcher? Wypróbuj <link /> launcher!",
+    "tryMVL": "Nie podoba ci się RiftLauncher? Wypróbuj <link /> launcher!",
     "twofacode": "Kod 2FA",
     "update": "Aktualizuj",
     "updated": "Zaktualizowany",
@@ -275,7 +274,7 @@
     "basics": "Podstawowe",
     "default": "Domyślne",
     "discord": "Discord",
-    "discordContact": "Discord (@zaldaryon)",
+    "discordContact": "Discord",
     "folders": "Foldery",
     "general": "Ogólne",
     "source": "Źródło",
@@ -302,11 +301,11 @@
       "gameExitedWithErrors": "Vintage Story zostało zamknięte z błędami!",
       "missingFields": "Wypełnij wszystkie pola!",
       "updateAvailable": "Nowa aktualizacja dostępna! Pobieranie...",
-      "updateDownloaded": "Aktualizacja została pobrana pomyślnie! Uruchom ponownie VS Launcher, aby dokończyć aktualizację!",
+      "updateDownloaded": "Aktualizacja została pobrana pomyślnie! Uruchom ponownie RiftLauncher, aby dokończyć aktualizację!",
       "folderNotEmpty": "Wybrany folder nie jest pusty! Upewnij się, że nie ma tam nic ważnego.",
       "noFileSelected": "Nie wybrano pliku!",
       "coulndtCopyIcon": "Ta ikona nie mogła zostać skopiowana do folderu ikon!",
-      "appClosePrevented": "Nie można zamknąć VS Launchera, ponieważ gra Vintage Story jest uruchomiona lub trwa wykonywanie zadania."
+      "appClosePrevented": "Nie można zamknąć RiftLaunchera, ponieważ gra Vintage Story jest uruchomiona lub trwa wykonywanie zadania."
     },
     "discard": "Wyczyść powiadomienia"
   },

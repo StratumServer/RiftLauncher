@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      - dev
+  workflow_dispatch:
 
 jobs:
   typecheck:
@@ -45,7 +47,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:unpack
+
+  # macos-latest bills Actions minutes at a 10x multiplier and the launcher
+  # can't launch the game on macOS yet, so this build is manual-only.
+  build-macos:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: false

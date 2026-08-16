@@ -20,7 +20,6 @@
     "type": "Tipo",
     "install": "Instalar",
     "minMaxAmmount": "Número entre {{min}} e {{max}}",
-    "donate": "Doações",
     "restore": "Restaurar",
     "text": "Texto",
     "author": "Autor",
@@ -38,7 +37,7 @@
     "authors": "Autores",
     "contributors": "Colaboradores",
     "update": "Atualizar",
-    "tryMVL": "Não gostou do VS Launcher? \nTente <link /> launcher!",
+    "tryMVL": "Não gostou do RiftLauncher? \nTente <link /> launcher!",
     "favorite": "Favorito",
     "any": "Qualquer",
     "both": "Ambos",
@@ -62,7 +61,7 @@
     "advanced": "Avançado",
     "compression": "Compressão",
     "discord": "Discord",
-    "discordContact": "Discord (@zaldaryon)",
+    "discordContact": "Discord",
     "folders": "Pastas",
     "twofacode": "Código 2FA",
     "email": "Email",
@@ -78,7 +77,7 @@
       "notImplementedDesc": "Volte na próxima versão, talvez já esteja pronta!"
     },
     "home": {
-      "title": "Bem-vindo ao VS Launcher",
+      "title": "Bem-vindo ao RiftLauncher",
       "description": "O lançador não oficial do Vintage Story com todas as funcionalidades que precisa."
     },
     "versions": {
@@ -137,7 +136,7 @@
       "labelStartParams": "Argumentos de início",
       "startParams": "Argumentos de início",
       "startParamsDesc": "Lista de todos os argumentos de ínicio disponíveis: <link />",
-      "cantUseDataPath": "O argumento --dataPath não pode ser usado pois já é usado pelo VS Launcher. Se quizer usar outra pasta, altere-a na instalação.",
+      "cantUseDataPath": "O argumento --dataPath não pode ser usado pois já é usado pelo RiftLauncher. Se quizer usar outra pasta, altere-a na instalação.",
       "startParamsLink": "Vintage Story Wiki",
       "gameAlreadyRunning": "Já está a jogar com essa instalação",
       "editWhilePlaying": "Não é possível editar a instalação enquanto estiver a jogar!",
@@ -177,7 +176,7 @@
       "deletingNotReversible": "A exclusão não é reversível, não será possível restaurar os mods, mas poderá sempre descarrega-lo novamente!",
       "openOnTheModDB": "Abrir no ModDB!",
       "listWithErrorsTitle": "Mods com erros",
-      "modsWithErrorsDescription": "Os próximos mods têm alguns erros e o VS Launcher não consegui identificá-los!",
+      "modsWithErrorsDescription": "Os próximos mods têm alguns erros e o RiftLauncher não consegui identificá-los!",
       "modsWithErrorsDescriptionReport": "Por favor, relate este incidente na página <Issues /> ou no nosso servidor de <discord />!",
       "noModSelected": "Nenhum mod selecionado!",
       "onlyFavMods": "Mostrar apenas mods favoritos",
@@ -199,7 +198,7 @@
       "updatesAvailableInstallation_zero": "A instalação selecionada tem mods {{count}} com atualizações disponíveis! Clique aqui para vê-los!",
       "updatingInstalledMods": "Atualizando os Mods instalados!",
       "updateAllButton": "Atualizar todos",
-      "errorUpdatingMod": "Ocorreu um error ao atualizar o Mod {mod}!",
+      "errorUpdatingMod": "Ocorreu um error ao atualizar o Mod {{mod}}!",
       "errorUpdatingMods": "Ocorreu um erro ao atualizar os Mods!",
       "modsUpdatedSuccessfully": "Todos os Mods foram atualizados com sucesso!",
       "updateAll": "Atualizar todos os Mods com atualizações disponíveis"
@@ -253,7 +252,7 @@
     "infoAndHelp": {
       "debugInfoTitle": "Informação de debug",
       "logsFolderTitle": "Pasta de Logs",
-      "title": "Info e Ajuda do VS Launcher",
+      "title": "Info e Ajuda do RiftLauncher",
       "thisFolder": "esta pasta",
       "includeLogs": "Envia-nos os ficheiros de log que estão na pasta <folderlink /> para nos ajudares ainda mais!",
       "debugInfoDesc": "Copia a seguinte informação e envia-a juntamente com a informação dos erros para nos ajudares a encontrar o problema!"
@@ -270,9 +269,9 @@
       "installationsTitle": "Instalações",
       "installationsDesc": "Gerir as suas instalações",
       "configTitle": "Configuração",
-      "configDesc": "Configurar VS Launcher",
+      "configDesc": "Configurar RiftLauncher",
       "infoAndHelpTitle": "Info & Ajuda",
-      "infoAndHelpDesc": "Ajuda & Info do VS Launcher"
+      "infoAndHelpDesc": "Ajuda & Info do RiftLauncher"
     },
     "tasksMenu": {
       "downloading": "A descarregar",
@@ -283,14 +282,14 @@
     },
     "loader": {
       "desc": "Estamos a preparar tudo para ti!",
-      "title": "Bem-vindo(a) ao VS Launcher!"
+      "title": "Bem-vindo(a) ao RiftLauncher!"
     }
   },
   "notifications": {
     "body": {
       "folderDoesntExists": "A pasta que está a tentar abrir não existe!",
       "updateAvailable": "Nova atualização disponível! A descarregar...",
-      "updateDownloaded": "Atualização descarregada com sucesso! Reinicie o VS Launcher para atualizar.",
+      "updateDownloaded": "Atualização descarregada com sucesso! Reinicie o RiftLauncher para atualizar.",
       "downloading": "A iniciar o download: {{downloadName}}!",
       "downloaded": "Download concluído: {{downloadName}}!",
       "downloadError": "Erro ao descarregar: {{downloadName}}!",
@@ -306,7 +305,7 @@
       "folderNotEmpty": "A pasta que você selecionou não está vazia! Certifique-se de que não tem nada importante lá.",
       "noFileSelected": "Sem ficheiros selecionados!",
       "coulndtCopyIcon": "Não foi possível copiar esse icon para a pasta de icons!",
-      "appClosePrevented": "Não podes encerrar o VS Launcher porque ainda estás a jogar Vintage Story ou porque há uma tarefa a ser executada!"
+      "appClosePrevented": "Não podes encerrar o RiftLauncher porque ainda estás a jogar Vintage Story ou porque há uma tarefa a ser executada!"
     },
     "discard": "Descartar notificação"
   },

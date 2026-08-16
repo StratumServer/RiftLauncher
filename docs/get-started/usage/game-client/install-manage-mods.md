@@ -1,13 +1,13 @@
 ---
 icon: gear
 description: >-
-  Mods can be installed, updated and uninstalled using VS Launcher. Check out
+  Mods can be installed, updated and uninstalled using RiftLauncher. Check out
   this how to guide.
 ---
 
 # Install/Manage Mods
 
-**Mods** are amazing. With them you can change everything you want to make the game perfect for you, but installing them was not the funniest thing to do. Now with VS Launcher you can install, update and uninstall all the mods you want with just a few clicks!
+**Mods** are amazing. With them you can change everything you want to make the game perfect for you, but installing them was not the funniest thing to do. Now with RiftLauncher you can install, update and uninstall all the mods you want with just a few clicks!
 
 {% hint style="info" %}
 Mods will be downloaded from the official ModDB!

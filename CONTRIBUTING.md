@@ -16,7 +16,7 @@ If you find a bug or have a suggestion, open an issue. Make sure to include:
 - A clear and concise description of the problem.
 - Steps to reproduce the issue (if applicable).
 - Relevant screenshots or logs.
-  You can find this ones on `AppData/Roaming/VSLauncher/logs` or `.config\VSLauncher\logs`.
+  You can find this ones on `AppData/Roaming/VSLauncher/logs` or `.config/VSLauncher/logs` (inherited from VS Launcher, renaming tracked separately).
 
 ## Proposing New Features
 
@@ -43,7 +43,7 @@ This project follows a [Code of Conduct](./CODE_OF_CONDUCT.md). By contributing,
 
 ## Contact
 
-If you have any questions, contact `@zaldaryon` on the project Discord server or open an issue.
+If you have any questions, join the [Stratum Discord server](https://discord.gg/vQm6z2urZs) or open an issue.
 
 ---
 

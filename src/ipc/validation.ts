@@ -1,5 +1,7 @@
-import { isAbsolute, relative, resolve } from "path"
+import { isAbsolute, relative, resolve, sep } from "path"
 import { fileURLToPath } from "url"
+
+import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
 
 export const MAX_IPC_STRING_LENGTH = 8_192
 export const MAX_PATH_LENGTH = 4_096
@@ -8,14 +10,22 @@ export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 export const MAX_LOGIN_RESPONSE_BYTES = 512 * 1024
 export const MAX_ARCHIVE_ENTRY_BYTES = 512 * 1024 * 1024
 export const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
+// The mods catalog has no server-side pagination: one growth spurt of the ~8000-mod
+// list (about 3.5 MB today) can outgrow the generic 4 MB ceiling with no fallback.
+// 16 MB gives years of headroom while staying a bounded, allow-listed exception rather
+// than an unbounded response.
+export const MAX_MODS_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024
 
 export type UrlRule = Readonly<{
   hostname: string
   pathPrefixes: readonly string[]
+  // Optional per-rule response ceiling. Falls back to MAX_RESPONSE_BYTES when unset.
+  maxBytes?: number
 }>
 
 export const API_URL_RULES: readonly UrlRule[] = [
   { hostname: "api.vintagestory.at", pathPrefixes: ["/stable.json", "/unstable.json"] },
+  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api"] },
   { hostname: "auth3.vintagestory.at", pathPrefixes: ["/v2/gamelogin"] }
 ]
@@ -27,9 +37,8 @@ export const DOWNLOAD_URL_RULES: readonly UrlRule[] = [
 ]
 
 export const BROWSER_URL_RULES: readonly UrlRule[] = [
-  { hostname: "discord.gg", pathPrefixes: ["/RtWpYBRRUz"] },
+  { hostname: "discord.gg", pathPrefixes: ["/vQm6z2urZs"] },
   { hostname: "github.com", pathPrefixes: ["/StratumServer/RiftLauncher"] },
-  { hostname: "ko-fi.com", pathPrefixes: ["/zaldaryon"] },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/show", "/mvl"] },
   { hostname: "vsldocs.xurxomf.xyz", pathPrefixes: ["/"] },
   { hostname: "wiki.vintagestory.at", pathPrefixes: ["/"] },
@@ -69,6 +78,45 @@ export function assertNonRootPath(value: unknown, name = "path"): string {
   if (resolvedPath === resolve(resolvedPath, "..")) throw new TypeError(`Invalid ${name}`)
 
   return pathValue
+}
+
+/**
+ * Puts a path in the shape two paths have to be in before they can be compared:
+ * absolute, and lower cased on Windows, whose file systems do not distinguish
+ * case.
+ */
+export function comparablePath(value: string): string {
+  const resolved = resolve(value)
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved
+}
+
+/** True when `candidate` sits under `root`, or is `root` itself when `allowRoot`. */
+export function isPathWithin(root: string, candidate: string, allowRoot = true): boolean {
+  const relativePath = relative(comparablePath(root), comparablePath(candidate))
+  return (allowRoot && relativePath === "") || (relativePath !== "" && relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath))
+}
+
+/**
+ * One entry of a path allow list.
+ *
+ * `descendants` is the whole difference between a folder the launcher owns and
+ * a single file it happens to know about. A folder grant reaches everything
+ * under it, because that is where mods, saves and game files live. A file grant
+ * reaches that one path and nothing else: an archive has no inside as far as
+ * the file system is concerned, so treating it as a folder only ever widens
+ * what the launcher accepts.
+ *
+ * Either way the granted path itself is covered. A grant that did not cover its
+ * own path would authorize nothing a caller ever asks about.
+ */
+export type PathGrant = {
+  path: string
+  descendants: boolean
+}
+
+/** True when at least one grant covers `candidate`. */
+export function isPathGranted(grants: readonly PathGrant[], candidate: string): boolean {
+  return grants.some((grant) => (grant.descendants ? isPathWithin(grant.path, candidate) : comparablePath(grant.path) === comparablePath(candidate)))
 }
 
 export function assertSafeTaskId(value: unknown): string {
@@ -183,6 +231,10 @@ function pathMatches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`)
 }
 
+function findMatchingRule(rules: readonly UrlRule[], hostname: string, pathname: string): UrlRule | undefined {
+  return rules.find((candidate) => candidate.hostname === hostname && candidate.pathPrefixes.some((prefix) => pathMatches(pathname, prefix)))
+}
+
 function parseAllowedUrl(value: unknown, rules: readonly UrlRule[]): URL {
   const rawUrl = assertString(value, "url", MAX_URL_LENGTH)
   let parsedUrl: URL
@@ -195,14 +247,22 @@ function parseAllowedUrl(value: unknown, rules: readonly UrlRule[]): URL {
 
   if (parsedUrl.protocol !== "https:" || parsedUrl.username || parsedUrl.password || parsedUrl.port) throw new TypeError("Invalid URL")
 
-  const rule = rules.find((candidate) => candidate.hostname === parsedUrl.hostname.toLowerCase())
-  if (!rule || !rule.pathPrefixes.some((prefix) => pathMatches(parsedUrl.pathname, prefix))) throw new TypeError("URL is not allowed")
+  if (!findMatchingRule(rules, parsedUrl.hostname.toLowerCase(), parsedUrl.pathname)) throw new TypeError("URL is not allowed")
 
   return parsedUrl
 }
 
 export function assertAllowedApiUrl(value: unknown): URL {
   return parseAllowedUrl(value, API_URL_RULES)
+}
+
+/**
+ * Resolves the response-size ceiling for an already-validated API URL, honoring a
+ * per-rule override (see API_URL_RULES) and falling back to the generic MAX_RESPONSE_BYTES.
+ */
+export function getApiUrlMaxBytes(url: URL): number {
+  const rule = findMatchingRule(API_URL_RULES, url.hostname.toLowerCase(), url.pathname)
+  return rule?.maxBytes ?? MAX_RESPONSE_BYTES
 }
 
 export function assertAllowedDownloadUrl(value: unknown): URL {
@@ -272,6 +332,43 @@ export function isSafeArchiveEntry(entryName: unknown): entryName is string {
   if (normalizedName.startsWith("/") || /^[A-Za-z]:\//.test(normalizedName)) return false
 
   return !normalizedName.split("/").some((part) => part === "..")
+}
+
+const RESTORE_WORKSPACE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * True when `candidateName` is one of the two temporary folders the backup
+ * restore puts beside an installation folder named `installationName`.
+ *
+ * Folder names only, no path parts. The caller is the one that checks both
+ * names live in the same parent folder.
+ */
+export function isRestoreWorkspaceName(installationName: string, candidateName: string): boolean {
+  if (!installationName || !candidateName.startsWith(installationName)) return false
+
+  const remainder = candidateName.slice(installationName.length)
+  return [RESTORE_STAGING_SUFFIX, RESTORE_REPLACED_SUFFIX].some((suffix) => remainder.startsWith(suffix) && RESTORE_WORKSPACE_TOKEN_PATTERN.test(remainder.slice(suffix.length)))
+}
+
+/**
+ * True when `name` is a gzipped tar, which 7-Zip cannot unpack in one pass and,
+ * for the archives Vintage Story ships, cannot read at all.
+ */
+export function isTarGzName(name: unknown): boolean {
+  return typeof name === "string" && /\.(?:tar\.gz|tgz)$/i.test(name)
+}
+
+/**
+ * Tar entry kinds that become a plain file or folder on disk.
+ *
+ * Everything else, symbolic links and hard links included, is refused: the
+ * extraction only ever writes files and directories, so an archive asking for
+ * anything else is not one the launcher unpacks.
+ */
+const SAFE_TAR_ENTRY_TYPES: ReadonlySet<string> = new Set(["File", "OldFile", "ContiguousFile", "Directory"])
+
+export function isSafeTarEntryType(entryType: unknown): boolean {
+  return typeof entryType === "string" && SAFE_TAR_ENTRY_TYPES.has(entryType)
 }
 
 export function isArchiveSymlink(externalFileAttributes: unknown): boolean {

@@ -1,3 +1,10 @@
+import { useTranslation } from "react-i18next"
+
+import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { parseModListResponse } from "@domain/mods/moddb"
+import { queryModDb } from "@renderer/features/moddb/adapters/moddb"
+import { logMods } from "@renderer/features/moddb/adapters/log"
+
 export function useQueryMods(): ({
   textFilter,
   authorFilter,
@@ -15,6 +22,9 @@ export function useQueryMods(): ({
   orderByOrder?: string
   onFinish?: () => void
 }) => Promise<DownloadableModOnListType[]> {
+  const { t } = useTranslation()
+  const { addNotification } = useNotificationsContext()
+
   /**
    * Makes a query and returns all the mods. Accepts the listed filters.
    *
@@ -54,15 +64,29 @@ export function useQueryMods(): ({
       filters.push(`orderby=${orderBy}`)
       filters.push(`orderdirection=${orderByOrder}`)
 
-      const res = await window.api.netManager.queryURL(`https://mods.vintagestory.at/api/mods${filters.length > 0 && `?${filters.join("&")}`}`)
-      const data = await JSON.parse(res)
+      const res = await queryModDb(`/mods${filters.length > 0 && `?${filters.join("&")}`}`)
+      const parsed = parseModListResponse(res)
 
       if (onFinish) onFinish()
 
-      return data["mods"]
+      // The ModDB answers an application error with a real HTTP 200, so a missing or bad
+      // `statuscode` never throws: it has to be checked explicitly, or every caller downstream
+      // (ListMods.tsx runs unguarded `mods.filter(...)` on the result) sees `undefined` typed as a
+      // list and crashes on the first filter.
+      if (!parsed.ok) {
+        logMods(
+          "error",
+          `[front] [mods] [features/mods/hooks/useQueryMods.ts] [useQueryMods > queryMods] Mods query failed: ${parsed.reason}${parsed.statusCode ? ` (statuscode ${parsed.statusCode})` : ""}.`
+        )
+        addNotification(t("features.mods.errorFetchingMods"), "error")
+        return []
+      }
+
+      return parsed.payload as unknown as DownloadableModOnListType[]
     } catch (err) {
-      window.api.utils.logMessage("error", `[front] [mods] [features/mods/hooks/useQueryMods.ts] [useQueryMods > queryMods] Error fetching mods.`)
-      window.api.utils.logMessage("debug", `[front] [mods] [features/mods/hooks/useQueryMods.ts] [useQueryMods > queryMods] Error fetching mods: ${err}`)
+      logMods("error", `[front] [mods] [features/mods/hooks/useQueryMods.ts] [useQueryMods > queryMods] Error fetching mods.`)
+      logMods("debug", `[front] [mods] [features/mods/hooks/useQueryMods.ts] [useQueryMods > queryMods] Error fetching mods: ${err}`)
+      addNotification(t("features.mods.errorFetchingMods"), "error")
       return []
     }
   }

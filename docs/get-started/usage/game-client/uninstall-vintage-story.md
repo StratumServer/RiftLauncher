@@ -23,7 +23,7 @@ Deleting **Installations** is easy, just follow this tutorial.
 
 {% hint style="warning" %}
 If you check the `Delete data` checkbox your worlds, configs, backups and so on will be deleted FOREVER!\
-If you want to keep them don't check this option so VS Launcher only deletes the **Installation** from the list but keeps the files on the same folder.
+If you want to keep them don't check this option so RiftLauncher only deletes the **Installation** from the list but keeps the files on the same folder.
 {% endhint %}
 
 {% embed url="https://www.youtube.com/watch?v=PW00qxd-B88" %}
