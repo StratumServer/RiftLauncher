@@ -1,7 +1,7 @@
 {
   "name": "vs-launcher",
   "version": "1.6.1",
-  "description": "Rift Launcher for Vintage Story",
+  "description": "RiftLauncher for Vintage Story",
   "overrides": {
     "js-yaml": "4.3.1",
     "tar": "7.5.22"

@@ -54,7 +54,7 @@ function createWindow(): void {
     center: true,
     width: 1280,
     height: 720,
-    title: `VS Launcher - ${app.getVersion()}`,
+    title: `RiftLauncher - ${app.getVersion()}`,
     show: false,
     autoHideMenuBar: true,
     fullscreenable: false,

@@ -38,7 +38,7 @@
     "authors": "Authors",
     "contributors": "Contributors",
     "update": "Update",
-    "tryMVL": "Not liking VS Launcher? Try <link /> launcher!",
+    "tryMVL": "Not liking RiftLauncher? Try <link /> launcher!",
     "favorite": "Favorite",
     "any": "Any",
     "both": "Both",
@@ -80,7 +80,7 @@
       "notImplementedDesc": "Come back on the next version and it may be ready!"
     },
     "home": {
-      "title": "Welcome to VS Launcher",
+      "title": "Welcome to RiftLauncher",
       "description": "The unofficial Vintage Story Launcher with (almost) all the features you need.",
       "watchTrailer": "Watch the latest trailer on YouTube"
     },
@@ -146,7 +146,7 @@
       "labelStartParams": "Start params",
       "startParams": "Start params",
       "startParamsDesc": "List of all the available start params: <link />",
-      "cantUseDataPath": "Start param --dataPath can't be used as it's used by VS Launcher. If you want to use another folder change it on the Installation.",
+      "cantUseDataPath": "Start param --dataPath can't be used as it's used by RiftLauncher. If you want to use another folder change it on the Installation.",
       "startParamsLink": "Vintage Story Wiki",
       "gameAlreadyRunning": "Already playing that Installation!",
       "editWhilePlaying": "You can't edit an Installation while playing it!",
@@ -187,7 +187,7 @@
       "deletingNotReversible": "Deletion is not reversible so you'll not be able to restore the Mods but you can always download them again!",
       "openOnTheModDB": "Open on the ModDB!",
       "listWithErrorsTitle": "Mods with errors",
-      "modsWithErrorsDescription": "The next Mods have some errors and VS Launcher can not identify them!",
+      "modsWithErrorsDescription": "The next Mods have some errors and RiftLauncher can not identify them!",
       "modsWithErrorsDescriptionReport": "Please, report this incident on the <issues /> page or on our <discord /> server!",
       "noModSelected": "No Mod selected!",
       "onlyFavMods": "Show favorite Mods only",
@@ -299,7 +299,7 @@
       "manageBackups": "Manage Backups"
     },
     "infoAndHelp": {
-      "title": "VS Launcher Info & Help",
+      "title": "RiftLauncher Info & Help",
       "debugInfoTitle": "Debug info",
       "includeLogs": "Send us the log files you can find on <folderlink /> to help us even more!",
       "logsFolderTitle": "Logs folder",
@@ -318,9 +318,9 @@
       "installationsTitle": "Installations",
       "installationsDesc": "Manage your Installations",
       "configTitle": "Config",
-      "configDesc": "Configure VS Launcher",
+      "configDesc": "Configure RiftLauncher",
       "infoAndHelpTitle": "Info & Help",
-      "infoAndHelpDesc": "VS Launcher help and info"
+      "infoAndHelpDesc": "RiftLauncher help and info"
     },
     "tasksMenu": {
       "downloading": "Downloading",
@@ -330,7 +330,7 @@
       "noTasksAvailable": "There are no tasks queued!"
     },
     "loader": {
-      "title": "Welcome to VS Launcher!",
+      "title": "Welcome to RiftLauncher!",
       "desc": "We are preparing everything for you!"
     }
   },
@@ -338,7 +338,7 @@
     "body": {
       "folderDoesntExists": "The folder you're trying to open does not exists!",
       "updateAvailable": "New update available! Downloading...",
-      "updateDownloaded": "Update downloaded successfully! Click here to restart VS Launcher and update it!",
+      "updateDownloaded": "Update downloaded successfully! Click here to restart RiftLauncher and update it!",
       "downloading": "Starting download: {{downloadName}}!",
       "downloaded": "Finished download: {{downloadName}}!",
       "downloadError": "Error downloading: {{downloadName}}!",
@@ -351,9 +351,9 @@
       "gameLaunchNoExecutable": "Couldn't find Vintage Story in this version's folder. Try reinstalling it!",
       "gameLaunchSessionWriteFailed": "Couldn't save your login to this installation. Try logging in again!",
       "gameLaunchInvalidEnvironment": "This installation's environment variables can't be used. Check them and try again!",
-      "configSaveInvalidPayload": "Your settings couldn't be saved because of an unexpected error! Try restarting VS Launcher, and let us know if it keeps happening.",
-      "configSaveUnauthorizedPath": "Your settings couldn't be saved: one of your folders isn't one VS Launcher manages. Re-pick it on the Config page!",
-      "configSaveWriteFailed": "Your settings couldn't be saved to disk! Make sure VS Launcher can write to its data folder, then try again.",
+      "configSaveInvalidPayload": "Your settings couldn't be saved because of an unexpected error! Try restarting RiftLauncher, and let us know if it keeps happening.",
+      "configSaveUnauthorizedPath": "Your settings couldn't be saved: one of your folders isn't one RiftLauncher manages. Re-pick it on the Config page!",
+      "configSaveWriteFailed": "Your settings couldn't be saved to disk! Make sure RiftLauncher can write to its data folder, then try again.",
       "configSaveRecovered": "Your settings are saving again!",
       "missingFields": "Please fill all the fields!",
       "compressing": "Starting compression: {{compressName}}!",
@@ -362,7 +362,7 @@
       "folderNotEmpty": "The folder you've selected is not empty! Make sure you've nothing important on there.",
       "noFileSelected": "No file selected!",
       "coulndtCopyIcon": "That icon couldn't be copied to the icons folder!",
-      "appClosePrevented": "You can't close VS Launcher either because you're playing Vintage Story or because there's a task in progress!"
+      "appClosePrevented": "You can't close RiftLauncher either because you're playing Vintage Story or because there's a task in progress!"
     },
     "discard": "Discard notification"
   },

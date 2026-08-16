@@ -38,7 +38,7 @@
     "authors": "Auteurs",
     "contributors": "Contributeurs",
     "update": "Mettre à jour",
-    "tryMVL": "Vous n'aimez pas VS Launcher ? Essayez <link /> !",
+    "tryMVL": "Vous n'aimez pas RiftLauncher ? Essayez <link /> !",
     "favorite": "Favori",
     "any": "Tout",
     "both": "Les deux",
@@ -78,7 +78,7 @@
       "notImplementedDesc": "Revenez à la prochaine version, elle pourrait être prête !"
     },
     "home": {
-      "title": "Bienvenue dans VS Launcher",
+      "title": "Bienvenue dans RiftLauncher",
       "description": "Le lanceur non officiel de Vintage Story avec (presque) toutes les fonctionnalités dont vous avez besoin."
     },
     "versions": {
@@ -137,7 +137,7 @@
       "labelStartParams": "Paramètres de démarrage",
       "startParams": "Paramètres de démarrage",
       "startParamsDesc": "Liste de tous les paramètres de démarrage disponibles : <link />",
-      "cantUseDataPath": "Le paramètre de démarrage --dataPath ne peut pas être utilisé car il est utilisé par VS Launcher. Si vous souhaitez utiliser un autre dossier, modifiez-le lors de l'installation.",
+      "cantUseDataPath": "Le paramètre de démarrage --dataPath ne peut pas être utilisé car il est utilisé par RiftLauncher. Si vous souhaitez utiliser un autre dossier, modifiez-le lors de l'installation.",
       "startParamsLink": "Vintage Story Wiki",
       "gameAlreadyRunning": "Vous jouez déjà à cette installation !",
       "editWhilePlaying": "Vous ne pouvez pas modifier une installation pendant que vous y jouez !",
@@ -177,7 +177,7 @@
       "deletingNotReversible": "La suppression est irréversible, vous ne pourrez donc pas restaurer les mods, mais vous pouvez toujours les télécharger à nouveau !",
       "openOnTheModDB": "Ouvrir sur le site !",
       "listWithErrorsTitle": "Mods avec erreurs",
-      "modsWithErrorsDescription": "Les mods suivants ont des erreurs et VS Launcher ne peut pas les identifier !",
+      "modsWithErrorsDescription": "Les mods suivants ont des erreurs et RiftLauncher ne peut pas les identifier !",
       "modsWithErrorsDescriptionReport": "Veuillez signaler cet incident sur la page <issues /> ou sur notre serveur <discord /> !",
       "noModSelected": "Aucun mod sélectionné !",
       "onlyFavMods": "Afficher uniquement les mods favoris",
@@ -290,7 +290,7 @@
     "body": {
       "folderDoesntExists": "Le dossier que vous essayez d'ouvrir n'existe pas !",
       "updateAvailable": "Nouvelle mise à jour disponible ! Téléchargement en cours...",
-      "updateDownloaded": "Mise à jour téléchargée avec succès ! Redémarrez VS Launcher pour l'appliquer.",
+      "updateDownloaded": "Mise à jour téléchargée avec succès ! Redémarrez RiftLauncher pour l'appliquer.",
       "downloading": "Début du téléchargement : {{downloadName}} !",
       "downloaded": "Téléchargement terminé : {{downloadName}} !",
       "downloadError": "Erreur lors du téléchargement : {{downloadName}} !",

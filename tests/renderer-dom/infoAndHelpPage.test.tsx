@@ -34,7 +34,7 @@ describe("InfoAndHelpPage", () => {
     // The debug info block starts collapsed; open it before asserting on its contents.
     await user.click(screen.getByText("Debug info"))
 
-    expect(await screen.findByText("VS Launcher Version - v9.9.9")).toBeTruthy()
+    expect(await screen.findByText("RiftLauncher Version - v9.9.9")).toBeTruthy()
     expect(await screen.findByText("OS Type - win32")).toBeTruthy()
   })
 
