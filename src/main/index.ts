@@ -17,6 +17,7 @@ import { registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
+import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import fse from "fs-extra"
 
 import "@src/ipc"
@@ -217,7 +218,8 @@ app.whenReady().then(async () => {
 
   createWindow()
 
-  if (process.env["UPDATE"] !== "false") {
+  const updateDecision = canAutoUpdate({ platform: process.platform, env: { UPDATE: process.env["UPDATE"], APPIMAGE: process.env["APPIMAGE"] } })
+  if (updateDecision.ok) {
     // If there is an update available send an event to the client.
     autoUpdater.on("update-available", () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE)
@@ -229,11 +231,18 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED)
     })
 
+    // A failed check or download used to vanish silently. Log it so it shows up in the log file.
+    autoUpdater.on("error", (error) => {
+      logMessage("error", `[back] [index] [main/index.ts] [whenReady] Auto-update failed: ${error.message}.`)
+    })
+
     // Defer the network check until the initial window has had time to become interactive.
     const updateCheckTimer = setTimeout(() => {
       void autoUpdater.checkForUpdatesAndNotify()
     }, 5_000)
     updateCheckTimer.unref()
+  } else {
+    logMessage("info", `[back] [index] [main/index.ts] [whenReady] Auto-update disabled: ${updateDecision.reason}.`)
   }
 
   app.on("activate", function () {
