@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve } from "path"
+import { isAbsolute, relative, resolve, sep } from "path"
 import { fileURLToPath } from "url"
 
 import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
@@ -70,6 +70,45 @@ export function assertNonRootPath(value: unknown, name = "path"): string {
   if (resolvedPath === resolve(resolvedPath, "..")) throw new TypeError(`Invalid ${name}`)
 
   return pathValue
+}
+
+/**
+ * Puts a path in the shape two paths have to be in before they can be compared:
+ * absolute, and lower cased on Windows, whose file systems do not distinguish
+ * case.
+ */
+export function comparablePath(value: string): string {
+  const resolved = resolve(value)
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved
+}
+
+/** True when `candidate` sits under `root`, or is `root` itself when `allowRoot`. */
+export function isPathWithin(root: string, candidate: string, allowRoot = true): boolean {
+  const relativePath = relative(comparablePath(root), comparablePath(candidate))
+  return (allowRoot && relativePath === "") || (relativePath !== "" && relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath))
+}
+
+/**
+ * One entry of a path allow list.
+ *
+ * `descendants` is the whole difference between a folder the launcher owns and
+ * a single file it happens to know about. A folder grant reaches everything
+ * under it, because that is where mods, saves and game files live. A file grant
+ * reaches that one path and nothing else: an archive has no inside as far as
+ * the file system is concerned, so treating it as a folder only ever widens
+ * what the launcher accepts.
+ *
+ * Either way the granted path itself is covered. A grant that did not cover its
+ * own path would authorize nothing a caller ever asks about.
+ */
+export type PathGrant = {
+  path: string
+  descendants: boolean
+}
+
+/** True when at least one grant covers `candidate`. */
+export function isPathGranted(grants: readonly PathGrant[], candidate: string): boolean {
+  return grants.some((grant) => (grant.descendants ? isPathWithin(grant.path, candidate) : comparablePath(grant.path) === comparablePath(candidate)))
 }
 
 export function assertSafeTaskId(value: unknown): string {

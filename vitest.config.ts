@@ -58,10 +58,10 @@ export default defineConfig({
         "src/renderer/src/features/config/utils/**"
       ],
       thresholds: {
-        lines: 63,
-        statements: 61,
-        functions: 64,
-        branches: 58
+        lines: 64,
+        statements: 63,
+        functions: 67,
+        branches: 60
       }
     }
   }
