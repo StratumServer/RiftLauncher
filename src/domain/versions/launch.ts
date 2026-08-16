@@ -36,10 +36,15 @@ import type { GameOs } from "./gameExecutable"
 /**
  * The variable the launcher sets for the "Mesa GL thread" checkbox.
  *
- * Spelled the way the launcher has always spelled it, in capitals, because a
- * player who ticked the box has been running with this name and no other.
+ * Lowercase, because that is the name Mesa's driconf override actually reads
+ * from the environment. The launcher inherited the uppercase spelling,
+ * MESA_GLTHREAD, from VS Launcher; Linux environment variables are case
+ * sensitive, so that spelling set a variable Mesa never looked at, meaning
+ * the checkbox has in all likelihood never done anything. Mesa 23.1+ already
+ * enables glthread by default for many applications, so this mostly matters
+ * on older Mesa or for apps Mesa does not whitelist.
  */
-export const MESA_GL_THREAD_VARIABLE = "MESA_GLTHREAD"
+export const MESA_GL_THREAD_VARIABLE = "mesa_glthread"
 
 /**
  * Why no command was built.
