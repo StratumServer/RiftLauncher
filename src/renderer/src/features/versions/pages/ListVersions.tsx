@@ -3,8 +3,10 @@ import { PiFolderOpenDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiMagnifyingG
 import { useTranslation } from "react-i18next"
 import semver from "semver"
 
+import { uninstallGameVersion } from "@domain/versions/uninstall"
 import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { createUninstallPorts, describeUninstallFailure, toGameVersionSnapshot } from "@renderer/features/versions/adapters/uninstall"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -13,6 +15,8 @@ import { LinkButton, NormalButton } from "@renderer/components/ui/Buttons"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
+
+const LOG_TAG = "[front] [versions] [features/versions/pages/ListVersions.tsx]"
 
 function ListVersions(): JSX.Element {
   const { t } = useTranslation()
@@ -26,17 +30,31 @@ function ListVersions(): JSX.Element {
   async function DeleteVersionHandler(): Promise<void> {
     if (versionToDelete === null) return addNotification(t("features.versions.noVersionSelected"), "error")
 
-    try {
-      if (versionToDelete._playing) return addNotification(t("features.versions.deleteWhilePlaying"), "error")
+    const version = versionToDelete
 
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: versionToDelete.version, updates: { _deleting: true } } })
-      const deleted = await window.api.pathsManager.deletePath(versionToDelete!.path)
-      if (!deleted) throw new Error("Error deleting fame gersion data")
-      configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: versionToDelete!.version } })
-      addNotification(t("features.versions.versionUninstalledSuccesfully", { version: versionToDelete!.version }), "success")
-    } catch (err) {
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: versionToDelete.version, updates: { _deleting: false } } })
-      addNotification(t("features.versions.versionUninstallationFailed", { version: versionToDelete!.version }), "error")
+    try {
+      const result = await uninstallGameVersion(
+        createUninstallPorts(),
+        { version: toGameVersionSnapshot(version) },
+        {
+          onStarted: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: version.version, updates: { _deleting: true } } }),
+          onFinished: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: version.version, updates: { _deleting: false } } })
+        }
+      )
+
+      if (result.ok) {
+        configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: version.version } })
+        return addNotification(t("features.versions.versionUninstalledSuccesfully", { version: version.version }), "success")
+      }
+
+      const { messageKey, logged } = describeUninstallFailure(result.reason)
+
+      if (logged) {
+        window.api.utils.logMessage("error", `${LOG_TAG} [DeleteVersionHandler] Error uninstalling a VS Version.`)
+        window.api.utils.logMessage("debug", `${LOG_TAG} [DeleteVersionHandler] Error uninstalling VS Version ${version.version}: ${result.reason}.`)
+      }
+
+      addNotification(t(messageKey, { version: version.version }), "error")
     } finally {
       setVersionToDelete(null)
     }
