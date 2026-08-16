@@ -7,11 +7,13 @@ import semver from "semver"
 import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
 
+import { validateInstallationFields } from "@domain/installations/create"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { describeInstallationFieldsFailure } from "@renderer/features/installations/adapters/create"
 
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -84,9 +86,11 @@ function EditInslallation(): JSX.Element {
 
     if (!id || !name || !version || !backupsLimit || backupsAuto === undefined) return addNotification(t("notifications.body.missingFields"), "error")
 
-    if (name.length < 5 || name.length > 50) return addNotification(t("features.installations.installationNameMinMaxCharacters"), "error")
-
-    if (startParams.includes("--dataPath")) return addNotification(t("features.installations.cantUseDataPath"), "error")
+    const fields = validateInstallationFields({ name, startParams })
+    if (!fields.ok) {
+      const { messageKey } = describeInstallationFieldsFailure(fields.reason)
+      return addNotification(t(messageKey, { min: 5, max: 50 }), "error")
+    }
 
     try {
       configDispatch({

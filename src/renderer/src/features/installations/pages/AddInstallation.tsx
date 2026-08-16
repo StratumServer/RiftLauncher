@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation, Trans } from "react-i18next"
-import { v4 as uuidv4 } from "uuid"
 import { PiCaretDownDuotone, PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiPlusCircleDuotone, PiXCircleDuotone } from "react-icons/pi"
 import semver from "semver"
 import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
 
+import { createInstallation } from "@domain/installations/create"
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useCleanFolderName } from "@renderer/hooks/useCleanFolderName"
+import { createCreateInstallationPorts, describeCreateInstallationFailure, toFoldersInUse, toInstallationType } from "@renderer/features/installations/adapters/create"
 
 import {
   FormBody,
@@ -70,33 +71,27 @@ function AddInslallation(): JSX.Element {
   const handleAddInstallation = async (): Promise<void> => {
     if (!name || !path || !version || !backupsLimit || backupsAuto === undefined) return addNotification(t("notifications.body.missingFields"), "error")
 
-    if (name.length < 5 || name.length > 50) return addNotification(t("features.installations.installationNameMinMaxCharacters", { min: 5, max: 50 }), "error")
+    const result = createInstallation(createCreateInstallationPorts(), {
+      name,
+      icon: icon.id,
+      path,
+      version: version.version,
+      startParams,
+      backupsLimit,
+      backupsAuto,
+      compressionLevel,
+      mesaGlThread,
+      envVars,
+      foldersInUse: toFoldersInUse(config)
+    })
 
-    if (path === config.backupsFolder || config.installations.some((i) => i.path === path) || config.gameVersions.some((gv) => gv.path === path))
-      return addNotification(t("features.installations.folderAlreadyInUse"), "error")
-
-    if (startParams.includes("--dataPath")) return addNotification(t("features.installations.cantUseDataPath"), "error")
+    if (!result.ok) {
+      const { messageKey } = describeCreateInstallationFailure(result.reason)
+      return addNotification(t(messageKey, { min: 5, max: 50 }), "error")
+    }
 
     try {
-      const newInstallation: InstallationType = {
-        id: uuidv4(),
-        name,
-        icon: icon.id,
-        path,
-        version: version.version,
-        startParams,
-        backupsLimit,
-        backupsAuto,
-        compressionLevel,
-        backups: [],
-        lastTimePlayed: -1,
-        totalTimePlayed: 0,
-        mesaGlThread,
-        envVars,
-        _modsCount: 0
-      }
-
-      configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION, payload: newInstallation })
+      configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION, payload: toInstallationType(result.installation) })
       window.api.pathsManager.ensurePathExists(path)
       addNotification(t("features.installations.installationSuccessfullyAdded"), "success")
       navigate("/installations")
