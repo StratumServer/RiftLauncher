@@ -59,16 +59,17 @@ export default defineConfig({
         "src/renderer/src/features/config/contexts/**",
         "src/renderer/src/features/config/utils/**"
       ],
-      // Raised by the worker and account-storage pass: measured repo-wide
-      // coverage after it is ~83.8/81.3/80.8/76.9
+      // Raised by the worker/account-storage pass and the win32 RUN_INSTALLER /
+      // utilsHandlers / TaskManagerContext pass together: measured repo-wide
+      // coverage with both is ~86.9/84.7/83.6/81.2
       // (lines/statements/functions/branches); floors sit a couple of points
       // under each, the same buffer every previous set of floors kept below
       // its own measured numbers.
       thresholds: {
-        lines: 81,
-        statements: 79,
-        functions: 78,
-        branches: 74
+        lines: 85,
+        statements: 83,
+        functions: 82,
+        branches: 79
       }
     }
   }

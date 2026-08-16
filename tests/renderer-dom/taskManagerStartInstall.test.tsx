@@ -2,7 +2,7 @@ import type { ReactElement, ReactNode } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { act, renderHook, waitFor } from "@testing-library/react"
 
-import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
+import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 
 import { installMockWindowApi } from "./helpers/windowApi"
@@ -76,5 +76,43 @@ describe("TaskManagerContext.startInstall", () => {
     const [status, error] = onFinish.mock.calls[0] as [boolean, Error | null]
     expect(status).toBe(false)
     expect(error?.message).toContain("installer-failed")
+  })
+
+  /**
+   * The tests above all pass notifications: "none", so they never exercise
+   * showsStart/showsSuccess/showsError's true side for startInstall (PR #41's
+   * gating). These two pin that a verbose mode shows the same start/success/
+   * error toasts startDownload/startExtract/startCompress show.
+   */
+  it("shows the start and success toasts when RUN_INSTALLER reports ok with a verbose mode", async () => {
+    installMockWindowApi({
+      pathsManager: { runInstaller: vi.fn(async () => ({ ok: true }) as InstallerRunResult) }
+    })
+
+    const { result } = renderHook(() => ({ task: useTaskContext(), notifications: useNotificationsContext() }), { wrapper })
+    const onFinish = vi.fn()
+
+    await act(async () => {
+      await result.current.task.startInstall("Install", "desc", "all", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+    })
+
+    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, null))
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "success"])
+  })
+
+  it("shows the error toast when RUN_INSTALLER fails with a verbose mode", async () => {
+    installMockWindowApi({
+      pathsManager: { runInstaller: vi.fn(async () => ({ ok: false, reason: "installer-failed" }) as InstallerRunResult) }
+    })
+
+    const { result } = renderHook(() => ({ task: useTaskContext(), notifications: useNotificationsContext() }), { wrapper })
+    const onFinish = vi.fn()
+
+    await act(async () => {
+      await result.current.task.startInstall("Install", "desc", "all", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+    })
+
+    await waitFor(() => expect(onFinish).toHaveBeenCalled())
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "error"])
   })
 })
