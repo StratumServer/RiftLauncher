@@ -2,6 +2,8 @@ import { useGetInstalledMods } from "./useGetInstalledMods"
 import { useQueryMod } from "./useQueryMod"
 import semver from "semver"
 
+import { evaluateModCompatibility } from "@domain/mods/compatibility"
+
 export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number) => void }) => Promise<{
   mods: InstalledModType[]
   errors: ErrorInstalledModType[]
@@ -39,15 +41,15 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
           for (const release of dmod.releases) {
             if (!mod.version || !release.modversion || !semver.valid(release.modversion) || !semver.valid(mod.version)) continue
 
-            // If it has the tag of the version selected or a tag of the same patch... Mod: 1.19.6 - Game: 1.19.X
-            const compatibleWithVersion = release.tags.some((tag) => tag.startsWith(`${version.split(".").slice(0, 2).join(".")}`))
+            // Declared or same-minor both count as "worth offering": the tag compat check historically
+            // treated "1.19.X" tags on a "1.19.6" install the same as an exact "1.19.6" tag, so only
+            // "undeclared" is excluded here to keep this identical to that behaviour.
+            const compatibleWithVersion = evaluateModCompatibility(release.tags, version) !== "undeclared"
 
             // 0 if it's the same version
             // 1 if the downloadable version < than the installed one
             // -1 if the downloadable version > than the isntalled one
             const newRelease = semver.compare(mod.version, release.modversion)
-
-            console.log(`Mod: ${mod.name}, Compatible with: ${release.tags.join(" · ")}, Current version: ${version}`)
 
             if (compatibleWithVersion && newRelease === -1) {
               availableModUpdates++
