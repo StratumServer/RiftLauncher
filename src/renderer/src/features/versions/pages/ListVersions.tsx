@@ -3,10 +3,10 @@ import { PiFolderOpenDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiMagnifyingG
 import { useTranslation } from "react-i18next"
 import semver from "semver"
 
-import { uninstallGameVersion } from "@domain/versions/uninstall"
-import { useGameVersions, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useGameVersions } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { createUninstallPorts, describeUninstallFailure, toGameVersionSnapshot } from "@renderer/features/versions/adapters/uninstall"
+import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUninstallGameVersion"
+import { useOpenVersionFolder } from "@renderer/features/versions/hooks/useOpenVersionFolder"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -16,13 +16,12 @@ import { FormButton } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
-const LOG_TAG = "[front] [versions] [features/versions/pages/ListVersions.tsx]"
-
 function ListVersions(): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const gameVersions = useGameVersions()
-  const configDispatch = useConfigDispatch()
+  const uninstallVersion = useUninstallGameVersion()
+  const openVersionFolder = useOpenVersionFolder()
 
   const [versionToDelete, setVersionToDelete] = useState<GameVersionType | null>(null)
 
@@ -31,31 +30,8 @@ function ListVersions(): JSX.Element {
   async function DeleteVersionHandler(): Promise<void> {
     if (versionToDelete === null) return addNotification(t("features.versions.noVersionSelected"), "error")
 
-    const version = versionToDelete
-
     try {
-      const result = await uninstallGameVersion(
-        createUninstallPorts(),
-        { version: toGameVersionSnapshot(version) },
-        {
-          onStarted: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: version.version, updates: { _deleting: true } } }),
-          onFinished: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: version.version, updates: { _deleting: false } } })
-        }
-      )
-
-      if (result.ok) {
-        configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: version.version } })
-        return addNotification(t("features.versions.versionUninstalledSuccesfully", { version: version.version }), "success")
-      }
-
-      const { messageKey, logged } = describeUninstallFailure(result.reason)
-
-      if (logged) {
-        window.api.utils.logMessage("error", `${LOG_TAG} [DeleteVersionHandler] Error uninstalling a VS Version.`)
-        window.api.utils.logMessage("debug", `${LOG_TAG} [DeleteVersionHandler] Error uninstalling VS Version ${version.version}: ${result.reason}.`)
-      }
-
-      addNotification(t(messageKey, { version: version.version }), "error")
+      await uninstallVersion(versionToDelete)
     } finally {
       setVersionToDelete(null)
     }
@@ -105,14 +81,7 @@ function ListVersions(): JSX.Element {
                     <ThinSeparator />
 
                     <div className="shrink-0 w-fit flex gap-1 text-lg">
-                      <NormalButton
-                        onClick={async () => {
-                          if (!(await window.api.pathsManager.checkPathExists(gv.path))) return addNotification(t("notifications.body.folderDoesntExists"), "error")
-                          window.api.pathsManager.openPathOnFileExplorer(gv.path)
-                        }}
-                        title={`${t("generic.openOnFileExplorer")} · ${gv.path}`}
-                        className="p-1"
-                      >
+                      <NormalButton onClick={() => openVersionFolder(gv.path)} title={`${t("generic.openOnFileExplorer")} · ${gv.path}`} className="p-1">
                         <PiFolderOpenDuotone />
                       </NormalButton>
                       <NormalButton
