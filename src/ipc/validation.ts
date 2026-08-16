@@ -29,9 +29,8 @@ export const DOWNLOAD_URL_RULES: readonly UrlRule[] = [
 ]
 
 export const BROWSER_URL_RULES: readonly UrlRule[] = [
-  { hostname: "discord.gg", pathPrefixes: ["/RtWpYBRRUz"] },
+  { hostname: "discord.gg", pathPrefixes: ["/vQm6z2urZs"] },
   { hostname: "github.com", pathPrefixes: ["/StratumServer/RiftLauncher"] },
-  { hostname: "ko-fi.com", pathPrefixes: ["/zaldaryon"] },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/show", "/mvl"] },
   { hostname: "vsldocs.xurxomf.xyz", pathPrefixes: ["/"] },
   { hostname: "wiki.vintagestory.at", pathPrefixes: ["/"] },

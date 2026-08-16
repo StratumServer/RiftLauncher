@@ -22,11 +22,13 @@ describe("IPC boundary validators", () => {
     assert.equal(assertAllowedApiUrl("https://mods.vintagestory.at/api/tags").hostname, "mods.vintagestory.at")
     assert.equal(assertAllowedApiUrl("https://auth3.vintagestory.at/v2/gamelogin").pathname, "/v2/gamelogin")
     assert.equal(assertAllowedBrowserUrl("https://github.com/StratumServer/RiftLauncher/issues").hostname, "github.com")
-    assert.equal(assertAllowedBrowserUrl("https://ko-fi.com/zaldaryon").pathname, "/zaldaryon")
+    assert.equal(assertAllowedBrowserUrl("https://discord.gg/vQm6z2urZs").pathname, "/vQm6z2urZs")
 
     assert.throws(() => assertAllowedApiUrl("http://mods.vintagestory.at/api/tags"), /Invalid URL/)
     assert.throws(() => assertAllowedApiUrl("https://example.com/api/tags"), /URL is not allowed/)
     assert.throws(() => assertAllowedBrowserUrl("javascript:alert(1)"), /Invalid URL/)
+    assert.throws(() => assertAllowedBrowserUrl("https://discord.gg/RtWpYBRRUz"), /URL is not allowed/)
+    assert.throws(() => assertAllowedBrowserUrl("https://ko-fi.com/zaldaryon"), /URL is not allowed/)
   })
 
   it("confines protocol paths to their intended root", () => {

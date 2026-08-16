@@ -20,7 +20,6 @@
     "type": "Typ",
     "install": "Installieren",
     "minMaxAmmount": "Zahl zwischen {{min}} und {{max}}",
-    "donate": "Spenden",
     "restore": "Wiederherstellen",
     "text": "Text",
     "author": "Autor",
@@ -56,7 +55,7 @@
     "selectIcon": "Symbol auswählen",
     "icon": "Symbol",
     "iconName": "Symbolname",
-    "discordContact": "Discord (@zaldaryon)"
+    "discordContact": "Discord"
   },
   "features": {
     "generic": {
