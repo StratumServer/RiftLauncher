@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest"
-import type { ReactNode } from "react"
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
@@ -7,7 +6,6 @@ import { Route, Routes } from "react-router-dom"
 import ManageMods from "@renderer/features/installations/pages/ManageMods"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
-import { useInstallations } from "@renderer/features/config/contexts/ConfigContext"
 
 import { createMockConfig, installMockWindowApi, type WindowApiOverrides } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -86,16 +84,11 @@ function queryModDb(url: string): Promise<string> {
 }
 
 /**
- * ManageMods reads the Installation off the route and scans for Mods in a mount effect whose only
- * dependency is `_updatingMods`, so a config that arrives after the first render never triggers a
- * second scan. The app only reaches this page by navigating from a list the loaded config drew, so
- * the harness mounts it the same way: once the Installations are in context.
+ * ManageMods reads the Installation off the route and mounts before ConfigProvider's async
+ * `getConfig()` resolves, exactly like a deep link or a slow disk would: the harness does not need
+ * to gate mounting behind the Installations being in context, because the scan effect now re-runs
+ * once the config's loaded state flips (#58).
  */
-function WhenInstallationsLoaded({ children }: { children: ReactNode }): JSX.Element | null {
-  const installations = useInstallations()
-  return installations.length > 0 ? <>{children}</> : null
-}
-
 function renderManageMods(overrides: WindowApiOverrides = {}): void {
   installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
@@ -110,9 +103,7 @@ function renderManageMods(overrides: WindowApiOverrides = {}): void {
         path="/installations/mods/:id"
         element={
           <TaskProvider>
-            <WhenInstallationsLoaded>
-              <ManageMods />
-            </WhenInstallationsLoaded>
+            <ManageMods />
             <NotificationsOverlay />
           </TaskProvider>
         }

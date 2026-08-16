@@ -36,10 +36,7 @@ const GAME_VERSIONS: GameVersionType[] = [
 ]
 
 /**
- * Stands in for ListInstallations: doubles as EditInstallation's post-submit
- * navigation target and, before that, as the link the pinned tests click through
- * so the Installation lookup runs once config has actually loaded, the same way
- * a real user reaches the edit page instead of deep-linking into it cold.
+ * Stands in for ListInstallations: EditInstallation's post-submit navigation target.
  */
 function InstallationsListStub(): JSX.Element {
   const installations = useInstallations()
@@ -53,8 +50,13 @@ function InstallationsListStub(): JSX.Element {
   )
 }
 
-function renderInstallationsShell(): ReturnType<typeof renderWithProviders> {
-  return renderWithProviders(
+/**
+ * Deep-links straight into the edit route, the same way a bookmark or a restored tab would: the
+ * page mounts before ConfigProvider's async `getConfig()` resolves, so the Installation lookup has
+ * to pick up the config once it lands rather than only ever finding it already there (#58).
+ */
+async function openEditInstallation(installationId: string): Promise<void> {
+  renderWithProviders(
     <>
       <Routes>
         <Route path="/installations" element={<InstallationsListStub />} />
@@ -62,14 +64,8 @@ function renderInstallationsShell(): ReturnType<typeof renderWithProviders> {
       </Routes>
       <NotificationsOverlay />
     </>,
-    { route: "/installations" }
+    { route: `/installations/edit/${installationId}` }
   )
-}
-
-/** Navigates into the edit page for `installationId` through the list stub, like a real user would. */
-async function openEditInstallation(user: ReturnType<typeof userEvent.setup>, installationId: string): Promise<void> {
-  renderInstallationsShell()
-  await user.click(await screen.findByText(`open-${installationId}`))
 }
 
 describe("EditInstallation", () => {
@@ -98,7 +94,7 @@ describe("EditInstallation", () => {
       }
     })
 
-    await openEditInstallation(user, "install-a")
+    await openEditInstallation("install-a")
 
     await screen.findByDisplayValue("Existing Install")
     expect(screen.getByText("Granite")).toBeTruthy()
@@ -141,7 +137,7 @@ describe("EditInstallation", () => {
       configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: GAME_VERSIONS, installations: [anInstallation()] })) }
     })
 
-    await openEditInstallation(user, "install-a")
+    await openEditInstallation("install-a")
 
     const nameInput = await screen.findByDisplayValue("Install A")
     await user.clear(nameInput)
@@ -159,7 +155,7 @@ describe("EditInstallation", () => {
       configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: GAME_VERSIONS, installations: [anInstallation()] })) }
     })
 
-    await openEditInstallation(user, "install-a")
+    await openEditInstallation("install-a")
 
     const nameInput = await screen.findByDisplayValue("Install A")
     await user.clear(nameInput)
@@ -179,7 +175,7 @@ describe("EditInstallation", () => {
       }
     })
 
-    await openEditInstallation(user, "install-a")
+    await openEditInstallation("install-a")
 
     await screen.findByDisplayValue("Install A")
     await user.click(screen.getByTitle("Save"))
