@@ -3,12 +3,14 @@ import { Input } from "@headlessui/react"
 import { PiFolderOpenDuotone, PiPlusCircleDuotone, PiPencilDuotone, PiBoxArrowDownDuotone, PiArrowCounterClockwiseDuotone, PiWrenchDuotone, PiXCircleDuotone, PiTrashDuotone } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
 
+import { deleteInstallation } from "@domain/installations/delete"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
+import { createDeleteInstallationPorts, describeDeleteInstallationFailure, toInstallationDeleteSnapshot } from "@renderer/features/installations/adapters/delete"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -17,6 +19,8 @@ import { FormButton } from "@renderer/components/ui/FormComponents"
 import { LinkButton, NormalButton } from "@renderer/components/ui/Buttons"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
+
+const LOG_TAG = "[front] [installations] [features/installations/pages/ListInstallations.tsx] [ListInslallations > DeleteInstallationHandler]"
 
 function ListInslallations(): JSX.Element {
   const { t } = useTranslation()
@@ -31,25 +35,33 @@ function ListInslallations(): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   async function DeleteInstallationHandler(): Promise<void> {
+    if (!installationToDelete) return addNotification(t("features.installations.noInstallationSelected"), "error")
+
+    const installation = installationToDelete
+
     try {
-      if (!installationToDelete) return addNotification(t("features.installations.noInstallationSelected"), "error")
+      const result = await deleteInstallation(createDeleteInstallationPorts(), { installation: toInstallationDeleteSnapshot(installation), deleteData })
 
-      if (installationToDelete._playing || installationToDelete._backuping || installationToDelete._restoringBackup) return addNotification(t("features.installations.cantDeleteWhileinUse"), "error")
+      if (!result.ok) {
+        const { messageKey, logged } = describeDeleteInstallationFailure(result.reason)
 
-      if (deleteData) {
-        const wasDeleted = await window.api.pathsManager.deletePath(installationToDelete.path)
-        if (!wasDeleted) throw new Error("Error deleting installation data!")
+        if (logged) {
+          window.api.utils.logMessage("error", `${LOG_TAG} Error deleting an Installation.`)
+          window.api.utils.logMessage("debug", `${LOG_TAG} Error deleting Installation ${installation.id}: ${result.reason}.`)
+        }
 
-        installationToDelete.backups.forEach((backup) => {
-          const wasBackupDeleted = window.api.pathsManager.deletePath(backup.path)
-          if (!wasBackupDeleted) throw new Error("Error deleting installation backup data!")
-        })
+        return addNotification(t(messageKey), "error")
       }
 
-      configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION, payload: { id: installationToDelete.id } })
+      configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION, payload: { id: installation.id } })
+
+      if (result.failedBackupPaths.length > 0) {
+        window.api.utils.logMessage("error", `${LOG_TAG} Installation deleted but some backups survived.`)
+        window.api.utils.logMessage("debug", `${LOG_TAG} Backups left over for Installation ${installation.id}: ${result.failedBackupPaths.join(", ")}.`)
+        return addNotification(t("features.installations.installationDeletedBackupsLeftOver", { count: result.failedBackupPaths.length }), "warning")
+      }
+
       addNotification(t("features.installations.installationSuccessfullyDeleted"), "success")
-    } catch (err) {
-      addNotification(t("features.installations.errorDeletingInstallation"), "error")
     } finally {
       setInstallationToDelete(null)
       setDeleData(false)

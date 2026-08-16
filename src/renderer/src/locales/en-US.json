@@ -140,6 +140,7 @@
       "deleteData": "Delete data",
       "installationSuccessfullyDeleted": "Installation deleted successfully!",
       "errorDeletingInstallation": "An error has occurred deleting the Installation!",
+      "installationDeletedBackupsLeftOver": "Installation deleted, but {{count}} backup file(s) could not be removed. Delete them by hand from the backups folder.",
       "installationFolder": "Installation folder",
       "labelStartParams": "Start params",
       "startParams": "Start params",
