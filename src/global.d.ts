@@ -247,6 +247,30 @@ declare global {
    */
   type GameExecutionResult = { ok: true; exitCode: number | null } | { ok: false; reason: GameExecutionFailureReason }
 
+  /**
+   * Why SAVE_CONFIG refused to persist the config it was handed. The
+   * renderer sends the whole config on every change; a persistent refusal
+   * here used to be invisible, silently discarding every setting,
+   * installation and backup record the player touched afterward.
+   *
+   * - `invalid-payload`: the argument was not even an object. Not reachable
+   *   from the launcher's own UI, which always sends the config it holds in
+   *   state; a defensive check against a malformed IPC call.
+   * - `unauthorized-path`: `assertConfigPathsAuthorized` refused because the
+   *   incoming config points at a folder outside the paths the launcher
+   *   already manages, and the player has not approved it either. The most
+   *   likely real-world cause: a folder picked, moved, or edited outside the
+   *   launcher's own dialogs.
+   * - `write-failed`: `saveConfig` queued the write and it threw (the
+   *   temp-file write or the rename onto `config.json` failed), which
+   *   `saveConfig` catches and reports as `false`. Disk full, permissions,
+   *   or something else holding the file.
+   */
+  type SaveConfigFailureReason = "invalid-payload" | "unauthorized-path" | "write-failed"
+
+  /** SAVE_CONFIG's verdict. `ok: false` means nothing was written to disk. */
+  type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason }
+
   declare module "*.png" {
     const value: string
     export default value

@@ -38,8 +38,12 @@ function App(): JSX.Element {
   }, [])
 
   return (
-    <ConfigProvider>
-      <NotificationsProvider>
+    // NotificationsProvider wraps ConfigProvider, not the other way around:
+    // ConfigContext's SAVE_CONFIG effect calls useNotificationsContext to
+    // report save failures, which only resolves to a real provider (not the
+    // no-op default) when NotificationsProvider is an ancestor.
+    <NotificationsProvider>
+      <ConfigProvider>
         <TaskProvider>
           <Router>
             <GlobalActionsWrapper>
@@ -67,8 +71,8 @@ function App(): JSX.Element {
             </GlobalActionsWrapper>
           </Router>
         </TaskProvider>
-      </NotificationsProvider>
-    </ConfigProvider>
+      </ConfigProvider>
+    </NotificationsProvider>
   )
 }
 
