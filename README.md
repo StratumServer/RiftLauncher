@@ -7,6 +7,8 @@
 
 # Welcome to RiftLauncher
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=StratumServer_RiftLauncher&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=StratumServer_RiftLauncher)
+
 ## What's RiftLauncher?
 
 RiftLauncher is an independent launcher for Vintage Story, built by the [Stratum](https://github.com/StratumServer) team.
