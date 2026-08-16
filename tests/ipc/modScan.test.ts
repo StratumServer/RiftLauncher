@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import fse from "fs-extra"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import "./helpers/electronMock"
@@ -33,6 +35,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(workspace, { recursive: true, force: true })
+  vi.restoreAllMocks()
 })
 
 describe("readModArchive", () => {
@@ -185,6 +188,32 @@ describe("createIconStorePort", () => {
     assert.notEqual(first, second)
   })
 
+  it("names an icon by the sha256 of its own bytes", async () => {
+    const { createIconStorePort } = await import("../../src/ipc/adapters/modScan")
+    const store = createIconStorePort()
+    const bytes = new Uint8Array([5, 6, 7, 8])
+
+    const name = await store.store(bytes)
+
+    assert.equal(name, `${createHash("sha256").update(bytes).digest("hex")}.png`)
+  })
+
+  it("stores the same bytes once no matter how many times they are scanned", async () => {
+    // Per issue #26: content-addressed names are what makes a rescan idempotent
+    // instead of writing a fresh uuid-named copy every time it runs.
+    const { createIconStorePort } = await import("../../src/ipc/adapters/modScan")
+    const store = createIconStorePort()
+    const bytes = new Uint8Array([1, 1, 2, 3, 5, 8])
+
+    const first = await store.store(bytes)
+    const second = await store.store(bytes)
+    const third = await store.store(bytes)
+
+    assert.equal(first, second)
+    assert.equal(second, third)
+    assert.deepEqual(readdirSync(join(workspace, "Cache", "Images", "Mods")), [first])
+  })
+
   it("tolerates a write failure by resolving undefined instead of throwing", async () => {
     // fse.ensureDir("<userData>/Cache/Images/Mods") fails when "Cache" already
     // exists as a plain file: there is nowhere to create a directory under a
@@ -198,5 +227,86 @@ describe("createIconStorePort", () => {
 
     assert.equal(name, undefined)
     assert.equal(existsSync(join(workspace, "Cache", "Images")), false)
+  })
+})
+
+describe("createIconStorePort pruning", () => {
+  function iconsFolder(): string {
+    return join(workspace, "Cache", "Images", "Mods")
+  }
+
+  it("removes a cached icon nothing in the latest scan points to any more", async () => {
+    const { createIconStorePort } = await import("../../src/ipc/adapters/modScan")
+    const store = createIconStorePort()
+    const kept = await store.store(new Uint8Array([1]))
+    const orphan = await store.store(new Uint8Array([2]))
+
+    await store.prune?.([kept as string])
+
+    assert.deepEqual(readdirSync(iconsFolder()), [kept])
+    assert.equal(existsSync(join(iconsFolder(), orphan as string)), false)
+  })
+
+  it("keeps every icon the scan still names, even when that is all of them", async () => {
+    const { createIconStorePort } = await import("../../src/ipc/adapters/modScan")
+    const store = createIconStorePort()
+    const first = await store.store(new Uint8Array([1]))
+    const second = await store.store(new Uint8Array([2]))
+
+    await store.prune?.([first as string, second as string])
+
+    assert.deepEqual(new Set(readdirSync(iconsFolder())), new Set([first, second]))
+  })
+
+  it("empties the folder when the scan named nothing at all", async () => {
+    const { createIconStorePort } = await import("../../src/ipc/adapters/modScan")
+    const store = createIconStorePort()
+    await store.store(new Uint8Array([1]))
+    await store.store(new Uint8Array([2]))
+
+    await store.prune?.([])
+
+    assert.deepEqual(readdirSync(iconsFolder()), [])
+  })
+
+  it("does nothing when the cache folder was never created", async () => {
+    const { createIconStorePort } = await import("../../src/ipc/adapters/modScan")
+    const store = createIconStorePort()
+
+    await assert.doesNotReject(async () => store.prune?.(["whatever.png"]))
+    assert.equal(existsSync(iconsFolder()), false)
+  })
+
+  it("never fails the scan when deleting a stranger errors out", async () => {
+    // Stands in for a concurrent delete racing this sweep: whatever the reason
+    // one removal rejects, pruning is best effort and must not let that bubble
+    // up and fail the scan that triggered it.
+    const { createIconStorePort } = await import("../../src/ipc/adapters/modScan")
+    const store = createIconStorePort()
+    const kept = await store.store(new Uint8Array([1]))
+    const orphan = await store.store(new Uint8Array([2]))
+
+    vi.spyOn(fse, "remove").mockRejectedValueOnce(new Error("locked by another process"))
+
+    await assert.doesNotReject(async () => store.prune?.([kept as string]))
+    // The failed removal really did fail: the orphan is still there, proving
+    // this exercised the catch branch rather than the removal quietly working.
+    assert.equal(existsSync(join(iconsFolder(), orphan as string)), true)
+  })
+
+  it("never deletes anything outside its own cache folder", async () => {
+    // A sibling file next to the cache folder, same tree depth as a would-be
+    // "../escape.png" entry, proves pruning only ever acts on names readdir
+    // handed back for modImagesFolder() itself.
+    const sentinel = join(workspace, "Cache", "Images", "sentinel.png")
+    fse.ensureDirSync(join(workspace, "Cache", "Images"))
+    writeFileSync(sentinel, "not a mod icon")
+    const { createIconStorePort } = await import("../../src/ipc/adapters/modScan")
+    const store = createIconStorePort()
+    await store.store(new Uint8Array([1]))
+
+    await store.prune?.([])
+
+    assert.equal(existsSync(sentinel), true)
   })
 })

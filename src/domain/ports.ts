@@ -193,6 +193,17 @@ export interface IconStore {
    * place in the list, so this never rejects.
    */
   store(bytes: Uint8Array): Promise<string | undefined>
+
+  /**
+   * Removes whatever this store is holding onto that is not named in
+   * `liveNames`, best effort. Called once a scan has settled on its final set
+   * of mods, with the names of the icons that set still points to.
+   *
+   * Optional because not every `IconStore` manages a shared, cumulative
+   * directory worth sweeping; a store never fails or holds up its caller over
+   * this, so an implementation that skips it is free to leave it undefined.
+   */
+  prune?(liveNames: readonly string[]): Promise<void>
 }
 
 /** Wall clock, so services never read the ambient time. */
