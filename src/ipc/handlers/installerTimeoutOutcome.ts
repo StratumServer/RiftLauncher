@@ -1,13 +1,13 @@
 /**
- * Pure helpers for RUN_INSTALLER's bounded wait.
+ * Pure helpers for RUN_INSTALLER: its bounded wait, and its verdict mapping.
  *
  * pathsHandlers.ts calls ipcMain.handle at module load, which needs a
  * running Electron main process and so cannot be imported directly by a unit
- * test (the same gap tracked in issue #27 for gameHandlers.ts). The
- * timeout/kill decision itself touches neither Electron nor a live
- * child_process, so it is pulled out here where a test can pin it without
- * standing up the app (mirrors gameExecutionOutcome.ts, written for the same
- * reason).
+ * test (the same gap tracked in issue #27 for gameHandlers.ts). Neither the
+ * timeout/kill decision nor the mapping onto {@link InstallerRunResult}
+ * touches Electron or a live child_process, so both are pulled out here
+ * where a test can pin them without standing up the app (mirrors
+ * gameExecutionOutcome.ts, written for the same reason).
  */
 
 /**
@@ -68,4 +68,46 @@ export function attemptInstallerTreeKill(
     log("error", "Failed to spawn taskkill for the installer's process tree.")
     log("debug", String(killError))
   }
+}
+
+/** RUN_INSTALLER's early refusal: the host is not Windows, so the installer is never run. */
+export function notWindowsResult(): InstallerRunResult {
+  return { ok: false, reason: "not-windows" }
+}
+
+/** RUN_INSTALLER's early refusal: the installer file at the given path does not exist. */
+export function installerMissingResult(): InstallerRunResult {
+  return { ok: false, reason: "installer-missing" }
+}
+
+/** RUN_INSTALLER's success, however it got there: payload extraction or the spawn fallback. */
+export function installerOkResult(): InstallerRunResult {
+  return { ok: true }
+}
+
+/** RUN_INSTALLER failed outright: extraction failed, or the fallback spawn errored, exited non-zero, or could not be started. */
+export function installerFailedResult(): InstallerRunResult {
+  return { ok: false, reason: "installer-failed" }
+}
+
+/** The fallback spawn ran past RUN_INSTALLER_TIMEOUT_MS and had its process tree killed. */
+export function installerTimedOutResult(): InstallerRunResult {
+  return { ok: false, reason: "installer-timed-out" }
+}
+
+/**
+ * Maps extractInstallerPayload's terminal verdict onto the wire.
+ *
+ * `format-refused` is not terminal (the caller falls back to spawnInstaller
+ * instead of resolving RUN_INSTALLER on it), so it has no mapping here.
+ */
+export function extractionOutcomeToResult(outcome: "extracted" | "failed"): InstallerRunResult {
+  return outcome === "extracted" ? installerOkResult() : installerFailedResult()
+}
+
+/** Maps spawnInstaller's terminal outcome onto the wire. */
+export function spawnInstallerOutcomeToResult(outcome: "installed" | "timed-out" | "failed"): InstallerRunResult {
+  if (outcome === "installed") return installerOkResult()
+  if (outcome === "timed-out") return installerTimedOutResult()
+  return installerFailedResult()
 }

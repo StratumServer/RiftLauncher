@@ -258,7 +258,11 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       if (showsStart(notifications)) addNotification(t("notifications.body.extracting", { extractName: name }), "info")
       const result = await window.api.pathsManager.runInstaller(id, filePath, outputPath, deleteInstaller)
 
-      if (!result) throw new Error("Installation failed")
+      // The wire tells apart why the installer never landed the game (see
+      // InstallerRunResult in global.d.ts), but onFinish here stays the
+      // boolean shape every caller already expects: the reason still rides
+      // along on the thrown Error's message for the log line below.
+      if (!result.ok) throw new Error(`Installation failed: ${result.reason}`)
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Installed.`)
       if (showsSuccess(notifications)) addNotification(t("notifications.body.extracted", { extractName: name }), "success")

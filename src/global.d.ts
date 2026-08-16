@@ -269,6 +269,30 @@ declare global {
   type GameExecutionResult = { ok: true; exitCode: number | null } | { ok: false; reason: GameExecutionFailureReason }
 
   /**
+   * Why RUN_INSTALLER never finished, narrowed to what the handler can
+   * actually tell apart today (see src/ipc/handlers/pathsHandlers.ts and its
+   * installerTimeoutOutcome.ts helpers). The extraction-vs-spawn mechanics
+   * behind RUN_INSTALLER stay internal: both count as `ok` when they land the
+   * game, and these reasons only describe how it failed.
+   *
+   * - `not-windows`: the host is not Windows, so RUN_INSTALLER never runs the
+   *   installer at all.
+   * - `installer-missing`: the installer file at the given path does not
+   *   exist.
+   * - `installer-timed-out`: the fallback spawn ran past its bound and had
+   *   its process tree killed. Only that direct-spawn path tracks this; a
+   *   payload-extraction attempt that runs long resolves `installer-failed`
+   *   instead, indistinguishable from any other extraction failure.
+   * - `installer-failed`: payload extraction failed outright, or the
+   *   fallback spawn errored on launch, exited non-zero, or could not be
+   *   started.
+   */
+  type InstallerRunFailureReason = "installer-failed" | "installer-timed-out" | "not-windows" | "installer-missing"
+
+  /** RUN_INSTALLER's verdict. `ok: false` means nothing was installed. */
+  type InstallerRunResult = { ok: true } | { ok: false; reason: InstallerRunFailureReason }
+
+  /**
    * Why SAVE_CONFIG refused to persist the config it was handed. The
    * renderer sends the whole config on every change; a persistent refusal
    * here used to be invisible, silently discarding every setting,

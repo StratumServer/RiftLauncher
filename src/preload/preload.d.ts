@@ -41,7 +41,7 @@ declare global {
       openPathOnFileExplorer: (path: string) => Promise<void>
       downloadOnPath: (id: string, url: string, outputPath: string, fileName: string) => Promise<string>
       extractOnPath: (id: string, filePath: string, outputPath: string, deleteZip: boolean) => Promise<boolean>
-      runInstaller: (id: string, filePath: string, outputPath: string, deleteInstaller: boolean) => Promise<boolean>
+      runInstaller: (id: string, filePath: string, outputPath: string, deleteInstaller: boolean) => Promise<InstallerRunResult>
       compressOnPath: (id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel?: number) => Promise<boolean>
       onDownloadProgress: (callback: ProgressCallback) => Unsubscribe
       onExtractProgress: (callback: ProgressCallback) => Unsubscribe
