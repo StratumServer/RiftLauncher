@@ -1,3 +1,5 @@
+import { resolveModsFolder } from "@renderer/features/mods/adapters/folder"
+
 export function useGetInstalledMods(): ({ path, onFinish }: { path: string; onFinish?: () => void }) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> {
   /**
    * Makes a query and returns all the mods from the selected path.
@@ -9,7 +11,7 @@ export function useGetInstalledMods(): ({ path, onFinish }: { path: string; onFi
    */
   async function getInstalledMods({ path, onFinish }: { path: string; onFinish?: () => void }): Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> {
     try {
-      const fullPath = await window.api.pathsManager.formatPath([path, "Mods"])
+      const fullPath = await resolveModsFolder(path)
       const mods = await window.api.modsManager.getInstalledMods(fullPath)
 
       if (onFinish) onFinish()

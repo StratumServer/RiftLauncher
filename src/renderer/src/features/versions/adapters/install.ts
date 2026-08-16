@@ -1,5 +1,6 @@
 import type { DownloadableGameVersion, InstallGameVersionFailure, InstallGameVersionPorts } from "@domain/versions/install"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
+import { createPathBuilderPort } from "@renderer/adapters/paths"
 import type { TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
 export interface InstallPortsOptions {
@@ -27,7 +28,7 @@ export interface InstallPortsOptions {
 export function createInstallPorts({ startDownload, startExtract, startInstall, taskName, downloadDescription, unpackDescription }: InstallPortsOptions): InstallGameVersionPorts {
   return {
     fileSystem: createFileSystemPort(),
-    paths: { join: (parts) => window.api.pathsManager.formatPath(parts) },
+    paths: createPathBuilderPort(),
     downloader: {
       download: (request, onComplete) =>
         startDownload(taskName, downloadDescription, "all", request.url, request.outputFolder, request.fileName, (status, path, error) =>
