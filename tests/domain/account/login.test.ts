@@ -127,13 +127,68 @@ describe("responses the launcher cannot act on", () => {
   })
 
   it("refuses a valid response with no session key rather than storing an empty session", () => {
-    assert.deepEqual(interpretFirstPass(EMAIL, successBody({ sessionkey: "" }), { twoFactorCodeProvided: false }), { status: "unreadable-response" })
-    assert.deepEqual(interpretSecondPass(EMAIL, successBody({ sessionsignature: undefined })), { status: "unreadable-response" })
+    const first = interpretFirstPass(EMAIL, successBody({ sessionkey: "" }), { twoFactorCodeProvided: false })
+    assert.equal(first.status, "unreadable-response")
+    assert.equal((first as { diagnosis?: string }).diagnosis, 'field "session key": expected non-empty string, got empty string')
+
+    const second = interpretSecondPass(EMAIL, successBody({ sessionsignature: undefined }))
+    assert.equal(second.status, "unreadable-response")
+    assert.equal((second as { diagnosis?: string }).diagnosis, 'field "session signature": expected non-empty string, got undefined')
   })
 
   it("refuses a valid response missing the player fields", () => {
-    assert.deepEqual(interpretFirstPass(EMAIL, successBody({ playername: undefined }), { twoFactorCodeProvided: false }), { status: "unreadable-response" })
-    assert.deepEqual(interpretFirstPass(EMAIL, successBody({ hasgameserver: "maybe" }), { twoFactorCodeProvided: false }), { status: "unreadable-response" })
+    const missingName = interpretFirstPass(EMAIL, successBody({ playername: undefined }), { twoFactorCodeProvided: false })
+    assert.equal(missingName.status, "unreadable-response")
+    assert.equal((missingName as { diagnosis?: string }).diagnosis, 'field "player name": expected non-empty string, got undefined')
+
+    const badFlag = interpretFirstPass(EMAIL, successBody({ hasgameserver: "maybe" }), { twoFactorCodeProvided: false })
+    assert.equal(badFlag.status, "unreadable-response")
+    assert.equal((badFlag as { diagnosis?: string }).diagnosis, "field \"game server flag\": expected boolean, 1/0, or '1'/'0', got string")
+  })
+})
+
+describe("the diagnosis on an unreadable success claim", () => {
+  it("names the field that failed, and only that, when a success-claiming body fails to parse", () => {
+    const verdict = interpretFirstPass(EMAIL, successBody({ entitlements: "" }), { twoFactorCodeProvided: false })
+
+    assert.equal(verdict.status, "unreadable-response")
+    assert.equal((verdict as { diagnosis?: string }).diagnosis, 'field "entitlements": expected non-empty string, got empty string')
+  })
+
+  it("never lets a value from the body ride along in the diagnosis, canary included", () => {
+    // The session key and entitlements below are canaries: if a future change
+    // to `establish`/`parseLoginAccount` ever interpolated a raw field value
+    // into the diagnosis instead of a type-level description, one of these
+    // exact strings would show up in the assertion below and fail it.
+    const CANARY_SESSION_KEY = "canary-session-key-should-never-leak"
+    const CANARY_ENTITLEMENTS = "canary-entitlements-should-never-leak"
+
+    const verdict = interpretFirstPass(EMAIL, successBody({ entitlements: "", sessionkey: CANARY_SESSION_KEY }), { twoFactorCodeProvided: false })
+
+    assert.equal(verdict.status, "unreadable-response")
+    const diagnosis = (verdict as { diagnosis?: string }).diagnosis ?? ""
+    assert.ok(diagnosis.length > 0, "expected a diagnosis string")
+    assert.equal(diagnosis.includes(CANARY_SESSION_KEY), false)
+    assert.equal(diagnosis.includes(CANARY_ENTITLEMENTS), false)
+    assert.equal(diagnosis, 'field "entitlements": expected non-empty string, got empty string')
+  })
+
+  it("names a missing field as undefined without ever mentioning the field it was allowed to keep", () => {
+    const CANARY_ENTITLEMENTS = "canary-entitlements-value"
+    const verdict = interpretSecondPass(EMAIL, successBody({ entitlements: CANARY_ENTITLEMENTS, sessionkey: undefined }))
+
+    assert.equal(verdict.status, "unreadable-response")
+    const diagnosis = (verdict as { diagnosis?: string }).diagnosis ?? ""
+    assert.equal(diagnosis, 'field "session key": expected non-empty string, got undefined')
+    assert.equal(diagnosis.includes(CANARY_ENTITLEMENTS), false)
+  })
+
+  it("does not attach a diagnosis when the body was never JSON or never an object, since parseLoginAccount was never reached", () => {
+    const notJson = interpretFirstPass(EMAIL, "<html>502 Bad Gateway</html>", { twoFactorCodeProvided: false })
+    assert.deepEqual(notJson, { status: "unreadable-response" })
+
+    const notObject = interpretFirstPass(EMAIL, "42", { twoFactorCodeProvided: false })
+    assert.deepEqual(notObject, { status: "unreadable-response" })
   })
 })
 

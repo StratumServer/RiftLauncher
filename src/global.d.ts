@@ -29,6 +29,20 @@ declare global {
   // Renderer-visible account data. Session credentials are main-process only.
   type AccountType = AccountPublicType
 
+  /**
+   * LOGIN's verdict once the domain's own verdict (src/domain/account/login.ts
+   * LoginVerdict) has been mapped onto the wire.
+   *
+   * `unexpected-response` is honesty, not a stand-in for bad credentials: the
+   * service claimed success but the launcher could not read the body it sent
+   * back, so the player's password was never actually rejected. Collapsing
+   * that case into `invalid-credentials` is exactly the bug this type exists
+   * to make impossible again.
+   */
+  type AccountLoginResult =
+    | { status: "success"; account: AccountPublicType }
+    | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response"; account?: undefined }
+
   type GameVersionType = {
     version: string
     path: string

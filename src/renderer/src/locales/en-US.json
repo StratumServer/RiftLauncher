@@ -257,6 +257,7 @@
       "loggingin": "Logging in!",
       "wrongtwofa": "Wrong 2FA code!",
       "invalidEmailPass": "Invalid email or password!",
+      "unexpectedResponse": "The account service answered in a way this launcher couldn't read. Your password was not rejected. Try again after an update.",
       "loggedin": "Logged in as {{user}}!",
       "onlyIfEnabledTwoFA": "Fill this field only if you have 2FA enabled!",
       "uiScale": "UI Scale",

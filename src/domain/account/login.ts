@@ -48,7 +48,7 @@
  * at all, since interpreting a response never needs it.
  */
 
-import { parseLoginAccount } from "./credentials"
+import { accountFieldDiagnosis, parseLoginAccount } from "./credentials"
 import type { AccountCredentials } from "./credentials"
 
 /** Refusal reason meaning the account has two-factor enabled and pass two is owed. */
@@ -73,8 +73,15 @@ export type TwoFactorRejected = { status: "two-factor-rejected" }
  * The body was not JSON, not an object, or claimed success without the fields a
  * session is made of. Distinct from a refusal: the service did not say no, it
  * said something the launcher cannot act on.
+ *
+ * `diagnosis`, when present, names which expectation failed: a field name and
+ * a type-level description of what showed up, e.g. `field "entitlements":
+ * expected non-empty string, got empty string`. It never carries a value from
+ * the body, so it is safe to log at error level as-is. It is only ever set
+ * when {@link parseLoginAccount} is the thing that refused; a body that was
+ * never valid JSON, or never an object, has nothing more specific to say.
  */
-export type UnreadableResponse = { status: "unreadable-response" }
+export type UnreadableResponse = { status: "unreadable-response"; diagnosis?: string }
 
 /**
  * A verdict a login can end on.
@@ -144,8 +151,9 @@ function refusalReason(body: Record<string, unknown>): string {
 function establish(email: string, body: Record<string, unknown>): LoginSuccess | UnreadableResponse {
   try {
     return { status: "success", credentials: parseLoginAccount(email, body) }
-  } catch {
-    return UNREADABLE
+  } catch (error) {
+    const diagnosis = accountFieldDiagnosis(error)
+    return diagnosis ? { status: "unreadable-response", diagnosis } : UNREADABLE
   }
 }
 
