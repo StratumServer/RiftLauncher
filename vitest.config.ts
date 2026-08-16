@@ -38,15 +38,30 @@ export default defineConfig({
     ],
     coverage: {
       provider: "v8",
-      // Renderer components stay out of the ratchet for now: this slice only
-      // adds the harness to mount them, not the coverage. Widening this to
-      // include src/renderer lands with the actual ConfigContext split (#17).
-      include: ["src/domain/**", "src/ipc/**", "src/utils/**", "src/config/**"],
+      // Renderer logic joins the ratchet here (#17): hooks, adapters, the
+      // config context/reducer, and plain utils. Presentation stays out on
+      // purpose (pages/**, components/**, App.tsx, main.tsx, i18n.ts): the
+      // DOM harness exercises it through behavior, but line-covering JSX is
+      // theater, not a signal worth gating on.
+      include: [
+        "src/domain/**",
+        "src/ipc/**",
+        "src/utils/**",
+        "src/config/**",
+        "src/renderer/src/adapters/**",
+        "src/renderer/src/hooks/**",
+        "src/renderer/src/utils/**",
+        "src/renderer/src/contexts/**",
+        "src/renderer/src/features/**/hooks/**",
+        "src/renderer/src/features/**/adapters/**",
+        "src/renderer/src/features/config/contexts/**",
+        "src/renderer/src/features/config/utils/**"
+      ],
       thresholds: {
-        lines: 46,
-        statements: 46,
-        functions: 50,
-        branches: 53
+        lines: 53,
+        statements: 53,
+        functions: 57,
+        branches: 54
       }
     }
   }
