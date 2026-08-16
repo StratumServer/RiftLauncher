@@ -159,12 +159,18 @@ declare global {
     changelog: string
   }
 
+  /** One platform's build as the version catalog serves it: the URL and the real file name. */
+  type DownloadableGameVersionBuildType = {
+    url: string
+    fileName: string
+  }
+
   type DownloadableGameVersionTypeType = {
     version: string
     type: "stable" | "rc" | "pre"
-    windows: string
-    linux: string
-    mac: string
+    windows: DownloadableGameVersionBuildType
+    linux: DownloadableGameVersionBuildType
+    mac: DownloadableGameVersionBuildType
   }
 
   type DownloadableModAuthorType = {

@@ -81,7 +81,7 @@ export interface DownloadRequest {
   url: string
   /** Folder the file is written into. The host creates it when missing. */
   outputFolder: string
-  /** Name the downloaded file is saved under. */
+  /** Name the downloaded file is saved under, extension included. The host adds nothing to it. */
   fileName: string
 }
 

@@ -1,7 +1,6 @@
 import { ipcMain, app, shell } from "electron"
 import { path7za } from "7zip-bin"
 import fse from "fs-extra"
-import yauzl from "yauzl"
 import { basename, extname, join, resolve, sep } from "path"
 import os from "os"
 import { spawn } from "child_process"
@@ -11,19 +10,8 @@ import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { createTrackedWorker, disposeTrackedWorker } from "@src/ipc/workerManager"
-import {
-  assertAllowedDownloadUrl,
-  assertBoolean,
-  assertInteger,
-  assertPath,
-  assertSafeFileName,
-  assertSafeTaskId,
-  isArchiveSymlink,
-  isRecord,
-  isSafeArchiveEntry,
-  MAX_ARCHIVE_ENTRY_BYTES,
-  MAX_ARCHIVE_TOTAL_BYTES
-} from "@src/ipc/validation"
+import { validateArchive } from "@src/ipc/archiveValidation"
+import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
 
@@ -33,17 +21,11 @@ import changePermsWorker from "@src/ipc/workers/changePermsWorker?modulePath"
 import downloadWorkerPath from "@src/ipc/workers/downloadWorker?modulePath"
 
 const sevenZipBin = app.isPackaged ? path7za.replace("app.asar", "app.asar.unpacked") : path7za
-const MAX_ARCHIVE_ENTRIES = 100_000
 const WORKER_TIMEOUTS_MS: Record<string, number> = {
   DOWNLOAD_ON_PATH: 45 * 60 * 1_000,
   EXTRACT_ON_PATH: 30 * 60 * 1_000,
   COMPRESS_ON_PATH: 30 * 60 * 1_000,
   CHANGE_PERMS: 10 * 60 * 1_000
-}
-
-function comparableArchiveEntry(entryName: string): string {
-  const normalizedName = entryName.replace(/\\/g, "/")
-  return process.platform === "win32" ? normalizedName.toLowerCase() : normalizedName
 }
 
 type WorkerMessage = {
@@ -145,137 +127,6 @@ function runTrackedWorker<T>(
       if (!settled) rejectOnce(new Error(`${operationName} worker exited with code ${code}`))
     })
   })
-}
-
-function validateZipArchive(filePath: string): Promise<void> {
-  return new Promise((resolvePromise, rejectPromise) => {
-    let settled = false
-    let totalUncompressedBytes = 0
-    let entryCount = 0
-    const entryNames = new Set<string>()
-
-    const finish = (error?: Error): void => {
-      if (settled) return
-      settled = true
-      if (error) rejectPromise(error)
-      else resolvePromise()
-    }
-
-    yauzl.open(filePath, { lazyEntries: true }, (error, zipFile) => {
-      if (error || !zipFile) {
-        finish(new Error("Archive could not be read"))
-        return
-      }
-
-      zipFile.on("entry", (entry) => {
-        const entrySize = entry.uncompressedSize
-        entryCount++
-        const normalizedEntryName = typeof entry.fileName === "string" ? comparableArchiveEntry(entry.fileName) : ""
-        if (
-          entryCount > MAX_ARCHIVE_ENTRIES ||
-          !isSafeArchiveEntry(entry.fileName) ||
-          entryNames.has(normalizedEntryName) ||
-          isArchiveSymlink(entry.externalFileAttributes) ||
-          !Number.isFinite(entrySize) ||
-          entrySize < 0 ||
-          entrySize > MAX_ARCHIVE_ENTRY_BYTES ||
-          totalUncompressedBytes + entrySize > MAX_ARCHIVE_TOTAL_BYTES
-        ) {
-          try {
-            zipFile.close()
-          } catch {
-            // The archive may already be closed after a parse error.
-          }
-          finish(new Error("Archive contains an unsafe entry"))
-          return
-        }
-
-        entryNames.add(normalizedEntryName)
-        totalUncompressedBytes += entrySize
-        zipFile.readEntry()
-      })
-
-      zipFile.once("end", () => finish())
-      zipFile.once("error", () => finish(new Error("Archive could not be read")))
-      zipFile.readEntry()
-    })
-  })
-}
-
-function validateSevenZipArchive(filePath: string): Promise<void> {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const archiveLister = spawn(sevenZipBin, ["l", "-slt", "-bb0", filePath], { windowsHide: true })
-    let output = ""
-    let settled = false
-
-    const finish = (error?: Error): void => {
-      if (settled) return
-      settled = true
-      if (error) rejectPromise(error)
-      else resolvePromise()
-    }
-
-    archiveLister.stdout.on("data", (chunk) => {
-      output += chunk.toString()
-      if (Buffer.byteLength(output, "utf8") > 4 * 1024 * 1024) {
-        archiveLister.kill()
-        finish(new Error("Archive listing is too large"))
-      }
-    })
-    archiveLister.stderr.on("data", () => {})
-    archiveLister.on("error", (error) => finish(error))
-    archiveLister.on("close", (code) => {
-      if (settled) return
-      if (code !== 0) {
-        finish(new Error("Archive could not be listed"))
-        return
-      }
-
-      const records = output.split(/\r?\n\s*\r?\n/)
-      let entryCount = 0
-      let totalUncompressedBytes = 0
-      let firstRecord = true
-      const entryNames = new Set<string>()
-      for (const record of records) {
-        const pathLine = record.split(/\r?\n/).find((line) => line.startsWith("Path = "))
-        if (!pathLine) continue
-        if (firstRecord) {
-          firstRecord = false
-          continue
-        }
-
-        const entryName = pathLine.slice("Path = ".length)
-        const sizeLine = record.split(/\r?\n/).find((line) => line.startsWith("Size = "))
-        const folderLine = record.split(/\r?\n/).find((line) => line.startsWith("Folder = "))
-        const isFolder = folderLine?.slice("Folder = ".length).trim() === "+"
-        const attributesLine = record.split(/\r?\n/).find((line) => line.startsWith("Attributes = "))
-        const entrySize = sizeLine ? Number(sizeLine.slice("Size = ".length)) : 0
-        entryCount++
-        totalUncompressedBytes += Number.isFinite(entrySize) && entrySize >= 0 ? entrySize : 0
-
-        if (
-          entryCount > MAX_ARCHIVE_ENTRIES ||
-          !isSafeArchiveEntry(entryName) ||
-          entryNames.has(comparableArchiveEntry(entryName)) ||
-          (attributesLine !== undefined && /(^|\s)L(\s|$)/.test(attributesLine)) ||
-          (!isFolder && (!sizeLine || !Number.isFinite(entrySize) || entrySize < 0)) ||
-          entrySize > MAX_ARCHIVE_ENTRY_BYTES ||
-          totalUncompressedBytes > MAX_ARCHIVE_TOTAL_BYTES
-        ) {
-          finish(new Error("Archive contains an unsafe entry"))
-          return
-        }
-        entryNames.add(comparableArchiveEntry(entryName))
-      }
-
-      finish()
-    })
-  })
-}
-
-async function validateArchive(filePath: string): Promise<void> {
-  if (filePath.toLowerCase().endsWith(".zip")) return validateZipArchive(filePath)
-  return validateSevenZipArchive(filePath)
 }
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.GET_CURRENT_USER_DATA_PATH, (event): string => {
@@ -403,7 +254,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
   const shouldDeleteZip = assertBoolean(deleteZip, "delete archive flag")
 
   if (resolve(safeFilePath) === resolve(safeOutputPath)) throw new TypeError("Archive and output paths must differ")
-  await validateArchive(safeFilePath)
+  await validateArchive(safeFilePath, sevenZipBin)
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
   await runTrackedWorker(

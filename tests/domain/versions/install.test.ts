@@ -7,17 +7,26 @@ import type { DownloadOutcome, DownloadRequest, Downloader, FileSystem, PathBuil
 
 const VERSION = "1.20.4"
 const TARGET = "/games/1.20.4"
-const DOWNLOADED = `${TARGET}/${VERSION}`
-const WINDOWS_URL = "https://cdn.vintagestory.at/1.20.4.exe"
-const MAC_URL = "https://cdn.vintagestory.at/1.20.4-mac.tar.gz"
-const LINUX_URL = "https://cdn.vintagestory.at/1.20.4-linux.tar.gz"
+const WINDOWS_FILE = "vs_install_win-x64_1.20.4.exe"
+const MAC_FILE = "vs_archive_1.20.4.tar.gz"
+const LINUX_FILE = "vs_client_linux-x64_1.20.4.tar.gz"
+const WINDOWS_URL = `https://cdn.vintagestory.at/gamefiles/stable/${WINDOWS_FILE}`
+const MAC_URL = `https://cdn.vintagestory.at/gamefiles/stable/${MAC_FILE}`
+const LINUX_URL = `https://cdn.vintagestory.at/gamefiles/stable/${LINUX_FILE}`
+const DOWNLOADED_LINUX = `${TARGET}/${LINUX_FILE}`
+const DOWNLOADED_WINDOWS = `${TARGET}/${WINDOWS_FILE}`
+
+const WINDOWS_BUILD = { url: WINDOWS_URL, fileName: WINDOWS_FILE }
+const MAC_BUILD = { url: MAC_URL, fileName: MAC_FILE }
+const LINUX_BUILD = { url: LINUX_URL, fileName: LINUX_FILE }
+const NO_BUILD = { url: "", fileName: "" }
 
 /** Everything the fakes wrote down, in the order it happened. */
 let trace: string[] = []
 
 const catalogEntry: DownloadableGameVersion = {
   version: VERSION,
-  downloads: { win32: WINDOWS_URL, darwin: MAC_URL, linux: LINUX_URL }
+  downloads: { win32: WINDOWS_BUILD, darwin: MAC_BUILD, linux: LINUX_BUILD }
 }
 
 /** A file system that remembers what is on disk, so verification has something real to read. */
@@ -131,12 +140,29 @@ describe("installGameVersion preconditions", () => {
   })
 
   it("names a platform the catalog has no build for instead of downloading nothing", async () => {
-    const version: DownloadableGameVersion = { version: VERSION, downloads: { win32: WINDOWS_URL, darwin: "", linux: LINUX_URL } }
+    const version: DownloadableGameVersion = { version: VERSION, downloads: { win32: WINDOWS_BUILD, darwin: NO_BUILD, linux: LINUX_BUILD } }
 
     const result = await installGameVersion(fakePorts(), input({ platform: "darwin", version }), recordingEvents())
 
     assert.deepEqual(result, { ok: false, reason: "no-download-for-os" })
     assert.deepEqual(trace, [])
+  })
+
+  it("refuses a build the catalog gives a URL for but no name, instead of inventing one", async () => {
+    const version: DownloadableGameVersion = { version: VERSION, downloads: { win32: WINDOWS_BUILD, darwin: MAC_BUILD, linux: { url: LINUX_URL, fileName: "" } } }
+
+    const result = await installGameVersion(fakePorts(), input({ version }), recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "no-download-for-os" })
+    assert.deepEqual(trace, [])
+  })
+
+  it("refuses a build the catalog names but has no URL for", async () => {
+    const version: DownloadableGameVersion = { version: VERSION, downloads: { win32: WINDOWS_BUILD, darwin: MAC_BUILD, linux: { url: "", fileName: LINUX_FILE } } }
+
+    const result = await installGameVersion(fakePorts(), input({ version }), recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "no-download-for-os" })
   })
 
   it("registers nothing when a precondition fails", async () => {
@@ -150,6 +176,48 @@ describe("installGameVersion preconditions", () => {
   })
 })
 
+describe("installGameVersion download naming", () => {
+  it("saves the Linux build under the archive name the catalog publishes", async () => {
+    const fileSystem = fakeFileSystem()
+    const { downloader, requests } = fakeDownloader({ outcome: { ok: true, filePath: DOWNLOADED_LINUX } })
+    const { unpacker } = fakeUnpacker({ disk: fileSystem.disk, lands: ["Vintagestory"] })
+
+    await installGameVersion(fakePorts({ fileSystem, downloader, unpacker }), input())
+
+    assert.equal(requests[0]?.fileName, LINUX_FILE)
+    assert.equal(requests[0]?.fileName.endsWith(".tar.gz"), true)
+    assert.equal(requests[0]?.outputFolder, TARGET)
+  })
+
+  it("saves the Windows build under the installer name, so it stays an executable", async () => {
+    const fileSystem = fakeFileSystem()
+    const { downloader, requests } = fakeDownloader({ outcome: { ok: true, filePath: DOWNLOADED_WINDOWS } })
+    const { unpacker } = fakeUnpacker({ disk: fileSystem.disk, lands: ["Vintagestory.exe"] })
+
+    await installGameVersion(fakePorts({ fileSystem, downloader, unpacker }), input({ platform: "win32" }))
+
+    assert.equal(requests[0]?.fileName, WINDOWS_FILE)
+    assert.equal(requests[0]?.fileName.endsWith(".exe"), true)
+  })
+
+  it("never names the download after the version, which is what dropped the extension", async () => {
+    const { downloader, requests } = fakeDownloader()
+
+    await installGameVersion(fakePorts({ downloader }), input())
+
+    assert.notEqual(requests[0]?.fileName, VERSION)
+  })
+
+  it("takes the name from the platform that is being installed", async () => {
+    const { downloader, requests } = fakeDownloader()
+
+    await installGameVersion(fakePorts({ downloader }), input({ platform: "darwin" }))
+
+    assert.equal(requests[0]?.fileName, MAC_FILE)
+    assert.equal(requests[0]?.url, MAC_URL)
+  })
+})
+
 describe("installGameVersion happy path", () => {
   it("downloads then extracts the archive on Linux, and only then calls it installed", async () => {
     const { ports, disk } = landingPorts(["Vintagestory"])
@@ -157,7 +225,7 @@ describe("installGameVersion happy path", () => {
     const result = await installGameVersion(ports, input(), recordingEvents())
 
     assert.deepEqual(result, { ok: true, path: TARGET })
-    assert.deepEqual(trace, ["registered", `download:${LINUX_URL}->${TARGET}/${VERSION}`, `extract:${DOWNLOADED}->${TARGET}`, `exists:${TARGET}/Vintagestory`, "installed"])
+    assert.deepEqual(trace, ["registered", `download:${LINUX_URL}->${DOWNLOADED_LINUX}`, `extract:${DOWNLOADED_LINUX}->${TARGET}`, `exists:${TARGET}/Vintagestory`, "installed"])
     assert.equal(disk.has(`${TARGET}/Vintagestory`), true)
   })
 
@@ -167,7 +235,7 @@ describe("installGameVersion happy path", () => {
     const result = await installGameVersion(ports, input({ platform: "win32" }), recordingEvents())
 
     assert.deepEqual(result, { ok: true, path: TARGET })
-    assert.deepEqual(trace, ["registered", `download:${WINDOWS_URL}->${TARGET}/${VERSION}`, `run-installer:${DOWNLOADED}->${TARGET}`, `exists:${TARGET}/Vintagestory.exe`, "installed"])
+    assert.deepEqual(trace, ["registered", `download:${WINDOWS_URL}->${DOWNLOADED_WINDOWS}`, `run-installer:${DOWNLOADED_WINDOWS}->${TARGET}`, `exists:${TARGET}/Vintagestory.exe`, "installed"])
   })
 
   it("never runs the Windows installer on a platform that ships an archive", async () => {
@@ -204,7 +272,7 @@ describe("installGameVersion happy path", () => {
   })
 
   it("accepts a macOS install without checking, because there is no expectation to check", async () => {
-    const version: DownloadableGameVersion = { version: VERSION, downloads: { win32: WINDOWS_URL, darwin: MAC_URL, linux: LINUX_URL } }
+    const version: DownloadableGameVersion = { version: VERSION, downloads: { win32: WINDOWS_BUILD, darwin: MAC_BUILD, linux: LINUX_BUILD } }
     const { ports } = landingPorts([])
 
     const result = await installGameVersion(ports, input({ platform: "darwin", version }), recordingEvents())
@@ -224,7 +292,7 @@ describe("installGameVersion failure tree", () => {
     const result = await installGameVersion(fakePorts({ downloader }), input(), recordingEvents())
 
     assert.deepEqual(result, { ok: false, reason: "download-failed" })
-    assert.deepEqual(trace, ["registered", `download:${LINUX_URL}->${TARGET}/${VERSION}`, "discarded:download-failed"])
+    assert.deepEqual(trace, ["registered", `download:${LINUX_URL}->${DOWNLOADED_LINUX}`, "discarded:download-failed"])
   })
 
   it("treats a downloader that never reports as a failed download", async () => {
@@ -253,7 +321,7 @@ describe("installGameVersion failure tree", () => {
     const result = await installGameVersion(fakePorts({ unpacker }), input(), recordingEvents())
 
     assert.deepEqual(result, { ok: false, reason: "unpack-failed" })
-    assert.deepEqual(trace, ["registered", `download:${LINUX_URL}->${TARGET}/${VERSION}`, `extract:${DOWNLOADED}->${TARGET}`, "discarded:unpack-failed"])
+    assert.deepEqual(trace, ["registered", `download:${LINUX_URL}->${DOWNLOADED_LINUX}`, `extract:${DOWNLOADED_LINUX}->${TARGET}`, "discarded:unpack-failed"])
   })
 
   it("names a failed Windows installer as an unpacking failure", async () => {
@@ -262,7 +330,7 @@ describe("installGameVersion failure tree", () => {
     const result = await installGameVersion(fakePorts({ unpacker }), input({ platform: "win32" }), recordingEvents())
 
     assert.deepEqual(result, { ok: false, reason: "unpack-failed" })
-    assert.equal(trace.includes(`run-installer:${DOWNLOADED}->${TARGET}`), true)
+    assert.equal(trace.includes(`run-installer:${DOWNLOADED_WINDOWS}->${TARGET}`), true)
   })
 
   it("treats an unpacker that never reports as a failed unpacking", async () => {
@@ -281,8 +349,8 @@ describe("installGameVersion failure tree", () => {
     assert.deepEqual(result, { ok: false, reason: "game-executable-missing" })
     assert.deepEqual(trace, [
       "registered",
-      `download:${WINDOWS_URL}->${TARGET}/${VERSION}`,
-      `run-installer:${DOWNLOADED}->${TARGET}`,
+      `download:${WINDOWS_URL}->${DOWNLOADED_WINDOWS}`,
+      `run-installer:${DOWNLOADED_WINDOWS}->${TARGET}`,
       `exists:${TARGET}/Vintagestory.exe`,
       "discarded:game-executable-missing"
     ])

@@ -43,7 +43,7 @@ export function createInstallPorts({ startDownload, startExtract, startInstall, 
   }
 }
 
-/** Copies the catalog entry into the plain shape the service reads. */
+/** Copies the catalog entry into the plain shape the service reads, file names included. */
 export function toDownloadableGameVersion(version: DownloadableGameVersionTypeType): DownloadableGameVersion {
   return {
     version: version.version,

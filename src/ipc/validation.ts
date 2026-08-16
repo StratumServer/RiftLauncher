@@ -292,6 +292,27 @@ export function isRestoreWorkspaceName(installationName: string, candidateName: 
   return [RESTORE_STAGING_SUFFIX, RESTORE_REPLACED_SUFFIX].some((suffix) => remainder.startsWith(suffix) && RESTORE_WORKSPACE_TOKEN_PATTERN.test(remainder.slice(suffix.length)))
 }
 
+/**
+ * True when `name` is a gzipped tar, which 7-Zip cannot unpack in one pass and,
+ * for the archives Vintage Story ships, cannot read at all.
+ */
+export function isTarGzName(name: unknown): boolean {
+  return typeof name === "string" && /\.(?:tar\.gz|tgz)$/i.test(name)
+}
+
+/**
+ * Tar entry kinds that become a plain file or folder on disk.
+ *
+ * Everything else, symbolic links and hard links included, is refused: the
+ * extraction only ever writes files and directories, so an archive asking for
+ * anything else is not one the launcher unpacks.
+ */
+const SAFE_TAR_ENTRY_TYPES: ReadonlySet<string> = new Set(["File", "OldFile", "ContiguousFile", "Directory"])
+
+export function isSafeTarEntryType(entryType: unknown): boolean {
+  return typeof entryType === "string" && SAFE_TAR_ENTRY_TYPES.has(entryType)
+}
+
 export function isArchiveSymlink(externalFileAttributes: unknown): boolean {
   if (typeof externalFileAttributes !== "number" || !Number.isFinite(externalFileAttributes)) return false
 

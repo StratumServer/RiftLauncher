@@ -119,7 +119,8 @@ function ImportModpackPopup({
           "end",
           release.mainfile,
           installPath,
-          `${release.modidstr}-${release.modversion}`,
+          // Mod releases are genuine zips. The extension used to be added by the download worker.
+          `${release.modidstr}-${release.modversion}.zip`,
           (status) => {
             updateStatus(entry.modid, status ? "done" : "failed")
             collected.push({ name: mod.name, modid: entry.modid, fromVersion: existingMod?.version ?? null, toVersion: status ? release.modversion : null, assetid: mod.assetid })
