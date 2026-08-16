@@ -83,7 +83,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
     }
 
     registerUserSelectedPaths([result.filePath])
-    const safeOutputPath = await assertManagedPath(result.filePath, "modpack path")
+    const safeOutputPath = await assertManagedPath(result.filePath, "modpack path", { allowMissing: true })
     await fse.writeFile(safeOutputPath, JSON.stringify(safeManifest, null, 2), "utf-8")
 
     logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Modpack exported to ${result.filePath}.`)
