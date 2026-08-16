@@ -10,14 +10,22 @@ export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 export const MAX_LOGIN_RESPONSE_BYTES = 512 * 1024
 export const MAX_ARCHIVE_ENTRY_BYTES = 512 * 1024 * 1024
 export const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
+// The mods catalog has no server-side pagination: one growth spurt of the ~8000-mod
+// list (about 3.5 MB today) can outgrow the generic 4 MB ceiling with no fallback.
+// 16 MB gives years of headroom while staying a bounded, allow-listed exception rather
+// than an unbounded response.
+export const MAX_MODS_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024
 
 export type UrlRule = Readonly<{
   hostname: string
   pathPrefixes: readonly string[]
+  // Optional per-rule response ceiling. Falls back to MAX_RESPONSE_BYTES when unset.
+  maxBytes?: number
 }>
 
 export const API_URL_RULES: readonly UrlRule[] = [
   { hostname: "api.vintagestory.at", pathPrefixes: ["/stable.json", "/unstable.json"] },
+  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api"] },
   { hostname: "auth3.vintagestory.at", pathPrefixes: ["/v2/gamelogin"] }
 ]
@@ -223,6 +231,10 @@ function pathMatches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`)
 }
 
+function findMatchingRule(rules: readonly UrlRule[], hostname: string, pathname: string): UrlRule | undefined {
+  return rules.find((candidate) => candidate.hostname === hostname && candidate.pathPrefixes.some((prefix) => pathMatches(pathname, prefix)))
+}
+
 function parseAllowedUrl(value: unknown, rules: readonly UrlRule[]): URL {
   const rawUrl = assertString(value, "url", MAX_URL_LENGTH)
   let parsedUrl: URL
@@ -235,14 +247,22 @@ function parseAllowedUrl(value: unknown, rules: readonly UrlRule[]): URL {
 
   if (parsedUrl.protocol !== "https:" || parsedUrl.username || parsedUrl.password || parsedUrl.port) throw new TypeError("Invalid URL")
 
-  const rule = rules.find((candidate) => candidate.hostname === parsedUrl.hostname.toLowerCase())
-  if (!rule || !rule.pathPrefixes.some((prefix) => pathMatches(parsedUrl.pathname, prefix))) throw new TypeError("URL is not allowed")
+  if (!findMatchingRule(rules, parsedUrl.hostname.toLowerCase(), parsedUrl.pathname)) throw new TypeError("URL is not allowed")
 
   return parsedUrl
 }
 
 export function assertAllowedApiUrl(value: unknown): URL {
   return parseAllowedUrl(value, API_URL_RULES)
+}
+
+/**
+ * Resolves the response-size ceiling for an already-validated API URL, honoring a
+ * per-rule override (see API_URL_RULES) and falling back to the generic MAX_RESPONSE_BYTES.
+ */
+export function getApiUrlMaxBytes(url: URL): number {
+  const rule = findMatchingRule(API_URL_RULES, url.hostname.toLowerCase(), url.pathname)
+  return rule?.maxBytes ?? MAX_RESPONSE_BYTES
 }
 
 export function assertAllowedDownloadUrl(value: unknown): URL {
