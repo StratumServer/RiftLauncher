@@ -4,24 +4,27 @@ description: List of contributors and a letter of love.
 
 # 👤 Contributors
 
-This fork is currently maintained by [**Zaldaryon**](https://github.com/Zaldaryon). General support is available through Discord at `@zaldaryon`, and donations can be made through [Ko-fi](https://ko-fi.com/zaldaryon).
-
-I started this project as a freelance developer, but after a few days many players started contributing to the project by translating it into new languages, suggesting features, bug hunting...
-
-This page is the Hall of Fame with the name of all the contributors this project has and had!
+This page is the Hall of Fame with the names of everyone who contributed to RiftLauncher and to VS Launcher, the project it was forked from.
 
 ---
 
-## Developers & Code contributors
+## RiftLauncher (Stratum team)
 
-- [**Zaldaryon**](https://github.com/Zaldaryon) - Current maintainer and developer.
+- [**Zaldaryon**](https://github.com/Zaldaryon) - Maintainer of the fork. General support is available through Discord at `@zaldaryon`, and donations can be made through [Ko-fi](https://ko-fi.com/zaldaryon).
+
+---
+
+## VS Launcher (original project)
+
+RiftLauncher is a fork of [VS Launcher](https://github.com/XurxoMF/vs-launcher), archived by its original author. Its codebase, and the people who built it, are the foundation this project stands on.
+
+### Developers & Code contributors
+
 - [**XurxoMF**](https://github.com/XurxoMF) - Original author and main developer.
 - [**scgm0**](https://github.com/scgm0) - Reverse engineering VS to learn how to log in with the VS account.
 - [**Tipsy The Cat**](https://github.com/TipsyTheCat) - Backups compression level code contribution.
 
----
-
-## Translators
+### Translators
 
 - [**XurxoMF**](https://github.com/XurxoMF)**,** [**SkyFoxCoder**](https://github.com/SkyFoxCoder) - English
 - [**XurxoMF**](https://github.com/XurxoMF) **-** Spanish (Spain)
@@ -36,23 +39,11 @@ This page is the Hall of Fame with the name of all the contributors this project
 - [**Pingoda**](https://github.com/Pingoda) - Italian
 - **magyar** - Hungarian
 
----
-
-## Documentation
+### Documentation
 
 - [**XurxoMF**](https://github.com/XurxoMF) - Original author and main editor.
 - [**asleeves**](https://github.com/asleeves), 𝕸𝖆𝖝𝖊𝖓𝖈𝖊 - Linux contributions.
 
----
+### Letter of love
 
-## Letter of love!
-
-Thank you very much for joining me and helping me improve VS Launcher during this time.
-
-Thanks a lot to all the translators that contributed on making VS Launcher multilingual!\
-Thanks a lot to all the players that helped hunting and reporting bugs!\
-Thanks a lot to all the players that downloaded VS Launcher!
-
-I hope to see this project as one of the most important ones in the Vintage Story community.
-
-Again, thanks a lot to all of you! ❤️ you all!
+Thank you to everyone who joined XurxoMF in building VS Launcher. Thanks to all the translators who made it multilingual, to everyone who hunted and reported bugs, and to everyone who downloaded and played with it. That work is the foundation RiftLauncher builds on.

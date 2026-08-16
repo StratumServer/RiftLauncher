@@ -1,7 +1,7 @@
 # Table of contents
 
 - [👋 Welcome](README.md)
-- [❓ What is VS Launcher?](what-is-vs-launcher.md)
+- [❓ What is RiftLauncher?](what-is-riftlauncher.md)
 
 ## GET STARTED
 

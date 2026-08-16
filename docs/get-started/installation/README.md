@@ -1,10 +1,14 @@
 ---
-description: Don't have VS Launcher installed yet?
+description: Don't have RiftLauncher installed yet?
 ---
 
 # ⬇️ Installation
 
-Installing VS Launcher is easy.
+Installing RiftLauncher is easy.
+
+{% hint style="info" %}
+RiftLauncher's application identity (window title, installer file names, data folders) hasn't fully migrated from VS Launcher yet; that work is tracked separately from this documentation. Until it ships, downloads, shortcuts and the installed app itself will still show "VS Launcher" in places.
+{% endhint %}
 
 Depending on the operating system you use, the process changes a bit, so we are going to separate the explanation into the three available systems: **Windows**, **Linux** and **MacOS**.
 

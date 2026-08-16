@@ -5,7 +5,7 @@ icon: windows
 
 # Windows
 
-The first thing you've to do is download the `.exe` from the Github Releases Page to install VS Launcher. Just follow this steps:
+The first thing you've to do is download the `.exe` from the Github Releases Page to install RiftLauncher. Just follow this steps:
 
 {% stepper %}
 {% step %}
@@ -28,7 +28,7 @@ On the releases page, the first version is always the last one. There you'll see
 
 ### Install the downloaded file
 
-Double click the downloaded file and VS Launcher will be automátically installed and opened.
+Double click the downloaded file and RiftLauncher will be automátically installed and opened.
 {% endstep %}
 
 {% step %}

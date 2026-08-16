@@ -7,7 +7,7 @@ description: >-
 
 # Vintage Story is already installed
 
-If you already have the game installed you just need to tell VS Launcher where it is. To do this just follow the next steps:
+If you already have the game installed you just need to tell RiftLauncher where it is. To do this just follow the next steps:
 
 {% stepper %}
 {% step %}
@@ -32,7 +32,7 @@ Add an already installed Vintage Story Version | VS Launcher Guides
 
 ### Add the Installation
 
-If you already played the game before then you'll have a data folder with all your worlds, configs, maps, mods... if don't the continue the guide [here](https://vsldocs.xurxomf.xyz/get-started/usage/game-client/install-vintage-story#add-an-installation). By default this ones can be found on the next folder:
+If you already played the game before then you'll have a data folder with all your worlds, configs, maps, mods... if don't the continue the guide [here](install-vintage-story.md#add-an-installation). By default this ones can be found on the next folder:
 
 - **Windows:** `C:/Users/YourUsername/AppData/Roaming/VintagestoryData`
 - **Linux:** `/home/YourUsername/.config/VintagestoryData/`

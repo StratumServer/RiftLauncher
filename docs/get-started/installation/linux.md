@@ -5,12 +5,12 @@ icon: linux
 
 # Linux
 
-VS Launcher works on ANY Linux distro thanks to the AppImage compilation we're using.
+RiftLauncher works on ANY Linux distro thanks to the AppImage compilation we're using.
 
 Installing it on Linux is as easy as downloading the AppImage and double clicking it.... that's it. Let's get started:
 
 {% hint style="success" %}
-If you're using Arch Linux you can install it from AUR with `yay -S vs-launcher`. You'll need to manually update using yay tho.
+If you're using Arch Linux you can install it from AUR with `yay -S vs-launcher`. This is the original VS Launcher AUR package; whether it tracks RiftLauncher's releases has not been confirmed by the Stratum team. You'll need to manually update using yay tho.
 {% endhint %}
 
 {% stepper %}
@@ -50,7 +50,7 @@ If you use any of this option just install it with double click or `flatpak inst
 For example the Desktop, the you'll be able to open it whenever you want.
 
 {% hint style="warning" %}
-Some users reported that AppImage Launcher is breaking automaitc updates so if you want to use it make sure to download the latest VS Launcher version when it's published!
+Some users reported that AppImage Launcher is breaking automaitc updates so if you want to use it make sure to download the latest RiftLauncher version when it's published!
 {% endhint %}
 {% endstep %}
 
@@ -66,15 +66,15 @@ chmod +x ./vs-launcher-X.X.X.AppImage
 {% endstep %}
 
 {% step %}
-**Open VS Launcher**
+**Open RiftLauncher**
 
-Double click the VS Launcher AppImage and that's it, ready to use!
+Double click the AppImage and that's it, ready to use! (The file itself is still named after VS Launcher; see the note above.)
 {% endstep %}
 
 {% step %}
 **Install Dependencies**
 
-VS Launcher does not need any dependecy to work but Vintage Story does so follow the next steps.
+RiftLauncher does not need any dependecy to work but Vintage Story does so follow the next steps.
 {% endstep %}
 {% endstepper %}
 
@@ -82,7 +82,7 @@ VS Launcher does not need any dependecy to work but Vintage Story does so follow
 
 ## Vintage Story Dependencies
 
-VS Launcher does not need any dependencies to work, but Vintage Story does. I wanted to make this process automatic upon game launch but Linux has a lot of distros and I can't personalize it to work on all of them so you'll have to do it manually.
+RiftLauncher does not need any dependencies to work, but Vintage Story does. This process isn't automated on game launch, since Linux has too many distros to personalize it for all of them, so you'll have to do it manually.
 
 To help you with this process we've made a few guide explaining how to install every dependency needed on the most popular Linux distros.
 
@@ -246,7 +246,7 @@ Note, that this will enable appimages system-wide, and all appimages will have d
 
 ## Migrating from AppImage to Flatpak
 
-**AppImage** and **DEB** options will use `/home/username/.config` as folder to store configs, game versions, installations... but Flatpak will use `/home/username/.var/app/xyz.xurxomf.vslauncher/config` for this so, if you were using **AppImage** or **DEB** builds of VS Launcher before and you install the **Flatpak** one you'll loose all your configs.
+**AppImage** and **DEB** options will use `/home/username/.config` as folder to store configs, game versions, installations... but Flatpak will use `/home/username/.var/app/xyz.xurxomf.vslauncher/config` for this (the Flatpak app ID is still the original VS Launcher one; renaming it is tracked separately) so, if you were using **AppImage** or **DEB** builds of RiftLauncher before and you install the **Flatpak** one you'll loose all your configs.
 
 To restore the config you've to move the config file to the new location manually.
 
@@ -260,16 +260,16 @@ This one will be at `/home/username/.config/VSLauncher/config.json` and copy it 
 
 {% step %}
 
-#### Open the Flatpak installed VS Launcher
+#### Open the Flatpak installed RiftLauncher
 
-Open the VS Launcher copy you've installed using Flatpak and wait one or two seconds for it to generate the config file.
+Open the RiftLauncher copy you've installed using Flatpak and wait one or two seconds for it to generate the config file.
 {% endstep %}
 
 {% step %}
 
 #### Go to the new config file location
 
-This one should be at `/home/username/.var/app/xyz.xurxomf.vslauncher/config/VSLauncher/config.json` . If it's not there go to the setting page on VS Launcher and you'll have the 3 default folders. Just copy one of them as seen on the next video and open it.
+This one should be at `/home/username/.var/app/xyz.xurxomf.vslauncher/config/VSLauncher/config.json` . If it's not there go to the setting page on RiftLauncher and you'll have the 3 default folders. Just copy one of them as seen on the next video and open it.
 {% endstep %}
 
 {% step %}
@@ -281,9 +281,9 @@ Just paste or move the old config file to the new location.
 
 {% step %}
 
-#### Restart VS Launcher
+#### Restart RiftLauncher
 
-Close and open VS Launcher and magic, all your installations and versions are back!
+Close and open RiftLauncher and magic, all your installations and versions are back!
 {% endstep %}
 {% endstepper %}
 
