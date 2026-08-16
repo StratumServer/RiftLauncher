@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
 
 import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
@@ -35,7 +35,10 @@ function ListMods(): JSX.Element {
   const [modsList, setModsList] = useState<DownloadableModOnListType[]>([])
   const [visibleMods, setVisibleMods] = useState<number>(DEFAULT_LOADED_MODS)
 
-  const [installation, setInstallation] = useState<InstallationType | undefined>(undefined)
+  // Derived (not copied into state) so an EDIT_INSTALLATION on the current
+  // installation (e.g. its mods count) shows up immediately, without needing
+  // lastUsedInstallation itself to change.
+  const installation = useMemo(() => installations.find((i) => i.id === lastUsedInstallation), [installations, lastUsedInstallation])
 
   const [installationInstalledMods, setInstallationInstalledMods] = useState<InstalledModType[] | undefined>([])
 
@@ -83,14 +86,16 @@ function ListMods(): JSX.Element {
     }
   }, [textFilter, authorFilter, versionsFilter, tagsFilter, sideFilter, installedFilter, onlyFav, orderBy, orderByOrder])
 
-  useEffect(() => {
-    setInstallation(installations.find((i) => i.id === lastUsedInstallation))
-  }, [lastUsedInstallation])
-
+  // Keyed on id/path, not on `installation` itself: triggerGetInstalledMods calls
+  // syncModsCount, which writes _modsCount back onto this same installation and
+  // hands useMemo a new object every time, matching value or not. Depending on the
+  // whole object would refire this effect on that write, syncModsCount would write
+  // again, and so on forever. id/path are the only fields the fetch below cares
+  // about, and they settle once the installation and its Mods folder stop changing.
   useEffect(() => {
     if (!installation) return setInstallationInstalledMods([])
     triggerGetInstalledMods()
-  }, [installation])
+  }, [installation?.id, installation?.path])
 
   useEffect(() => {
     if (installedFilter !== "all") triggerQueryMods(false)
