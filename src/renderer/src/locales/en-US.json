@@ -360,6 +360,7 @@
       "compressed": "Finished compression: {{compressName}}!",
       "compressError": "Error compressing: {{compressName}}!",
       "folderNotEmpty": "The folder you've selected is not empty! Make sure you've nothing important on there.",
+      "installationFolderCreateFailed": "Couldn't create the folder for this Installation! Check that RiftLauncher can write to that location, then try again.",
       "noFileSelected": "No file selected!",
       "coulndtCopyIcon": "That icon couldn't be copied to the icons folder!",
       "appClosePrevented": "You can't close RiftLauncher either because you're playing Vintage Story or because there's a task in progress!"

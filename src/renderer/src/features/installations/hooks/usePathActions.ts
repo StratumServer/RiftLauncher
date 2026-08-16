@@ -43,7 +43,7 @@ export function useCheckPathExists(): (path: string) => Promise<boolean> {
   return (path) => window.api.pathsManager.checkPathExists(path)
 }
 
-/** Makes sure `path` exists on disk, creating it when it's missing. Fire-and-forget by design: callers that need the outcome read the resolved boolean. */
+/** Makes sure `path` exists on disk, creating it when it's missing. Resolves `false` instead of throwing when creation fails, so callers must await and check the result rather than fire it and forget it. */
 export function useEnsurePathExists(): (path: string) => Promise<boolean> {
   return (path) => window.api.pathsManager.ensurePathExists(path)
 }
