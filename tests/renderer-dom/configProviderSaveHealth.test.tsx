@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { act, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
-import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useConfigDispatch, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
@@ -10,8 +10,9 @@ import { renderWithProviders } from "./helpers/render"
 
 /** Reaches into ConfigContext from inside the provider to fire a real config change, the only way SAVE_CONFIG's effect (which lives inside ConfigProvider) can be triggered from a test. */
 function BumpInstallationsFolder(): JSX.Element {
-  const { config, configDispatch } = useConfigContext()
-  return <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.SET_DEFAULT_INSTALLATIONS_FOLDER, payload: `${config.defaultInstallationsFolder}x` })}>bump</button>
+  const { defaultInstallationsFolder } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+  return <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.SET_DEFAULT_INSTALLATIONS_FOLDER, payload: `${defaultInstallationsFolder}x` })}>bump</button>
 }
 
 describe("ConfigProvider save health", () => {
