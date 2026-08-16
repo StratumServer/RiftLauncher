@@ -7,7 +7,7 @@ import { PiDownloadDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "r
 
 import { installGameVersion } from "@domain/versions/install"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useGameVersions, useInstallations, useSettingsConfig, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { createInstallPorts, describeInstallFailure, toDownloadableGameVersion } from "@renderer/features/versions/adapters/install"
 import { compareVersions } from "@domain/versionNumbers"
@@ -74,7 +74,10 @@ function parseGameVersions(stable: RawVersions, unstable: RawVersions): Download
 function AddVersion(): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
-  const { config, configDispatch } = useConfigContext()
+  const installedGameVersions = useGameVersions()
+  const installations = useInstallations()
+  const settings = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
   const { startDownload, startExtract, startInstall } = useTaskContext()
   const navigate = useNavigate()
 
@@ -102,12 +105,12 @@ function AddVersion(): JSX.Element {
 
   useEffect(() => {
     ;(async (): Promise<void> => {
-      if (version && !folderByUser) setFolder(await window.api.pathsManager.formatPath([config.defaultVersionsFolder, version.version]))
+      if (version && !folderByUser) setFolder(await window.api.pathsManager.formatPath([settings.defaultVersionsFolder, version.version]))
     })()
   }, [version])
 
   useEffect(() => {
-    setVersion(gameVersions.find((gv) => versionFilters[gv.type] && !config.gameVersions.some((igv) => igv.version === gv.version)))
+    setVersion(gameVersions.find((gv) => versionFilters[gv.type] && !installedGameVersions.some((igv) => igv.version === gv.version)))
   }, [gameVersions, versionFilters])
 
   const handleInstallVersion = async (): Promise<void> => {
@@ -128,8 +131,8 @@ function AddVersion(): JSX.Element {
         platform: await window.api.utils.getOs(),
         version: toDownloadableGameVersion(version),
         targetFolder: folder,
-        installedVersions: config.gameVersions.map((gv) => gv.version),
-        foldersInUse: [config.backupsFolder, ...config.gameVersions.map((gv) => gv.path), ...config.installations.map((i) => i.path)]
+        installedVersions: installedGameVersions.map((gv) => gv.version),
+        foldersInUse: [settings.backupsFolder, ...installedGameVersions.map((gv) => gv.path), ...installations.map((i) => i.path)]
       },
       {
         onRegistered: () => {
@@ -230,8 +233,8 @@ function AddVersion(): JSX.Element {
                             <TableBodyRow
                               key={gv.version}
                               selected={version?.version === gv.version}
-                              disabled={config.gameVersions.some((igv) => igv.version === gv.version)}
-                              onClick={() => !config.gameVersions.find((igv) => igv.version === gv.version) && setVersion(gv)}
+                              disabled={installedGameVersions.some((igv) => igv.version === gv.version)}
+                              onClick={() => !installedGameVersions.find((igv) => igv.version === gv.version) && setVersion(gv)}
                             >
                               <TableCell className="w-1/2">{gv.version}</TableCell>
                               <TableCell className="w-1/2">{gv.type}</TableCell>

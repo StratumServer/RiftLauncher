@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiPlusCircleDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 
 import PopupDialogPanel from "./PopupDialogPanel"
 import { ButtonsWrapper, FormBody, FormButton, FormFieldGroup, FormGroupWrapper, FormHead, FormInputText, FormLabel, FromGroup, FromWrapper } from "./FormComponents"
@@ -12,7 +12,7 @@ import { ButtonsWrapper, FormBody, FormButton, FormFieldGroup, FormGroupWrapper,
 export function AddCustomIconPupup({ open, setOpen }: { open: boolean; setOpen: Dispatch<SetStateAction<boolean>> }): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
-  const { configDispatch } = useConfigContext()
+  const configDispatch = useConfigDispatch()
 
   const [id, setId] = useState<string | undefined>(undefined)
   const [file, setFile] = useState<string | undefined>(undefined)

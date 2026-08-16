@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom"
 import { PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useGameVersions, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 
 import {
   ButtonsWrapper,
@@ -25,7 +25,8 @@ import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuB
 function LookForAVersion(): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
-  const { config, configDispatch } = useConfigContext()
+  const gameVersions = useGameVersions()
+  const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
 
   const [folder, setFolder] = useState<string>("")
@@ -37,7 +38,7 @@ function LookForAVersion(): JSX.Element {
     try {
       if (!folder || !versionFound) return addNotification(t("features.versions.missingFolderOrVersion"), "error")
 
-      if (config.gameVersions.some((gv) => gv.version === versionFound)) return addNotification(t("features.versions.versionAlreadyInstalled", { version: versionFound }), "error")
+      if (gameVersions.some((gv) => gv.version === versionFound)) return addNotification(t("features.versions.versionAlreadyInstalled", { version: versionFound }), "error")
 
       const newGameVersion: GameVersionType = {
         version: versionFound,

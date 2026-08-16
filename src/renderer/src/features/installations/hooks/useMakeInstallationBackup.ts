@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next"
 
 import { makeInstallationBackup as runBackup } from "@domain/installations/backup"
 import type { MakeInstallationBackupFailure } from "@domain/installations/backup"
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { createBackupPorts, describeBackupFailure, toInstallationSnapshot } from "@renderer/features/installations/adapters/backup"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
@@ -25,7 +25,9 @@ const NON_BLOCKING_REASONS: readonly MakeInstallationBackupFailure[] = ["install
 export function useMakeInstallationBackup(): (installationId: string) => Promise<boolean> {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
-  const { config, configDispatch } = useConfigContext()
+  const installations = useInstallations()
+  const settings = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
   const { startCompress } = useTaskContext()
 
   /**
@@ -35,7 +37,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
    * @returns {Promise<boolean>} - If the backup was made or not.
    */
   async function makeInstallationBackup(installationId: string): Promise<boolean> {
-    const installation = config.installations.find((i) => i.id === installationId)
+    const installation = installations.find((i) => i.id === installationId)
 
     if (!installation) {
       addNotification(t("features.installations.noInstallationFound"), "error")
@@ -54,7 +56,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
 
     const result = await runBackup(
       ports,
-      { installation: toInstallationSnapshot(installation), backupsFolder: config.backupsFolder },
+      { installation: toInstallationSnapshot(installation), backupsFolder: settings.backupsFolder },
       {
         onStarted: () => setBackuping(true),
         onFinished: () => setBackuping(false),

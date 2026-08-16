@@ -7,7 +7,7 @@ import clsx from "clsx"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
 import { FormBody, FormFieldGroup, FormHead, FormLabel, FromGroup, FromWrapper, FormGroupWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
@@ -19,7 +19,8 @@ function ConfigPage(): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
 
-  const { config, configDispatch } = useConfigContext()
+  const settings = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -85,7 +86,7 @@ function ConfigPage(): JSX.Element {
                   >
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
-                  <FormInputText value={config.defaultInstallationsFolder} readOnly className="w-full" />
+                  <FormInputText value={settings.defaultInstallationsFolder} readOnly className="w-full" />
                 </FormFieldGroup>
               </FormBody>
             </FromGroup>
@@ -111,7 +112,7 @@ function ConfigPage(): JSX.Element {
                   >
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
-                  <FormInputText value={config.defaultVersionsFolder} readOnly className="w-full" />
+                  <FormInputText value={settings.defaultVersionsFolder} readOnly className="w-full" />
                 </FormFieldGroup>
               </FormBody>
             </FromGroup>
@@ -137,7 +138,7 @@ function ConfigPage(): JSX.Element {
                   >
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
-                  <FormInputText value={config.backupsFolder} readOnly className="w-full" />
+                  <FormInputText value={settings.backupsFolder} readOnly className="w-full" />
                 </FormFieldGroup>
               </FormBody>
             </FromGroup>

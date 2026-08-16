@@ -10,7 +10,7 @@ import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstall
 import { toBackupSnapshot, toInstallationSnapshot } from "@renderer/features/installations/adapters/backup"
 import { createBackupDeletionPorts, createRestorePorts, describeBackupDeletionFailure, describeRestoreFailure } from "@renderer/features/installations/adapters/restore"
 
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 
@@ -28,7 +28,8 @@ function ManageInstallationBackups(): JSX.Element {
   const { id } = useParams()
 
   const { t } = useTranslation()
-  const { config, configDispatch } = useConfigContext()
+  const installations = useInstallations()
+  const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
   const { startExtract } = useTaskContext()
 
@@ -39,7 +40,7 @@ function ManageInstallationBackups(): JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  const installation = config.installations.find((igv) => igv.id === id)
+  const installation = installations.find((igv) => igv.id === id)
   const backups = installation?.backups
 
   async function RestoreBackupHandler(backup: BackupType | null): Promise<void> {

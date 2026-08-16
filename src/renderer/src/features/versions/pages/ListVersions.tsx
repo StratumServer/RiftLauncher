@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import semver from "semver"
 
 import { uninstallGameVersion } from "@domain/versions/uninstall"
-import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useGameVersions, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { createUninstallPorts, describeUninstallFailure, toGameVersionSnapshot } from "@renderer/features/versions/adapters/uninstall"
 
@@ -21,7 +21,8 @@ const LOG_TAG = "[front] [versions] [features/versions/pages/ListVersions.tsx]"
 function ListVersions(): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
-  const { config, configDispatch } = useConfigContext()
+  const gameVersions = useGameVersions()
+  const configDispatch = useConfigDispatch()
 
   const [versionToDelete, setVersionToDelete] = useState<GameVersionType | null>(null)
 
@@ -91,7 +92,7 @@ function ListVersions(): JSX.Element {
                 </LinkButton>
               </ListItem>
             </div>
-            {config.gameVersions
+            {gameVersions
               .slice()
               .sort((a, b) => semver.rcompare(a.version, b.version))
               .map((gv) => (
