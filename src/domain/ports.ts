@@ -242,6 +242,71 @@ export interface ProcessProbe {
   run(request: ProcessProbeRequest): Promise<ProcessProbeOutcome>
 }
 
+/** A JSON document read back off disk. `undefined` means the file was not there. */
+export type JsonFileReadResult = { ok: true; document: unknown } | { ok: false; error?: string }
+
+export type JsonFileWriteResult = { ok: true } | { ok: false; error?: string }
+
+/**
+ * Reads and writes whole JSON documents the launcher shares with another
+ * program.
+ *
+ * Kept apart from {@link FileSystem} for the same reason as
+ * {@link DirectoryReader}: reading a document is a main process capability
+ * today, and the preload surface the renderer wires {@link FileSystem} onto has
+ * no equivalent, so widening that port would leave the renderer adapter with a
+ * member it cannot honour.
+ *
+ * A missing file is NOT a failure: it resolves `ok` with an undefined document,
+ * so a read-modify-write service creates the file on its first run without
+ * having to ask whether it exists. A file that exists but holds no readable
+ * JSON IS a failure, because overwriting it would destroy whatever it holds.
+ */
+export interface JsonFile {
+  /** Never rejects: an unreadable file resolves `ok: false`. */
+  read(path: string): Promise<JsonFileReadResult>
+  /** Never rejects: a write that did not happen resolves `ok: false`. */
+  write(path: string, document: unknown): Promise<JsonFileWriteResult>
+}
+
+/** Everything the host needs to start one game process. */
+export interface GameProcessRequest {
+  /** Executable to run, already resolved to a real path or a name the host can find on its own. */
+  command: string
+  /** Arguments passed to the command, in order. */
+  args: string[]
+  /** The complete environment the process runs with, not a set of additions. */
+  env: Readonly<Record<string, string | undefined>>
+  /** Working directory the process starts in. */
+  cwd: string
+}
+
+/**
+ * How a game process ended.
+ *
+ * `started: false` is the one case that means the game never ran. An exit code
+ * is reported for the record and never read as a verdict: Vintage Story exits
+ * non-zero often enough that treating that as a failed launch would report an
+ * error to a player who just finished playing.
+ */
+export type GameProcessOutcome = { started: true; exitCode: number | null } | { started: false; error?: string }
+
+/**
+ * Runs the game and waits for the player to close it.
+ *
+ * Distinct from {@link ProcessProbe}, which spawns a short command to read one
+ * line off its stdout and bounds how long it waits. This one is the play
+ * session: it resolves when the game exits, however long that takes, which is
+ * what lets a caller measure how long someone played.
+ */
+export interface GameProcess {
+  /**
+   * Spawns `request` and resolves once the process exits, never rejecting: a
+   * spawn failure is reported through `started: false` instead.
+   */
+  run(request: GameProcessRequest): Promise<GameProcessOutcome>
+}
+
 /** Releases a close guard acquired earlier. Safe to call once. */
 export type ReleaseCloseGuard = () => void
 
