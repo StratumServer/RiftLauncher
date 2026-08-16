@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useGetCompleteInstalledMods } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
 import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
 
@@ -19,13 +20,17 @@ export interface ManageInstalledMods {
 /**
  * One Installation's installed Mods: the scan, what it found, and whether it is still running.
  *
- * The effect deliberately keeps its single `_updatingMods` dependency. It is what stops a scan from
- * racing a bulk update that is rewriting the same folder, and it is what runs the scan again the
- * moment that update lets go.
+ * The effect keeps its `_updatingMods` dependency on purpose. It is what stops a scan from racing a
+ * bulk update that is rewriting the same folder, and it is what runs the scan again the moment that
+ * update lets go. It also depends on the Installation's identity and on the config's loaded state:
+ * without those, a cold mount whose config arrives after the first render never re-runs the effect,
+ * because `_updatingMods` stays `undefined` across that transition, so the scan never starts (#58).
  */
 export function useManageInstalledMods(installation: InstallationType | undefined): ManageInstalledMods {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
+  const { schemaVersion } = useSettingsConfig()
+  const isConfigLoaded = schemaVersion !== 0
 
   const getCompleteInstalledMods = useGetCompleteInstalledMods()
   const syncModsCount = useSyncModsCount()
@@ -36,8 +41,9 @@ export function useManageInstalledMods(installation: InstallationType | undefine
   const [gettingMods, setGettingMods] = useState<boolean>(false)
 
   useEffect(() => {
+    if (!isConfigLoaded) return
     if (!installation?._updatingMods) refresh()
-  }, [installation?._updatingMods])
+  }, [installation?.id, installation?._updatingMods, isConfigLoaded])
 
   async function refresh(): Promise<void> {
     setGettingMods(true)

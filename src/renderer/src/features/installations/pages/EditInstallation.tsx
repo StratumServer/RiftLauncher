@@ -9,7 +9,7 @@ import { validateInstallationFields } from "@domain/installations/create"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, useSettingsConfig, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { describeInstallationFieldsFailure } from "@renderer/features/installations/adapters/create"
 import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
 import { useInstallationFormFields } from "@renderer/features/installations/hooks/useInstallationFormFields"
@@ -32,6 +32,8 @@ function EditInslallation(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
   const openExternalLink = useOpenExternalLink()
+  const { schemaVersion } = useSettingsConfig()
+  const isConfigLoaded = schemaVersion !== 0
 
   const { id } = useParams()
 
@@ -51,9 +53,12 @@ function EditInslallation(): JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
+  // Depends on the loaded state too: on a cold mount whose config arrives after the first render,
+  // `id` never changes, so a dependency list of just `[id]` never re-runs this lookup and the page
+  // is stuck reporting "Installation not found!" even once the config lands (#58).
   useEffect(() => {
     setInstallation(installations.find((igv) => igv.id === id))
-  }, [id])
+  }, [id, isConfigLoaded])
 
   useEffect(() => {
     fields.setIcon(INSTALLATION_ICONS.find((ii) => ii.id === installation?.icon) ?? customIcons.find((ii) => ii.id === installation?.icon) ?? INSTALLATION_ICONS[0])
