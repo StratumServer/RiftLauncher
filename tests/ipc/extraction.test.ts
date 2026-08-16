@@ -5,8 +5,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import * as tar from "tar"
+import { path7za } from "7zip-bin"
 
-import { runnableSevenZip } from "../helpers/sevenZip"
 import { contentRoot, runExtraction, validateTree } from "../../src/ipc/workers/extraction"
 
 /**
@@ -16,7 +16,7 @@ import { contentRoot, runExtraction, validateTree } from "../../src/ipc/workers/
  * RIFT_E2E_ARCHIVE at a downloaded game tar.gz to run it. CI never does.
  */
 
-const sevenZipBin = runnableSevenZip()
+const sevenZipBin = path7za
 
 let workspace: string
 
