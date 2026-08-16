@@ -38,6 +38,8 @@ export default defineConfig({
     ],
     coverage: {
       provider: "v8",
+      // Default reporters (text, html, clover, json) plus lcov for SonarCloud.
+      reporter: ["text", "html", "clover", "json", "lcov"],
       // Renderer logic joins the ratchet here (#17): hooks, adapters, the
       // config context/reducer, and plain utils. Presentation stays out on
       // purpose (pages/**, components/**, App.tsx, main.tsx, i18n.ts): the
