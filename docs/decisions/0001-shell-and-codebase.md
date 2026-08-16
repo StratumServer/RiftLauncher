@@ -35,7 +35,7 @@ Locales: 14 JSON files in `src/renderer/src/locales`, 347 leaf keys in `en-US.js
 
 Dependencies: 22 declared in `dependencies`, 87 packages in the resolved production tree (`npm ls --omit=dev --all --parseable`). One ships native binaries: `7zip-bin`, 11.9 MB in `node_modules`, of which 8.8 MB (six `7za` executables: linux arm, arm64, ia32, x64 and mac arm64, x64) lands in `app.asar.unpacked` on a Linux build.
 
-Installed size, from `npm run build:unpack` then `du -sh dist/linux-unpacked`: **433 MB**. The breakdown is worth reading:
+Installed size, from `npm run build:unpack` then `du -sh dist/linux-unpacked`: **433 MB** at the time of measurement, **337 MB** since PR #68 landed mid-drafting and stopped renderer-only packages from shipping twice (asar 112 MB down to 16 MB). The 433 MB breakdown is still worth reading because everything except the asar line is unchanged:
 
 | Component                                      | Size   |
 | ---------------------------------------------- | ------ |
@@ -47,7 +47,7 @@ Installed size, from `npm run build:unpack` then `du -sh dist/linux-unpacked`: *
 | `resources/app.asar.unpacked` (7-Zip binaries) | 9.4 MB |
 | everything else                                | ~24 MB |
 
-The app's own compiled code is 6.5 MB (`du -sh out`). The 112 MB asar is mostly not ours either: `react-icons` alone is 83 MB in `node_modules` and appears as 139 entries inside the asar (`npx asar list`), because electron-builder copies every `dependencies` entry whole even though the bundler already tree-shook it into those 6.5 MB. That 83 MB is avoidable under any of the three options and should not be charged to Electron.
+The app's own compiled code is 6.5 MB (`du -sh out`). The 112 MB asar is mostly not ours either: `react-icons` alone is 83 MB in `node_modules` and appears as 139 entries inside the asar (`npx asar list`), because electron-builder copies every `dependencies` entry whole even though the bundler already tree-shook it into those 6.5 MB. That 83 MB was avoidable under any of the three options and should not be charged to Electron; PR #68 has since removed it (asar now 16 MB, install 337 MB).
 
 Memory, dev mode, on a Wayland session, read from `/proc/<pid>/status` on the `electron-vite dev --watch` app already running on this machine. **These are dev-mode numbers**, with the Vite dev server attached and no production optimisations, and RSS summed across processes double-counts shared pages:
 
@@ -103,7 +103,7 @@ Contributors, from the GitHub API on `Pixnop/Prospect`: **one**. Pixnop, 49 cont
 
 **What the team gains.** Nothing new, which is the point. The rebuild continues on a codebase where 458 tests already pass, where the security work (path policy, archive validation, artifact verification, fuses) is done and tested, and where the next contributor writes TypeScript. Twelve routes ship today in 14 languages. Time to value is zero because there is nothing to port.
 
-**What it costs.** 433 MB installed on Linux, of which 211 MB is a private Chromium and 46 MB is Chromium's own locale bundle for languages the app does not use. Around 985 MiB of summed dev-mode RSS across seven processes. Four worker entrypoints, 507 lines, each with its own timeout and a termination hook on `before-quit`, which is machinery that exists because Node has no other way to keep the main process responsive during a 600 MB download. Six `7za` binaries in the package, and the whole archive-validation layer partly exists because shelling out to `7za l -slt` is the only way to read a table of contents from formats yauzl and node-tar do not handle. And Electron 43 tracks Chromium, so the shell has a security update cadence set by someone else, on a schedule the team cannot negotiate.
+**What it costs.** 337 MB installed on Linux (since PR #68), of which 211 MB is a private Chromium and 46 MB is Chromium's own locale bundle for languages the app does not use. Around 985 MiB of summed dev-mode RSS across seven processes. Four worker entrypoints, 507 lines, each with its own timeout and a termination hook on `before-quit`, which is machinery that exists because Node has no other way to keep the main process responsive during a 600 MB download. Six `7za` binaries in the package, and the whole archive-validation layer partly exists because shelling out to `7za l -slt` is the only way to read a table of contents from formats yauzl and node-tar do not handle. And Electron 43 tracks Chromium, so the shell has a security update cadence set by someone else, on a schedule the team cannot negotiate.
 
 **What breaks for existing VS Launcher users.** Nothing. The config file, the folder layout and the update feed all stay where they are.
 
@@ -123,7 +123,7 @@ The lines are the easy part. The hard part is that `pathPolicy.ts` (166 lines: s
 
 ## Option C: adopt Prospect as the base
 
-**What the team gains.** A launcher that is already finished, and four capabilities the fork does not have and would each be real work to build: dependency resolution, pure-C# Inno payload extraction, migration rails with tested one-class-per-step pipelines, and a conformance tier that boots the real game engine and checks the launcher's assumptions against it rather than against a mock. 2582 tests, 87% line coverage on Core. 109 MB installed rather than 433 MB, and 290 MiB idle in one process. The VS Launcher import already exists and already works. And Prospect is written in the same language as the game and its mods, which matters for a launcher whose whole job is understanding what the game does with a folder.
+**What the team gains.** A launcher that is already finished, and four capabilities the fork does not have and would each be real work to build: dependency resolution, pure-C# Inno payload extraction, migration rails with tested one-class-per-step pipelines, and a conformance tier that boots the real game engine and checks the launcher's assumptions against it rather than against a mock. 2582 tests, 87% line coverage on Core. 109 MB installed rather than 337 MB, and 290 MiB idle in one process. The VS Launcher import already exists and already works. And Prospect is written in the same language as the game and its mods, which matters for a launcher whose whole job is understanding what the game does with a folder.
 
 **What it costs.** Everything the fork has that Prospect does not, plus the language.
 
@@ -149,7 +149,7 @@ That totals roughly 23 to 35 person-days, excluding translations and excluding o
 
 ## The criteria that actually discriminate
 
-Installed size does not discriminate the way issue #18 assumed. 433 MB measured against the 150 to 200 MB the issue estimated, and 83 MB of that is a packaging mistake that any option fixes. Prospect's 109 MB is real but untrimmed, and Tauri's number is unmeasured. Size separates A from the others; it does not separate B from C.
+Installed size does not discriminate the way issue #18 assumed. 433 MB measured against the 150 to 200 MB the issue estimated, and the 83 MB packaging mistake in that number has already been fixed (337 MB since PR #68). Prospect's 109 MB is real but untrimmed, and Tauri's number is unmeasured. Size separates A from the others; it does not separate B from C.
 
 **Team language comfort.** The fork is TypeScript, which the team reads. Prospect is C#, which one person writes. Tauri means Rust, which nobody writes. This is the criterion that decides how many people can review a security fix, and it is a question for the team rather than a number: who is willing to learn what, and by when.
 
