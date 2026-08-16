@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid"
 
 import type { BackupSnapshot, InstallationSnapshot, MakeInstallationBackupFailure, MakeInstallationBackupPorts } from "@domain/installations/backup"
-import { createFileSystemPort } from "@renderer/features/installations/adapters/fileSystem"
+import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 import type { TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
 export interface BackupPortsOptions {

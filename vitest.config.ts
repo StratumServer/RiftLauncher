@@ -8,8 +8,8 @@ export default defineConfig({
       include: ["src/domain/**", "src/ipc/**", "src/utils/**", "src/config/**"],
       thresholds: {
         lines: 15,
-        statements: 15,
-        functions: 17,
+        statements: 16,
+        functions: 18,
         branches: 20
       }
     }

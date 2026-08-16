@@ -1,5 +1,5 @@
 import type { DownloadableGameVersion, InstallGameVersionFailure, InstallGameVersionPorts } from "@domain/versions/install"
-import { createFileSystemPort } from "@renderer/features/installations/adapters/fileSystem"
+import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 import type { TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
 export interface InstallPortsOptions {
