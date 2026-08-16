@@ -22,7 +22,7 @@ declare global {
     }
     configManager: {
       getConfig: () => Promise<ConfigType>
-      saveConfig: (configJson: ConfigType) => Promise<boolean>
+      saveConfig: (configJson: ConfigType) => Promise<SaveConfigResult>
     }
     modsManager: {
       getInstalledMods: (path: string) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }>

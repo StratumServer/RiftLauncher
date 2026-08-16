@@ -1,6 +1,9 @@
-import { createContext, useContext, useEffect, useReducer, useState } from "react"
+import { createContext, useContext, useEffect, useReducer, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
+import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { configSaveFailureMessageKey, initialConfigSaveHealthState, updateConfigSaveHealth } from "@renderer/features/config/utils/saveHealth"
 
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
@@ -300,6 +303,12 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
   const [isConfigLoaded, setIsConfigLoaded] = useState(false)
 
   const getInstalledMods = useGetInstalledMods()
+  const { t } = useTranslation()
+  const { addNotification } = useNotificationsContext()
+  // Carries the running failure streak across renders without re-triggering
+  // this effect: only the save result should decide when to notify, never a
+  // state update reacting to its own state update.
+  const saveHealthRef = useRef(initialConfigSaveHealthState)
 
   useEffect(() => {
     ;(async (): Promise<void> => {
@@ -312,7 +321,21 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
   useEffect(() => {
     if (!isConfigLoaded && config.schemaVersion !== 0) setIsConfigLoaded(true)
     if (!isConfigLoaded) return
-    window.api.configManager.saveConfig(config)
+
+    // Still fire-and-forget in spirit: nothing here blocks the UI on a save.
+    // The result is only observed to decide whether the player needs telling.
+    void window.api.configManager.saveConfig(config).then((result) => {
+      const { state, notice } = updateConfigSaveHealth(saveHealthRef.current, result)
+      saveHealthRef.current = state
+      if (!notice) return
+
+      if (notice.kind === "failing") {
+        window.api.utils.logMessage("error", `[front] [config] [features/config/contexts/ConfigContext.tsx] [ConfigProvider] Config saves are failing: ${notice.reason}.`)
+        addNotification(t(configSaveFailureMessageKey(notice.reason)), "error")
+      } else {
+        addNotification(t("notifications.body.configSaveRecovered"), "success")
+      }
+    })
   }, [config])
 
   useEffect(() => {
