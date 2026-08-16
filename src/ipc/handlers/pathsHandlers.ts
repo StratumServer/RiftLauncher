@@ -18,6 +18,7 @@ import { attemptInstallerTreeKill } from "@src/ipc/handlers/installerTimeoutOutc
 
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
+import innoExtractWorker from "@src/ipc/workers/innoExtractWorker?modulePath"
 import changePermsWorker from "@src/ipc/workers/changePermsWorker?modulePath"
 import downloadWorkerPath from "@src/ipc/workers/downloadWorker?modulePath"
 
@@ -26,8 +27,28 @@ const WORKER_TIMEOUTS_MS: Record<string, number> = {
   DOWNLOAD_ON_PATH: 45 * 60 * 1_000,
   EXTRACT_ON_PATH: 30 * 60 * 1_000,
   COMPRESS_ON_PATH: 30 * 60 * 1_000,
-  CHANGE_PERMS: 10 * 60 * 1_000
+  CHANGE_PERMS: 10 * 60 * 1_000,
+  // Reading the payload out of the Windows installer. Measured at 41 seconds
+  // for the 598 MB installer of 1.22.6 on a developer machine, so this leaves
+  // room for a slow disk without leaving a stuck worker running for an hour.
+  RUN_INSTALLER: 30 * 60 * 1_000
 }
+
+/**
+ * Whether a Windows install reads the game out of the installer instead of
+ * running it.
+ *
+ * Running it is what issue #8 is about: a pre-existing uninstall key makes
+ * `InitializeSetup` show a MsgBox that `/SUPPRESSMSGBOXES` cannot answer, the
+ * silent run hangs on it, and every run writes that key back for the next
+ * install to trip over. Reading the payload plays none of the script, so the
+ * dialog, the registry write and the redirect all stop existing at once.
+ *
+ * The constant is here so the conformance workflow can exercise both paths
+ * against a real machine later. It stays true: the extraction is what a player
+ * gets, and the installer is only run for a file the reader declines.
+ */
+const EXTRACT_INSTALLER_PAYLOAD = true
 
 /**
  * RUN_INSTALLER spawns a real installer process directly rather than going
@@ -48,6 +69,10 @@ type WorkerMessage = {
   progress?: unknown
   path?: unknown
   message?: unknown
+  verdict?: unknown
+  reason?: unknown
+  filesWritten?: unknown
+  bytesWritten?: unknown
 }
 
 function sendProgress(event: IpcMainInvokeEvent, channel: string | undefined, id: string, progress: number): void {
@@ -297,6 +322,64 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: strin
   if (extension !== ".exe") throw new TypeError("Invalid installer file")
   await assertVerifiedArtifact(safeFilePath)
 
+  if (EXTRACT_INSTALLER_PAYLOAD) {
+    const verdict = await extractInstallerPayload(event, safeId, safeFilePath, safeOutputPath, shouldDeleteInstaller)
+    if (verdict !== "format-refused") return verdict === "extracted"
+  }
+
+  return spawnInstaller(event, safeId, safeFilePath, safeOutputPath, shouldDeleteInstaller)
+})
+
+/**
+ * Reads the game out of the installer instead of running it.
+ *
+ * @returns `extracted` or `failed` once the attempt is over, or `format-refused`
+ * when the reader declined the file and the caller should run the installer.
+ */
+async function extractInstallerPayload(
+  event: IpcMainInvokeEvent,
+  safeId: string,
+  safeFilePath: string,
+  safeOutputPath: string,
+  shouldDeleteInstaller: boolean
+): Promise<"extracted" | "failed" | "format-refused"> {
+  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracting the installer payload instead of running it.`)
+  sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
+
+  try {
+    return await runTrackedWorker(
+      event,
+      safeId,
+      IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
+      innoExtractWorker,
+      { filePath: safeFilePath, outputPath: safeOutputPath, deleteInstaller: shouldDeleteInstaller },
+      "RUN_INSTALLER",
+      (message) => {
+        if (message.verdict === "format-refused") {
+          const reason = typeof message.reason === "string" ? message.reason : "no reason given"
+          logMessage("warn", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
+          return "format-refused"
+        }
+        if (message.verdict !== "extracted") throw new Error("Installer payload extraction returned an unknown verdict")
+        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
+        return "extracted"
+      }
+    )
+  } catch (err) {
+    logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Installer payload extraction failed.`)
+    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
+    return "failed"
+  }
+}
+
+/**
+ * The original path: run the installer silently and hope no dialog is waiting.
+ *
+ * Kept for the file this reader cannot follow. Issue #8 is exactly what happens
+ * here when the uninstall key is already set, so this is the fallback and not
+ * the way in.
+ */
+function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath: string, safeOutputPath: string, shouldDeleteInstaller: boolean): Promise<boolean> {
   return new Promise((resolvePromise) => {
     const exePath = safeFilePath
     let settled = false
@@ -349,7 +432,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: strin
       resolvePromise(false)
     }
   })
-})
+}
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH, async (event, id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel = 4): Promise<boolean> => {
   assertTrustedIpcSender(event)
