@@ -47,6 +47,18 @@ if (!window.IntersectionObserver) {
   window.IntersectionObserver = NoopIntersectionObserver as unknown as typeof IntersectionObserver
 }
 
+// jsdom does not implement ResizeObserver. @headlessui/react's Listbox/Menu
+// (the mods filter dropdowns) reads it to track the anchor button's size as
+// soon as one is opened, so any test that clicks a filter open needs it.
+if (!window.ResizeObserver) {
+  class NoopResizeObserver implements ResizeObserver {
+    observe = (): void => {}
+    unobserve = (): void => {}
+    disconnect = (): void => {}
+  }
+  window.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver
+}
+
 afterEach(() => {
   cleanup()
 })
