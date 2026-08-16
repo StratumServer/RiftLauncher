@@ -10,6 +10,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
+import { useLaunchGame } from "@renderer/features/launch/hooks/useLaunchGame"
 
 import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
 import TasksMenu from "@renderer/components/ui/TasksMenu"
@@ -33,6 +34,7 @@ function MainMenu(): JSX.Element {
   const { addNotification } = useNotificationsContext()
 
   const makeInstallationBackup = useMakeInstallationBackup()
+  const { preventAppClose, runGame, checkInstallationPathExists, logLaunch } = useLaunchGame()
 
   const [selectedInstallation, setSelectedInstallation] = useState<InstallationType | undefined>(undefined)
 
@@ -52,7 +54,7 @@ function MainMenu(): JSX.Element {
 
   async function PlayHandler(): Promise<void> {
     const id = uuidv4()
-    window.api.utils.setPreventAppClose("add", id, "Started playing Vintage Story.")
+    preventAppClose("add", id, "Started playing Vintage Story.")
 
     // Only set once _playing has actually been flipped to true below, so the
     // finally block never clears a flag this call did not set itself (the
@@ -83,7 +85,7 @@ function MainMenu(): JSX.Element {
       }
 
       const startedPlaying = Date.now()
-      const result = await window.api.gameManager.executeGame(gameVersionToRun, selectedInstallation)
+      const result = await runGame(gameVersionToRun, selectedInstallation)
 
       // Playtime is only recorded once the game actually ran: a launch that
       // never started played for 0 seconds, and crediting it with the sliver
@@ -98,8 +100,8 @@ function MainMenu(): JSX.Element {
       const outcomeNotification = pickPlayOutcomeNotification(result)
       if (outcomeNotification) addNotification(t(outcomeNotification.key), "error")
     } catch (err) {
-      window.api.utils.logMessage("error", "[front] [layout] [components/layout/MainMenu.tsx] [MainMenu > PlayHandler] Error executing the game.")
-      window.api.utils.logMessage("debug", `[front] [layout] [components/layout/MainMenu.tsx] [MainMenu > PlayHandler] Error executing the game: ${err}`)
+      logLaunch("error", "[front] [layout] [components/layout/MainMenu.tsx] [MainMenu > PlayHandler] Error executing the game.")
+      logLaunch("debug", `[front] [layout] [components/layout/MainMenu.tsx] [MainMenu > PlayHandler] Error executing the game: ${err}`)
       addNotification(t("notifications.body.errorExecutingGame"), "error")
     } finally {
       // Runs on every outcome, the two early-return backup and error paths
@@ -107,7 +109,7 @@ function MainMenu(): JSX.Element {
       // version stuck at _playing: true until the app restarts (issue #40).
       if (playingInstallationId) configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: playingInstallationId, updates: { _playing: false } } })
       if (playingGameVersion) configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: playingGameVersion, updates: { _playing: false } } })
-      window.api.utils.setPreventAppClose("remove", id, "Finished playing vintage Story.")
+      preventAppClose("remove", id, "Finished playing vintage Story.")
     }
   }
 
@@ -145,7 +147,7 @@ function MainMenu(): JSX.Element {
                 className="p-1"
                 title={t("features.installations.backupInstallation")}
                 onClick={async () => {
-                  if (!(await window.api.pathsManager.checkPathExists(selectedInstallation.path))) return addNotification(t("features.backups.folderDoesntExists"), "error")
+                  if (!(await checkInstallationPathExists(selectedInstallation.path))) return addNotification(t("features.backups.folderDoesntExists"), "error")
                   makeInstallationBackup(selectedInstallation.id)
                 }}
               >

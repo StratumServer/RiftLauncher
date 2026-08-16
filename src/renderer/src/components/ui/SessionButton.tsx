@@ -4,6 +4,7 @@ import { PiFloppyDiskBackDuotone, PiTrashDuotone, PiUserDuotone, PiXCircleDuoton
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { CONFIG_ACTIONS, useAccount, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
+import { useAccountSession } from "@renderer/features/account/hooks/useAccountSession"
 
 import {
   ButtonsWrapper,
@@ -27,6 +28,7 @@ function SessionButton(): JSX.Element {
   const account = useAccount()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
+  const { login, logout } = useAccountSession()
 
   // Log In states
   const [email, setEmail] = useState("")
@@ -45,7 +47,7 @@ function SessionButton(): JSX.Element {
     // If you're reading this, make sure to check out MVL https://github.com/scgm0/MVL
 
     try {
-      const result = await window.api.accountManager.login(email, password, twofacode || undefined)
+      const result = await login(email, password, twofacode || undefined)
       if (result.status === "wrong-two-factor") return addNotification(t("features.config.wrongtwofa"), "error")
       if (result.status === "invalid-credentials") return addNotification(t("features.config.invalidEmailPass"), "error")
       if (result.status === "requires-two-factor") return addNotification(t("features.config.wrongtwofa"), "error")
@@ -62,7 +64,7 @@ function SessionButton(): JSX.Element {
   }
 
   async function handleLogout(): Promise<void> {
-    const loggedOut = await window.api.accountManager.logout()
+    const loggedOut = await logout()
     if (!loggedOut) return addNotification(t("features.config.invalidEmailPass"), "error")
     configDispatch({ type: CONFIG_ACTIONS.SET_ACCOUNT, payload: null })
     addNotification(t("features.config.loggedout"), "success")

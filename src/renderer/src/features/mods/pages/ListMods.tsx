@@ -10,6 +10,8 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useQueryMods } from "@renderer/features/mods/hooks/useQueryMods"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
 import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
+import { useLogMods } from "@renderer/features/mods/hooks/useLogMods"
+import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
 
 import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -37,6 +39,8 @@ function ListMods(): JSX.Element {
   const queryMods = useQueryMods()
   const getInstalledMods = useGetInstalledMods()
   const syncModsCount = useSyncModsCount()
+  const logMods = useLogMods()
+  const { openModOnModDb } = useExternalLinks()
 
   const [modsList, setModsList] = useState<DownloadableModOnListType[]>([])
   const [visibleMods, setVisibleMods] = useState<number>(DEFAULT_LOADED_MODS)
@@ -105,11 +109,11 @@ function ListMods(): JSX.Element {
   async function triggerQueryMods(resetScroll: boolean = true): Promise<void> {
     // If the installed mods are not loaded yet, skip, it'll be run again when the mods are loaded
     if (!installationInstalledMods) {
-      window.api.utils.logMessage("info", "[front] [mods] [features/mods/pages/ListMods.tsx] [triggerQueryMods] Installed mods not loaded yet, skipping query")
+      logMods("info", "[front] [mods] [features/mods/pages/ListMods.tsx] [triggerQueryMods] Installed mods not loaded yet, skipping query")
       return
     }
 
-    window.api.utils.logMessage("info", "[front] [mods] [features/mods/pages/ListMods.tsx] [triggerQueryMods] Installed mods loaded, querying mods")
+    logMods("info", "[front] [mods] [features/mods/pages/ListMods.tsx] [triggerQueryMods] Installed mods loaded, querying mods")
 
     setSearching(true)
 
@@ -256,7 +260,7 @@ function ListMods(): JSX.Element {
                         title={t("features.mods.openOnTheModDB")}
                         onClick={(e) => {
                           e.stopPropagation()
-                          window.api.utils.openOnBrowser(`https://mods.vintagestory.at/show/mod/${mod.assetid}`)
+                          openModOnModDb(mod.assetid)
                         }}
                         className="p-1 text-lg opacity-0 group-hover:opacity-100 duration-200"
                       >

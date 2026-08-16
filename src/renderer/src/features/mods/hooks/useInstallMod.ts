@@ -5,6 +5,7 @@ import type { InstallModResult, ModReleaseToInstall, InstalledModCopy } from "@d
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { createModInstallPorts, describeModInstallFailure } from "@renderer/features/mods/adapters/install"
+import { logMods } from "@renderer/features/moddb/adapters/log"
 
 const LOG_TAG = "[front] [mods] [features/mods/hooks/useInstallMod.ts]"
 
@@ -54,8 +55,8 @@ export function useInstallMod(): (options: InstallModOptions) => Promise<Install
     const { messageKey, logged } = describeModInstallFailure(result.reason)
 
     if (logged) {
-      window.api.utils.logMessage("error", `${LOG_TAG} [runInstallMod] Could not install the ${modName} Mod on ${outName}.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} [runInstallMod] Could not install ${release.modidstr} v${release.modversion} on ${installationPath}: ${result.reason}.`)
+      logMods("error", `${LOG_TAG} [runInstallMod] Could not install the ${modName} Mod on ${outName}.`)
+      logMods("debug", `${LOG_TAG} [runInstallMod] Could not install ${release.modidstr} v${release.modversion} on ${installationPath}: ${result.reason}.`)
     }
 
     if (messageKey) addNotification(t(messageKey, { mod: modName }), "error")

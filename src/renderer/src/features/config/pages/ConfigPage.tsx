@@ -7,20 +7,22 @@ import clsx from "clsx"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
-import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
-import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useSettingsConfig, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 
 import { FormBody, FormFieldGroup, FormHead, FormLabel, FromGroup, FromWrapper, FormGroupWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import LanguagesMenu from "@renderer/components/ui/LanguagesMenu"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
+import { useConfigFolderPicker } from "@renderer/features/config/hooks/useConfigFolderPicker"
 
 function ConfigPage(): JSX.Element {
   const { t } = useTranslation()
-  const { addNotification } = useNotificationsContext()
 
   const settings = useSettingsConfig()
-  const configDispatch = useConfigDispatch()
+
+  const pickInstallationsFolder = useConfigFolderPicker(CONFIG_ACTIONS.SET_DEFAULT_INSTALLATIONS_FOLDER)
+  const pickVersionsFolder = useConfigFolderPicker(CONFIG_ACTIONS.SET_DEFAULT_VERSIONS_FOLDER)
+  const pickBackupsFolder = useConfigFolderPicker(CONFIG_ACTIONS.SET_DEFAULT_BACKUPS_FOLDER)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -72,18 +74,7 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton
-                    onClick={async () => {
-                      const path = await window.api.utils.selectFolderDialog()
-                      const selectedPath = path[0]
-                      if (selectedPath && selectedPath.length > 0) {
-                        if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
-                        configDispatch({ type: CONFIG_ACTIONS.SET_DEFAULT_INSTALLATIONS_FOLDER, payload: selectedPath })
-                      }
-                    }}
-                    title={t("generic.browse")}
-                    className="px-2 py-1"
-                  >
+                  <FormButton onClick={pickInstallationsFolder} title={t("generic.browse")} className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText value={settings.defaultInstallationsFolder} readOnly className="w-full" />
@@ -98,18 +89,7 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton
-                    onClick={async () => {
-                      const path = await window.api.utils.selectFolderDialog()
-                      const selectedPath = path[0]
-                      if (selectedPath && selectedPath.length > 0) {
-                        if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
-                        configDispatch({ type: CONFIG_ACTIONS.SET_DEFAULT_VERSIONS_FOLDER, payload: selectedPath })
-                      }
-                    }}
-                    title={t("generic.browse")}
-                    className="px-2 py-1"
-                  >
+                  <FormButton onClick={pickVersionsFolder} title={t("generic.browse")} className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText value={settings.defaultVersionsFolder} readOnly className="w-full" />
@@ -124,18 +104,7 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton
-                    onClick={async () => {
-                      const path = await window.api.utils.selectFolderDialog()
-                      const selectedPath = path[0]
-                      if (selectedPath && selectedPath.length > 0) {
-                        if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
-                        configDispatch({ type: CONFIG_ACTIONS.SET_DEFAULT_BACKUPS_FOLDER, payload: selectedPath })
-                      }
-                    }}
-                    title={t("generic.browse")}
-                    className="px-2 py-1"
-                  >
+                  <FormButton onClick={pickBackupsFolder} title={t("generic.browse")} className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText value={settings.backupsFolder} readOnly className="w-full" />

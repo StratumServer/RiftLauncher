@@ -1,4 +1,6 @@
 import { parseModDetailResponse } from "@domain/mods/moddb"
+import { queryModDb } from "@renderer/features/moddb/adapters/moddb"
+import { logMods } from "@renderer/features/moddb/adapters/log"
 
 export function useQueryMod(): ({ modid, onFinish }: { modid: number | string; onFinish?: () => void }) => Promise<DownloadableModType | undefined> {
   /**
@@ -11,7 +13,7 @@ export function useQueryMod(): ({ modid, onFinish }: { modid: number | string; o
    */
   async function queryMod({ modid, onFinish }: { modid: number | string; onFinish?: () => void }): Promise<DownloadableModType | undefined> {
     try {
-      const res = await window.api.netManager.queryURL(`https://mods.vintagestory.at/api/mod/${modid}`)
+      const res = await queryModDb(`/mod/${modid}`)
       const parsed = parseModDetailResponse(res)
 
       if (onFinish) onFinish()
@@ -20,8 +22,8 @@ export function useQueryMod(): ({ modid, onFinish }: { modid: number | string; o
 
       return parsed.payload as unknown as DownloadableModType
     } catch (err) {
-      window.api.utils.logMessage("error", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching ${modid} mod versions.`)
-      window.api.utils.logMessage("debug", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching ${modid} mod versions: ${err}`)
+      logMods("error", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching ${modid} mod versions.`)
+      logMods("debug", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching ${modid} mod versions: ${err}`)
       return
     }
   }

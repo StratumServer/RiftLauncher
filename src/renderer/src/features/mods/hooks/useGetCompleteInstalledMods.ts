@@ -3,6 +3,7 @@ import { useQueryMod } from "./useQueryMod"
 import semver from "semver"
 
 import { evaluateModCompatibility } from "@domain/mods/compatibility"
+import { logMods } from "@renderer/features/moddb/adapters/log"
 
 export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number) => void }) => Promise<{
   mods: InstalledModType[]
@@ -28,8 +29,7 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
 
     const mods = await getInstalledMods({
       path: path,
-      onFinish: () =>
-        window.api.utils.logMessage("info", `[front] [mods] [features/mods/hooks/useGetCompleteInstalledMods.ts] [useGetCompleteInstalledMods > getCompleteInstalledMods] Mods got succesfully.`)
+      onFinish: () => logMods("info", `[front] [mods] [features/mods/hooks/useGetCompleteInstalledMods.ts] [useGetCompleteInstalledMods > getCompleteInstalledMods] Mods got succesfully.`)
     })
 
     await Promise.all(
@@ -63,10 +63,7 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
       })
     )
 
-    window.api.utils.logMessage(
-      "info",
-      `[front] [mods] [features/mods/hooks/useGetCompleteInstalledMods.ts] [useGetCompleteInstalledMods > getCompleteInstalledMods] Found ${availableModUpdates} mod updates.`
-    )
+    logMods("info", `[front] [mods] [features/mods/hooks/useGetCompleteInstalledMods.ts] [useGetCompleteInstalledMods > getCompleteInstalledMods] Found ${availableModUpdates} mod updates.`)
 
     if (onFinish) onFinish(availableModUpdates)
     return mods
