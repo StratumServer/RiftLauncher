@@ -15,6 +15,12 @@ import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
 import { resolveModsFolder } from "@renderer/features/mods/adapters/folder"
 
+import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
+import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
+import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
+import { useImportModpackTrigger } from "@renderer/features/installations/hooks/useImportModpackTrigger"
+import { useDeleteInstalledModFile } from "@renderer/features/installations/hooks/useDeleteInstalledModFile"
+
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
 import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeSummaryPopup"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -43,6 +49,11 @@ function ListMods(): JSX.Element {
   const installMod = useInstallMod()
   const exportModpack = useExportModpack()
   const syncModsCount = useSyncModsCount()
+  const openPathInExplorer = useOpenPathInExplorer()
+  const openExternalLink = useOpenExternalLink()
+  const logMessage = useLogMessage()
+  const importModpackTrigger = useImportModpackTrigger()
+  const deleteInstalledModFile = useDeleteInstalledModFile()
 
   const { id } = useParams()
 
@@ -90,7 +101,7 @@ function ListMods(): JSX.Element {
     if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantDeleteWhileinUse"), "error")
 
     try {
-      const deleted = await window.api.pathsManager.deletePath(modToDelete.path)
+      const deleted = await deleteInstalledModFile(modToDelete.path)
       if (!deleted) throw new Error(`The host refused to delete ${modToDelete.path}.`)
 
       triggerGetCompleteInstalledMods()
@@ -120,7 +131,7 @@ function ListMods(): JSX.Element {
           const release = modToUpdate._mod?.releases.find((candidate) => candidate.modversion === modToUpdate._updatableTo)
 
           if (!modToUpdate._mod || !release) {
-            window.api.utils.logMessage("error", `${LOG_TAG} [UpdateModsHandler] No ModDB release matching ${modToUpdate._updatableTo} for the ${modToUpdate.name} Mod.`)
+            logMessage("error", `${LOG_TAG} [UpdateModsHandler] No ModDB release matching ${modToUpdate._updatableTo} for the ${modToUpdate.name} Mod.`)
             addNotification(t("features.mods.errorUpdatingMod", { mod: modToUpdate.name }), "error")
             collected.push({ name: modToUpdate.name, modid: modToUpdate.modid, fromVersion: modToUpdate.version, toVersion: null, assetid: modToUpdate._mod?.assetid })
             return
@@ -157,8 +168,8 @@ function ListMods(): JSX.Element {
       setUpdateSummaryEntries(collected)
       setShowUpdateSummary(true)
     } catch (err) {
-      window.api.utils.logMessage("error", `${LOG_TAG} [UpdateModsHandler] The Mod update run stopped unexpectedly.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} [UpdateModsHandler] The Mod update run stopped unexpectedly: ${err}`)
+      logMessage("error", `${LOG_TAG} [UpdateModsHandler] The Mod update run stopped unexpectedly.`)
+      logMessage("debug", `${LOG_TAG} [UpdateModsHandler] The Mod update run stopped unexpectedly: ${err}`)
       addNotification(t("features.mods.errorUpdatingMods"), "error")
     } finally {
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _updatingMods: false } } })
@@ -214,7 +225,7 @@ function ListMods(): JSX.Element {
                   title={t("features.mods.importModpack")}
                   className="p-1 w-fit h-8"
                   onClick={async () => {
-                    const result = await window.api.modsManager.importModpack()
+                    const result = await importModpackTrigger()
                     if (result.success && result.manifest) {
                       setImportManifest(result.manifest)
                     } else if (result.error) {
@@ -231,9 +242,7 @@ function ListMods(): JSX.Element {
                   className="w-8 h-8"
                   onClick={async () => {
                     const path = await resolveModsFolder(installation.path)
-                    const exists = await window.api.pathsManager.ensurePathExists(path)
-                    if (!exists) return addNotification(t("notifications.body.folderDoesntExists"), "error")
-                    window.api.pathsManager.openPathOnFileExplorer(path)
+                    openPathInExplorer(path, { ensure: true })
                   }}
                 >
                   <PiFolderOpenDuotone className="text-xl" />
@@ -309,7 +318,7 @@ function ListMods(): JSX.Element {
                                     title={t("generic.issues")}
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      window.api.utils.openOnBrowser("https://github.com/StratumServer/RiftLauncher/issues")
+                                      openExternalLink("https://github.com/StratumServer/RiftLauncher/issues")
                                     }}
                                     className="text-vsl"
                                   >
@@ -321,7 +330,7 @@ function ListMods(): JSX.Element {
                                     title="Discord"
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      window.api.utils.openOnBrowser("https://discord.gg/RtWpYBRRUz")
+                                      openExternalLink("https://discord.gg/RtWpYBRRUz")
                                     }}
                                     className="text-vsl"
                                   >
@@ -378,7 +387,7 @@ function ListMods(): JSX.Element {
                                     title={t("generic.issues")}
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      window.api.utils.openOnBrowser("https://github.com/StratumServer/RiftLauncher/issues")
+                                      openExternalLink("https://github.com/StratumServer/RiftLauncher/issues")
                                     }}
                                     className="text-vsl"
                                   >
@@ -390,7 +399,7 @@ function ListMods(): JSX.Element {
                                     title="Discord"
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      window.api.utils.openOnBrowser("https://discord.gg/RtWpYBRRUz")
+                                      openExternalLink("https://discord.gg/RtWpYBRRUz")
                                     }}
                                     className="text-vsl"
                                   >
@@ -433,7 +442,7 @@ function ListMods(): JSX.Element {
                                     title={t("generic.issues")}
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      window.api.utils.openOnBrowser("https://github.com/StratumServer/RiftLauncher/issues")
+                                      openExternalLink("https://github.com/StratumServer/RiftLauncher/issues")
                                     }}
                                     className="text-vsl"
                                   >
@@ -445,7 +454,7 @@ function ListMods(): JSX.Element {
                                     title="Discord"
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      window.api.utils.openOnBrowser("https://discord.gg/RtWpYBRRUz")
+                                      openExternalLink("https://discord.gg/RtWpYBRRUz")
                                     }}
                                     className="text-vsl"
                                   >
@@ -547,6 +556,7 @@ function ListMods(): JSX.Element {
 
 function InstalledModItem({ iMod, onDeleteClick, onUpdateClick }: { iMod: InstalledModType; onDeleteClick: () => void; onUpdateClick: () => void }): JSX.Element {
   const { t } = useTranslation()
+  const openExternalLink = useOpenExternalLink()
 
   return (
     <ListItem key={iMod.modid + iMod.path}>
@@ -609,7 +619,7 @@ function InstalledModItem({ iMod, onDeleteClick, onUpdateClick }: { iMod: Instal
             title={t("features.mods.openOnTheModDB")}
             onClick={(e) => {
               e.stopPropagation()
-              window.api.utils.openOnBrowser(`https://mods.vintagestory.at/show/mod/${iMod._mod?.assetid}`)
+              openExternalLink(`https://mods.vintagestory.at/show/mod/${iMod._mod?.assetid}`)
             }}
           >
             <FiExternalLink />

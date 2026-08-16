@@ -13,8 +13,9 @@ import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useInstallations, useGameVersions, useCustomIcons, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
-import { useCleanFolderName } from "@renderer/hooks/useCleanFolderName"
 import { createCreateInstallationPorts, describeCreateInstallationFailure, toFoldersInUse, toInstallationType } from "@renderer/features/installations/adapters/create"
+import { useDefaultInstallationPath, useEnsurePathExists, usePickEmptyFolder } from "@renderer/features/installations/hooks/usePathActions"
+import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
 
 import {
   FormBody,
@@ -48,7 +49,10 @@ function AddInslallation(): JSX.Element {
   const settings = useSettingsConfig()
   const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
-  const cleanFolderName = useCleanFolderName()
+  const defaultInstallationPath = useDefaultInstallationPath()
+  const pickEmptyFolder = usePickEmptyFolder()
+  const ensurePathExists = useEnsurePathExists()
+  const openExternalLink = useOpenExternalLink()
 
   const [icon, setIcon] = useState<IconType>(INSTALLATION_ICONS[0])
   const [name, setName] = useState<string>(t("features.installations.defaultName"))
@@ -68,7 +72,7 @@ function AddInslallation(): JSX.Element {
 
   useEffect(() => {
     ;(async (): Promise<void> => {
-      if (name && !folderByUser) setPath(await window.api.pathsManager.formatPath([settings.defaultInstallationsFolder, await cleanFolderName({ folderName: name })]))
+      if (name && !folderByUser) setPath(await defaultInstallationPath(settings.defaultInstallationsFolder, name))
     })()
   }, [name])
 
@@ -96,7 +100,7 @@ function AddInslallation(): JSX.Element {
 
     try {
       configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION, payload: toInstallationType(result.installation) })
-      window.api.pathsManager.ensurePathExists(path)
+      ensurePathExists(path)
       addNotification(t("features.installations.installationSuccessfullyAdded"), "success")
       navigate("/installations")
     } catch (error) {
@@ -282,11 +286,8 @@ function AddInslallation(): JSX.Element {
                 <FormFieldGroup alignment="x">
                   <FormButton
                     onClick={async () => {
-                      const path = await window.api.utils.selectFolderDialog()
-                      const selectedPath = path[0]
-                      if (selectedPath && selectedPath.length > 0) {
-                        if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
-
+                      const selectedPath = await pickEmptyFolder()
+                      if (selectedPath) {
                         setPath(selectedPath)
                         setFolderByUser(true)
                       }
@@ -380,7 +381,7 @@ function AddInslallation(): JSX.Element {
                           link: (
                             <NormalButton
                               title={t("features.installations.startParamsLink")}
-                              onClick={() => window.api.utils.openOnBrowser("https://wiki.vintagestory.at/Client_startup_parameters")}
+                              onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")}
                               className="text-vsl"
                             >
                               {t("features.installations.startParamsLink")}
