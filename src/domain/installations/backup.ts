@@ -1,4 +1,4 @@
-import { cleanFolderName } from "../naming"
+import { cleanFolderName, formatTimestampForFilename } from "../naming"
 import type { Archiver, Clock, CloseGuard, CompressOutcome, FileSystem, IdGenerator, PathBuilder } from "../ports"
 
 /** Folder the launcher groups installation archives under, inside the backups folder. */
@@ -126,11 +126,12 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
     }
 
     const date = ports.clock.now()
-    const cleanInstallationName = cleanFolderName(installation.name)
-    // Yes, toLocaleString on a number: epoch millis with Spanish digit grouping.
-    // Kept as is on purpose, changing it would rename every future archive.
-    const cleanDate = cleanFolderName(date.toLocaleString("es"))
-    const fileName = `${cleanInstallationName}_${cleanDate}.zip`
+    // Falls back to a slice of the installation id when the name sanitises
+    // away to nothing (e.g. "***"), so the archive never ends up as a bare
+    // "_<stamp>.zip".
+    const cleanInstallationName = cleanFolderName(installation.name) || installation.id.slice(0, 8)
+    const dateStamp = formatTimestampForFilename(date)
+    const fileName = `${cleanInstallationName}_${dateStamp}.zip`
 
     const outputFolder = await ports.paths.join([backupsFolder, INSTALLATIONS_BACKUP_SUBFOLDER, cleanInstallationName])
     const archivePath = await ports.paths.join([outputFolder, fileName])
