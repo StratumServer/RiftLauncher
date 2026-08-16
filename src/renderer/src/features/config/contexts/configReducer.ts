@@ -23,7 +23,9 @@ export enum CONFIG_ACTIONS {
   REMOVE_FAV_MOD = "REMOVE_FAV_MOD",
 
   ADD_CUSTOM_ICON = "ADD_CUSTOM_ICON",
-  DELETE_CUSTOM_ICON = "DELETE_CUSTOM_ICON"
+  DELETE_CUSTOM_ICON = "DELETE_CUSTOM_ICON",
+
+  ADD_NOTIFIED_MOD_UPDATE = "ADD_NOTIFIED_MOD_UPDATE"
 }
 
 export interface SetConfig {
@@ -148,6 +150,21 @@ export interface RemoveFavMod {
   }
 }
 
+/**
+ * Records that the player has been told about mod updates for one
+ * installation, so GlobalModUpdateChecker's de-dupe survives a revisit
+ * without renotifying. Session-only bookkeeping: normalizeConfig
+ * (src/config/configManager.ts) does not carry `_notifiedModUpdatesInstallations`
+ * into the fields it writes back out, so this state never reaches disk and
+ * resets every launch, same as before this action existed.
+ */
+export interface AddNotifiedModUpdate {
+  type: CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE
+  payload: {
+    installationId: string
+  }
+}
+
 export type ConfigAction =
   | SetConfig
   | SetSchemaVersion
@@ -169,6 +186,7 @@ export type ConfigAction =
   | EditGameVersion
   | AddFavMod
   | RemoveFavMod
+  | AddNotifiedModUpdate
 
 /**
  * The single config reducer. Every case rebuilds the root object but leaves the
@@ -264,6 +282,11 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
         ...config,
         favMods: config.favMods.filter((fm) => fm !== action.payload.modid)
       }
+    case CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE: {
+      const notified = config._notifiedModUpdatesInstallations ?? []
+      if (notified.includes(action.payload.installationId)) return config
+      return { ...config, _notifiedModUpdatesInstallations: [...notified, action.payload.installationId] }
+    }
     default:
       return config
   }
