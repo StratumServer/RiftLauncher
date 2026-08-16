@@ -16,7 +16,7 @@ import { vi } from "vitest"
  * on the object this factory returns for whatever the test actually exercises.
  */
 
-type MockedBridgeAPI = { [K in keyof BridgeAPI]: { [M in keyof BridgeAPI[K]]: BridgeAPI[K][M] } }
+export type MockedBridgeAPI = { [K in keyof BridgeAPI]: { [M in keyof BridgeAPI[K]]: BridgeAPI[K][M] } }
 export type WindowApiOverrides = { [K in keyof BridgeAPI]?: Partial<BridgeAPI[K]> }
 
 function notMocked(channel: string): () => Promise<never> {
