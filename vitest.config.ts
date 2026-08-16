@@ -47,6 +47,7 @@ export default defineConfig({
       // theater, not a signal worth gating on.
       include: [
         "src/domain/**",
+        "src/main/**",
         "src/ipc/**",
         "src/utils/**",
         "src/config/**",
@@ -59,6 +60,13 @@ export default defineConfig({
         "src/renderer/src/features/config/contexts/**",
         "src/renderer/src/features/config/utils/**"
       ],
+      // src/main joined the instrumented set so files like the userData
+      // migration adapter report real numbers to the ratchet and to Sonar
+      // (uninstrumented lines read as uncovered there, failing PR gates on
+      // tested code). index.ts stays out for the same reason main.tsx does
+      // renderer-side: it is process bootstrap, exercised by launching the
+      // app, not by line-covering wiring.
+      exclude: ["src/main/index.ts"],
       // Raised by the worker/account-storage pass, the win32 RUN_INSTALLER /
       // utilsHandlers / TaskManagerContext pass, and the Inno domain / config
       // pass (script.ts, extract.ts, lzma.ts, configManager.ts,
