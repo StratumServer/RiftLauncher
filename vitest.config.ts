@@ -43,10 +43,10 @@ export default defineConfig({
       // include src/renderer lands with the actual ConfigContext split (#17).
       include: ["src/domain/**", "src/ipc/**", "src/utils/**", "src/config/**"],
       thresholds: {
-        lines: 42,
-        statements: 43,
-        functions: 45,
-        branches: 51
+        lines: 46,
+        statements: 46,
+        functions: 50,
+        branches: 53
       }
     }
   }
