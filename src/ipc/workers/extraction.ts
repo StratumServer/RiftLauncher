@@ -169,8 +169,11 @@ function extractTarGz(filePath: string, destination: string, onProgress?: (progr
       if (settled) return
       settled = true
       if (error) {
+        // Stop both ends before the caller wipes the temporary folder, so nothing
+        // is still writing into it while it is being removed.
         reader.unpipe()
         reader.destroy()
+        unpacker.abort(error)
         rejectPromise(error)
         return
       }
