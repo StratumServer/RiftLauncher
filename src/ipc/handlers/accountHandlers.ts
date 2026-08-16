@@ -6,7 +6,7 @@ import { badCredentialsResult, needsTwoFactorResult, twoFactorRejectedResult, un
 import { buildLoginRequestBody } from "@src/ipc/handlers/loginRequestBody"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { requestBoundedText } from "@src/ipc/network"
+import { requestBoundedTextViaNode } from "@src/ipc/network"
 import { assertString, MAX_LOGIN_RESPONSE_BYTES } from "@src/ipc/validation"
 import { clearAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
@@ -21,13 +21,19 @@ const LOGIN_URL = new URL("https://auth3.vintagestory.at/v2/gamelogin")
  * allow-listed in `src/ipc/validation.ts` and the response is size-capped, both
  * unchanged from before the interpretation moved out.
  *
+ * This goes through `requestBoundedTextViaNode`, not `requestBoundedText`:
+ * the auth service refuses credential posts carrying the browser fetch
+ * metadata Electron's `net.request` attaches (issue #76), so the login pass
+ * needs the Node `https` transport. Every other caller of `requestBoundedText`
+ * is untouched.
+ *
  * The password is a parameter and nothing else: it is never held in a field,
  * never logged, and never survives the call.
  */
 async function requestLoginPass(email: string, password: string, twoFactorCode?: string, preLoginToken?: string): Promise<string> {
   const body = buildLoginRequestBody(email, password, twoFactorCode, preLoginToken)
 
-  return await requestBoundedText(LOGIN_URL, { method: "POST", body: body.toString(), maxBytes: MAX_LOGIN_RESPONSE_BYTES })
+  return await requestBoundedTextViaNode(LOGIN_URL, { method: "POST", body: body.toString(), maxBytes: MAX_LOGIN_RESPONSE_BYTES })
 }
 
 /**

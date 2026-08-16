@@ -26,7 +26,7 @@ function countOccurrences(haystack: string, needle: string): number {
 
 describe("the login handler cannot retry", () => {
   it("reaches the network through one wrapper and nothing else", () => {
-    assert.equal(countOccurrences(HANDLER_SOURCE, "requestBoundedText("), 1)
+    assert.equal(countOccurrences(HANDLER_SOURCE, "requestBoundedTextViaNode("), 1)
   })
 
   it("calls that wrapper exactly twice, one call site per protocol pass", () => {
