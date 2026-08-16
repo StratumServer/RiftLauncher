@@ -57,11 +57,7 @@ declare global {
       queryURL: (url: string) => Promise<string>
     }
     accountManager: {
-      login: (
-        email: string,
-        password: string,
-        twoFactorCode?: string
-      ) => Promise<{ status: "success"; account: AccountPublicType } | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" }>
+      login: (email: string, password: string, twoFactorCode?: string) => Promise<AccountLoginResult>
       logout: () => Promise<boolean>
     }
   }

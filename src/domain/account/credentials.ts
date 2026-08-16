@@ -32,12 +32,59 @@ export type AccountCredentials = {
 
 const MAX_ACCOUNT_FIELD_LENGTH = 128 * 1024
 
+/**
+ * Thrown by the guards below when a field will not do. Carries a diagnosis
+ * split into three pieces (field name, what was expected, a TYPE-level
+ * description of what showed up) so a caller can report exactly which
+ * expectation failed without ever touching the value itself: `actual` is
+ * always a shape or type ("empty string", "undefined", "number"), never the
+ * value, never its length. `.message` stays the plain `Invalid account
+ * <name>` this module has always thrown, so nothing that already matches on
+ * it breaks.
+ */
+export class AccountFieldError extends TypeError {
+  readonly field: string
+  readonly expected: string
+  readonly actual: string
+
+  constructor(field: string, expected: string, actual: string, message = `Invalid account ${field}`) {
+    super(message)
+    this.name = "AccountFieldError"
+    this.field = field
+    this.expected = expected
+    this.actual = actual
+  }
+
+  /** `field "entitlements": expected non-empty string, got empty string`, safe to log as-is. */
+  get diagnosis(): string {
+    return `field "${this.field}": expected ${this.expected}, got ${this.actual}`
+  }
+}
+
+/** Extracts a safe diagnosis string from whatever `parseLoginAccount` threw, or undefined if it was not one of these guards. */
+export function accountFieldDiagnosis(error: unknown): string | undefined {
+  return error instanceof AccountFieldError ? error.diagnosis : undefined
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+/** A type-level description of a value: never the value, never its length. */
+function describeShape(value: unknown): string {
+  if (value === undefined) return "undefined"
+  if (value === null) return "null"
+  if (Array.isArray(value)) return "array"
+  return typeof value
+}
+
 function accountString(value: unknown, name: string, maxLength = MAX_ACCOUNT_FIELD_LENGTH): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > maxLength || value.includes("\0")) throw new TypeError(`Invalid account ${name}`)
+  const expected = "non-empty string"
+
+  if (typeof value !== "string") throw new AccountFieldError(name, expected, describeShape(value))
+  if (value.length === 0) throw new AccountFieldError(name, expected, "empty string")
+  if (value.length > maxLength) throw new AccountFieldError(name, expected, "string exceeding the maximum length")
+  if (value.includes("\0")) throw new AccountFieldError(name, expected, "string containing a null byte")
   return value
 }
 
@@ -53,7 +100,7 @@ function accountString(value: unknown, name: string, maxLength = MAX_ACCOUNT_FIE
 function accountBoolean(value: unknown, name: string): boolean {
   if (value === true || value === 1 || value === "1") return true
   if (value === false || value === 0 || value === "0") return false
-  throw new TypeError(`Invalid account ${name}`)
+  throw new AccountFieldError(name, "boolean, 1/0, or '1'/'0'", describeShape(value))
 }
 
 function nullableAccountString(value: unknown, name: string): string | null {
@@ -74,7 +121,7 @@ function nullableAccountString(value: unknown, name: string): string | null {
  * @param value The parsed response body.
  */
 export function parseLoginAccount(email: string, value: unknown): AccountCredentials {
-  if (!isRecord(value)) throw new TypeError("Invalid login response")
+  if (!isRecord(value)) throw new AccountFieldError("body", "JSON object", describeShape(value), "Invalid login response")
 
   const publicAccount: AccountPublicType = {
     email: accountString(email, "email", 320),

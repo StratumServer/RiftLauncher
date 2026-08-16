@@ -40,3 +40,25 @@ describe("the login handler cannot retry", () => {
     }
   })
 })
+
+/**
+ * `unreadable-response` used to fall out of `settle`'s switch as a thrown
+ * Error, which the handler's own catch block (and, after that, the
+ * renderer's) collapsed into the same generic failure as a wrong password.
+ * That is the live bug this stage fixes: a real success payload that failed
+ * to parse told the player their credentials were wrong. Source-grepped for
+ * the same reason as the retry guard above, `settle` cannot be imported
+ * without a running Electron main process.
+ */
+describe("the login handler never reports an unreadable success payload as bad credentials", () => {
+  it("no longer throws out of the unreadable-response case", () => {
+    const unreadableCase = HANDLER_SOURCE.slice(HANDLER_SOURCE.indexOf('case "unreadable-response"'), HANDLER_SOURCE.indexOf("}\n}", HANDLER_SOURCE.indexOf('case "unreadable-response"')))
+
+    assert.equal(unreadableCase.includes("throw"), false, "the unreadable-response case still throws")
+  })
+
+  it("resolves unexpected-response for an unreadable-response verdict, and logs it", () => {
+    assert.ok(HANDLER_SOURCE.includes("unexpectedResponseOutcome"), "settle should map unreadable-response through unexpectedResponseOutcome")
+    assert.ok(HANDLER_SOURCE.includes('logMessage("error"'), "an unreadable success payload should be logged at error level")
+  })
+})

@@ -71,12 +71,7 @@ const api: BridgeAPI = {
     queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url)
   },
   accountManager: {
-    login: (
-      email: string,
-      password: string,
-      twoFactorCode?: string
-    ): Promise<{ status: "success"; account: AccountPublicType } | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" }> =>
-      ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, email, password, twoFactorCode),
+    login: (email: string, password: string, twoFactorCode?: string): Promise<AccountLoginResult> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, email, password, twoFactorCode),
     logout: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGOUT)
   }
 }

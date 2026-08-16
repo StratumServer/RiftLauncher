@@ -2,6 +2,7 @@ import { ipcMain } from "electron"
 
 import { interpretFirstPass, interpretSecondPass } from "@domain/account/login"
 import type { LoginVerdict } from "@domain/account/login"
+import { badCredentialsResult, needsTwoFactorResult, twoFactorRejectedResult, unexpectedResponseOutcome } from "@src/ipc/handlers/accountLoginOutcome"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { requestBoundedText } from "@src/ipc/network"
@@ -10,8 +11,6 @@ import { clearAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
 const LOGIN_URL = new URL("https://auth3.vintagestory.at/v2/gamelogin")
-
-type AccountLoginResult = { status: "success"; account: AccountPublicType } | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor"; account?: undefined }
 
 /**
  * Sends one login pass and hands back the raw body.
@@ -41,6 +40,15 @@ async function requestLoginPass(email: string, password: string, twoFactorCode?:
  *
  * The secrets go straight from the verdict into the encrypted store and stop
  * there. Only the public half rides back over IPC.
+ *
+ * `unreadable-response` used to be thrown here, which the caller's catch
+ * block collapsed into the same generic failure as everything else, and the
+ * renderer's own catch turned that into "invalid email or password". That lie
+ * is why this case now resolves instead of throwing: `unexpected-response`
+ * tells the renderer the credentials were never actually refused, and the
+ * verdict's diagnosis (a field name and a type, never a value, see
+ * {@link ../../domain/account/login}) goes to the log at error level so the
+ * next occurrence leaves a trail.
  */
 async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
   switch (verdict.status) {
@@ -48,13 +56,16 @@ async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
       await saveAccountSecrets(verdict.credentials.secrets)
       return { status: "success", account: verdict.credentials.publicAccount }
     case "needs-two-factor":
-      return { status: "requires-two-factor" }
+      return needsTwoFactorResult()
     case "two-factor-rejected":
-      return { status: "wrong-two-factor" }
+      return twoFactorRejectedResult()
     case "bad-credentials":
-      return { status: "invalid-credentials" }
-    case "unreadable-response":
-      throw new Error("Login response could not be read")
+      return badCredentialsResult()
+    case "unreadable-response": {
+      const outcome = unexpectedResponseOutcome(verdict)
+      logMessage("error", `[back] [ipc] [accountHandlers.ts] [LOGIN] ${outcome.logMessage}`)
+      return outcome.result
+    }
   }
 }
 
