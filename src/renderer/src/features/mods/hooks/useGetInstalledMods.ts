@@ -1,4 +1,6 @@
 import { resolveModsFolder } from "@renderer/features/mods/adapters/folder"
+import { fetchInstalledMods } from "@renderer/features/moddb/adapters/modsManager"
+import { logMods } from "@renderer/features/moddb/adapters/log"
 
 export function useGetInstalledMods(): ({ path, onFinish }: { path: string; onFinish?: () => void }) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> {
   /**
@@ -12,14 +14,14 @@ export function useGetInstalledMods(): ({ path, onFinish }: { path: string; onFi
   async function getInstalledMods({ path, onFinish }: { path: string; onFinish?: () => void }): Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> {
     try {
       const fullPath = await resolveModsFolder(path)
-      const mods = await window.api.modsManager.getInstalledMods(fullPath)
+      const mods = await fetchInstalledMods(fullPath)
 
       if (onFinish) onFinish()
 
       return mods
     } catch (err) {
-      window.api.utils.logMessage("error", `[front] [mods] [features/mods/hooks/useGetInstalledMods.ts] [useGetInstalledMods > getInstalledMods] Error getting mods installed on ${path}.`)
-      window.api.utils.logMessage("debug", `[front] [mods] [features/mods/hooks/useGetInstalledMods.ts] [useGetInstalledMods > getInstalledMods] Error getting mods installed on ${path}: ${err}`)
+      logMods("error", `[front] [mods] [features/mods/hooks/useGetInstalledMods.ts] [useGetInstalledMods > getInstalledMods] Error getting mods installed on ${path}.`)
+      logMods("debug", `[front] [mods] [features/mods/hooks/useGetInstalledMods.ts] [useGetInstalledMods > getInstalledMods] Error getting mods installed on ${path}: ${err}`)
       return { mods: [], errors: [] }
     }
   }

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { exportModpackArchive } from "@renderer/features/moddb/adapters/modsManager"
 
 export function useExportModpack(): ({ installedMods, installation }: { installedMods: InstalledModType[]; installation: InstallationType }) => Promise<void> {
   const { t } = useTranslation()
@@ -16,7 +17,7 @@ export function useExportModpack(): ({ installedMods, installation }: { installe
       }))
     }
 
-    const result = await window.api.modsManager.exportModpack(manifest)
+    const result = await exportModpackArchive(manifest)
 
     if (result.success) {
       addNotification(t("features.mods.exportModpackSuccess"), "success")

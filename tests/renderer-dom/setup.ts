@@ -19,6 +19,34 @@ if (!window.matchMedia) {
     }) as MediaQueryList
 }
 
+// jsdom does not implement Element.scrollTo either. ScrollableContainer's ref
+// (ListMods' search-reset, StickyMenu's "go to top") calls it straight after
+// every successful query, so leaving it missing does not fail loudly: it
+// throws inside whatever try/catch happens to wrap that call, which quietly
+// turns "the query worked" into "the query returned nothing" instead.
+if (!Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = (): void => {}
+}
+
+// jsdom does not implement IntersectionObserver. motion/react's useInView
+// (every GridItem card) reads it on mount; missing it throws during the
+// commit phase and takes the whole subtree down with it, with no error
+// boundary in these tests to contain it.
+if (!window.IntersectionObserver) {
+  class NoopIntersectionObserver implements IntersectionObserver {
+    readonly root: Element | Document | null = null
+    readonly rootMargin: string = ""
+    readonly thresholds: ReadonlyArray<number> = []
+    observe = (): void => {}
+    unobserve = (): void => {}
+    disconnect = (): void => {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return []
+    }
+  }
+  window.IntersectionObserver = NoopIntersectionObserver as unknown as typeof IntersectionObserver
+}
+
 afterEach(() => {
   cleanup()
 })

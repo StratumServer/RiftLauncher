@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useEffect, useState } from "react"
+import { Dispatch, SetStateAction } from "react"
 import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
 import { useTranslation } from "react-i18next"
@@ -6,7 +6,7 @@ import { PiCaretDownDuotone, PiCheckFatDuotone } from "react-icons/pi"
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
-import { parseGameVersionsResponse } from "@domain/mods/moddb"
+import { useGameVersionsLookup } from "@renderer/features/mods/hooks/useModDbLookups"
 
 function VersionsFilter({
   versionsFilter,
@@ -19,28 +19,7 @@ function VersionsFilter({
 }): JSX.Element {
   const { t } = useTranslation()
 
-  const [gameVersionsList, setGameVersionsList] = useState<DownloadableModGameVersionType[]>([])
-
-  useEffect(() => {
-    queryGameVersions()
-  }, [])
-
-  async function queryGameVersions(): Promise<void> {
-    try {
-      const res = await window.api.netManager.queryURL("https://mods.vintagestory.at/api/gameversions")
-      const parsed = parseGameVersionsResponse(res)
-
-      if (!parsed.ok) {
-        window.api.utils.logMessage("debug", `[front] [mods] [features/mods/pages/ListMods.tsx] [VersionsFilter > queryGameVersions] Game versions query failed: ${parsed.reason}.`)
-        return
-      }
-
-      setGameVersionsList([...parsed.payload].reverse() as unknown as DownloadableModGameVersionType[])
-    } catch (err) {
-      window.api.utils.logMessage("error", `[front] [mods] [features/mods/pages/ListMods.tsx] [VersionsFilter > queryGameVersions] Error fetching game versions.`)
-      window.api.utils.logMessage("debug", `[front] [mods] [features/mods/pages/ListMods.tsx] [VersionsFilter > queryGameVersions] Error fetching game versions: ${err}`)
-    }
-  }
+  const gameVersionsList = useGameVersionsLookup()
 
   return (
     <Listbox value={versionsFilter} onChange={setVersionsFilter} multiple>
