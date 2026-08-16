@@ -54,7 +54,7 @@ export async function loadLanguage(language: string): Promise<boolean> {
   if (!definition?.loader) return false
 
   const existingPromise = loadedLanguagePromises.get(language)
-  if (existingPromise) return existingPromise
+  if (existingPromise !== undefined) return existingPromise
 
   const loadingPromise = definition
     .loader()
