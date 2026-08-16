@@ -11,6 +11,9 @@ import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
 
 import { useGetCompleteInstalledMods } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
 import { useExportModpack } from "@renderer/features/mods/hooks/useExportModpack"
+import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
+import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
+import { resolveModsFolder } from "@renderer/features/mods/adapters/folder"
 
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
 import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeSummaryPopup"
@@ -22,6 +25,8 @@ import { LinkButton, NormalButton } from "@renderer/components/ui/Buttons"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
+
+const LOG_TAG = "[front] [ManageInstallationMods] [features/installations/pages/ManageMods.tsx]"
 
 function isServerMod(side: string | undefined): boolean {
   if (!side) return true
@@ -36,13 +41,14 @@ function ListMods(): JSX.Element {
   const getCompleteInstalledMods = useGetCompleteInstalledMods()
   const installMod = useInstallMod()
   const exportModpack = useExportModpack()
+  const syncModsCount = useSyncModsCount()
 
   const { id } = useParams()
 
   const installation = config.installations.find((i) => i.id === id)
 
   const [installedMods, setInstalledMods] = useState<InstalledModType[]>([])
-  const [insatlledModsWithErrors, setInstalledModsWithErrors] = useState<ErrorInstalledModType[]>([])
+  const [installedModsWithErrors, setInstalledModsWithErrors] = useState<ErrorInstalledModType[]>([])
 
   const [modToDelete, setModToDelete] = useState<InstalledModType | ErrorInstalledModType | null>(null)
   const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
@@ -68,8 +74,7 @@ function ListMods(): JSX.Element {
       version: installation.version
     })
 
-    const totalMods = mods.errors.length + mods.mods.length
-    configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _modsCount: totalMods } } })
+    syncModsCount(installation.id, mods)
 
     setInstalledMods(mods.mods)
     setInstalledModsWithErrors(mods.errors)
@@ -85,7 +90,7 @@ function ListMods(): JSX.Element {
 
     try {
       const deleted = await window.api.pathsManager.deletePath(modToDelete.path)
-      if (!deleted) throw "There was an error deleting the mod!"
+      if (!deleted) throw new Error(`The host refused to delete ${modToDelete.path}.`)
 
       triggerGetCompleteInstalledMods()
 
@@ -109,47 +114,52 @@ function ListMods(): JSX.Element {
 
       const modsToUpdate = installedMods.filter((iMod) => iMod._updatableTo)
 
-      const updated = modsToUpdate.map((modToUpdate) => {
-        return new Promise<void>((resolve) => {
-          if (!modToUpdate._mod) {
-            window.api.utils.logMessage("error", "[front] [ManageInstallationMods] [features/installations/pages/ManageMods.tsx] [UpdateModsHandler] The mod could not be queried from the ModDB API!")
+      await Promise.all(
+        modsToUpdate.map(async (modToUpdate) => {
+          const release = modToUpdate._mod?.releases.find((candidate) => candidate.modversion === modToUpdate._updatableTo)
+
+          if (!modToUpdate._mod || !release) {
+            window.api.utils.logMessage("error", `${LOG_TAG} [UpdateModsHandler] No ModDB release matching ${modToUpdate._updatableTo} for the ${modToUpdate.name} Mod.`)
             addNotification(t("features.mods.errorUpdatingMod", { mod: modToUpdate.name }), "error")
-            collected.push({ name: modToUpdate.name, modid: modToUpdate.modid, fromVersion: modToUpdate.version, toVersion: null })
-            return resolve()
+            collected.push({ name: modToUpdate.name, modid: modToUpdate.modid, fromVersion: modToUpdate.version, toVersion: null, assetid: modToUpdate._mod?.assetid })
+            return
           }
 
-          const release = modToUpdate._mod.releases.find((release) => release.modversion === modToUpdate._updatableTo)
-
-          if (!release) {
-            window.api.utils.logMessage(
-              "error",
-              "[front] [ManageInstallationMods] [features/installations/pages/ManageMods.tsx] [UpdateModsHandler] The mod release could not be found on the queried Mod!"
-            )
-            addNotification(t("features.mods.errorUpdatingMod", { mod: modToUpdate.name }), "error")
-            collected.push({ name: modToUpdate.name, modid: modToUpdate.modid, fromVersion: modToUpdate.version, toVersion: null, assetid: modToUpdate._mod.assetid })
-            return resolve()
-          }
-
-          collected.push({ name: modToUpdate.name, modid: modToUpdate.modid, fromVersion: modToUpdate.version, toVersion: release.modversion, assetid: modToUpdate._mod.assetid })
-
-          installMod({
-            path: installation.path,
-            mod: modToUpdate._mod,
-            release,
+          const result = await installMod({
+            installationPath: installation.path,
             outName: installation.name,
-            oldMod: modToUpdate,
-            onFinish: () => resolve()
+            modName: modToUpdate._mod.name,
+            release: toModReleaseToInstall(release),
+            existing: toInstalledModCopy(modToUpdate)
+          })
+
+          collected.push({
+            name: modToUpdate.name,
+            modid: modToUpdate.modid,
+            fromVersion: modToUpdate.version,
+            toVersion: result.ok ? release.modversion : null,
+            assetid: modToUpdate._mod.assetid
           })
         })
-      })
+      )
 
-      await Promise.all(updated)
+      // One verdict, and it is the true one. The old flow raised the failure and the success
+      // together from a catch and a finally, so a bulk update that dropped half the mods still
+      // signed off with "All the Mods were updated successfully".
+      const failed = collected.filter((entry) => entry.toVersion === null).length
+      const updated = collected.length - failed
+
+      if (failed === 0) addNotification(t("features.mods.modsUpdatedSuccessfully"), "success")
+      else if (updated === 0) addNotification(t("features.mods.errorUpdatingMods"), "error")
+      else addNotification(t("features.mods.modsPartiallyUpdated", { updated, failed }), "warning")
+
       setUpdateSummaryEntries(collected)
       setShowUpdateSummary(true)
     } catch (err) {
+      window.api.utils.logMessage("error", `${LOG_TAG} [UpdateModsHandler] The Mod update run stopped unexpectedly.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [UpdateModsHandler] The Mod update run stopped unexpectedly: ${err}`)
       addNotification(t("features.mods.errorUpdatingMods"), "error")
     } finally {
-      addNotification(t("features.mods.modsUpdatedSuccessfully"), "success")
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _updatingMods: false } } })
     }
   }
@@ -219,7 +229,7 @@ function ListMods(): JSX.Element {
                   title={t("features.mods.updateAll")}
                   className="w-8 h-8"
                   onClick={async () => {
-                    const path = await window.api.pathsManager.formatPath([installation.path, "Mods"])
+                    const path = await resolveModsFolder(installation.path)
                     const exists = await window.api.pathsManager.ensurePathExists(path)
                     if (!exists) return addNotification(t("notifications.body.folderDoesntExists"), "error")
                     window.api.pathsManager.openPathOnFileExplorer(path)
@@ -255,7 +265,7 @@ function ListMods(): JSX.Element {
                 </ListWrapper>
               ) : (
                 <>
-                  {installedMods.length < 1 && insatlledModsWithErrors.length < 1 && (
+                  {installedMods.length < 1 && installedModsWithErrors.length < 1 && (
                     <ListWrapper className="w-full">
                       <ListGroup>
                         {gettingMods ? (
@@ -283,7 +293,7 @@ function ListMods(): JSX.Element {
                     </ListWrapper>
                   )}
 
-                  {insatlledModsWithErrors.length > 0 && (
+                  {installedModsWithErrors.length > 0 && (
                     <ListWrapper className="w-full">
                       <ListGroup>
                         <div className="flex flex-col gap-1">
@@ -321,7 +331,7 @@ function ListMods(): JSX.Element {
                             />
                           </p>
                         </div>
-                        {insatlledModsWithErrors.map((iModE) => (
+                        {installedModsWithErrors.map((iModE) => (
                           <ListItem key={iModE.zipname + iModE.zipname}>
                             <div className="flex gap-4 p-2 justify-between items-center whitespace-nowrap bg-red-700/15">
                               <div className="shrink-0">

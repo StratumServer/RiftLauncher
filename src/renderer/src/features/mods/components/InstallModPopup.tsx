@@ -4,7 +4,10 @@ import { PiDownloadDuotone, PiArrowClockwiseDuotone } from "react-icons/pi"
 import { FiLoader } from "react-icons/fi"
 import clsx from "clsx"
 
+import { evaluateModCompatibility } from "@domain/mods/compatibility"
+import type { ModCompatibilityVerdict } from "@domain/mods/compatibility"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
 
 import { useInstallMod } from "../hooks/useInstallMod"
 import { useQueryMod } from "../hooks/useQueryMod"
@@ -12,6 +15,13 @@ import { useQueryMod } from "../hooks/useQueryMod"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { FormButton } from "@renderer/components/ui/FormComponents"
+
+/** Button styling for what the author declared about a release. Undeclared keeps its long-standing red. */
+const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { type: "success" | "warn" | "error"; titleKey: string }> = {
+  declared: { type: "success", titleKey: "features.mods.worksOnTheVersion" },
+  "same-minor": { type: "warn", titleKey: "features.mods.shouldWorkOnTheVersion" },
+  undeclared: { type: "error", titleKey: "features.mods.probablyDontWorkOnTheVersion" }
+}
 
 interface IInstallationToInstallModIn {
   installation: InstallationType
@@ -87,58 +97,53 @@ function InstallModPopup({
             </div>
           ) : (
             <TableBody className="max-h-[18rem]">
-              {downloadableModToInstall.releases.map((release) => (
-                <TableBodyRow key={release.releaseid}>
-                  <TableCell className="w-2/12">{release.modversion}</TableCell>
-                  <TableCell className="w-3/12">{new Date(release.created).toLocaleDateString("es")}</TableCell>
-                  <TableCell className="w-5/12 overflow-hidden whitespace-nowrap text-ellipsis">
-                    <input type="text" value={release.tags.join(", ")} readOnly className="w-full bg-transparent outline-hidden text-center" />
-                  </TableCell>
-                  <TableCell className="w-2/12 flex gap-2 items-center justify-center text-lg">
-                    {installation && (
-                      <FormButton
-                        disabled={installation.oldMod && installation.oldMod.version === release.modversion}
-                        onClick={async () => {
-                          if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
-                          if (installation.installation._backuping || installation.installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
+              {downloadableModToInstall.releases.map((release) => {
+                const compatibility = installation ? COMPATIBILITY_STYLE[evaluateModCompatibility(release.tags, installation.installation.version)] : undefined
 
-                          installMod({
-                            mod: downloadableModToInstall,
-                            path: installation.installation.path,
-                            outName: installation.installation.name,
-                            release,
-                            oldMod: installation.oldMod,
-                            onFinish: () => {
-                              if (onFinishInstallation) onFinishInstallation()
-                            }
-                          })
-                          setModToInstall(null)
-                          setDownloadableModToInstall(null)
-                        }}
-                        className="w-7 h-7"
-                        type={
-                          release.tags.includes(`${installation.installation.version}`)
-                            ? "success"
-                            : release.tags.some((tag) => tag.startsWith(`${installation.installation.version.split(".").slice(0, 2).join(".")}`))
-                              ? "warn"
-                              : "error"
-                        }
-                        title={
-                          release.tags.includes(`${installation.installation.version}`)
-                            ? t("features.mods.worksOnTheVersion")
-                            : release.tags.some((tag) => tag.startsWith(`${installation.installation.version.split(".").slice(0, 2).join(".")}`))
-                              ? t("features.mods.shouldWorkOnTheVersion")
-                              : t("features.mods.probablyDontWorkOnTheVersion")
-                        }
-                      >
-                        <div className={clsx("w-full h-full rounded-sm flex items-center justify-center", installation.oldMod?._updatableTo === release.modversion && "bg-lime-600/15")}>
-                          {installation.oldMod ? <PiArrowClockwiseDuotone /> : <PiDownloadDuotone />}
-                        </div>
-                      </FormButton>
-                    )}
-                  </TableCell>
-                </TableBodyRow>
-              ))}
+                return (
+                  <TableBodyRow key={release.releaseid}>
+                    <TableCell className="w-2/12">{release.modversion}</TableCell>
+                    <TableCell className="w-3/12">{new Date(release.created).toLocaleDateString("es")}</TableCell>
+                    <TableCell className="w-5/12 overflow-hidden whitespace-nowrap text-ellipsis">
+                      <input type="text" value={release.tags.join(", ")} readOnly className="w-full bg-transparent outline-hidden text-center" />
+                    </TableCell>
+                    <TableCell className="w-2/12 flex gap-2 items-center justify-center text-lg">
+                      {installation && compatibility && (
+                        <FormButton
+                          disabled={installation.oldMod && installation.oldMod.version === release.modversion}
+                          onClick={async () => {
+                            if (installation.installation._backuping || installation.installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
+
+                            const oldMod = installation.oldMod
+
+                            setModToInstall(null)
+                            setDownloadableModToInstall(null)
+
+                            // Deliberately not awaited: the popup closes on the click and the download
+                            // runs on in the task list, which is what this flow has always done.
+                            void installMod({
+                              installationPath: installation.installation.path,
+                              outName: installation.installation.name,
+                              modName: downloadableModToInstall.name,
+                              release: toModReleaseToInstall(release),
+                              existing: oldMod && toInstalledModCopy(oldMod)
+                            }).then((result) => {
+                              if (result.ok && onFinishInstallation) onFinishInstallation()
+                            })
+                          }}
+                          className="w-7 h-7"
+                          type={compatibility.type}
+                          title={t(compatibility.titleKey)}
+                        >
+                          <div className={clsx("w-full h-full rounded-sm flex items-center justify-center", installation.oldMod?._updatableTo === release.modversion && "bg-lime-600/15")}>
+                            {installation.oldMod ? <PiArrowClockwiseDuotone /> : <PiDownloadDuotone />}
+                          </div>
+                        </FormButton>
+                      )}
+                    </TableCell>
+                  </TableBodyRow>
+                )
+              })}
             </TableBody>
           )}
         </TableWrapper>

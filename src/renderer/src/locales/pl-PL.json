@@ -169,7 +169,7 @@
       "updatingInstalledMods": "Aktualizowanie zainstalowanych modów!",
       "modsUpdatedSuccessfully": "Wszystkie mody zostały pomyślnie zaktualizowane!",
       "errorUpdatingMods": "Wystąpił błąd podczas aktualizacji modów!",
-      "errorUpdatingMod": "Wystąpił błąd podczas aktualizacji moda {mod}!"
+      "errorUpdatingMod": "Wystąpił błąd podczas aktualizacji moda {{mod}}!"
     },
     "versions": {
       "areYouSureUninstall": "Czy na pewno chcesz odinstalować tę wersję VS?",

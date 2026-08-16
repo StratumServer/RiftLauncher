@@ -5,6 +5,7 @@ import { PiArrowCounterClockwiseDuotone, PiFolderOpenDuotone, PiTrashDuotone, Pi
 
 import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
 import { restoreInstallationBackup } from "@domain/installations/restore"
+import { installedModsTotal } from "@domain/mods/scanInstalled"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
 import { toBackupSnapshot, toInstallationSnapshot } from "@renderer/features/installations/adapters/backup"
 import { createBackupDeletionPorts, createRestorePorts, describeBackupDeletionFailure, describeRestoreFailure } from "@renderer/features/installations/adapters/restore"
@@ -68,7 +69,7 @@ function ManageInstallationBackups(): JSX.Element {
 
     if (started) {
       const mods = await getInstalledMods({ path: installation.path })
-      const totalMods = mods.mods.length + mods.errors.length
+      const totalMods = installedModsTotal(mods)
 
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _restoringBackup: false, _modsCount: totalMods } } })
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _restoring: false } } })

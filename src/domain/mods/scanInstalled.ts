@@ -57,6 +57,17 @@ export interface ScanInstalledModsResult {
   errors: UnidentifiedModArchive[]
 }
 
+/**
+ * How many mod archives an installation holds, identified or not.
+ *
+ * The archives the scan could not read count too, and that is the point: they are still files in the
+ * Mods folder, the game still tries to load them, and an installation showing "12 Mods" while
+ * holding fourteen zips is a lie the user cannot act on.
+ */
+export function installedModsTotal(scan: { mods: readonly unknown[]; errors: readonly unknown[] }): number {
+  return scan.mods.length + scan.errors.length
+}
+
 export interface ScanInstalledModsPorts {
   directories: DirectoryReader
   archives: ModArchiveReader

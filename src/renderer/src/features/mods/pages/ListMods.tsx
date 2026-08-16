@@ -9,6 +9,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 
 import { useQueryMods } from "@renderer/features/mods/hooks/useQueryMods"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
+import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
 
 import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -32,6 +33,7 @@ function ListMods(): JSX.Element {
 
   const queryMods = useQueryMods()
   const getInstalledMods = useGetInstalledMods()
+  const syncModsCount = useSyncModsCount()
 
   const [modsList, setModsList] = useState<DownloadableModOnListType[]>([])
   const [visibleMods, setVisibleMods] = useState<number>(DEFAULT_LOADED_MODS)
@@ -144,8 +146,7 @@ function ListMods(): JSX.Element {
     })
 
     // Set the installed mods count for the selected Installation. We had to get the mods anyway so... 2x1
-    const totalMods = mods.errors.length + mods.mods.length
-    configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _modsCount: totalMods } } })
+    syncModsCount(installation.id, mods)
 
     setInstallationInstalledMods(mods.mods)
   }

@@ -5,8 +5,11 @@ import { PiCheckCircleDuotone, PiProhibitInsetDuotone, PiDownloadDuotone, PiMinu
 import { FiLoader } from "react-icons/fi"
 import clsx from "clsx"
 
-import { compareVersions } from "@renderer/utils/semver"
-import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, planModpackImport } from "@domain/mods/importModpack"
+import type { ModpackEntryStatus, ModpackModDetail } from "@domain/mods/importModpack"
+import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { toInstalledModSnapshot, toModChangeSummaryEntry, toModpackModDetail } from "@renderer/features/mods/adapters/importModpack"
+import { useInstallMod } from "../hooks/useInstallMod"
 import { useQueryMod } from "../hooks/useQueryMod"
 
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
@@ -14,7 +17,8 @@ import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import ModChangeSummaryPopup from "./ModChangeSummaryPopup"
 
-type ModStatus = "pending" | "downloading" | "done" | "failed" | "not-found" | "no-release" | "already-present"
+/** What one row of the table shows: the two states of an entry in flight, then whatever it settled on. */
+type ModStatus = "pending" | "downloading" | ModpackEntryStatus
 
 function ImportModpackPopup({
   isOpen,
@@ -34,7 +38,8 @@ function ImportModpackPopup({
   const { t } = useTranslation()
   const navigate = useNavigate()
 
-  const { startDownload } = useTaskContext()
+  const { addNotification } = useNotificationsContext()
+  const installMod = useInstallMod()
   const queryMod = useQueryMod()
 
   const [modStatuses, setModStatuses] = useState<Record<string, ModStatus>>({})
@@ -44,10 +49,7 @@ function ImportModpackPopup({
 
   const downgradedMods = useMemo(() => {
     if (!manifest) return []
-    return manifest.mods.filter((entry) => {
-      const existing = installedMods.find((m) => m.modid === entry.modid)
-      return existing && compareVersions(entry.version, existing.version) < 0
-    })
+    return modpackDowngrades(manifest.mods, installedMods.map(toInstalledModSnapshot))
   }, [manifest, installedMods])
 
   const completedCount = useMemo(() => {
@@ -72,63 +74,50 @@ function ImportModpackPopup({
   async function handleImport(): Promise<void> {
     if (!manifest) return
 
+    // The same precondition every sibling flow has. Importing a pack writes to the Mods folder just
+    // as an update does, and it was the one write that ran straight through a backup.
+    if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
+
     setImporting(true)
 
-    const versionPrefix = installation.version.split(".").slice(0, 2).join(".")
+    const installed = installedMods.map(toInstalledModSnapshot)
+
+    // Only the entries the folder does not already satisfy cost a lookup, which is what the old
+    // interleaved loop achieved by checking the folder before it queried.
+    const toResolve = modpackEntriesToResolve(manifest.mods, installed)
+    const fetched = await Promise.all(toResolve.map(async (entry) => [entry.modid, await queryMod({ modid: entry.modid })] as const))
+
+    const details = new Map<string, ModpackModDetail>()
+    for (const [modid, mod] of fetched) {
+      if (mod) details.set(modid, toModpackModDetail(mod))
+    }
+
+    const plan = planModpackImport({ entries: manifest.mods, installed, gameVersion: installation.version, details })
+
     const collected: ModChangeSummaryEntry[] = []
 
-    for (const entry of manifest.mods) {
-      updateStatus(entry.modid, "downloading")
-
-      const existingMod = installedMods.find((m) => m.modid === entry.modid)
-
-      if (existingMod && existingMod.version === entry.version) {
-        updateStatus(entry.modid, "already-present")
-        collected.push({ name: existingMod.name, modid: entry.modid, fromVersion: existingMod.version, toVersion: existingMod.version, assetid: existingMod._mod?.assetid, alreadyPresent: true })
-        continue
+    await executeModpackImport(
+      {
+        installer: {
+          install: (item) =>
+            installMod({
+              installationPath: installation.path,
+              outName: installation.name,
+              modName: item.name,
+              release: item.release,
+              existing: item.existing
+            })
+        }
+      },
+      { plan },
+      {
+        onEntryStarted: (modid) => updateStatus(modid, "downloading"),
+        onEntrySettled: (report) => {
+          updateStatus(report.modid, report.status)
+          collected.push(toModChangeSummaryEntry(report))
+        }
       }
-
-      const mod = await queryMod({ modid: entry.modid })
-
-      if (!mod) {
-        updateStatus(entry.modid, "not-found")
-        collected.push({ name: entry.modid, modid: entry.modid, fromVersion: existingMod?.version ?? null, toVersion: null })
-        continue
-      }
-
-      const exactRelease = mod.releases.find((release) => release.modversion === entry.version)
-      const compatibleRelease = mod.releases.find((release) => release.tags.some((tag) => tag.startsWith(versionPrefix)))
-      const release = exactRelease || compatibleRelease || mod.releases[0]
-
-      if (!release) {
-        updateStatus(entry.modid, "no-release")
-        collected.push({ name: mod.name, modid: entry.modid, fromVersion: existingMod?.version ?? null, toVersion: null, assetid: mod.assetid })
-        continue
-      }
-
-      if (existingMod) {
-        await window.api.pathsManager.deletePath(existingMod.path)
-      }
-
-      const installPath = await window.api.pathsManager.formatPath([installation.path, "Mods"])
-
-      await new Promise<void>((resolve) => {
-        startDownload(
-          t("features.mods.modTaskName", { name: mod.name, version: `v${release.modversion}`, out: installation.name }),
-          t("features.mods.modDownloadDesc", { name: mod.name, version: `v${release.modversion}`, out: installation.name }),
-          "end",
-          release.mainfile,
-          installPath,
-          // Mod releases are genuine zips. The extension used to be added by the download worker.
-          `${release.modidstr}-${release.modversion}.zip`,
-          (status) => {
-            updateStatus(entry.modid, status ? "done" : "failed")
-            collected.push({ name: mod.name, modid: entry.modid, fromVersion: existingMod?.version ?? null, toVersion: status ? release.modversion : null, assetid: mod.assetid })
-            resolve()
-          }
-        )
-      })
-    }
+    )
 
     setImporting(false)
     setSummaryEntries(collected)
@@ -259,54 +248,52 @@ function ImportModpackPopup({
 
 function StatusIcon({ status }: { status: ModStatus }): JSX.Element {
   switch (status) {
-    case "done":
+    case "installed":
       return <PiCheckCircleDuotone />
     case "already-present":
       return <PiMinusCircleDuotone />
     case "downloading":
       return <FiLoader className="animate-spin" />
-    case "failed":
-    case "not-found":
-    case "no-release":
-      return <PiProhibitInsetDuotone />
-    default:
+    case "pending":
       return <PiDownloadDuotone />
+    default:
+      return <PiProhibitInsetDuotone />
   }
 }
 
 function statusColor(status: ModStatus): string {
   switch (status) {
-    case "done":
+    case "installed":
       return "text-green-400"
     case "already-present":
       return "text-zinc-400"
     case "downloading":
       return "text-blue-400"
-    case "failed":
-    case "not-found":
-    case "no-release":
-      return "text-red-400"
-    default:
+    case "pending":
       return "text-zinc-500"
+    default:
+      return "text-red-400"
   }
 }
 
 function statusLabel(status: ModStatus, t: (key: string) => string): string {
   switch (status) {
-    case "done":
+    case "installed":
       return t("features.mods.importModpackStatusDone")
     case "already-present":
       return t("features.mods.importModpackAlreadyPresent")
     case "downloading":
       return t("features.mods.importModpackStatusDownloading")
-    case "failed":
-      return t("features.mods.importModpackStatusFailed")
-    case "not-found":
+    case "not-on-moddb":
       return t("features.mods.importModpackNotFound")
     case "no-release":
       return t("features.mods.importModpackNoRelease")
-    default:
+    case "old-version-delete-failed":
+      return t("features.mods.importModpackOldVersionStuck")
+    case "pending":
       return t("features.mods.importModpackStatusPending")
+    default:
+      return t("features.mods.importModpackStatusFailed")
   }
 }
 

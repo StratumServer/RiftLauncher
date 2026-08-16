@@ -199,7 +199,7 @@
       "cantUpdateWhileinUse": "Вы не можаце абнавіць мод, пакуль ён выкарыстоўваецца!",
       "updateAll": "Абнавіць усе моды з даступнымі абнаўленнямі",
       "updatingInstalledMods": "Абнаўленне усталяваных модаў!",
-      "errorUpdatingMod": "Адбылася памылка пры абнаўленні мода {mod}!",
+      "errorUpdatingMod": "Адбылася памылка пры абнаўленні мода {{mod}}!",
       "errorUpdatingMods": "Адбылася памылка пры абнаўленні модаў!",
       "updateAllButton": "Абнавіць усё",
       "modsUpdatedSuccessfully": "Усе моды паспяхова абноўлены!"

@@ -199,7 +199,7 @@
       "cantUpdateWhileinUse": "Вы не можете обновить мод, пока он используется!",
       "updateAll": "Обновить все моды с доступными обновлениями",
       "updatingInstalledMods": "Обновление установленных модов!",
-      "errorUpdatingMod": "Произошла ошибка при обновлении мода {mod}!",
+      "errorUpdatingMod": "Произошла ошибка при обновлении мода {{mod}}!",
       "errorUpdatingMods": "Произошла ошибка при обновлении модов!",
       "updateAllButton": "Обновить все",
       "modsUpdatedSuccessfully": "Все моды успешно обновлены!"

@@ -10,7 +10,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { CONFIG_ACTIONS, useConfigContext } from "@renderer/features/config/contexts/ConfigContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { createInstallPorts, describeInstallFailure, toDownloadableGameVersion } from "@renderer/features/versions/adapters/install"
-import { compareVersions } from "@renderer/utils/semver"
+import { compareVersions } from "@domain/versionNumbers"
 
 import {
   FormBody,

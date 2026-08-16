@@ -118,7 +118,7 @@
       "updatesAvailableInstallation_zero": "¡La instalación seleccionada tiene {{count}} Mods con actualizaciones disponibles! ¡Haz clic aquí para verlos!",
       "worksOnTheVersion": "¡El autor lo etiquetó como compatible con la versión seleccionada de Vintage Story!",
       "cantUpdateWhileinUse": "¡No puedes actualizar un Mod mientras está en uso!",
-      "errorUpdatingMod": "¡Ha ocurrido un error al actualizar el Mod {mod}!",
+      "errorUpdatingMod": "¡Ha ocurrido un error al actualizar el Mod {{mod}}!",
       "errorUpdatingMods": "¡Ha ocurrido un error al actualizar los Mods!",
       "modsUpdatedSuccessfully": "¡Todos los Mods se actualizaron con éxito!",
       "updateAll": "Actualizar todos los Mods con actualizaciones disponibles",

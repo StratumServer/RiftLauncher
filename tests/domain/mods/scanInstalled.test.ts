@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { beforeEach, describe, it } from "vitest"
 
-import { MAX_MOD_ARCHIVES, MOD_SCAN_BATCH_SIZE, scanInstalledMods } from "../../../src/domain/mods/scanInstalled"
+import { MAX_MOD_ARCHIVES, MOD_SCAN_BATCH_SIZE, installedModsTotal, scanInstalledMods } from "../../../src/domain/mods/scanInstalled"
 import type { ScanInstalledModsEvents, ScanInstalledModsPorts } from "../../../src/domain/mods/scanInstalled"
 import type { DirectoryReader, IconStore, ModArchiveResult, PathBuilder } from "../../../src/domain/ports"
 
@@ -174,6 +174,20 @@ describe("scanInstalledMods folder listing", () => {
 
     assert.equal(ports.readsOf().length, 40)
     assert.equal(new Set(ports.readsOf()).size, 40)
+  })
+})
+
+describe("installedModsTotal", () => {
+  it("counts the archives the scan could not read alongside the mods it identified", () => {
+    assert.equal(installedModsTotal({ mods: [1, 2, 3], errors: [4] }), 4)
+  })
+
+  it("counts nothing for an empty folder", () => {
+    assert.equal(installedModsTotal({ mods: [], errors: [] }), 0)
+  })
+
+  it("counts a folder of nothing but broken archives", () => {
+    assert.equal(installedModsTotal({ mods: [], errors: [1, 2] }), 2)
   })
 })
 
