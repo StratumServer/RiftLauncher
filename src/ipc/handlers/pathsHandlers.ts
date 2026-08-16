@@ -14,6 +14,7 @@ import { validateArchive } from "@src/ipc/archiveValidation"
 import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
+import { attemptInstallerTreeKill } from "@src/ipc/handlers/installerTimeoutOutcome"
 
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
@@ -27,6 +28,20 @@ const WORKER_TIMEOUTS_MS: Record<string, number> = {
   COMPRESS_ON_PATH: 30 * 60 * 1_000,
   CHANGE_PERMS: 10 * 60 * 1_000
 }
+
+/**
+ * RUN_INSTALLER spawns a real installer process directly rather than going
+ * through a tracked worker, so it sits outside WORKER_TIMEOUTS_MS above; this
+ * bound mirrors that table's spirit (generous but finite) instead of joining
+ * its shape. 15 minutes covers the silent Inno installer plus a bundled
+ * runtime sub-installer under normal conditions (the .NET 7 Desktop Runtime
+ * that 1.18.15 pulls in), while still failing a genuinely hung sub-installer
+ * well inside a CI job's ceiling. Issue #55: on a clean windows-latest
+ * runner that sub-installer hung outright, and the job died at its 30-minute
+ * ceiling with the installer still alive as an orphan because RUN_INSTALLER
+ * had no bound of its own.
+ */
+const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
 
 type WorkerMessage = {
   type: unknown
@@ -290,9 +305,33 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: strin
       sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
       const installer = spawn(exePath, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/NOICONS", `/DIR=${safeOutputPath}`], { shell: false, windowsHide: true })
 
+      const timeoutHandle = setTimeout(() => {
+        // The wire contract for RUN_INSTALLER stays a plain boolean (the
+        // renderer's TaskManagerContext reads it as `if (!result) throw`),
+        // so a timeout resolves `false` the same as any other install
+        // failure rather than a distinct "installer-timed-out" reason.
+        // Threading that reason onto the wire would mean widening
+        // GameExecutionResult-style plumbing through global.d.ts,
+        // preload.d.ts and the renderer's install adapter, all outside this
+        // handler's surface; the log line below carries the distinction for
+        // diagnosis instead.
+        logMessage(
+          "error",
+          `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Timed out after ${RUN_INSTALLER_TIMEOUT_MS}ms waiting on the installer; killing its process tree. reason=installer-timed-out`
+        )
+        attemptInstallerTreeKill(
+          installer.pid,
+          process.platform,
+          (command, args) => spawn(command, args, { shell: false, windowsHide: true }),
+          (level, message) => logMessage(level, `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${message}`)
+        )
+        finish(false)
+      }, RUN_INSTALLER_TIMEOUT_MS)
+
       const finish = (success: boolean): void => {
         if (settled) return
         settled = true
+        clearTimeout(timeoutHandle)
         if (shouldDeleteInstaller) void fse.remove(exePath).catch(() => {})
         if (success) sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 100)
         resolvePromise(success)
