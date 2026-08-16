@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import { compareVersions } from "@domain/versionNumbers"
 
@@ -44,29 +44,60 @@ function parseGameVersions(stable: RawVersions, unstable: RawVersions): Download
     .sort((a, b) => compareVersions(b.version, a.version))
 }
 
+export type GameVersionCatalogState = {
+  gameVersions: DownloadableGameVersionTypeType[]
+  loading: boolean
+  failed: boolean
+  /** Resets the failure and re-runs the fetch. Safe to call again while a retry is already in flight. */
+  retry: () => void
+}
+
 /**
- * Fetches the public stable and unstable catalogs and merges them into one
- * sorted, typed list. Empty until the first successful fetch resolves, and
- * stays that way on failure: the view already renders a loading spinner for
- * an empty list, so a fetch that fails just leaves that spinner up instead of
- * gaining its own error state.
+ * Fetches the public stable and unstable catalogs through the netManager IPC
+ * channel (the same bounded, allow-listed path every ModDB call already
+ * rides) and merges them into one sorted, typed list.
+ *
+ * A failed fetch surfaces as `failed: true` instead of leaving the caller to
+ * infer it from an empty list forever: the page renders one sentence and a
+ * retry, rather than a spinner with nothing behind it.
  */
-export function useGameVersionCatalog(): DownloadableGameVersionTypeType[] {
+export function useGameVersionCatalog(): GameVersionCatalogState {
   const [gameVersions, setGameVersions] = useState<DownloadableGameVersionTypeType[]>([])
+  const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    let cancelled = false
+
     ;(async (): Promise<void> => {
       try {
-        const [stableResponse, unstableResponse] = await Promise.all([fetch(`${VS_API}/stable.json`), fetch(`${VS_API}/unstable.json`)])
-        if (!stableResponse.ok || !unstableResponse.ok) throw new Error("Game version API request failed")
-        const [stable, unstable] = (await Promise.all([stableResponse.json(), unstableResponse.json()])) as [RawVersions, RawVersions]
+        const [stableText, unstableText] = await Promise.all([window.api.netManager.queryURL(`${VS_API}/stable.json`), window.api.netManager.queryURL(`${VS_API}/unstable.json`)])
+        const stable = JSON.parse(stableText) as RawVersions
+        const unstable = JSON.parse(unstableText) as RawVersions
+        if (cancelled) return
         setGameVersions(parseGameVersions(stable, unstable))
+        setLoading(false)
+        setFailed(false)
       } catch (err) {
         window.api.utils.logMessage("error", `${LOG_TAG} Error fetching game versions.`)
         window.api.utils.logMessage("debug", `${LOG_TAG} Error fetching game versions: ${err}`)
+        if (cancelled) return
+        setLoading(false)
+        setFailed(true)
       }
     })()
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [attempt])
+
+  const retry = useCallback((): void => {
+    setLoading(true)
+    setFailed(false)
+    setAttempt((n) => n + 1)
   }, [])
 
-  return gameVersions
+  return { gameVersions, loading, failed, retry }
 }

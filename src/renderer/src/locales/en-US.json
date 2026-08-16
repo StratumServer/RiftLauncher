@@ -119,7 +119,8 @@
       "noDownloadForYourSystem": "VS Version {{version}} has no download for your operating system. Pick another version.",
       "installDownloadFailed": "VS Version {{version}} couldn't be downloaded. Check your connection and install it again.",
       "installUnpackFailed": "VS Version {{version}} was downloaded but couldn't be unpacked. Install it again.",
-      "installGameNotInFolder": "VS Version {{version}} didn't end up in {{folder}}. Install it again into an empty folder."
+      "installGameNotInFolder": "VS Version {{version}} didn't end up in {{folder}}. Install it again into an empty folder.",
+      "catalogLoadFailed": "The VS Version list couldn't be loaded. Check your connection and try again."
     },
     "installations": {
       "noInstallationsFound": "No Installations found!",

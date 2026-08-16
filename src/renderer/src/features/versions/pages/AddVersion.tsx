@@ -24,14 +24,14 @@ import {
 } from "@renderer/components/ui/FormComponents"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
+import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 function AddVersion(): JSX.Element {
   const { t } = useTranslation()
   const installedGameVersions = useGameVersions()
   const settings = useSettingsConfig()
 
-  const gameVersions = useGameVersionCatalog()
+  const { gameVersions, loading, failed, retry } = useGameVersionCatalog()
   const [version, setVersion] = useState<DownloadableGameVersionTypeType | undefined>()
   const [versionFilters, setVersionFilters] = useState({ stable: true, rc: false, pre: false })
   const { folder, setFolder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder)
@@ -110,7 +110,12 @@ function AddVersion(): JSX.Element {
                     </TableHeadRow>
                   </TableHead>
 
-                  {gameVersions.length === 0 ? (
+                  {failed ? (
+                    <div className="flex flex-col items-center justify-center gap-2 py-10">
+                      <p className="text-sm text-zinc-400">{t("features.versions.catalogLoadFailed")}</p>
+                      <ReloadButton onClick={retry} reloading={loading} />
+                    </div>
+                  ) : gameVersions.length === 0 ? (
                     <div className="flex items-center justify-center py-10">
                       <FiLoader className="animate-spin text-3xl text-zinc-400" />
                     </div>
