@@ -29,17 +29,19 @@ export function createInstallPorts({ startDownload, startExtract, startInstall, 
   return {
     fileSystem: createFileSystemPort(),
     paths: createPathBuilderPort(),
+    // "progress": describeInstallFailure already raises a specific toast for every
+    // reason download/unpack/install can fail here, so the generic error would double up.
     downloader: {
       download: (request, onComplete) =>
-        startDownload(taskName, downloadDescription, "all", request.url, request.outputFolder, request.fileName, (status, path, error) =>
+        startDownload(taskName, downloadDescription, "progress", request.url, request.outputFolder, request.fileName, (status, path, error) =>
           onComplete({ ok: status, filePath: path, error: error?.message })
         )
     },
     unpacker: {
       extractArchive: (request, onComplete) =>
-        startExtract(taskName, unpackDescription, "all", request.sourcePath, request.outputFolder, true, (status, error) => onComplete({ ok: status, error: error?.message })),
+        startExtract(taskName, unpackDescription, "progress", request.sourcePath, request.outputFolder, true, (status, error) => onComplete({ ok: status, error: error?.message })),
       runInstaller: (request, onComplete) =>
-        startInstall(taskName, unpackDescription, "all", request.sourcePath, request.outputFolder, true, (status, error) => onComplete({ ok: status, error: error?.message }))
+        startInstall(taskName, unpackDescription, "progress", request.sourcePath, request.outputFolder, true, (status, error) => onComplete({ ok: status, error: error?.message }))
     }
   }
 }

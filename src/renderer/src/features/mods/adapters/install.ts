@@ -22,6 +22,8 @@ export function createModInstallPorts({ startDownload, taskName, taskDescription
   return {
     fileSystem: createFileSystemPort(),
     paths: createPathBuilderPort(),
+    // "end" left as is on purpose: describeModInstallFailure returns messageKey: null for
+    // download-failed, deliberately leaning on this generic toast, so it must stay visible.
     downloader: {
       download: (request, onComplete) =>
         startDownload(taskName, taskDescription, "end", request.url, request.outputFolder, request.fileName, (status, path, error) => onComplete({ ok: status, filePath: path, error: error?.message }))
