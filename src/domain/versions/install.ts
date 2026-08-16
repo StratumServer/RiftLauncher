@@ -2,11 +2,26 @@ import type { DownloadOutcome, Downloader, FileSystem, PathBuilder, UnpackOutcom
 import { expectedGameExecutables, toGameOs } from "./gameExecutable"
 import type { GameOs } from "./gameExecutable"
 
-/** The download URLs a catalog entry carries, one per platform the launcher knows. */
+/**
+ * One platform's build: where it is fetched from, and what the catalog calls it.
+ *
+ * The file name travels with the URL because the format has to survive the trip
+ * to disk. A Linux build is a `.tar.gz` and a Windows build is an `.exe`, and
+ * saving either one under a made up name is what broke installs: the extractor
+ * routes on the extension and the installer refuses anything that is not `.exe`.
+ */
+export interface GameVersionDownload {
+  /** Where the build is fetched from. Empty when the catalog has no build for the platform. */
+  url: string
+  /** The name the file is saved under, extension included. Empty when the catalog omits it. */
+  fileName: string
+}
+
+/** The downloads a catalog entry carries, one per platform the launcher knows. */
 export interface GameVersionDownloads {
-  win32: string
-  darwin: string
-  linux: string
+  win32: GameVersionDownload
+  darwin: GameVersionDownload
+  linux: GameVersionDownload
 }
 
 /** The catalog entry the user picked, copied out of wherever it lives. */
@@ -68,9 +83,16 @@ function refuse(reason: InstallGameVersionFailure): InstallGameVersionResult {
   return { ok: false, reason }
 }
 
-/** Picks the download URL for a platform. Empty means the catalog has no build for it. */
-function downloadUrlFor(version: DownloadableGameVersion, os: GameOs): string {
-  return version.downloads[os]
+/**
+ * Picks the download for a platform.
+ *
+ * A build only counts when it has both a URL and a name. A catalog entry
+ * missing either one is treated as no build at all rather than guessed at,
+ * because a guessed name is exactly what the install cannot survive.
+ */
+function downloadFor(version: DownloadableGameVersion, os: GameOs): GameVersionDownload | undefined {
+  const download = version.downloads[os]
+  return download.url && download.fileName ? download : undefined
 }
 
 /** True when the target folder holds something the launcher would accept as the game. */
@@ -108,8 +130,8 @@ export async function installGameVersion(ports: InstallGameVersionPorts, input: 
   if (input.installedVersions.includes(version.version)) return refuse("version-already-installed")
   if (input.foldersInUse.includes(targetFolder)) return refuse("folder-in-use")
 
-  const url = downloadUrlFor(version, os)
-  if (!url) return refuse("no-download-for-os")
+  const download = downloadFor(version, os)
+  if (!download) return refuse("no-download-for-os")
 
   events.onRegistered?.()
 
@@ -118,14 +140,14 @@ export async function installGameVersion(ports: InstallGameVersionPorts, input: 
     return refuse(reason)
   }
 
-  let download: DownloadOutcome = { ok: false, error: "The downloader never reported an outcome." }
-  await ports.downloader.download({ url, outputFolder: targetFolder, fileName: version.version }, (reported) => {
-    download = reported
+  let downloaded: DownloadOutcome = { ok: false, error: "The downloader never reported an outcome." }
+  await ports.downloader.download({ url: download.url, outputFolder: targetFolder, fileName: download.fileName }, (reported) => {
+    downloaded = reported
   })
 
-  if (!download.ok || !download.filePath) return discard("download-failed")
+  if (!downloaded.ok || !downloaded.filePath) return discard("download-failed")
 
-  const request = { sourcePath: download.filePath, outputFolder: targetFolder }
+  const request = { sourcePath: downloaded.filePath, outputFolder: targetFolder }
 
   let unpack: UnpackOutcome = { ok: false, error: "The unpacker never reported an outcome." }
   const report = (reported: UnpackOutcome): void => {
