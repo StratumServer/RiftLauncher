@@ -170,6 +170,7 @@
       "modsCount_many": "{{count}} Mods",
       "modsCount_other": "{{count}} Mods",
       "noMatchingFilters": "There are no Mods that match your filters!",
+      "errorFetchingMods": "An error has occurred fetching the Mods from the ModDB!",
       "installMod": "Install Mod",
       "modTaskName": "{{name}} Mod {{version}} on {{out}}",
       "modDownloadDesc": "Downloading {{name}} Mod {{version}} on {{out}}!",

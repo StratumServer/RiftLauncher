@@ -6,6 +6,7 @@ import { PiCaretDownDuotone, PiCheckFatDuotone } from "react-icons/pi"
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
+import { parseTagsResponse } from "@domain/mods/moddb"
 
 function TagsFilter({
   tagsFilter,
@@ -27,8 +28,14 @@ function TagsFilter({
   async function queryTags(): Promise<void> {
     try {
       const res = await window.api.netManager.queryURL("https://mods.vintagestory.at/api/tags")
-      const data = await JSON.parse(res)
-      setTagsList(data["tags"])
+      const parsed = parseTagsResponse(res)
+
+      if (!parsed.ok) {
+        window.api.utils.logMessage("debug", `[front] [mods] [features/mods/pages/ListMods.tsx] [TagsFilter > queryTags] Tags query failed: ${parsed.reason}.`)
+        return
+      }
+
+      setTagsList(parsed.payload as unknown as DownloadableModTagType[])
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [mods] [features/mods/pages/ListMods.tsx] [TagsFilter > queryTags] Error fetching tags.`)
       window.api.utils.logMessage("debug", `[front] [mods] [features/mods/pages/ListMods.tsx] [TagsFilter > queryTags] Error fetching tags: ${err}`)

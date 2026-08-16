@@ -6,6 +6,7 @@ import { PiCaretDownDuotone, PiCheckFatDuotone } from "react-icons/pi"
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
+import { parseGameVersionsResponse } from "@domain/mods/moddb"
 
 function VersionsFilter({
   versionsFilter,
@@ -27,9 +28,14 @@ function VersionsFilter({
   async function queryGameVersions(): Promise<void> {
     try {
       const res = await window.api.netManager.queryURL("https://mods.vintagestory.at/api/gameversions")
-      const data = await JSON.parse(res)
-      data["gameversions"].reverse()
-      setGameVersionsList(data["gameversions"])
+      const parsed = parseGameVersionsResponse(res)
+
+      if (!parsed.ok) {
+        window.api.utils.logMessage("debug", `[front] [mods] [features/mods/pages/ListMods.tsx] [VersionsFilter > queryGameVersions] Game versions query failed: ${parsed.reason}.`)
+        return
+      }
+
+      setGameVersionsList([...parsed.payload].reverse() as unknown as DownloadableModGameVersionType[])
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [mods] [features/mods/pages/ListMods.tsx] [VersionsFilter > queryGameVersions] Error fetching game versions.`)
       window.api.utils.logMessage("debug", `[front] [mods] [features/mods/pages/ListMods.tsx] [VersionsFilter > queryGameVersions] Error fetching game versions: ${err}`)
