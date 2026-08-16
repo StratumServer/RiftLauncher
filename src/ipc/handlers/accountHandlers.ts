@@ -3,6 +3,7 @@ import { ipcMain } from "electron"
 import { interpretFirstPass, interpretSecondPass } from "@domain/account/login"
 import type { LoginVerdict } from "@domain/account/login"
 import { badCredentialsResult, needsTwoFactorResult, twoFactorRejectedResult, unexpectedResponseOutcome } from "@src/ipc/handlers/accountLoginOutcome"
+import { buildLoginRequestBody } from "@src/ipc/handlers/loginRequestBody"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { requestBoundedText } from "@src/ipc/network"
@@ -24,12 +25,7 @@ const LOGIN_URL = new URL("https://auth3.vintagestory.at/v2/gamelogin")
  * never logged, and never survives the call.
  */
 async function requestLoginPass(email: string, password: string, twoFactorCode?: string, preLoginToken?: string): Promise<string> {
-  const body = new URLSearchParams({
-    email,
-    password,
-    totpcode: twoFactorCode ?? "",
-    prelogintoken: preLoginToken ?? ""
-  })
+  const body = buildLoginRequestBody(email, password, twoFactorCode, preLoginToken)
 
   return await requestBoundedText(LOGIN_URL, { method: "POST", body: body.toString(), maxBytes: MAX_LOGIN_RESPONSE_BYTES })
 }

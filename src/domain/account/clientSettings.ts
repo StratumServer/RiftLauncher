@@ -48,7 +48,8 @@ export interface AccountSessionFields {
   sessionKey: string
   sessionSignature: string
   email: string
-  playerEntitlements: string
+  /** Null for an account with no entitlements. The game reads this straight into `ClientSettings.Entitlements`, so null is a value it already expects. */
+  playerEntitlements: string | null
   playerUid: string
   playerName: string
   hostGameServer: boolean
