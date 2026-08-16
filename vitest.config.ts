@@ -63,15 +63,14 @@ export default defineConfig({
       // utilsHandlers / TaskManagerContext pass, and the Inno domain / config
       // pass (script.ts, extract.ts, lzma.ts, configManager.ts,
       // configReducer.ts) together: measured repo-wide coverage with all
-      // three is PLACEHOLDER, updated below once rebased and re-measured.
-      // (lines/statements/functions/branches); floors sit a couple of points
-      // under each, the same buffer every previous set of floors kept below
-      // its own measured numbers.
+      // three is ~90.95/89.49/87/86.92 (lines/statements/functions/branches);
+      // floors sit a couple of points under each, the same buffer every
+      // previous set of floors kept below its own measured numbers.
       thresholds: {
-        lines: 85,
-        statements: 83,
-        functions: 82,
-        branches: 79
+        lines: 89,
+        statements: 87,
+        functions: 85,
+        branches: 85
       }
     }
   }
