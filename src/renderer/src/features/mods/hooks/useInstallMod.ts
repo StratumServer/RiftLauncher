@@ -57,7 +57,8 @@ export function useInstallMod(): ({
       "end",
       release.mainfile,
       installPath,
-      `${release.modidstr}-${release.modversion}`,
+      // Mod releases are genuine zips. The extension used to be added by the download worker.
+      `${release.modidstr}-${release.modversion}.zip`,
       async (status, _path, error) => {
         if (!status) {
           window.api.utils.logMessage("error", `[front] [mods] [features/mods/hooks/useInstallMod.ts] [useInstallMod > installMod] Error downloading mod.`)
