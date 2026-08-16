@@ -39,8 +39,10 @@ export interface InstallationSnapshot {
  * Why a backup did not happen.
  *
  * The last three of the first block used to be one silent no-op that reported
- * success. They are named separately so a caller can tell them apart, even if
- * the current UI still stays quiet for all three.
+ * success. They are named separately so a caller can tell them apart. The
+ * renderer now tells the player about all three (see describeBackupFailure
+ * in features/installations/adapters/backup.ts), though the auto-backup-
+ * before-play flow still treats them as non-blocking, on purpose.
  */
 export type MakeInstallationBackupFailure =
   | "installation-busy"

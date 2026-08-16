@@ -25,7 +25,11 @@ export function createBackupPorts({ startCompress, taskName, taskDescription }: 
         startCompress(
           taskName,
           taskDescription,
-          "all",
+          // The hook already raises its own toast via describeBackupFailure
+          // for every reason that reaches this compress call, so the generic
+          // one would double up. "progress" keeps the ambient start/success
+          // toasts and drops only the error.
+          "progress",
           request.sourcePath,
           request.outputFolder,
           request.fileName,
@@ -81,8 +85,14 @@ export interface BackupFailureFeedback {
 /**
  * How the UI reacts to a refusal.
  *
- * The three silent entries were a single no-op branch before the service split
- * them apart. They still report success and say nothing, on purpose.
+ * The three "nothing to back up" entries (installation-path-missing,
+ * no-backups-folder, backups-disabled) were a single silent no-op branch
+ * before the service split them apart, and stayed silent for parity with
+ * the pre-domain code even after the split. They speak now: each gets its
+ * own sentence naming what to do about it. useMakeInstallationBackup still
+ * treats them as a non-blocking outcome (see the comment there) because
+ * auto-backup-before-play reads this hook's return value to decide whether
+ * to launch the game at all, and a missed backup must never refuse to play.
  */
 export function describeBackupFailure(reason: MakeInstallationBackupFailure): BackupFailureFeedback {
   switch (reason) {
@@ -96,8 +106,10 @@ export function describeBackupFailure(reason: MakeInstallationBackupFailure): Ba
     case "compress-failed":
       return { messageKey: "features.backups.errorMakingBackup", logged: true }
     case "installation-path-missing":
+      return { messageKey: "features.backups.installationPathMissing", logged: true }
     case "no-backups-folder":
+      return { messageKey: "features.backups.noBackupsFolder", logged: true }
     case "backups-disabled":
-      return { messageKey: null, logged: false }
+      return { messageKey: "features.backups.backupsDisabled", logged: true }
   }
 }
