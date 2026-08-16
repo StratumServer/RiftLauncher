@@ -1,7 +1,7 @@
+import { createHash } from "crypto"
 import { app } from "electron"
 import fse from "fs-extra"
 import { join } from "path"
-import { v4 as uuidv4 } from "uuid"
 import yauzl from "yauzl"
 
 import type { DirectoryReader, IconStore, ModArchiveContent, ModArchiveReader, ModArchiveResult, PathBuilder } from "@domain/ports"
@@ -151,21 +151,72 @@ export function createModArchiveReaderPort(): ModArchiveReader {
   return { read: readModArchive }
 }
 
+/**
+ * Names an icon by the sha256 of its own bytes.
+ *
+ * Two mods shipping the same icon collapse onto the same file, and rescanning
+ * the same mod again writes to the same name instead of a fresh one, which is
+ * what keeps a rescan from growing the cache at all.
+ */
+function contentAddressedName(bytes: Uint8Array): string {
+  return `${createHash("sha256").update(bytes).digest("hex")}.png`
+}
+
 /** Wires the icon store port onto the launcher's image cache. */
 export function createIconStorePort(): IconStore {
   return {
     store: async (bytes: Uint8Array): Promise<string | undefined> => {
-      const imageName = `${uuidv4()}.png`
+      const imageName = contentAddressedName(bytes)
       try {
         const folder = modImagesFolder()
         await fse.ensureDir(folder)
-        await fse.writeFile(join(folder, imageName), bytes)
+        const target = join(folder, imageName)
+        // The name is the content: whatever already sits at that path is these
+        // same bytes, so a rescan has nothing left to write.
+        if (!(await fse.pathExists(target))) await fse.writeFile(target, bytes)
         return imageName
       } catch (err) {
         logMessage("error", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon.`)
         logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon: ${err}`)
         return undefined
       }
+    },
+
+    prune: async (liveNames: readonly string[]): Promise<void> => {
+      const folder = modImagesFolder()
+      let entries: string[]
+      try {
+        entries = await fse.readdir(folder)
+      } catch {
+        // No cache folder yet, or it just vanished: nothing to sweep either way.
+        return
+      }
+
+      const live = new Set(liveNames)
+      const strangers = entries.filter((entry) => {
+        try {
+          assertSafeFileName(entry)
+          return !live.has(entry)
+        } catch {
+          // A name too strange to be one this store ever wrote is a stranger too.
+          return true
+        }
+      })
+
+      // Deleted individually and in parallel rather than as one recursive
+      // removal of the folder: each target stays a single, safe join onto a
+      // name `readdir` itself just handed back, so this can never reach outside
+      // modImagesFolder(), and one file another process is mid-delete on never
+      // takes the rest of the sweep down with it.
+      await Promise.all(
+        strangers.map(async (entry) => {
+          try {
+            await fse.remove(join(folder, entry))
+          } catch (err) {
+            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Could not prune ${entry} from the icon cache: ${err}`)
+          }
+        })
+      )
     }
   }
 }

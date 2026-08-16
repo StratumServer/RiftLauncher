@@ -182,5 +182,12 @@ export async function scanInstalledMods(ports: ScanInstalledModsPorts, input: Sc
     }
   }
 
+  // The scan just decided the whole cache's live set: every icon name any
+  // surviving mod still points to. Nothing else in the process ever sees that
+  // set as a whole, so this is the one place a sweep can happen without
+  // guessing at what another scan might still need.
+  const liveIconNames = mods.map((mod) => mod.image).filter((image): image is string => image !== undefined)
+  await ports.icons.prune?.(liveIconNames)
+
   return { mods, errors }
 }
