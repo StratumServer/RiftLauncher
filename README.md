@@ -1,3 +1,6 @@
+> [!WARNING]
+> **RiftLauncher is in active development.** There is no release yet: expect missing pieces, breaking changes and rough edges while the team rebuilds the launcher. Follow the issues and the Discord for progress, and hold off on daily use until the first release lands.
+
 > [!NOTE]
 > This fork is maintained by [Zaldaryon](https://github.com/Zaldaryon) and the [Stratum](https://github.com/StratumServer) team.
 > For general support, join the [Stratum Discord server](https://discord.gg/vQm6z2urZs).
