@@ -218,7 +218,11 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
 
       if (!result) throw new Error("Extraction failed")
 
-      window.api.pathsManager.changePerms([outputPath], 0o755)
+      // Awaited so a rejected chmod is caught below instead of becoming an unhandled
+      // rejection. A failed chmod fails the task on purpose: an unexecutable game is a
+      // failed install on Linux, not a harmless side note. (On non-Linux platforms the
+      // call resolves `false` without throwing, which is the normal, expected outcome.)
+      await window.api.pathsManager.changePerms([outputPath], 0o755)
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Extracted.`)
       if (showsSuccess(notifications)) addNotification(t("notifications.body.extracted", { extractName: name }), "success")
