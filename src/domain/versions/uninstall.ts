@@ -9,7 +9,7 @@ export interface GameVersionSnapshot {
 }
 
 /** Why a version was not uninstalled. */
-export type UninstallGameVersionFailure = "version-playing" | "version-busy" | "file-delete-failed"
+export type UninstallGameVersionFailure = "version-playing" | "version-busy" | "version-in-use" | "file-delete-failed"
 
 export type UninstallGameVersionResult = { ok: true } | { ok: false; reason: UninstallGameVersionFailure }
 
@@ -19,6 +19,10 @@ export interface UninstallGameVersionPorts {
 
 export interface UninstallGameVersionInput {
   version: GameVersionSnapshot
+  /** Names of the installations still pointing at this version, for display in the warning. */
+  usedByInstallations: readonly string[]
+  /** Whether the caller already warned the player about `usedByInstallations` and got a yes. */
+  confirmedInUse: boolean
 }
 
 /**
@@ -47,10 +51,11 @@ function refuse(reason: UninstallGameVersionFailure): UninstallGameVersionResult
  * @returns Success, or the reason the folder is still there.
  */
 export async function uninstallGameVersion(ports: UninstallGameVersionPorts, input: UninstallGameVersionInput, events: UninstallGameVersionEvents = {}): Promise<UninstallGameVersionResult> {
-  const { version } = input
+  const { version, usedByInstallations, confirmedInUse } = input
 
   if (version.isPlaying) return refuse("version-playing")
   if (version.isDeleting) return refuse("version-busy")
+  if (usedByInstallations.length > 0 && !confirmedInUse) return refuse("version-in-use")
 
   events.onStarted?.()
 
