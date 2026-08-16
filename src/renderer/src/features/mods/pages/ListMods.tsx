@@ -1,8 +1,5 @@
 import { useState, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { PiDownloadDuotone, PiStarDuotone, PiChatCenteredTextDuotone, PiEraserDuotone, PiUserCircleDuotone } from "react-icons/pi"
-import { FiExternalLink, FiLoader } from "react-icons/fi"
-import clsx from "clsx"
 
 import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -13,18 +10,11 @@ import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount
 import { useLogMods } from "@renderer/features/mods/hooks/useLogMods"
 import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
 
-import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import { GridGroup, GridItem, GridWrapper } from "@renderer/components/ui/Grid"
 import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, ReloadButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
-import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
-import AuthorFilter from "@renderer/features/mods/components/AuthorFilter"
-import VersionsFilter from "@renderer/features/mods/components/VersionsFilter"
-import TagsFilter from "@renderer/features/mods/components/TagsFilter"
-import SideFilter from "@renderer/features/mods/components/SideFilter"
-import OrderFilter from "@renderer/features/mods/components/OrderFilter"
-import InstalledFilter from "@renderer/features/mods/components/InstalledFilter"
+import ModsFilterBar from "@renderer/features/mods/components/ModsFilterBar"
+import ModsGrid from "@renderer/features/mods/components/ModsGrid"
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
@@ -191,120 +181,48 @@ function ListMods(): JSX.Element {
             </StickyMenuGroup>
           </StickyMenuGroupWrapper>
 
-          <StickyMenuGroupWrapper type="centered">
-            <StickyMenuGroup>
-              <FormInputText placeholder={t("generic.text")} value={textFilter} onChange={(e) => setTextFilter(e.target.value)} className="w-40 h-8" />
-
-              <AuthorFilter authorFilter={authorFilter} setAuthorFilter={setAuthorFilter} size="w-40 h-8" />
-
-              <VersionsFilter versionsFilter={versionsFilter} setVersionsFilter={setVersionsFilter} size="w-40 h-8" />
-
-              <TagsFilter tagsFilter={tagsFilter} setTagsFilter={setTagsFilter} size="w-40 h-8" />
-
-              <SideFilter sideFilter={sideFilter} setSideFilter={setSideFilter} size="w-40 h-8" />
-
-              <InstalledFilter installedFilter={installedFilter} setInstalledFilter={setInstalledFilter} size="w-40 h-8" />
-
-              <FormButton title={t("features.mods.onlyFavMods")} onClick={() => setOnlyFav((prev) => !prev)} className="w-8 h-8 text-lg" type={onlyFav ? "warn" : "normal"}>
-                <PiStarDuotone />
-              </FormButton>
-
-              <OrderFilter orderBy={orderBy} setOrderBy={setOrderBy} orderByOrder={orderByOrder} setOrderByOrder={setOrderByOrder} />
-
-              <FormButton title={t("generic.clearFilter")} onClick={() => clearFilters()} className="w-8 h-8 text-lg">
-                <PiEraserDuotone />
-              </FormButton>
-            </StickyMenuGroup>
-          </StickyMenuGroupWrapper>
+          <ModsFilterBar
+            textFilter={textFilter}
+            setTextFilter={setTextFilter}
+            authorFilter={authorFilter}
+            setAuthorFilter={setAuthorFilter}
+            versionsFilter={versionsFilter}
+            setVersionsFilter={setVersionsFilter}
+            tagsFilter={tagsFilter}
+            setTagsFilter={setTagsFilter}
+            sideFilter={sideFilter}
+            setSideFilter={setSideFilter}
+            installedFilter={installedFilter}
+            setInstalledFilter={setInstalledFilter}
+            onlyFav={onlyFav}
+            setOnlyFav={setOnlyFav}
+            orderBy={orderBy}
+            setOrderBy={setOrderBy}
+            orderByOrder={orderByOrder}
+            setOrderByOrder={setOrderByOrder}
+            onClearFilters={clearFilters}
+          />
         </StickyMenuWrapper>
 
-        <GridWrapper className="my-auto">
-          <GridGroup>
-            {modsList.length < 1 ? (
-              <div className="w-full flex flex-col items-center justify-center gap-2 rounded-sm p-4">
-                {searching ? <FiLoader className="animate-spin text-4xl text-zinc-400" /> : t("features.mods.noMatchingFilters")}
-              </div>
-            ) : (
-              modsList.slice(0, visibleMods).map((mod) => (
-                <GridItem
-                  key={mod.modid}
-                  onClick={() => {
-                    if (!installation) return addNotification(t("features.installations.noInstallationSelected"), "error")
-                    setModToInstall(mod)
-                  }}
-                  selected={installationInstalledMods?.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid))}
-                  size="w-[18rem] max-w-[26rem]"
-                  className="group overflow-hidden"
-                >
-                  <div className="relative w-full aspect-[3/2]">
-                    <img src={mod.logo ? `${mod.logo}` : "https://mods.vintagestory.at/web/img/mod-default.png"} alt={mod.name} className="w-full h-full object-cover object-top" />
-
-                    <div className="absolute w-full top-0 flex items-center justify-between p-1">
-                      <FormButton
-                        title={t("generic.favorite")}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (favMods.some((modid) => modid === mod.modid)) {
-                            configDispatch({ type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: mod.modid } })
-                          } else {
-                            configDispatch({ type: CONFIG_ACTIONS.ADD_FAV_MOD, payload: { modid: mod.modid } })
-                          }
-                        }}
-                        className={clsx("p-1 text-lg", !favMods.some((modid) => modid === mod.modid) && "opacity-0 group-hover:opacity-100 duration-200")}
-                        type={favMods.some((modid) => modid === mod.modid) ? "warn" : "normal"}
-                      >
-                        <PiStarDuotone />
-                      </FormButton>
-
-                      <FormButton
-                        title={t("features.mods.openOnTheModDB")}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openModOnModDb(mod.assetid)
-                        }}
-                        className="p-1 text-lg opacity-0 group-hover:opacity-100 duration-200"
-                      >
-                        <FiExternalLink />
-                      </FormButton>
-                    </div>
-                  </div>
-
-                  <div className="w-full aspect-[3/1] flex text-sm">
-                    <div className="shrink-0 w-1/3 flex flex-col gap-1 px-2 py-1 overflow-hidden">
-                      <p className="flex items-center gap-1" title={mod.author}>
-                        <PiUserCircleDuotone className="shrink-0 opacity-50" />
-                        <span className="overflow-hidden whitespace-nowrap text-ellipsis">{mod.author}</span>
-                      </p>
-                      <p className="flex items-center gap-1">
-                        <PiDownloadDuotone className="shrink-0 opacity-50" />
-                        <span>{Number(mod.downloads) > 10000 ? `${Math.floor(Number(mod.downloads) / 1000)}K` : Number(mod.downloads)}</span>
-                      </p>
-                      <p className="flex items-center gap-1">
-                        <PiStarDuotone className="shrink-0 opacity-50" />
-                        <span>{Number(mod.follows) > 10000 ? `${Math.floor(Number(mod.follows) / 1000)}K` : Number(mod.follows)}</span>
-                      </p>
-                      <p className="flex items-center gap-1">
-                        <PiChatCenteredTextDuotone className="shrink-0 opacity-50" />
-                        <span>{Number(mod.comments) > 10000 ? `${Math.floor(Number(mod.comments) / 1000)}K` : Number(mod.comments)}</span>
-                      </p>
-                    </div>
-
-                    <ThinSeparator />
-
-                    <div className="w-full flex flex-col gap-1 px-2 py-1 overflow-hidden">
-                      <p className="text-base font-bold overflow-hidden whitespace-nowrap text-ellipsis" title={mod.name}>
-                        {mod.name}
-                      </p>
-                      <p className="text-zinc-400 line-clamp-3" title={mod.summary ?? ""}>
-                        {mod.summary}
-                      </p>
-                    </div>
-                  </div>
-                </GridItem>
-              ))
-            )}
-          </GridGroup>
-        </GridWrapper>
+        <ModsGrid
+          mods={modsList}
+          visibleCount={visibleMods}
+          searching={searching}
+          isModInstalled={(mod) => Boolean(installationInstalledMods?.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid)))}
+          isModFav={(mod) => favMods.some((modid) => modid === mod.modid)}
+          onSelectMod={(mod) => {
+            if (!installation) return addNotification(t("features.installations.noInstallationSelected"), "error")
+            setModToInstall(mod)
+          }}
+          onToggleFavMod={(mod) => {
+            if (favMods.some((modid) => modid === mod.modid)) {
+              configDispatch({ type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: mod.modid } })
+            } else {
+              configDispatch({ type: CONFIG_ACTIONS.ADD_FAV_MOD, payload: { modid: mod.modid } })
+            }
+          }}
+          onOpenModDb={(mod) => openModOnModDb(mod.assetid)}
+        />
 
         <InstallModPopup
           modToInstall={modToInstall?.modid || null}
