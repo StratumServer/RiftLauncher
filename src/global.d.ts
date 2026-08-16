@@ -22,7 +22,14 @@ declare global {
     email: string
     playerName: string
     playerUid: string
-    playerEntitlements: string
+    /**
+     * Null for an account with no entitlements (a live `gamelogin` response
+     * answers `entitlements: null` for one), not just absent or unusable. The
+     * game's own client sets `ClientSettings.Entitlements` straight from the
+     * response, so null is a value it already handles, not a launcher-only
+     * concept. See src/domain/account/credentials.ts.
+     */
+    playerEntitlements: string | null
     hostGameServer: boolean
   }
 

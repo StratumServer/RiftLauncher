@@ -96,6 +96,16 @@ describe("mergeSessionIntoClientSettings on a normal document", () => {
     assert.ok("mptoken" in stringSettingsOf(merged))
   })
 
+  it("passes an account with no entitlements through as null rather than dropping the key", () => {
+    // The game sets ClientSettings.Entitlements straight from this value, null
+    // included, so writing null here is what an account with no entitlements
+    // (issue #74) is supposed to produce.
+    const merged = mergeSessionIntoClientSettings({}, { ...SESSION, playerEntitlements: null })
+
+    assert.equal(stringSettingsOf(merged).entitlements, null)
+    assert.ok("entitlements" in stringSettingsOf(merged))
+  })
+
   it("writes the game server flag as a boolean", () => {
     const merged = mergeSessionIntoClientSettings({}, { ...SESSION, hostGameServer: false })
 

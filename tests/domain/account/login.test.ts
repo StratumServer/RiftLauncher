@@ -30,6 +30,26 @@ function refusalBody(reason: unknown, overrides: Record<string, unknown> = {}): 
   return JSON.stringify({ valid: 0, reason, ...overrides })
 }
 
+/**
+ * The exact body proven against the live auth service in issue #74: a real
+ * successful login for an account with no entitlements. Secrets are
+ * replaced by placeholder characters of the same length as the real values
+ * (44 for the session key, 344 for the signature); every other field,
+ * including the `null` entitlements and `false` hasgameserver, is as-observed.
+ */
+function realShapeResponseWithNoEntitlements(): string {
+  return JSON.stringify({
+    sessionkey: "k".repeat(44),
+    sessionsignature: "s".repeat(344),
+    mptoken: null,
+    uid: "uid-abcdefghijklmnop",
+    entitlements: null,
+    playername: "Player",
+    hasgameserver: false,
+    valid: 1
+  })
+}
+
 describe("interpretFirstPass", () => {
   it("establishes the session when the account has no two-factor", () => {
     const verdict = interpretFirstPass(EMAIL, successBody(), { twoFactorCodeProvided: false })
@@ -45,6 +65,22 @@ describe("interpretFirstPass", () => {
       hostGameServer: false
     })
     assert.equal(verdict.credentials.secrets.sessionKey, "fake-session-key")
+  })
+
+  it("establishes the session for the real response shape proven in issue #74 (no entitlements)", () => {
+    const verdict = interpretFirstPass(EMAIL, realShapeResponseWithNoEntitlements(), { twoFactorCodeProvided: false })
+
+    assert.equal(verdict.status, "success")
+    if (verdict.status !== "success") throw new Error("unreachable")
+
+    assert.deepEqual(verdict.credentials.publicAccount, {
+      email: EMAIL,
+      playerName: "Player",
+      playerUid: "uid-abcdefghijklmnop",
+      playerEntitlements: null,
+      hostGameServer: false
+    })
+    assert.equal(verdict.credentials.secrets.mptoken, null)
   })
 
   it("asks the user for a code when the account has two-factor and none was typed", () => {
@@ -126,6 +162,20 @@ describe("responses the launcher cannot act on", () => {
     }
   })
 
+  it("still refuses null sessionkey, missing uid, and empty playername, unlike the now-nullable entitlements", () => {
+    const nullSessionKey = interpretFirstPass(EMAIL, successBody({ sessionkey: null }), { twoFactorCodeProvided: false })
+    assert.equal(nullSessionKey.status, "unreadable-response")
+    assert.equal((nullSessionKey as { diagnosis?: string }).diagnosis, 'field "session key": expected non-empty string, got null')
+
+    const missingUid = interpretFirstPass(EMAIL, successBody({ uid: undefined }), { twoFactorCodeProvided: false })
+    assert.equal(missingUid.status, "unreadable-response")
+    assert.equal((missingUid as { diagnosis?: string }).diagnosis, 'field "player uid": expected non-empty string, got undefined')
+
+    const emptyPlayerName = interpretFirstPass(EMAIL, successBody({ playername: "" }), { twoFactorCodeProvided: false })
+    assert.equal(emptyPlayerName.status, "unreadable-response")
+    assert.equal((emptyPlayerName as { diagnosis?: string }).diagnosis, 'field "player name": expected non-empty string, got empty string')
+  })
+
   it("refuses a valid response with no session key rather than storing an empty session", () => {
     const first = interpretFirstPass(EMAIL, successBody({ sessionkey: "" }), { twoFactorCodeProvided: false })
     assert.equal(first.status, "unreadable-response")
@@ -149,28 +199,37 @@ describe("responses the launcher cannot act on", () => {
 
 describe("the diagnosis on an unreadable success claim", () => {
   it("names the field that failed, and only that, when a success-claiming body fails to parse", () => {
-    const verdict = interpretFirstPass(EMAIL, successBody({ entitlements: "" }), { twoFactorCodeProvided: false })
+    const verdict = interpretFirstPass(EMAIL, successBody({ playername: "" }), { twoFactorCodeProvided: false })
 
     assert.equal(verdict.status, "unreadable-response")
-    assert.equal((verdict as { diagnosis?: string }).diagnosis, 'field "entitlements": expected non-empty string, got empty string')
+    assert.equal((verdict as { diagnosis?: string }).diagnosis, 'field "player name": expected non-empty string, got empty string')
   })
 
   it("never lets a value from the body ride along in the diagnosis, canary included", () => {
-    // The session key and entitlements below are canaries: if a future change
+    // The session key and player name below are canaries: if a future change
     // to `establish`/`parseLoginAccount` ever interpolated a raw field value
     // into the diagnosis instead of a type-level description, one of these
     // exact strings would show up in the assertion below and fail it.
     const CANARY_SESSION_KEY = "canary-session-key-should-never-leak"
-    const CANARY_ENTITLEMENTS = "canary-entitlements-should-never-leak"
+    const CANARY_PLAYER_NAME = "canary-player-name-should-never-leak"
 
-    const verdict = interpretFirstPass(EMAIL, successBody({ entitlements: "", sessionkey: CANARY_SESSION_KEY }), { twoFactorCodeProvided: false })
+    const verdict = interpretFirstPass(EMAIL, successBody({ playername: "", sessionkey: CANARY_SESSION_KEY }), { twoFactorCodeProvided: false })
 
     assert.equal(verdict.status, "unreadable-response")
     const diagnosis = (verdict as { diagnosis?: string }).diagnosis ?? ""
     assert.ok(diagnosis.length > 0, "expected a diagnosis string")
     assert.equal(diagnosis.includes(CANARY_SESSION_KEY), false)
-    assert.equal(diagnosis.includes(CANARY_ENTITLEMENTS), false)
-    assert.equal(diagnosis, 'field "entitlements": expected non-empty string, got empty string')
+    assert.equal(diagnosis.includes(CANARY_PLAYER_NAME), false)
+    assert.equal(diagnosis, 'field "player name": expected non-empty string, got empty string')
+  })
+
+  it("does not refuse a success claim with no entitlements, since a real response sends exactly that", () => {
+    // Issue #74. Before this fix, entitlements: null on an otherwise valid
+    // success body produced this same "unreadable-response" verdict and told
+    // the player their credentials were wrong.
+    const verdict = interpretFirstPass(EMAIL, successBody({ entitlements: null }), { twoFactorCodeProvided: false })
+
+    assert.equal(verdict.status, "success")
   })
 
   it("names a missing field as undefined without ever mentioning the field it was allowed to keep", () => {

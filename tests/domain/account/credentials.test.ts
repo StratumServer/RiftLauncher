@@ -37,6 +37,46 @@ describe("parseLoginAccount", () => {
     assert.equal(parseLoginAccount(EMAIL, { ...base, mptoken: "fake-mptoken" }).secrets.mptoken, "fake-mptoken")
   })
 
+  it("reads null, absent, and empty entitlements as no entitlements, and a real value as itself", () => {
+    // Issue #74: a real successful login for an account with no entitlements
+    // answers `entitlements: null`. Refusing that turned a login the server
+    // accepted into a false "wrong credentials" diagnosis.
+    const base = { playername: "Player", uid: "uid-1", hasgameserver: false, sessionkey: "fake-key", sessionsignature: "fake-signature" }
+
+    assert.equal(parseLoginAccount(EMAIL, { ...base, entitlements: null }).publicAccount.playerEntitlements, null)
+    assert.equal(parseLoginAccount(EMAIL, { ...base, entitlements: "" }).publicAccount.playerEntitlements, null)
+    assert.equal(parseLoginAccount(EMAIL, base).publicAccount.playerEntitlements, null)
+    assert.equal(parseLoginAccount(EMAIL, { ...base, entitlements: "singleplayer,multiplayer" }).publicAccount.playerEntitlements, "singleplayer,multiplayer")
+  })
+
+  it("parses the real successful response shape for an account with no entitlements", () => {
+    // Redacted but shape-accurate: the exact body proven against the live
+    // auth service in issue #74, secrets replaced by placeholder characters
+    // of the same length (44 for the session key, 344 for the signature).
+    const REAL_SHAPE_RESPONSE = {
+      sessionkey: "k".repeat(44),
+      sessionsignature: "s".repeat(344),
+      mptoken: null,
+      uid: "uid-abcdefghijklmnop",
+      entitlements: null,
+      playername: "Player",
+      hasgameserver: false,
+      valid: 1
+    }
+
+    const credentials = parseLoginAccount(EMAIL, REAL_SHAPE_RESPONSE)
+
+    assert.deepEqual(credentials.publicAccount, {
+      email: EMAIL,
+      playerName: "Player",
+      playerUid: "uid-abcdefghijklmnop",
+      playerEntitlements: null,
+      hostGameServer: false
+    })
+    assert.equal(credentials.secrets.mptoken, null)
+    assert.equal(credentials.secrets.sessionKey, REAL_SHAPE_RESPONSE.sessionkey)
+  })
+
   it("refuses anything that is not a response object", () => {
     for (const value of [null, "text", 7, [1, 2, 3], undefined]) {
       assert.throws(() => parseLoginAccount(EMAIL, value), /Invalid login response/, String(value))
@@ -96,6 +136,12 @@ describe("toPublicAccount", () => {
 
     assert.deepEqual(account, { email: EMAIL, playerName: "Player", playerUid: "uid-1", playerEntitlements: "game", hostGameServer: true })
     assert.equal(JSON.stringify(account).includes("fake-"), false)
+  })
+
+  it("keeps a stored account with no entitlements readable, rather than refusing it", () => {
+    const account = toPublicAccount({ email: EMAIL, playerName: "Player", playerUid: "uid-1", playerEntitlements: null, hostGameServer: true })
+
+    assert.deepEqual(account, { email: EMAIL, playerName: "Player", playerUid: "uid-1", playerEntitlements: null, hostGameServer: true })
   })
 
   it("returns null when the stored account is not usable", () => {

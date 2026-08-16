@@ -55,7 +55,7 @@ export class AccountFieldError extends TypeError {
     this.actual = actual
   }
 
-  /** `field "entitlements": expected non-empty string, got empty string`, safe to log as-is. */
+  /** `field "player uid": expected non-empty string, got empty string`, safe to log as-is. */
   get diagnosis(): string {
     return `field "${this.field}": expected ${this.expected}, got ${this.actual}`
   }
@@ -103,6 +103,15 @@ function accountBoolean(value: unknown, name: string): boolean {
   throw new AccountFieldError(name, "boolean, 1/0, or '1'/'0'", describeShape(value))
 }
 
+/**
+ * The multiplayer token's treatment, reused for entitlements: a live
+ * `gamelogin` response for an account with no entitlements answers
+ * `entitlements: null`, and the game's own client sets
+ * `ClientSettings.Entitlements` straight from whatever the response carried,
+ * null included. Refusing null here would turn a login the server accepted
+ * into a false "wrong credentials" diagnosis, which is exactly what issue #74
+ * was.
+ */
 function nullableAccountString(value: unknown, name: string): string | null {
   if (value === null || value === undefined || value === "") return null
   return accountString(value, name)
@@ -127,7 +136,7 @@ export function parseLoginAccount(email: string, value: unknown): AccountCredent
     email: accountString(email, "email", 320),
     playerName: accountString(value.playername, "player name", 256),
     playerUid: accountString(value.uid, "player uid", 256),
-    playerEntitlements: accountString(value.entitlements, "entitlements"),
+    playerEntitlements: nullableAccountString(value.entitlements, "entitlements"),
     hostGameServer: accountBoolean(value.hasgameserver, "game server flag")
   }
 
@@ -199,7 +208,7 @@ export function toPublicAccount(value: unknown): AccountPublicType | null {
       email: accountString(value.email, "email", 320),
       playerName: accountString(value.playerName, "player name", 256),
       playerUid: accountString(value.playerUid, "player uid", 256),
-      playerEntitlements: accountString(value.playerEntitlements, "entitlements"),
+      playerEntitlements: nullableAccountString(value.playerEntitlements, "entitlements"),
       hostGameServer: accountBoolean(value.hostGameServer, "game server flag")
     }
   } catch {
