@@ -11,6 +11,8 @@ import {
   isArchiveSymlink,
   isRestoreWorkspaceName,
   isSafeArchiveEntry,
+  isSafeTarEntryType,
+  isTarGzName,
   resolveContainedPath
 } from "../src/ipc/validation"
 import { redactSensitiveText } from "../src/utils/logManager"
@@ -42,9 +44,35 @@ describe("IPC boundary validators", () => {
     assert.equal(isArchiveSymlink(0o100644 << 16), false)
   })
 
+  it("recognises the gzipped tars the game ships, whatever the case", () => {
+    assert.equal(isTarGzName("vs_client_linux-x64_1.22.6.tar.gz"), true)
+    assert.equal(isTarGzName("vs_archive_1.9.14.TAR.GZ"), true)
+    assert.equal(isTarGzName("build.tgz"), true)
+
+    assert.equal(isTarGzName("carrycapacity-1.7.0.zip"), false)
+    assert.equal(isTarGzName("vs_install_win-x64_1.22.6.exe"), false)
+    assert.equal(isTarGzName("payload.tar"), false)
+    assert.equal(isTarGzName("tar.gz.zip"), false)
+    assert.equal(isTarGzName(undefined), false)
+  })
+
+  it("lets only plain files and folders through the tar reader", () => {
+    assert.equal(isSafeTarEntryType("File"), true)
+    assert.equal(isSafeTarEntryType("Directory"), true)
+    assert.equal(isSafeTarEntryType("OldFile"), true)
+
+    assert.equal(isSafeTarEntryType("SymbolicLink"), false)
+    assert.equal(isSafeTarEntryType("Link"), false)
+    assert.equal(isSafeTarEntryType("CharacterDevice"), false)
+    assert.equal(isSafeTarEntryType(undefined), false)
+  })
+
   it("bounds task IDs, filenames, and numeric inputs", () => {
     assert.equal(assertSafeTaskId("download:123"), "download:123")
     assert.equal(assertSafeFileName("archive.zip"), "archive.zip")
+    assert.equal(assertSafeFileName("vs_client_linux-x64_1.22.6.tar.gz"), "vs_client_linux-x64_1.22.6.tar.gz")
+    assert.equal(assertSafeFileName("vs_install_win-x64_1.22.6.exe"), "vs_install_win-x64_1.22.6.exe")
+    assert.equal(assertSafeFileName("carrycapacity-1.7.0.zip"), "carrycapacity-1.7.0.zip")
     assert.equal(assertInteger(4, "compression level", 0, 9), 4)
     assert.throws(() => assertSafeTaskId("../escape"), /Invalid task id/)
     assert.throws(() => assertSafeFileName("../escape"), /Invalid file name/)
