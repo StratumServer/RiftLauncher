@@ -1,6 +1,7 @@
 declare global {
   type BasicConfigType = {
-    version: number
+    /** Schema of the stored config, an integer counting schemas. Never the app version. See src/domain/config/migrations.ts. */
+    schemaVersion: number
     lastUsedInstallation: string | null
     defaultInstallationsFolder: string
     defaultVersionsFolder: string
