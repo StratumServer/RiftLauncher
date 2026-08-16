@@ -1,0 +1,71 @@
+name: Windows install conformance
+
+# Manual only. This proves the Windows half of PR #28's fix (issue #8's
+# "old version detected" MsgBox) on a real, disposable Windows machine: no
+# local machine can safely seed the Inno Setup uninstall registry key, so
+# this never runs anywhere except a runner that gets thrown away afterward.
+#
+# Not wired into ci.yml and not a required check. See tests/e2e/windows-install.ts
+# for what each scenario does and why the second one cannot fail the job.
+on:
+  workflow_dispatch:
+    inputs:
+      game_version:
+        description: "Vintage Story version to install. 'latest' (default) resolves at runtime against the live catalog's windows.latest flag, so the default never goes stale. Set to 1.18.15 to reproduce issue #55's regression case instead: that older installer bundles its own .NET 7 Desktop Runtime sub-installer (dotnet70desktop_x64), a different runtime than preinstall_dotnet_runtime below prepares for."
+        required: false
+        default: "latest"
+        type: string
+      preinstall_dotnet_runtime:
+        description: "Preinstall the .NET Windows Desktop Runtime the default (latest) game version needs before running the installer, so scenario 1 exercises RUN_INSTALLER's own flags instead of Microsoft's runtime installer. Turn off to leave the runner clean, which is what reproducing issue #55 against game_version 1.18.15 requires."
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  windows-install-conformance:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Preinstall .NET Windows Desktop Runtime
+        if: ${{ inputs.preinstall_dotnet_runtime }}
+        shell: pwsh
+        # Targets the runtime the DEFAULT game_version (latest, the 1.22.x
+        # line as of writing) needs to run: .NET 10 Desktop Runtime, per
+        # https://info.vintagestory.at/v1dot22, not the .NET 7 build that
+        # issue #55's older 1.18.15 installer bundles as dotnet70desktop_x64.
+        # Unlike that 1.18.15/.NET 7 hang, which issue #55's first run
+        # confirmed directly from the run log, whether the current installer
+        # still bundles its own runtime sub-installer has not been proven on
+        # a live run yet; this step is a defensive default either way, since
+        # a preinstalled runtime is harmless if the installer does not need
+        # to touch it. Separate step so this is independently toggleable.
+        run: |
+          Invoke-WebRequest -Uri https://dot.net/v1/dotnet-install.ps1 -OutFile dotnet-install.ps1
+          ./dotnet-install.ps1 -Channel 10.0 -Runtime windowsdesktop
+      - name: Typecheck the conformance script
+        run: npx tsc --noEmit -p tests/e2e/tsconfig.json
+      - name: Run the conformance script
+        run: npx tsx tests/e2e/windows-install.ts
+        env:
+          RIFT_WINDOWS_VERSION: ${{ inputs.game_version }}
+      - name: Upload conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-conformance-report
+          # Only the small report the script writes, never the downloaded
+          # installer or the installed game files. The script now writes
+          # this file after every phase, not just on a clean exit (see
+          # persistReport in tests/e2e/windows-install.ts), so if:always()
+          # here can recover evidence even from a run that scenario 1's own
+          # 10-minute timeout could not prevent from needing a job-level
+          # cancellation.
+          path: ${{ runner.temp }}\rift-e2e\report
+          if-no-files-found: warn
+          retention-days: 14
