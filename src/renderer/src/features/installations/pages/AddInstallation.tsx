@@ -95,8 +95,16 @@ function AddInslallation(): JSX.Element {
     }
 
     try {
+      // Awaited and checked on purpose: a folder that can't be created (permissions, bad
+      // path) must block the add, not just log a rejection nobody catches. Adding the
+      // Installation to the list before the folder exists would leave a dangling entry
+      // with no data behind it.
+      if (!(await ensurePathExists(path))) {
+        addNotification(t("notifications.body.installationFolderCreateFailed"), "error")
+        return
+      }
+
       configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION, payload: toInstallationType(result.installation) })
-      ensurePathExists(path)
       addNotification(t("features.installations.installationSuccessfullyAdded"), "success")
       navigate("/installations")
     } catch (error) {
