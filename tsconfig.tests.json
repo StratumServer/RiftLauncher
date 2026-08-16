@@ -8,7 +8,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    // "electron-vite/node" (not just "node"): tests/ipc/pathsHandlers.test.ts
+    // imports src/ipc/handlers/pathsHandlers.ts, which imports its worker
+    // modules with the `?modulePath` suffix electron-vite's own build
+    // resolves specially. tsconfig.node.json's "types" already includes it;
+    // extending here would otherwise still override rather than merge it.
+    "types": ["node", "electron-vite/node"],
     "baseUrl": ".",
     "paths": {
       "@src/*": ["src/*"],
