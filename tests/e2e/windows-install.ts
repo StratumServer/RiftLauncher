@@ -10,7 +10,11 @@
  * 1. Clean install. Download the real Windows installer the catalog
  *    publishes, run it silently with the exact flags RUN_INSTALLER uses
  *    (src/ipc/handlers/pathsHandlers.ts), and assert Vintagestory.exe lands in
- *    the requested folder. Failing this fails the job.
+ *    the requested folder. Bounded by its own timeout (see
+ *    SCENARIO_1_TIMEOUT_MS): issue #55 proved a bundled runtime sub-installer
+ *    can hang outright, and this scenario must fail fast with a process-tree
+ *    kill instead of riding the workflow's outer job timeout to death, which
+ *    is what erased the report on the first run. Failing this fails the job.
  *
  * 2. Seeded uninstall key. Pre-seed the HKCU uninstall registry key that
  *    arms Inno Setup's "old version detected" MsgBox (issue #8), then run the
@@ -20,6 +24,11 @@
  *    its own: an unresolved dialog or a redirected install is the documented,
  *    expected-bad outcome it exists to put on the record, not a bug in this
  *    script.
+ *
+ * The report is written after every phase (not just at the end): see
+ * persistReport() in main(). The first run of this workflow lost all
+ * evidence of the hang because the report was only written on a clean exit,
+ * and the job's 30-minute ceiling killed the process before it got there.
  *
  * Registry writes only ever happen under CI, guarded below, so nobody points
  * this at a real machine and seeds their actual uninstall key by accident.
@@ -33,6 +42,7 @@ import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
 
 import { assertAllowedApiUrl, assertAllowedDownloadUrl, assertSafeFileName, isRecord, MAX_RESPONSE_BYTES } from "../../src/ipc/validation"
+import { buildInstallerTreeKillCommand, shouldKillInstallerTree } from "../../src/ipc/handlers/installerTimeoutOutcome"
 
 if (!process.env.CI) {
   console.error("Refusing to run outside CI: this script writes to HKCU\\...\\Uninstall to reproduce issue #8. Run it only through the windows-conformance workflow.")
@@ -45,18 +55,33 @@ if (process.platform !== "win32") {
 }
 
 const CATALOG_URL = "https://api.vintagestory.at/stable.json"
-// Smallest stable Windows installer that still uses the current
-// vs_install_win-x64_<v>.exe naming (424.9 MB, versus 570.4 MB for the
-// current latest, 1.22.6): see the PR body for the full size survey. Older
-// versions are smaller still but predate that naming scheme and were not
-// checked against today's extraction assumptions.
-const DEFAULT_VERSION = "1.18.15"
+// The sentinel that resolves to whichever version the live catalog currently
+// flags as latest (see resolveLatestWindowsVersion). This is the default so
+// the workflow always exercises what a player installs today instead of
+// going stale the way a hardcoded version number would: the catalog already
+// gets fetched before the version is picked, so resolving "latest" from its
+// own `windows.latest === 1` flag costs nothing extra. 1.18.15 (the smallest
+// stable installer that still uses the current vs_install_win-x64_<v>.exe
+// naming, see the PR body for the size survey) stays reachable through the
+// game_version workflow input: it is issue #55's regression case, the
+// bundled .NET 7 Desktop Runtime sub-installer (dotnet70desktop_x64) that
+// hung outright on a clean runner, which the current default no longer
+// exercises now that "latest" tracks whatever runtime the game actually
+// ships with.
+const LATEST_VERSION_SENTINEL = "latest"
 // The AppId Inno Setup writes to the uninstall registry on every run, and the
 // key issue #8's InitializeSetup check looks for.
 const UNINSTALL_KEY_GUID = "{70364653-036D-49B3-8B80-AF39665F29C1}_is1"
 const UNINSTALL_KEY_PATH = `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${UNINSTALL_KEY_GUID}`
 const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000
+// Scenario 1 must fail on its own clock, not the workflow job's 30-minute
+// ceiling: that ceiling is what erased the report on issue #55's first run,
+// because the process was killed mid-install before it ever reached the
+// code that writes it. 10 minutes is generous for a silent Inno install even
+// with a runtime sub-installer attached, while still leaving the job time to
+// run scenario 2 and upload whatever the report holds.
+const SCENARIO_1_TIMEOUT_MS = 10 * 60 * 1000
 const SCENARIO_2_TIMEOUT_MS = 3 * 60 * 1000
 
 type CatalogPlatformEntry = {
@@ -70,6 +95,15 @@ type InstallerRunResult = {
   exitCode: number | null
   timedOut: boolean
   durationMs: number
+  /**
+   * null when the run never timed out (nothing to kill). Otherwise whether
+   * the taskkill /T /F against the installer's process tree reported
+   * success: the installer itself is spawn()'d directly, so a bare
+   * ChildProcess#kill() would only signal that one pid and leave a bundled
+   * runtime sub-installer running as an orphan, exactly what happened on
+   * issue #55's first run.
+   */
+  orphansKilled: boolean | null
 }
 
 function asCatalogPlatformEntry(value: unknown): CatalogPlatformEntry | undefined {
@@ -77,6 +111,18 @@ function asCatalogPlatformEntry(value: unknown): CatalogPlatformEntry | undefine
   const urls = value.urls
   if (typeof value.filename !== "string" || typeof value.filesize !== "string" || typeof value.md5 !== "string" || !isRecord(urls) || typeof urls.cdn !== "string") return undefined
   return { filename: value.filename, filesize: value.filesize, md5: value.md5, cdnUrl: urls.cdn }
+}
+
+/** Scans the catalog for the version whose Windows entry is flagged `latest: 1`, which is how the API marks the current stable release. */
+function resolveLatestWindowsVersion(catalog: Record<string, unknown>): { version: string; entry: CatalogPlatformEntry } {
+  for (const [version, versionEntry] of Object.entries(catalog)) {
+    if (!isRecord(versionEntry)) continue
+    const windowsRaw = versionEntry.windows
+    if (!isRecord(windowsRaw) || windowsRaw.latest !== 1) continue
+    const entry = asCatalogPlatformEntry(windowsRaw)
+    if (entry) return { version, entry }
+  }
+  throw new Error("No catalog entry has a Windows build flagged as latest")
 }
 
 function fetchCatalog(): Promise<unknown> {
@@ -193,8 +239,27 @@ function downloadFile(url: URL, destinationPath: string, expectedMd5: string): P
 }
 
 /**
+ * Kills an installer's whole process tree via taskkill (see
+ * buildInstallerTreeKillCommand), the same mechanism RUN_INSTALLER uses on
+ * its own timeout. Returns whether the kill command itself reported success;
+ * this is a synchronous spawnSync deliberately, since a timed-out scenario
+ * must not go on waiting for an async kill to land before it can resolve.
+ */
+function killInstallerTree(pid: number): boolean {
+  if (!shouldKillInstallerTree(process.platform, pid)) return false
+  const { command, args } = buildInstallerTreeKillCommand(pid)
+  const result = spawnSync(command, args, { windowsHide: true })
+  return result.status === 0
+}
+
+/**
  * Runs the installer with exactly the flags and spawn options RUN_INSTALLER
  * uses in src/ipc/handlers/pathsHandlers.ts.
+ *
+ * On timeout this resolves immediately after issuing the process-tree kill
+ * rather than waiting for the child's "close" event: the kill can itself
+ * fail or take time, and a scenario that hung once should not be trusted to
+ * exit cleanly just because it was asked to.
  */
 function runInstaller(installerPath: string, targetDir: string, timeoutMs?: number): Promise<InstallerRunResult> {
   return new Promise((resolvePromise) => {
@@ -202,21 +267,24 @@ function runInstaller(installerPath: string, targetDir: string, timeoutMs?: numb
     const child = spawn(installerPath, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/NOICONS", `/DIR=${targetDir}`], { shell: false, windowsHide: true })
     let settled = false
     let timedOut = false
-
-    const timer =
-      timeoutMs !== undefined
-        ? setTimeout(() => {
-            timedOut = true
-            child.kill()
-          }, timeoutMs)
-        : undefined
+    let orphansKilled: boolean | null = null
 
     const finish = (exitCode: number | null): void => {
       if (settled) return
       settled = true
       if (timer) clearTimeout(timer)
-      resolvePromise({ exitCode, timedOut, durationMs: Date.now() - startedAt })
+      resolvePromise({ exitCode, timedOut, durationMs: Date.now() - startedAt, orphansKilled })
     }
+
+    const timer =
+      timeoutMs !== undefined
+        ? setTimeout(() => {
+            timedOut = true
+            const pid = child.pid
+            orphansKilled = typeof pid === "number" ? killInstallerTree(pid) : false
+            finish(null)
+          }, timeoutMs)
+        : undefined
 
     child.on("close", (code) => finish(code))
     child.on("error", () => finish(null))
@@ -287,7 +355,7 @@ async function runScenario2(installerPath: string, workDir: string, version: str
   removeUninstallKey()
 
   const verdict = result.timedOut
-    ? "Installer did not exit within the timeout: consistent with issue #8, InitializeSetup's MsgBox is not answered by /SUPPRESSMSGBOXES and blocks a silent run."
+    ? `Installer did not exit within the timeout (orphans killed: ${result.orphansKilled ? "yes" : "no"}): consistent with issue #8, InitializeSetup's MsgBox is not answered by /SUPPRESSMSGBOXES and blocks a silent run.`
     : targetExecutableLanded
       ? "Installer exited and the game landed in the requested /DIR despite the seeded key."
       : sentinelExecutableLanded
@@ -303,6 +371,7 @@ async function runScenario2(installerPath: string, workDir: string, version: str
     keyPresentAfterRun,
     exitCode: result.exitCode,
     timedOut: result.timedOut,
+    orphansKilled: result.orphansKilled,
     durationMs: result.durationMs,
     targetDir,
     targetExecutableLanded,
@@ -315,46 +384,97 @@ async function runScenario2(installerPath: string, workDir: string, version: str
 }
 
 async function main(): Promise<void> {
-  const version = process.env.RIFT_WINDOWS_VERSION?.trim() || DEFAULT_VERSION
+  const requestedVersion = process.env.RIFT_WINDOWS_VERSION?.trim()
   const workDir = join(process.env.RUNNER_TEMP ?? tmpdir(), "rift-e2e")
   mkdirSync(workDir, { recursive: true })
 
-  console.log(`Resolving the Windows installer for ${version} against the live catalog...`)
+  // Written after every phase below, not just at the end: the first run of
+  // this workflow lost every scrap of evidence about the hang because
+  // nothing was written until a clean exit, and the job's 30-minute ceiling
+  // killed the process first. `phase` records how far the run got even if
+  // the next step is what hangs.
+  const report: { phase: string; version: string | null; fileName: string | null; scenario1: unknown; scenario2: unknown } = {
+    phase: "starting",
+    version: requestedVersion ?? null,
+    fileName: null,
+    scenario1: null,
+    scenario2: null
+  }
+  const persistReport = (): string => writeReport(report, workDir)
+  persistReport()
+
+  const wantsLatest = !requestedVersion || requestedVersion.toLowerCase() === LATEST_VERSION_SENTINEL
+  console.log(`Resolving the Windows installer for ${wantsLatest ? "the latest stable version" : requestedVersion} against the live catalog...`)
+  report.phase = "resolving-catalog"
+  persistReport()
+
   const catalog = await fetchCatalog()
   if (!isRecord(catalog)) throw new Error("Catalog response was not an object")
-  const versionEntry = catalog[version]
-  if (!isRecord(versionEntry)) throw new Error(`Version ${version} was not found in the catalog`)
-  const windowsEntry = asCatalogPlatformEntry(versionEntry.windows)
-  if (!windowsEntry) throw new Error(`No Windows installer entry for version ${version}`)
+
+  let version: string
+  let windowsEntry: CatalogPlatformEntry
+  if (wantsLatest) {
+    const resolved = resolveLatestWindowsVersion(catalog)
+    version = resolved.version
+    windowsEntry = resolved.entry
+    console.log(`Latest stable is ${version}.`)
+  } else {
+    version = requestedVersion as string
+    const versionEntry = catalog[version]
+    if (!isRecord(versionEntry)) throw new Error(`Version ${version} was not found in the catalog`)
+    const entry = asCatalogPlatformEntry(versionEntry.windows)
+    if (!entry) throw new Error(`No Windows installer entry for version ${version}`)
+    windowsEntry = entry
+  }
+  report.version = version
 
   const fileName = assertSafeFileName(windowsEntry.filename)
   const downloadUrl = assertAllowedDownloadUrl(windowsEntry.cdnUrl)
   const installerPath = join(workDir, fileName)
+  report.fileName = fileName
+  report.phase = "downloading"
+  persistReport()
 
   console.log(`Downloading ${fileName} (${windowsEntry.filesize}) from ${downloadUrl.toString()}`)
   const download = await downloadFile(downloadUrl, installerPath, windowsEntry.md5)
   console.log(`Downloaded ${download.bytes} bytes, md5 matches the catalog.`)
 
   console.log("\nScenario 1: clean install into an empty folder.")
+  report.phase = "scenario-1"
+  persistReport()
+
   const scenario1TargetDir = join(workDir, "scenario-1-clean-install")
-  const scenario1Result = await runInstaller(installerPath, scenario1TargetDir)
+  const scenario1Result = await runInstaller(installerPath, scenario1TargetDir, SCENARIO_1_TIMEOUT_MS)
   const scenario1ExecutableLanded = existsSync(join(scenario1TargetDir, "Vintagestory.exe"))
+  const scenario1Failed = scenario1Result.timedOut || !scenario1ExecutableLanded
+
+  const scenario1Verdict = scenario1Result.timedOut
+    ? `installer-timed-out after ${SCENARIO_1_TIMEOUT_MS}ms, orphans killed: ${scenario1Result.orphansKilled ? "yes" : "no"} (issue #55's regression case when a bundled runtime sub-installer hangs).`
+    : scenario1ExecutableLanded
+      ? "Installer exited cleanly and the game landed in the requested folder."
+      : "Installer exited but Vintagestory.exe did not land in the requested folder."
 
   const scenario1Report = {
     scenario: "clean-install",
     version,
     fileName,
     exitCode: scenario1Result.exitCode,
+    timedOut: scenario1Result.timedOut,
+    orphansKilled: scenario1Result.orphansKilled,
     durationMs: scenario1Result.durationMs,
     targetDir: scenario1TargetDir,
     executableLanded: scenario1ExecutableLanded,
-    targetListing: safeListDir(scenario1TargetDir)
+    targetListing: safeListDir(scenario1TargetDir),
+    verdict: scenario1Verdict
   }
   console.log(JSON.stringify(scenario1Report, null, 2))
+  report.scenario1 = scenario1Report
+  report.phase = scenario1Failed ? "scenario-1-failed" : "scenario-2"
+  persistReport()
 
-  if (!scenario1ExecutableLanded) {
-    const reportDir = writeReport({ scenario1: scenario1Report, scenario2: null }, workDir)
-    console.error(`\nFAIL: Vintagestory.exe did not land in ${scenario1TargetDir}. Report at ${reportDir}.`)
+  if (scenario1Failed) {
+    const reportDir = writeReport(report, workDir)
+    console.error(`\nFAIL: ${scenario1Verdict} Report at ${reportDir}.`)
     process.exitCode = 1
     return
   }
@@ -366,8 +486,9 @@ async function main(): Promise<void> {
     scenario2Report = { scenario: "seeded-uninstall-key", error: error instanceof Error ? error.message : String(error) }
   }
   console.log(JSON.stringify(scenario2Report, null, 2))
-
-  const reportDir = writeReport({ scenario1: scenario1Report, scenario2: scenario2Report }, workDir)
+  report.scenario2 = scenario2Report
+  report.phase = "done"
+  const reportDir = persistReport()
   console.log(`\nReport written to ${reportDir}`)
 }
 
