@@ -50,7 +50,7 @@ declare global {
       copyToIcons: (path: string, name: string) => Promise<{ status: true; file: string } | { status: false }>
     }
     gameManager: {
-      executeGame: (version: GameVersionType, installation: InstallationType) => Promise<boolean>
+      executeGame: (version: GameVersionType, installation: InstallationType) => Promise<GameExecutionResult>
       lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }>
     }
     netManager: {

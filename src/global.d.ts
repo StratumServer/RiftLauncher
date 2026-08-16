@@ -218,6 +218,35 @@ declare global {
     alreadyPresent?: boolean
   }
 
+  /**
+   * Why EXECUTE_GAME never started the game. Every value here is a refusal a
+   * player can reach through normal use, not an attack: those are still
+   * thrown (see assertTrustedIpcSender, validateGameVersion,
+   * validateGameInstallation, assertManagedPath in src/ipc), which rejects the
+   * invoke() promise instead of resolving with a reason.
+   *
+   * - `unsupported-platform` / `no-executable`: {@link BuildGameLaunchPlanFailure}.
+   * - `session-write-failed`: the account session could not be written into
+   *   the installation's clientsettings.json (unreadable or unwritable file).
+   * - `launch-failed`: the executable failed its last check before spawning,
+   *   or the spawn itself failed.
+   * - `invalid-request`: the installation's own start environment variables
+   *   could not be parsed. Reachable by typing garbage into an installation's
+   *   settings, not by an attacker on the IPC channel.
+   */
+  type GameExecutionFailureReason = "unsupported-platform" | "no-executable" | "session-write-failed" | "launch-failed" | "invalid-request"
+
+  /**
+   * EXECUTE_GAME's verdict.
+   *
+   * `ok: true` resolves once the game exits, however long the play session
+   * takes and whatever exit code it leaves with: a non-zero exit code is not
+   * read as a launch failure, since Vintage Story exits non-zero often enough
+   * that treating it as one would blame a player for closing their own game.
+   * `ok: false` means the game never ran at all.
+   */
+  type GameExecutionResult = { ok: true; exitCode: number | null } | { ok: false; reason: GameExecutionFailureReason }
+
   declare module "*.png" {
     const value: string
     export default value

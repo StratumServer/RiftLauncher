@@ -13,6 +13,14 @@ import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
 import { CLIENT_SETTINGS_FILE_NAME, writeClientSettingsSession } from "@domain/account/clientSettings"
+import {
+  gameProcessOutcomeToResult,
+  invalidExecutableResult,
+  invalidRequestResult,
+  launchPlanFailureResult,
+  noExecutableResult,
+  sessionWriteFailedResult
+} from "@src/ipc/handlers/gameExecutionOutcome"
 import type {
   GameProcess,
   GameProcessOutcome,
@@ -107,17 +115,15 @@ function realGameProcess(): GameProcess {
 /**
  * Starts a game version with an installation and resolves when the player quits.
  *
- * The wire shape is inherited and left alone: it resolves `true` once the game
- * exits, whatever exit code it exits with, and it REJECTS with the boolean
- * `false` when the game could not be spawned at all. Both are load bearing. The
- * renderer times the play session by how long this call takes and writes the
- * playtime when it resolves, and it tells the two endings apart only by which
- * notification it shows. Everything the launch decides is now named by the
- * domain, so a refusal is logged with the reason it happened rather than with
- * the same sentence for all of them, but the two values on the wire are the
- * ones EXECUTE_GAME has always sent.
+ * Resolves a typed {@link GameExecutionResult}: `ok: true` once the game
+ * exits, whatever exit code it exits with, `ok: false` with a reason when it
+ * never ran. Every refusal below is a flow a player can reach through normal
+ * use, so all of them resolve rather than reject. The checks ahead of them
+ * (trusted sender, request shape, managed paths) stay throws: those guard
+ * against a hostile renderer, not against a player whose game would not
+ * start, and turning them into reasons would blur that line.
  */
-ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: unknown, installation: unknown): Promise<boolean> => {
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: unknown, installation: unknown): Promise<GameExecutionResult> => {
   assertTrustedIpcSender(event)
   const safeVersion = validateGameVersion(version)
   const safeInstallation = validateGameInstallation(installation)
@@ -127,7 +133,14 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   const accountSecrets = account ? await getAccountSecrets() : null
   logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Trying to run Vintage Story ${safeVersion.version}.`)
 
-  const processEnv = parseSafeEnvironment(safeInstallation.envVars)
+  let processEnv: Record<string, string>
+  try {
+    processEnv = parseSafeEnvironment(safeInstallation.envVars)
+  } catch (err) {
+    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused invalid environment variables for this installation.`)
+    logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
+    return invalidRequestResult()
+  }
 
   let fileNames: string[]
   try {
@@ -135,7 +148,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   } catch (err) {
     logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story.`)
     logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story: ${getErrorMessage(err)}`)
-    return false
+    return noExecutableResult()
   }
 
   const planned = await buildGameLaunchPlan(
@@ -152,7 +165,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
 
   if (!planned.ok) {
     logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Couldn't find a way to run Vintage Story on ${os.platform()} (${planned.reason}), aborting...`)
-    return false
+    return launchPlanFailureResult(planned.reason)
   }
 
   const plan = planned.plan
@@ -162,7 +175,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   } catch (err) {
     logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused to run an invalid game executable.`)
     logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
-    return false
+    return invalidExecutableResult()
   }
 
   if (account && accountSecrets) {
@@ -174,7 +187,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     } catch (err) {
       logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
       logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused the client settings path: ${getErrorMessage(err)}`)
-      return false
+      return sessionWriteFailedResult()
     }
 
     const written = await writeClientSettingsSession(
@@ -197,7 +210,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     if (!written.ok) {
       logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
       logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${written.reason}.`)
-      return false
+      return sessionWriteFailedResult()
     }
   }
 
@@ -205,13 +218,10 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
 
   const outcome = await realGameProcess().run({ command: plan.command, args: plan.args, env: { ...process.env, ...processEnv, ...plan.env }, cwd: plan.cwd })
 
-  // Rejecting with a boolean is an anti-pattern the renderer depends on: it is
-  // the only way EXECUTE_GAME distinguishes "never started" from "played and
-  // quit". Typing this channel properly is its own change.
-  if (!outcome.started) return Promise.reject(false)
+  if (!outcome.started) logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Failed to run Vintage Story: ${outcome.error ?? "unknown error"}.`)
+  else logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
 
-  logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
-  return true
+  return gameProcessOutcomeToResult(outcome)
 })
 
 type LookForAGameVersionResult = { exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }

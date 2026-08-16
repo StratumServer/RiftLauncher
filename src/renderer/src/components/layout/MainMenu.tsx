@@ -9,6 +9,7 @@ import { useConfigContext, CONFIG_ACTIONS } from "@renderer/features/config/cont
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
+import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
 
 import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
 import TasksMenu from "@renderer/components/ui/TasksMenu"
@@ -50,6 +51,13 @@ function MainMenu(): JSX.Element {
     const id = uuidv4()
     window.api.utils.setPreventAppClose("add", id, "Started playing Vintage Story.")
 
+    // Only set once _playing has actually been flipped to true below, so the
+    // finally block never clears a flag this call did not set itself (the
+    // early "already playing" guard reads someone else's _playing, and must
+    // not stomp on it if this call unwinds before ever taking it over).
+    let playingInstallationId: string | undefined
+    let playingGameVersion: string | undefined
+
     try {
       if (!selectedInstallation) return addNotification(t("features.installations.noInstallationSelected"), "error")
       if (selectedInstallation._playing) return addNotification(t("features.installations.gameAlreadyRunning"), "error")
@@ -60,6 +68,9 @@ function MainMenu(): JSX.Element {
       if (gameVersionToRun._deleting) return addNotification(t("features.versions.versionDeleting", { version: selectedInstallation.version }), "error")
       if (gameVersionToRun._playing) return addNotification(t("features.versions.versionPlaying", { version: selectedInstallation.version }), "error")
 
+      playingInstallationId = selectedInstallation.id
+      playingGameVersion = gameVersionToRun.version
+
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: selectedInstallation.id, updates: { _playing: true } } })
       configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: gameVersionToRun.version, updates: { _playing: true } } })
 
@@ -69,15 +80,30 @@ function MainMenu(): JSX.Element {
       }
 
       const startedPlaying = Date.now()
-      const closeStatus = await window.api.gameManager.executeGame(gameVersionToRun, selectedInstallation)
-      const finishedPlaying = Date.now()
-      const ttp = finishedPlaying - startedPlaying + selectedInstallation.totalTimePlayed
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: selectedInstallation.id, updates: { _playing: false, lastTimePlayed: finishedPlaying, totalTimePlayed: ttp } } })
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: gameVersionToRun.version, updates: { _playing: false } } })
-      if (!closeStatus) return addNotification(t("notifications.body.gameExitedWithErrors"), "error")
+      const result = await window.api.gameManager.executeGame(gameVersionToRun, selectedInstallation)
+
+      // Playtime is only recorded once the game actually ran: a launch that
+      // never started played for 0 seconds, and crediting it with the sliver
+      // of time between the two Date.now() calls would misreport "just
+      // played" for a session that never happened.
+      if (result.ok) {
+        const finishedPlaying = Date.now()
+        const ttp = finishedPlaying - startedPlaying + selectedInstallation.totalTimePlayed
+        configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: selectedInstallation.id, updates: { lastTimePlayed: finishedPlaying, totalTimePlayed: ttp } } })
+      }
+
+      const outcomeNotification = pickPlayOutcomeNotification(result)
+      if (outcomeNotification) addNotification(t(outcomeNotification.key), "error")
     } catch (err) {
+      window.api.utils.logMessage("error", "[front] [layout] [components/layout/MainMenu.tsx] [MainMenu > PlayHandler] Error executing the game.")
+      window.api.utils.logMessage("debug", `[front] [layout] [components/layout/MainMenu.tsx] [MainMenu > PlayHandler] Error executing the game: ${err}`)
       addNotification(t("notifications.body.errorExecutingGame"), "error")
     } finally {
+      // Runs on every outcome, the two early-return backup and error paths
+      // included, so a failed launch never leaves the installation and game
+      // version stuck at _playing: true until the app restarts (issue #40).
+      if (playingInstallationId) configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: playingInstallationId, updates: { _playing: false } } })
+      if (playingGameVersion) configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: playingGameVersion, updates: { _playing: false } } })
       window.api.utils.setPreventAppClose("remove", id, "Finished playing vintage Story.")
     }
   }
