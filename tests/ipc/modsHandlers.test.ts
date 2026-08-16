@@ -90,11 +90,8 @@ describe("EXPORT_MODPACK", () => {
   })
 
   it("returns success: false when the picked destination cannot be written to (permission denied)", async () => {
-    // The target must already exist for assertManagedPath to admit it here:
-    // EXPORT_MODPACK calls it without { allowMissing: true } (see the PR
-    // description -- this looks like a real defect, since a save dialog's
-    // whole point is usually a filename that does NOT exist yet). Pre-seeding
-    // the file is what isolates "the write itself fails" from that gap.
+    // Pre-seed an existing, read-only file so the failure is isolated to the
+    // write itself rather than anything path-policy related.
     const exportDirectory = join(temporaryRoot, "exports")
     mkdirSync(exportDirectory, { recursive: true })
     const targetFile = join(exportDirectory, "My Modpack.json")
@@ -115,11 +112,12 @@ describe("EXPORT_MODPACK", () => {
     }
   })
 
-  it("defect: a picked destination that does not exist yet is refused as an unmanaged path, so export always fails for a new file name", async () => {
-    // Documents the same gap the test above works around. A real save dialog
-    // almost always returns a path for a file that is not there yet; this
-    // pins that EXPORT_MODPACK's current behavior for that ordinary case is
-    // success: false, not a successful export. See PR description.
+  it("exports to a picked destination that does not exist yet, the normal save-as case", async () => {
+    // A real save dialog almost always returns a path for a file that is not
+    // there yet. This is the guard for the fix in issue #96: the destination
+    // does not need to pre-exist, only to be user-approved (the save dialog
+    // result is registered via registerUserSelectedPaths before the managed
+    // path assertion runs), and the write is what creates the file.
     const exportDirectory = join(temporaryRoot, "exports-new")
     mkdirSync(exportDirectory, { recursive: true })
     const targetFile = join(exportDirectory, "Brand New Modpack.json")
@@ -127,11 +125,12 @@ describe("EXPORT_MODPACK", () => {
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: targetFile })
 
     const event = await createTrustedEvent()
-    const result = await exportModpackHandler()(event, validManifest())
-    assert.deepEqual(result, { success: false })
+    const manifest = validManifest()
+    const result = await exportModpackHandler()(event, manifest)
+    assert.deepEqual(result, { success: true, path: targetFile })
 
-    const { existsSync } = await import("node:fs")
-    assert.equal(existsSync(targetFile), false, "nothing should have been written for a path assertManagedPath refused")
+    const { readFileSync } = await import("node:fs")
+    assert.deepEqual(JSON.parse(readFileSync(targetFile, "utf-8")), manifest)
   })
 })
 
