@@ -196,16 +196,26 @@ describe("makeInstallationBackup pruning", () => {
 })
 
 describe("makeInstallationBackup archiving", () => {
-  it("builds the archive name the launcher has always built", async () => {
+  it("builds the archive name from a cleaned installation name and a UTC date stamp", async () => {
     const { archiver, requests } = fakeArchiver()
 
     const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot(), backupsFolder: "/backups" })
 
-    assert.equal(requests[0]?.fileName, "My-Install-Test_1.755.300.000.000.zip")
+    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-15_23-20-00.zip")
     assert.equal(requests[0]?.outputFolder, "/backups/Installations/My-Install-Test")
     assert.equal(requests[0]?.sourcePath, "/games/my-install")
     assert.equal(requests[0]?.compressionLevel, 5)
-    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_1.755.300.000.000.zip")
+    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.zip")
+  })
+
+  it("falls back to a slice of the installation id when the cleaned name is empty", async () => {
+    const { archiver, requests } = fakeArchiver()
+
+    const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot({ id: "installation-1", name: "***" }), backupsFolder: "/backups" })
+
+    assert.equal(requests[0]?.fileName, "installa_2025-08-15_23-20-00.zip")
+    assert.equal(requests[0]?.outputFolder, "/backups/Installations/installa")
+    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/installa/installa_2025-08-15_23-20-00.zip")
   })
 
   it("stamps the record with the clock time and a generated id", async () => {
@@ -214,7 +224,7 @@ describe("makeInstallationBackup archiving", () => {
     assert.deepEqual(result.ok === true && result.backup, {
       id: "generated-id-1",
       date: FIXED_NOW,
-      path: "/backups/Installations/My-Install-Test/My-Install-Test_1.755.300.000.000.zip"
+      path: "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.zip"
     })
   })
 
@@ -227,7 +237,7 @@ describe("makeInstallationBackup archiving", () => {
       "started",
       "remove:/backups/b1.zip",
       "deleted:b1",
-      "compress:/backups/Installations/My-Install-Test/My-Install-Test_1.755.300.000.000.zip",
+      "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.zip",
       "guard-release",
       "finished"
     ])

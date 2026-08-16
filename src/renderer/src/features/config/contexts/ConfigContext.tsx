@@ -20,20 +20,10 @@ export interface ConfigSettingsType {
   window: WindowType
 }
 
-/**
- * The session-scoped list of installations the player has already been warned
- * about having mod updates.
- *
- * It lives on the config object and is mutated in place, on purpose: it is a
- * de-dupe memo, not rendered state, and routing it through the reducer would
- * make every "you have updates" toast trigger a save and a re-render. Handing
- * out the live array keeps that behaviour byte for byte while stopping the one
- * consumer that needs it from having to hold the whole config.
- */
-export interface ModUpdateNoticesType {
-  /** The live array, created on the config object on first use. */
-  notifiedInstallations: () => string[]
-}
+// Stable identity for the "nobody has been notified yet" case, so a consumer
+// that only reads this slice does not see a new array on every unrelated
+// render (see the "list slices are handed out as-is" note below).
+const EMPTY_NOTIFIED_MOD_UPDATES: string[] = []
 
 const ConfigDispatchContext = createContext<React.Dispatch<ConfigAction> | null>(null)
 const InstallationsContext = createContext<InstallationType[] | null>(null)
@@ -44,7 +34,7 @@ const AccountContext = createContext<{ account: AccountType | null } | null>(nul
 const SettingsContext = createContext<ConfigSettingsType | null>(null)
 const FavModsContext = createContext<number[] | null>(null)
 const CustomIconsContext = createContext<IconType[] | null>(null)
-const ModUpdateNoticesContext = createContext<ModUpdateNoticesType | null>(null)
+const NotifiedModUpdatesContext = createContext<string[] | null>(null)
 
 const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Element => {
   const [config, configDispatch] = useReducer(configReducer, initialState)
@@ -57,10 +47,6 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
   // this effect: only the save result should decide when to notify, never a
   // state update reacting to its own state update.
   const saveHealthRef = useRef(initialConfigSaveHealthState)
-  // Keeps the in-place mod-update bookkeeping pointing at the live config
-  // object rather than at a memoised copy of a slice.
-  const configRef = useRef(config)
-  configRef.current = config
 
   useEffect(() => {
     ;(async (): Promise<void> => {
@@ -135,20 +121,9 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
     [config.schemaVersion, config.lastUsedInstallation, config.defaultInstallationsFolder, config.defaultVersionsFolder, config.backupsFolder, config.window]
   )
 
-  const modUpdateNotices = useMemo<ModUpdateNoticesType>(
-    () => ({
-      notifiedInstallations: (): string[] => {
-        const current = configRef.current
-        if (current._notifiedModUpdatesInstallations === undefined || current._notifiedModUpdatesInstallations.length === 0) current._notifiedModUpdatesInstallations = []
-        return current._notifiedModUpdatesInstallations
-      }
-    }),
-    []
-  )
-
   return (
     <ConfigDispatchContext.Provider value={configDispatch}>
-      <ModUpdateNoticesContext.Provider value={modUpdateNotices}>
+      <NotifiedModUpdatesContext.Provider value={config._notifiedModUpdatesInstallations ?? EMPTY_NOTIFIED_MOD_UPDATES}>
         <SettingsContext.Provider value={settings}>
           <AccountContext.Provider value={account}>
             <InstallationsContext.Provider value={config.installations}>
@@ -160,7 +135,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
             </InstallationsContext.Provider>
           </AccountContext.Provider>
         </SettingsContext.Provider>
-      </ModUpdateNoticesContext.Provider>
+      </NotifiedModUpdatesContext.Provider>
     </ConfigDispatchContext.Provider>
   )
 }
@@ -186,6 +161,7 @@ const useFavMods = (): number[] => requireProvider(useContext(FavModsContext), "
 
 const useCustomIcons = (): IconType[] => requireProvider(useContext(CustomIconsContext), "useCustomIcons")
 
-const useModUpdateNotices = (): ModUpdateNoticesType => requireProvider(useContext(ModUpdateNoticesContext), "useModUpdateNotices")
+/** Ids of installations the player has already been told about mod updates for, this session. */
+const useNotifiedModUpdates = (): string[] => requireProvider(useContext(NotifiedModUpdatesContext), "useNotifiedModUpdates")
 
-export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccount, useSettingsConfig, useFavMods, useCustomIcons, useModUpdateNotices }
+export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccount, useSettingsConfig, useFavMods, useCustomIcons, useNotifiedModUpdates }
