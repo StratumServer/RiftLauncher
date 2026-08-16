@@ -132,6 +132,69 @@ export interface Unpacker {
   runInstaller(request: UnpackRequest, onComplete: (outcome: UnpackOutcome) => void): Promise<void>
 }
 
+/**
+ * Lists what sits directly inside a folder.
+ *
+ * Kept apart from {@link FileSystem} because listing is a main process
+ * capability today: the preload surface the renderer wires {@link FileSystem}
+ * onto has no equivalent, so widening that port would leave the renderer
+ * adapter with a member it cannot honour.
+ */
+export interface DirectoryReader {
+  /**
+   * Entry names directly inside `path`, without their folder. Resolves empty
+   * when `path` is not a readable folder, so a service never has to ask whether
+   * a folder exists before listing it.
+   *
+   * The host is free to drop entries it will not let the domain touch, symlinks
+   * and unsafe names among them: what comes back is what may be opened.
+   */
+  listFileNames(path: string): Promise<string[]>
+}
+
+/** What one mod archive gave up. */
+export interface ModArchiveContent {
+  /** Text of the archive's `modinfo.json`, absent when it carries none. */
+  modinfo?: string
+  /** Bytes of the archive's mod icon, absent when it carries none. */
+  icon?: Uint8Array
+}
+
+/**
+ * Why an archive gave up nothing usable.
+ *
+ * The two size problems are the host's call: how many bytes are too many is a
+ * reading policy, not a domain rule, but the domain still has to name the
+ * outcome to report it.
+ */
+export type ModArchiveProblem = "unreadable-archive" | "modinfo-too-large" | "icon-too-large"
+
+export type ModArchiveResult = { ok: true; content: ModArchiveContent } | { ok: false; problem: ModArchiveProblem }
+
+/**
+ * Pulls the two entries the launcher cares about out of one mod archive.
+ *
+ * The whole read happens inside a single call: the host opens the archive,
+ * takes what it needs and closes it before resolving. That is deliberate. The
+ * archive handle never escapes the adapter, so no caller can hold one open by
+ * forgetting to close it, and a service can count how many archives are being
+ * read at once by counting calls in flight.
+ */
+export interface ModArchiveReader {
+  /** Never rejects: an archive that cannot be read resolves to a problem. */
+  read(archivePath: string): Promise<ModArchiveResult>
+}
+
+/** Keeps mod icons somewhere the UI can load them from, and names them. */
+export interface IconStore {
+  /**
+   * Stores `bytes` and resolves the name the icon can be found under, or
+   * undefined when it could not be stored. A missing icon never costs a mod its
+   * place in the list, so this never rejects.
+   */
+  store(bytes: Uint8Array): Promise<string | undefined>
+}
+
 /** Wall clock, so services never read the ambient time. */
 export interface Clock {
   now(): number
