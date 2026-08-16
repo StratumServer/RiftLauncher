@@ -13,7 +13,7 @@ describe("LookForAVersion", () => {
     const user = userEvent.setup()
     installMockWindowApi({
       utils: { selectFolderDialog: vi.fn(async () => ["/games/1.20.4"]) },
-      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true, installedGameVersion: "1.20.4" })) }
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.20.4" })) }
     })
 
     renderWithProviders(<LookForAVersion />, { route: "/versions/look-for-a-version" })
@@ -28,7 +28,7 @@ describe("LookForAVersion", () => {
     const user = userEvent.setup()
     installMockWindowApi({
       utils: { selectFolderDialog: vi.fn(async () => ["/games/empty"]) },
-      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: false })) }
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: false as const })) }
     })
 
     renderWithProviders(

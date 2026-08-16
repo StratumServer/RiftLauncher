@@ -71,7 +71,7 @@ describe("ManageInstallationBackups", () => {
 
   it("extracts the backup archive over the Installation once the restore is confirmed", async () => {
     const user = userEvent.setup()
-    const extractOnPath = vi.fn(async () => true)
+    const extractOnPath = vi.fn<BridgeAPI["pathsManager"]["extractOnPath"]>(async () => true)
     installMockWindowApi({
       configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallationWithBackup()] })) },
       pathsManager: {

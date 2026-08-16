@@ -24,8 +24,13 @@ function workspacePath(...parts: string[]): string {
   return join(workspace, ...parts)
 }
 
+/** A folder tree of arbitrary depth: a string is a file body, an object is a folder. */
+interface FileTree {
+  [name: string]: string | FileTree
+}
+
 /** Writes a folder tree, where a string is a file body and an object is a folder. */
-function writeTree(root: string, tree: Record<string, string | Record<string, string>>): void {
+function writeTree(root: string, tree: FileTree): void {
   mkdirSync(root, { recursive: true })
   for (const [name, value] of Object.entries(tree)) {
     if (typeof value === "string") writeFileSync(join(root, name), value)

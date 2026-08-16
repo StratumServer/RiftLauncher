@@ -152,7 +152,7 @@ describe("ManageMods", () => {
 
   it("reports a half-failed bulk update as partial, not as a success", async () => {
     const user = userEvent.setup()
-    const deletePath = vi.fn(async () => true)
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
     // Beta's download dies, Alpha's lands. One verdict has to cover both.
     const downloadOnPath = vi.fn(async (_id: string, url: string) => {
       if (url.includes("beta")) throw new Error("The transfer died.")
