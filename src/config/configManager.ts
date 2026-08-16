@@ -5,19 +5,10 @@ import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@src/ipc/accountTypes"
 import { saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord } from "@src/ipc/validation"
+import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from "@domain/config/migrations"
 
-/**
- * VERSIONS LIST
- * 1.0: 0.0.1 -> 0.0.5
- * 1.1: 1.0.0
- * 1.2: 1.1.0 -> 1.2.3
- * 1.3: 1.3.0 -> 1.3.2
- * 1.4: 1.4.0
- * 1.5: 1.4.1 -> 1.4.3
- * 1.6: 1.4.4
- */
 const defaultConfig: ConfigType = {
-  version: 1.6,
+  schemaVersion: CURRENT_CONFIG_SCHEMA,
   lastUsedInstallation: null,
   defaultInstallationsFolder: join(app.getPath("appData"), "VSLInstallations"),
   defaultVersionsFolder: join(app.getPath("appData"), "VSLGameVersions"),
@@ -124,9 +115,11 @@ export async function getConfig(): Promise<ConfigType> {
     if (configCache) return normalizeConfig(configCache)
     const config = await fse.readJSON(configPath, "utf-8")
     const hadLegacyAccountSecrets = await migrateLegacyAccount(config)
-    const ensuredConfig = normalizeConfig(config)
+    const migration = migrateConfigDocument(config)
+    logConfigMigration(migration)
+    const ensuredConfig = normalizeConfig(migration.doc)
     configCache = ensuredConfig
-    if (hadLegacyAccountSecrets) await saveConfig(ensuredConfig)
+    if (hadLegacyAccountSecrets || migration.applied.length > 0) await saveConfig(ensuredConfig)
     return ensuredConfig
   } catch (err) {
     logMessage("error", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at ${configPath}. Using default config.`)
@@ -154,6 +147,37 @@ export async function ensureConfig(): Promise<boolean> {
   }
 }
 
+/** Says what the schema pipeline did with the stored document, and at what level it deserves saying. */
+function logConfigMigration(migration: ReturnType<typeof migrateConfigDocument>): void {
+  const prefix = "[back] [config] [config/configManager.ts] [getConfig]"
+  const steps = migration.applied.map((step) => `${step.fromSchema}->${step.toSchema}`).join(", ")
+
+  switch (migration.outcome) {
+    case "migrated":
+      return logMessage("info", `${prefix} Config migrated from the ${migration.detected.era} era to schema ${migration.schema} (${steps}).`)
+    case "future-schema":
+      return logMessage("warn", `${prefix} Config carries schema ${migration.schema}, newer than the ${CURRENT_CONFIG_SCHEMA} this build knows. Reading it as is, not downgrading it.`)
+    case "chain-broken":
+      return logMessage("warn", `${prefix} No migration continues the chain past schema ${migration.schema}. Reading the config as it stands.`)
+    case "migration-failed":
+      return logMessage("error", `${prefix} A config migration failed at schema ${migration.schema}. Reading the config as it stands.`)
+    case "unreadable":
+      return logMessage("warn", `${prefix} Config is not an object. Falling back to defaults.`)
+    default:
+      return
+  }
+}
+
+/**
+ * Moves the credentials of a pre-secure-storage account into the OS keychain.
+ *
+ * Kept out of the schema pipeline on purpose. Every step in
+ * {@link migrateConfigDocument} is a pure document transform; this one writes
+ * to secure storage and can fail on its own terms, which is a side effect the
+ * domain layer is not allowed to have. It runs before the pipeline and stays
+ * shaped exactly as it always was: the account fields it leaves behind are
+ * stripped later by `toPublicAccount`, whatever schema the document is at.
+ */
 async function migrateLegacyAccount(config: unknown): Promise<boolean> {
   if (!isRecord(config) || !isRecord(config.account)) return false
   const account = config.account
@@ -265,7 +289,7 @@ export function normalizeConfig(config: unknown): ConfigType {
     .slice(0, 1_000)
 
   const fixedConfig: ConfigType = {
-    version: asNumber(rawConfig.version, defaultConfig.version, defaultConfig.version, 99),
+    schemaVersion: clampConfigSchema(rawConfig.schemaVersion),
     lastUsedInstallation: rawConfig.lastUsedInstallation === null ? null : asString(rawConfig.lastUsedInstallation, defaultConfig.lastUsedInstallation ?? "", 128) || null,
     defaultInstallationsFolder: asString(rawConfig.defaultInstallationsFolder, defaultConfig.defaultInstallationsFolder),
     defaultVersionsFolder: asString(rawConfig.defaultVersionsFolder, defaultConfig.defaultVersionsFolder),

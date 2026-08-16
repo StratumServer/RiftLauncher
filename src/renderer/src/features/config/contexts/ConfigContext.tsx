@@ -5,7 +5,7 @@ import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstall
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
 
-  SET_VERSION = "SET_VERSION",
+  SET_SCHEMA_VERSION = "SET_SCHEMA_VERSION",
   SET_LAST_USED_INSTALLATION = "SET_LAST_USED_INSTALLATION",
   SET_DEFAULT_INSTALLATIONS_FOLDER = "SET_DEFAULT_INSTALLATIONS_FOLDER",
   SET_DEFAULT_VERSIONS_FOLDER = "SET_DEFAULT_VERSIONS_FOLDER",
@@ -35,8 +35,8 @@ export interface SetConfig {
   payload: ConfigType
 }
 
-export interface SetVersion {
-  type: CONFIG_ACTIONS.SET_VERSION
+export interface SetSchemaVersion {
+  type: CONFIG_ACTIONS.SET_SCHEMA_VERSION
   payload: number
 }
 
@@ -154,7 +154,7 @@ export interface RemoveFavMod {
 
 export type ConfigAction =
   | SetConfig
-  | SetVersion
+  | SetSchemaVersion
   | SetLastUsedInstallation
   | SetDefaultInstllationsFolder
   | SetDefaultVersionsFolder
@@ -178,8 +178,8 @@ const configReducer = (config: ConfigType, action: ConfigAction): ConfigType => 
   switch (action.type) {
     case CONFIG_ACTIONS.SET_CONFIG:
       return action.payload
-    case CONFIG_ACTIONS.SET_VERSION:
-      return { ...config, version: action.payload }
+    case CONFIG_ACTIONS.SET_SCHEMA_VERSION:
+      return { ...config, schemaVersion: action.payload }
     case CONFIG_ACTIONS.SET_LAST_USED_INSTALLATION:
       return { ...config, lastUsedInstallation: action.payload }
     case CONFIG_ACTIONS.SET_DEFAULT_INSTALLATIONS_FOLDER:
@@ -268,7 +268,8 @@ const configReducer = (config: ConfigType, action: ConfigAction): ConfigType => 
 }
 
 export const initialState: ConfigType = {
-  version: 0,
+  // Sentinel until the main process answers with the stored config: no real schema is 0.
+  schemaVersion: 0,
   lastUsedInstallation: null,
   defaultInstallationsFolder: "",
   defaultVersionsFolder: "",
@@ -309,7 +310,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
   }, [])
 
   useEffect(() => {
-    if (!isConfigLoaded && config.version !== 0) setIsConfigLoaded(true)
+    if (!isConfigLoaded && config.schemaVersion !== 0) setIsConfigLoaded(true)
     if (!isConfigLoaded) return
     window.api.configManager.saveConfig(config)
   }, [config])
