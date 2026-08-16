@@ -42,3 +42,36 @@ export function expectedGameExecutables(os: GameOs): readonly string[] {
       return []
   }
 }
+
+/**
+ * How a found executable has to be started.
+ *
+ * `direct` means the file itself is run. `mono` means the file is a .NET
+ * binary that Linux has no loader for, so `mono` has to be put in front of it.
+ */
+export type GameExecutableLaunchMode = "direct" | "mono"
+
+/** One name from {@link expectedGameExecutables}, paired with how it is launched once found. */
+export interface GameExecutableCandidate {
+  fileName: string
+  launchMode: GameExecutableLaunchMode
+}
+
+/**
+ * {@link expectedGameExecutables}, paired with how each entry is launched.
+ *
+ * Windows' `Vintagestory.exe` and Linux's native `Vintagestory` both run
+ * directly. The one exception is `Vintagestory.exe` on Linux: it is the same
+ * .NET build Windows ships, kept as a fallback for the older versions that
+ * never got a native Linux launcher, and Linux can only run it through `mono`.
+ * This is strictly additional information: the file names and their order
+ * are still exactly what {@link expectedGameExecutables} returns, so a
+ * caller that already verifies against that list keeps seeing the same
+ * candidates.
+ */
+export function gameExecutableCandidates(os: GameOs): readonly GameExecutableCandidate[] {
+  return expectedGameExecutables(os).map((fileName) => ({
+    fileName,
+    launchMode: os === "linux" && fileName.endsWith(".exe") ? "mono" : "direct"
+  }))
+}
