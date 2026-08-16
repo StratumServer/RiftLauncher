@@ -7,7 +7,10 @@
 
 # Welcome to RiftLauncher
 
+[![CI](https://github.com/StratumServer/RiftLauncher/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/StratumServer/RiftLauncher/actions/workflows/ci.yml)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=StratumServer_RiftLauncher&metric=coverage)](https://sonarcloud.io/summary/overall?id=StratumServer_RiftLauncher)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=StratumServer_RiftLauncher&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=StratumServer_RiftLauncher)
+[![Support on OpenCollective](https://img.shields.io/badge/Support-OpenCollective-7FADF2?logo=opencollective&logoColor=white)](https://opencollective.com/stratum)
 
 ## What's RiftLauncher?
 
@@ -51,3 +54,7 @@ You can report any bug on the [RiftLauncher GitHub Issues](https://github.com/St
 ## Can I make a suggestion?
 
 Yes, you can do so on our [Discord server](https://discord.gg/vQm6z2urZs).
+
+## Can I support the project?
+
+Financial support goes through the Stratum team's [OpenCollective](https://opencollective.com/stratum), which gives the project a transparent way to handle donations and project costs. Testing, translating and reporting bugs help just as much.

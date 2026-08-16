@@ -43,8 +43,11 @@ jobs:
       - run: npm ci
       - run: npm run test:coverage
 
+  # Informational quality scan: never blocks a merge, so a SonarCloud outage
+  # or configuration change can't turn the whole run red.
   sonarcloud:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
