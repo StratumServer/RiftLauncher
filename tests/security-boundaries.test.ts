@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { describe, it } from "vitest"
@@ -78,5 +79,27 @@ describe("process and navigation boundaries", () => {
     assert.equal(isAllowedRendererUrl("app://evil/index.html", undefined, packagedPath), false)
     assert.equal(isAllowedRendererUrl("http://localhost:5173/#/home", "http://localhost:5173", "/tmp/out/renderer/index.html"), true)
     assert.equal(isAllowedRendererUrl("http://localhost:5173.evil/#/home", "http://localhost:5173", "/tmp/out/renderer/index.html"), false)
+  })
+})
+
+/**
+ * src/main/index.ts cannot be imported here: it is the Electron main process
+ * bootstrap and runs app.whenReady() on load. The property worth guarding does
+ * not need it running, so this reads the source, the same approach
+ * tests/ipc/accountLoginFlow.test.ts takes with the login handler.
+ *
+ * The property: both session calls survive. setSpellCheckerLanguages([]) is the
+ * one that keeps a fresh profile from downloading a multi-megabyte hunspell
+ * dictionary from a third-party CDN (#129, #132), and setSpellCheckerEnabled(false)
+ * sitting next to it makes the pair look redundant. Both assertions match on the
+ * session.defaultSession. prefix so that a comment naming either method cannot
+ * satisfy them.
+ */
+const MAIN_SOURCE = readFileSync(resolve(__dirname, "../src/main/index.ts"), "utf8")
+
+describe("startup network boundaries", () => {
+  it("keeps both session calls that stop the spellcheck dictionary download", () => {
+    assert.equal(MAIN_SOURCE.includes("session.defaultSession.setSpellCheckerLanguages([])"), true, "src/main/index.ts stopped clearing the spellchecker language list")
+    assert.equal(MAIN_SOURCE.includes("session.defaultSession.setSpellCheckerEnabled(false)"), true, "src/main/index.ts stopped disabling the session spellchecker")
   })
 })

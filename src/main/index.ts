@@ -80,8 +80,9 @@ function createWindow(): void {
       // suggestions were never reachable. What it did cost was real: a fresh profile
       // downloads a multi-megabyte hunspell dictionary from a third-party CDN into
       // userData/Dictionaries at startup and keeps the spellcheck service alive for it.
-      // This flag alone does not reliably stop that download; see the session-level
-      // setSpellCheckerEnabled(false) call in the whenReady handler below.
+      // This flag alone does not stop that download. The call that stops it is
+      // setSpellCheckerLanguages([]) in the whenReady handler below, which empties the
+      // session's language list so there is no dictionary left to fetch.
       spellcheck: false,
       preload: join(__dirname, "../preload/index.js")
     }
@@ -185,11 +186,16 @@ app.whenReady().then(async () => {
 
   session.defaultSession.setPermissionCheckHandler(() => false)
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
-  // webPreferences.spellcheck: false alone does not reliably stop Electron from fetching a
+  // webPreferences.spellcheck: false alone does not stop Electron from fetching a
   // hunspell dictionary at startup (electron/electron#22995, electron/electron#24931).
-  // setSpellCheckerEnabled(false) is the documented session-level toggle; clearing the
-  // language list too covers the case where the dictionary fetch is driven by the OS
-  // locale rather than by whether the checker itself is enabled.
+  // setSpellCheckerLanguages([]) is the call that stops it: the fetch follows the session's
+  // language list, so an empty list leaves nothing to download. That is the whole fix, not
+  // an edge case on top of the toggle below it. A fresh profile with spellcheck: false and
+  // setSpellCheckerEnabled(false) set, language list untouched, downloaded the dictionary
+  // anyway, reproduced twice (#132). setSpellCheckerEnabled(false) stays as the documented
+  // session-level toggle, but it is the redundant half of the pair. Tidying away the
+  // language list line brings the download back, and tests/security-boundaries.test.ts
+  // now fails if either call goes missing.
   session.defaultSession.setSpellCheckerEnabled(false)
   session.defaultSession.setSpellCheckerLanguages([])
 
