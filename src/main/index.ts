@@ -75,6 +75,14 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The launcher has no prose input (installation names, start params and env vars
+      // are the only text fields) and no context menu anywhere in the app, so spelling
+      // suggestions were never reachable. What it did cost was real: a fresh profile
+      // downloads a multi-megabyte hunspell dictionary from a third-party CDN into
+      // userData/Dictionaries at startup and keeps the spellcheck service alive for it.
+      // This flag alone does not reliably stop that download; see the session-level
+      // setSpellCheckerEnabled(false) call in the whenReady handler below.
+      spellcheck: false,
       preload: join(__dirname, "../preload/index.js")
     }
   })
@@ -177,6 +185,13 @@ app.whenReady().then(async () => {
 
   session.defaultSession.setPermissionCheckHandler(() => false)
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+  // webPreferences.spellcheck: false alone does not reliably stop Electron from fetching a
+  // hunspell dictionary at startup (electron/electron#22995, electron/electron#24931).
+  // setSpellCheckerEnabled(false) is the documented session-level toggle; clearing the
+  // language list too covers the case where the dictionary fetch is driven by the OS
+  // locale rather than by whether the checker itself is enabled.
+  session.defaultSession.setSpellCheckerEnabled(false)
+  session.defaultSession.setSpellCheckerLanguages([])
 
   if (!is.dev) {
     protocol.handle("app", async (request) => {

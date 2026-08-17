@@ -17,6 +17,18 @@
     scrollbar-width: none !important;
     scrollbar-color: transparent transparent !important;
   }
+
+  /*
+   * Skips layout/paint for elements scrolled out of view, the same win a windowing library gives
+   * without unmounting anything (AnimatePresence/useInView in Grid.tsx and Table.tsx need every
+   * item mounted to animate it in and out). No contain-intrinsic-size: the elements this is meant
+   * for size themselves with aspect-ratio, and the UI scale in this file (html[data-uiscale]) runs
+   * from 8px to 24px root font-size, so any single guessed pixel value would be wrong somewhere in
+   * that range.
+   */
+  .skip-offscreen-render {
+    content-visibility: auto;
+  }
 }
 
 /* Custom scale options */
