@@ -1,7 +1,6 @@
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
 
-  SET_SCHEMA_VERSION = "SET_SCHEMA_VERSION",
   SET_LAST_USED_INSTALLATION = "SET_LAST_USED_INSTALLATION",
   SET_DEFAULT_INSTALLATIONS_FOLDER = "SET_DEFAULT_INSTALLATIONS_FOLDER",
   SET_DEFAULT_VERSIONS_FOLDER = "SET_DEFAULT_VERSIONS_FOLDER",
@@ -31,11 +30,6 @@ export enum CONFIG_ACTIONS {
 export interface SetConfig {
   type: CONFIG_ACTIONS.SET_CONFIG
   payload: ConfigType
-}
-
-export interface SetSchemaVersion {
-  type: CONFIG_ACTIONS.SET_SCHEMA_VERSION
-  payload: number
 }
 
 export interface SetLastUsedInstallation {
@@ -167,7 +161,6 @@ export interface AddNotifiedModUpdate {
 
 export type ConfigAction =
   | SetConfig
-  | SetSchemaVersion
   | SetLastUsedInstallation
   | SetDefaultInstllationsFolder
   | SetDefaultVersionsFolder
@@ -198,8 +191,6 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
   switch (action.type) {
     case CONFIG_ACTIONS.SET_CONFIG:
       return action.payload
-    case CONFIG_ACTIONS.SET_SCHEMA_VERSION:
-      return { ...config, schemaVersion: action.payload }
     case CONFIG_ACTIONS.SET_LAST_USED_INSTALLATION:
       return { ...config, lastUsedInstallation: action.payload }
     case CONFIG_ACTIONS.SET_DEFAULT_INSTALLATIONS_FOLDER:
@@ -294,6 +285,7 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
 
 export const initialState: ConfigType = {
   // Sentinel until the main process answers with the stored config: no real schema is 0.
+  // The migration runner owns this marker; the renderer receives it through SET_CONFIG.
   schemaVersion: 0,
   lastUsedInstallation: null,
   defaultInstallationsFolder: "",
