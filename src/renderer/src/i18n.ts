@@ -22,7 +22,7 @@ const languageDefinitions: Record<string, LanguageDefinition> = {
   "fr-FR": { name: "Français", credits: "by LorIlcs", loader: () => import("@renderer/locales/fr-FR.json") },
   "de-DE": { name: "Deutsch", credits: "by Brady_The", loader: () => import("@renderer/locales/de-DE.json") },
   "pt-PT": { name: "Português", credits: "by Bruno Cabrita", loader: () => import("@renderer/locales/pt-PT.json") },
-  "pt-BR": { name: "Português (Brasil)", credits: "by Paulo Nascimento", loader: () => import("@renderer/locales/pt-BR.json") },
+  "pt-BR": { name: "Português (Brasil)", credits: "by Paulo Nascimento, Zaldaryon", loader: () => import("@renderer/locales/pt-BR.json") },
   "nl-NL": { name: "Dutch (Netherlands)", credits: "by Dennisjeee", loader: () => import("@renderer/locales/nl-NL.json") },
   "pl-PL": { name: "Polski", credits: "by Runo Hawk, Zsuatem", loader: () => import("@renderer/locales/pl-PL.json") },
   "it-IT": { name: "Italiano", credits: "by Pingoda", loader: () => import("@renderer/locales/it-IT.json") },
@@ -54,7 +54,7 @@ export async function loadLanguage(language: string): Promise<boolean> {
   if (!definition?.loader) return false
 
   const existingPromise = loadedLanguagePromises.get(language)
-  if (existingPromise) return existingPromise
+  if (existingPromise !== undefined) return existingPromise
 
   const loadingPromise = definition
     .loader()

@@ -68,7 +68,8 @@ async function writeConfig(normalizedConfig: ConfigType): Promise<void> {
 }
 
 function scheduleConfigWrite(): Promise<void> {
-  if (scheduledConfigWrite) return scheduledConfigWrite
+  // Compared against null rather than tested for truthiness: the question is whether a write is already scheduled, not whether a promise is truthy (it always is).
+  if (scheduledConfigWrite !== null) return scheduledConfigWrite
 
   const write = configWriteQueue.then(async () => {
     // Config state can change several times during one renderer interaction. Coalesce those transitions into one atomic write.

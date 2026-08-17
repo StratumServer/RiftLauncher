@@ -4,14 +4,16 @@ import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import { autoUpdater } from "electron-updater"
 import Logger from "electron-log"
 import { pathToFileURL } from "url"
+import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMigration"
 
-const customUserDataPath = join(app.getPath("appData"), "VSLauncher")
-app.setPath("userData", customUserDataPath)
+const userDataSetup = setUpUserDataFolder(app.getPath("appData"))
+app.setPath("userData", userDataSetup.path)
 
 import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { logMessage } from "@src/utils/logManager"
+import { createUpdaterLogger } from "@src/utils/updaterLogger"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
@@ -23,14 +25,21 @@ import fse from "fs-extra"
 import "@src/ipc"
 import { clearTimeout, setTimeout } from "timers"
 
-autoUpdater.logger = Logger
-autoUpdater.logger.info("Logger configured for auto-updater")
-
 Logger.transports.file.resolvePathFn = (variables, message): string => {
   const logsPath = join(variables.userData, "Logs")
   if (!message) return join(logsPath, "default.log")
   return join(logsPath, `${message.level}.log`)
 }
+
+logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
+
+// electron-updater's own constructor already attaches an "error" listener that logs
+// error.stack || error.message through whatever logger it is given, so a hand-written
+// listener here would be redundant. What it was given until now was the raw electron-log
+// instance, the one component writing to disk without passing through logMessage, so the
+// updater's cache paths and feed URLs escaped the redaction every other line gets.
+// Placed after resolvePathFn so nothing is logged before the app's Logs directory exists.
+autoUpdater.logger = createUpdaterLogger()
 
 let mainWindow: BrowserWindow
 const packagedRendererPath = join(__dirname, "../renderer/index.html")
@@ -67,6 +76,14 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The launcher has no prose input (installation names, start params and env vars
+      // are the only text fields) and no context menu anywhere in the app, so spelling
+      // suggestions were never reachable. What it did cost was real: a fresh profile
+      // downloads a multi-megabyte hunspell dictionary from a third-party CDN into
+      // userData/Dictionaries at startup and keeps the spellcheck service alive for it.
+      // This flag alone does not reliably stop that download; see the session-level
+      // setSpellCheckerEnabled(false) call in the whenReady handler below.
+      spellcheck: false,
       preload: join(__dirname, "../preload/index.js")
     }
   })
@@ -184,6 +201,13 @@ app.whenReady().then(async () => {
 
   session.defaultSession.setPermissionCheckHandler(() => false)
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+  // webPreferences.spellcheck: false alone does not reliably stop Electron from fetching a
+  // hunspell dictionary at startup (electron/electron#22995, electron/electron#24931).
+  // setSpellCheckerEnabled(false) is the documented session-level toggle; clearing the
+  // language list too covers the case where the dictionary fetch is driven by the OS
+  // locale rather than by whether the checker itself is enabled.
+  session.defaultSession.setSpellCheckerEnabled(false)
+  session.defaultSession.setSpellCheckerLanguages([])
 
   if (!is.dev) {
     protocol.handle("app", async (request) => {
@@ -290,7 +314,7 @@ app.on("before-quit", (event) => {
 
   if (isWaitingForConfigFlush) return
   const pendingConfigWrite = flushConfigWrites()
-  if (!pendingConfigWrite) return
+  if (pendingConfigWrite === null) return
 
   event.preventDefault()
   isWaitingForConfigFlush = true

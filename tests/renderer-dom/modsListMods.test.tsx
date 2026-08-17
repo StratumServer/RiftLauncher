@@ -82,6 +82,10 @@ describe("ListMods", () => {
     const modCard = await screen.findByText("Better Ruins", {}, { timeout: 3000 })
     expect(modCard).toBeTruthy()
     expect(screen.getByText("Someone")).toBeTruthy()
+
+    // The ModDB grid can grow into the hundreds on scroll, so its logo image must stay
+    // off the initial paint until it nears the viewport.
+    expect(screen.getByAltText("Better Ruins").getAttribute("loading")).toBe("lazy")
   })
 
   it("shows the no-matching-filters state when the ModDB query comes back empty", async () => {

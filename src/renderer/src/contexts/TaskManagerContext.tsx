@@ -71,12 +71,32 @@ export interface RemoveTaskAction {
 
 export type TaskAction = AddTaskAction | UpdateTaskAction | RemoveTaskAction
 
+/** True when every field the update carries already holds that value on the task. */
+function changesNothing(task: TaskType, updates: Partial<Omit<TaskType, "id">>): boolean {
+  return (Object.keys(updates) as (keyof typeof updates)[]).every((field) => task[field] === updates[field])
+}
+
+/**
+ * UPDATE_TASK is deliberately idempotent: an update that would not change a
+ * single field returns the very same state array, so `useReducer` bails out
+ * instead of re-rendering every task consumer.
+ *
+ * A completed task now gets its completion dispatched twice on a normal run,
+ * once by the progress listener seeing 100 and once by the flow's own success
+ * path (both land on the same `{ progress: 100, status: "completed" }`), and
+ * whichever arrives second has to be a no-op rather than a second render with
+ * identical content.
+ */
 export function taskReducer(state: TaskType[], action: TaskAction): TaskType[] {
   switch (action.type) {
     case ACTIONS.ADD_TASK:
       return [action.payload, ...state]
-    case ACTIONS.UPDATE_TASK:
-      return state.map((task) => (task.id === action.payload.id ? { ...task, ...action.payload.updates } : task))
+    case ACTIONS.UPDATE_TASK: {
+      const { id, updates } = action.payload
+      const target = state.find((task) => task.id === id)
+      if (!target || changesNothing(target, updates)) return state
+      return state.map((task) => (task.id === id ? { ...task, ...updates } : task))
+    }
     case ACTIONS.REMOVE_TASK:
       return state.filter((task) => task.id !== action.payload.id)
     default:
@@ -85,6 +105,13 @@ export function taskReducer(state: TaskType[], action: TaskAction): TaskType[] {
 }
 
 export const initialState: TaskType[] = []
+
+/**
+ * The one terminal state a successful task ends on, whichever route gets there
+ * first. Kept at module scope so the progress-listener effect below can use it
+ * without taking a dependency that would re-subscribe the listeners on render.
+ */
+const COMPLETED: Partial<Omit<TaskType, "id">> = { progress: 100, status: "completed" }
 
 export interface TaskContextType {
   tasks: TaskType[]
@@ -139,19 +166,19 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   useEffect((): (() => void) => {
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for download progress.`)
     const removeDownloadProgressListener = window.api.pathsManager.onDownloadProgress(({ id, progress }) => {
-      if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "completed" } } })
+      if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
 
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for extract progress.`)
     const removeExtractProgressListener = window.api.pathsManager.onExtractProgress(({ id, progress }) => {
-      if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "completed" } } })
+      if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
 
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for compress progress.`)
     const removeCompressProgressListener = window.api.pathsManager.onCompressProgress(({ id, progress }) => {
-      if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "completed" } } })
+      if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
 
@@ -183,6 +210,11 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       const downloadedFile = await window.api.pathsManager.downloadOnPath(id, url, outputPath, fileName)
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Downloaded.`)
+      // The download resolving is what completes the task, not the progress
+      // events: a source whose last tick lands at 97 would otherwise leave the
+      // task showing as still running forever. See the reducer above for why
+      // dispatching this after a 100 tick already did costs nothing.
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
       if (showsSuccess(notifications)) addNotification(t("notifications.body.downloaded", { downloadName: name }), "success")
       onFinish(true, downloadedFile, null)
     } catch (err) {
@@ -225,6 +257,9 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       await window.api.pathsManager.changePerms([outputPath], 0o755)
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Extracted.`)
+      // Completed once the extraction and the chmod are both through, so a
+      // last progress tick under 100 cannot strand the task as running.
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
       if (showsSuccess(notifications)) addNotification(t("notifications.body.extracted", { extractName: name }), "success")
       onFinish(true, null)
     } catch (err) {
@@ -265,6 +300,10 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       if (!result.ok) throw new Error(`Installation failed: ${result.reason}`)
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Installed.`)
+      // The worst of the four for this: an installer that ran to the end sends
+      // a 100 tick, but one whose payload was read out instead reports whatever
+      // the reader last counted, and neither is what says the task is done.
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
       if (showsSuccess(notifications)) addNotification(t("notifications.body.extracted", { extractName: name }), "success")
       onFinish(true, null)
     } catch (err) {
@@ -302,6 +341,8 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       if (!result) throw new Error("Compression failed")
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Compressed.`)
+      // Same as the other three: the resolved call is the completion signal.
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
       if (showsSuccess(notifications)) addNotification(t("notifications.body.compressed", { compressName: name }), "success")
       onFinish(true, null)
     } catch (err) {
