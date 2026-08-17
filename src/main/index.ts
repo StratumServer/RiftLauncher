@@ -4,9 +4,10 @@ import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import { autoUpdater } from "electron-updater"
 import Logger from "electron-log"
 import { pathToFileURL } from "url"
+import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMigration"
 
-const customUserDataPath = join(app.getPath("appData"), "VSLauncher")
-app.setPath("userData", customUserDataPath)
+const userDataSetup = setUpUserDataFolder(app.getPath("appData"))
+app.setPath("userData", userDataSetup.path)
 
 import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
@@ -30,6 +31,8 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
   if (!message) return join(logsPath, "default.log")
   return join(logsPath, `${message.level}.log`)
 }
+
+logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
 
 let mainWindow: BrowserWindow
 const packagedRendererPath = join(__dirname, "../renderer/index.html")
