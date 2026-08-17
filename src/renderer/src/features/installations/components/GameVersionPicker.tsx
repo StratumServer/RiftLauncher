@@ -10,8 +10,11 @@ export interface GameVersionPickerProps {
   gameVersions: GameVersionType[]
   version: GameVersionType | undefined
   onSelect: (version: GameVersionType) => void
-  /** An Installation's VS Version that is no longer installed, if any. Warns instead of
-   *  letting the empty selection look like a glitch (#118). Unused by AddInstallation. */
+  /** The Installation's own VS Version when it is not installed: the version string to name,
+   *  or "" for an Installation that has no version at all (configManager.ts normalizes a
+   *  missing or invalid version to "" and keeps the Installation). `undefined` means nothing
+   *  to warn about, which is why this is checked with `!== undefined` and not for truthiness
+   *  (#118). Unused by AddInstallation. */
   missingVersion?: string
 }
 
@@ -26,10 +29,10 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
       </FormHead>
 
       <FormBody>
-        {missingVersion && (
+        {missingVersion !== undefined && (
           <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
             <PiWarningDuotone className="text-lg shrink-0" />
-            <span>{t("features.versions.versionNotInstalledPickAnother", { version: missingVersion })}</span>
+            <span>{missingVersion === "" ? t("features.versions.noVersionSetPickOne") : t("features.versions.versionNotInstalledPickAnother", { version: missingVersion })}</span>
           </div>
         )}
 

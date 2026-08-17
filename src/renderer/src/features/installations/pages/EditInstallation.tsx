@@ -78,8 +78,11 @@ function EditInslallation(): JSX.Element {
 
   // The Installation's own version when the launcher no longer has it installed. Read
   // from the Installation, not from the picker: it stays true (and worth showing) after
-  // the player has picked a replacement, until the edit is actually saved.
-  const missingGameVersion = installation && !gameVersions.some((gv) => gv.version === installation.version) ? installation.version : undefined
+  // the player has picked a replacement, until the edit is actually saved. "" is a real
+  // value here, not a bug: configManager normalizes a missing or invalid version to the
+  // empty string and keeps the Installation, and gameVersions can never hold an entry with
+  // an empty version, so the empty case always falls through to the warning too (#118).
+  const missingGameVersion: string | undefined = installation && !gameVersions.some((gv) => gv.version === installation.version) ? installation.version : undefined
 
   const handleEditInstallation = async (): Promise<void> => {
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
@@ -87,7 +90,6 @@ function EditInslallation(): JSX.Element {
     if (installation._playing) return addNotification(t("features.installations.editWhilePlaying"), "error")
     if (installation._restoringBackup) return addNotification(t("features.backups.restoreInProgress"), "error")
 
-    if (!fields.version) return addNotification(t("features.versions.versionNotInstalled", { version: installation.version }), "error")
     if (!id || !fields.name || !fields.backupsLimit || fields.backupsAuto === undefined) return addNotification(t("notifications.body.missingFields"), "error")
 
     const result = validateInstallationFields({ name: fields.name, startParams: fields.startParams })
@@ -97,24 +99,27 @@ function EditInslallation(): JSX.Element {
     }
 
     try {
-      configDispatch({
-        type: CONFIG_ACTIONS.EDIT_INSTALLATION,
-        payload: {
-          id,
-          updates: {
-            name: fields.name,
-            icon: fields.icon.id,
-            version: fields.version.version,
-            startParams: fields.startParams,
-            backupsAuto: fields.backupsAuto,
-            backupsLimit: fields.backupsLimit,
-            compressionLevel: fields.compressionLevel,
-            mesaGlThread: fields.mesaGlThread,
-            envVars: fields.envVars
-          }
-        }
-      })
+      // version is only sent when the picker has a selection. EDIT_INSTALLATION takes Partial
+      // updates (configReducer.ts), so leaving the key out keeps whatever the Installation already
+      // points at, orphaned or unset, instead of reassigning it, while every other field on the
+      // form still saves the way it did before this fix (#118).
+      const updates: Partial<Omit<InstallationType, "id">> = {
+        name: fields.name,
+        icon: fields.icon.id,
+        startParams: fields.startParams,
+        backupsAuto: fields.backupsAuto,
+        backupsLimit: fields.backupsLimit,
+        compressionLevel: fields.compressionLevel,
+        mesaGlThread: fields.mesaGlThread,
+        envVars: fields.envVars
+      }
+      if (fields.version) updates.version = fields.version.version
+
+      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id, updates } })
       addNotification(t("features.installations.installationSuccessfullyEdited"), "success")
+      // The banner is gone once the page unmounts, so the toast is the only thing left telling
+      // the player the version is still unresolved after an otherwise successful save.
+      if (!fields.version) addNotification(t("features.versions.versionLeftUnchanged"), "warning")
       navigate("/installations")
     } catch (error) {
       addNotification(t("features.installations.errorEditingInstallation"), "error")
