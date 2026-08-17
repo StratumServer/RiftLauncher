@@ -1,0 +1,75 @@
+name: Packaged Windows install conformance
+
+# Manual only, and a different layer from windows-conformance.yml rather than a
+# second copy of it. That workflow drives tests/e2e/windows-install.ts, which
+# imports the extractor out of `src/` and runs it under tsx: it proves the
+# install logic, on a real Windows machine, from source. Nothing about the
+# packaged app is exercised there, and the packaged app is where worker
+# modules resolve through electron-vite's build output instead of `src/`,
+# where app.asar and asarUnpack decide whether a path inside the bundle is
+# reachable, and where the electron-builder.yml fuses actually apply.
+#
+# Issue #119 (a beta.1 tester reporting that every game version install "fails
+# to unpack") is a report about that layer. This job builds the app with
+# electron-builder, launches the real .exe with a DevTools port open, and calls
+# the launcher's own preload API from inside its own renderer, so the download
+# and the unpack travel the same contextBridge, ipcMain handlers, path policy
+# and worker spawn a player's click travels. See the header of
+# tests/e2e/packaged-windows-install.ts for the four preload calls it makes and
+# why each one is the one AddVersion.tsx makes.
+#
+# Manual only for the same reason windows-conformance.yml is: the run downloads
+# and unpacks most of a gigabyte and leaves a launcher process running until
+# the script's finally block kills its process tree. Not wired into ci.yml and
+# not a required check.
+on:
+  workflow_dispatch:
+
+jobs:
+  packaged-windows-install-conformance:
+    runs-on: windows-latest
+    # Generous but bounded. The build is the slow half (npm ci, electron-vite,
+    # then electron-builder --dir), and the script bounds its own download and
+    # unpack at ten minutes each so it always has room to write its report and
+    # let the upload step below run inside this ceiling. Issue #55's first
+    # windows-conformance run is the cautionary tale: it rode the job timeout
+    # to death and left no evidence at all.
+    timeout-minutes: 35
+    env:
+      # Nothing here is signed, and auto-discovery on a runner with no
+      # certificate just adds a slow lookup. Mirrors ci.yml's build job.
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck the conformance script
+        # tsconfig.tests.json excludes tests/e2e, so `npm run typecheck` never
+        # reaches this file; the e2e project is its own tsc invocation, same as
+        # in windows-conformance.yml.
+        run: npx tsc --noEmit -p tests/e2e/tsconfig.json
+      - name: Build the renderer, preload and main bundles
+        run: npm run build
+      - name: Package the Windows app
+        # --dir, not a full NSIS build: the script drives the unpacked
+        # executable directly, and there is nothing to install on the runner.
+        run: npx electron-builder --win --x64 --dir
+      - name: Drive the packaged app through a real version install
+        run: npx tsx tests/e2e/packaged-windows-install.ts
+      - name: Upload the conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-windows-conformance-report
+          # Only the small JSON report, never the downloaded installer or the
+          # installed game files. The script writes it after every phase and
+          # from its own finally block, so if:always() here recovers evidence
+          # even from a run that failed to launch the app at all: the app's
+          # stdout and stderr are carried in that same file, which is the only
+          # thing a packaged app that never reaches its window leaves behind.
+          path: ${{ runner.temp }}\rift-packaged-e2e\report
+          if-no-files-found: warn
+          retention-days: 14
