@@ -1,5 +1,6 @@
 import { useTranslation, Trans } from "react-i18next"
 import semver from "semver"
+import { PiWarningDuotone } from "react-icons/pi"
 
 import { FormBody, FormHead, FormLabel, FromGroup } from "@renderer/components/ui/FormComponents"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
@@ -9,10 +10,13 @@ export interface GameVersionPickerProps {
   gameVersions: GameVersionType[]
   version: GameVersionType | undefined
   onSelect: (version: GameVersionType) => void
+  /** An Installation's VS Version that is no longer installed, if any. Warns instead of
+   *  letting the empty selection look like a glitch (#118). Unused by AddInstallation. */
+  missingVersion?: string
 }
 
 /** The game version table shared by AddInstallation and EditInstallation. */
-export function GameVersionPicker({ gameVersions, version, onSelect }: GameVersionPickerProps): JSX.Element {
+export function GameVersionPicker({ gameVersions, version, onSelect, missingVersion }: GameVersionPickerProps): JSX.Element {
   const { t } = useTranslation()
 
   return (
@@ -22,6 +26,13 @@ export function GameVersionPicker({ gameVersions, version, onSelect }: GameVersi
       </FormHead>
 
       <FormBody>
+        {missingVersion && (
+          <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
+            <PiWarningDuotone className="text-lg shrink-0" />
+            <span>{t("features.versions.versionNotInstalledPickAnother", { version: missingVersion })}</span>
+          </div>
+        )}
+
         <TableWrapper>
           <TableHead>
             <TableHeadRow>

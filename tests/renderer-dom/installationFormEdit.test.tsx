@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen } from "@testing-library/react"
+import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Routes, Route, Link } from "react-router-dom"
 
@@ -34,6 +34,11 @@ const GAME_VERSIONS: GameVersionType[] = [
   { version: "1.20.0", path: "/versions/1.20.0" },
   { version: "1.19.0", path: "/versions/1.19.0" }
 ]
+
+// Only 1.22.6 installed; the Installation under test still points at 1.19.8, the way a
+// config looks right after that version was uninstalled (#118).
+const GAME_VERSIONS_WITHOUT_1_19_8: GameVersionType[] = [{ version: "1.22.6", path: "/versions/1.22.6" }]
+const ORPHAN_WARNING = "This Installation's VS Version (1.19.8) is not installed anymore. Install it again or pick another one before saving."
 
 /**
  * Stands in for ListInstallations: EditInstallation's post-submit navigation target.
@@ -115,6 +120,7 @@ describe("EditInstallation", () => {
 
     const selectedVersionRow = screen.getByText("1.20.0").closest("li")
     expect(selectedVersionRow?.className).toContain("border-vs")
+    expect(screen.queryByText(/is not installed anymore/)).toBeNull()
   })
 
   it("shows the not-found message instead of the form for an unknown id", async () => {
@@ -182,5 +188,68 @@ describe("EditInstallation", () => {
 
     await screen.findByText("You can't edit an Installation while playing it!")
     expect(screen.queryByText("installations-list")).toBeNull()
+  })
+
+  it("leaves the version unselected and warns when the Installation's VS Version is gone", async () => {
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: GAME_VERSIONS_WITHOUT_1_19_8, installations: [anInstallation({ version: "1.19.8" })] }))
+      }
+    })
+
+    await openEditInstallation("install-a")
+
+    await screen.findByDisplayValue("Install A")
+    await screen.findByText(ORPHAN_WARNING)
+
+    const unselectedVersionRow = screen.getByText("1.22.6").closest("li")
+    expect(unselectedVersionRow?.className).not.toContain("border-vs")
+  })
+
+  it("refuses to save and names the missing VS Version instead of reassigning it", async () => {
+    const user = userEvent.setup()
+    const savedConfigs: ConfigType[] = []
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: GAME_VERSIONS_WITHOUT_1_19_8, installations: [anInstallation({ version: "1.19.8" })] })),
+        saveConfig: vi.fn(async (config: ConfigType) => {
+          savedConfigs.push(config)
+          return { ok: true } as SaveConfigResult
+        })
+      }
+    })
+
+    await openEditInstallation("install-a")
+
+    await screen.findByDisplayValue("Install A")
+    await user.click(screen.getByTitle("Save"))
+
+    await screen.findByText("VS Version 1.19.8 not installed!")
+    expect(screen.queryByText("installations-list")).toBeNull()
+    expect(savedConfigs.every((config) => config.installations.every((installation) => installation.version === "1.19.8"))).toBe(true)
+  })
+
+  it("saves once the player picks a VS Version that is still installed", async () => {
+    const user = userEvent.setup()
+    const savedConfigs: ConfigType[] = []
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: GAME_VERSIONS_WITHOUT_1_19_8, installations: [anInstallation({ version: "1.19.8" })] })),
+        saveConfig: vi.fn(async (config: ConfigType) => {
+          savedConfigs.push(config)
+          return { ok: true } as SaveConfigResult
+        })
+      }
+    })
+
+    await openEditInstallation("install-a")
+
+    await screen.findByDisplayValue("Install A")
+    await user.click(screen.getByText("1.22.6"))
+    await user.click(screen.getByTitle("Save"))
+
+    await screen.findByText("Installation edited successfully!")
+    await screen.findByText("installations-list")
+    await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.version === "1.22.6")).toBe(true))
   })
 })
