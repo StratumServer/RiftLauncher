@@ -19,6 +19,7 @@ import { registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
+import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import fse from "fs-extra"
 
 import "@src/ipc"
@@ -180,6 +181,21 @@ const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) app.quit()
 
+/**
+ * Reads electron-builder's `package-type` marker next to the packaged app, when the deb or
+ * rpm targets wrote one. Its absence just means an AppImage, a flatpak, or a dev run, all of
+ * which canAutoUpdate treats the same as "no marker".
+ */
+function readLinuxPackageType(): string | undefined {
+  try {
+    const markerPath = join(process.resourcesPath, "package-type")
+    if (!fse.existsSync(markerPath)) return undefined
+    return fse.readFileSync(markerPath, "utf-8").trim()
+  } catch {
+    return undefined
+  }
+}
+
 // This method will be called when Electron has finished initialization and is ready to create browser windows. Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   logMessage("info", "[back] [index] [main/index.ts] [whenReady] Electron ready.")
@@ -247,7 +263,12 @@ app.whenReady().then(async () => {
 
   createWindow()
 
-  if (process.env["UPDATE"] !== "false") {
+  const updateDecision = canAutoUpdate({
+    platform: process.platform,
+    env: { UPDATE: process.env["UPDATE"], APPIMAGE: process.env["APPIMAGE"] },
+    linuxPackageType: process.platform === "linux" ? readLinuxPackageType() : undefined
+  })
+  if (updateDecision.ok) {
     // If there is an update available send an event to the client.
     autoUpdater.on("update-available", () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE)
@@ -264,6 +285,8 @@ app.whenReady().then(async () => {
       void autoUpdater.checkForUpdatesAndNotify()
     }, 5_000)
     updateCheckTimer.unref()
+  } else {
+    logMessage("info", `[back] [index] [main/index.ts] [whenReady] Auto-update disabled: ${updateDecision.reason}.`)
   }
 
   app.on("activate", function () {
