@@ -12,12 +12,24 @@ describe("canAutoUpdate", () => {
     assert.deepEqual(canAutoUpdate({ platform: "linux", env: { APPIMAGE: "/opt/RiftLauncher.AppImage" } }), { ok: true })
   })
 
-  it("refuses linux when APPIMAGE is absent, the deb case", () => {
-    assert.deepEqual(canAutoUpdate({ platform: "linux", env: {} }), { ok: false, reason: "linux-not-appimage" })
+  it("allows linux when the package-type marker reads deb", () => {
+    assert.deepEqual(canAutoUpdate({ platform: "linux", env: {}, linuxPackageType: "deb" }), { ok: true })
   })
 
-  it("refuses linux when APPIMAGE is empty", () => {
-    assert.deepEqual(canAutoUpdate({ platform: "linux", env: { APPIMAGE: "" } }), { ok: false, reason: "linux-not-appimage" })
+  it("prefers an AppImage run over a deb marker left behind on the same host", () => {
+    assert.deepEqual(canAutoUpdate({ platform: "linux", env: { APPIMAGE: "/opt/RiftLauncher.AppImage" }, linuxPackageType: "deb" }), { ok: true })
+  })
+
+  it("refuses linux when APPIMAGE is absent and no deb marker was found, the flatpak case", () => {
+    assert.deepEqual(canAutoUpdate({ platform: "linux", env: {} }), { ok: false, reason: "linux-unsupported-package" })
+  })
+
+  it("refuses linux when APPIMAGE is empty and no deb marker was found", () => {
+    assert.deepEqual(canAutoUpdate({ platform: "linux", env: { APPIMAGE: "" } }), { ok: false, reason: "linux-unsupported-package" })
+  })
+
+  it("refuses linux when the package-type marker names something other than deb", () => {
+    assert.deepEqual(canAutoUpdate({ platform: "linux", env: {}, linuxPackageType: "rpm" }), { ok: false, reason: "linux-unsupported-package" })
   })
 
   it("refuses when UPDATE is the string false, on any platform", () => {
