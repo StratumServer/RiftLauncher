@@ -69,7 +69,9 @@
     "goBackTo": "Voltar para:",
     "addIcon": "Adicionar ícone",
     "backups": "Backups",
-    "default": "Padrão"
+    "default": "Padrão",
+    "name": "Nome",
+    "status": "Status"
   },
   "features": {
     "generic": {
@@ -78,7 +80,8 @@
     },
     "home": {
       "title": "Bem-vindo ao RiftLauncher",
-      "description": "O launcher não oficial do Vintage Story com todas as funcionalidades que você precisa."
+      "description": "O launcher não oficial do Vintage Story com todas as funcionalidades que você precisa.",
+      "watchTrailer": "Assista ao último trailer no YouTube"
     },
     "versions": {
       "uninstallVersion": "Desinstalar versão",
@@ -111,7 +114,15 @@
       "deleteWhilePlaying": "Você não pode excluir essa versão enquanto estiver jogando!",
       "installNewVersion": "Instale uma nova versão",
       "labelGameVersions": "Versões do VS",
-      "deleteVersion": "Excluir Versão"
+      "deleteVersion": "Excluir Versão",
+      "catalogLoadFailed": "Não foi possível carregar a lista de Versões do VS. Verifique sua conexão e tente novamente.",
+      "deleteAnyway": "Excluir mesmo assim",
+      "installDownloadFailed": "Não foi possível baixar a Versão {{version}} do VS. Verifique sua conexão e instale-a novamente.",
+      "installGameNotInFolder": "A Versão {{version}} do VS não foi parar em {{folder}}. Instale-a novamente em uma pasta vazia.",
+      "installUnpackFailed": "A Versão {{version}} do VS foi baixada, mas não pôde ser extraída. Instale-a novamente.",
+      "noDownloadForYourSystem": "A Versão {{version}} do VS não tem download para o seu sistema operacional. Escolha outra versão.",
+      "versionInUse": "Versão do VS em uso",
+      "versionInUseByInstallations": "Ainda em uso por: {{installations}}. Excluir agora faz com que essas instalações não iniciem até você apontá-las para outra versão."
     },
     "installations": {
       "noInstallationsFound": "Nenhuma instalação encontrada!",
@@ -150,7 +161,8 @@
       "editInstallation": "Editar Instalação",
       "mesaGlThread": "mesa_glthread",
       "envVarsPlaceholder": "ENV_1=coisa, ENV_2=outracoisa",
-      "mesaGlThreadDesc": "Ative para executar o jogo com mesa_glthread. Isso pode melhorar o desempenho em alguns sistemas Linux."
+      "mesaGlThreadDesc": "Ative para executar o jogo com mesa_glthread. Isso pode melhorar o desempenho em alguns sistemas Linux.",
+      "installationDeletedBackupsLeftOver": "Instalação excluída, mas {{count}} arquivo(s) de backup não puderam ser removidos. Exclua-os manualmente na pasta de backups."
     },
     "mods": {
       "modsCount": "{{count}} Mods",
@@ -201,7 +213,41 @@
       "errorUpdatingMod": "Ocorreu um erro ao atualizar o Mod {{mod}}!",
       "errorUpdatingMods": "Ocorreu um erro ao atualizar os Mods!",
       "modsUpdatedSuccessfully": "Todos os Mods foram atualizados com sucesso!",
-      "updateAll": "Atualizar todos os Mods com atualizações disponíveis"
+      "updateAll": "Atualizar todos os Mods com atualizações disponíveis",
+      "errorFetchingMods": "Ocorreu um erro ao buscar os Mods no ModDB!",
+      "errorReplacingOldModVersion": "A versão antiga de {{mod}} ainda está no disco, então ela foi deixada como está. Feche o Vintage Story e qualquer outro programa que esteja usando esse arquivo, depois atualize novamente.",
+      "exportModpack": "Exportar os Mods instalados como um arquivo de modpack compartilhável",
+      "exportModpackButton": "Exportar Modpack",
+      "exportModpackError": "Ocorreu um erro ao exportar o modpack!",
+      "exportModpackSuccess": "Modpack exportado com sucesso!",
+      "exportServerModpack": "Exportar apenas os mods de servidor e universais como um arquivo de modpack",
+      "exportServerModpackButton": "Exportar Modpack do Servidor",
+      "importModpack": "Importar um arquivo de modpack para instalar todos os seus Mods",
+      "importModpackAlreadyPresent": "Já instalado",
+      "importModpackButton": "Importar Modpack",
+      "importModpackDesc": "Os seguintes Mods serão instalados a partir de \"{{name}}\":",
+      "importModpackDowngradeBackupLink": "Fazer um backup",
+      "importModpackDowngradeWarning": "{{count}} mod(s) serão rebaixados de versão. Considere fazer um backup antes.",
+      "importModpackImporting": "Importando...",
+      "importModpackInvalidFile": "Arquivo de modpack inválido!",
+      "importModpackManualRequired": "Instalação manual necessária",
+      "importModpackNoRelease": "Nenhuma versão compatível",
+      "importModpackNotFound": "Não encontrado no ModDB",
+      "importModpackOldVersionStuck": "Versão antiga ainda no disco",
+      "importModpackProgress": "{{completed}} / {{total}} mods",
+      "importModpackStatusDone": "Instalado",
+      "importModpackStatusDownloading": "Baixando",
+      "importModpackStatusFailed": "Falhou",
+      "importModpackStatusPending": "Pendente",
+      "importModpackTitle": "Importar Modpack",
+      "importModpackVersionWarning": "Este modpack foi feito para a versão {{packVersion}} do jogo, mas esta Instalação usa a versão {{installVersion}}. Alguns Mods podem não ser compatíveis.",
+      "importSummaryTitle": "Resumo da Importação do Modpack",
+      "modsPartiallyUpdated": "{{updated}} Mods atualizados, {{failed}} deixados como estavam. O resumo mostra quais foram.",
+      "summaryAlreadyPresent": "Já instalado",
+      "summaryClose": "Concluído",
+      "summaryFailed": "Falhou",
+      "summaryNew": "Novo",
+      "updateSummaryTitle": "Resumo da Atualização de Mods"
     },
     "config": {
       "defaultInstallationsFolder": "Instalações",
@@ -218,7 +264,8 @@
       "onlyIfEnabledTwoFA": "Preencha este campo somente se você tiver 2FA ativado!",
       "uiScale": "Escala da UI",
       "wrongtwofa": "Código 2FA incorreto!",
-      "loginoutNotReversible": "O encerramento da sessão é irreversível, mas você sempre pode voltar a iniciar a sessão com a mesma conta do Vintage Story!"
+      "loginoutNotReversible": "O encerramento da sessão é irreversível, mas você sempre pode voltar a iniciar a sessão com a mesma conta do Vintage Story!",
+      "unexpectedResponse": "O serviço de contas respondeu de uma forma que este launcher não conseguiu interpretar. Sua senha não foi rejeitada. Tente novamente após uma atualização."
     },
     "backups": {
       "backupInProgress": "Já existe um backup em andamento!",
@@ -247,7 +294,12 @@
       "folderDoesntExists": "Esta instalação não tem dados. Por favor, jogue pelo menos uma vez para gerar os dados!",
       "compressionLevel": "Nível de compressão",
       "compressionLevelDesc": "Compressões mais altas demoram mais tempo, mas criam backups menores.",
-      "manageBackups": "Gerenciar Backups"
+      "manageBackups": "Gerenciar Backups",
+      "backupsDisabled": "Nenhum backup foi feito: o limite máximo de Backups desta Instalação está definido como 0. Aumente-o na página de edição da Instalação para reativar os backups.",
+      "errorRestoringBackup": "Não foi possível restaurar o Backup, então sua Instalação foi deixada como estava.",
+      "installationPathMissing": "Nenhum backup foi feito: esta Instalação ainda não tem dados. Jogue uma vez para gerar os dados primeiro.",
+      "noBackupsFolder": "Nenhum backup foi feito: você ainda não definiu uma pasta de Backups. Defina uma na página de Configuração.",
+      "restoreLeftDataAside": "Não foi possível restaurar o Backup e os dados antigos da sua Instalação agora estão em {{path}}. Mova essa pasta de volta manualmente antes de jogar."
     },
     "infoAndHelp": {
       "debugInfoTitle": "Informações de depuração",
@@ -305,7 +357,16 @@
       "folderNotEmpty": "A pasta que você selecionou não está vazia! Certifique-se de que não há nada importante lá.",
       "noFileSelected": "Nenhum arquivo selecionado!",
       "coulndtCopyIcon": "Não foi possível copiar esse ícone para a pasta de ícones!",
-      "appClosePrevented": "Você não pode fechar o RiftLauncher porque ainda está jogando Vintage Story ou porque há uma tarefa em execução!"
+      "appClosePrevented": "Você não pode fechar o RiftLauncher porque ainda está jogando Vintage Story ou porque há uma tarefa em execução!",
+      "configSaveInvalidPayload": "Não foi possível salvar suas configurações devido a um erro inesperado! Tente reiniciar o RiftLauncher e nos avise se continuar acontecendo.",
+      "configSaveRecovered": "Suas configurações estão sendo salvas novamente!",
+      "configSaveUnauthorizedPath": "Não foi possível salvar suas configurações: uma das suas pastas não é gerenciada pelo RiftLauncher. Selecione-a novamente na página de Configuração!",
+      "configSaveWriteFailed": "Não foi possível salvar suas configurações no disco! Certifique-se de que o RiftLauncher pode escrever na sua pasta de dados e tente novamente.",
+      "gameLaunchInvalidEnvironment": "As variáveis de ambiente desta instalação não podem ser usadas. Verifique-as e tente novamente!",
+      "gameLaunchNoExecutable": "Não foi possível encontrar o Vintage Story na pasta desta versão. Tente reinstalá-la!",
+      "gameLaunchSessionWriteFailed": "Não foi possível salvar seu login nesta instalação. Tente iniciar sessão novamente!",
+      "gameLaunchUnsupportedPlatform": "O Vintage Story ainda não pode rodar nesta plataforma. Tente a partir do Windows ou Linux!",
+      "installationFolderCreateFailed": "Não foi possível criar a pasta para esta Instalação! Verifique se o RiftLauncher pode escrever nesse local e tente novamente."
     },
     "discard": "Descartar notificação"
   },
