@@ -1,5 +1,6 @@
 import { useTranslation, Trans } from "react-i18next"
 import semver from "semver"
+import { PiWarningDuotone } from "react-icons/pi"
 
 import { FormBody, FormHead, FormLabel, FromGroup } from "@renderer/components/ui/FormComponents"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
@@ -9,10 +10,16 @@ export interface GameVersionPickerProps {
   gameVersions: GameVersionType[]
   version: GameVersionType | undefined
   onSelect: (version: GameVersionType) => void
+  /** The Installation's own VS Version when it is not installed: the version string to name,
+   *  or "" for an Installation that has no version at all (configManager.ts normalizes a
+   *  missing or invalid version to "" and keeps the Installation). `undefined` means nothing
+   *  to warn about, which is why this is checked with `!== undefined` and not for truthiness
+   *  (#118). Unused by AddInstallation. */
+  missingVersion?: string
 }
 
 /** The game version table shared by AddInstallation and EditInstallation. */
-export function GameVersionPicker({ gameVersions, version, onSelect }: GameVersionPickerProps): JSX.Element {
+export function GameVersionPicker({ gameVersions, version, onSelect, missingVersion }: GameVersionPickerProps): JSX.Element {
   const { t } = useTranslation()
 
   return (
@@ -22,6 +29,13 @@ export function GameVersionPicker({ gameVersions, version, onSelect }: GameVersi
       </FormHead>
 
       <FormBody>
+        {missingVersion !== undefined && (
+          <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
+            <PiWarningDuotone className="text-lg shrink-0" />
+            <span>{missingVersion === "" ? t("features.versions.noVersionSetPickOne") : t("features.versions.versionNotInstalledPickAnother", { version: missingVersion })}</span>
+          </div>
+        )}
+
         <TableWrapper>
           <TableHead>
             <TableHeadRow>

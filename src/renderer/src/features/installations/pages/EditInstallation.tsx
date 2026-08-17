@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { Button } from "@headlessui/react"
 import { PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
-import semver from "semver"
 
 import { validateInstallationFields } from "@domain/installations/create"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
@@ -42,7 +41,9 @@ function EditInslallation(): JSX.Element {
   const fields = useInstallationFormFields({
     icon: INSTALLATION_ICONS[0],
     name: "",
-    version: [...gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0],
+    // Starts empty on purpose: the only version this form may show is the one the
+    // Installation actually points at, filled in by the effect below (#118).
+    version: undefined,
     startParams: "",
     backupsLimit: 0,
     backupsAuto: false,
@@ -63,7 +64,10 @@ function EditInslallation(): JSX.Element {
   useEffect(() => {
     fields.setIcon(INSTALLATION_ICONS.find((ii) => ii.id === installation?.icon) ?? customIcons.find((ii) => ii.id === installation?.icon) ?? INSTALLATION_ICONS[0])
     fields.setName(installation?.name ?? "")
-    fields.setVersion(gameVersions.find((gv) => gv.version === installation?.version) ?? gameVersions[0])
+    // No fallback: an Installation whose VS Version was uninstalled leaves the picker
+    // empty rather than silently adopting whatever happens to be first in the config's
+    // list, which used to get written to disk on the next save (#118).
+    fields.setVersion(gameVersions.find((gv) => gv.version === installation?.version))
     fields.setStartParams(installation?.startParams ?? "")
     fields.setBackupsLimit(installation?.backupsLimit ?? 0)
     fields.setBackupsAuto(installation?.backupsAuto ?? false)
@@ -72,13 +76,21 @@ function EditInslallation(): JSX.Element {
     fields.setEnvVars(installation?.envVars ?? "")
   }, [installation])
 
+  // The Installation's own version when the launcher no longer has it installed. Read
+  // from the Installation, not from the picker: it stays true (and worth showing) after
+  // the player has picked a replacement, until the edit is actually saved. "" is a real
+  // value here, not a bug: configManager normalizes a missing or invalid version to the
+  // empty string and keeps the Installation, and gameVersions can never hold an entry with
+  // an empty version, so the empty case always falls through to the warning too (#118).
+  const missingGameVersion: string | undefined = installation && !gameVersions.some((gv) => gv.version === installation.version) ? installation.version : undefined
+
   const handleEditInstallation = async (): Promise<void> => {
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
     if (installation._backuping) return addNotification(t("features.backups.backupInProgress"), "error")
     if (installation._playing) return addNotification(t("features.installations.editWhilePlaying"), "error")
     if (installation._restoringBackup) return addNotification(t("features.backups.restoreInProgress"), "error")
 
-    if (!id || !fields.name || !fields.version || !fields.backupsLimit || fields.backupsAuto === undefined) return addNotification(t("notifications.body.missingFields"), "error")
+    if (!id || !fields.name || !fields.backupsLimit || fields.backupsAuto === undefined) return addNotification(t("notifications.body.missingFields"), "error")
 
     const result = validateInstallationFields({ name: fields.name, startParams: fields.startParams })
     if (!result.ok) {
@@ -87,24 +99,27 @@ function EditInslallation(): JSX.Element {
     }
 
     try {
-      configDispatch({
-        type: CONFIG_ACTIONS.EDIT_INSTALLATION,
-        payload: {
-          id,
-          updates: {
-            name: fields.name,
-            icon: fields.icon.id,
-            version: fields.version.version,
-            startParams: fields.startParams,
-            backupsAuto: fields.backupsAuto,
-            backupsLimit: fields.backupsLimit,
-            compressionLevel: fields.compressionLevel,
-            mesaGlThread: fields.mesaGlThread,
-            envVars: fields.envVars
-          }
-        }
-      })
+      // version is only sent when the picker has a selection. EDIT_INSTALLATION takes Partial
+      // updates (configReducer.ts), so leaving the key out keeps whatever the Installation already
+      // points at, orphaned or unset, instead of reassigning it, while every other field on the
+      // form still saves the way it did before this fix (#118).
+      const updates: Partial<Omit<InstallationType, "id">> = {
+        name: fields.name,
+        icon: fields.icon.id,
+        startParams: fields.startParams,
+        backupsAuto: fields.backupsAuto,
+        backupsLimit: fields.backupsLimit,
+        compressionLevel: fields.compressionLevel,
+        mesaGlThread: fields.mesaGlThread,
+        envVars: fields.envVars
+      }
+      if (fields.version) updates.version = fields.version.version
+
+      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id, updates } })
       addNotification(t("features.installations.installationSuccessfullyEdited"), "success")
+      // The banner is gone once the page unmounts, so the toast is the only thing left telling
+      // the player the version is still unresolved after an otherwise successful save.
+      if (!fields.version) addNotification(t("features.versions.versionLeftUnchanged"), "warning")
       navigate("/installations")
     } catch (error) {
       addNotification(t("features.installations.errorEditingInstallation"), "error")
@@ -151,7 +166,7 @@ function EditInslallation(): JSX.Element {
                   iconButtonClassName="w-1/3 h-13 p-1 pr-2 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none text-sm text-start cursor-pointer"
                 />
 
-                <GameVersionPicker gameVersions={gameVersions} version={fields.version} onSelect={fields.setVersion} />
+                <GameVersionPicker gameVersions={gameVersions} version={fields.version} onSelect={fields.setVersion} missingVersion={missingGameVersion} />
               </FormGroupWrapper>
 
               <BackupsSettingsSection

@@ -68,7 +68,13 @@ function MainMenu(): JSX.Element {
       if (selectedInstallation._playing) return addNotification(t("features.installations.gameAlreadyRunning"), "error")
 
       const gameVersionToRun = gameVersions.find((gv) => gv.version === selectedInstallation.version)
-      if (!gameVersionToRun) return addNotification(t("features.versions.versionNotInstalled", { version: selectedInstallation.version }), "error")
+      if (!gameVersionToRun) {
+        // An Installation with no version at all reaches here too (configManager normalizes a
+        // missing version to ""), and interpolating that into versionNotInstalled reads as
+        // "VS Version  not installed!" with a blank name (#118).
+        const message = selectedInstallation.version ? t("features.versions.versionNotInstalled", { version: selectedInstallation.version }) : t("features.versions.noVersionSet")
+        return addNotification(message, "error")
+      }
       if (gameVersionToRun._installing) return addNotification(t("features.versions.versionInstalling", { version: selectedInstallation.version }), "error")
       if (gameVersionToRun._deleting) return addNotification(t("features.versions.versionDeleting", { version: selectedInstallation.version }), "error")
       if (gameVersionToRun._playing) return addNotification(t("features.versions.versionPlaying", { version: selectedInstallation.version }), "error")
