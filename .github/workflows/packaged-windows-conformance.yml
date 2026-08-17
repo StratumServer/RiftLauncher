@@ -24,6 +24,14 @@ name: Packaged Windows install conformance
 # not a required check.
 on:
   workflow_dispatch:
+  # workflow_dispatch only registers once this file reaches the default
+  # branch, so a brand-new workflow could never produce its first proof
+  # before merging. This path-scoped trigger closes that gap: the job runs
+  # on the PR that introduces or edits the workflow itself, and stays quiet
+  # on every other PR.
+  pull_request:
+    paths:
+      - ".github/workflows/packaged-windows-conformance.yml"
 
 jobs:
   packaged-windows-install-conformance:
