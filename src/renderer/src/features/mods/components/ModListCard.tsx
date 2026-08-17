@@ -32,7 +32,7 @@ function ModListCard({
 
   return (
     <GridItem onClick={onSelect} selected={installed} size="w-[18rem] max-w-[26rem]" className="group overflow-hidden">
-      <div className="relative w-full aspect-[3/2]">
+      <div className="relative w-full aspect-[3/2] skip-offscreen-render">
         <img src={mod.logo ? `${mod.logo}` : "https://mods.vintagestory.at/web/img/mod-default.png"} alt={mod.name} loading="lazy" className="w-full h-full object-cover object-top" />
 
         <div className="absolute w-full top-0 flex items-center justify-between p-1">
@@ -61,7 +61,7 @@ function ModListCard({
         </div>
       </div>
 
-      <div className="w-full aspect-[3/1] flex text-sm">
+      <div className="w-full aspect-[3/1] flex text-sm skip-offscreen-render">
         <div className="shrink-0 w-1/3 flex flex-col gap-1 px-2 py-1 overflow-hidden">
           <p className="flex items-center gap-1" title={mod.author}>
             <PiUserCircleDuotone className="shrink-0 opacity-50" />
