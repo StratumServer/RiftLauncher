@@ -8,6 +8,9 @@ name: Windows install conformance
 # registry key, so this never runs anywhere except a runner that gets thrown
 # away afterward.
 #
+# This runs the install logic from source, under tsx. The packaged app is a
+# different layer and has its own manual workflow, packaged-windows-conformance.yml.
+#
 # Not wired into ci.yml and not a required check. See tests/e2e/windows-install.ts
 # for what each of the three scenarios does. Scenarios 1 and 3 fail the job;
 # scenario 2 never does, because an unresolved dialog or a redirected install
