@@ -262,7 +262,7 @@ app.on("before-quit", (event) => {
 
   if (isWaitingForConfigFlush) return
   const pendingConfigWrite = flushConfigWrites()
-  if (!pendingConfigWrite) return
+  if (pendingConfigWrite === null) return
 
   event.preventDefault()
   isWaitingForConfigFlush = true

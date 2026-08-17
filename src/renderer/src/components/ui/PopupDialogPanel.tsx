@@ -54,6 +54,4 @@ function PopupDialogPanel({
   )
 }
 
-;("w-full rounded-sm backdrop-blur-xs bg-zinc-950/50 border border-zinc-400/5 group overflow-hidden group shadow-sm shadow-zinc-950/50 hover:shadow-none duration-200")
-
 export default PopupDialogPanel

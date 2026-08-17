@@ -50,7 +50,7 @@ function ModChangeSummaryPopup({ isOpen, close, title, entries }: { isOpen: bool
                     )}
                   </TableCell>
                   <TableCell className="w-2/12 flex justify-center">
-                    {entry.assetid && (
+                    {Boolean(entry.assetid) && (
                       <NormalButton className="p-1" title={t("features.mods.openOnTheModDB")} onClick={() => entry.assetid && openModOnModDb(entry.assetid)}>
                         <FiExternalLink />
                       </NormalButton>
