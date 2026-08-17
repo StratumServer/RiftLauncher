@@ -13,6 +13,7 @@ import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/con
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { logMessage } from "@src/utils/logManager"
+import { createUpdaterLogger } from "@src/utils/updaterLogger"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
@@ -23,9 +24,6 @@ import fse from "fs-extra"
 import "@src/ipc"
 import { clearTimeout, setTimeout } from "timers"
 
-autoUpdater.logger = Logger
-autoUpdater.logger.info("Logger configured for auto-updater")
-
 Logger.transports.file.resolvePathFn = (variables, message): string => {
   const logsPath = join(variables.userData, "Logs")
   if (!message) return join(logsPath, "default.log")
@@ -33,6 +31,14 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
 }
 
 logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
+
+// electron-updater's own constructor already attaches an "error" listener that logs
+// error.stack || error.message through whatever logger it is given, so a hand-written
+// listener here would be redundant. What it was given until now was the raw electron-log
+// instance, the one component writing to disk without passing through logMessage, so the
+// updater's cache paths and feed URLs escaped the redaction every other line gets.
+// Placed after resolvePathFn so nothing is logged before the app's Logs directory exists.
+autoUpdater.logger = createUpdaterLogger()
 
 let mainWindow: BrowserWindow
 const packagedRendererPath = join(__dirname, "../renderer/index.html")
