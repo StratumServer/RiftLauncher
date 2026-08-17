@@ -38,7 +38,7 @@ function anInstallation(): InstallationType {
 function aModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
   return {
     mods: [
-      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, description: "The first one.", authors: ["Ann"], contributors: [] },
+      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, description: "The first one.", authors: ["Ann"], contributors: [], _image: "alpha.png" },
       { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, description: "The second one.", authors: ["Bob"], contributors: [] },
       { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: "/games/a/Mods/gamma-3.0.0.zip", authors: ["Cal"], contributors: [] }
     ],
@@ -120,6 +120,12 @@ describe("ManageMods", () => {
     expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
     expect(screen.getByText("Beta Mod")).toBeTruthy()
     expect(screen.getByText("Gamma Mod")).toBeTruthy()
+
+    // Alpha is the only fixture with a cached icon, so its <img> is the one path that exercises
+    // the loading="lazy" branch instead of the placeholder <div>.
+    const alphaImage = screen.getByAltText("Alpha Mod")
+    expect(alphaImage.getAttribute("src")).toBe("cachemodimg:alpha.png")
+    expect(alphaImage.getAttribute("loading")).toBe("lazy")
 
     expect(screen.getByText("Mods with updates")).toBeTruthy()
     expect(screen.getByText("Mods with incompatible updates")).toBeTruthy()

@@ -33,7 +33,7 @@ function ModListCard({
   return (
     <GridItem onClick={onSelect} selected={installed} size="w-[18rem] max-w-[26rem]" className="group overflow-hidden">
       <div className="relative w-full aspect-[3/2]">
-        <img src={mod.logo ? `${mod.logo}` : "https://mods.vintagestory.at/web/img/mod-default.png"} alt={mod.name} className="w-full h-full object-cover object-top" />
+        <img src={mod.logo ? `${mod.logo}` : "https://mods.vintagestory.at/web/img/mod-default.png"} alt={mod.name} loading="lazy" className="w-full h-full object-cover object-top" />
 
         <div className="absolute w-full top-0 flex items-center justify-between p-1">
           <FormButton
