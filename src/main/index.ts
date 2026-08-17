@@ -274,11 +274,6 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED)
     })
 
-    // A failed check or download used to vanish silently. Log it so it shows up in the log file.
-    autoUpdater.on("error", (error) => {
-      logMessage("error", `[back] [index] [main/index.ts] [whenReady] Auto-update failed: ${error.message}.`)
-    })
-
     // Defer the network check until the initial window has had time to become interactive.
     const updateCheckTimer = setTimeout(() => {
       void autoUpdater.checkForUpdatesAndNotify()
