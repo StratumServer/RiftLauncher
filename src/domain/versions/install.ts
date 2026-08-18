@@ -1,4 +1,5 @@
 import type { DownloadOutcome, Downloader, FileSystem, PathBuilder, UnpackOutcome, Unpacker } from "../ports"
+import { folderIsInUse } from "../paths"
 import { expectedGameExecutables, toGameOs } from "./gameExecutable"
 import type { GameOs } from "./gameExecutable"
 
@@ -128,7 +129,7 @@ export async function installGameVersion(ports: InstallGameVersionPorts, input: 
   const os = toGameOs(input.platform)
 
   if (input.installedVersions.includes(version.version)) return refuse("version-already-installed")
-  if (input.foldersInUse.includes(targetFolder)) return refuse("folder-in-use")
+  if (folderIsInUse(targetFolder, input.foldersInUse)) return refuse("folder-in-use")
 
   const download = downloadFor(version, os)
   if (!download) return refuse("no-download-for-os")

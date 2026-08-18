@@ -1,4 +1,5 @@
 import type { IdGenerator } from "../ports"
+import { folderIsInUse } from "../paths"
 
 /** Bounds an installation name must fall within. */
 export const INSTALLATION_NAME_MIN_LENGTH = 5
@@ -98,7 +99,7 @@ export function createInstallation(ports: CreateInstallationPorts, input: Create
   const fields = validateInstallationFields(input)
   if (!fields.ok) return refuseCreate(fields.reason)
 
-  if (input.foldersInUse.includes(input.path)) return refuseCreate("folder-in-use")
+  if (folderIsInUse(input.path, input.foldersInUse)) return refuseCreate("folder-in-use")
 
   return {
     ok: true,
