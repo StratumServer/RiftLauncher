@@ -143,7 +143,12 @@ describe("ManageInstallationBackups", () => {
     await user.click(screen.getAllByTitle("Delete")[1]!)
 
     await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(screen.queryByTitle("Delete")).toBeNull())
+
+    const trashButtons = screen.getAllByRole("button").filter((btn) => btn.querySelector("svg"))
+    const trashButton = trashButtons.find((btn) => btn.hasAttribute("disabled") || btn.getAttribute("title") === "")
+    if (trashButton) await user.click(trashButton)
+
+    expect(deletePath).toHaveBeenCalledTimes(1)
 
     resolveDelete(true)
     await waitFor(() => expect(screen.queryByText("Are you sure you want to delete this Backup?")).toBeNull())

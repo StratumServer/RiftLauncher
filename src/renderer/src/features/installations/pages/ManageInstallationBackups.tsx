@@ -104,7 +104,9 @@ function ManageInstallationBackups(): JSX.Element {
       return addNotification(t("features.backups.backupDeletedSuccesfully"), "success")
     }
 
-    configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _deleting: false } } })
+    if (result.reason !== "backup-in-use") {
+      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _deleting: false } } })
+    }
     const { messageKey, logged } = describeBackupDeletionFailure(result.reason)
 
     if (logged) {
