@@ -96,4 +96,81 @@ describe("ManageInstallationBackups", () => {
     // The confirm dialog closes as part of the same click.
     await waitFor(() => expect(screen.queryByText("Are you sure you want to restore this Backup?")).toBeNull())
   })
+
+  it("deletes the backup archive after the delete confirmation", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallationWithBackup()] })) },
+      pathsManager: {
+        deletePath,
+        extractOnPath: vi.fn(async () => true)
+      }
+    })
+
+    renderManageBackups("install-a")
+
+    await user.click(await screen.findByTitle("Delete"))
+    await screen.findByText("Are you sure you want to delete this Backup?")
+    await user.click(screen.getAllByTitle("Delete")[1]!)
+
+    await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(1))
+    expect(deletePath.mock.calls[0]?.[0]).toBe("/backups/a/backup-1.zip")
+    await waitFor(() => expect(screen.queryByTitle("Delete")).toBeNull())
+  })
+
+  it("does not start a second deletion while the first one is in flight", async () => {
+    const user = userEvent.setup()
+    let resolveDelete: (result: boolean) => void = () => {}
+    const deletePath = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveDelete = resolve
+        })
+    )
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallationWithBackup()] })) },
+      pathsManager: {
+        deletePath,
+        extractOnPath: vi.fn(async () => true)
+      }
+    })
+
+    renderManageBackups("install-a")
+
+    await user.click(await screen.findByTitle("Delete"))
+    await screen.findByText("Are you sure you want to delete this Backup?")
+    await user.click(screen.getAllByTitle("Delete")[1]!)
+
+    await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByTitle("Delete")).toBeNull())
+
+    resolveDelete(true)
+    await waitFor(() => expect(screen.queryByText("Are you sure you want to delete this Backup?")).toBeNull())
+  })
+
+  it("clears the deleting state when the archive deletion fails", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallationWithBackup()] })) },
+      pathsManager: {
+        deletePath,
+        extractOnPath: vi.fn(async () => true)
+      }
+    })
+
+    renderManageBackups("install-a")
+
+    await user.click(await screen.findByTitle("Delete"))
+    await screen.findByText("Are you sure you want to delete this Backup?")
+    await user.click(screen.getAllByTitle("Delete")[1]!)
+    await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByTitle("Delete")).toBeTruthy())
+
+    await user.click(screen.getByTitle("Delete"))
+    await screen.findByText("Are you sure you want to delete this Backup?")
+    await user.click(screen.getAllByTitle("Delete")[1]!)
+    await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(2))
+  })
 })

@@ -96,6 +96,7 @@ function ManageInstallationBackups(): JSX.Element {
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
     if (!backup) return addNotification(t("features.backups.cantDeleteWhileinUse"), "error")
 
+    configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _deleting: true } } })
     const result = await deleteInstallationBackup(createBackupDeletionPorts(), { backup: toBackupSnapshot(backup) })
 
     if (result.ok) {
@@ -103,6 +104,7 @@ function ManageInstallationBackups(): JSX.Element {
       return addNotification(t("features.backups.backupDeletedSuccesfully"), "success")
     }
 
+    configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _deleting: false } } })
     const { messageKey, logged } = describeBackupDeletionFailure(result.reason)
 
     if (logged) {
@@ -153,10 +155,10 @@ function ManageInstallationBackups(): JSX.Element {
                     <ThinSeparator />
 
                     <div className="shrink-0 w-fit flex gap-1 text-lg">
-                      <NormalButton className="p-1" title={t("features.backups.restoreBackup")} onClick={() => setBackupToRestore(backup)}>
+                      <NormalButton className="p-1" title={t("features.backups.restoreBackup")} onClick={() => setBackupToRestore(backup)} disabled={backup._deleting || backup._restoring}>
                         <PiArrowCounterClockwiseDuotone />
                       </NormalButton>
-                      <NormalButton onClick={() => setBackupToDelete(backup)} title={t("generic.delete")} className="p-1">
+                      <NormalButton onClick={() => setBackupToDelete(backup)} title={t("generic.delete")} className="p-1" disabled={backup._deleting || backup._restoring}>
                         <PiTrashDuotone />
                       </NormalButton>
                       <NormalButton onClick={() => openPathInExplorer(backup.path, { parentOfFile: true })} title={`${t("generic.openOnFileExplorer")} · ${backup.path}`} className="p-1">
