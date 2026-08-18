@@ -3,57 +3,87 @@
              xmlns:vm="using:RiftLauncher.ViewModels.Pages"
              x:Class="RiftLauncher.Views.Pages.VersionLookupView"
              x:DataType="vm:VersionLookupViewModel">
-    <Border Padding="24">
-        <Grid RowDefinitions="Auto,*,Auto">
-            <!-- Header -->
-            <TextBlock Grid.Row="0"
-                       Text="Look For A Version"
-                       FontSize="20"
-                       FontWeight="SemiBold"
-                       Foreground="{StaticResource Zinc100Brush}"
-                       Margin="0,0,0,16" />
 
-            <!-- Content -->
-            <StackPanel Grid.Row="1" Spacing="16" VerticalAlignment="Center">
-                <!-- Folder selection -->
-                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Game Folder" FontWeight="SemiBold"
-                                   Foreground="{StaticResource Zinc200Brush}" />
-                        <Grid ColumnDefinitions="Auto,*">
-                            <Button Grid.Column="0" Content="Browse"
-                                    Command="{Binding DetectFolderCommand}"
-                                    Padding="8,6" Margin="0,0,8,0" />
-                            <TextBox Grid.Column="1"
-                                     Text="{Binding Folder}"
-                                     IsReadOnly="True"
-                                     PlaceholderText="Select a folder containing a game version" />
-                        </Grid>
-                    </StackPanel>
-                </Border>
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Sticky Menu -->
+        <Border Grid.Row="0" Background="#3309090b" Padding="8"
+                BorderBrush="#0Da1a1aa" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Grid.Column="0" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        Command="{Binding GoBackCommand}">
+                    <PathIcon Data="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center"
+                            Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="/" Foreground="#71717a" FontSize="12"/>
+                    <TextBlock Text="Versions" Foreground="#71717a" FontSize="12"/>
+                    <TextBlock Text="/" Foreground="#71717a" FontSize="12"/>
+                    <TextBlock Text="Look For A Version" Foreground="#e4e4e7" FontSize="12" FontWeight="Bold"/>
+                </StackPanel>
+                <Button Grid.Column="2" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Data="M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+            </Grid>
+        </Border>
 
-                <!-- Detected version -->
-                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Version Found" FontWeight="SemiBold"
-                                   Foreground="{StaticResource Zinc200Brush}" />
-                        <TextBox Text="{Binding VersionFound}"
-                                 IsReadOnly="True"
-                                 PlaceholderText="No version detected yet" />
-                    </StackPanel>
-                </Border>
+        <!-- Content -->
+        <StackPanel Grid.Row="1" Spacing="16" MaxWidth="600"
+                    HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16">
+
+            <!-- Folder selection -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Folder" FontSize="12" Foreground="#a1a1aa" FontWeight="Bold"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0" Text="{Binding Folder}" IsReadOnly="True"
+                             PlaceholderText="Select a game folder" Height="32" FontSize="12"/>
+                    <Button Grid.Column="1" Width="32" Height="32" Margin="4,0,0,0"
+                            Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                            CornerRadius="2" Padding="0" Cursor="Hand"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                            Command="{Binding DetectFolderCommand}">
+                        <PathIcon Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"
+                                  Foreground="#a1a1aa" Width="14" Height="14"/>
+                    </Button>
+                </Grid>
             </StackPanel>
 
-            <!-- Action buttons -->
-            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
-                        HorizontalAlignment="Center" Margin="0,16,0,0">
-                <Button Content="Cancel" Command="{Binding GoBackCommand}"
-                        Padding="16,8" />
-                <Button Classes="accent" Content="Add"
-                        Command="{Binding AddVersionCommand}"
-                        IsEnabled="{Binding CanAdd}"
-                        Padding="16,8" />
+            <!-- Version found -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Version Found" FontSize="12" Foreground="#a1a1aa" FontWeight="Bold"/>
+                <TextBox Text="{Binding VersionFound}" IsReadOnly="True"
+                         PlaceholderText="No version detected yet" Height="32" FontSize="12"/>
             </StackPanel>
-        </Grid>
-    </Border>
+        </StackPanel>
+
+        <!-- Footer buttons -->
+        <Border Grid.Row="2" Padding="16,8" Background="#3309090b"
+                BorderBrush="#0Da1a1aa" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center">
+                <Button Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                        CornerRadius="2" Padding="16,8" Cursor="Hand"
+                        Command="{Binding GoBackCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <PathIcon Data="M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z"
+                                  Foreground="#b91c1c" Width="14" Height="14"/>
+                        <TextBlock Text="Cancel" Foreground="#b91c1c" FontSize="12"/>
+                    </StackPanel>
+                </Button>
+                <Button Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                        CornerRadius="2" Padding="16,8" Cursor="Hand"
+                        Command="{Binding AddVersionCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <PathIcon Data="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"
+                                  Foreground="#65a30d" Width="14" Height="14"/>
+                        <TextBlock Text="Add" Foreground="#65a30d" FontSize="12"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+    </Grid>
 </UserControl>

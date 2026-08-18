@@ -150,13 +150,45 @@ public partial class MainWindowViewModel : ViewModelBase
         CurrentPage = index switch
         {
             0 => _services.GetRequiredService<Pages.HomeViewModel>(),
-            1 => _services.GetRequiredService<Pages.InstallationsListViewModel>(),
-            2 => _services.GetRequiredService<Pages.VersionsListViewModel>(),
+            1 => CreateInstallationsListVm(),
+            2 => CreateVersionsListVm(),
             3 => _services.GetRequiredService<Pages.ModsListViewModel>(),
             4 => _services.GetRequiredService<Pages.ConfigViewModel>(),
             5 => _services.GetRequiredService<Pages.InfoHelpViewModel>(),
             _ => CurrentPage
         };
+    }
+
+    private Pages.InstallationsListViewModel CreateInstallationsListVm()
+    {
+        var vm = _services.GetRequiredService<Pages.InstallationsListViewModel>();
+        // TODO: wire sub-navigation (add/edit/backups/mods)
+        return vm;
+    }
+
+    private Pages.VersionsListViewModel CreateVersionsListVm()
+    {
+        var vm = _services.GetRequiredService<Pages.VersionsListViewModel>();
+        vm.NavigateToAdd = () =>
+        {
+            var addVm = new Pages.VersionAddViewModel(
+                _services.GetRequiredService<IConfigService>(),
+                _services.GetRequiredService<IVersionCatalogService>(),
+                _services.GetRequiredService<ITaskManagerService>(),
+                _services.GetRequiredService<IDownloadService>(),
+                _services.GetRequiredService<IArchiveService>(),
+                null,
+                () => NavigateToIndex(2));
+            NavigateToSubPage(addVm);
+        };
+        vm.NavigateToLookup = () =>
+        {
+            var lookupVm = new Pages.VersionLookupViewModel(
+                _services.GetRequiredService<IConfigService>(),
+                () => NavigateToIndex(2));
+            NavigateToSubPage(lookupVm);
+        };
+        return vm;
     }
 
     private async Task LoadInstallationStateAsync()

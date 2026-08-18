@@ -4,77 +4,93 @@
              x:Class="RiftLauncher.Views.Pages.BackupsView"
              x:DataType="vm:BackupsViewModel">
 
-  <Grid RowDefinitions="Auto,*">
-    <!-- Header -->
-    <StackPanel Grid.Row="0" Margin="24,16,24,8" Spacing="4">
-      <TextBlock Text="Manage Backups"
-                 FontSize="20" FontWeight="Bold"
-                 Foreground="{DynamicResource Zinc100Brush}"/>
-      <TextBlock Text="{Binding InstallationName}"
-                 FontSize="13"
-                 Foreground="{DynamicResource Zinc400Brush}"/>
-    </StackPanel>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Sticky Menu -->
+        <Border Grid.Row="0" Background="#3309090b" Padding="8"
+                BorderBrush="#0Da1a1aa" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Grid.Column="0" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        >
+                    <PathIcon Data="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center"
+                            Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="/" Foreground="#71717a" FontSize="12"/>
+                    <TextBlock Text="Installations" Foreground="#71717a" FontSize="12"/>
+                    <TextBlock Text="/" Foreground="#71717a" FontSize="12"/>
+                    <TextBlock Text="Manage Backups" Foreground="#e4e4e7" FontSize="12" FontWeight="Bold"/>
+                </StackPanel>
+                <Button Grid.Column="2" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Data="M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+            </Grid>
+        </Border>
 
-    <!-- Backup list -->
-    <Panel Grid.Row="1" Margin="24,0">
-      <!-- Empty state -->
-      <TextBlock Text="No backups found"
-                 IsVisible="{Binding !Backups.Count}"
-                 FontSize="16"
-                 Foreground="{DynamicResource Zinc400Brush}"
-                 HorizontalAlignment="Center"
-                 VerticalAlignment="Center"/>
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" Padding="8">
+            <StackPanel Spacing="8" MaxWidth="800" HorizontalAlignment="Center" Margin="0,8">
 
-      <!-- List -->
-      <ScrollViewer IsVisible="{Binding Backups.Count}">
-        <ItemsControl ItemsSource="{Binding Backups}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate DataType="vm:BackupItemViewModel">
-              <Border Margin="0,0,0,4"
-                      Padding="12,6"
-                      Background="{DynamicResource Zinc800Brush}"
-                      CornerRadius="4"
-                      Height="40">
-                <Grid ColumnDefinitions="*,Auto">
-                  <!-- Date -->
-                  <TextBlock Text="{Binding DateDisplay}"
-                             FontWeight="SemiBold" FontSize="13"
-                             VerticalAlignment="Center"
-                             Foreground="{DynamicResource Zinc200Brush}"/>
+                <!-- Empty state -->
+                <TextBlock Text="No backups found"
+                           FontSize="20" Foreground="#a1a1aa"
+                           HorizontalAlignment="Center" Margin="0,32"
+                           />
 
-                  <!-- Actions -->
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                    <Button Padding="6" Background="Transparent"
-                            ToolTip.Tip="Restore"
-                            Command="{Binding $parent[ItemsControl].((vm:BackupsViewModel)DataContext).RequestRestoreCommand}"
-                            CommandParameter="{Binding}">
-                      <PathIcon Data="M12.5,8C9.85,8 7.45,9 5.6,10.6L2,7V16H11L7.38,12.38C8.77,11.22 10.54,10.5 12.5,10.5C16.04,10.5 19.05,12.81 20.1,16L22.47,15.22C21.08,11.03 17.15,8 12.5,8Z"
-                                Width="14" Height="14"
-                                Foreground="{DynamicResource Zinc300Brush}"/>
-                    </Button>
-                    <Button Padding="6" Background="Transparent"
-                            ToolTip.Tip="Delete"
-                            Command="{Binding $parent[ItemsControl].((vm:BackupsViewModel)DataContext).RequestDeleteCommand}"
-                            CommandParameter="{Binding}">
-                      <PathIcon Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
-                                Width="14" Height="14"
-                                Foreground="#dc2626"/>
-                    </Button>
-                    <Button Padding="6" Background="Transparent"
-                            ToolTip.Tip="Open Folder"
-                            Command="{Binding $parent[ItemsControl].((vm:BackupsViewModel)DataContext).OpenInExplorerCommand}"
-                            CommandParameter="{Binding Path}">
-                      <PathIcon Data="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"
-                                Width="14" Height="14"
-                                Foreground="{DynamicResource Zinc300Brush}"/>
-                    </Button>
-                  </StackPanel>
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
-    </Panel>
-  </Grid>
+                <!-- Backup list -->
+                <ItemsControl ItemsSource="{Binding Backups}"
+                              >
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                                    CornerRadius="2" Height="32" Margin="0,2" Padding="8,0">
+                                <Grid ColumnDefinitions="*,1,Auto,Auto,Auto">
+                                    <!-- Date -->
+                                    <TextBlock Grid.Column="0" Text="{Binding DateDisplay}"
+                                               FontWeight="Bold" FontSize="12" Foreground="#e4e4e7"
+                                               VerticalAlignment="Center"/>
+                                    <Border Grid.Column="1" Width="1" Background="#40a1a1aa" Margin="8,4"/>
+                                    <!-- Restore -->
+                                    <Button Grid.Column="2" Background="Transparent" BorderThickness="0"
+                                            Width="28" Height="28" Padding="4" Cursor="Hand"
+                                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                            Command="{Binding $parent[ItemsControl].((vm:BackupsViewModel)DataContext).RequestRestoreCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="Restore">
+                                        <PathIcon Data="M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12H4A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4Z"
+                                                  Foreground="#a1a1aa" Width="12" Height="12"/>
+                                    </Button>
+                                    <!-- Delete -->
+                                    <Button Grid.Column="3" Background="Transparent" BorderThickness="0"
+                                            Width="28" Height="28" Padding="4" Cursor="Hand"
+                                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                            Command="{Binding $parent[ItemsControl].((vm:BackupsViewModel)DataContext).RequestDeleteCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="Delete">
+                                        <PathIcon Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
+                                                  Foreground="#b91c1c" Width="12" Height="12"/>
+                                    </Button>
+                                    <!-- Open folder -->
+                                    <Button Grid.Column="4" Background="Transparent" BorderThickness="0"
+                                            Width="28" Height="28" Padding="4" Cursor="Hand"
+                                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                            Command="{Binding $parent[ItemsControl].((vm:BackupsViewModel)DataContext).OpenInExplorerCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="Open in Explorer">
+                                        <PathIcon Data="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"
+                                                  Foreground="#a1a1aa" Width="12" Height="12"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </UserControl>
