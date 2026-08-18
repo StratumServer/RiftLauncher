@@ -1,0 +1,45 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Vintage Story brand colors (matching Tailwind config) -->
+    <Color x:Key="VsColor">#7e501e</Color>
+    <Color x:Key="VsLightColor">#ad7639</Color>
+    <Color x:Key="VsDarkColor">#4f3110</Color>
+
+    <SolidColorBrush x:Key="VsBrush" Color="{StaticResource VsColor}" />
+    <SolidColorBrush x:Key="VsLightBrush" Color="{StaticResource VsLightColor}" />
+    <SolidColorBrush x:Key="VsDarkBrush" Color="{StaticResource VsDarkColor}" />
+
+    <!-- Zinc palette (Tailwind zinc) -->
+    <Color x:Key="Zinc50">#fafafa</Color>
+    <Color x:Key="Zinc100">#f4f4f5</Color>
+    <Color x:Key="Zinc200">#e4e4e7</Color>
+    <Color x:Key="Zinc300">#d4d4d8</Color>
+    <Color x:Key="Zinc400">#a1a1aa</Color>
+    <Color x:Key="Zinc500">#71717a</Color>
+    <Color x:Key="Zinc600">#52525b</Color>
+    <Color x:Key="Zinc700">#3f3f46</Color>
+    <Color x:Key="Zinc800">#27272a</Color>
+    <Color x:Key="Zinc900">#18181b</Color>
+    <Color x:Key="Zinc950">#09090b</Color>
+
+    <SolidColorBrush x:Key="Zinc50Brush" Color="{StaticResource Zinc50}" />
+    <SolidColorBrush x:Key="Zinc100Brush" Color="{StaticResource Zinc100}" />
+    <SolidColorBrush x:Key="Zinc200Brush" Color="{StaticResource Zinc200}" />
+    <SolidColorBrush x:Key="Zinc300Brush" Color="{StaticResource Zinc300}" />
+    <SolidColorBrush x:Key="Zinc400Brush" Color="{StaticResource Zinc400}" />
+    <SolidColorBrush x:Key="Zinc500Brush" Color="{StaticResource Zinc500}" />
+    <SolidColorBrush x:Key="Zinc600Brush" Color="{StaticResource Zinc600}" />
+    <SolidColorBrush x:Key="Zinc700Brush" Color="{StaticResource Zinc700}" />
+    <SolidColorBrush x:Key="Zinc800Brush" Color="{StaticResource Zinc800}" />
+    <SolidColorBrush x:Key="Zinc900Brush" Color="{StaticResource Zinc900}" />
+    <SolidColorBrush x:Key="Zinc950Brush" Color="{StaticResource Zinc950}" />
+
+    <!-- Semantic colors -->
+    <SolidColorBrush x:Key="SidebarBackground" Color="#CC18181b" />
+    <SolidColorBrush x:Key="ContentBackground" Color="#E618181b" />
+    <SolidColorBrush x:Key="OverlayBackground" Color="#80000000" />
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource VsColor}" />
+    <SolidColorBrush x:Key="AccentLightBrush" Color="{StaticResource VsLightColor}" />
+
+</ResourceDictionary>

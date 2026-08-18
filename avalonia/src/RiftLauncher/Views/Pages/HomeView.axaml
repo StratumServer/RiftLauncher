@@ -1,0 +1,17 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RiftLauncher.ViewModels.Pages"
+             x:Class="RiftLauncher.Views.Pages.HomeView"
+             x:DataType="vm:HomeViewModel">
+    <Border Padding="24">
+        <StackPanel Spacing="16" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock Text="Rift Launcher"
+                       FontSize="28"
+                       FontWeight="Bold"
+                       Foreground="{StaticResource Zinc100Brush}" />
+            <TextBlock Text="Welcome! Select an option from the sidebar to get started."
+                       FontSize="14"
+                       Foreground="{StaticResource Zinc400Brush}" />
+        </StackPanel>
+    </Border>
+</UserControl>

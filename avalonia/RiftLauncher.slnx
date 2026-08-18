@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RiftLauncher.Core/RiftLauncher.Core.csproj" />
+    <Project Path="src/RiftLauncher.Tests/RiftLauncher.Tests.csproj" />
+    <Project Path="src/RiftLauncher/RiftLauncher.csproj" />
+  </Folder>
+</Solution>

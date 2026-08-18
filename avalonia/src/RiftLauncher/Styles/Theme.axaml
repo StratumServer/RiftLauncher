@@ -1,0 +1,40 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Base window style -->
+    <Style Selector="Window">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FontFamily" Value="{StaticResource InterFont}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Foreground" Value="{StaticResource Zinc100Brush}" />
+    </Style>
+
+    <!-- Custom scrollbar -->
+    <Style Selector="ScrollViewer /template/ ScrollBar">
+        <Setter Property="Width" Value="6" />
+    </Style>
+
+    <Style Selector="ScrollViewer /template/ ScrollBar /template/ Thumb">
+        <Setter Property="Background" Value="{StaticResource VsBrush}" />
+        <Setter Property="CornerRadius" Value="3" />
+        <Setter Property="MinHeight" Value="30" />
+    </Style>
+
+    <!-- UI Scale styles -->
+    <Style Selector="Window.Scale50">
+        <Setter Property="FontSize" Value="8" />
+    </Style>
+    <Style Selector="Window.Scale75">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Window.Scale100">
+        <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style Selector="Window.Scale125">
+        <Setter Property="FontSize" Value="18" />
+    </Style>
+    <Style Selector="Window.Scale150">
+        <Setter Property="FontSize" Value="22" />
+    </Style>
+
+</Styles>
