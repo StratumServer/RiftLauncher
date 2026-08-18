@@ -1,0 +1,188 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RiftLauncher.ViewModels.Pages"
+             x:Class="RiftLauncher.Views.Pages.InstallationFormView"
+             x:DataType="vm:InstallationFormViewModel">
+
+  <ScrollViewer Padding="24,16">
+    <StackPanel Spacing="16" MaxWidth="800">
+      <!-- Header -->
+      <TextBlock Text="{Binding PageTitle}"
+                 FontSize="20" FontWeight="Bold"
+                 Foreground="{DynamicResource Zinc100Brush}"/>
+
+      <!-- Missing version warning -->
+      <Border IsVisible="{Binding MissingVersionWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+              Background="#1afb923c"
+              BorderBrush="#4dfb923c"
+              BorderThickness="1"
+              CornerRadius="6"
+              Padding="12,8">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <PathIcon Data="M1,21H23L12,2" Width="14" Height="14" Foreground="#fb923c"/>
+          <TextBlock Text="{Binding MissingVersionWarning}" Foreground="#fdba74" FontSize="12"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Error message -->
+      <Border IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+              Background="#1aef4444"
+              BorderBrush="#4def4444"
+              BorderThickness="1"
+              CornerRadius="6"
+              Padding="12,8">
+        <TextBlock Text="{Binding ErrorMessage}" Foreground="#ef4444" FontSize="12"/>
+      </Border>
+
+      <!-- Basics Section -->
+      <Expander Header="Basics" IsExpanded="True">
+        <StackPanel Spacing="12" Margin="0,8,0,0">
+          <!-- Name -->
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Name" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <TextBox Grid.Column="1"
+                     Text="{Binding Name}"
+                     Watermark="Installation name (5-50 chars)"
+                     MaxLength="50"/>
+          </Grid>
+
+          <!-- Icon -->
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Icon" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{Binding AvailableIcons}"
+                      SelectedItem="{Binding SelectedIcon}"
+                      MinWidth="200">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:IconOption">
+                  <TextBlock Text="{Binding Name}"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <!-- Version picker -->
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Version" VerticalAlignment="Top" Margin="0,8,0,0"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <Border Grid.Column="1"
+                    Background="{DynamicResource Zinc800Brush}"
+                    CornerRadius="4"
+                    MaxHeight="200"
+                    BorderBrush="{DynamicResource Zinc600Brush}"
+                    BorderThickness="1">
+              <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding AvailableVersions}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:GameVersionOption">
+                      <Button Background="Transparent"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Left"
+                              Padding="12,6"
+                              CornerRadius="0">
+                        <TextBlock Text="{Binding Version}" FontSize="12"/>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Border>
+          </Grid>
+
+          <!-- Data folder (only for new) -->
+          <Grid ColumnDefinitions="120,*,Auto"
+                IsVisible="{Binding IsPathEditable}">
+            <TextBlock Text="Data Folder" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <TextBox Grid.Column="1"
+                     Text="{Binding Path}"
+                     IsReadOnly="True"
+                     Watermark="Select a folder..."/>
+            <Button Grid.Column="2"
+                    Margin="8,0,0,0"
+                    Padding="8,6"
+                    Command="{Binding PickFolderCommand}">
+              <TextBlock Text="Browse"/>
+            </Button>
+          </Grid>
+        </StackPanel>
+      </Expander>
+
+      <!-- Backups Section -->
+      <Expander Header="Backups">
+        <StackPanel Spacing="12" Margin="0,8,0,0">
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Limit" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <NumericUpDown Grid.Column="1"
+                           Value="{Binding BackupsLimit}"
+                           Minimum="0" Maximum="10"
+                           Width="120" HorizontalAlignment="Left"/>
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Automatic" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <ToggleSwitch Grid.Column="1"
+                          IsChecked="{Binding BackupsAuto}"
+                          OnContent="On" OffContent="Off"/>
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Compression" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <NumericUpDown Grid.Column="1"
+                           Value="{Binding CompressionLevel}"
+                           Minimum="0" Maximum="9"
+                           Width="120" HorizontalAlignment="Left"/>
+          </Grid>
+        </StackPanel>
+      </Expander>
+
+      <!-- Advanced Section -->
+      <Expander Header="Advanced" IsExpanded="False">
+        <StackPanel Spacing="12" Margin="0,8,0,0">
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Start Params" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <TextBox Grid.Column="1"
+                     Text="{Binding StartParams}"
+                     Watermark="Optional startup parameters"/>
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Mesa GL Thread" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <ToggleSwitch Grid.Column="1"
+                          IsChecked="{Binding MesaGlThread}"
+                          OnContent="On" OffContent="Off"/>
+          </Grid>
+          <Grid ColumnDefinitions="120,*">
+            <TextBlock Text="Env Variables" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Zinc300Brush}"/>
+            <TextBox Grid.Column="1"
+                     Text="{Binding EnvVars}"
+                     Watermark="KEY=VALUE pairs"/>
+          </Grid>
+        </StackPanel>
+      </Expander>
+
+      <!-- Buttons -->
+      <StackPanel Orientation="Horizontal" Spacing="12"
+                  HorizontalAlignment="Right" Margin="0,16,0,0">
+        <Button Padding="16,8" Foreground="#dc2626">
+          <TextBlock Text="Cancel"/>
+        </Button>
+        <Button Classes="accent"
+                Padding="16,8"
+                Command="{Binding SaveCommand}"
+                IsEnabled="{Binding !IsBusy}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Data="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"
+                      Width="14" Height="14"/>
+            <TextBlock Text="Save"/>
+          </StackPanel>
+        </Button>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -9,6 +9,7 @@ public sealed class AppConfig
     public string BackupsFolder { get; set; } = string.Empty;
     public WindowConfig Window { get; set; } = new();
     public AccountPublic? Account { get; set; }
+    public AppSettings? Settings { get; set; }
     public List<Installation> Installations { get; set; } = [];
     public List<GameVersion> GameVersions { get; set; } = [];
     public List<int> FavMods { get; set; } = [];
@@ -49,6 +50,7 @@ public sealed class Installation
     public long TotalTimePlayed { get; set; }
     public bool MesaGlThread { get; set; }
     public string EnvVars { get; set; } = string.Empty;
+    public int ModsCount { get; set; }
 }
 
 public sealed class Backup
@@ -70,4 +72,14 @@ public sealed class CustomIcon
     public string Name { get; set; } = string.Empty;
     public string Icon { get; set; } = string.Empty;
     public bool Custom { get; set; }
+}
+
+public sealed class AppSettings
+{
+    public string? DefaultInstallationsFolder { get; set; }
+    public string? DefaultVersionsFolder { get; set; }
+    public string? Language { get; set; }
+    public int UiScale { get; set; } = 100;
+    public bool MinimizeToTray { get; set; }
+    public bool CloseToTray { get; set; }
 }
