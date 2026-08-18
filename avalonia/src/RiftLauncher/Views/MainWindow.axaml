@@ -284,13 +284,140 @@
 
             <!-- ==================== CONTENT AREA ==================== -->
             <Border Grid.Column="1">
-                <TransitioningContentControl Content="{Binding CurrentPage}"
-                                             HorizontalAlignment="Stretch"
-                                             VerticalAlignment="Stretch">
-                    <TransitioningContentControl.PageTransition>
-                        <CrossFade Duration="0:0:0.1" />
-                    </TransitioningContentControl.PageTransition>
-                </TransitioningContentControl>
+                <Panel>
+                    <TransitioningContentControl Content="{Binding CurrentPage}"
+                                                 HorizontalAlignment="Stretch"
+                                                 VerticalAlignment="Stretch">
+                        <TransitioningContentControl.PageTransition>
+                            <CrossFade Duration="0:0:0.1" />
+                        </TransitioningContentControl.PageTransition>
+                    </TransitioningContentControl>
+
+                    <!-- Notifications: top-right overlay, w-80 (320px) -->
+                    <ItemsControl ItemsSource="{Binding Notifications.Notifications}"
+                                  Width="320"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Top"
+                                  Margin="0,8,8,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:NotificationItem">
+                                <Border Margin="0,0,0,8"
+                                        Padding="8"
+                                        CornerRadius="2"
+                                        Background="#9909090b"
+                                        BorderThickness="4,0,0,0"
+                                        BorderBrush="#7e501e">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <PathIcon Grid.Column="0"
+                                                  Width="20" Height="20"
+                                                  Margin="0,0,8,0"
+                                                  VerticalAlignment="Center"
+                                                  Data="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"
+                                                  Foreground="#ad7639"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Message}"
+                                                   Foreground="#a1a1aa"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   TextWrapping="Wrap"/>
+                                        <Button Grid.Column="2"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4"
+                                                Cursor="Hand"
+                                                VerticalAlignment="Center">
+                                            <PathIcon Data="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"
+                                                      Foreground="#a1a1aa" Width="12" Height="12"/>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Login Dialog overlay -->
+                    <Border IsVisible="{Binding Session.Login.ShowDialog}"
+                            Background="#CC09090b"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch">
+                        <Border HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="#8009090b"
+                                BorderBrush="#0Da1a1aa"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="24"
+                                Width="640">
+                            <StackPanel Spacing="16" DataContext="{Binding Session.Login}">
+                                <TextBlock Text="Log In"
+                                           FontSize="24"
+                                           FontWeight="Bold"
+                                           Foreground="#e4e4e7"
+                                           HorizontalAlignment="Center"/>
+
+                                <StackPanel Spacing="12">
+                                    <Grid ColumnDefinitions="100,*">
+                                        <TextBlock Grid.Column="0" Text="Email"
+                                                   Foreground="#e4e4e7" FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   TextAlignment="Right" Margin="0,0,12,0"/>
+                                        <TextBox Grid.Column="1" Classes="form-input"
+                                                 Text="{Binding Email}"
+                                                 PlaceholderText="Email"
+                                                 IsReadOnly="{Binding IsLoggingIn}"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="100,*">
+                                        <TextBlock Grid.Column="0" Text="Password"
+                                                   Foreground="#e4e4e7" FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   TextAlignment="Right" Margin="0,0,12,0"/>
+                                        <TextBox Grid.Column="1" Classes="form-input"
+                                                 Text="{Binding Password}"
+                                                 PlaceholderText="Password"
+                                                 PasswordChar="&#x2022;"
+                                                 IsReadOnly="{Binding IsLoggingIn}"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="100,*">
+                                        <TextBlock Grid.Column="0" Text="2FA Code"
+                                                   Foreground="#e4e4e7" FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   TextAlignment="Right" Margin="0,0,12,0"/>
+                                        <StackPanel Grid.Column="1" Spacing="4">
+                                            <TextBox Classes="form-input"
+                                                     Text="{Binding TotpCode}"
+                                                     PlaceholderText="2FA Code"
+                                                     MaxLength="6"
+                                                     IsReadOnly="{Binding IsLoggingIn}"/>
+                                            <TextBlock Text="Only if you have 2FA enabled"
+                                                       Foreground="#71717a" FontSize="10"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Center" Spacing="16">
+                                    <Button Classes="form-button error" Padding="12,8"
+                                            Command="{Binding CloseDialogCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <PathIcon Data="M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z"
+                                                      Foreground="#b91c1c" Width="14" Height="14"/>
+                                            <TextBlock Text="Cancel" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Classes="form-button success" Padding="12,8"
+                                            Command="{Binding LoginCommand}"
+                                            IsEnabled="{Binding !IsLoggingIn}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <PathIcon Data="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"
+                                                      Foreground="#65a30d" Width="14" Height="14"/>
+                                            <TextBlock Text="Log In" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Border>
+                </Panel>
             </Border>
         </Grid>
     </Panel>

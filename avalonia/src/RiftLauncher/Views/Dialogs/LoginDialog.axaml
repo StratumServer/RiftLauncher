@@ -1,0 +1,115 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RiftLauncher.ViewModels"
+             x:Class="RiftLauncher.Views.Dialogs.LoginDialog"
+             x:DataType="vm:LoginViewModel">
+
+    <!-- Full-screen overlay: z-200, flex center, bg-zinc-950/80 -->
+    <Panel IsVisible="{Binding ShowDialog}">
+        <Border Background="#CC09090b">
+            <Border HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="#8009090b"
+                    BorderBrush="#0Da1a1aa"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="24"
+                    Width="640">
+
+                <StackPanel Spacing="16">
+                    <!-- Title: text-2xl font-bold -->
+                    <TextBlock Text="Log In"
+                               FontSize="24"
+                               FontWeight="Bold"
+                               Foreground="#e4e4e7"
+                               HorizontalAlignment="Center"/>
+
+                    <!-- Form fields -->
+                    <StackPanel Spacing="12">
+                        <!-- Email -->
+                        <Grid ColumnDefinitions="Auto,*" Margin="0">
+                            <TextBlock Grid.Column="0"
+                                       Text="Email"
+                                       Foreground="#e4e4e7"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Width="100"
+                                       TextAlignment="Right"
+                                       Margin="0,0,12,0"/>
+                            <TextBox Grid.Column="1"
+                                     Classes="form-input"
+                                     Text="{Binding Email}"
+                                     PlaceholderText="Email"
+                                     IsReadOnly="{Binding IsLoggingIn}"/>
+                        </Grid>
+
+                        <!-- Password -->
+                        <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock Grid.Column="0"
+                                       Text="Password"
+                                       Foreground="#e4e4e7"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Width="100"
+                                       TextAlignment="Right"
+                                       Margin="0,0,12,0"/>
+                            <TextBox Grid.Column="1"
+                                     Classes="form-input"
+                                     Text="{Binding Password}"
+                                     PlaceholderText="Password"
+                                     PasswordChar="•"
+                                     IsReadOnly="{Binding IsLoggingIn}"/>
+                        </Grid>
+
+                        <!-- 2FA Code -->
+                        <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock Grid.Column="0"
+                                       Text="2FA Code"
+                                       Foreground="#e4e4e7"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Width="100"
+                                       TextAlignment="Right"
+                                       Margin="0,0,12,0"/>
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBox Classes="form-input"
+                                         Text="{Binding TotpCode}"
+                                         PlaceholderText="2FA Code"
+                                         MaxLength="6"
+                                         IsReadOnly="{Binding IsLoggingIn}"/>
+                                <TextBlock Text="Only if you have 2FA enabled"
+                                           Foreground="#71717a"
+                                           FontSize="10"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Buttons: cancel (error) + login (success) -->
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Spacing="16">
+                        <Button Classes="form-button error"
+                                Padding="12,8"
+                                Command="{Binding CloseDialogCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <PathIcon Data="M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z"
+                                          Foreground="#b91c1c" Width="16" Height="16"/>
+                                <TextBlock Text="Cancel" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="form-button success"
+                                Padding="12,8"
+                                Command="{Binding LoginCommand}"
+                                IsEnabled="{Binding !IsLoggingIn}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <PathIcon Data="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"
+                                          Foreground="#65a30d" Width="16" Height="16"/>
+                                <TextBlock Text="Log In" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Panel>
+</UserControl>

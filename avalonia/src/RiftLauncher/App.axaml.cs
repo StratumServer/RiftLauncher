@@ -75,6 +75,7 @@ public partial class App : Application
         services.AddSingleton<IUpdateService, UpdateService>();
 
         // Shell VMs
+        services.AddSingleton<NotificationsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddTransient<TasksViewModel>();
         services.AddTransient<LoginViewModel>();

@@ -71,6 +71,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public TasksViewModel Tasks { get; }
     public SessionViewModel Session { get; }
+    public NotificationsViewModel Notifications { get; }
 
     public ObservableCollection<NavItemViewModel> NavItems { get; } = new()
     {
@@ -86,6 +87,7 @@ public partial class MainWindowViewModel : ViewModelBase
         IServiceProvider services,
         TasksViewModel tasksViewModel,
         SessionViewModel sessionViewModel,
+        NotificationsViewModel notificationsViewModel,
         IConfigService configService,
         IAccountService accountService)
     {
@@ -94,6 +96,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _accountService = accountService;
         Tasks = tasksViewModel;
         Session = sessionViewModel;
+        Notifications = notificationsViewModel;
         NavigateToIndex(0);
         _ = LoadInstallationStateAsync();
     }

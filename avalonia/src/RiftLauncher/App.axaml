@@ -20,5 +20,6 @@
         <FluentTheme />
         <StyleInclude Source="avares://RiftLauncher/Styles/Theme.axaml" />
         <StyleInclude Source="avares://RiftLauncher/Styles/Controls.axaml" />
+        <StyleInclude Source="avares://RiftLauncher/Styles/FormControls.axaml" />
     </Application.Styles>
 </Application>

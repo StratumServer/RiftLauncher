@@ -37,7 +37,8 @@ public class MainWindowViewModelTests
         var tasksVm = new TasksViewModel(taskManager);
         var loginVm = new LoginViewModel(accountService);
         var sessionVm = new SessionViewModel(accountService, loginVm);
-        return new MainWindowViewModel(sp, tasksVm, sessionVm, configService, accountService);
+        var notificationsVm = new NotificationsViewModel();
+        return new MainWindowViewModel(sp, tasksVm, sessionVm, notificationsVm, configService, accountService);
     }
 
     [Fact]

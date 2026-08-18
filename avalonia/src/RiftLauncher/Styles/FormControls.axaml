@@ -1,0 +1,82 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- FormInput: h-8, px-2 py-1, rounded-md, bg-zinc-950/50, border zinc-400/5 -->
+    <Style Selector="TextBox.form-input">
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Background" Value="#8009090b"/>
+        <Setter Property="BorderBrush" Value="#0Da1a1aa"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="#e4e4e7"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="CaretBrush" Value="#e4e4e7"/>
+    </Style>
+    <Style Selector="TextBox.form-input:pointerover">
+        <Setter Property="BorderBrush" Value="#1Aa1a1aa"/>
+    </Style>
+    <Style Selector="TextBox.form-input:focus">
+        <Setter Property="BorderBrush" Value="#7e501e"/>
+    </Style>
+    <Style Selector="TextBox.form-input:disabled">
+        <Setter Property="Opacity" Value="0.5"/>
+    </Style>
+    <Style Selector="TextBox.form-input /template/ TextBlock#PART_Watermark">
+        <Setter Property="Foreground" Value="#26e4e4e7"/>
+    </Style>
+
+    <!-- FormButton: border zinc-400/5, bg-zinc-950/50, rounded-sm, shadow -->
+    <Style Selector="Button.form-button">
+        <Setter Property="Background" Value="#8009090b"/>
+        <Setter Property="BorderBrush" Value="#0Da1a1aa"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="2"/>
+        <Setter Property="Foreground" Value="#e4e4e7"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.form-button:pointerover">
+        <Setter Property="Background" Value="#9909090b"/>
+    </Style>
+    <Style Selector="Button.form-button:disabled">
+        <Setter Property="Opacity" Value="0.5"/>
+    </Style>
+
+    <!-- FormButton type variants -->
+    <Style Selector="Button.form-button.error">
+        <Setter Property="Foreground" Value="#b91c1c"/>
+    </Style>
+    <Style Selector="Button.form-button.success">
+        <Setter Property="Foreground" Value="#65a30d"/>
+    </Style>
+    <Style Selector="Button.form-button.warn">
+        <Setter Property="Foreground" Value="#facc15"/>
+    </Style>
+
+    <!-- FormToggle: w-48, h-24, rounded-full, bg-zinc-950/50, checked:bg-vs -->
+    <Style Selector="ToggleSwitch.form-toggle">
+        <Setter Property="OffContent" Value=""/>
+        <Setter Property="OnContent" Value=""/>
+        <Setter Property="Width" Value="48"/>
+        <Setter Property="Height" Value="24"/>
+    </Style>
+
+    <!-- DropdownSection header: bg-zinc-950/50, border zinc-400/5, rounded-sm -->
+    <Style Selector="Expander.dropdown-section">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+    </Style>
+    <Style Selector="Expander.dropdown-section /template/ ToggleButton#PART_toggle">
+        <Setter Property="Background" Value="#8009090b"/>
+        <Setter Property="BorderBrush" Value="#0Da1a1aa"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="2"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="Foreground" Value="#e4e4e7"/>
+    </Style>
+
+</Styles>

@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RiftLauncher.ViewModels"
+             x:Class="RiftLauncher.Views.Controls.NotificationsOverlay"
+             x:DataType="vm:NotificationsViewModel">
+
+    <!-- Notifications stack: w-80 (320px), absolute top-2 right-2, gap-2 -->
+    <ItemsControl ItemsSource="{Binding Notifications}"
+                  Width="320"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Top"
+                  Margin="0,8,8,0">
+        <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:NotificationItem">
+                <Border Margin="0,0,0,8"
+                        Padding="8"
+                        CornerRadius="2"
+                        Background="#9909090b"
+                        BorderThickness="4,0,0,0"
+                        Cursor="Hand">
+                    <!-- Border color by type set via converter or class -->
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <!-- Icon -->
+                        <PathIcon Grid.Column="0"
+                                  Width="20" Height="20"
+                                  Margin="0,0,8,0"
+                                  VerticalAlignment="Center"
+                                  Data="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"
+                                  Foreground="#ad7639"/>
+                        <!-- Message -->
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Message}"
+                                   Foreground="#a1a1aa"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"/>
+                        <!-- Dismiss X -->
+                        <Button Grid.Column="2"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="4"
+                                Cursor="Hand"
+                                VerticalAlignment="Center">
+                            <PathIcon Data="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"
+                                      Foreground="#a1a1aa" Width="12" Height="12"/>
+                        </Button>
+                    </Grid>
+                </Border>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+</UserControl>
