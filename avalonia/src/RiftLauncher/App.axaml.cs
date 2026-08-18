@@ -58,9 +58,12 @@ public partial class App : Application
         services.AddSingleton<ITaskManagerService, TaskManagerService>();
         services.AddSingleton<IVersionCatalogService, VersionCatalogService>();
         services.AddSingleton<IModDbService, ModDbService>();
+        services.AddSingleton<IAccountService, AccountService>();
 
         services.AddTransient<MainWindowViewModel>();
         services.AddTransient<TasksViewModel>();
+        services.AddTransient<LoginViewModel>();
+        services.AddTransient<SessionViewModel>();
     }
 
     private static string GetLocalesDirectory()
