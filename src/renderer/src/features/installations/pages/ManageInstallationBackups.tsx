@@ -96,12 +96,16 @@ function ManageInstallationBackups(): JSX.Element {
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
     if (!backup) return addNotification(t("features.backups.cantDeleteWhileinUse"), "error")
 
+    configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _deleting: true } } })
+
     const result = await deleteInstallationBackup(createBackupDeletionPorts(), { backup: toBackupSnapshot(backup) })
 
     if (result.ok) {
       configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id } })
       return addNotification(t("features.backups.backupDeletedSuccesfully"), "success")
     }
+
+    configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _deleting: false } } })
 
     const { messageKey, logged } = describeBackupDeletionFailure(result.reason)
 
