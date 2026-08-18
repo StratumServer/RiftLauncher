@@ -1,13 +1,14 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Accent button (Play button style) -->
+    <!-- Accent button (Play button: bg-vs, h-56, rounded-sm, shadow) -->
     <Style Selector="Button.accent">
         <Setter Property="Background" Value="{StaticResource VsBrush}" />
         <Setter Property="Foreground" Value="White" />
-        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="CornerRadius" Value="2" />
         <Setter Property="Padding" Value="16,8" />
         <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="BorderThickness" Value="0" />
     </Style>
     <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{StaticResource VsLightBrush}" />
@@ -15,25 +16,47 @@
     <Style Selector="Button.accent:pressed /template/ ContentPresenter">
         <Setter Property="Background" Value="{StaticResource VsDarkBrush}" />
     </Style>
+    <Style Selector="Button.accent:disabled">
+        <Setter Property="Opacity" Value="0.5" />
+    </Style>
 
-    <!-- Sidebar nav item -->
-    <Style Selector="ListBoxItem.nav-item">
-        <Setter Property="Padding" Value="12" />
-        <Setter Property="Margin" Value="4" />
-        <Setter Property="CornerRadius" Value="8" />
+    <!-- Form button (universal button: bg-zinc-950/50, border zinc-400/5, rounded-sm, shadow) -->
+    <Style Selector="Button.form-button">
+        <Setter Property="Background" Value="{StaticResource ButtonBackground}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SubtleBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.form-button:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource ButtonBackground}" />
+        <Setter Property="Opacity" Value="0.8" />
+    </Style>
+    <Style Selector="Button.form-button:disabled">
+        <Setter Property="Opacity" Value="0.5" />
+    </Style>
+
+    <!-- Nav link button (sidebar navigation items) -->
+    <Style Selector="Button.nav-link">
         <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="Padding" Value="4,8" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Cursor" Value="Hand" />
     </Style>
-    <Style Selector="ListBoxItem.nav-item:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="#20FFFFFF" />
-    </Style>
-    <Style Selector="ListBoxItem.nav-item:selected /template/ ContentPresenter">
-        <Setter Property="Background" Value="{StaticResource VsBrush}" />
+    <Style Selector="Button.nav-link:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="#15FFFFFF" />
     </Style>
 
     <!-- Card style -->
     <Style Selector="Border.card">
-        <Setter Property="Background" Value="#40FFFFFF" />
-        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Background" Value="{StaticResource ButtonBackground}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SubtleBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="2" />
         <Setter Property="Padding" Value="16" />
     </Style>
 

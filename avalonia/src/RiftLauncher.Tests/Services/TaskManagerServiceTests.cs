@@ -183,7 +183,8 @@ public class TaskManagerServiceTests
     [Fact]
     public async Task StartDownloadAsync_PropagatesProgress()
     {
-        var capturedProgress = Substitute.For<IProgress<double>>();
+        double reportedValue = -1;
+        var capturedProgress = new Progress<double>(v => reportedValue = v);
 
         _downloadService.DownloadAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
@@ -195,7 +196,8 @@ public class TaskManagerServiceTests
             "Download", "desc", "http://example.com/file.zip", "/tmp", "file.zip",
             capturedProgress);
 
-        capturedProgress.Received().Report(50);
+        await Task.Delay(50);
+        reportedValue.Should().Be(50);
     }
 
     [Fact]

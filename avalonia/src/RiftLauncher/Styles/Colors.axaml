@@ -35,11 +35,31 @@
     <SolidColorBrush x:Key="Zinc900Brush" Color="{StaticResource Zinc900}" />
     <SolidColorBrush x:Key="Zinc950Brush" Color="{StaticResource Zinc950}" />
 
-    <!-- Semantic colors -->
-    <SolidColorBrush x:Key="SidebarBackground" Color="#CC18181b" />
-    <SolidColorBrush x:Key="ContentBackground" Color="#E618181b" />
-    <SolidColorBrush x:Key="OverlayBackground" Color="#80000000" />
+    <!-- Custom zinc shades (from Tailwind config) -->
+    <Color x:Key="Zinc750">#313136</Color>
+    <Color x:Key="Zinc850">#212122</Color>
+    <SolidColorBrush x:Key="Zinc750Brush" Color="{StaticResource Zinc750}" />
+    <SolidColorBrush x:Key="Zinc850Brush" Color="{StaticResource Zinc850}" />
+
+    <!-- Semantic colors (matching Electron: zinc-950/30, zinc-950/15 overlay) -->
+    <SolidColorBrush x:Key="SidebarBackground" Color="#4D09090b" />
+    <SolidColorBrush x:Key="ContentBackground" Color="Transparent" />
+    <SolidColorBrush x:Key="OverlayBackground" Color="#2609090b" />
     <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource VsColor}" />
     <SolidColorBrush x:Key="AccentLightBrush" Color="{StaticResource VsLightColor}" />
+
+    <!-- Borders (zinc-400/5 = 5% opacity) -->
+    <SolidColorBrush x:Key="SubtleBorderBrush" Color="#0Da1a1aa" />
+
+    <!-- Button backgrounds (zinc-950/50) -->
+    <SolidColorBrush x:Key="ButtonBackground" Color="#8009090b" />
+
+    <!-- Status colors -->
+    <Color x:Key="ErrorColor">#991b1b</Color>
+    <Color x:Key="WarningColor">#facc15</Color>
+    <Color x:Key="SuccessColor">#65a30d</Color>
+    <SolidColorBrush x:Key="ErrorBrush" Color="{StaticResource ErrorColor}" />
+    <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
 
 </ResourceDictionary>
