@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { PiFolderOpenDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone, PiWarningDuotone } from "react-icons/pi"
+import { PiFolderOpenDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone, PiWarningDuotone, PiLinkDuotone } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
 import semver from "semver"
 
@@ -111,13 +111,14 @@ function ListVersions(): JSX.Element {
 
                     <ThinSeparator />
 
-                    <div className="shrink-0 w-fit flex gap-1 text-lg">
+                    <div className="shrink-0 w-fit flex gap-1 items-center text-lg">
+                      {gv.linked && <PiLinkDuotone className="p-1" title={t("features.versions.linkedVersion")} />}
                       <NormalButton onClick={() => openVersionFolder(gv.path)} title={`${t("generic.openOnFileExplorer")} · ${gv.path}`} className="p-1">
                         <PiFolderOpenDuotone />
                       </NormalButton>
                       <NormalButton
                         className="p-1"
-                        title={t("features.versions.deleteVersion")}
+                        title={gv.linked ? t("features.versions.removeFromList") : t("features.versions.deleteVersion")}
                         onClick={async () => {
                           setVersionToDelete(gv)
                         }}
@@ -131,15 +132,19 @@ function ListVersions(): JSX.Element {
           </ListGroup>
         </ListWrapper>
 
-        <PopupDialogPanel title={t("features.versions.uninstallVersion")} isOpen={versionToDelete !== null} close={() => setVersionToDelete(null)}>
+        <PopupDialogPanel
+          title={t(versionToDelete?.linked ? "features.versions.removeFromList" : "features.versions.uninstallVersion")}
+          isOpen={versionToDelete !== null}
+          close={() => setVersionToDelete(null)}
+        >
           <>
-            <p>{t("features.versions.areYouSureUninstall")}</p>
-            <p className="text-zinc-400">{t("features.versions.uninstallingNotReversible")}</p>
+            <p>{t(versionToDelete?.linked ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall")}</p>
+            <p className="text-zinc-400">{t(versionToDelete?.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
             <div className="flex gap-4 items-center justify-center text-lg">
               <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setVersionToDelete(null)} type="success">
                 <PiXCircleDuotone />
               </FormButton>
-              <FormButton title={t("generic.uninstall")} className="p-2" onClick={DeleteVersionHandler} type="error">
+              <FormButton title={t(versionToDelete?.linked ? "features.versions.removeFromList" : "generic.uninstall")} className="p-2" onClick={DeleteVersionHandler} type="error">
                 <PiTrashDuotone />
               </FormButton>
             </div>
@@ -152,7 +157,7 @@ function ListVersions(): JSX.Element {
               <PiWarningDuotone className="text-lg shrink-0" />
               <span>{t("features.versions.versionInUseByInstallations", { installations: formatUsedByInstallations(versionInUseWarning?.usedByInstallations ?? []) })}</span>
             </div>
-            <p className="text-zinc-400">{t("features.versions.uninstallingNotReversible")}</p>
+            <p className="text-zinc-400">{t(versionInUseWarning?.version.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
             <div className="flex gap-4 items-center justify-center text-lg">
               <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setVersionInUseWarning(null)} type="success">
                 <PiXCircleDuotone />

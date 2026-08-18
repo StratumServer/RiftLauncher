@@ -12,7 +12,8 @@ export function toGameVersionSnapshot(version: GameVersionType): GameVersionSnap
     version: version.version,
     path: version.path,
     isPlaying: version._playing ?? false,
-    isDeleting: version._deleting ?? false
+    isDeleting: version._deleting ?? false,
+    linked: version.linked === true
   }
 }
 

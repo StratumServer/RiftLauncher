@@ -126,7 +126,12 @@
       "installDownloadFailed": "VS Version {{version}} couldn't be downloaded. Check your connection and install it again.",
       "installUnpackFailed": "VS Version {{version}} was downloaded but couldn't be unpacked. Install it again.",
       "installGameNotInFolder": "VS Version {{version}} didn't end up in {{folder}}. Install it again into an empty folder.",
-      "catalogLoadFailed": "The VS Version list couldn't be loaded. Check your connection and try again."
+      "catalogLoadFailed": "The VS Version list couldn't be loaded. Check your connection and try again.",
+      "linkedVersion": "Registered folder. The launcher did not install this version.",
+      "removeFromList": "Remove from List",
+      "areYouSureUnlink": "Are you sure you want to remove this VS Version from the list?",
+      "unlinkingKeepsTheFolder": "The folder stays where it is. Only the launcher's record of it goes away.",
+      "versionUnlinkedSuccessfully": "VS Version {{version}} removed from the list. Its folder was left alone."
     },
     "installations": {
       "noInstallationsFound": "No Installations found!",
