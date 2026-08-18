@@ -12,6 +12,7 @@ import { useInstallations, useGameVersions, useCustomIcons, useSettingsConfig, u
 import { createCreateInstallationPorts, describeCreateInstallationFailure, toFoldersInUse, toInstallationType } from "@renderer/features/installations/adapters/create"
 import { useDefaultInstallationPath, useEnsurePathExists, usePickEmptyFolder } from "@renderer/features/installations/hooks/usePathActions"
 import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
+import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
 import { useInstallationFormFields } from "@renderer/features/installations/hooks/useInstallationFormFields"
 import { NameAndIconPicker } from "@renderer/features/installations/components/NameAndIconPicker"
 import { GameVersionPicker } from "@renderer/features/installations/components/GameVersionPicker"
@@ -35,6 +36,8 @@ import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
+const LOG_TAG = "[front] [installations] [features/installations/pages/AddInstallation.tsx]"
+
 function AddInslallation(): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
@@ -48,6 +51,7 @@ function AddInslallation(): JSX.Element {
   const pickEmptyFolder = usePickEmptyFolder()
   const ensurePathExists = useEnsurePathExists()
   const openExternalLink = useOpenExternalLink()
+  const logMessage = useLogMessage()
 
   const fields = useInstallationFormFields({
     icon: INSTALLATION_ICONS[0],
@@ -108,6 +112,8 @@ function AddInslallation(): JSX.Element {
       addNotification(t("features.installations.installationSuccessfullyAdded"), "success")
       navigate("/installations")
     } catch (error) {
+      logMessage("error", `${LOG_TAG} [handleAddInstallation] Error adding an Installation.`)
+      logMessage("debug", `${LOG_TAG} [handleAddInstallation] Error adding the Installation at ${path}: ${error}.`)
       addNotification(t("features.installations.errorAddingInstallation"), "error")
     }
   }

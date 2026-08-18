@@ -38,13 +38,13 @@ describe("validateArchive", () => {
   it("accepts a gzipped tar, which is what the Linux game builds ship as", async () => {
     const archivePath = await makeTarGz("vs_client_linux-x64_1.22.6.tar.gz", ["vintagestory"])
 
-    await validateArchive(archivePath, sevenZipBin)
+    await assert.doesNotReject(async () => validateArchive(archivePath, sevenZipBin))
   })
 
   it("accepts the same archive under the .tgz spelling", async () => {
     const archivePath = await makeTarGz("build.tgz", ["vintagestory"])
 
-    await validateArchive(archivePath, sevenZipBin)
+    await assert.doesNotReject(async () => validateArchive(archivePath, sevenZipBin))
   })
 
   it("refuses a gzipped tar carrying a symbolic link", async () => {
@@ -71,7 +71,7 @@ describe("validateArchive", () => {
     const archivePath = workspacePath("backup.zip")
     execFileSync(sevenZipBin, ["a", "-tzip", archivePath, workspacePath("source", "vintagestory")], { stdio: "ignore" })
 
-    await validateArchive(archivePath, sevenZipBin)
+    await assert.doesNotReject(async () => validateArchive(archivePath, sevenZipBin))
   })
 
   it("refuses a zip that cannot be parsed", async () => {
@@ -84,7 +84,7 @@ describe("validateArchive", () => {
     const archivePath = workspacePath("backup.7z")
     execFileSync(sevenZipBin, ["a", "-t7z", archivePath, workspacePath("source", "vintagestory")], { stdio: "ignore" })
 
-    await validateArchive(archivePath, sevenZipBin)
+    await assert.doesNotReject(async () => validateArchive(archivePath, sevenZipBin))
     await assert.rejects(validateArchive(workspacePath("source", "vintagestory", "Vintagestory"), sevenZipBin), /could not be listed/)
   })
 })

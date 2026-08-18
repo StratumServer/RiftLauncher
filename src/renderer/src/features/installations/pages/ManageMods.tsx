@@ -12,6 +12,7 @@ import { useBulkUpdateMods } from "@renderer/features/mods/hooks/useBulkUpdateMo
 import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpackImportPicker"
 
 import { useDeleteInstalledModFile } from "@renderer/features/installations/hooks/useDeleteInstalledModFile"
+import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
 
 import { ListGroup, ListWrapper } from "@renderer/components/ui/List"
 import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeSummaryPopup"
@@ -27,6 +28,8 @@ import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalle
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 
+const LOG_TAG = "[front] [mods] [features/installations/pages/ManageMods.tsx]"
+
 function byName(a: InstalledModType, b: InstalledModType): number {
   return a.name.localeCompare(b.name)
 }
@@ -37,6 +40,7 @@ function ListMods(): JSX.Element {
   const { addNotification } = useNotificationsContext()
 
   const deleteInstalledModFile = useDeleteInstalledModFile()
+  const logMessage = useLogMessage()
 
   const { id } = useParams()
 
@@ -70,6 +74,8 @@ function ListMods(): JSX.Element {
 
       addNotification(t("features.mods.modSuccessfullyDeleted"), "success")
     } catch (err) {
+      logMessage("error", `${LOG_TAG} [DeleteModHandler] Error deleting a mod.`)
+      logMessage("debug", `${LOG_TAG} [DeleteModHandler] Error deleting the mod file ${modToDelete.path}: ${err}.`)
       addNotification(t("features.mods.errorDeletingMod"), "error")
     } finally {
       setModToDelete(null)

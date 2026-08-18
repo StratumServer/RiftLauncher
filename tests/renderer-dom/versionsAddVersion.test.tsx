@@ -45,7 +45,7 @@ describe("AddVersion", () => {
     renderAddVersion()
 
     expect(await screen.findByText("The VS Version list couldn't be loaded. Check your connection and try again.")).toBeTruthy()
-    expect(screen.queryByTitle("Reload")).toBeTruthy()
+    expect(screen.getByTitle("Reload")).toBeTruthy()
     expect(document.querySelector(".animate-spin")).toBeNull()
   })
 
