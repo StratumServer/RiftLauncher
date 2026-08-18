@@ -5,7 +5,9 @@ import { join } from "path"
 import yauzl from "yauzl"
 
 import type { DirectoryReader, IconStore, ModArchiveContent, ModArchiveReader, ModArchiveResult, PathBuilder } from "@domain/ports"
+import type { CachedIcon } from "@domain/mods/iconCache"
 import type { ScanInstalledModsPorts } from "@domain/mods/scanInstalled"
+import { MOD_ICON_CACHE_MAX_BYTES, planIconCacheEviction } from "@domain/mods/iconCache"
 import { assertSafeFileName } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
 
@@ -172,53 +174,90 @@ export function createIconStorePort(): IconStore {
         await fse.ensureDir(folder)
         const target = join(folder, imageName)
         // The name is the content: whatever already sits at that path is these
-        // same bytes, so a rescan has nothing left to write.
-        if (!(await fse.pathExists(target))) await fse.writeFile(target, bytes)
+        // same bytes, so a rescan has nothing left to write. It is touched
+        // instead, which is what makes the sweep's eviction order mean
+        // something: an icon that is still installed but never rewritten would
+        // otherwise look older than one for a mod uninstalled last week. A
+        // failed touch must not cost the mod its icon.
+        if (await fse.pathExists(target)) {
+          const now = new Date()
+          await fse.utimes(target, now, now).catch(() => undefined)
+        } else {
+          await fse.writeFile(target, bytes)
+        }
         return imageName
       } catch (err) {
         logMessage("error", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon.`)
         logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon: ${err}`)
         return undefined
       }
-    },
-
-    prune: async (liveNames: readonly string[]): Promise<void> => {
-      const folder = modImagesFolder()
-      let entries: string[]
-      try {
-        entries = await fse.readdir(folder)
-      } catch {
-        // No cache folder yet, or it just vanished: nothing to sweep either way.
-        return
-      }
-
-      const live = new Set(liveNames)
-      const strangers = entries.filter((entry) => {
-        try {
-          assertSafeFileName(entry)
-          return !live.has(entry)
-        } catch {
-          // A name too strange to be one this store ever wrote is a stranger too.
-          return true
-        }
-      })
-
-      // Deleted individually and in parallel rather than as one recursive
-      // removal of the folder: each target stays a single, safe join onto a
-      // name `readdir` itself just handed back, so this can never reach outside
-      // modImagesFolder(), and one file another process is mid-delete on never
-      // takes the rest of the sweep down with it.
-      await Promise.all(
-        strangers.map(async (entry) => {
-          try {
-            await fse.remove(join(folder, entry))
-          } catch (err) {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Could not prune ${entry} from the icon cache: ${err}`)
-          }
-        })
-      )
     }
   }
+}
+
+/**
+ * Deletes what the shared mod icon cache no longer earns its keep on.
+ *
+ * The rule is age and size, never a live set. The cache folder is shared by every installation
+ * while a scan only ever reads one of them, so a caller that swept against the names one scan
+ * produced would delete the icons every other installation is pointing at, which is what #117
+ * reports. What this deletes instead is anything the current store could not have written, then the
+ * least recently scanned icons once the folder is over budget. `createIconStorePort().store` moves
+ * an icon's timestamp forward every time a scan points at it again, so an icon that is still
+ * installed keeps looking young whichever installation holds it.
+ *
+ * Best effort throughout: this runs at startup and a cache sweep must never be able to break a
+ * launch, so every filesystem error is logged and swallowed.
+ *
+ * @param maxBytes Budget the survivors have to fit in. Only tests pass this.
+ */
+export async function pruneModIconCache(maxBytes: number = MOD_ICON_CACHE_MAX_BYTES): Promise<void> {
+  const folder = modImagesFolder()
+
+  let names: string[]
+  try {
+    names = await fse.readdir(folder)
+  } catch {
+    // No cache folder yet, or it just vanished: nothing to sweep either way.
+    return
+  }
+
+  const entries: CachedIcon[] = []
+  for (const name of names) {
+    try {
+      // A name readdir handed back is already a single component, and this keeps
+      // every join below inside modImagesFolder() even so. A name too strange to
+      // pass is left alone rather than deleted on a guess.
+      assertSafeFileName(name)
+      const stats = await fse.stat(join(folder, name))
+      if (stats.isFile()) entries.push({ name, bytes: stats.size, modifiedAt: stats.mtimeMs })
+    } catch (err) {
+      logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Skipping ${name}: ${err}`)
+    }
+  }
+
+  const doomed = planIconCacheEviction(entries, maxBytes)
+  if (doomed.length === 0) return
+
+  const bytesByName = new Map(entries.map((entry) => [entry.name, entry.bytes]))
+  let reclaimed = 0
+
+  // Deleted individually rather than as one recursive removal of the folder:
+  // each target stays a single, safe join onto a name readdir itself just handed
+  // back, and one file another process is mid-delete on never takes the rest of
+  // the sweep down with it.
+  await Promise.all(
+    doomed.map(async (name) => {
+      try {
+        await fse.remove(join(folder, name))
+        reclaimed += bytesByName.get(name) ?? 0
+      } catch (err) {
+        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Could not remove ${name} from the icon cache: ${err}`)
+      }
+    })
+  )
+
+  logMessage("info", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Removed ${doomed.length} icons from the cache, ${reclaimed} bytes reclaimed.`)
 }
 
 /**

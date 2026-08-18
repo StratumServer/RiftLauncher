@@ -182,12 +182,10 @@ export async function scanInstalledMods(ports: ScanInstalledModsPorts, input: Sc
     }
   }
 
-  // The scan just decided the whole cache's live set: every icon name any
-  // surviving mod still points to. Nothing else in the process ever sees that
-  // set as a whole, so this is the one place a sweep can happen without
-  // guessing at what another scan might still need.
-  const liveIconNames = mods.map((mod) => mod.image).filter((image): image is string => image !== undefined)
-  await ports.icons.prune?.(liveIconNames)
-
+  // Nothing is swept here. A scan sees one installation's Mods folder while the
+  // icon cache is shared by every installation, so this result is never the
+  // whole live set, and treating it as one deleted the other installations'
+  // icons on every scan (#117). The sweep runs at startup instead, on age and
+  // size, in pruneModIconCache.
   return { mods, errors }
 }
