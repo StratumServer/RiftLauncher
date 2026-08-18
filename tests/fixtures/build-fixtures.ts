@@ -290,9 +290,10 @@ write(
 
 // --- oversized-declared-icon.zip -------------------------------------------
 // Same idea as oversized-declared-modinfo.zip, aimed at the icon's own,
-// larger cap instead (MAX_MOD_IMAGE_BYTES, 8 MiB in modScan.ts). modinfo.json
-// is valid and under its cap, so the archive gets as far as trying the icon
-// and declaredSizeAllowed() rejects it there.
+// larger cap instead (MAX_MOD_IMAGE_BYTES, 512 KiB in modScan.ts). modinfo.json
+// is valid and under its cap, so the archive gets as far as trying the icon.
+// The declared size exceeds the limit, so the icon is skipped and the mod
+// appears without a picture rather than as an error.
 write(
   "oversized-declared-icon.zip",
   assembleZip([
@@ -301,7 +302,7 @@ write(
       name: "modicon.png",
       method: METHOD_DEFLATE,
       realBytes: Buffer.from("irrelevant", "utf8"),
-      declaredUncompressedSize: 9 * 1024 * 1024
+      declaredUncompressedSize: 1 * 1024 * 1024
     }
   ])
 )
