@@ -30,10 +30,9 @@
                 <Border CornerRadius="6" ClipToBounds="True"
                         MaxWidth="560" MaxHeight="315">
                     <Panel>
-                        <!-- Thumbnail image -->
-                        <Image Source="https://img.youtube.com/vi/mgvzBB_--xM/maxresdefault.jpg"
-                               Stretch="UniformToFill"
-                               Width="560" Height="315"/>
+                        <!-- Thumbnail placeholder (async load not supported in static AXAML) -->
+                        <Border Background="#3f3f46"
+                                Width="560" Height="315"/>
                         <!-- Dark overlay -->
                         <Border Background="#4D09090b">
                             <!-- Play icon centered -->

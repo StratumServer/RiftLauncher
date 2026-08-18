@@ -22,6 +22,7 @@ public class ViewLocator : IDataTemplate
                              .Replace("ViewModel", "View", StringComparison.Ordinal);
 
         var type = ViewAssembly.GetType(viewName);
+        Console.WriteLine($"[ViewLocator] VM={vmName} -> View={viewName} -> Type={type?.Name ?? "NOT FOUND"}");
 
         if (type != null)
             return (Control)Activator.CreateInstance(type)!;

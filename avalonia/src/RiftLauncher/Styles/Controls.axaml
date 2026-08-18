@@ -51,6 +51,31 @@
         <Setter Property="Background" Value="#15FFFFFF" />
     </Style>
 
+    <!-- Nav item button (MVVM, like Prospect: Button.navitem + .active class) -->
+    <!-- border-l-4, px-2 py-1, rounded-sm, hover:pl-3, duration-100 -->
+    <Style Selector="Button.navitem">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="4,0,0,0"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="CornerRadius" Value="2"/>
+        <Setter Property="Padding" Value="8,6"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Foreground" Value="#e4e4e7"/>
+    </Style>
+    <Style Selector="Button.navitem:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="#15ffffff"/>
+        <Setter Property="Padding" Value="12,6,8,6"/>
+    </Style>
+    <Style Selector="Button.navitem.active">
+        <Setter Property="BorderBrush" Value="#7e501e"/>
+        <Setter Property="Background" Value="#267e501e"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.navitem.active /template/ ContentPresenter">
+        <Setter Property="Background" Value="#267e501e"/>
+    </Style>
+
     <!-- Card style -->
     <Style Selector="Border.card">
         <Setter Property="Background" Value="{StaticResource ButtonBackground}" />
