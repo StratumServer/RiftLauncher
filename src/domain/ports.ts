@@ -191,19 +191,13 @@ export interface IconStore {
    * Stores `bytes` and resolves the name the icon can be found under, or
    * undefined when it could not be stored. A missing icon never costs a mod its
    * place in the list, so this never rejects.
+   *
+   * The name comes from the content, so storing the same bytes twice resolves
+   * the same name and writes the file once. Nothing here deletes: a store is
+   * shared by every installation, and no single scan knows what the others
+   * still point at.
    */
   store(bytes: Uint8Array): Promise<string | undefined>
-
-  /**
-   * Removes whatever this store is holding onto that is not named in
-   * `liveNames`, best effort. Called once a scan has settled on its final set
-   * of mods, with the names of the icons that set still points to.
-   *
-   * Optional because not every `IconStore` manages a shared, cumulative
-   * directory worth sweeping; a store never fails or holds up its caller over
-   * this, so an implementation that skips it is free to leave it undefined.
-   */
-  prune?(liveNames: readonly string[]): Promise<void>
 }
 
 /** Wall clock, so services never read the ambient time. */

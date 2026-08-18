@@ -20,6 +20,7 @@ import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } f
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
+import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import fse from "fs-extra"
 
 import "@src/ipc"
@@ -262,6 +263,13 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+
+  // Fire and forget, after the window exists so it stays off the first paint path
+  // and before the renderer's first scan 2.5 seconds later. This is the only
+  // sweep of the shared mod icon cache: a scan reads one installation and the
+  // folder holds every installation's icons, so a scan can never decide what is
+  // dead there (#117).
+  void pruneModIconCache()
 
   const updateDecision = canAutoUpdate({
     platform: process.platform,
