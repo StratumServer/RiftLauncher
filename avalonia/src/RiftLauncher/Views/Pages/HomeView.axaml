@@ -4,14 +4,53 @@
              x:Class="RiftLauncher.Views.Pages.HomeView"
              x:DataType="vm:HomeViewModel">
     <Border Padding="24">
-        <StackPanel Spacing="16" VerticalAlignment="Center" HorizontalAlignment="Center">
-            <TextBlock Text="Rift Launcher"
-                       FontSize="28"
+        <StackPanel Spacing="16" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="500">
+            <!-- Welcome -->
+            <TextBlock Text="{Binding WelcomeMessage}"
+                       FontSize="24"
                        FontWeight="Bold"
-                       Foreground="{StaticResource Zinc100Brush}" />
-            <TextBlock Text="Welcome! Select an option from the sidebar to get started."
-                       FontSize="14"
-                       Foreground="{StaticResource Zinc400Brush}" />
+                       Foreground="{StaticResource Zinc100Brush}"
+                       HorizontalAlignment="Center" />
+
+            <!-- Stats cards -->
+            <Border Background="{StaticResource Zinc800Brush}" CornerRadius="8" Padding="20">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,*">
+                        <StackPanel Grid.Column="0" HorizontalAlignment="Center" Spacing="4">
+                            <TextBlock Text="{Binding InstallationsCount}"
+                                       FontSize="28" FontWeight="Bold"
+                                       Foreground="{StaticResource VsBrush}"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="Installations"
+                                       FontSize="12"
+                                       Foreground="{StaticResource Zinc400Brush}"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="4">
+                            <TextBlock Text="{Binding VersionsCount}"
+                                       FontSize="28" FontWeight="Bold"
+                                       Foreground="{StaticResource VsBrush}"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="Versions"
+                                       FontSize="12"
+                                       Foreground="{StaticResource Zinc400Brush}"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Border Height="1" Background="{StaticResource Zinc700Brush}" Margin="0,4" />
+
+                    <StackPanel Spacing="4" IsVisible="{Binding LastUsedInstallation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock Text="Last played"
+                                   FontSize="11"
+                                   Foreground="{StaticResource Zinc500Brush}" />
+                        <TextBlock Text="{Binding LastUsedInstallation}"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource Zinc200Brush}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </Border>
 </UserControl>

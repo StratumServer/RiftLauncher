@@ -4,9 +4,66 @@
              x:Class="RiftLauncher.Views.Pages.InfoHelpView"
              x:DataType="vm:InfoHelpViewModel">
     <Border Padding="24">
-        <TextBlock Text="Info &amp; Help"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   Foreground="{StaticResource Zinc100Brush}" />
+        <ScrollViewer>
+            <StackPanel Spacing="16" MaxWidth="500" HorizontalAlignment="Center">
+                <TextBlock Text="Info &amp; Help"
+                           FontSize="20"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource Zinc100Brush}" />
+
+                <!-- About -->
+                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Rift Launcher"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="{StaticResource Zinc100Brush}" />
+                        <TextBlock Text="A launcher for Vintage Story by the Stratum project."
+                                   Foreground="{StaticResource Zinc300Brush}"
+                                   TextWrapping="Wrap" />
+                        <StackPanel Spacing="4" Margin="0,8,0,0">
+                            <TextBlock Foreground="{StaticResource Zinc400Brush}" FontSize="11">
+                                <Run Text="Version: " /><Run Text="{Binding AppVersion}" />
+                            </TextBlock>
+                            <TextBlock Foreground="{StaticResource Zinc400Brush}" FontSize="11">
+                                <Run Text="Runtime: " /><Run Text="{Binding DotNetVersion}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Links -->
+                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Links"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource Zinc200Brush}" />
+                        <Button Content="GitHub Repository"
+                                Command="{Binding OpenGitHubCommand}"
+                                Padding="8,6"
+                                HorizontalAlignment="Stretch" />
+                        <Button Content="Discord Server"
+                                Command="{Binding OpenDiscordCommand}"
+                                Padding="8,6"
+                                HorizontalAlignment="Stretch" />
+                        <Button Content="Vintage Story Website"
+                                Command="{Binding OpenVintageStoryCommand}"
+                                Padding="8,6"
+                                HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Credits -->
+                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Credits"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource Zinc200Brush}" />
+                        <TextBlock Foreground="{StaticResource Zinc400Brush}" TextWrapping="Wrap">
+                            Built by the Stratum community. Vintage Story is developed by Anego Studios.
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
     </Border>
 </UserControl>
