@@ -4,9 +4,74 @@
              x:Class="RiftLauncher.Views.Pages.ConfigView"
              x:DataType="vm:ConfigViewModel">
     <Border Padding="24">
-        <TextBlock Text="Configuration"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   Foreground="{StaticResource Zinc100Brush}" />
+        <ScrollViewer>
+            <StackPanel Spacing="16" MaxWidth="500" HorizontalAlignment="Center">
+                <TextBlock Text="Configuration"
+                           FontSize="20"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource Zinc100Brush}"
+                           Margin="0,0,0,8" />
+
+                <!-- Language -->
+                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Language" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Zinc200Brush}" />
+                        <ComboBox ItemsSource="{Binding AvailableLanguages}"
+                                  SelectedItem="{Binding Language}"
+                                  HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Border>
+
+                <!-- UI Scale -->
+                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="UI Scale" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Zinc200Brush}" />
+                        <ComboBox ItemsSource="{Binding AvailableScales}"
+                                  SelectedItem="{Binding UiScale}"
+                                  HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Behavior -->
+                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Behavior" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Zinc200Brush}" />
+                        <CheckBox Content="Minimize to tray"
+                                  IsChecked="{Binding MinimizeToTray}" />
+                        <CheckBox Content="Close to tray"
+                                  IsChecked="{Binding CloseToTray}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Folders -->
+                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Default Folders" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Zinc200Brush}" />
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Installations" FontSize="11"
+                                       Foreground="{StaticResource Zinc400Brush}" />
+                            <TextBox Text="{Binding DefaultInstallationsFolder}"
+                                     PlaceholderText="Default installations folder" />
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Versions" FontSize="11"
+                                       Foreground="{StaticResource Zinc400Brush}" />
+                            <TextBox Text="{Binding DefaultVersionsFolder}"
+                                     PlaceholderText="Default versions folder" />
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Backups" FontSize="11"
+                                       Foreground="{StaticResource Zinc400Brush}" />
+                            <TextBox Text="{Binding BackupsFolder}"
+                                     PlaceholderText="Default backups folder" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
     </Border>
 </UserControl>
