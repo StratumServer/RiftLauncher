@@ -1,12 +1,116 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RiftLauncher.ViewModels.Pages"
+             xmlns:svc="using:RiftLauncher.Core.Services"
              x:Class="RiftLauncher.Views.Pages.ModsListView"
              x:DataType="vm:ModsListViewModel">
     <Border Padding="24">
-        <TextBlock Text="Mods"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   Foreground="{StaticResource Zinc100Brush}" />
+        <Grid RowDefinitions="Auto,Auto,*">
+            <!-- Header -->
+            <TextBlock Grid.Row="0"
+                       Text="Mods"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource Zinc100Brush}"
+                       Margin="0,0,0,12" />
+
+            <!-- Filter bar -->
+            <Border Grid.Row="1" Background="{StaticResource Zinc800Brush}"
+                    CornerRadius="4" Padding="12" Margin="0,0,0,12">
+                <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding TextFilter}"
+                                 PlaceholderText="Search mods..."
+                                 Margin="0,0,8,0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                            <Button Content="Clear" Command="{Binding ClearFiltersCommand}"
+                                    Padding="8,6" />
+                            <ToggleButton Content="★" IsChecked="{Binding OnlyFavorites}"
+                                          Padding="8,6" ToolTip.Tip="Show favorites only" />
+                        </StackPanel>
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ComboBox SelectedItem="{Binding SideFilter}" Width="100">
+                            <ComboBoxItem Content="Any" Tag="any" />
+                            <ComboBoxItem Content="Client" Tag="client" />
+                            <ComboBoxItem Content="Server" Tag="server" />
+                            <ComboBoxItem Content="Both" Tag="both" />
+                        </ComboBox>
+                        <ComboBox SelectedItem="{Binding OrderBy}" Width="120">
+                            <ComboBoxItem Content="Follows" Tag="follows" />
+                            <ComboBoxItem Content="Downloads" Tag="downloads" />
+                            <ComboBoxItem Content="Comments" Tag="comments" />
+                            <ComboBoxItem Content="Last Updated" Tag="lastreleased" />
+                        </ComboBox>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Mods grid -->
+            <ScrollViewer Grid.Row="2">
+                <StackPanel>
+                    <!-- Loading -->
+                    <TextBlock Text="Searching..."
+                               IsVisible="{Binding IsSearching}"
+                               Foreground="{StaticResource Zinc400Brush}"
+                               HorizontalAlignment="Center"
+                               Margin="0,40" />
+
+                    <!-- Results -->
+                    <ItemsControl ItemsSource="{Binding FilteredMods}"
+                                  IsVisible="{Binding !IsSearching}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="svc:ModListEntry">
+                                <Border Background="{StaticResource Zinc800Brush}"
+                                        CornerRadius="4"
+                                        Padding="12"
+                                        Margin="4"
+                                        Width="220"
+                                        Cursor="Hand">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource Zinc100Brush}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxLines="1" />
+                                        <TextBlock Text="{Binding Summary}"
+                                                   Foreground="{StaticResource Zinc400Brush}"
+                                                   FontSize="11"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxLines="2"
+                                                   TextWrapping="Wrap" />
+                                        <StackPanel Orientation="Horizontal" Spacing="12">
+                                            <TextBlock FontSize="10" Foreground="{StaticResource Zinc500Brush}">
+                                                <Run Text="↓ " /><Run Text="{Binding Downloads}" />
+                                            </TextBlock>
+                                            <TextBlock FontSize="10" Foreground="{StaticResource Zinc500Brush}">
+                                                <Run Text="♥ " /><Run Text="{Binding Follows}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Author}"
+                                                   FontSize="10"
+                                                   Foreground="{StaticResource Zinc500Brush}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Empty state -->
+                    <TextBlock Text="No mods found matching your filters"
+                               IsVisible="{Binding !IsSearching}"
+                               Foreground="{StaticResource Zinc400Brush}"
+                               HorizontalAlignment="Center"
+                               Margin="0,40" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
     </Border>
 </UserControl>

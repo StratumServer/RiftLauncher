@@ -57,6 +57,7 @@ public partial class App : Application
         services.AddSingleton<IArchiveService, ArchiveService>();
         services.AddSingleton<ITaskManagerService, TaskManagerService>();
         services.AddSingleton<IVersionCatalogService, VersionCatalogService>();
+        services.AddSingleton<IModDbService, ModDbService>();
 
         services.AddTransient<MainWindowViewModel>();
         services.AddTransient<TasksViewModel>();
