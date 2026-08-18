@@ -59,6 +59,7 @@ public partial class App : Application
         services.AddSingleton<IVersionCatalogService, VersionCatalogService>();
         services.AddSingleton<IModDbService, ModDbService>();
         services.AddSingleton<IAccountService, AccountService>();
+        services.AddSingleton<IUpdateService, UpdateService>();
 
         services.AddTransient<MainWindowViewModel>();
         services.AddTransient<TasksViewModel>();
