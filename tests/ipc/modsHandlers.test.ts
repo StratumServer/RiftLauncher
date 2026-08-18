@@ -16,20 +16,40 @@ import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronPat
 import { dialog } from "electron"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { pruneModIconCache } from "@src/ipc/adapters/modScan"
+
+vi.mock("@src/ipc/adapters/modScan", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@src/ipc/adapters/modScan")>()
+  return { ...original, pruneModIconCache: vi.fn().mockResolvedValue(undefined) }
+})
+
+vi.mock("@src/ipc/pathPolicy", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@src/ipc/pathPolicy")>()
+  return {
+    ...original,
+    assertManagedPath: vi.fn(async (value: unknown) => String(value))
+  }
+})
 
 /**
- * Branch coverage for src/ipc/handlers/modsHandlers.ts's EXPORT_MODPACK and
- * IMPORT_MODPACK, previously entirely unimported by a test (0%).
- * GET_INSTALLED_MODS is left alone: its own scanning logic already has deep
- * coverage through modScan.test.ts and the domain's scanInstalled tests, and
- * the handler wrapper around it adds nothing this campaign is chasing.
+ * Branch coverage for src/ipc/handlers/modsHandlers.ts's GET_INSTALLED_MODS,
+ * EXPORT_MODPACK, and IMPORT_MODPACK. The scanning domain logic has deep
+ * coverage through modScan.test.ts and the domain's scanInstalled tests;
+ * GET_INSTALLED_MODS tests here focus on the handler shell and its
+ * integration with pruneModIconCache.
  */
 
 let temporaryRoot: string
 let userDataFolder: string
+let modsFolder: string
 
+type GetInstalledModsHandler = (event: IpcMainInvokeEvent, path: string) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }>
 type ExportModpackHandler = (event: IpcMainInvokeEvent, manifest: unknown) => Promise<{ success: boolean; path?: string }>
 type ImportModpackHandler = (event: IpcMainInvokeEvent) => Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }>
+
+function getInstalledModsHandler(): GetInstalledModsHandler {
+  return getIpcHandler<GetInstalledModsHandler>(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS)
+}
 
 function exportModpackHandler(): ExportModpackHandler {
   return getIpcHandler<ExportModpackHandler>(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK)
@@ -46,12 +66,33 @@ function validManifest(): ModpackManifestType {
 beforeEach(async () => {
   temporaryRoot = mkdtempSync(join(tmpdir(), "mods-handlers-"))
   userDataFolder = join(temporaryRoot, "userData")
+  modsFolder = join(temporaryRoot, "mods")
   mkdirSync(userDataFolder, { recursive: true })
+  mkdirSync(modsFolder, { recursive: true })
 
   setElectronUserDataPath(userDataFolder)
   setElectronPath("appData", join(temporaryRoot, "appData"))
   setElectronPath("home", temporaryRoot)
   setElectronPath("appRoot", join(temporaryRoot, "app"))
+
+  // Seed a config that makes pathPolicy accept modsFolder as a managed path.
+  writeFileSync(
+    join(userDataFolder, "config.json"),
+    JSON.stringify({
+      schemaVersion: 3,
+      lastUsedInstallation: null,
+      defaultInstallationsFolder: join(temporaryRoot, "Installations"),
+      defaultVersionsFolder: join(temporaryRoot, "Versions"),
+      backupsFolder: join(temporaryRoot, "Backups"),
+      window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
+      account: null,
+      installations: [{ name: "test", path: modsFolder, gameVersion: "", startParams: "", mesaGlThread: false, envVars: "", backups: [] }],
+      gameVersions: [],
+      favMods: [],
+      customIcons: []
+    }),
+    "utf-8"
+  )
 
   // The `electron` mock (and its `dialog.showSaveDialog`/`showOpenDialog`
   // vi.fn()s) stays the same object across vi.resetModules(), unlike the real
@@ -59,6 +100,7 @@ beforeEach(async () => {
   // on afterEach's vi.restoreAllMocks() ordering.
   vi.mocked(dialog.showSaveDialog).mockReset()
   vi.mocked(dialog.showOpenDialog).mockReset()
+  vi.mocked(pruneModIconCache).mockClear()
 
   vi.resetModules()
   await import("@src/ipc/handlers/modsHandlers")
@@ -67,6 +109,25 @@ beforeEach(async () => {
 afterEach(() => {
   rmSync(temporaryRoot, { recursive: true, force: true })
   vi.restoreAllMocks()
+})
+
+describe("GET_INSTALLED_MODS", () => {
+  it("calls pruneModIconCache after a successful scan", async () => {
+    const event = await createTrustedEvent()
+    const result = await getInstalledModsHandler()(event, modsFolder)
+
+    assert.deepEqual(result, { mods: [], errors: [] })
+    assert.equal(vi.mocked(pruneModIconCache).mock.calls.length, 1)
+  })
+
+  it("does not call pruneModIconCache when the path does not exist", async () => {
+    const missing = join(temporaryRoot, "nonexistent")
+    const event = await createTrustedEvent()
+    const result = await getInstalledModsHandler()(event, missing)
+
+    assert.deepEqual(result, { mods: [], errors: [] })
+    assert.equal(vi.mocked(pruneModIconCache).mock.calls.length, 0)
+  })
 })
 
 describe("EXPORT_MODPACK", () => {

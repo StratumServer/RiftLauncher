@@ -380,18 +380,24 @@ describe("pruneModIconCache coalescing and mtime guard", () => {
     assert.equal(existsSync(join(iconsFolder(), icon)), true)
   })
 
-  it("coalesces overlapping calls into one sweep plus a trailing re-run", async () => {
+  it("coalesces overlapping calls into at most two readdir sweeps", async () => {
     const { pruneModIconCache } = await import("../../src/ipc/adapters/modScan")
     seedIcon(contentName("a"), 16, 1_000)
 
-    // Fire three overlapping calls; the first runs, the rest coalesce
+    const readdirSpy = vi.spyOn(fse, "readdir")
+
+    // Fire three overlapping calls; the first runs, the rest coalesce into
+    // at most one trailing re-run.
     const p1 = pruneModIconCache()
     const p2 = pruneModIconCache()
     const p3 = pruneModIconCache()
 
     await Promise.all([p1, p2, p3])
 
-    // All resolved without error
-    assert.equal(existsSync(iconsFolder()), true)
+    // Coalescing means at most 2 readdir calls (one active + one trailing),
+    // never 3. Without coalescing each call would readdir independently.
+    const readdirCalls = readdirSpy.mock.calls.filter((args) => String(args[0]).includes("Mods"))
+    assert.ok(readdirCalls.length <= 2, `Expected at most 2 readdir calls on the icon folder, got ${readdirCalls.length}`)
+    assert.ok(readdirCalls.length >= 1, "Expected at least 1 readdir call")
   })
 })
