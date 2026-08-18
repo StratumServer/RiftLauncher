@@ -1,4 +1,6 @@
 using FluentAssertions;
+using NSubstitute;
+using RiftLauncher.Core.Services;
 using RiftLauncher.ViewModels;
 using RiftLauncher.ViewModels.Pages;
 
@@ -6,10 +8,18 @@ namespace RiftLauncher.Tests;
 
 public class MainWindowViewModelTests
 {
+    private static MainWindowViewModel CreateVm()
+    {
+        var taskManager = Substitute.For<ITaskManagerService>();
+        taskManager.Tasks.Returns(new System.Collections.ObjectModel.ObservableCollection<TaskItem>());
+        var tasksVm = new TasksViewModel(taskManager);
+        return new MainWindowViewModel(tasksVm);
+    }
+
     [Fact]
     public void Constructor_SetsHomeAsInitialPage()
     {
-        var vm = new MainWindowViewModel();
+        var vm = CreateVm();
 
         vm.CurrentPage.Should().BeOfType<HomeViewModel>();
         vm.WindowTitle.Should().Be("Rift Launcher");
@@ -25,7 +35,7 @@ public class MainWindowViewModelTests
     [InlineData(5, typeof(InfoHelpViewModel))]
     public void SelectedNavIndex_NavigatesToCorrectPage(int index, Type expectedType)
     {
-        var vm = new MainWindowViewModel();
+        var vm = CreateVm();
 
         vm.SelectedNavIndex = index;
 
@@ -35,7 +45,7 @@ public class MainWindowViewModelTests
     [Fact]
     public void SelectedNavIndex_InvalidIndex_KeepsCurrentPage()
     {
-        var vm = new MainWindowViewModel();
+        var vm = CreateVm();
         var initialPage = vm.CurrentPage;
 
         vm.SelectedNavIndex = 99;

@@ -52,7 +52,13 @@ public partial class App : Application
         services.AddSingleton<IConfigService>(sp =>
             new ConfigService(sp.GetRequiredService<ILogger<ConfigService>>()));
 
+        services.AddSingleton<HttpClient>();
+        services.AddSingleton<IDownloadService, DownloadService>();
+        services.AddSingleton<IArchiveService, ArchiveService>();
+        services.AddSingleton<ITaskManagerService, TaskManagerService>();
+
         services.AddTransient<MainWindowViewModel>();
+        services.AddTransient<TasksViewModel>();
     }
 
     private static string GetLocalesDirectory()

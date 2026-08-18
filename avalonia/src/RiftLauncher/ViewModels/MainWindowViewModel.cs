@@ -13,8 +13,11 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _windowTitle = "Rift Launcher";
 
-    public MainWindowViewModel()
+    public TasksViewModel Tasks { get; }
+
+    public MainWindowViewModel(TasksViewModel tasksViewModel)
     {
+        Tasks = tasksViewModel;
         CurrentPage = new Pages.HomeViewModel();
     }
 

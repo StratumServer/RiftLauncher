@@ -1,0 +1,168 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RiftLauncher.ViewModels"
+             xmlns:svc="using:RiftLauncher.Core.Services"
+             xmlns:local="using:RiftLauncher.Views.Controls"
+             x:Class="RiftLauncher.Views.Controls.TasksPopup"
+             x:DataType="vm:TasksViewModel">
+
+  <Panel>
+    <!-- Toggle Button -->
+    <Button Command="{Binding ToggleCommand}"
+            Width="36" Height="36"
+            Padding="6"
+            Background="Transparent"
+            CornerRadius="6"
+            ToolTip.Tip="Tasks">
+      <Panel>
+        <PathIcon Data="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
+                  Width="18" Height="18"
+                  Foreground="{DynamicResource VsLightBrush}"/>
+        <!-- Badge for active tasks -->
+        <Border IsVisible="{Binding HasActiveTasks}"
+                Background="#ef4444"
+                CornerRadius="6"
+                MinWidth="14" Height="14"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,-2,-2,0"
+                Padding="2,0">
+          <TextBlock Text="{Binding ActiveTaskCount}"
+                     FontSize="9"
+                     Foreground="White"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"/>
+        </Border>
+      </Panel>
+    </Button>
+
+    <!-- Popup Panel -->
+    <Popup IsOpen="{Binding IsOpen}"
+           Placement="TopEdgeAlignedRight"
+           IsLightDismissEnabled="True"
+           MaxWidth="320"
+           MaxHeight="280">
+      <Border Background="{DynamicResource Zinc800Brush}"
+              BorderBrush="{DynamicResource Zinc600Brush}"
+              BorderThickness="1"
+              CornerRadius="8"
+              Padding="8"
+              Width="300">
+        <Panel>
+          <!-- Empty state -->
+          <TextBlock Text="No active tasks"
+                     IsVisible="{Binding !Tasks.Count}"
+                     Foreground="{DynamicResource Zinc400Brush}"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     Margin="0,16"/>
+
+          <!-- Task list -->
+          <ScrollViewer MaxHeight="240"
+                        IsVisible="{Binding Tasks.Count}">
+            <ItemsControl ItemsSource="{Binding Tasks}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="svc:TaskItem">
+                  <Border Margin="0,0,0,6"
+                          Padding="8"
+                          Background="{DynamicResource Zinc700Brush}"
+                          CornerRadius="6">
+                    <Grid RowDefinitions="Auto,Auto,Auto">
+                      <!-- Row 0: Type icon + Name + Action button -->
+                      <Grid ColumnDefinitions="Auto,*,Auto">
+                        <!-- Type indicator -->
+                        <Border Width="6" Height="6"
+                                CornerRadius="3"
+                                Margin="0,0,8,0"
+                                VerticalAlignment="Center">
+                          <Border.Styles>
+                            <Style Selector="Border">
+                              <Setter Property="Background" Value="{DynamicResource Zinc400Brush}"/>
+                            </Style>
+                          </Border.Styles>
+                        </Border>
+
+                        <!-- Task name -->
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Name}"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Zinc100Brush}"
+                                   TextTrimming="CharacterEllipsis"/>
+
+                        <!-- Cancel button (for active tasks) -->
+                        <Button Grid.Column="2"
+                                Command="{Binding $parent[ItemsControl].((vm:TasksViewModel)DataContext).CancelTaskCommand}"
+                                CommandParameter="{Binding Id}"
+                                IsVisible="{Binding Status, Converter={x:Static local:TaskStatusConverters.IsActive}}"
+                                Width="20" Height="20"
+                                Padding="2"
+                                Background="Transparent"
+                                ToolTip.Tip="Cancel">
+                          <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                                    Width="12" Height="12"
+                                    Foreground="{DynamicResource Zinc400Brush}"/>
+                        </Button>
+
+                        <!-- Remove button (for completed/failed) -->
+                        <Button Grid.Column="2"
+                                Command="{Binding $parent[ItemsControl].((vm:TasksViewModel)DataContext).RemoveTaskCommand}"
+                                CommandParameter="{Binding Id}"
+                                IsVisible="{Binding Status, Converter={x:Static local:TaskStatusConverters.IsTerminal}}"
+                                Width="20" Height="20"
+                                Padding="2"
+                                Background="Transparent"
+                                ToolTip.Tip="Dismiss">
+                          <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                                    Width="12" Height="12"
+                                    Foreground="{DynamicResource Zinc400Brush}"/>
+                        </Button>
+                      </Grid>
+
+                      <!-- Row 1: Description -->
+                      <TextBlock Grid.Row="1"
+                                 Text="{Binding Description}"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource Zinc400Brush}"
+                                 TextTrimming="CharacterEllipsis"
+                                 MaxLines="2"
+                                 Margin="14,2,0,0"/>
+
+                      <!-- Row 2: Progress bar (only when in-progress) -->
+                      <Grid Grid.Row="2"
+                            Margin="14,6,0,0"
+                            Height="4"
+                            IsVisible="{Binding Status, Converter={x:Static local:TaskStatusConverters.IsInProgress}}">
+                        <Border Background="{DynamicResource Zinc600Brush}"
+                                CornerRadius="2"/>
+                        <Border Background="{DynamicResource VsLightBrush}"
+                                CornerRadius="2"
+                                HorizontalAlignment="Left">
+                          <Border.Width>
+                            <MultiBinding Converter="{x:Static local:TaskStatusConverters.ProgressWidth}">
+                              <Binding Path="Progress"/>
+                              <Binding Path="$parent[Grid].Bounds.Width"/>
+                            </MultiBinding>
+                          </Border.Width>
+                        </Border>
+                      </Grid>
+
+                      <!-- Error message (only when failed) -->
+                      <TextBlock Grid.Row="2"
+                                 Text="{Binding ErrorMessage}"
+                                 FontSize="10"
+                                 Foreground="#ef4444"
+                                 Margin="14,4,0,0"
+                                 IsVisible="{Binding Status, Converter={x:Static local:TaskStatusConverters.IsFailed}}"
+                                 TextTrimming="CharacterEllipsis"/>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </Panel>
+      </Border>
+    </Popup>
+  </Panel>
+</UserControl>
