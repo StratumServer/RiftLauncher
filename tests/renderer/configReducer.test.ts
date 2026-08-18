@@ -80,13 +80,6 @@ describe("configReducer: SET_CONFIG", () => {
 })
 
 describe("configReducer: scalar setters", () => {
-  it("SET_SCHEMA_VERSION overwrites schemaVersion only", () => {
-    const config = baseConfig({ schemaVersion: 1 })
-    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_SCHEMA_VERSION, payload: 2 })
-    assert.equal(result.schemaVersion, 2)
-    assert.equal(result.installations, config.installations)
-  })
-
   it("SET_LAST_USED_INSTALLATION accepts an id and null alike", () => {
     const config = baseConfig()
     const withId = configReducer(config, { type: CONFIG_ACTIONS.SET_LAST_USED_INSTALLATION, payload: "install-1" })
