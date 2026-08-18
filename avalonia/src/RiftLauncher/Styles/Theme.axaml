@@ -4,7 +4,7 @@
     <!-- Base window style -->
     <Style Selector="Window">
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="FontFamily" Value="{StaticResource InterFont}" />
+        <Setter Property="FontFamily" Value="Inter" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="Foreground" Value="{StaticResource Zinc100Brush}" />
     </Style>
