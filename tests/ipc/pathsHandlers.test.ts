@@ -186,6 +186,29 @@ describe("FORMAT_PATH: assertion throws", () => {
   })
 })
 
+describe("REMOVE_FILE_FROM_PATH", () => {
+  it("throws Unauthorized IPC sender for an untrusted caller", async () => {
+    assert.throws(() => handler<string>(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH)(createUntrustedEvent(), join(temporaryRoot, "file.txt")), /Unauthorized IPC sender/)
+  })
+
+  it("throws when the path fails validation", async () => {
+    const event = await createTrustedEvent()
+    assert.throws(() => handler<string>(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH)(event, ""), /Invalid path/)
+  })
+
+  it("returns the parent of a file in the root directory", async () => {
+    const event = await createTrustedEvent()
+    const filePath = join(temporaryRoot, "file.txt")
+    assert.equal(handler<string>(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH)(event, filePath), temporaryRoot)
+  })
+
+  it("returns the parent of a file in a nested directory", async () => {
+    const event = await createTrustedEvent()
+    const filePath = join(temporaryRoot, "nested", "file.txt")
+    assert.equal(handler<string>(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH)(event, filePath), join(temporaryRoot, "nested"))
+  })
+})
+
 describe("DOWNLOAD_ON_PATH / EXTRACT_ON_PATH / RUN_INSTALLER / COMPRESS_ON_PATH: the task-id assertion throws before any worker runs", () => {
   it("DOWNLOAD_ON_PATH rejects an unsafe task id", async () => {
     const event = await createTrustedEvent()
