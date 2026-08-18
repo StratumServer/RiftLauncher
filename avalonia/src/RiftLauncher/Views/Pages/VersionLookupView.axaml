@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RiftLauncher.ViewModels.Pages"
+             x:Class="RiftLauncher.Views.Pages.VersionLookupView"
+             x:DataType="vm:VersionLookupViewModel">
+    <Border Padding="24">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- Header -->
+            <TextBlock Grid.Row="0"
+                       Text="Look For A Version"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource Zinc100Brush}"
+                       Margin="0,0,0,16" />
+
+            <!-- Content -->
+            <StackPanel Grid.Row="1" Spacing="16" VerticalAlignment="Center">
+                <!-- Folder selection -->
+                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Game Folder" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Zinc200Brush}" />
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Button Grid.Column="0" Content="Browse"
+                                    Command="{Binding DetectFolderCommand}"
+                                    Padding="8,6" Margin="0,0,8,0" />
+                            <TextBox Grid.Column="1"
+                                     Text="{Binding Folder}"
+                                     IsReadOnly="True"
+                                     PlaceholderText="Select a folder containing a game version" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Detected version -->
+                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Version Found" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Zinc200Brush}" />
+                        <TextBox Text="{Binding VersionFound}"
+                                 IsReadOnly="True"
+                                 PlaceholderText="No version detected yet" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Action buttons -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
+                        HorizontalAlignment="Center" Margin="0,16,0,0">
+                <Button Content="Cancel" Command="{Binding GoBackCommand}"
+                        Padding="16,8" />
+                <Button Classes="accent" Content="Add"
+                        Command="{Binding AddVersionCommand}"
+                        IsEnabled="{Binding CanAdd}"
+                        Padding="16,8" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

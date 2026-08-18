@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RiftLauncher.ViewModels.Pages"
+             xmlns:svc="using:RiftLauncher.Core.Services"
+             x:Class="RiftLauncher.Views.Pages.VersionAddView"
+             x:DataType="vm:VersionAddViewModel">
+    <Border Padding="24">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- Header -->
+            <TextBlock Grid.Row="0"
+                       Text="Install New Version"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource Zinc100Brush}"
+                       Margin="0,0,0,16" />
+
+            <!-- Content -->
+            <ScrollViewer Grid.Row="1">
+                <StackPanel Spacing="16">
+                    <!-- Version type filters -->
+                    <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Version Type" FontWeight="SemiBold"
+                                       Foreground="{StaticResource Zinc200Brush}" />
+                            <StackPanel Orientation="Horizontal" Spacing="16">
+                                <CheckBox Content="Stable" IsChecked="{Binding ShowStable}" />
+                                <CheckBox Content="RC" IsChecked="{Binding ShowRc}" />
+                                <CheckBox Content="Pre-release" IsChecked="{Binding ShowPre}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Version table -->
+                    <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Available Versions" FontWeight="SemiBold"
+                                       Foreground="{StaticResource Zinc200Brush}" />
+
+                            <!-- Loading state -->
+                            <TextBlock Text="Loading catalog..."
+                                       IsVisible="{Binding IsLoading}"
+                                       Foreground="{StaticResource Zinc400Brush}"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,20" />
+
+                            <!-- Failed state -->
+                            <StackPanel IsVisible="{Binding HasFailed}" Spacing="8"
+                                        HorizontalAlignment="Center" Margin="0,20">
+                                <TextBlock Text="Failed to load version catalog"
+                                           Foreground="{StaticResource Zinc400Brush}"
+                                           HorizontalAlignment="Center" />
+                                <Button Content="Retry" Command="{Binding RetryCommand}"
+                                        HorizontalAlignment="Center"
+                                        Padding="12,6" />
+                            </StackPanel>
+
+                            <!-- Version list (scrollable, max height) -->
+                            <ScrollViewer MaxHeight="250"
+                                          IsVisible="{Binding !IsLoading}">
+                                <ItemsControl ItemsSource="{Binding FilteredVersions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="svc:VersionCatalogEntry">
+                                            <Border Padding="8,6"
+                                                    Margin="0,0,0,2"
+                                                    CornerRadius="2"
+                                                    Background="{StaticResource Zinc700Brush}"
+                                                    Cursor="Hand">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBlock Grid.Column="0"
+                                                               Text="{Binding Version}"
+                                                               Foreground="{StaticResource Zinc100Brush}" />
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding Type}"
+                                                               Foreground="{StaticResource Zinc400Brush}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Install folder -->
+                    <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Install Folder" FontWeight="SemiBold"
+                                       Foreground="{StaticResource Zinc200Brush}" />
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Button Grid.Column="0" Content="Browse"
+                                        Padding="8,6" Margin="0,0,8,0" />
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding InstallFolder}"
+                                         PlaceholderText="Version install folder" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Action buttons -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
+                        HorizontalAlignment="Center" Margin="0,16,0,0">
+                <Button Content="Cancel" Command="{Binding GoBackCommand}"
+                        Padding="16,8" />
+                <Button Classes="accent" Content="Install" Command="{Binding InstallCommand}"
+                        Padding="16,8" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

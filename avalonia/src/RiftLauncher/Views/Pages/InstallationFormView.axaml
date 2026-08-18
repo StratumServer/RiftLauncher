@@ -43,7 +43,7 @@
                        Foreground="{DynamicResource Zinc300Brush}"/>
             <TextBox Grid.Column="1"
                      Text="{Binding Name}"
-                     Watermark="Installation name (5-50 chars)"
+                     PlaceholderText="Installation name (5-50 chars)"
                      MaxLength="50"/>
           </Grid>
 
@@ -99,7 +99,7 @@
             <TextBox Grid.Column="1"
                      Text="{Binding Path}"
                      IsReadOnly="True"
-                     Watermark="Select a folder..."/>
+                     PlaceholderText="Select a folder..."/>
             <Button Grid.Column="2"
                     Margin="8,0,0,0"
                     Padding="8,6"
@@ -147,7 +147,7 @@
                        Foreground="{DynamicResource Zinc300Brush}"/>
             <TextBox Grid.Column="1"
                      Text="{Binding StartParams}"
-                     Watermark="Optional startup parameters"/>
+                     PlaceholderText="Optional startup parameters"/>
           </Grid>
           <Grid ColumnDefinitions="120,*">
             <TextBlock Text="Mesa GL Thread" VerticalAlignment="Center"
@@ -161,7 +161,7 @@
                        Foreground="{DynamicResource Zinc300Brush}"/>
             <TextBox Grid.Column="1"
                      Text="{Binding EnvVars}"
-                     Watermark="KEY=VALUE pairs"/>
+                     PlaceholderText="KEY=VALUE pairs"/>
           </Grid>
         </StackPanel>
       </Expander>

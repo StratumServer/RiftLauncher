@@ -4,9 +4,74 @@
              x:Class="RiftLauncher.Views.Pages.VersionsListView"
              x:DataType="vm:VersionsListViewModel">
     <Border Padding="24">
-        <TextBlock Text="VS Versions"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   Foreground="{StaticResource Zinc100Brush}" />
+        <Grid RowDefinitions="Auto,*">
+            <!-- Header with action buttons -->
+            <StackPanel Grid.Row="0" Spacing="8" Margin="0,0,0,16">
+                <TextBlock Text="VS Versions"
+                           FontSize="20"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource Zinc100Brush}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="accent"
+                            Command="{Binding NavigateToAddPageCommand}"
+                            ToolTip.Tip="Install new version"
+                            Padding="12,8">
+                        <PathIcon Data="M12 4v16m-8-8h16" Width="16" Height="16"
+                                  Foreground="{StaticResource Zinc100Brush}" />
+                    </Button>
+                    <Button Classes="accent"
+                            Command="{Binding NavigateToLookupPageCommand}"
+                            ToolTip.Tip="Search for existing version"
+                            Padding="12,8">
+                        <PathIcon Data="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" Width="16" Height="16"
+                                  Foreground="{StaticResource Zinc100Brush}" />
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Version list -->
+            <ScrollViewer Grid.Row="1">
+                <ItemsControl ItemsSource="{Binding Versions}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:GameVersionDisplay">
+                            <Border Background="{StaticResource Zinc800Brush}"
+                                    CornerRadius="4"
+                                    Padding="12,8"
+                                    Margin="0,0,0,4">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Version}"
+                                               FontWeight="Bold"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource Zinc100Brush}" />
+
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                                        <Button Command="{Binding $parent[ItemsControl].((vm:VersionsListViewModel)DataContext).OpenFolderCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="{Binding Path}"
+                                                Padding="6">
+                                            <PathIcon Data="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                                                      Width="14" Height="14"
+                                                      Foreground="{StaticResource Zinc400Brush}" />
+                                        </Button>
+                                        <Button Command="{Binding $parent[ItemsControl].((vm:VersionsListViewModel)DataContext).RequestDeleteCommand}"
+                                                CommandParameter="{Binding}"
+                                                Padding="6">
+                                            <PathIcon Data="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                                      Width="14" Height="14"
+                                                      Foreground="{StaticResource Zinc400Brush}" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
     </Border>
+
+    <!-- Delete confirmation dialog overlay -->
+    <!-- Note: In full implementation, use DialogHost.Avalonia for overlay dialogs -->
 </UserControl>
