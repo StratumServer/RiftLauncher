@@ -153,8 +153,8 @@ describe("EditInstallation", () => {
 
     await user.click(screen.getByTitle("Save"))
 
-    await screen.findByText("Installation edited successfully!")
-    await screen.findByText("installations-list")
+    expect(await screen.findByText("Installation edited successfully!")).toBeTruthy()
+    expect(await screen.findByText("installations-list")).toBeTruthy()
   })
 
   it("notifies the name length failure and stays on the form when the name is too short", async () => {
