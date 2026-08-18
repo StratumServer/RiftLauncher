@@ -96,15 +96,20 @@ describe("readModArchive", () => {
     assert.deepEqual(result, { ok: false, problem: "modinfo-too-large" })
   })
 
-  it("refuses a modicon.png whose declared size already exceeds the 8 MiB cap", async () => {
+  it("skips the icon when its declared size exceeds the 512 KiB cap", async () => {
     // modinfo.json is valid and under its own cap here, so the archive reaches
-    // the icon and declaredSizeAllowed() rejects that entry's header instead.
+    // the icon. The declared size exceeds the limit, so the icon is skipped and
+    // the mod appears without a picture rather than failing the archive.
     const { createModArchiveReaderPort } = await import("../../src/ipc/adapters/modScan")
     const readModArchive = createModArchiveReaderPort().read
 
     const result = await readModArchive(fixturePath("oversized-declared-icon.zip"))
 
-    assert.deepEqual(result, { ok: false, problem: "icon-too-large" })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.notEqual(result.content.modinfo, undefined)
+      assert.equal(result.content.icon, undefined)
+    }
   })
 
   it("refuses a file with no zip structure in it at all", async () => {

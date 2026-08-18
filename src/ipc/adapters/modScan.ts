@@ -118,7 +118,11 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
         }
 
         if (entry.fileName === MODICON_ENTRY && content.icon === undefined) {
-          if (!declaredSizeAllowed(entry, MAX_MOD_IMAGE_BYTES)) return settle({ ok: false, problem: "icon-too-large" })
+          if (!declaredSizeAllowed(entry, MAX_MOD_IMAGE_BYTES)) {
+            // An oversized icon costs the mod its picture, never its place in
+            // the list: skip the icon and keep extracting metadata.
+            return advance()
+          }
 
           return collect(
             entry,
@@ -127,7 +131,8 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
               content.icon = bytes
               advance()
             },
-            () => settle({ ok: false, problem: "icon-too-large" }),
+            // Runtime size exceeds the limit: skip the icon, keep the mod.
+            () => advance(),
             // An icon that will not read costs the mod its picture, never its
             // place in the list: the metadata may still be perfectly readable.
             () => advance()

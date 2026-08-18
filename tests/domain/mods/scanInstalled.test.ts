@@ -289,7 +289,6 @@ describe("scanInstalledMods problem kinds", () => {
       fakePorts({
         "gone.zip": { problem: "unreadable-archive" },
         "huge-info.zip": { problem: "modinfo-too-large" },
-        "huge-icon.zip": { problem: "icon-too-large" },
         "resources.zip": {},
         "broken.zip": { modinfo: "{ not json" },
         "nameless.zip": { modinfo: JSON.stringify({ version: "1.0.0" }) }
@@ -299,13 +298,28 @@ describe("scanInstalledMods problem kinds", () => {
 
     assert.deepEqual(
       result.errors.map((archive) => `${archive.zipname}:${archive.problem}`),
+      ["gone.zip:unreadable-archive", "huge-info.zip:modinfo-too-large", "resources.zip:modinfo-missing", "broken.zip:modinfo-invalid", "nameless.zip:modinfo-incomplete"]
+    )
+  })
+
+  it("lists a mod with an oversized declared icon without an icon, not as an error", async () => {
+    const result = await scanInstalledMods(
+      fakePorts({
+        "huge-icon.zip": { modinfo: modinfoText({ modid: "hugeicon" }) },
+        "normal.zip": { modinfo: modinfoText({ modid: "normal" }), icon: ICON }
+      }),
+      { folder: FOLDER }
+    )
+
+    assert.deepEqual(
+      result.errors.map((e) => e.zipname),
+      []
+    )
+    assert.deepEqual(
+      result.mods.map((m) => ({ id: m.modid, hasIcon: m.image !== undefined })),
       [
-        "gone.zip:unreadable-archive",
-        "huge-info.zip:modinfo-too-large",
-        "huge-icon.zip:icon-too-large",
-        "resources.zip:modinfo-missing",
-        "broken.zip:modinfo-invalid",
-        "nameless.zip:modinfo-incomplete"
+        { id: "hugeicon", hasIcon: false },
+        { id: "normal", hasIcon: true }
       ]
     )
   })
