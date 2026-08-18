@@ -343,3 +343,66 @@ describe("pruneModIconCache", () => {
     assert.equal(existsSync(sentinel), true)
   })
 })
+
+describe("pruneModIconCache coalescing and mtime guard", () => {
+  function iconsFolder(): string {
+    return join(workspace, "Cache", "Images", "Mods")
+  }
+
+  function seedIcon(name: string, bytes: number, modifiedAt: number): string {
+    fse.ensureDirSync(iconsFolder())
+    const target = join(iconsFolder(), name)
+    writeFileSync(target, Buffer.alloc(bytes, 1))
+    fse.utimesSync(target, new Date(modifiedAt), new Date(modifiedAt))
+    return name
+  }
+
+  function contentName(seed: string): string {
+    return `${seed.repeat(64).slice(0, 64)}.png`
+  }
+
+  it("skips removal when mtime moved since the snapshot (concurrent scan touched it)", async () => {
+    const { pruneModIconCache } = await import("../../src/ipc/adapters/modScan")
+    const icon = seedIcon(contentName("a"), 64, 1_000)
+
+    // Stat once to prime, then move the mtime forward simulating a concurrent touch
+    const originalStat = fse.stat.bind(fse)
+    let statCount = 0
+    vi.spyOn(fse, "stat").mockImplementation(async (path: unknown) => {
+      statCount++
+      const result = await originalStat(String(path))
+      // On the second stat of the same file (the re-stat before removal),
+      // report a newer mtime to simulate a concurrent scan touching it.
+      if (statCount > 1 && String(path).includes(contentName("a"))) {
+        return { ...result, mtimeMs: 9_000 }
+      }
+      return result
+    })
+
+    await pruneModIconCache(32)
+
+    // The icon should NOT have been deleted because mtime moved.
+    assert.equal(existsSync(join(iconsFolder(), icon)), true)
+  })
+
+  it("coalesces overlapping calls into at most two readdir sweeps", async () => {
+    const { pruneModIconCache } = await import("../../src/ipc/adapters/modScan")
+    seedIcon(contentName("a"), 16, 1_000)
+
+    const readdirSpy = vi.spyOn(fse, "readdir")
+
+    // Fire three overlapping calls; the first runs, the rest coalesce into
+    // at most one trailing re-run.
+    const p1 = pruneModIconCache()
+    const p2 = pruneModIconCache()
+    const p3 = pruneModIconCache()
+
+    await Promise.all([p1, p2, p3])
+
+    // Coalescing means at most 2 readdir calls (one active + one trailing),
+    // never 3. Without coalescing each call would readdir independently.
+    const readdirCalls = readdirSpy.mock.calls.filter((args) => String(args[0]).includes("Mods"))
+    assert.ok(readdirCalls.length <= 2, `Expected at most 2 readdir calls on the icon folder, got ${readdirCalls.length}`)
+    assert.ok(readdirCalls.length >= 1, "Expected at least 1 readdir call")
+  })
+})

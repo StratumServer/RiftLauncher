@@ -211,12 +211,39 @@ export function createIconStorePort(): IconStore {
  * an icon's timestamp forward every time a scan points at it again, so an icon that is still
  * installed keeps looking young whichever installation holds it.
  *
- * Best effort throughout: this runs at startup and a cache sweep must never be able to break a
- * launch, so every filesystem error is logged and swallowed.
+ * Safe to call repeatedly: concurrent calls coalesce into at most one active sweep plus one
+ * trailing re-run (in case a scan wrote icons while the sweep was in flight). Icons whose mtime
+ * moved since the snapshot are skipped rather than removed, closing the race where a concurrent
+ * scan touches an icon the sweep already planned to delete.
+ *
+ * Best effort throughout: this runs at startup and after each scan, and a cache sweep must never
+ * be able to break a launch, so every filesystem error is logged and swallowed.
  *
  * @param maxBytes Budget the survivors have to fit in. Only tests pass this.
  */
+let _pruneInFlight: Promise<void> | null = null
+let _pruneAgain = false
+
 export async function pruneModIconCache(maxBytes: number = MOD_ICON_CACHE_MAX_BYTES): Promise<void> {
+  if (_pruneInFlight !== null) {
+    _pruneAgain = true
+    return _pruneInFlight
+  }
+
+  _pruneInFlight = doPruneModIconCache(maxBytes)
+  try {
+    await _pruneInFlight
+  } finally {
+    _pruneInFlight = null
+  }
+
+  if (_pruneAgain) {
+    _pruneAgain = false
+    return pruneModIconCache(maxBytes)
+  }
+}
+
+async function doPruneModIconCache(maxBytes: number): Promise<void> {
   const folder = modImagesFolder()
 
   let names: string[]
@@ -230,9 +257,6 @@ export async function pruneModIconCache(maxBytes: number = MOD_ICON_CACHE_MAX_BY
   const entries: CachedIcon[] = []
   for (const name of names) {
     try {
-      // A name readdir handed back is already a single component, and this keeps
-      // every join below inside modImagesFolder() even so. A name too strange to
-      // pass is left alone rather than deleted on a guess.
       assertSafeFileName(name)
       const stats = await fse.stat(join(folder, name))
       if (stats.isFile()) entries.push({ name, bytes: stats.size, modifiedAt: stats.mtimeMs })
@@ -244,16 +268,18 @@ export async function pruneModIconCache(maxBytes: number = MOD_ICON_CACHE_MAX_BY
   const doomed = planIconCacheEviction(entries, maxBytes)
   if (doomed.length === 0) return
 
+  const mtimeByName = new Map(entries.map((entry) => [entry.name, entry.modifiedAt]))
   const bytesByName = new Map(entries.map((entry) => [entry.name, entry.bytes]))
   let reclaimed = 0
 
-  // Deleted individually rather than as one recursive removal of the folder:
-  // each target stays a single, safe join onto a name readdir itself just handed
-  // back, and one file another process is mid-delete on never takes the rest of
-  // the sweep down with it.
   await Promise.all(
     doomed.map(async (name) => {
       try {
+        // Re-stat before removal: if mtime moved since the snapshot, a
+        // concurrent scan just touched/recreated this icon. Skip it.
+        const current = await fse.stat(join(folder, name))
+        if (current.mtimeMs !== mtimeByName.get(name)) return
+
         await fse.remove(join(folder, name))
         reclaimed += bytesByName.get(name) ?? 0
       } catch (err) {
