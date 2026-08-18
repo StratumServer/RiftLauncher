@@ -1,7 +1,7 @@
 import { dialog, ipcMain } from "electron"
 import fse from "fs-extra"
 import { IPC_CHANNELS } from "../ipcChannels"
-import { createScanInstalledModsPorts } from "@src/ipc/adapters/modScan"
+import { createScanInstalledModsPorts, pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertString, isRecord } from "@src/ipc/validation"
@@ -56,6 +56,8 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
         "debug",
         `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Found ${scan.errors.length} mods with errors: ${scan.errors.map((archive) => `${archive.zipname} (${archive.problem})`)}`
       )
+
+    void pruneModIconCache()
 
     return { mods: scan.mods.map(toWireMod), errors: scan.errors.map((archive) => ({ zipname: archive.zipname, path: archive.path })) }
   } catch (err) {
