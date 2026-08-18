@@ -200,7 +200,8 @@ export const stampLinkedOnExternalVersions: ConfigMigration = {
     const versions = doc.gameVersions
     if (!Array.isArray(versions) || versions.length === 0) return { ...doc }
 
-    const managedRoot = typeof doc.defaultVersionsFolder === "string" ? doc.defaultVersionsFolder : null
+    const raw = typeof doc.defaultVersionsFolder === "string" ? doc.defaultVersionsFolder : ""
+    const managedRoot = raw.length > 0 ? raw : null
 
     const stamped = versions.map((entry: unknown) => {
       if (!isRecord(entry)) return entry
@@ -208,7 +209,7 @@ export const stampLinkedOnExternalVersions: ConfigMigration = {
       if (typeof path !== "string" || !path) return entry
       if (entry.linked === true) return entry
 
-      const isManaged = managedRoot !== null && path.startsWith(managedRoot)
+      const isManaged = managedRoot !== null && (path === managedRoot || path.startsWith(managedRoot + "/") || path.startsWith(managedRoot + "\\"))
       return isManaged ? entry : { ...entry, linked: true }
     })
 

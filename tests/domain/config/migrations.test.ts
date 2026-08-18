@@ -352,3 +352,35 @@ describe("migrateConfigDocument chaining", () => {
     assert.equal(result.outcome, "already-current")
   })
 })
+
+describe("stampLinkedOnExternalVersions boundary checks", () => {
+  it("does not match a sibling-prefix folder as managed", () => {
+    const doc = {
+      defaultVersionsFolder: "C:/Games/VS",
+      gameVersions: [
+        { version: "1.20.0", path: "C:/Games/VS/1.20.0" },
+        { version: "1.21.0", path: "C:/Games/VSCustom/1.21.0" }
+      ]
+    }
+    const result = stampLinkedOnExternalVersions.migrate(doc) as Record<string, unknown>
+    const versions = result.gameVersions as Array<Record<string, unknown>>
+
+    assert.equal(versions[0]!.linked, undefined)
+    assert.equal(versions[1]!.linked, true)
+  })
+
+  it("treats all versions as external when defaultVersionsFolder is empty string", () => {
+    const doc = {
+      defaultVersionsFolder: "",
+      gameVersions: [
+        { version: "1.20.0", path: "/home/user/versions/1.20.0" },
+        { version: "1.19.0", path: "/opt/games/vs" }
+      ]
+    }
+    const result = stampLinkedOnExternalVersions.migrate(doc) as Record<string, unknown>
+    const versions = result.gameVersions as Array<Record<string, unknown>>
+
+    assert.equal(versions[0]!.linked, true)
+    assert.equal(versions[1]!.linked, true)
+  })
+})
