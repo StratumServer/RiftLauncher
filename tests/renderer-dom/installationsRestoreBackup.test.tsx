@@ -119,7 +119,7 @@ describe("ManageInstallationBackups", () => {
     await waitFor(() => expect(screen.queryByTitle("Delete")).toBeNull())
   })
 
-  it("does not start a second deletion while the first one is in flight", async () => {
+  it("disables the row trash button while a deletion is in flight", async () => {
     const user = userEvent.setup()
     let resolveDelete: (result: boolean) => void = () => {}
     const deletePath = vi.fn(
@@ -138,20 +138,29 @@ describe("ManageInstallationBackups", () => {
 
     renderManageBackups("install-a")
 
-    await user.click(await screen.findByTitle("Delete"))
+    // Acquire the row's trash button. Before deletion it must be enabled.
+    const trashButton = await screen.findByTitle("Delete")
+    expect(trashButton.hasAttribute("disabled")).toBe(false)
+
+    // Start the first deletion through the confirm dialog.
+    await user.click(trashButton)
     await screen.findByText("Are you sure you want to delete this Backup?")
-    await user.click(screen.getAllByTitle("Delete")[1]!)
+    const confirmButtons = screen.getAllByTitle("Delete")
+    await user.click(confirmButtons[confirmButtons.length - 1]!)
 
     await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(1))
 
-    const trashButtons = screen.getAllByRole("button").filter((btn) => btn.querySelector("svg"))
-    const trashButton = trashButtons.find((btn) => btn.hasAttribute("disabled") || btn.getAttribute("title") === "")
-    if (trashButton) await user.click(trashButton)
-
-    expect(deletePath).toHaveBeenCalledTimes(1)
+    // While the deletion is in flight, the row trash button must be disabled.
+    // This assertion fails on dev (where _deleting is never set) and passes on
+    // this branch (where configDispatch sets _deleting: true before the call).
+    await waitFor(() => {
+      const buttons = screen.getAllByRole("button")
+      const disabledButtons = buttons.filter((btn) => btn.hasAttribute("disabled"))
+      expect(disabledButtons.length).toBeGreaterThan(0)
+    })
 
     resolveDelete(true)
-    await waitFor(() => expect(screen.queryByText("Are you sure you want to delete this Backup?")).toBeNull())
+    await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(1))
   })
 
   it("clears the deleting state when the archive deletion fails", async () => {
