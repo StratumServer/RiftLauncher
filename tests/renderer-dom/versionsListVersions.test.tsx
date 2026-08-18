@@ -28,6 +28,26 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
 }
 
 describe("ListVersions", () => {
+  it("renders without crashing when a version string is not valid semver", async () => {
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [
+              { version: "1.20.4", path: "/versions/1.20.4" },
+              { version: "Vintage Story 1.21.0", path: "/versions/custom" }
+            ]
+          })
+        )
+      }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    await screen.findByText("1.20.4")
+    expect(screen.getByText("Vintage Story 1.21.0")).toBeTruthy()
+  })
+
   it("deletes a version once the uninstall confirmation is accepted", async () => {
     const user = userEvent.setup()
     const api = installMockWindowApi({

@@ -94,7 +94,14 @@ function ListVersions(): JSX.Element {
             </div>
             {gameVersions
               .slice()
-              .sort((a, b) => semver.rcompare(a.version, b.version))
+              .sort((a, b) => {
+                const aValid = semver.valid(a.version)
+                const bValid = semver.valid(b.version)
+                if (aValid && bValid) return semver.rcompare(a.version, b.version)
+                if (aValid) return -1
+                if (bValid) return 1
+                return a.version.localeCompare(b.version)
+              })
               .map((gv) => (
                 <ListItem key={gv.version}>
                   <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
