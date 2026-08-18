@@ -3,75 +3,128 @@
              xmlns:vm="using:RiftLauncher.ViewModels.Pages"
              x:Class="RiftLauncher.Views.Pages.ConfigView"
              x:DataType="vm:ConfigViewModel">
-    <Border Padding="24">
-        <ScrollViewer>
-            <StackPanel Spacing="16" MaxWidth="500" HorizontalAlignment="Center">
-                <TextBlock Text="Configuration"
-                           FontSize="20"
-                           FontWeight="SemiBold"
-                           Foreground="{StaticResource Zinc100Brush}"
-                           Margin="0,0,0,8" />
 
-                <!-- Language -->
-                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Language" FontWeight="SemiBold"
-                                   Foreground="{StaticResource Zinc200Brush}" />
-                        <ComboBox ItemsSource="{Binding AvailableLanguages}"
+    <Grid RowDefinitions="Auto,*">
+        <!-- Sticky Menu -->
+        <Border Grid.Row="0" Background="#3309090b" Padding="8"
+                BorderBrush="#0Da1a1aa" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Grid.Column="0" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Data="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center"
+                            Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="/" Foreground="#71717a" FontSize="12"/>
+                    <TextBlock Text="Config" Foreground="#e4e4e7" FontSize="12" FontWeight="Bold"/>
+                </StackPanel>
+                <Button Grid.Column="2" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Data="M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" Padding="8">
+            <StackPanel Spacing="24" MaxWidth="600" HorizontalAlignment="Center" Margin="0,16">
+
+                <!-- General Section -->
+                <StackPanel Spacing="12">
+                    <TextBlock Text="General" FontWeight="Bold" FontSize="14" Foreground="#e4e4e7"/>
+
+                    <!-- Language -->
+                    <Grid ColumnDefinitions="120,*">
+                        <TextBlock Grid.Column="0" Text="Language" FontSize="12" Foreground="#a1a1aa"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0"/>
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableLanguages}"
                                   SelectedItem="{Binding Language}"
-                                  HorizontalAlignment="Stretch" />
-                    </StackPanel>
-                </Border>
+                                  Height="32" HorizontalAlignment="Stretch" FontSize="12"/>
+                    </Grid>
 
-                <!-- UI Scale -->
-                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="UI Scale" FontWeight="SemiBold"
-                                   Foreground="{StaticResource Zinc200Brush}" />
-                        <ComboBox ItemsSource="{Binding AvailableScales}"
+                    <!-- UI Scale -->
+                    <Grid ColumnDefinitions="120,*">
+                        <TextBlock Grid.Column="0" Text="UI Scale" FontSize="12" Foreground="#a1a1aa"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0"/>
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableScales}"
                                   SelectedItem="{Binding UiScale}"
-                                  HorizontalAlignment="Stretch" />
-                    </StackPanel>
-                </Border>
+                                  Height="32" HorizontalAlignment="Stretch" FontSize="12"/>
+                    </Grid>
 
-                <!-- Behavior -->
-                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Behavior" FontWeight="SemiBold"
-                                   Foreground="{StaticResource Zinc200Brush}" />
-                        <CheckBox Content="Minimize to tray"
-                                  IsChecked="{Binding MinimizeToTray}" />
-                        <CheckBox Content="Close to tray"
-                                  IsChecked="{Binding CloseToTray}" />
-                    </StackPanel>
-                </Border>
+                    <!-- Minimize to Tray -->
+                    <Grid ColumnDefinitions="120,*">
+                        <TextBlock Grid.Column="0" Text="Minimize to Tray" FontSize="12" Foreground="#a1a1aa"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0"/>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding MinimizeToTray}"
+                                      OnContent="" OffContent=""/>
+                    </Grid>
 
-                <!-- Folders -->
-                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Default Folders" FontWeight="SemiBold"
-                                   Foreground="{StaticResource Zinc200Brush}" />
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="Installations" FontSize="11"
-                                       Foreground="{StaticResource Zinc400Brush}" />
-                            <TextBox Text="{Binding DefaultInstallationsFolder}"
-                                     PlaceholderText="Default installations folder" />
-                        </StackPanel>
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="Versions" FontSize="11"
-                                       Foreground="{StaticResource Zinc400Brush}" />
-                            <TextBox Text="{Binding DefaultVersionsFolder}"
-                                     PlaceholderText="Default versions folder" />
-                        </StackPanel>
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="Backups" FontSize="11"
-                                       Foreground="{StaticResource Zinc400Brush}" />
-                            <TextBox Text="{Binding BackupsFolder}"
-                                     PlaceholderText="Default backups folder" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
+                    <!-- Close to Tray -->
+                    <Grid ColumnDefinitions="120,*">
+                        <TextBlock Grid.Column="0" Text="Close to Tray" FontSize="12" Foreground="#a1a1aa"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0"/>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding CloseToTray}"
+                                      OnContent="" OffContent=""/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- Folders Section -->
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Folders" FontWeight="Bold" FontSize="14" Foreground="#e4e4e7"/>
+
+                    <!-- Default Installations Folder -->
+                    <Grid ColumnDefinitions="120,*,Auto">
+                        <TextBlock Grid.Column="0" Text="Installations" FontSize="12" Foreground="#a1a1aa"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0"/>
+                        <TextBox Grid.Column="1" Text="{Binding DefaultInstallationsFolder}"
+                                 IsReadOnly="True" Height="32" FontSize="11"/>
+                        <Button Grid.Column="2" Width="32" Height="32" Margin="4,0,0,0"
+                                Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                                CornerRadius="2" Padding="0" Cursor="Hand"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                Command="{Binding BrowseInstallationsFolderCommand}">
+                            <PathIcon Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"
+                                      Foreground="#a1a1aa" Width="14" Height="14"/>
+                        </Button>
+                    </Grid>
+
+                    <!-- Default Versions Folder -->
+                    <Grid ColumnDefinitions="120,*,Auto">
+                        <TextBlock Grid.Column="0" Text="Versions" FontSize="12" Foreground="#a1a1aa"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0"/>
+                        <TextBox Grid.Column="1" Text="{Binding DefaultVersionsFolder}"
+                                 IsReadOnly="True" Height="32" FontSize="11"/>
+                        <Button Grid.Column="2" Width="32" Height="32" Margin="4,0,0,0"
+                                Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                                CornerRadius="2" Padding="0" Cursor="Hand"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                Command="{Binding BrowseVersionsFolderCommand}">
+                            <PathIcon Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"
+                                      Foreground="#a1a1aa" Width="14" Height="14"/>
+                        </Button>
+                    </Grid>
+
+                    <!-- Backups Folder -->
+                    <Grid ColumnDefinitions="120,*,Auto">
+                        <TextBlock Grid.Column="0" Text="Backups" FontSize="12" Foreground="#a1a1aa"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,12,0"/>
+                        <TextBox Grid.Column="1" Text="{Binding BackupsFolder}"
+                                 IsReadOnly="True" Height="32" FontSize="11"/>
+                        <Button Grid.Column="2" Width="32" Height="32" Margin="4,0,0,0"
+                                Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                                CornerRadius="2" Padding="0" Cursor="Hand"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                Command="{Binding BrowseBackupsFolderCommand}">
+                            <PathIcon Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"
+                                      Foreground="#a1a1aa" Width="14" Height="14"/>
+                        </Button>
+                    </Grid>
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
-    </Border>
+    </Grid>
 </UserControl>

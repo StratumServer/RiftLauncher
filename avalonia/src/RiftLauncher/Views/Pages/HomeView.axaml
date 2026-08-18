@@ -3,30 +3,49 @@
              xmlns:vm="using:RiftLauncher.ViewModels.Pages"
              x:Class="RiftLauncher.Views.Pages.HomeView"
              x:DataType="vm:HomeViewModel">
-    <Border Padding="24">
-        <StackPanel Spacing="16" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="500">
-            <TextBlock Text="Welcome to Rift Launcher"
-                       FontSize="24" FontWeight="Bold"
-                       Foreground="#f4f4f5"
-                       HorizontalAlignment="Center" />
-            <Border Background="#27272a" CornerRadius="8" Padding="20">
-                <StackPanel Spacing="12">
-                    <Grid ColumnDefinitions="*,*">
-                        <StackPanel Grid.Column="0" HorizontalAlignment="Center" Spacing="4">
-                            <TextBlock Text="0" FontSize="28" FontWeight="Bold"
-                                       Foreground="#7e501e" HorizontalAlignment="Center" />
-                            <TextBlock Text="Installations" FontSize="12"
-                                       Foreground="#a1a1aa" HorizontalAlignment="Center" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="4">
-                            <TextBlock Text="0" FontSize="28" FontWeight="Bold"
-                                       Foreground="#7e501e" HorizontalAlignment="Center" />
-                            <TextBlock Text="Versions" FontSize="12"
-                                       Foreground="#a1a1aa" HorizontalAlignment="Center" />
-                        </StackPanel>
-                    </Grid>
-                </StackPanel>
-            </Border>
+
+    <Grid RowDefinitions="*">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Spacing="16" MaxWidth="700">
+            <!-- Title -->
+            <TextBlock Text="{Binding WelcomeMessage}"
+                       FontSize="32" FontWeight="Bold"
+                       Foreground="#e4e4e7"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"/>
+
+            <!-- Description -->
+            <TextBlock Text="A custom launcher for Vintage Story by the Stratum project."
+                       FontSize="16" Foreground="#a1a1aa"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"/>
+
+            <!-- YouTube Trailer Thumbnail -->
+            <Button Command="{Binding OpenTrailerCommand}"
+                    Background="Transparent" BorderThickness="0"
+                    Padding="0" Margin="24"
+                    Cursor="Hand"
+                    HorizontalAlignment="Center"
+                    ToolTip.Tip="Watch Trailer">
+                <Border CornerRadius="6" ClipToBounds="True"
+                        MaxWidth="560" MaxHeight="315">
+                    <Panel>
+                        <!-- Thumbnail image -->
+                        <Image Source="https://img.youtube.com/vi/mgvzBB_--xM/maxresdefault.jpg"
+                               Stretch="UniformToFill"
+                               Width="560" Height="315"/>
+                        <!-- Dark overlay -->
+                        <Border Background="#4D09090b">
+                            <!-- Play icon centered -->
+                            <PathIcon Data="M8,5.14V19.14L19,12.14L8,5.14Z"
+                                      Foreground="#CCffffff"
+                                      Width="56" Height="56"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"/>
+                        </Border>
+                    </Panel>
+                </Border>
+            </Button>
         </StackPanel>
-    </Border>
+    </Grid>
 </UserControl>

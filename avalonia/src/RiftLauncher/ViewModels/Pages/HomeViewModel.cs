@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RiftLauncher.Core.Services;
@@ -6,6 +7,8 @@ namespace RiftLauncher.ViewModels.Pages;
 
 public partial class HomeViewModel : ViewModelBase
 {
+    private const string VideoId = "mgvzBB_--xM";
+
     [ObservableProperty]
     private string _welcomeMessage = "Welcome to Rift Launcher";
 
@@ -28,6 +31,16 @@ public partial class HomeViewModel : ViewModelBase
 
     public HomeViewModel()
     {
+    }
+
+    [RelayCommand]
+    private void OpenTrailer()
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = $"https://www.youtube.com/watch?v={VideoId}",
+            UseShellExecute = true
+        });
     }
 
     private async Task LoadStatsAsync()

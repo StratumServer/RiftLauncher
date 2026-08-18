@@ -20,13 +20,31 @@ public partial class InfoHelpViewModel : ViewModelBase
     [RelayCommand]
     private void OpenGitHub()
     {
-        OpenUrl("https://github.com/StratumServer/RiftLauncher");
+        OpenUrl("https://github.com/StratumServer/RiftLauncher/issues");
+    }
+
+    [RelayCommand]
+    private void OpenGuides()
+    {
+        OpenUrl("https://vsldocs.xurxomf.xyz/");
     }
 
     [RelayCommand]
     private void OpenDiscord()
     {
-        OpenUrl("https://discord.gg/stratum");
+        OpenUrl("https://discord.gg/vQm6z2urZs");
+    }
+
+    [RelayCommand]
+    private void OpenContributors()
+    {
+        OpenUrl("https://github.com/StratumServer/RiftLauncher/blob/main/docs/important-info/contributors.md");
+    }
+
+    [RelayCommand]
+    private void OpenSource()
+    {
+        OpenUrl("https://github.com/StratumServer/RiftLauncher");
     }
 
     [RelayCommand]

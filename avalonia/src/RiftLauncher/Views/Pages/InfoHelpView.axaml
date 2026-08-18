@@ -3,67 +3,118 @@
              xmlns:vm="using:RiftLauncher.ViewModels.Pages"
              x:Class="RiftLauncher.Views.Pages.InfoHelpView"
              x:DataType="vm:InfoHelpViewModel">
-    <Border Padding="24">
-        <ScrollViewer>
-            <StackPanel Spacing="16" MaxWidth="500" HorizontalAlignment="Center">
-                <TextBlock Text="Info &amp; Help"
-                           FontSize="20"
-                           FontWeight="SemiBold"
-                           Foreground="{StaticResource Zinc100Brush}" />
 
-                <!-- About -->
-                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="16">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Rift Launcher"
-                                   FontSize="16" FontWeight="Bold"
-                                   Foreground="{StaticResource Zinc100Brush}" />
-                        <TextBlock Text="A launcher for Vintage Story by the Stratum project."
-                                   Foreground="{StaticResource Zinc300Brush}"
-                                   TextWrapping="Wrap" />
-                        <StackPanel Spacing="4" Margin="0,8,0,0">
-                            <TextBlock Foreground="{StaticResource Zinc400Brush}" FontSize="11">
-                                <Run Text="Version: " /><Run Text="{Binding AppVersion}" />
-                            </TextBlock>
-                            <TextBlock Foreground="{StaticResource Zinc400Brush}" FontSize="11">
-                                <Run Text="Runtime: " /><Run Text="{Binding DotNetVersion}" />
-                            </TextBlock>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Sticky Menu -->
+        <Border Grid.Row="0" Background="#3309090b" Padding="8"
+                BorderBrush="#0Da1a1aa" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Grid.Column="0" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Data="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center"
+                            Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="/" Foreground="#71717a" FontSize="12"/>
+                    <TextBlock Text="Info &amp; Help" Foreground="#e4e4e7" FontSize="12" FontWeight="Bold"/>
+                </StackPanel>
+                <Button Grid.Column="2" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Data="M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" Padding="8">
+            <StackPanel Spacing="24" MaxWidth="800" HorizontalAlignment="Center" Margin="0,24">
+
+                <!-- Title -->
+                <TextBlock Text="Info &amp; Help" FontSize="32" FontWeight="Bold"
+                           Foreground="#e4e4e7" HorizontalAlignment="Center"/>
+
+                <!-- Social buttons -->
+                <WrapPanel HorizontalAlignment="Center" Margin="0,8">
+                    <!-- Issues -->
+                    <Button Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                            CornerRadius="2" Padding="12,8" Margin="4" Cursor="Hand"
+                            Command="{Binding OpenGitHubCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <PathIcon Data="M12,2A10,10 0 0,0 2,12C2,16.42 4.87,20.17 8.84,21.5C9.34,21.58 9.5,21.27 9.5,21C9.5,20.77 9.5,20.14 9.5,19.31C6.73,19.91 6.14,17.97 6.14,17.97C5.68,16.81 5.03,16.5 5.03,16.5C4.12,15.88 5.1,15.9 5.1,15.9C6.1,15.97 6.63,16.93 6.63,16.93C7.5,18.45 8.97,18 9.54,17.76C9.63,17.11 9.89,16.67 10.17,16.42C7.95,16.17 5.62,15.31 5.62,11.5C5.62,10.39 6,9.5 6.65,8.79C6.55,8.54 6.2,7.5 6.75,6.15C6.75,6.15 7.59,5.88 9.5,7.17C10.29,6.95 11.15,6.84 12,6.84C12.85,6.84 13.71,6.95 14.5,7.17C16.41,5.88 17.25,6.15 17.25,6.15C17.8,7.5 17.45,8.54 17.35,8.79C18,9.5 18.38,10.39 18.38,11.5C18.38,15.32 16.04,16.16 13.81,16.41C14.17,16.72 14.5,17.33 14.5,18.26C14.5,19.6 14.5,20.68 14.5,21C14.5,21.27 14.66,21.59 15.17,21.5C19.14,20.16 22,16.42 22,12A10,10 0 0,0 12,2Z"
+                                      Foreground="#e4e4e7" Width="14" Height="14"/>
+                            <TextBlock Text="Issues" Foreground="#e4e4e7" FontSize="12"/>
                         </StackPanel>
-                    </StackPanel>
-                </Border>
+                    </Button>
+                    <!-- Guides -->
+                    <Button Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                            CornerRadius="2" Padding="12,8" Margin="4" Cursor="Hand"
+                            Command="{Binding OpenGuidesCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <PathIcon Data="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"
+                                      Foreground="#e4e4e7" Width="14" Height="14"/>
+                            <TextBlock Text="Guides" Foreground="#e4e4e7" FontSize="12"/>
+                        </StackPanel>
+                    </Button>
+                    <!-- Discord -->
+                    <Button Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                            CornerRadius="2" Padding="12,8" Margin="4" Cursor="Hand"
+                            Command="{Binding OpenDiscordCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <PathIcon Data="M22,24L16.75,19L17.38,21H4.5A2.5,2.5 0 0,1 2,18.5V3.5A2.5,2.5 0 0,1 4.5,1H19.5A2.5,2.5 0 0,1 22,3.5V24M12,6.8C9.32,6.8 7.44,7.95 7.44,7.95C8.47,7.03 10.27,6.5 10.27,6.5L10.1,6.33C8.41,6.36 6.88,7.53 6.88,7.53C5.16,11.12 5.27,14.22 5.27,14.22C6.67,16.03 8.75,15.9 8.75,15.9L9.46,15C8.21,14.73 7.42,13.62 7.42,13.62C7.42,13.62 9.3,14.9 12,14.9C14.7,14.9 16.58,13.62 16.58,13.62C16.58,13.62 15.79,14.73 14.54,15L15.25,15.9C15.25,15.9 17.33,16.03 18.73,14.22C18.73,14.22 18.84,11.12 17.12,7.53C17.12,7.53 15.59,6.36 13.9,6.33L13.73,6.5C13.73,6.5 15.53,7.03 16.56,7.95C16.56,7.95 14.68,6.8 12,6.8M9.93,10.59C10.58,10.59 11.11,11.16 11.1,11.86C11.1,12.55 10.58,13.13 9.93,13.13C9.29,13.13 8.77,12.55 8.77,11.86C8.77,11.16 9.28,10.59 9.93,10.59M14.1,10.59C14.75,10.59 15.27,11.16 15.27,11.86C15.27,12.55 14.75,13.13 14.1,13.13C13.46,13.13 12.94,12.55 12.94,11.86C12.94,11.16 13.45,10.59 14.1,10.59Z"
+                                      Foreground="#e4e4e7" Width="14" Height="14"/>
+                            <TextBlock Text="Discord" Foreground="#e4e4e7" FontSize="12"/>
+                        </StackPanel>
+                    </Button>
+                    <!-- Contributors -->
+                    <Button Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                            CornerRadius="2" Padding="12,8" Margin="4" Cursor="Hand"
+                            Command="{Binding OpenContributorsCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <PathIcon Data="M16,13C15.71,13 15.38,13 15.03,13.05C16.19,13.89 17,15 17,16.5V19H23V16.5C23,14.17 18.33,13 16,13M8,13C5.67,13 1,14.17 1,16.5V19H15V16.5C15,14.17 10.33,13 8,13M8,11A3,3 0 0,0 11,8A3,3 0 0,0 8,5A3,3 0 0,0 5,8A3,3 0 0,0 8,11M16,11A3,3 0 0,0 19,8A3,3 0 0,0 16,5A3,3 0 0,0 13,8A3,3 0 0,0 16,11Z"
+                                      Foreground="#e4e4e7" Width="14" Height="14"/>
+                            <TextBlock Text="Contributors" Foreground="#e4e4e7" FontSize="12"/>
+                        </StackPanel>
+                    </Button>
+                    <!-- Source -->
+                    <Button Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                            CornerRadius="2" Padding="12,8" Margin="4" Cursor="Hand"
+                            Command="{Binding OpenSourceCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <PathIcon Data="M14.6,16.6L19.2,12L14.6,7.4L16,6L22,12L16,18L14.6,16.6M9.4,16.6L4.8,12L9.4,7.4L8,6L2,12L8,18L9.4,16.6Z"
+                                      Foreground="#e4e4e7" Width="14" Height="14"/>
+                            <TextBlock Text="Source" Foreground="#e4e4e7" FontSize="12"/>
+                        </StackPanel>
+                    </Button>
+                </WrapPanel>
 
-                <!-- Links -->
-                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="16">
+                <!-- Debug Info -->
+                <Border Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                        CornerRadius="4" Padding="16">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="Links"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource Zinc200Brush}" />
-                        <Button Content="GitHub Repository"
-                                Command="{Binding OpenGitHubCommand}"
-                                Padding="8,6"
-                                HorizontalAlignment="Stretch" />
-                        <Button Content="Discord Server"
-                                Command="{Binding OpenDiscordCommand}"
-                                Padding="8,6"
-                                HorizontalAlignment="Stretch" />
-                        <Button Content="Vintage Story Website"
-                                Command="{Binding OpenVintageStoryCommand}"
-                                Padding="8,6"
-                                HorizontalAlignment="Stretch" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Credits -->
-                <Border Background="{StaticResource Zinc800Brush}" CornerRadius="4" Padding="16">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Credits"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource Zinc200Brush}" />
-                        <TextBlock Foreground="{StaticResource Zinc400Brush}" TextWrapping="Wrap">
-                            Built by the Stratum community. Vintage Story is developed by Anego Studios.
+                        <TextBlock Text="Debug Info" FontWeight="Bold" FontSize="13" Foreground="#e4e4e7"/>
+                        <TextBlock FontSize="11" Foreground="#a1a1aa">
+                            <TextBlock.Text>
+                                <MultiBinding StringFormat="RiftLauncher Version - v{0}&#x0a;Runtime - {1}">
+                                    <Binding Path="AppVersion"/>
+                                    <Binding Path="DotNetVersion"/>
+                                </MultiBinding>
+                            </TextBlock.Text>
                         </TextBlock>
+                        <TextBlock Text="Include the logs folder content when reporting issues."
+                                   FontSize="10" Foreground="#71717a"/>
                     </StackPanel>
                 </Border>
+
+                <!-- MVL Promotion -->
+                <TextBlock Text="Try MVL - a mod that improves the vanilla game experience!"
+                           FontSize="11" Foreground="#ad7639"
+                           HorizontalAlignment="Center"
+                           Cursor="Hand"/>
             </StackPanel>
         </ScrollViewer>
-    </Border>
+    </Grid>
 </UserControl>

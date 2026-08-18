@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using RiftLauncher.Core.Services;
 using RiftLauncher.ViewModels;
@@ -12,8 +13,31 @@ public class MainWindowViewModelTests
     {
         var taskManager = Substitute.For<ITaskManagerService>();
         taskManager.Tasks.Returns(new System.Collections.ObjectModel.ObservableCollection<TaskItem>());
+        var configService = Substitute.For<IConfigService>();
+        configService.GetConfigAsync().Returns(Task.FromResult(new RiftLauncher.Core.Domain.Config.AppConfig()));
+        var accountService = Substitute.For<IAccountService>();
+
+        var services = new ServiceCollection();
+        services.AddSingleton(taskManager);
+        services.AddSingleton(configService);
+        services.AddSingleton(accountService);
+        services.AddSingleton(Substitute.For<ILocalizationService>());
+        services.AddSingleton(Substitute.For<IModDbService>());
+        services.AddSingleton(Substitute.For<IDownloadService>());
+        services.AddSingleton(Substitute.For<IVersionCatalogService>());
+        services.AddSingleton(Substitute.For<IArchiveService>());
+        services.AddTransient<HomeViewModel>();
+        services.AddTransient<InstallationsListViewModel>();
+        services.AddTransient<VersionsListViewModel>();
+        services.AddTransient<ModsListViewModel>();
+        services.AddTransient<ConfigViewModel>();
+        services.AddTransient<InfoHelpViewModel>();
+        var sp = services.BuildServiceProvider();
+
         var tasksVm = new TasksViewModel(taskManager);
-        return new MainWindowViewModel(tasksVm);
+        var loginVm = new LoginViewModel(accountService);
+        var sessionVm = new SessionViewModel(accountService, loginVm);
+        return new MainWindowViewModel(sp, tasksVm, sessionVm, configService, accountService);
     }
 
     [Fact]

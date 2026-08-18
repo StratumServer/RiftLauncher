@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
+using RiftLauncher.Core.Services;
 
 namespace RiftLauncher.ViewModels;
 
@@ -28,6 +30,10 @@ public partial class NavItemViewModel : ObservableObject
 
 public partial class MainWindowViewModel : ViewModelBase
 {
+    private readonly IServiceProvider _services;
+    private readonly IConfigService _configService;
+    private readonly IAccountService _accountService;
+
     [ObservableProperty]
     private ViewModelBase? _currentPage;
 
@@ -46,12 +52,25 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _windowTitle = "Rift Launcher";
 
     [ObservableProperty]
-    private string _currentInstallationName = "Default";
+    private string _currentInstallationName = "No installation selected";
 
     [ObservableProperty]
-    private string _sessionDisplayName = "Not logged in";
+    private string _currentInstallationDesc = "Select an installation";
+
+    [ObservableProperty]
+    private string _sessionDisplayName = "Log In";
+
+    [ObservableProperty]
+    private bool _isLoggedIn;
+
+    [ObservableProperty]
+    private bool _hasInstallationSelected;
+
+    [ObservableProperty]
+    private bool _isPlaying;
 
     public TasksViewModel Tasks { get; }
+    public SessionViewModel Session { get; }
 
     public ObservableCollection<NavItemViewModel> NavItems { get; } = new()
     {
@@ -63,12 +82,20 @@ public partial class MainWindowViewModel : ViewModelBase
         new() { Index = 5, Title = "Info & Help", IconData = "M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z" },
     };
 
-    public MainWindowViewModel() : this(new TasksViewModel(null!)) { }
-
-    public MainWindowViewModel(TasksViewModel tasksViewModel)
+    public MainWindowViewModel(
+        IServiceProvider services,
+        TasksViewModel tasksViewModel,
+        SessionViewModel sessionViewModel,
+        IConfigService configService,
+        IAccountService accountService)
     {
+        _services = services;
+        _configService = configService;
+        _accountService = accountService;
         Tasks = tasksViewModel;
+        Session = sessionViewModel;
         NavigateToIndex(0);
+        _ = LoadInstallationStateAsync();
     }
 
     [RelayCommand]
@@ -78,6 +105,43 @@ public partial class MainWindowViewModel : ViewModelBase
             NavigateToIndex(index);
     }
 
+    [RelayCommand]
+    private async Task PlayAsync()
+    {
+        // TODO: Full play logic (validate installation, run game, track time)
+        await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private void QuickBackup()
+    {
+        // TODO: Make backup of current installation
+    }
+
+    [RelayCommand]
+    private void QuickMods()
+    {
+        // TODO: Navigate to manage mods for current installation
+    }
+
+    [RelayCommand]
+    private void QuickEdit()
+    {
+        // TODO: Navigate to edit current installation
+    }
+
+    [RelayCommand]
+    private void QuickAdd()
+    {
+        NavigateToIndex(1);
+        // TODO: Navigate directly to add installation sub-page
+    }
+
+    public void NavigateToSubPage(ViewModelBase viewModel)
+    {
+        CurrentPage = viewModel;
+    }
+
     private void NavigateToIndex(int index)
     {
         foreach (var item in NavItems)
@@ -85,13 +149,35 @@ public partial class MainWindowViewModel : ViewModelBase
 
         CurrentPage = index switch
         {
-            0 => new Pages.HomeViewModel(),
-            1 => new Pages.InstallationsListViewModel(),
-            2 => new Pages.VersionsListViewModel(),
-            3 => new Pages.ModsListViewModel(),
-            4 => new Pages.ConfigViewModel(),
-            5 => new Pages.InfoHelpViewModel(),
+            0 => _services.GetRequiredService<Pages.HomeViewModel>(),
+            1 => _services.GetRequiredService<Pages.InstallationsListViewModel>(),
+            2 => _services.GetRequiredService<Pages.VersionsListViewModel>(),
+            3 => _services.GetRequiredService<Pages.ModsListViewModel>(),
+            4 => _services.GetRequiredService<Pages.ConfigViewModel>(),
+            5 => _services.GetRequiredService<Pages.InfoHelpViewModel>(),
             _ => CurrentPage
         };
+    }
+
+    private async Task LoadInstallationStateAsync()
+    {
+        try
+        {
+            var config = await _configService.GetConfigAsync();
+            if (!string.IsNullOrEmpty(config.LastUsedInstallation))
+            {
+                var inst = config.Installations?.FirstOrDefault(i => i.Id == config.LastUsedInstallation);
+                if (inst != null)
+                {
+                    CurrentInstallationName = inst.Name;
+                    CurrentInstallationDesc = $"v{inst.Version} · {inst.ModsCount} mods";
+                    HasInstallationSelected = true;
+                }
+            }
+        }
+        catch
+        {
+            // Config not loaded yet, use defaults
+        }
     }
 }

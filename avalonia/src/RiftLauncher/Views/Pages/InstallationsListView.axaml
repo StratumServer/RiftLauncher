@@ -4,144 +4,207 @@
              x:Class="RiftLauncher.Views.Pages.InstallationsListView"
              x:DataType="vm:InstallationsListViewModel">
 
-  <Grid RowDefinitions="Auto,*">
-    <!-- Header -->
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="24,16,24,8">
-      <TextBlock Text="Installations"
-                 FontSize="20" FontWeight="Bold"
-                 Foreground="{DynamicResource Zinc100Brush}"
-                 VerticalAlignment="Center"/>
-      <Button Grid.Column="1"
-              Classes="accent"
-              Padding="12,6"
-              Command="{Binding $parent[UserControl].((vm:InstallationsListViewModel)DataContext).OpenFolderCommand}">
-        <StackPanel Orientation="Horizontal" Spacing="6">
-          <PathIcon Data="M12,2C6.47,2 2,6.47 2,12C2,17.53 6.47,22 12,22C17.53,22 22,17.53 22,12C22,6.47 17.53,2 12,2M15,17H9V15H15V17M15,13H13V7H11V13H9L12,16L15,13Z"
-                    Width="14" Height="14"/>
-          <TextBlock Text="Add New"/>
-        </StackPanel>
-      </Button>
-    </Grid>
-
-    <!-- List -->
-    <ScrollViewer Grid.Row="1" Padding="24,0">
-      <ItemsControl ItemsSource="{Binding Installations}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate DataType="vm:InstallationItemViewModel">
-            <Border Margin="0,0,0,6"
-                    Padding="8"
-                    Background="{DynamicResource Zinc800Brush}"
-                    CornerRadius="6"
-                    Height="64">
-              <Grid ColumnDefinitions="56,Auto,*,Auto,Auto">
-                <!-- Icon -->
-                <Border Width="48" Height="48"
-                        CornerRadius="4"
-                        Background="{DynamicResource Zinc700Brush}"
-                        ClipToBounds="True">
-                  <TextBlock Text="{Binding Name, Converter={x:Static vm:InstallationsListViewModel.InitialConverter}}"
-                             FontSize="20" FontWeight="Bold"
-                             HorizontalAlignment="Center"
-                             VerticalAlignment="Center"
-                             Foreground="{DynamicResource VsLightBrush}"/>
-                </Border>
-
-                <!-- Separator -->
-                <Border Grid.Column="1" Width="1" Margin="8,4"
-                        Background="{DynamicResource Zinc600Brush}"/>
-
-                <!-- Name + metadata -->
-                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="4,0">
-                  <TextBlock Text="{Binding Name}"
-                             FontWeight="Bold" FontSize="13"
-                             Foreground="{DynamicResource Zinc100Brush}"
-                             TextTrimming="CharacterEllipsis"/>
-                  <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
-                    <TextBlock Text="{Binding LastPlayedDisplay}"
-                               FontSize="11"
-                               Foreground="{DynamicResource Zinc400Brush}"/>
-                    <TextBlock Text="·" FontSize="11"
-                               Foreground="{DynamicResource Zinc400Brush}"/>
-                    <TextBlock Text="{Binding TotalTimeDisplay}"
-                               FontSize="11"
-                               Foreground="{DynamicResource Zinc400Brush}"/>
-                  </StackPanel>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Sticky Menu -->
+        <Border Grid.Row="0" Background="#3309090b" Padding="8"
+                BorderBrush="#0Da1a1aa" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Grid.Column="0" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Data="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center"
+                            Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="/" Foreground="#71717a" FontSize="12"/>
+                    <TextBlock Text="Installations" Foreground="#e4e4e7" FontSize="12" FontWeight="Bold"/>
                 </StackPanel>
+                <Button Grid.Column="2" Width="32" Height="32" Background="Transparent"
+                        BorderThickness="0" Padding="0" Cursor="Hand"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <PathIcon Data="M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"
+                              Foreground="#a1a1aa" Width="16" Height="16"/>
+                </Button>
+            </Grid>
+        </Border>
 
-                <!-- Separator -->
-                <Border Grid.Column="3" Width="1" Margin="8,4"
-                        Background="{DynamicResource Zinc600Brush}"/>
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" Padding="8">
+            <StackPanel Spacing="8" MaxWidth="800" HorizontalAlignment="Center" Margin="0,8">
 
-                <!-- Version + Actions -->
-                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8"
-                            VerticalAlignment="Center">
-                  <!-- Version badge -->
-                  <StackPanel VerticalAlignment="Center" Width="60">
-                    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
-                      <PathIcon Data="M1,21H23L12,2"
-                                Width="10" Height="10"
-                                Foreground="#fb923c"
-                                IsVisible="{Binding IsVersionMissing}"/>
-                      <TextBlock Text="{Binding Version}"
-                                 FontWeight="Bold" FontSize="12"
-                                 HorizontalAlignment="Center">
-                        <TextBlock.Styles>
-                          <Style Selector="TextBlock">
-                            <Setter Property="Foreground" Value="{DynamicResource Zinc200Brush}"/>
-                          </Style>
-                        </TextBlock.Styles>
-                      </TextBlock>
+                <!-- Add installation button -->
+                <Button Background="Transparent" BorderThickness="0"
+                        HorizontalAlignment="Center"
+                        Cursor="Hand" Padding="16"
+                        Command="{Binding LoadCommand}">
+                    <PathIcon Data="M12,2C6.47,2 2,6.47 2,12C2,17.53 6.47,22 12,22C17.53,22 22,17.53 22,12C22,6.47 17.53,2 12,2M15,17H13V13H9V11H13V7H15V11H19V13H15V17Z"
+                              Foreground="#3fa1a1aa" Width="28" Height="28"/>
+                </Button>
+
+                <!-- Installations list -->
+                <ItemsControl ItemsSource="{Binding Installations}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:InstallationItemViewModel">
+                            <!-- Row: h-16, bg-zinc-950/50, border, rounded-sm -->
+                            <Border Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                                    CornerRadius="2" Height="64" Margin="0,2" Padding="8">
+                                <Grid ColumnDefinitions="48,1,*,1,80,1,Auto">
+                                    <!-- Icon (initial letter placeholder) -->
+                                    <Border Grid.Column="0" Background="#267e501e" CornerRadius="2"
+                                            Width="48" Height="48"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name, Converter={x:Static vm:InstallationsListViewModel.InitialConverter}}"
+                                                   Foreground="#ad7639" FontSize="20" FontWeight="Bold"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+
+                                    <!-- Separator -->
+                                    <Border Grid.Column="1" Width="1" Background="#40a1a1aa" Margin="8,4"/>
+
+                                    <!-- Name + metadata -->
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="4,0">
+                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="12"
+                                                   Foreground="#e4e4e7" TextTrimming="CharacterEllipsis"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding LastPlayedDisplay}" FontSize="10" Foreground="#a1a1aa"/>
+                                            <TextBlock Text="·" FontSize="10" Foreground="#71717a"/>
+                                            <TextBlock Text="{Binding TotalTimeDisplay}" FontSize="10" Foreground="#a1a1aa"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- Separator -->
+                                    <Border Grid.Column="3" Width="1" Background="#40a1a1aa" Margin="4,4"/>
+
+                                    <!-- Version + Mods -->
+                                    <StackPanel Grid.Column="4" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                        <TextBlock Text="{Binding Version}" FontWeight="Bold" FontSize="11"
+                                                   Foreground="#e4e4e7" HorizontalAlignment="Center"/>
+                                        <TextBlock FontSize="10" Foreground="#a1a1aa" HorizontalAlignment="Center">
+                                            <TextBlock.Text>
+                                                <MultiBinding StringFormat="{}{0} mods">
+                                                    <Binding Path="ModsCount"/>
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+                                    </StackPanel>
+
+                                    <!-- Separator -->
+                                    <Border Grid.Column="5" Width="1" Background="#40a1a1aa" Margin="4,4"
+                                            IsVisible="False"/>
+
+                                    <!-- Action buttons 3x2 -->
+                                    <UniformGrid Grid.Column="6" Columns="3" Rows="2" Width="96" Margin="4,0,0,0">
+                                        <!-- Backup -->
+                                        <Button Background="Transparent" BorderThickness="0" Padding="2"
+                                                Width="28" Height="22" Cursor="Hand"
+                                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                Command="{Binding $parent[ItemsControl].((vm:InstallationsListViewModel)DataContext).MakeBackupCommand}"
+                                                CommandParameter="{Binding Id}"
+                                                ToolTip.Tip="Backup">
+                                            <PathIcon Data="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z"
+                                                      Foreground="#a1a1aa" Width="12" Height="12"/>
+                                        </Button>
+                                        <!-- Manage Backups -->
+                                        <Button Background="Transparent" BorderThickness="0" Padding="2"
+                                                Width="28" Height="22" Cursor="Hand"
+                                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                ToolTip.Tip="Manage Backups">
+                                            <PathIcon Data="M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12H4A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4Z"
+                                                      Foreground="#a1a1aa" Width="12" Height="12"/>
+                                        </Button>
+                                        <!-- Manage Mods -->
+                                        <Button Background="Transparent" BorderThickness="0" Padding="2"
+                                                Width="28" Height="22" Cursor="Hand"
+                                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                ToolTip.Tip="Manage Mods">
+                                            <PathIcon Data="M22.7,19L13.6,9.9C14.5,7.6 14,4.9 12.1,3C10.1,1 7.1,0.6 4.7,1.7L8.5,5.5L5.5,8.5L1.7,4.7C0.6,7.1 1.1,10.1 3.1,12.1C5,14 7.7,14.5 9.9,13.6L19,22.7C19.4,23.1 20,23.1 20.4,22.7L22.6,20.5C23.1,20.1 23.1,19.4 22.7,19Z"
+                                                      Foreground="#a1a1aa" Width="12" Height="12"/>
+                                        </Button>
+                                        <!-- Open Folder -->
+                                        <Button Background="Transparent" BorderThickness="0" Padding="2"
+                                                Width="28" Height="22" Cursor="Hand"
+                                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                Command="{Binding $parent[ItemsControl].((vm:InstallationsListViewModel)DataContext).OpenFolderCommand}"
+                                                CommandParameter="{Binding Path}"
+                                                ToolTip.Tip="Open Folder">
+                                            <PathIcon Data="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"
+                                                      Foreground="#a1a1aa" Width="12" Height="12"/>
+                                        </Button>
+                                        <!-- Edit -->
+                                        <Button Background="Transparent" BorderThickness="0" Padding="2"
+                                                Width="28" Height="22" Cursor="Hand"
+                                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                ToolTip.Tip="Edit">
+                                            <PathIcon Data="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"
+                                                      Foreground="#a1a1aa" Width="12" Height="12"/>
+                                        </Button>
+                                        <!-- Delete -->
+                                        <Button Background="Transparent" BorderThickness="0" Padding="2"
+                                                Width="28" Height="22" Cursor="Hand"
+                                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                Command="{Binding $parent[ItemsControl].((vm:InstallationsListViewModel)DataContext).RequestDeleteCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Delete">
+                                            <PathIcon Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
+                                                      Foreground="#b91c1c" Width="12" Height="12"/>
+                                        </Button>
+                                    </UniformGrid>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Delete Confirmation Dialog -->
+        <Border Grid.Row="0" Grid.RowSpan="2"
+                Background="#CC09090b"
+                IsVisible="{Binding IsDeleteDialogOpen}"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                ZIndex="100">
+            <Border Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                    CornerRadius="4" Padding="24" MaxWidth="500"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="16" HorizontalAlignment="Center">
+                    <TextBlock Text="Delete Installation" FontSize="20" FontWeight="Bold"
+                               Foreground="#e4e4e7" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Are you sure you want to delete this installation?"
+                               Foreground="#e4e4e7" FontSize="13" HorizontalAlignment="Center"
+                               TextWrapping="Wrap" TextAlignment="Center"/>
+                    <TextBlock Text="This action cannot be undone."
+                               Foreground="#a1a1aa" FontSize="11" HorizontalAlignment="Center"/>
+
+                    <!-- Delete data checkbox -->
+                    <CheckBox IsChecked="{Binding DeleteDataChecked}" Margin="0,8,0,0">
+                        <TextBlock Text="Also delete installation data folder"
+                                   Foreground="#e4e4e7" FontSize="12"/>
+                    </CheckBox>
+
+                    <!-- Buttons -->
+                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,8,0,0">
+                        <Button Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                                CornerRadius="2" Padding="16,8" Cursor="Hand"
+                                Command="{Binding CancelDeleteCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <PathIcon Data="M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z"
+                                          Foreground="#65a30d" Width="14" Height="14"/>
+                                <TextBlock Text="Cancel" Foreground="#65a30d" FontSize="12"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Background="#8009090b" BorderBrush="#0Da1a1aa" BorderThickness="1"
+                                CornerRadius="2" Padding="16,8" Cursor="Hand"
+                                Command="{Binding ConfirmDeleteCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <PathIcon Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
+                                          Foreground="#b91c1c" Width="14" Height="14"/>
+                                <TextBlock Text="Delete" Foreground="#b91c1c" FontSize="12"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
-                    <TextBlock FontSize="10"
-                               HorizontalAlignment="Center"
-                               Foreground="{DynamicResource Zinc400Brush}">
-                      <TextBlock.Text>
-                        <MultiBinding StringFormat="{}{0} mods">
-                          <Binding Path="ModsCount"/>
-                        </MultiBinding>
-                      </TextBlock.Text>
-                    </TextBlock>
-                  </StackPanel>
-
-                  <!-- Action buttons 3x2 grid -->
-                  <UniformGrid Columns="3" Rows="2" Width="78" Height="44">
-                    <Button Padding="4" Background="Transparent" ToolTip.Tip="Backup"
-                            Command="{Binding $parent[ItemsControl].((vm:InstallationsListViewModel)DataContext).MakeBackupCommand}"
-                            CommandParameter="{Binding Id}">
-                      <PathIcon Data="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" Width="14" Height="14"
-                                Foreground="{DynamicResource Zinc300Brush}"/>
-                    </Button>
-                    <Button Padding="4" Background="Transparent" ToolTip.Tip="Restore">
-                      <PathIcon Data="M12.5,8C9.85,8 7.45,9 5.6,10.6L2,7V16H11L7.38,12.38C8.77,11.22 10.54,10.5 12.5,10.5C16.04,10.5 19.05,12.81 20.1,16L22.47,15.22C21.08,11.03 17.15,8 12.5,8Z" Width="14" Height="14"
-                                Foreground="{DynamicResource Zinc300Brush}"/>
-                    </Button>
-                    <Button Padding="4" Background="Transparent" ToolTip.Tip="Mods">
-                      <PathIcon Data="M22.7,19L13.6,9.9C14.5,7.6 14,4.9 12.1,3C10.1,1 7.1,0.6 4.7,1.7L8.5,5.5L5.5,8.5L1.7,4.7C0.6,7.1 1.1,10.1 3.1,12.1C5,14 7.7,14.5 9.9,13.6L19,22.7C19.4,23.1 20,23.1 20.4,22.7L22.6,20.5C23.1,20.1 23.1,19.4 22.7,19Z" Width="14" Height="14"
-                                Foreground="{DynamicResource Zinc300Brush}"/>
-                    </Button>
-                    <Button Padding="4" Background="Transparent" ToolTip.Tip="Open Folder"
-                            Command="{Binding $parent[ItemsControl].((vm:InstallationsListViewModel)DataContext).OpenFolderCommand}"
-                            CommandParameter="{Binding Path}">
-                      <PathIcon Data="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z" Width="14" Height="14"
-                                Foreground="{DynamicResource Zinc300Brush}"/>
-                    </Button>
-                    <Button Padding="4" Background="Transparent" ToolTip.Tip="Edit">
-                      <PathIcon Data="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z" Width="14" Height="14"
-                                Foreground="{DynamicResource Zinc300Brush}"/>
-                    </Button>
-                    <Button Padding="4" Background="Transparent" ToolTip.Tip="Delete"
-                            Command="{Binding $parent[ItemsControl].((vm:InstallationsListViewModel)DataContext).RequestDeleteCommand}"
-                            CommandParameter="{Binding}">
-                      <PathIcon Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" Width="14" Height="14"
-                                Foreground="#dc2626"/>
-                    </Button>
-                  </UniformGrid>
                 </StackPanel>
-              </Grid>
             </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </ScrollViewer>
-  </Grid>
+        </Border>
+    </Grid>
 </UserControl>

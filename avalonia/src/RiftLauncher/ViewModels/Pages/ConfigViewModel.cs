@@ -82,4 +82,55 @@ public partial class ConfigViewModel : ViewModelBase
     partial void OnUiScaleChanged(int value) => _ = SaveAsync();
     partial void OnMinimizeToTrayChanged(bool value) => _ = SaveAsync();
     partial void OnCloseToTrayChanged(bool value) => _ = SaveAsync();
+
+    [RelayCommand]
+    private async Task BrowseInstallationsFolder()
+    {
+        var folder = await PickFolderAsync();
+        if (folder != null)
+        {
+            DefaultInstallationsFolder = folder;
+            _ = SaveAsync();
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseVersionsFolder()
+    {
+        var folder = await PickFolderAsync();
+        if (folder != null)
+        {
+            DefaultVersionsFolder = folder;
+            _ = SaveAsync();
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseBackupsFolder()
+    {
+        var folder = await PickFolderAsync();
+        if (folder != null)
+        {
+            BackupsFolder = folder;
+            _ = SaveAsync();
+        }
+    }
+
+    private static async Task<string?> PickFolderAsync()
+    {
+        var topLevel = Avalonia.Application.Current?.ApplicationLifetime is
+            Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+            ? desktop.MainWindow
+            : null;
+        if (topLevel == null) return null;
+
+        var result = await topLevel.StorageProvider.OpenFolderPickerAsync(
+            new Avalonia.Platform.Storage.FolderPickerOpenOptions
+            {
+                AllowMultiple = false,
+                Title = "Select Folder"
+            });
+
+        return result.Count > 0 ? result[0].Path.LocalPath : null;
+    }
 }

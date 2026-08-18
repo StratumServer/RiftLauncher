@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RiftLauncher.Core.Services;
 using RiftLauncher.ViewModels;
+using RiftLauncher.ViewModels.Pages;
 using RiftLauncher.Views;
 
 namespace RiftLauncher;
@@ -34,7 +35,6 @@ public partial class App : Application
 
         base.OnFrameworkInitializationCompleted();
 
-        // Initialize localization after the window is shown (non-blocking)
         _ = InitializeLocalizationAsync();
     }
 
@@ -74,10 +74,19 @@ public partial class App : Application
         services.AddSingleton<IAccountService, AccountService>();
         services.AddSingleton<IUpdateService, UpdateService>();
 
-        services.AddTransient<MainWindowViewModel>();
+        // Shell VMs
+        services.AddSingleton<MainWindowViewModel>();
         services.AddTransient<TasksViewModel>();
         services.AddTransient<LoginViewModel>();
-        services.AddTransient<SessionViewModel>();
+        services.AddSingleton<SessionViewModel>();
+
+        // Page VMs (transient so each navigation creates fresh state)
+        services.AddTransient<HomeViewModel>();
+        services.AddTransient<InstallationsListViewModel>();
+        services.AddTransient<VersionsListViewModel>();
+        services.AddTransient<ModsListViewModel>();
+        services.AddTransient<ConfigViewModel>();
+        services.AddTransient<InfoHelpViewModel>();
     }
 
     private static string GetLocalesDirectory()
