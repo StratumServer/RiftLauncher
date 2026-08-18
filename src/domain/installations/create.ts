@@ -61,6 +61,8 @@ export interface CreateInstallationInput {
   envVars: string
   /** Folders the launcher already uses for backups, versions or other installations. */
   foldersInUse: readonly string[]
+  /** Host platform for path normalization. Defaults to posix when absent. */
+  platform?: "win32" | "posix"
 }
 
 /** The record built for a fresh installation, ready for the caller to add to its list. */
@@ -99,7 +101,7 @@ export function createInstallation(ports: CreateInstallationPorts, input: Create
   const fields = validateInstallationFields(input)
   if (!fields.ok) return refuseCreate(fields.reason)
 
-  if (folderIsInUse(input.path, input.foldersInUse)) return refuseCreate("folder-in-use")
+  if (folderIsInUse(input.path, input.foldersInUse, input.platform)) return refuseCreate("folder-in-use")
 
   return {
     ok: true,

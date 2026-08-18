@@ -129,7 +129,7 @@ export async function installGameVersion(ports: InstallGameVersionPorts, input: 
   const os = toGameOs(input.platform)
 
   if (input.installedVersions.includes(version.version)) return refuse("version-already-installed")
-  if (folderIsInUse(targetFolder, input.foldersInUse)) return refuse("folder-in-use")
+  if (folderIsInUse(targetFolder, input.foldersInUse, input.platform === "win32" ? "win32" : "posix")) return refuse("folder-in-use")
 
   const download = downloadFor(version, os)
   if (!download) return refuse("no-download-for-os")
