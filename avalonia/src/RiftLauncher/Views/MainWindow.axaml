@@ -2,170 +2,104 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RiftLauncher.ViewModels"
         xmlns:controls="using:RiftLauncher.Views.Controls"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d"
-        d:DesignWidth="1280" d:DesignHeight="720"
         x:Class="RiftLauncher.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding WindowTitle}"
         Width="1280" Height="720"
         MinWidth="1024" MinHeight="600"
-        Background="Transparent"
+        Background="#09090b"
         Classes="Scale100">
 
-    <Design.DataContext>
-        <vm:MainWindowViewModel />
-    </Design.DataContext>
-
     <Panel>
-        <!-- Background image layer (full cover) -->
+        <!-- Background image -->
         <Image Source="/Assets/Images/background.jpg"
                Stretch="UniformToFill" />
 
-        <!-- Overlay: 15% zinc-950 (matching Electron bg-zinc-950/15) -->
-        <Border Background="{StaticResource OverlayBackground}" />
+        <!-- Overlay: 15% zinc-950 -->
+        <Border Background="#2609090b" />
 
-        <!-- Main layout: Sidebar (288px) + Content -->
+        <!-- Main layout: Sidebar 288px + Content -->
         <Grid ColumnDefinitions="288,*">
-            <!-- Sidebar: bg-zinc-950/30, backdrop-blur-sm, border-r zinc-400/5 -->
+            <!-- Sidebar -->
             <Border Grid.Column="0"
-                    Background="{StaticResource SidebarBackground}"
-                    BorderBrush="{StaticResource SubtleBorderBrush}"
+                    Background="#4D09090b"
+                    BorderBrush="#0Da1a1aa"
                     BorderThickness="0,0,1,0"
-                    Padding="8"
-                    ZIndex="99">
+                    Padding="8">
                 <DockPanel>
-                    <!-- Bottom section: Play button + quick actions + installations dropdown -->
+                    <!-- Play button at bottom -->
                     <StackPanel DockPanel.Dock="Bottom" Spacing="8">
-                        <!-- Installations dropdown (h-56px) -->
-                        <Border Background="{StaticResource ButtonBackground}"
-                                BorderBrush="{StaticResource SubtleBorderBrush}"
-                                BorderThickness="1"
+                        <Button Background="#7e501e"
+                                Foreground="White"
                                 CornerRadius="2"
                                 Height="56"
-                                Padding="4,4,8,4">
-                            <Grid ColumnDefinitions="Auto,*,Auto">
-                                <!-- Icon thumbnail -->
-                                <Border Grid.Column="0" Width="48" Height="48" CornerRadius="2" ClipToBounds="True">
-                                    <Image Source="/Assets/Images/background.jpg" Stretch="UniformToFill"/>
-                                </Border>
-                                <!-- Installation name -->
-                                <TextBlock Grid.Column="1" Text="{Binding CurrentInstallationName}"
-                                           VerticalAlignment="Center" Margin="8,0"
-                                           FontSize="14" Foreground="{StaticResource Zinc200Brush}"
-                                           TextTrimming="CharacterEllipsis"/>
-                                <!-- Caret -->
-                                <PathIcon Grid.Column="2" Data="M7,10L12,15L17,10H7Z"
-                                          Foreground="{StaticResource Zinc400Brush}"
-                                          Width="16" Height="16"
-                                          VerticalAlignment="Center"/>
-                            </Grid>
-                        </Border>
-
-                        <!-- Play row: button + quick actions grid -->
-                        <Grid ColumnDefinitions="*,56">
-                            <!-- Play button (h-56px, bg-vs) -->
-                            <Button Grid.Column="0"
-                                    Classes="accent"
-                                    Height="56"
-                                    Margin="0,0,4,0"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Center"
-                                    VerticalContentAlignment="Center"
-                                    FontSize="24">
-                                <PathIcon Data="M8,5.14V19.14L19,12.14L8,5.14Z"
-                                          Foreground="White" Width="24" Height="24"/>
-                            </Button>
-
-                            <!-- Quick action grid (2x2) -->
-                            <UniformGrid Grid.Column="1" Rows="2" Columns="2">
-                                <Button Classes="form-button" Padding="4"
-                                        ToolTip.Tip="Download">
-                                    <PathIcon Data="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z"
-                                              Foreground="{StaticResource Zinc400Brush}" Width="14" Height="14"/>
-                                </Button>
-                                <Button Classes="form-button" Padding="4"
-                                        ToolTip.Tip="Mods">
-                                    <PathIcon Data="M22.7,19L13.6,9.9C14.5,7.6 14,4.9 12.1,3C10.1,1 7.1,0.6 4.7,1.7L8.5,5.5L5.5,8.5L1.7,4.7C0.6,7.1 1,10.1 3,12.1C4.9,14 7.6,14.5 9.9,13.6L19,22.7C19.4,23.1 20,23.1 20.4,22.7L22.6,20.5C23.1,20.1 23.1,19.4 22.7,19Z"
-                                              Foreground="{StaticResource Zinc400Brush}" Width="14" Height="14"/>
-                                </Button>
-                                <Button Classes="form-button" Padding="4"
-                                        ToolTip.Tip="Edit">
-                                    <PathIcon Data="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"
-                                              Foreground="{StaticResource Zinc400Brush}" Width="14" Height="14"/>
-                                </Button>
-                                <Button Classes="form-button" Padding="4"
-                                        ToolTip.Tip="Add">
-                                    <PathIcon Data="M17,13H13V17H11V13H7V11H11V7H13V11H17M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"
-                                              Foreground="{StaticResource Zinc400Brush}" Width="14" Height="14"/>
-                                </Button>
-                            </UniformGrid>
-                        </Grid>
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center">
+                            <PathIcon Data="M8,5.14V19.14L19,12.14L8,5.14Z"
+                                      Foreground="White" Width="24" Height="24"/>
+                        </Button>
                     </StackPanel>
 
-                    <!-- Top row: Session button + Tasks -->
-                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,32" Height="32" Margin="0,0,0,8">
-                        <!-- Session button -->
-                        <Button Grid.Column="0" Classes="form-button"
-                                Height="32" HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Left" Padding="8,0">
-                            <TextBlock Text="{Binding SessionDisplayName}"
-                                       FontSize="12" Foreground="{StaticResource Zinc200Brush}"
-                                       TextTrimming="CharacterEllipsis"/>
-                        </Button>
-
-                        <!-- Tasks button -->
-                        <controls:TasksPopup Grid.Column="1"
-                                             DataContext="{Binding Tasks}"
-                                             Width="32" Height="32"/>
-                    </Grid>
-
-                    <!-- Navigation links (fills remaining space) -->
-                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl ItemsSource="{Binding NavItems}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Classes="nav-link"
-                                            Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).NavigateCommand}"
-                                            CommandParameter="{Binding Index}"
-                                            Margin="0,2">
-                                        <Grid ColumnDefinitions="4,Auto,*">
-                                            <!-- Active indicator (4px left border) -->
-                                            <Border Grid.Column="0" Width="4" CornerRadius="2"
-                                                    Background="{Binding ActiveBrush}"
-                                                    VerticalAlignment="Stretch"/>
-
-                                            <!-- Icon -->
-                                            <PathIcon Grid.Column="1" Data="{Binding IconData}"
-                                                      Foreground="{StaticResource Zinc400Brush}"
-                                                      Width="24" Height="24"
-                                                      Margin="8,0,8,0"/>
-
-                                            <!-- Text: Title + Description -->
-                                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Title}"
-                                                           FontWeight="Bold" FontSize="14"
-                                                           Foreground="{StaticResource Zinc200Brush}"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding Description}"
-                                                           FontSize="12"
-                                                           Foreground="{StaticResource Zinc400Brush}"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           IsVisible="{Binding HasDescription}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                    <!-- Navigation -->
+                    <ListBox SelectedIndex="{Binding SelectedNavIndex}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Margin="0,8,0,0">
+                        <ListBoxItem Padding="12" Margin="2" CornerRadius="4">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <PathIcon Data="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z"
+                                          Foreground="#a1a1aa" Width="20" Height="20"/>
+                                <TextBlock Text="Home" VerticalAlignment="Center"
+                                           Foreground="#e4e4e7" FontSize="14"/>
+                            </StackPanel>
+                        </ListBoxItem>
+                        <ListBoxItem Padding="12" Margin="2" CornerRadius="4">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <PathIcon Data="M4,6H20V16H4M4,4A2,2 0 0,0 2,6V16A2,2 0 0,0 4,18H8L10,20H14L16,18H20A2,2 0 0,0 22,16V6A2,2 0 0,0 20,4H4Z"
+                                          Foreground="#a1a1aa" Width="20" Height="20"/>
+                                <TextBlock Text="Installations" VerticalAlignment="Center"
+                                           Foreground="#e4e4e7" FontSize="14"/>
+                            </StackPanel>
+                        </ListBoxItem>
+                        <ListBoxItem Padding="12" Margin="2" CornerRadius="4">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <PathIcon Data="M12,3L2,12H5V20H19V12H22L12,3M12,8.75A2.25,2.25 0 0,1 14.25,11A2.25,2.25 0 0,1 12,13.25A2.25,2.25 0 0,1 9.75,11A2.25,2.25 0 0,1 12,8.75Z"
+                                          Foreground="#a1a1aa" Width="20" Height="20"/>
+                                <TextBlock Text="VS Versions" VerticalAlignment="Center"
+                                           Foreground="#e4e4e7" FontSize="14"/>
+                            </StackPanel>
+                        </ListBoxItem>
+                        <ListBoxItem Padding="12" Margin="2" CornerRadius="4">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <PathIcon Data="M12,2L2,7L12,12L22,7L12,2M2,17L12,22L22,17L12,12L2,17Z"
+                                          Foreground="#a1a1aa" Width="20" Height="20"/>
+                                <TextBlock Text="Mods" VerticalAlignment="Center"
+                                           Foreground="#e4e4e7" FontSize="14"/>
+                            </StackPanel>
+                        </ListBoxItem>
+                        <ListBoxItem Padding="12" Margin="2" CornerRadius="4">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <PathIcon Data="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.04 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.04 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"
+                                          Foreground="#a1a1aa" Width="20" Height="20"/>
+                                <TextBlock Text="Config" VerticalAlignment="Center"
+                                           Foreground="#e4e4e7" FontSize="14"/>
+                            </StackPanel>
+                        </ListBoxItem>
+                        <ListBoxItem Padding="12" Margin="2" CornerRadius="4">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <PathIcon Data="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"
+                                          Foreground="#a1a1aa" Width="20" Height="20"/>
+                                <TextBlock Text="Info &amp; Help" VerticalAlignment="Center"
+                                           Foreground="#e4e4e7" FontSize="14"/>
+                            </StackPanel>
+                        </ListBoxItem>
+                    </ListBox>
                 </DockPanel>
             </Border>
 
             <!-- Content area -->
-            <Border Grid.Column="1">
+            <Border Grid.Column="1" Padding="16">
                 <TransitioningContentControl Content="{Binding CurrentPage}"
                                              HorizontalAlignment="Stretch"
                                              VerticalAlignment="Stretch">

@@ -18,15 +18,11 @@ public partial class App : Application
         AvaloniaXamlLoader.Load(this);
     }
 
-    public override async void OnFrameworkInitializationCompleted()
+    public override void OnFrameworkInitializationCompleted()
     {
         var services = new ServiceCollection();
         ConfigureServices(services);
         Services = services.BuildServiceProvider();
-
-        var localization = Services.GetRequiredService<ILocalizationService>();
-        if (localization is JsonLocalizationService jsonLoc)
-            await jsonLoc.InitializeAsync();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -37,6 +33,23 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+
+        // Initialize localization after the window is shown (non-blocking)
+        _ = InitializeLocalizationAsync();
+    }
+
+    private static async Task InitializeLocalizationAsync()
+    {
+        try
+        {
+            var localization = Services.GetRequiredService<ILocalizationService>();
+            if (localization is JsonLocalizationService jsonLoc)
+                await jsonLoc.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[App] Localization init failed: {ex.Message}");
+        }
     }
 
     private static void ConfigureServices(IServiceCollection services)
