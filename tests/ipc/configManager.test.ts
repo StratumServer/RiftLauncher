@@ -365,7 +365,7 @@ describe("getConfig: schema migration logging", () => {
 
     const { getConfig } = await freshConfigManager()
     const config = await getConfig()
-    assert.equal(config.schemaVersion, 2)
+    assert.equal(config.schemaVersion, 3)
   })
 })
 
