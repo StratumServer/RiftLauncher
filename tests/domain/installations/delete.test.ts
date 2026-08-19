@@ -4,6 +4,8 @@ import { beforeEach, describe, it } from "vitest"
 import { deleteInstallation } from "../../../src/domain/installations/delete"
 import type { DeleteInstallationEvents, DeleteInstallationPorts, InstallationDeleteSnapshot } from "../../../src/domain/installations/delete"
 
+type BackupFixture = InstallationDeleteSnapshot["backups"][number]
+
 /** Everything the fakes wrote down, in the order it happened. */
 let trace: string[] = []
 
@@ -17,6 +19,10 @@ function fakePorts(options: { removals?: Record<string, boolean> } = {}): Delete
       }
     }
   }
+}
+
+function backup(id: string, overrides: { isDeleting?: boolean; isRestoring?: boolean } = {}): BackupFixture {
+  return { id, path: `/backups/${id}.zip`, ...overrides }
 }
 
 function snapshot(overrides: Partial<InstallationDeleteSnapshot> = {}): InstallationDeleteSnapshot {
@@ -77,7 +83,7 @@ describe("deleteInstallation preconditions", () => {
 
 describe("deleteInstallation without data deletion", () => {
   it("touches nothing on disk and reports success", async () => {
-    const result = await deleteInstallation(fakePorts(), { installation: snapshot({ backups: [{ path: "/backups/b1.zip" }] }), deleteData: false }, recordingEvents())
+    const result = await deleteInstallation(fakePorts(), { installation: snapshot({ backups: [backup("b1")] }), deleteData: false }, recordingEvents())
 
     assert.deepEqual(result, { ok: true, failedBackupPaths: [] })
     assert.deepEqual(trace, [])
@@ -86,7 +92,7 @@ describe("deleteInstallation without data deletion", () => {
 
 describe("deleteInstallation with data deletion", () => {
   it("removes the installation folder then every backup, reporting each", async () => {
-    const installation = snapshot({ backups: [{ path: "/backups/b1.zip" }, { path: "/backups/b2.zip" }] })
+    const installation = snapshot({ backups: [backup("b1"), backup("b2")] })
 
     const result = await deleteInstallation(fakePorts(), { installation, deleteData: true }, recordingEvents())
 
@@ -102,7 +108,7 @@ describe("deleteInstallation with data deletion", () => {
   })
 
   it("stops before touching any backup when the installation folder itself fails to delete", async () => {
-    const installation = snapshot({ backups: [{ path: "/backups/b1.zip" }] })
+    const installation = snapshot({ backups: [backup("b1")] })
     const ports = fakePorts({ removals: { "/installations/my-install": false } })
 
     const result = await deleteInstallation(ports, { installation, deleteData: true }, recordingEvents())
@@ -112,7 +118,7 @@ describe("deleteInstallation with data deletion", () => {
   })
 
   it("keeps going past a failed backup deletion instead of aborting", async () => {
-    const installation = snapshot({ backups: [{ path: "/backups/b1.zip" }, { path: "/backups/b2.zip" }, { path: "/backups/b3.zip" }] })
+    const installation = snapshot({ backups: [backup("b1"), backup("b2"), backup("b3")] })
     const ports = fakePorts({ removals: { "/backups/b2.zip": false } })
 
     const result = await deleteInstallation(ports, { installation, deleteData: true }, recordingEvents())
@@ -131,7 +137,7 @@ describe("deleteInstallation with data deletion", () => {
   })
 
   it("collects every failed backup path, not just the first", async () => {
-    const installation = snapshot({ backups: [{ path: "/backups/b1.zip" }, { path: "/backups/b2.zip" }] })
+    const installation = snapshot({ backups: [backup("b1"), backup("b2")] })
     const ports = fakePorts({ removals: { "/backups/b1.zip": false, "/backups/b2.zip": false } })
 
     const result = await deleteInstallation(ports, { installation, deleteData: true })
@@ -154,7 +160,25 @@ describe("deleteInstallation with data deletion", () => {
 
   it("skips a backup already being deleted elsewhere, without touching its file or reporting it as failed", async () => {
     const installation = snapshot({
-      backups: [{ path: "/backups/b1.zip" }, { path: "/backups/b2.zip", isDeleting: true }, { path: "/backups/b3.zip" }]
+      backups: [backup("b1"), backup("b2", { isDeleting: true }), backup("b3")]
+    })
+
+    const result = await deleteInstallation(fakePorts(), { installation, deleteData: true }, recordingEvents())
+
+    assert.deepEqual(result, { ok: true, failedBackupPaths: [] })
+    assert.deepEqual(trace, [
+      "remove:/installations/my-install",
+      "data-deleted",
+      "remove:/backups/b1.zip",
+      "backup-deleted:/backups/b1.zip",
+      "remove:/backups/b3.zip",
+      "backup-deleted:/backups/b3.zip"
+    ])
+  })
+
+  it("skips a backup being restored elsewhere, without touching its file or reporting it as failed", async () => {
+    const installation = snapshot({
+      backups: [backup("b1"), backup("b2", { isRestoring: true }), backup("b3")]
     })
 
     const result = await deleteInstallation(fakePorts(), { installation, deleteData: true }, recordingEvents())
@@ -172,10 +196,7 @@ describe("deleteInstallation with data deletion", () => {
 
   it("treats every backup as in flight the same way, reporting a clean success with none removed here", async () => {
     const installation = snapshot({
-      backups: [
-        { path: "/backups/b1.zip", isDeleting: true },
-        { path: "/backups/b2.zip", isDeleting: true }
-      ]
+      backups: [backup("b1", { isDeleting: true }), backup("b2", { isDeleting: true })]
     })
 
     const result = await deleteInstallation(fakePorts(), { installation, deleteData: true }, recordingEvents())
