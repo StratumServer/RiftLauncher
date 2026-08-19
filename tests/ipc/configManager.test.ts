@@ -91,6 +91,21 @@ describe("normalizeConfig: the document itself", () => {
     }
   })
 
+  it("keeps an existing folder value exactly as stored, even one still carrying the pre-rebrand VSL folder names", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const legacyPaths = {
+      defaultInstallationsFolder: join(appDataFolder, "VSLInstallations"),
+      defaultVersionsFolder: join(appDataFolder, "VSLGameVersions"),
+      backupsFolder: join(appDataFolder, "VSLBackups")
+    }
+
+    const result = normalizeConfig(legacyPaths)
+
+    assert.equal(result.defaultInstallationsFolder, legacyPaths.defaultInstallationsFolder)
+    assert.equal(result.defaultVersionsFolder, legacyPaths.defaultVersionsFolder)
+    assert.equal(result.backupsFolder, legacyPaths.backupsFolder)
+  })
+
   it("falls back to default window fields when window is not a record", async () => {
     const { normalizeConfig } = await freshConfigManager()
     const result = normalizeConfig({ window: "not an object" })
