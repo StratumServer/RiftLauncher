@@ -70,9 +70,9 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
   return {
     schemaVersion: 1,
     lastUsedInstallation: null,
-    defaultInstallationsFolder: join(appDataFolder, "VSLInstallations"),
-    defaultVersionsFolder: join(appDataFolder, "VSLGameVersions"),
-    backupsFolder: join(appDataFolder, "VSLBackups"),
+    defaultInstallationsFolder: join(appDataFolder, "RiftLauncherInstallations"),
+    defaultVersionsFolder: join(appDataFolder, "RiftLauncherGameVersions"),
+    backupsFolder: join(appDataFolder, "RiftLauncherBackups"),
     window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
     account: null,
     installations: [],
@@ -103,7 +103,7 @@ describe("GET_CONFIG", () => {
     const event = await createTrustedEvent()
     const config = await getConfigHandler()(event)
     assert.deepEqual(config.installations, [])
-    assert.equal(config.defaultInstallationsFolder, join(appDataFolder, "VSLInstallations"))
+    assert.equal(config.defaultInstallationsFolder, join(appDataFolder, "RiftLauncherInstallations"))
   })
 })
 
@@ -153,7 +153,7 @@ describe("SAVE_CONFIG", () => {
 
     // Round-trips through the real getConfig(), proving the write landed.
     const reread = await getConfigHandler()(event)
-    assert.equal(reread.defaultInstallationsFolder, join(appDataFolder, "VSLInstallations"))
+    assert.equal(reread.defaultInstallationsFolder, join(appDataFolder, "RiftLauncherInstallations"))
   })
 
   it("reports write-failed when the config file cannot be written", async () => {

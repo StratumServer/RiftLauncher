@@ -10,9 +10,9 @@ import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from 
 const defaultConfig: ConfigType = {
   schemaVersion: CURRENT_CONFIG_SCHEMA,
   lastUsedInstallation: null,
-  defaultInstallationsFolder: join(app.getPath("appData"), "VSLInstallations"),
-  defaultVersionsFolder: join(app.getPath("appData"), "VSLGameVersions"),
-  backupsFolder: join(app.getPath("appData"), "VSLBackups"),
+  defaultInstallationsFolder: join(app.getPath("appData"), "RiftLauncherInstallations"),
+  defaultVersionsFolder: join(app.getPath("appData"), "RiftLauncherGameVersions"),
+  backupsFolder: join(app.getPath("appData"), "RiftLauncherBackups"),
   window: {
     width: 1280,
     height: 720,
