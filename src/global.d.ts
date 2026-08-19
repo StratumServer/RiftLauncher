@@ -53,6 +53,8 @@ declare global {
   type GameVersionType = {
     version: string
     path: string
+    /** Registered from a folder the launcher did not install, so removing it must only unregister it. */
+    linked?: boolean
     _installing?: boolean
     _deleting?: boolean
     _playing?: boolean

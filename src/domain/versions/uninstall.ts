@@ -6,12 +6,15 @@ export interface GameVersionSnapshot {
   path: string
   isPlaying: boolean
   isDeleting: boolean
+  /** True when this folder was registered, not installed, by the launcher. See `uninstallGameVersion`. */
+  linked: boolean
 }
 
 /** Why a version was not uninstalled. */
 export type UninstallGameVersionFailure = "version-playing" | "version-busy" | "version-in-use" | "file-delete-failed"
 
-export type UninstallGameVersionResult = { ok: true } | { ok: false; reason: UninstallGameVersionFailure }
+/** `folderRemoved` tells a caller which of the two outcomes happened without re-deriving it from the input. */
+export type UninstallGameVersionResult = { ok: true; folderRemoved: boolean } | { ok: false; reason: UninstallGameVersionFailure }
 
 export interface UninstallGameVersionPorts {
   fileSystem: Pick<FileSystem, "remove">
@@ -41,14 +44,22 @@ function refuse(reason: UninstallGameVersionFailure): UninstallGameVersionResult
 }
 
 /**
- * Deletes one installed version's folder off disk. Dropping it from the
- * launcher's list is the caller's job, and only once this says the folder is
- * gone.
+ * Deletes one installed version's folder off disk, and drops it from the
+ * launcher's list either way (the caller's job, and only once this says the
+ * outcome).
+ *
+ * A `linked` version is one the launcher never installed, only registered
+ * from a folder the player already had. For that case removing it from the
+ * list is the whole job: calling `fileSystem.remove` on it would delete a
+ * folder the launcher does not own, which is the exact bug this flag exists
+ * to prevent. The guards above still apply unchanged, since a linked version
+ * being played or still pinned by an installation is just as real a reason
+ * to refuse.
  *
  * @param ports Host capabilities the work runs on.
  * @param input The version to uninstall.
  * @param events Hooks the caller uses to mirror progress into its own state.
- * @returns Success, or the reason the folder is still there.
+ * @returns Success (and whether the folder was actually removed), or the reason the folder is still there.
  */
 export async function uninstallGameVersion(ports: UninstallGameVersionPorts, input: UninstallGameVersionInput, events: UninstallGameVersionEvents = {}): Promise<UninstallGameVersionResult> {
   const { version, usedByInstallations, confirmedInUse } = input
@@ -60,9 +71,11 @@ export async function uninstallGameVersion(ports: UninstallGameVersionPorts, inp
   events.onStarted?.()
 
   try {
+    if (version.linked) return { ok: true, folderRemoved: false }
+
     if (!(await ports.fileSystem.remove(version.path))) return refuse("file-delete-failed")
 
-    return { ok: true }
+    return { ok: true, folderRemoved: true }
   } finally {
     events.onFinished?.()
   }

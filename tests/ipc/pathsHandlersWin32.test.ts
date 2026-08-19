@@ -92,7 +92,7 @@ let userDataFolder: string
 
 function writeConfig(config: Partial<ConfigType>): void {
   const fullConfig = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     lastUsedInstallation: null,
     defaultInstallationsFolder: managedFolder,
     defaultVersionsFolder: versionsFolder,

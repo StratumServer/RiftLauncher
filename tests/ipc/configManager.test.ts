@@ -215,6 +215,31 @@ describe("normalizeConfig: game versions", () => {
     const { normalizeConfig } = await freshConfigManager()
     assert.deepEqual(normalizeConfig({ gameVersions: "nope" }).gameVersions, [])
   })
+
+  // `linked` is the only thing telling "remove from list" apart from "delete this folder
+  // off disk", so if normalization dropped it on every reload, a folder the player owns
+  // would quietly become deletable again the next time the config loads. That is data
+  // loss, not a cosmetic regression, so it gets its own coverage here.
+  it("keeps linked: true across normalization", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ gameVersions: [{ version: "1.20.0", path: "/v", linked: true }] })
+    assert.equal(result.gameVersions[0]!.linked, true)
+  })
+
+  it("drops linked when it is absent or not a boolean, instead of keeping a stray value", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({
+      gameVersions: [
+        { version: "1.20.0", path: "/v" },
+        { version: "1.20.1", path: "/v2", linked: "yes" },
+        { version: "1.20.2", path: "/v3", linked: false }
+      ]
+    })
+    assert.deepEqual(
+      result.gameVersions.map((g) => g.linked),
+      [undefined, undefined, undefined]
+    )
+  })
 })
 
 describe("normalizeConfig: custom icons", () => {
@@ -340,7 +365,7 @@ describe("getConfig: schema migration logging", () => {
 
     const { getConfig } = await freshConfigManager()
     const config = await getConfig()
-    assert.equal(config.schemaVersion, 2)
+    assert.equal(config.schemaVersion, 3)
   })
 })
 

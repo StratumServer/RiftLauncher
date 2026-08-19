@@ -257,6 +257,10 @@ function normalizeGameVersion(value: unknown): GameVersionType | null {
     version: asString(value.version, "", 128),
     path: asString(value.path, "")
   }
+  // Only set when true so a plain version, or an unset one, doesn't grow a `linked: false`
+  // it never had. This flag is what keeps a player's own install off the delete path, so
+  // dropping it silently on the next load would turn "remove from list" back into deletion.
+  if (asBoolean(value.linked, false)) gameVersion.linked = true
   return gameVersion.version && gameVersion.path ? gameVersion : null
 }
 

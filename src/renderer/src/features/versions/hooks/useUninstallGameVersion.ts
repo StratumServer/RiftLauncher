@@ -40,7 +40,8 @@ export function useUninstallGameVersion(): (version: GameVersionType, options?: 
 
     if (result.ok) {
       configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: version.version } })
-      addNotification(t("features.versions.versionUninstalledSuccesfully", { version: version.version }), "success")
+      const messageKey = result.folderRemoved ? "features.versions.versionUninstalledSuccesfully" : "features.versions.versionUnlinkedSuccessfully"
+      addNotification(t(messageKey, { version: version.version }), "success")
       return result
     }
 

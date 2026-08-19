@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import ListVersions from "@renderer/features/versions/pages/ListVersions"
@@ -132,5 +132,25 @@ describe("ListVersions", () => {
 
     await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
     expect(api.pathsManager.deletePath).toHaveBeenCalledWith("/versions/1.20.4")
+  })
+
+  it("unregisters a linked version without deleting its folder", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/games/vintagestory", linked: true }] })) },
+      pathsManager: { deletePath: vi.fn(async () => true) }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    await screen.findByText("1.20.4")
+
+    await user.click(screen.getByTitle("Remove from List"))
+    await screen.findByText("Are you sure you want to remove this VS Version from the list?")
+
+    await user.click(within(screen.getByRole("dialog")).getByTitle("Remove from List"))
+
+    await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
   })
 })

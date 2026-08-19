@@ -55,7 +55,8 @@ export function useLookForAVersion(): UseLookForAVersionResult {
 
       const newGameVersion: GameVersionType = {
         version: versionFound,
-        path: folder
+        path: folder,
+        linked: true
       }
 
       configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: newGameVersion })
