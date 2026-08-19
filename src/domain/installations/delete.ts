@@ -4,7 +4,7 @@ import type { BackupRecord } from "./backup"
 /** The installation state a delete decision needs, copied out of wherever it lives. */
 export interface InstallationDeleteSnapshot {
   path: string
-  backups: readonly Pick<BackupRecord, "path">[]
+  backups: readonly (Pick<BackupRecord, "path"> & { isDeleting?: boolean })[]
   isPlaying: boolean
   isBackingUp: boolean
   isRestoringBackup: boolean
@@ -80,6 +80,13 @@ export async function deleteInstallation(ports: DeleteInstallationPorts, input: 
   const failedBackupPaths: string[] = []
 
   for (const backup of installation.backups) {
+    // Already on its way out through another operation (a manual delete in
+    // flight). Neither this operation's success nor its failure, so it is
+    // reported as neither: removing it here would race the same file, and
+    // counting it as a failure would be misleading when the other operation
+    // is the one that actually succeeds.
+    if (backup.isDeleting) continue
+
     if (await ports.fileSystem.remove(backup.path)) {
       events.onBackupDeleted?.(backup.path)
     } else {

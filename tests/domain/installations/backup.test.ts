@@ -65,8 +65,8 @@ function fakePorts(overrides: Partial<MakeInstallationBackupPorts> = {}): MakeIn
   }
 }
 
-function backup(id: string): BackupRecord {
-  return { id, date: 1, path: `/backups/${id}.zip` }
+function backup(id: string, overrides: { isDeleting?: boolean } = {}): BackupRecord & { isDeleting?: boolean } {
+  return { id, date: 1, path: `/backups/${id}.zip`, ...overrides }
 }
 
 function snapshot(overrides: Partial<InstallationSnapshot> = {}): InstallationSnapshot {
@@ -192,6 +192,45 @@ describe("makeInstallationBackup pruning", () => {
     )
     assert.equal(trace.at(-2), "guard-release")
     assert.equal(trace.at(-1), "finished")
+  })
+
+  it("skips the oldest backup when it is already being deleted elsewhere, without touching its file", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2"), backup("b3", { isDeleting: true })] })
+
+    const result = await makeInstallationBackup(fakePorts(), { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b2"])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      ["remove:/backups/b2.zip", "deleted:b2"]
+    )
+  })
+
+  it("counts a skipped in-flight deletion toward the limit instead of also removing a newer backup", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2", { isDeleting: true })] })
+
+    const result = await makeInstallationBackup(fakePorts(), { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, [])
+    assert.equal(
+      trace.some((entry) => entry.startsWith("remove:")),
+      false
+    )
+  })
+
+  it("keeps pruning past a skipped in-flight deletion to reach the limit", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2"), backup("b3", { isDeleting: true }), backup("b4")] })
+
+    const result = await makeInstallationBackup(fakePorts(), { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b4", "b2"])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      ["remove:/backups/b4.zip", "deleted:b4", "remove:/backups/b2.zip", "deleted:b2"]
+    )
   })
 })
 

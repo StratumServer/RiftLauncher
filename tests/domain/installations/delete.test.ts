@@ -151,4 +151,36 @@ describe("deleteInstallation with data deletion", () => {
 
     assert.deepEqual(result, { ok: true, failedBackupPaths: [] })
   })
+
+  it("skips a backup already being deleted elsewhere, without touching its file or reporting it as failed", async () => {
+    const installation = snapshot({
+      backups: [{ path: "/backups/b1.zip" }, { path: "/backups/b2.zip", isDeleting: true }, { path: "/backups/b3.zip" }]
+    })
+
+    const result = await deleteInstallation(fakePorts(), { installation, deleteData: true }, recordingEvents())
+
+    assert.deepEqual(result, { ok: true, failedBackupPaths: [] })
+    assert.deepEqual(trace, [
+      "remove:/installations/my-install",
+      "data-deleted",
+      "remove:/backups/b1.zip",
+      "backup-deleted:/backups/b1.zip",
+      "remove:/backups/b3.zip",
+      "backup-deleted:/backups/b3.zip"
+    ])
+  })
+
+  it("treats every backup as in flight the same way, reporting a clean success with none removed here", async () => {
+    const installation = snapshot({
+      backups: [
+        { path: "/backups/b1.zip", isDeleting: true },
+        { path: "/backups/b2.zip", isDeleting: true }
+      ]
+    })
+
+    const result = await deleteInstallation(fakePorts(), { installation, deleteData: true }, recordingEvents())
+
+    assert.deepEqual(result, { ok: true, failedBackupPaths: [] })
+    assert.deepEqual(trace, ["remove:/installations/my-install", "data-deleted"])
+  })
 })
