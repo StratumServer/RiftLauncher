@@ -28,8 +28,8 @@ describe("normalizeFolderForComparison", () => {
     assert.equal(normalizeFolderForComparison("/opt/VintageStory"), "/opt/VintageStory")
   })
 
-  it("does not lowercase a Linux path with a backslash filename character", () => {
-    assert.equal(normalizeFolderForComparison("/home/a/dir\\x", "posix"), "/home/a/dir/x")
+  it("preserves a backslash as a literal filename character on posix", () => {
+    assert.equal(normalizeFolderForComparison("/home/a/dir\\x", "posix"), "/home/a/dir\\x")
   })
 
   it("returns an empty string unchanged", () => {
