@@ -29,7 +29,7 @@ export interface InstallationSnapshot {
   path: string
   backupsLimit: number
   compressionLevel: number
-  backups: readonly BackupRecord[]
+  backups: readonly (BackupRecord & { isDeleting?: boolean })[]
   isBackingUp: boolean
   isPlaying: boolean
   isRestoringBackup: boolean
@@ -117,12 +117,18 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
     while (remaining > 0 && remaining >= installation.backupsLimit) {
       const oldest = installation.backups[remaining - 1]
       if (!oldest) break
+      remaining--
+
+      // Already on its way out through another operation (a manual delete in
+      // flight). Removing it here too would race the same file; counting it
+      // toward `remaining` without touching it is correct either way, since
+      // it will not be there once that other operation finishes.
+      if (oldest.isDeleting) continue
 
       if (!(await ports.fileSystem.remove(oldest.path))) return refuse("prune-failed", deletedBackupIds)
 
       deletedBackupIds.push(oldest.id)
       events.onBackupDeleted?.(oldest)
-      remaining--
     }
 
     const date = ports.clock.now()
