@@ -65,7 +65,7 @@ function fakePorts(overrides: Partial<MakeInstallationBackupPorts> = {}): MakeIn
   }
 }
 
-function backup(id: string, overrides: { isDeleting?: boolean } = {}): BackupRecord & { isDeleting?: boolean } {
+function backup(id: string, overrides: { isDeleting?: boolean; isRestoring?: boolean } = {}): BackupRecord & { isDeleting?: boolean; isRestoring?: boolean } {
   return { id, date: 1, path: `/backups/${id}.zip`, ...overrides }
 }
 
@@ -230,6 +230,19 @@ describe("makeInstallationBackup pruning", () => {
     assert.deepEqual(
       trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
       ["remove:/backups/b4.zip", "deleted:b4", "remove:/backups/b2.zip", "deleted:b2"]
+    )
+  })
+
+  it("skips the oldest backup when it is being restored, without touching its file", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2"), backup("b3", { isRestoring: true })] })
+
+    const result = await makeInstallationBackup(fakePorts(), { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b2"])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      ["remove:/backups/b2.zip", "deleted:b2"]
     )
   })
 })

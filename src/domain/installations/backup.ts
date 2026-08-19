@@ -1,5 +1,6 @@
 import { cleanFolderName, formatTimestampForFilename } from "../naming"
 import type { Archiver, Clock, CloseGuard, CompressOutcome, FileSystem, IdGenerator, PathBuilder } from "../ports"
+import { deleteInstallationBackup } from "./backupDeletion"
 
 /** Folder the launcher groups installation archives under, inside the backups folder. */
 export const INSTALLATIONS_BACKUP_SUBFOLDER = "Installations"
@@ -29,7 +30,7 @@ export interface InstallationSnapshot {
   path: string
   backupsLimit: number
   compressionLevel: number
-  backups: readonly (BackupRecord & { isDeleting?: boolean })[]
+  backups: readonly (BackupRecord & { isDeleting?: boolean; isRestoring?: boolean })[]
   isBackingUp: boolean
   isPlaying: boolean
   isRestoringBackup: boolean
@@ -119,13 +120,19 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
       if (!oldest) break
       remaining--
 
-      // Already on its way out through another operation (a manual delete in
-      // flight). Removing it here too would race the same file; counting it
-      // toward `remaining` without touching it is correct either way, since
-      // it will not be there once that other operation finishes.
-      if (oldest.isDeleting) continue
+      const result = await deleteInstallationBackup(
+        { fileSystem: ports.fileSystem },
+        { backup: { id: oldest.id, path: oldest.path, isDeleting: oldest.isDeleting ?? false, isRestoring: oldest.isRestoring ?? false } }
+      )
 
-      if (!(await ports.fileSystem.remove(oldest.path))) return refuse("prune-failed", deletedBackupIds)
+      // Already on its way out, or in, through another operation (a manual
+      // delete or restore in flight). Removing it here too would race the
+      // same file; counting it toward `remaining` without touching it is
+      // correct either way, since it will not be there (or will still be
+      // there, untouched) once that other operation finishes.
+      if (!result.ok && result.reason === "backup-in-use") continue
+
+      if (!result.ok) return refuse("prune-failed", deletedBackupIds)
 
       deletedBackupIds.push(oldest.id)
       events.onBackupDeleted?.(oldest)
