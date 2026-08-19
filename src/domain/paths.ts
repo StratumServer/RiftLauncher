@@ -1,16 +1,16 @@
 /**
  * Normalizes a folder path for equality comparison.
  *
- * Strips trailing path separators (/ and \), unifies separators to forward
- * slashes, and on the given platform lowercases to handle case-insensitive
- * filesystems (win32).
+ * Strips trailing path separators (/ and \). On win32, unifies backslashes to
+ * forward slashes and lowercases. On posix, backslash is a legal filename
+ * character and is left untouched.
  *
  * This does NOT resolve symlinks or relative segments: that is the host's job
  * before handing paths into the domain.
  */
 export function normalizeFolderForComparison(folder: string, platform: "win32" | "posix" = detectPlatform(folder)): string {
-  let normalized = folder.replace(/[\\/]+$/, "").replace(/\\/g, "/")
-  if (platform === "win32") normalized = normalized.toLowerCase()
+  let normalized = folder.replace(/[\\/]+$/, "")
+  if (platform === "win32") normalized = normalized.replace(/\\/g, "/").toLowerCase()
   return normalized
 }
 
