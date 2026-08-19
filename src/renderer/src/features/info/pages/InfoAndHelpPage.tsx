@@ -39,7 +39,7 @@ function InfoAndHelpPage(): JSX.Element {
 
           <div className="w-full shrink-0 flex flex-wrap items-center justify-center gap-2">
             <SocialButtons icon={<PiGithubLogoDuotone />} to="https://github.com/StratumServer/RiftLauncher/issues" text={t("generic.issues")} />
-            <SocialButtons icon={<PiInfoDuotone />} to="https://github.com/StratumServer/RiftLauncher/blob/main/docs/README.md" text={t("generic.guides")} />
+            <SocialButtons icon={<PiInfoDuotone />} to="https://github.com/StratumServer/RiftLauncher/wiki" text={t("generic.guides")} />
             <SocialButtons icon={<PiDiscordLogoDuotone />} to="https://discord.gg/vQm6z2urZs" text={t("generic.discordContact")} />
             <SocialButtons icon={<PiUsersThreeDuotone />} to="https://github.com/StratumServer/RiftLauncher/blob/main/docs/important-info/contributors.md" text={t("generic.contributors")} />
             <SocialButtons icon={<PiCodeDuotone />} to="https://github.com/StratumServer/RiftLauncher" text={t("generic.source")} />
