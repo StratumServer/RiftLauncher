@@ -90,7 +90,7 @@
       "uninstallingNotReversible": "Uninstalling is not reversible but you can download the same VS Version again!",
       "noVersionSelected": "No VS Version selected!",
       "versionAlreadyInstalled": "VS Version {{version}} already installed!",
-      "noVersionFoundOnThatFolder": "No VS Version found on the folder you've selected!",
+      "noVersionFoundOnThatFolder": "Couldn't detect a VS Version on that folder automatically. If you're sure it has Vintage Story installed, type the version in below.",
       "versionSuccessfullyAdded": "That VS Version was successfully added!",
       "versionUninstalledSuccesfully": "VS Version {{version}} uninstalled successfully!",
       "versionUninstallationFailed": "An error occurred while uninstalling VS Version {{version}}!",

@@ -8,12 +8,14 @@ import { CONFIG_ACTIONS, useGameVersions, useConfigDispatch } from "@renderer/fe
 const LOG_TAG = "[front] [versions] [features/versions/hooks/useLookForAVersion.ts] [useLookForAVersion > addVersion]"
 
 export interface UseLookForAVersionResult {
-  /** Folder picked through `detectFolder`, empty until a version is found there. */
+  /** Folder picked through `detectFolder`. */
   folder: string
-  /** Version string `detectFolder` found on disk, empty until one is found. */
+  /** Version string, either detected on disk by `detectFolder` or typed in by hand when detection failed. */
   versionFound: string
   /** Opens the OS folder picker and looks for an installed game in what was picked. */
   detectFolder: () => Promise<void>
+  /** Overrides `versionFound`, for a build `detectFolder` could not read a version from. */
+  setVersionFound: (version: string) => void
   /** Registers `versionFound` at `folder` as an already-installed game version. */
   addVersion: () => Promise<void>
 }
@@ -36,14 +38,14 @@ export function useLookForAVersion(): UseLookForAVersionResult {
 
     const res = await window.api.gameManager.lookForAGameVersion(selectedPath)
 
+    setFolder(selectedPath)
+
     if (!res.exists) {
-      setFolder("")
       setVersionFound("")
-      addNotification(t("features.versions.noVersionFoundOnThatFolder"), "error")
+      addNotification(t("features.versions.noVersionFoundOnThatFolder"), "info")
       return
     }
 
-    setFolder(selectedPath)
     setVersionFound(res.installedGameVersion)
   }
 
@@ -71,5 +73,5 @@ export function useLookForAVersion(): UseLookForAVersionResult {
     }
   }
 
-  return { folder, versionFound, detectFolder, addVersion }
+  return { folder, versionFound, detectFolder, setVersionFound, addVersion }
 }
