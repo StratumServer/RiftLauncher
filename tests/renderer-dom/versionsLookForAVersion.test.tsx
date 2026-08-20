@@ -24,7 +24,7 @@ describe("LookForAVersion", () => {
     expect(screen.getByDisplayValue("1.20.4")).toBeTruthy()
   })
 
-  it("notifies and leaves the fields empty when the folder has no detectable version", async () => {
+  it("notifies and keeps the folder set but the version empty when detection finds nothing", async () => {
     const user = userEvent.setup()
     installMockWindowApi({
       utils: { selectFolderDialog: vi.fn(async () => ["/games/empty"]) },
@@ -41,9 +41,34 @@ describe("LookForAVersion", () => {
 
     await user.click(screen.getByTitle("Browse"))
 
-    expect(await screen.findByText("No VS Version found on the folder you've selected!")).toBeTruthy()
-    expect((screen.getByPlaceholderText("Folder") as HTMLInputElement).value).toBe("")
+    expect(await screen.findByText("Couldn't detect a VS Version on that folder automatically. If you're sure it has Vintage Story installed, type the version in below.")).toBeTruthy()
+    expect((screen.getByPlaceholderText("Folder") as HTMLInputElement).value).toBe("/games/empty")
     expect((screen.getByPlaceholderText("VS Version found") as HTMLInputElement).value).toBe("")
+  })
+
+  it("registers a folder with a hand-typed version when detection could not find one", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      utils: { selectFolderDialog: vi.fn(async () => ["/games/unreleased-build"]) },
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: false as const })) },
+      configManager: { saveConfig }
+    })
+
+    renderWithProviders(<LookForAVersion />, { route: "/versions/look-for-a-version" })
+
+    await user.click(screen.getByTitle("Browse"))
+    await screen.findByDisplayValue("/games/unreleased-build")
+
+    await user.type(screen.getByPlaceholderText("VS Version found"), "1.22.0-pre.1")
+    await user.click(screen.getByTitle("Add"))
+
+    expect(saveConfig).toHaveBeenCalled()
+    const savedConfig = (saveConfig.mock.calls[0] as unknown as [ConfigType])[0]
+    const addedVersion = savedConfig.gameVersions.find((gv) => gv.version === "1.22.0-pre.1")
+    expect(addedVersion).toBeTruthy()
+    expect(addedVersion!.linked).toBe(true)
+    expect(addedVersion!.path).toBe("/games/unreleased-build")
   })
 
   it("dispatches ADD_GAME_VERSION with linked: true when registering", async () => {
