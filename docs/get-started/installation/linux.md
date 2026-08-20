@@ -34,7 +34,7 @@ I'm trying to add .NET to the `.flatpak` but idk if I'll be able to.
 {% endhint %}
 
 {% hint style="info" %}
-If you want you can use the `DEB` or `Flatpak` options but remember that those option have no automatic updates.
+If you want you can use the `DEB` or `Flatpak` options but remember that `Flatpak` has no automatic updates for now (see below). `DEB` does update automatically, but since installing a `.deb` needs elevated privileges, RiftLauncher will show a system password prompt (`pkexec`, `sudo` or similar) each time it applies an update.
 
 If you use any of this option just install it with double click or `flatpak install vs-launcher-X.X.X.flatpak` and then skip steps 3, 4 and 5. Just open it like any other app.
 {% endhint %}
