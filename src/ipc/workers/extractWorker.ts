@@ -12,5 +12,5 @@ runExtraction({
   onProgress: (progress) => parentPort?.postMessage({ type: "progress", progress })
 }).then(
   () => parentPort?.postMessage({ type: "finished" }),
-  () => parentPort?.postMessage({ type: "error", message: "Extraction failed" })
+  (error) => parentPort?.postMessage({ type: "error", message: error instanceof Error ? error.message : "Extraction failed" })
 )

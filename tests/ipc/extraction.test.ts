@@ -174,8 +174,11 @@ describe("runExtraction on a gzipped tar", () => {
   it("writes nothing into the target when the archive cannot be read", async () => {
     writeFileSync(workspacePath("broken.tar.gz"), "not a gzip stream at all")
 
-    await assert.rejects(runExtraction({ filePath: workspacePath("broken.tar.gz"), outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin }), /Extraction failed/)
-    assert.deepEqual(readdirSync(workspacePath("target")), [])
+    // Caught by runExtraction's own pre-extraction validateArchive call, before it even
+    // creates the target directory, let alone extracts (and its generic "Extraction failed")
+    // is ever reached.
+    await assert.rejects(runExtraction({ filePath: workspacePath("broken.tar.gz"), outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin }), /Archive could not be read/)
+    assert.equal(existsSync(workspacePath("target")), false)
   })
 
   it("leaves no temporary workspace behind", async () => {

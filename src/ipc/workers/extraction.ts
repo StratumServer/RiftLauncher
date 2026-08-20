@@ -18,6 +18,7 @@ import * as tar from "tar"
 
 // Relative so the module stays importable from a plain test run, like validation.ts.
 import { isSafeTarEntryType, isTarGzName } from "../validation"
+import { validateArchive } from "../archiveValidation"
 
 const MAX_ARCHIVE_ENTRIES = 100_000
 const MAX_ARCHIVE_ENTRY_BYTES = 512 * 1024 * 1024
@@ -231,6 +232,12 @@ export interface ExtractionOptions {
 export async function runExtraction(options: ExtractionOptions): Promise<void> {
   const { filePath, outputPath, deleteArchive, sevenZipBin, onProgress } = options
   let temporaryRoot: string | undefined
+
+  // The first of two validation gates (see archiveValidation.ts's own comment): reads the
+  // archive's table of contents and refuses it, before a single byte is written anywhere,
+  // if it names an entry outside its root, repeats a name, carries a link, or busts the
+  // entry/size bounds.
+  await validateArchive(filePath, sevenZipBin)
 
   try {
     assertNoSymlinkComponents(outputPath)
