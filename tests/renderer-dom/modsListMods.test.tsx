@@ -1,13 +1,22 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import ListMods from "@renderer/features/mods/pages/ListMods"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
+import { clearQueryCache } from "@renderer/features/mods/hooks/useQueryMods"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
+
+// useQueryMods' cache is shared across every ListMods instance on purpose (see its own
+// comment), which means it also outlives a single `it()` here unless cleared: without this,
+// a test asserting on a fresh query can silently get another test's cached result instead of
+// ever calling its own queryURL mock.
+beforeEach(() => {
+  clearQueryCache()
+})
 
 /** One `/api/mods` entry, just enough of the shape parseModListResponse and ListMods both read. */
 const MOD_RESPONSE = {
@@ -103,6 +112,46 @@ describe("ListMods", () => {
     )
 
     expect(await screen.findByText("There are no Mods that match your filters!", {}, { timeout: 3000 })).toBeTruthy()
+  })
+
+  it("does not let a slower, superseded search overwrite a newer, faster one", async () => {
+    const user = userEvent.setup()
+    let resolveOldSearch: ((value: string) => void) | undefined
+
+    const queryURL = vi.fn(async (url: string) => {
+      if (!url.includes("/api/mods")) return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+      if (url.includes("text=old")) return new Promise<string>((resolve) => (resolveOldSearch = resolve))
+      if (url.includes("text=new")) return JSON.stringify({ statuscode: "200", mods: [{ ...MOD_RESPONSE.mods[0], modid: 456, assetid: 456, name: "New Mod" }] })
+      return JSON.stringify({ statuscode: "200", mods: [] })
+    })
+
+    installMockWindowApi({ netManager: { queryURL } })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    const input = screen.getByPlaceholderText("Text")
+    await user.type(input, "old")
+
+    // Waits for the "old" search's debounce to actually fire the request (still unresolved).
+    await waitFor(() => expect(resolveOldSearch).toBeTruthy(), { timeout: 3000 })
+
+    await user.clear(input)
+    await user.type(input, "new")
+
+    // The newer search resolves and renders while "old" is still pending.
+    expect(await screen.findByText("New Mod", {}, { timeout: 3000 })).toBeTruthy()
+
+    // The stale search finally comes back. It must be ignored, not overwrite the current list.
+    resolveOldSearch?.(JSON.stringify({ statuscode: "200", mods: [{ ...MOD_RESPONSE.mods[0], name: "Old Mod" }] }))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(screen.queryByText("Old Mod")).toBeNull()
+    expect(screen.getByText("New Mod")).toBeTruthy()
   })
 
   it("picks up an edit to the current installation without lastUsedInstallation changing", async () => {

@@ -58,6 +58,7 @@ function ListMods(): JSX.Element {
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const queryTokenRef = useRef<number>(0)
 
   const handleScroll = (): void => {
     if (!scrollRef.current) return
@@ -112,6 +113,12 @@ function ListMods(): JSX.Element {
 
     setSearching(true)
 
+    // Nothing stops a second triggerQueryMods (a filter changed again before the first
+    // request came back) from landing after this one. Without this token, whichever
+    // resolves last wins regardless of which was asked for last, so a slow, already-stale
+    // query could overwrite a filter the user has since moved past.
+    const queryToken = ++queryTokenRef.current
+
     let mods = await queryMods({
       textFilter,
       authorFilter,
@@ -120,12 +127,15 @@ function ListMods(): JSX.Element {
       orderBy,
       orderByOrder,
       onFinish: () => {
+        if (queryToken !== queryTokenRef.current) return
         if (resetScroll) {
           scrollRef.current?.scrollTo({ top: 0 })
           setVisibleMods(DEFAULT_LOADED_MODS)
         }
       }
     })
+
+    if (queryToken !== queryTokenRef.current) return
 
     if (sideFilter !== "any") mods = mods.filter((mod) => mod.side === sideFilter)
 

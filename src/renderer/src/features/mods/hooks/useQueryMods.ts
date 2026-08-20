@@ -5,6 +5,56 @@ import { parseModListResponse } from "@domain/mods/moddb"
 import { queryModDb } from "@renderer/features/moddb/adapters/moddb"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 
+/**
+ * How long a query's result is trusted before a repeat of the exact same filters goes back
+ * to the network. Long enough that toggling a filter on and back off, or leaving the mods
+ * page and returning to it, stays free; short enough that a search someone returns to later
+ * still sees roughly current download/follow counts.
+ */
+const QUERY_CACHE_TTL_MS = 2 * 60 * 1_000
+
+/** How many distinct filter combinations to remember at once. */
+const MAX_CACHED_QUERIES = 20
+
+/**
+ * Module-scoped on purpose: every ListMods instance (and any future caller) searches the
+ * same global ModDB catalog, so a result cached for one is valid for all of them. Keyed by
+ * the exact request path queryMods already builds, so there is no separate key-building
+ * logic to keep in sync with it.
+ */
+const queryCache = new Map<string, { mods: DownloadableModOnListType[]; cachedAt: number }>()
+
+function getCachedQuery(key: string): DownloadableModOnListType[] | undefined {
+  const cached = queryCache.get(key)
+  if (!cached) return undefined
+
+  if (Date.now() - cached.cachedAt > QUERY_CACHE_TTL_MS) {
+    queryCache.delete(key)
+    return undefined
+  }
+
+  // Re-inserting moves the key to the end of the Map's insertion-ordered iteration, which
+  // is what makes the first key visited below the least recently used.
+  queryCache.delete(key)
+  queryCache.set(key, cached)
+  return cached.mods
+}
+
+/** Empties the shared query cache. Exists for tests: production never needs a cold cache. */
+export function clearQueryCache(): void {
+  queryCache.clear()
+}
+
+function rememberQuery(key: string, mods: DownloadableModOnListType[]): void {
+  queryCache.delete(key)
+  queryCache.set(key, { mods, cachedAt: Date.now() })
+
+  if (queryCache.size > MAX_CACHED_QUERIES) {
+    const oldestKey = queryCache.keys().next().value
+    if (oldestKey !== undefined) queryCache.delete(oldestKey)
+  }
+}
+
 export function useQueryMods(): ({
   textFilter,
   authorFilter,
@@ -64,7 +114,15 @@ export function useQueryMods(): ({
       filters.push(`orderby=${orderBy}`)
       filters.push(`orderdirection=${orderByOrder}`)
 
-      const res = await queryModDb(`/mods${filters.length > 0 && `?${filters.join("&")}`}`)
+      const requestPath = `/mods${filters.length > 0 && `?${filters.join("&")}`}`
+
+      const cached = getCachedQuery(requestPath)
+      if (cached) {
+        if (onFinish) onFinish()
+        return cached
+      }
+
+      const res = await queryModDb(requestPath)
       const parsed = parseModListResponse(res)
 
       if (onFinish) onFinish()
@@ -82,7 +140,9 @@ export function useQueryMods(): ({
         return []
       }
 
-      return parsed.payload as unknown as DownloadableModOnListType[]
+      const mods = parsed.payload as unknown as DownloadableModOnListType[]
+      rememberQuery(requestPath, mods)
+      return mods
     } catch (err) {
       logMods("error", `[front] [mods] [features/mods/hooks/useQueryMods.ts] [useQueryMods > queryMods] Error fetching mods.`)
       logMods("debug", `[front] [mods] [features/mods/hooks/useQueryMods.ts] [useQueryMods > queryMods] Error fetching mods: ${err}`)
