@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, protocol, net, session, Menu } from "electron"
-import { dirname, join } from "path"
+import { dirname, join } from "node:path"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import { autoUpdater } from "electron-updater"
 import Logger from "electron-log"

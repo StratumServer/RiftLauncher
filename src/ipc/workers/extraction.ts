@@ -12,7 +12,7 @@
 import Seven from "node-7z"
 import fse from "fs-extra"
 import { createReadStream, mkdtempSync } from "fs"
-import { isAbsolute, join, relative, resolve, sep } from "path"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { tmpdir } from "os"
 import * as tar from "tar"
 

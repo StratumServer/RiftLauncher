@@ -1,7 +1,7 @@
 import { ipcMain, app, shell } from "electron"
 import { path7za } from "7zip-bin"
 import fse from "fs-extra"
-import { basename, extname, join, resolve, sep } from "path"
+import { basename, extname, join, resolve, sep } from "node:path"
 import os from "os"
 import { spawn } from "child_process"
 import type { IpcMainInvokeEvent } from "electron"

@@ -1,7 +1,7 @@
 import { ipcMain } from "electron"
 import { spawn } from "child_process"
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 import os from "os"
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"

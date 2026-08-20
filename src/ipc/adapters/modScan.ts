@@ -1,7 +1,7 @@
 import { createHash } from "crypto"
 import { app } from "electron"
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 import yauzl from "yauzl"
 
 import type { DirectoryReader, IconStore, ModArchiveContent, ModArchiveReader, ModArchiveResult, PathBuilder } from "@domain/ports"
