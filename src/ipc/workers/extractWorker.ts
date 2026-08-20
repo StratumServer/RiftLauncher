@@ -1,16 +1,10 @@
-import { parentPort, workerData } from "worker_threads"
-
+import { serveTasks } from "@src/ipc/workers/workerHost"
 import { runExtraction } from "@src/ipc/workers/extraction"
 
-const { filePath, outputPath, deleteZip, sevenZipBin } = workerData
-
-runExtraction({
-  filePath,
-  outputPath,
-  deleteArchive: deleteZip,
-  sevenZipBin,
-  onProgress: (progress) => parentPort?.postMessage({ type: "progress", progress })
-}).then(
-  () => parentPort?.postMessage({ type: "finished" }),
-  (error) => parentPort?.postMessage({ type: "error", message: error instanceof Error ? error.message : "Extraction failed" })
+serveTasks(
+  async (payload, onProgress) => {
+    const { filePath, outputPath, deleteZip, sevenZipBin } = payload as { filePath: string; outputPath: string; deleteZip: boolean; sevenZipBin: string }
+    await runExtraction({ filePath, outputPath, deleteArchive: deleteZip, sevenZipBin, onProgress })
+  },
+  (error) => (error instanceof Error ? error.message : "Extraction failed")
 )

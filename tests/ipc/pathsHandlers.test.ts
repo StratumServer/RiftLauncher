@@ -32,10 +32,12 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
  * message-handling logic (progress validation, "finished"/"error"/unknown
  * message shapes, the worker's own "error" event), which DOWNLOAD_ON_PATH/
  * EXTRACT_ON_PATH/COMPRESS_ON_PATH/CHANGE_PERMS all funnel through:
- * `@src/ipc/workerManager` is mocked so `createTrackedWorker` hands back a
- * plain `EventEmitter` a test drives directly instead of a real
+ * `@src/ipc/workerManager` is mocked so `acquireWorker` hands back a lease
+ * wrapping a plain `EventEmitter` a test drives directly instead of a real
  * `worker_threads.Worker`, which is what runTrackedWorker only ever calls
- * `.on`/`.once`/`.removeAllListeners` on anyway.
+ * `.on`/`.off` on anyway. The pool's own reuse/discard bookkeeping lives in
+ * workerPool.test.ts; this file only checks that runTrackedWorker asks for
+ * the right one at each settle path (see the `release` assertions below).
  *
  * Left uncovered: RUN_INSTALLER's payload-extraction and direct-spawn bodies
  * (`extractInstallerPayload`/`spawnInstaller`), which only run on
@@ -52,23 +54,32 @@ vi.mock("@src/ipc/workers/changePermsWorker?modulePath", () => ({ default: "chan
 vi.mock("@src/ipc/workers/downloadWorker?modulePath", () => ({ default: "downloadWorker-path" }))
 
 vi.mock("@src/ipc/workerManager", () => ({
-  createTrackedWorker: vi.fn(),
-  disposeTrackedWorker: vi.fn()
+  acquireWorker: vi.fn()
 }))
 
+let nextLeaseToken = 1
+
 /**
- * Waits for the next `createTrackedWorker(...)` call (made by
- * `runTrackedWorker` once a channel's own validation/authorization has
- * passed) and hands back a fake worker the test can `.emit(...)` messages
- * and events on, standing in for the real `worker_threads.Worker`.
+ * Waits for the next `acquireWorker(...)` call (made by `runTrackedWorker` once a
+ * channel's own validation/authorization has passed) and hands back a fake worker the
+ * test can `.emit(...)` messages and events on, standing in for the real
+ * `worker_threads.Worker`. The returned object also carries `release`, the lease's own
+ * mock, for tests that check whether a worker was handed back for reuse or discarded.
  */
-async function nextTrackedWorker(): Promise<EventEmitter> {
-  const { createTrackedWorker } = await import("@src/ipc/workerManager")
+async function nextTrackedWorker(): Promise<EventEmitter & { release: ReturnType<typeof vi.fn> }> {
+  const { acquireWorker } = await import("@src/ipc/workerManager")
+  const token = nextLeaseToken++
   return new Promise((resolvePromise) => {
-    vi.mocked(createTrackedWorker).mockImplementationOnce(() => {
-      const worker = new EventEmitter()
+    vi.mocked(acquireWorker).mockImplementationOnce(() => {
+      const release = vi.fn()
+      const worker = Object.assign(new EventEmitter(), { release })
       resolvePromise(worker)
-      return worker as unknown as import("worker_threads").Worker
+      return {
+        worker: worker as unknown as import("worker_threads").Worker,
+        token,
+        dispatch: vi.fn(),
+        release
+      }
     })
   })
 }
@@ -136,9 +147,8 @@ beforeEach(async () => {
   // @src/ipc/workerManager is a vi.mock, which -- like the electron mock --
   // stays the same object across vi.resetModules(); clear its call history
   // explicitly rather than relying on afterEach's ordering.
-  const { createTrackedWorker, disposeTrackedWorker } = await import("@src/ipc/workerManager")
-  vi.mocked(createTrackedWorker).mockReset()
-  vi.mocked(disposeTrackedWorker).mockReset()
+  const { acquireWorker } = await import("@src/ipc/workerManager")
+  vi.mocked(acquireWorker).mockReset()
 
   vi.resetModules()
   await import("@src/ipc/handlers/pathsHandlers")
@@ -462,8 +472,10 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
 
     assert.equal(await resultPromise, true)
 
-    const { disposeTrackedWorker } = await import("@src/ipc/workerManager")
-    assert.equal(vi.mocked(disposeTrackedWorker).mock.calls.length, 1)
+    // A clean finish releases the worker for reuse, not a hard terminate: that is the
+    // whole point of pooling it in the first place.
+    assert.equal(worker.release.mock.calls.length, 1)
+    assert.equal(worker.release.mock.calls[0]?.[0], "reuse")
   })
 
   it("rejects when the worker emits an 'error' event", async () => {
@@ -479,6 +491,8 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("error", new Error("worker crashed"))
 
     await assert.rejects(() => resultPromise, /worker crashed/)
+    // An uncaught exception in the worker leaves it in an unknown state: never reused.
+    assert.equal(worker.release.mock.calls[0]?.[0], "discard")
   })
 
   it("rejects on a worker message with no recognizable type", async () => {
@@ -494,6 +508,7 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("message", { type: "not-a-real-type" })
 
     await assert.rejects(() => resultPromise, /returned an unknown worker message/)
+    assert.equal(worker.release.mock.calls[0]?.[0], "discard")
   })
 
   it("rejects when the worker exits before ever settling", async () => {
@@ -509,6 +524,8 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("exit", 1)
 
     await assert.rejects(() => resultPromise, /worker exited with code 1/)
+    // The thread is gone; nothing left to reuse.
+    assert.equal(worker.release.mock.calls[0]?.[0], "discard")
   })
 
   it("rejects a worker message that is not even a record", async () => {
@@ -571,6 +588,9 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("message", { type: "error", message: "disk is full" })
 
     await assert.rejects(() => resultPromise, /disk is full/)
+    // A reported task failure ran the worker's own error path and left it fit to reuse:
+    // every logic module under src/ipc/workers/ cleans up its own temp state on failure.
+    assert.equal(worker.release.mock.calls[0]?.[0], "reuse")
   })
 
   it("rejects on an explicit 'error' type message with no usable message string, falling back to a generic reason", async () => {
@@ -586,6 +606,43 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("message", { type: "error" })
 
     await assert.rejects(() => resultPromise, /EXTRACT_ON_PATH failed/)
+  })
+
+  it("discards, not reuses, a worker whose error message sets retire", async () => {
+    const archivePath = join(managedFolder, "archive.zip")
+    copyFileSync(resolvePath(__dirname, "../fixtures/valid-mod.zip"), archivePath)
+    const outputPath = join(versionsFolder, "extracted-10")
+
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH)(event, "task-10", archivePath, outputPath, false)
+
+    const worker = await workerPromise
+    // workerHost.ts posts this when a worker receives a task while already busy on
+    // another one -- a state the worker itself is saying it should not serve again.
+    worker.emit("message", { type: "error", message: "Worker received a task while busy", retire: true })
+
+    await assert.rejects(() => resultPromise, /Worker received a task while busy/)
+    assert.equal(worker.release.mock.calls[0]?.[0], "discard")
+  })
+
+  it("ignores a message tagged with another task's token, then still resolves on its own", async () => {
+    const archivePath = join(managedFolder, "archive.zip")
+    copyFileSync(resolvePath(__dirname, "../fixtures/valid-mod.zip"), archivePath)
+    const outputPath = join(versionsFolder, "extracted-11")
+
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH)(event, "task-11", archivePath, outputPath, false)
+
+    const worker = await workerPromise
+    // A message stamped with a token this lease never had: exactly what a reused
+    // worker's abandoned previous task would still be capable of posting.
+    worker.emit("message", { type: "progress", token: -1, progress: 90 })
+    worker.emit("message", { type: "finished" })
+
+    assert.equal(await resultPromise, true)
+    assert.equal(vi.mocked(event.sender.send).mock.calls.length, 0)
   })
 })
 
@@ -651,19 +708,24 @@ describe("DOWNLOAD_ON_PATH: concurrency limit", () => {
 
   it("caps concurrent downloads at 3 and starts a 4th only once a slot frees", async () => {
     const event = await createTrustedEvent()
-    const { createTrackedWorker } = await import("@src/ipc/workerManager")
+    const { acquireWorker } = await import("@src/ipc/workerManager")
 
     // A local, synchronous stand-in for the shared nextTrackedWorker() helper above: that
     // one does `await import(...)` before registering its mockImplementationOnce, which is
     // invisible with one call in flight (every other test here) but races a handler that
-    // reaches createTrackedWorker before that import's microtask settles once several
-    // calls overlap, exactly what this test needs to fire at once.
+    // reaches acquireWorker before that import's microtask settles once several calls
+    // overlap, exactly what this test needs to fire at once.
     function queueNextWorker(): Promise<EventEmitter> {
       return new Promise((resolvePromise) => {
-        vi.mocked(createTrackedWorker).mockImplementationOnce(() => {
+        vi.mocked(acquireWorker).mockImplementationOnce(() => {
           const worker = new EventEmitter()
           resolvePromise(worker)
-          return worker as unknown as import("worker_threads").Worker
+          return {
+            worker: worker as unknown as import("worker_threads").Worker,
+            token: nextLeaseToken++,
+            dispatch: vi.fn(),
+            release: vi.fn()
+          }
         })
       })
     }
@@ -681,11 +743,11 @@ describe("DOWNLOAD_ON_PATH: concurrency limit", () => {
     const worker3 = await worker3Promise
 
     // 3 active downloads is the configured limit: a 4th call must stay queued,
-    // never reaching createTrackedWorker, until one of the first 3 finishes.
-    const callsBeforeFourth = vi.mocked(createTrackedWorker).mock.calls.length
+    // never reaching acquireWorker, until one of the first 3 finishes.
+    const callsBeforeFourth = vi.mocked(acquireWorker).mock.calls.length
     const result4 = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-4", DOWNLOAD_URL, versionsFolder, "four.zip")
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 50))
-    assert.equal(vi.mocked(createTrackedWorker).mock.calls.length, callsBeforeFourth)
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeFourth)
 
     const worker4Promise = queueNextWorker()
     worker1.emit("message", { type: "finished", path: join(versionsFolder, "one.zip") })
@@ -714,7 +776,7 @@ describe("RUN_INSTALLER", () => {
     const result = await handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-1", installerPath, versionsFolder, false)
     assert.deepEqual(result, { ok: false, reason: "not-windows" })
 
-    const { createTrackedWorker } = await import("@src/ipc/workerManager")
-    assert.equal(vi.mocked(createTrackedWorker).mock.calls.length, 0)
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0)
   })
 })

@@ -5,7 +5,7 @@
  *
  * Exists to cap how many worker threads a burst of same-kind IPC calls can spin up at
  * once (e.g. installing several mods at once, each downloading and then extracting):
- * createTrackedWorker itself has no ceiling, so without this, N concurrent renderer calls
+ * acquireWorker itself has no ceiling, so without this, N concurrent renderer calls
  * meant N concurrent worker threads with no bound. A queued task shows up to the caller as
  * a promise that simply hasn't resolved yet, no different from a slow worker; TaskManagerContext
  * already renders that as "pending" until the first progress event arrives.

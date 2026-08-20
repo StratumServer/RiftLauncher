@@ -9,7 +9,8 @@ import type { IpcMainInvokeEvent } from "electron"
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { createTrackedWorker, disposeTrackedWorker } from "@src/ipc/workerManager"
+import { acquireWorker } from "@src/ipc/workerManager"
+import type { WorkerDisposition } from "@src/ipc/workerManager"
 import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
 import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
@@ -82,8 +83,29 @@ const ARCHIVE_CONCURRENCY_LIMIT = 2
 const downloadConcurrency = new ConcurrencyLimiter(DOWNLOAD_CONCURRENCY_LIMIT)
 const archiveConcurrency = new ConcurrencyLimiter(ARCHIVE_CONCURRENCY_LIMIT)
 
+/**
+ * How many idle workers of each kind stay warm, waiting for the next task instead of being
+ * terminated right away. The invariant: never keep more idle than could be busy at once,
+ * which is exactly what the concurrency limits above already decide.
+ *
+ * CHANGE_PERMS and RUN_INSTALLER are 0 on purpose. Both run once per install with no burst
+ * behind them, so pooling either would buy one saved worker spawn per game install and pay
+ * for it with a resident idle isolate. They still go through the pooled protocol below so
+ * there is only one worker protocol in the app; 0 just means every release terminates,
+ * exactly like before this file started pooling anything.
+ */
+const WORKER_POOL_MAX_IDLE: Record<string, number> = {
+  DOWNLOAD_ON_PATH: DOWNLOAD_CONCURRENCY_LIMIT,
+  EXTRACT_ON_PATH: ARCHIVE_CONCURRENCY_LIMIT,
+  COMPRESS_ON_PATH: 1,
+  CHANGE_PERMS: 0,
+  RUN_INSTALLER: 0
+}
+
 type WorkerMessage = {
   type: unknown
+  token?: unknown
+  retire?: unknown
   progress?: unknown
   path?: unknown
   message?: unknown
@@ -106,43 +128,60 @@ function runTrackedWorker<T>(
   operationName: string,
   onFinished: (message: WorkerMessage) => T
 ): Promise<T> {
-  const worker = createTrackedWorker(workerPath, workerData)
+  const lease = acquireWorker(workerPath, WORKER_POOL_MAX_IDLE[operationName] ?? 0)
+  const worker = lease.worker
 
   return new Promise((resolvePromise, rejectPromise) => {
     let settled = false
     let lastProgress = 0
     const timeout = setTimeout(
       () => {
-        rejectOnce(new Error(`${operationName} timed out`))
+        // Never reused: the abandoned task is still running inside this thread (still
+        // holding a socket or a 7-Zip child), so its eventual message could still arrive
+        // after some later task has been dispatched to the same worker.
+        rejectOnce(new Error(`${operationName} timed out`), "discard")
       },
       WORKER_TIMEOUTS_MS[operationName] ?? 30 * 60 * 1_000
     )
 
-    const cleanup = (): void => {
+    // Named removals, never removeAllListeners(): the pool keeps its own "error" and
+    // "exit" listeners on this worker for as long as the thread lives, and a reused worker
+    // must not lose them between tasks. This runs synchronously, before the lease is
+    // released, so no message can be delivered to a half-detached task.
+    const cleanup = (disposition: WorkerDisposition): void => {
       clearTimeout(timeout)
-      worker.removeAllListeners()
-      disposeTrackedWorker(worker)
+      worker.off("message", onMessage)
+      worker.off("error", onError)
+      worker.off("exit", onExit)
+      lease.release(disposition)
     }
 
     const resolveOnce = (value: T): void => {
       if (settled) return
       settled = true
-      cleanup()
+      cleanup("reuse")
       resolvePromise(value)
     }
 
-    const rejectOnce = (error: unknown): void => {
+    const rejectOnce = (error: unknown, disposition: WorkerDisposition = "discard"): void => {
       if (settled) return
       settled = true
-      cleanup()
+      cleanup(disposition)
       rejectPromise(error instanceof Error ? error : new Error(`${operationName} failed`))
     }
 
-    worker.on("message", (message: unknown) => {
+    const onMessage = (message: unknown): void => {
       if (!isRecord(message) || typeof message.type !== "string") {
         rejectOnce(new Error(`${operationName} returned an invalid worker message`))
         return
       }
+
+      // A pooled worker outlives its task, so a message tagged with another task's token
+      // was posted by a task this handler already gave up on, and it belongs to nobody
+      // now. A message with no token at all is accepted rather than dropped, so a worker
+      // shim that ever stopped echoing one degrades to plain delivery instead of hanging
+      // this call for its full timeout.
+      if (typeof message.token === "number" && message.token !== lease.token) return
 
       const workerMessage = message as WorkerMessage
 
@@ -168,22 +207,35 @@ function runTrackedWorker<T>(
       }
 
       if (workerMessage.type === "error") {
-        rejectOnce(new Error(typeof workerMessage.message === "string" ? workerMessage.message : `${operationName} failed`))
+        // A reported failure ran the worker's own error path: workerHost caught the
+        // rejection and the worker went back to waiting for another task. Every logic
+        // module under src/ipc/workers/ releases its temp dir, file handle, or partial
+        // download in a finally block or its own fail() path, so the worker is fit to
+        // reuse unless it says otherwise with retire.
+        rejectOnce(new Error(typeof workerMessage.message === "string" ? workerMessage.message : `${operationName} failed`), workerMessage.retire === true ? "discard" : "reuse")
         return
       }
 
       rejectOnce(new Error(`${operationName} returned an unknown worker message`))
-    })
+    }
 
-    worker.once("error", (error) => {
+    const onError = (error: Error): void => {
       logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operationName}] Worker error.`)
       logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operationName}] ${getErrorMessage(error)}`)
       rejectOnce(error)
-    })
+    }
 
-    worker.once("exit", (code) => {
+    const onExit = (code: number): void => {
       if (!settled) rejectOnce(new Error(`${operationName} worker exited with code ${code}`))
-    })
+    }
+
+    worker.on("message", onMessage)
+    worker.on("error", onError)
+    worker.on("exit", onExit)
+
+    // Dispatched last, only once every listener above is attached: nothing the worker
+    // posts back can arrive before there is something here to receive it.
+    lease.dispatch(workerData)
   })
 }
 
