@@ -64,6 +64,7 @@ describe("GridItem in-view tracking", () => {
 
       expect(FakeIntersectionObserver.instances).toHaveLength(1)
       const observer = FakeIntersectionObserver.instances[0]
+      if (!observer) throw new Error("expected an IntersectionObserver instance")
       const cardElement = container.querySelector("li") as Element
       expect(observer.observedElements.has(cardElement)).toBe(true)
 
