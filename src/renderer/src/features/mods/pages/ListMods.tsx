@@ -70,6 +70,11 @@ function ListMods(): JSX.Element {
     if (scrollRef.current) scrollRef.current.addEventListener("scroll", handleScroll)
 
     return (): void => {
+      // scrollRef is the ScrollableContainer's own ref, stable for ListMods' whole mounted
+      // life; the element this attaches to and the element this detaches from are always
+      // the same node, so a value read at cleanup time can never differ from the one the
+      // listener was actually added to.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       if (scrollRef.current) scrollRef.current.removeEventListener("scroll", handleScroll)
     }
   }, [])
@@ -85,6 +90,12 @@ function ListMods(): JSX.Element {
     return (): void => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
+    // triggerQueryMods is a plain function redeclared every render, not a useCallback: it
+    // always closes over this render's own filter values, so calling it from here already
+    // reads the current textFilter/authorFilter/etc. Listing it as a dependency would only
+    // make this effect refire on ListMods' own re-renders, not on anything it doesn't
+    // already refire on through the filters below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textFilter, authorFilter, versionsFilter, tagsFilter, sideFilter, installedFilter, onlyFav, orderBy, orderByOrder])
 
   // Keyed on id/path, not on `installation` itself: triggerGetInstalledMods calls
@@ -96,10 +107,19 @@ function ListMods(): JSX.Element {
   useEffect(() => {
     if (!installation) return setInstallationInstalledMods([])
     triggerGetInstalledMods()
+    // triggerGetInstalledMods is excluded for the same reason as the effects above: a plain
+    // function redeclared every render, already closing over the current `installation`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installation?.id, installation?.path])
 
   useEffect(() => {
     if (installedFilter !== "all") triggerQueryMods(false)
+    // installedFilter changing on its own is already covered by the debounced-query effect
+    // above (it lists installedFilter in its own deps); this effect exists only to redo an
+    // "installed"/"not-installed" filter once a fresh installationInstalledMods scan comes
+    // in, so listing installedFilter here too would just fire triggerQueryMods twice for
+    // the same change. triggerQueryMods is excluded for the same reason as the effect above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installationInstalledMods])
 
   async function triggerQueryMods(resetScroll: boolean = true): Promise<void> {
