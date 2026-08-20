@@ -42,10 +42,10 @@ export function assertNoSymlinkComponents(pathValue: string): void {
   if (fse.lstatSync(current).isSymbolicLink()) throw new Error("Symbolic links are not allowed")
 }
 
-export type ArchiveStats = { entries: number; bytes: number; inodes: Set<string> }
+export type ArchiveStats = { entries: number; bytes: number }
 
 export function validateTree(root: string): ArchiveStats {
-  const stats: ArchiveStats = { entries: 0, bytes: 0, inodes: new Set<string>() }
+  const stats: ArchiveStats = { entries: 0, bytes: 0 }
   const visit = (current: string): void => {
     const entry = fse.lstatSync(current)
     if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) throw new Error("Archive contains an unsafe filesystem entry")
@@ -54,9 +54,11 @@ export function validateTree(root: string): ArchiveStats {
     if (stats.entries > MAX_ARCHIVE_ENTRIES) throw new Error("Archive contains too many entries")
     if (entry.isFile()) {
       if (entry.size > MAX_ARCHIVE_ENTRY_BYTES || stats.bytes + entry.size > MAX_ARCHIVE_TOTAL_BYTES) throw new Error("Archive is too large")
-      const inode = `${entry.dev}:${entry.ino}`
-      if (stats.inodes.has(inode)) throw new Error("Archive contains hard links")
-      stats.inodes.add(inode)
+      // entry.nlink is the OS's own hard-link count, unlike tracking dev:ino pairs by hand:
+      // Windows has reused the same ino for two freshly written, otherwise-unrelated files
+      // during a real install (nlink stayed 1 on both), which turned every install on Windows
+      // into a false "hard links" refusal. nlink is what actually answers the question.
+      if (entry.nlink > 1) throw new Error("Archive contains hard links")
       stats.bytes += entry.size
       return
     }
