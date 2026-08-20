@@ -12,7 +12,7 @@
  */
 
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 
 const MAX_ITEMS = 100_000
 

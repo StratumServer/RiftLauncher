@@ -1,6 +1,6 @@
 import { app } from "electron"
 import fse from "fs-extra"
-import { basename, dirname, resolve } from "path"
+import { basename, dirname, resolve } from "node:path"
 
 import { getConfig } from "@src/config/configManager"
 import type { PathGrant } from "@src/ipc/validation"

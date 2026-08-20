@@ -1,6 +1,6 @@
 import { app, safeStorage } from "electron"
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 
 import { parseStoredSecrets, type AccountSecrets } from "@src/ipc/accountTypes"
 

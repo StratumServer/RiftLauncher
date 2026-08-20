@@ -16,7 +16,7 @@ import { createHash } from "crypto"
 import type { ClientRequest, IncomingMessage, RequestOptions } from "http"
 import { request as httpsRequest } from "https"
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
 import { assertAllowedDownloadUrl } from "../validation"

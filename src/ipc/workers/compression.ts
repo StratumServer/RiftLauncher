@@ -13,7 +13,7 @@
 import type { EventEmitter } from "events"
 import Seven from "node-7z"
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 
 const MAX_ITEMS = 100_000
 

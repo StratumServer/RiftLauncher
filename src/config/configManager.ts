@@ -1,6 +1,6 @@
 import { app } from "electron"
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@src/ipc/accountTypes"
 import { saveAccountSecrets } from "@src/ipc/accountStore"

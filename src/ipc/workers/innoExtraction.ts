@@ -17,7 +17,7 @@ import { createHash } from "crypto"
 import fse from "fs-extra"
 import { mkdtempSync } from "fs"
 import { open } from "fs/promises"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "path"
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { tmpdir } from "os"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
