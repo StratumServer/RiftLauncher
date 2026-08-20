@@ -3,11 +3,12 @@
  *
  * electron-updater can only apply what electron-builder publishes: Windows
  * installers, the AppImage (it swaps the file the `APPIMAGE` env var points
- * at, which only AppImage runs set), and a deb install, which electron-updater's
- * own DebUpdater applies through dpkg once it reads the `package-type` marker
- * electron-builder writes next to the packaged app. Flatpak updates through its
- * own repo rather than electron-updater, so a Linux run with neither marker
- * stays refused. Nothing is published for macOS at all.
+ * at, which only AppImage runs set), and a deb, rpm or pacman install, which
+ * electron-updater's DebUpdater, RpmUpdater or PacmanUpdater apply through
+ * the matching system package manager once one reads the `package-type`
+ * marker electron-builder writes next to the packaged app. Flatpak updates
+ * through its own repo rather than electron-updater, so a Linux run with no
+ * marker stays refused. Nothing is published for macOS at all.
  */
 
 /** Why the updater stays off. */
@@ -22,6 +23,9 @@ export interface CanAutoUpdateInput {
   linuxPackageType?: string
 }
 
+/** The package-type marker values electron-updater has a Linux updater for. */
+const SUPPORTED_LINUX_PACKAGE_TYPES: ReadonlySet<string> = new Set(["deb", "rpm", "pacman"])
+
 function refuse(reason: CanAutoUpdateFailure): CanAutoUpdateResult {
   return { ok: false, reason }
 }
@@ -29,7 +33,7 @@ function refuse(reason: CanAutoUpdateFailure): CanAutoUpdateResult {
 /**
  * Says whether this run can check for, download and apply updates.
  *
- * @param input The process platform, the two env vars, and the deb marker the decision reads.
+ * @param input The process platform, the two env vars, and the package-type marker the decision reads.
  * @returns Ok, or the reason the updater must stay off.
  */
 export function canAutoUpdate(input: CanAutoUpdateInput): CanAutoUpdateResult {
@@ -39,7 +43,7 @@ export function canAutoUpdate(input: CanAutoUpdateInput): CanAutoUpdateResult {
   if (platform === "win32") return { ok: true }
   if (platform === "linux") {
     if (env.APPIMAGE !== undefined && env.APPIMAGE !== "") return { ok: true }
-    if (linuxPackageType === "deb") return { ok: true }
+    if (linuxPackageType !== undefined && SUPPORTED_LINUX_PACKAGE_TYPES.has(linuxPackageType)) return { ok: true }
     return refuse("linux-unsupported-package")
   }
 

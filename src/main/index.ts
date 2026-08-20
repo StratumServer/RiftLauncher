@@ -183,9 +183,9 @@ const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) app.quit()
 
 /**
- * Reads electron-builder's `package-type` marker next to the packaged app, when the deb or
- * rpm targets wrote one. Its absence just means an AppImage, a flatpak, or a dev run, all of
- * which canAutoUpdate treats the same as "no marker".
+ * Reads electron-builder's `package-type` marker next to the packaged app, when the deb,
+ * rpm or pacman targets wrote one. Its absence just means an AppImage, a flatpak, or a dev
+ * run, all of which canAutoUpdate treats the same as "no marker".
  */
 function readLinuxPackageType(): string | undefined {
   try {

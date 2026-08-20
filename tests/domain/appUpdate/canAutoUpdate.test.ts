@@ -12,24 +12,27 @@ describe("canAutoUpdate", () => {
     assert.deepEqual(canAutoUpdate({ platform: "linux", env: { APPIMAGE: "/opt/RiftLauncher.AppImage" } }), { ok: true })
   })
 
-  it("allows linux when the package-type marker reads deb", () => {
+  it("allows linux when the package-type marker reads deb, rpm or pacman", () => {
     assert.deepEqual(canAutoUpdate({ platform: "linux", env: {}, linuxPackageType: "deb" }), { ok: true })
+    assert.deepEqual(canAutoUpdate({ platform: "linux", env: {}, linuxPackageType: "rpm" }), { ok: true })
+    assert.deepEqual(canAutoUpdate({ platform: "linux", env: {}, linuxPackageType: "pacman" }), { ok: true })
   })
 
-  it("prefers an AppImage run over a deb marker left behind on the same host", () => {
+  it("prefers an AppImage run over a package-type marker left behind on the same host", () => {
     assert.deepEqual(canAutoUpdate({ platform: "linux", env: { APPIMAGE: "/opt/RiftLauncher.AppImage" }, linuxPackageType: "deb" }), { ok: true })
   })
 
-  it("refuses linux when APPIMAGE is absent and no deb marker was found, the flatpak case", () => {
+  it("refuses linux when APPIMAGE is absent and no supported marker was found, the flatpak case", () => {
     assert.deepEqual(canAutoUpdate({ platform: "linux", env: {} }), { ok: false, reason: "linux-unsupported-package" })
   })
 
-  it("refuses linux when APPIMAGE is empty and no deb marker was found", () => {
+  it("refuses linux when APPIMAGE is empty and no supported marker was found", () => {
     assert.deepEqual(canAutoUpdate({ platform: "linux", env: { APPIMAGE: "" } }), { ok: false, reason: "linux-unsupported-package" })
   })
 
-  it("refuses linux when the package-type marker names something other than deb", () => {
-    assert.deepEqual(canAutoUpdate({ platform: "linux", env: {}, linuxPackageType: "rpm" }), { ok: false, reason: "linux-unsupported-package" })
+  it("refuses linux when the package-type marker names something with no Linux updater", () => {
+    assert.deepEqual(canAutoUpdate({ platform: "linux", env: {}, linuxPackageType: "flatpak" }), { ok: false, reason: "linux-unsupported-package" })
+    assert.deepEqual(canAutoUpdate({ platform: "linux", env: {}, linuxPackageType: "snap" }), { ok: false, reason: "linux-unsupported-package" })
   })
 
   it("refuses when UPDATE is the string false, on any platform", () => {
