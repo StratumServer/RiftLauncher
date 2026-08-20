@@ -56,16 +56,4 @@ describe("InfoAndHelpPage", () => {
 
     expect(api.pathsManager.openPathOnFileExplorer).toHaveBeenCalledWith("/mock/userdata/Logs")
   })
-
-  it("opens the MVL link on the system browser through the shared link hook", async () => {
-    const user = userEvent.setup()
-    const api = installMockWindowApi()
-
-    renderWithProviders(<InfoAndHelpPage />, { route: "/info-and-help" })
-    await waitForAppInfoToSettle(api)
-
-    await user.click(screen.getByTitle("MVL"))
-
-    expect(api.utils.openOnBrowser).toHaveBeenCalledWith("https://mods.vintagestory.at/mvl")
-  })
 })

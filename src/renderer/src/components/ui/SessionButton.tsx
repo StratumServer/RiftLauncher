@@ -44,7 +44,6 @@ function SessionButton(): JSX.Element {
     addNotification(t("features.config.loggingin"), "info")
 
     // Thanks a lot to https://github.com/scgm0 for teaching me how to login using the Vintage Story Game Account
-    // If you're reading this, make sure to check out MVL https://github.com/scgm0/MVL
 
     try {
       const result = await login(email, password, twofacode || undefined)

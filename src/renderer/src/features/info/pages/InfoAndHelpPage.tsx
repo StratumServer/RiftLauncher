@@ -12,7 +12,6 @@ import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
 
 function InfoAndHelpPage(): JSX.Element {
   const { t } = useTranslation()
-  const { openOnBrowser } = useExternalLinks()
   const { vslVersion, os, openLogsFolder } = useAppInfo()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -66,19 +65,6 @@ function InfoAndHelpPage(): JSX.Element {
               />
             </p>
           </DropdownSection>
-
-          <span className="flex gap-1 items-center flex-wrap justify-center animate-pulse">
-            <Trans
-              i18nKey="generic.tryMVL"
-              components={{
-                link: (
-                  <NormalButton title="MVL" onClick={() => openOnBrowser("https://mods.vintagestory.at/mvl")} className="text-vsl">
-                    MVL
-                  </NormalButton>
-                )
-              }}
-            />
-          </span>
         </div>
       </div>
     </ScrollableContainer>
