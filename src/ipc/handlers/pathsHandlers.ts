@@ -83,6 +83,16 @@ const ARCHIVE_CONCURRENCY_LIMIT = 2
 const downloadConcurrency = new ConcurrencyLimiter(DOWNLOAD_CONCURRENCY_LIMIT)
 const archiveConcurrency = new ConcurrencyLimiter(ARCHIVE_CONCURRENCY_LIMIT)
 
+// before-quit can preventDefault (the config flush in main/index.ts), so quitting isn't
+// instant: without this, a queued download or extraction could still be handed a slot and
+// start writing to disk during that window. Shutting both limiters down here means every
+// queued task rejects immediately, and any DOWNLOAD_ON_PATH/EXTRACT_ON_PATH/COMPRESS_ON_PATH
+// call that arrives after this point rejects on arrival instead of queueing behind it.
+app.on("before-quit", () => {
+  downloadConcurrency.shutdown()
+  archiveConcurrency.shutdown()
+})
+
 /**
  * How many idle workers of each kind stay warm, waiting for the next task instead of being
  * terminated right away. The invariant: never keep more idle than could be busy at once,

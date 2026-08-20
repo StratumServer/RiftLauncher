@@ -62,6 +62,11 @@ export class WorkerPool {
    * @param maxIdle How many workers of this script may sit idle at once. 0 never pools.
    */
   acquire(scriptPath: string, maxIdle: number): WorkerLease {
+    // Same asymmetry the ConcurrencyLimiter fix closes upstream: returnWorker already
+    // refuses to re-idle a worker once shuttingDown, but nothing stopped acquire() itself
+    // from spawning a brand-new thread after terminateAll() had already run.
+    if (this.shuttingDown) throw new Error("Worker pool is shutting down")
+
     const pooled = this.take(scriptPath)
     pooled.state = "busy"
     const token = ++this.nextToken

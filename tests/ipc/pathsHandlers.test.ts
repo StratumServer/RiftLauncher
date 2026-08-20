@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import type { IpcMainInvokeEvent } from "electron"
 
 import "./helpers/electronMock"
-import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
+import { clearAppEventListeners, createTrustedEvent, createUntrustedEvent, emitAppEvent, getIpcHandler, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 
 // After "./helpers/electronMock": that side-effect import is what registers
 // the vi.mock("electron", ...) factory, and it has to run before this file's
@@ -127,6 +127,11 @@ function handler<R = Promise<unknown>>(channel: string): Handler<R> {
 }
 
 beforeEach(async () => {
+  // Cleared before pathsHandlers.ts's fresh import below registers its own before-quit
+  // listener: without this, a listener from a previous test's now-shut-down limiters would
+  // still be sitting in the map and fire again on this test's emitAppEvent call.
+  clearAppEventListeners()
+
   temporaryRoot = mkdtempSync(join(tmpdir(), "paths-handlers-"))
   managedFolder = join(temporaryRoot, "Installations")
   versionsFolder = join(temporaryRoot, "Versions")
@@ -761,6 +766,61 @@ describe("DOWNLOAD_ON_PATH: concurrency limit", () => {
     assert.equal(await result2, join(versionsFolder, "two.zip"))
     assert.equal(await result3, join(versionsFolder, "three.zip"))
     assert.equal(await result4, join(versionsFolder, "four.zip"))
+  })
+})
+
+describe("before-quit: the limiters stop admitting work", () => {
+  it("DOWNLOAD_ON_PATH rejects a call still queued when before-quit fires, and never reaches acquireWorker for it", async () => {
+    const event = await createTrustedEvent()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    const DOWNLOAD_URL = "https://moddbcdn.vintagestory.at/some-mod-1.0.0.zip"
+
+    function queueNextWorker(): Promise<EventEmitter> {
+      return new Promise((resolvePromise) => {
+        vi.mocked(acquireWorker).mockImplementationOnce(() => {
+          const worker = new EventEmitter()
+          resolvePromise(worker)
+          return {
+            worker: worker as unknown as import("worker_threads").Worker,
+            token: nextLeaseToken++,
+            dispatch: vi.fn(),
+            release: vi.fn()
+          }
+        })
+      })
+    }
+
+    // Fill the download limit (3) so the 4th call queues instead of starting.
+    const worker1Promise = queueNextWorker()
+    handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-1", DOWNLOAD_URL, versionsFolder, "one.zip")
+    await worker1Promise
+    const worker2Promise = queueNextWorker()
+    handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-2", DOWNLOAD_URL, versionsFolder, "two.zip")
+    await worker2Promise
+    const worker3Promise = queueNextWorker()
+    handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-3", DOWNLOAD_URL, versionsFolder, "three.zip")
+    await worker3Promise
+
+    const callsBeforeQueued = vi.mocked(acquireWorker).mock.calls.length
+    const queuedResult = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-4", DOWNLOAD_URL, versionsFolder, "four.zip")
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10))
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeQueued)
+
+    emitAppEvent("before-quit")
+    await assert.rejects(queuedResult, /Cancelled because the app is quitting/)
+    // Shutdown ran before the freed download slot (if any) could ever reach it.
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeQueued)
+  })
+
+  it("COMPRESS_ON_PATH rejects a call arriving after before-quit, without ever calling acquireWorker", async () => {
+    const event = await createTrustedEvent()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+
+    emitAppEvent("before-quit")
+
+    const result = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH)(event, "task-1", managedFolder, versionsFolder, "archive.zip", 4)
+    await assert.rejects(result, /Cancelled because the app is quitting/)
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0)
   })
 })
 

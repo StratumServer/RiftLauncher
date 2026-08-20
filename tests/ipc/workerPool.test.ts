@@ -177,6 +177,19 @@ describe("WorkerPool", () => {
     assert.equal(asFake(lease.worker).terminate.mock.calls.length, 0)
   })
 
+  it("refuses to spawn a fresh worker on acquire after terminateAll, instead of resurrecting the pool", () => {
+    const factory = vi.fn(() => fakeWorker())
+    const pool = new WorkerPool(factory)
+
+    pool.acquire("script.js", 2)
+    pool.terminateAll()
+    assert.equal(factory.mock.calls.length, 1)
+
+    assert.throws(() => pool.acquire("script.js", 2))
+    // The pool never asked the factory for a second worker: acquire() refused before spawn().
+    assert.equal(factory.mock.calls.length, 1)
+  })
+
   it("terminateAll kills idle and busy workers alike, and a later release cannot resurrect one", () => {
     const pool = new WorkerPool(() => fakeWorker())
 

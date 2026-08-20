@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
+import { ConcurrencyLimiter, LIMITER_SHUTDOWN_MESSAGE } from "@src/ipc/concurrencyLimiter"
 
 /** A task that only resolves once `release()` is called, so a test controls exactly when it finishes. */
 function deferredTask(): { promise: Promise<void>; release: () => void } {
@@ -99,5 +99,74 @@ describe("ConcurrencyLimiter", () => {
     await Promise.all([second, third])
 
     assert.deepEqual(order, ["second", "third"])
+  })
+
+  it("rejects a task still queued when shutdown runs, and never starts it", async () => {
+    const limiter = new ConcurrencyLimiter(1)
+    const first = deferredTask()
+    const started: string[] = []
+
+    void limiter.run(() => first.promise)
+    await Promise.resolve()
+
+    const queued = limiter.run(async () => {
+      started.push("queued")
+    })
+    await Promise.resolve()
+    assert.equal(limiter.queuedCount, 1)
+
+    limiter.shutdown()
+    await assert.rejects(queued, new RegExp(LIMITER_SHUTDOWN_MESSAGE))
+
+    first.release()
+    await first.promise
+    // The freed slot never reached the queued task: shutdown removed it from the line.
+    assert.deepEqual(started, [])
+    assert.equal(limiter.queuedCount, 0)
+  })
+
+  it("rejects a task that arrives after shutdown without ever queuing or running it", async () => {
+    const limiter = new ConcurrencyLimiter(1)
+
+    limiter.shutdown()
+
+    await assert.rejects(() => limiter.run(async () => "should never run"), new RegExp(LIMITER_SHUTDOWN_MESSAGE))
+    assert.equal(limiter.activeCount, 0)
+    assert.equal(limiter.queuedCount, 0)
+  })
+
+  it("rejects a task even when shutdown lands after acquire resolves but before the task body runs", async () => {
+    const limiter = new ConcurrencyLimiter(1)
+    let ran = false
+
+    // run() awaits acquire() first, so shutdown() called synchronously right after has a real
+    // chance to land in the gap between that resolution and the re-check at the top of the
+    // try block, exactly the race the re-check exists to close.
+    const result = limiter.run(async () => {
+      ran = true
+    })
+    limiter.shutdown()
+
+    await assert.rejects(result, new RegExp(LIMITER_SHUTDOWN_MESSAGE))
+    assert.equal(ran, false)
+  })
+
+  it("treats a second shutdown call as a no-op", async () => {
+    const limiter = new ConcurrencyLimiter(1)
+    const first = deferredTask()
+
+    void limiter.run(() => first.promise)
+    await Promise.resolve()
+    const queued = limiter.run(async () => "queued")
+    await Promise.resolve()
+
+    limiter.shutdown()
+    assert.doesNotThrow(() => limiter.shutdown())
+
+    await assert.rejects(queued, new RegExp(LIMITER_SHUTDOWN_MESSAGE))
+    assert.equal(limiter.isShuttingDown, true)
+
+    first.release()
+    await first.promise
   })
 })
