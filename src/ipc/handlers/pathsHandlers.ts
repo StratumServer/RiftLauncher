@@ -10,6 +10,7 @@ import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { createTrackedWorker, disposeTrackedWorker } from "@src/ipc/workerManager"
+import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
 import { validateArchive } from "@src/ipc/archiveValidation"
 import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
@@ -63,6 +64,24 @@ const EXTRACT_INSTALLER_PAYLOAD = true
  * had no bound of its own.
  */
 const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
+
+/**
+ * Nothing capped how many DOWNLOAD_ON_PATH/EXTRACT_ON_PATH/COMPRESS_ON_PATH calls the
+ * renderer could fire at once (a mod update-all, say): each one spun up its own worker
+ * thread with no ceiling. A queued call just shows up to the caller as a promise that
+ * hasn't resolved yet, and TaskManagerContext already renders that as "pending" until the
+ * first progress event, so this needs no renderer-side change to look right.
+ *
+ * Extraction and compression share one limiter instead of each getting their own: both
+ * spawn a 7-Zip subprocess and compete for the same CPU cores, so the resource that
+ * actually needs bounding is "concurrent 7-Zip processes", not "concurrent extractions"
+ * and "concurrent compressions" separately.
+ */
+const DOWNLOAD_CONCURRENCY_LIMIT = 3
+const ARCHIVE_CONCURRENCY_LIMIT = 2
+
+const downloadConcurrency = new ConcurrencyLimiter(DOWNLOAD_CONCURRENCY_LIMIT)
+const archiveConcurrency = new ConcurrencyLimiter(ARCHIVE_CONCURRENCY_LIMIT)
 
 type WorkerMessage = {
   type: unknown
@@ -270,17 +289,19 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   const expectedMd5 = await getTrustedDownloadHash(safeUrl)
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DOWNLOAD_ON_PATH] [${safeId}] Starting a bounded download.`)
-  const downloadedPath = await runTrackedWorker(
-    event,
-    safeId,
-    IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS,
-    downloadWorkerPath,
-    { id: safeId, url: safeUrl.toString(), outputPath: safeOutputPath, fileName: safeFileName, expectedMd5 },
-    "DOWNLOAD_ON_PATH",
-    (message) => {
-      if (typeof message.path !== "string") throw new Error("Download returned an invalid path")
-      return message.path
-    }
+  const downloadedPath = await downloadConcurrency.run(() =>
+    runTrackedWorker(
+      event,
+      safeId,
+      IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS,
+      downloadWorkerPath,
+      { id: safeId, url: safeUrl.toString(), outputPath: safeOutputPath, fileName: safeFileName, expectedMd5 },
+      "DOWNLOAD_ON_PATH",
+      (message) => {
+        if (typeof message.path !== "string") throw new Error("Download returned an invalid path")
+        return message.path
+      }
+    )
   )
   if (expectedMd5) await recordVerifiedArtifact(downloadedPath, safeUrl, expectedMd5)
   return downloadedPath
@@ -297,14 +318,16 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
   await validateArchive(safeFilePath, sevenZipBin)
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
-  await runTrackedWorker(
-    event,
-    safeId,
-    IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
-    extractWorker,
-    { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, sevenZipBin },
-    "EXTRACT_ON_PATH",
-    () => true
+  await archiveConcurrency.run(() =>
+    runTrackedWorker(
+      event,
+      safeId,
+      IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
+      extractWorker,
+      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, sevenZipBin },
+      "EXTRACT_ON_PATH",
+      () => true
+    )
   )
   return true
 })
@@ -435,14 +458,16 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH, async (event, id: st
   const safeCompressionLevel = assertInteger(compressionLevel, "compression level", 0, 9)
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
-  await runTrackedWorker(
-    event,
-    safeId,
-    IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
-    compressWorker,
-    { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel, sevenZipBin },
-    "COMPRESS_ON_PATH",
-    () => true
+  await archiveConcurrency.run(() =>
+    runTrackedWorker(
+      event,
+      safeId,
+      IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
+      compressWorker,
+      { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel, sevenZipBin },
+      "COMPRESS_ON_PATH",
+      () => true
+    )
   )
   return true
 })

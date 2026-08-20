@@ -646,6 +646,62 @@ describe("DOWNLOAD_ON_PATH: runTrackedWorker via a fake worker", () => {
   })
 })
 
+describe("DOWNLOAD_ON_PATH: concurrency limit", () => {
+  const DOWNLOAD_URL = "https://moddbcdn.vintagestory.at/some-mod-1.0.0.zip"
+
+  it("caps concurrent downloads at 3 and starts a 4th only once a slot frees", async () => {
+    const event = await createTrustedEvent()
+    const { createTrackedWorker } = await import("@src/ipc/workerManager")
+
+    // A local, synchronous stand-in for the shared nextTrackedWorker() helper above: that
+    // one does `await import(...)` before registering its mockImplementationOnce, which is
+    // invisible with one call in flight (every other test here) but races a handler that
+    // reaches createTrackedWorker before that import's microtask settles once several
+    // calls overlap, exactly what this test needs to fire at once.
+    function queueNextWorker(): Promise<EventEmitter> {
+      return new Promise((resolvePromise) => {
+        vi.mocked(createTrackedWorker).mockImplementationOnce(() => {
+          const worker = new EventEmitter()
+          resolvePromise(worker)
+          return worker as unknown as import("worker_threads").Worker
+        })
+      })
+    }
+
+    const worker1Promise = queueNextWorker()
+    const result1 = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-1", DOWNLOAD_URL, versionsFolder, "one.zip")
+    const worker1 = await worker1Promise
+
+    const worker2Promise = queueNextWorker()
+    const result2 = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-2", DOWNLOAD_URL, versionsFolder, "two.zip")
+    const worker2 = await worker2Promise
+
+    const worker3Promise = queueNextWorker()
+    const result3 = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-3", DOWNLOAD_URL, versionsFolder, "three.zip")
+    const worker3 = await worker3Promise
+
+    // 3 active downloads is the configured limit: a 4th call must stay queued,
+    // never reaching createTrackedWorker, until one of the first 3 finishes.
+    const callsBeforeFourth = vi.mocked(createTrackedWorker).mock.calls.length
+    const result4 = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-4", DOWNLOAD_URL, versionsFolder, "four.zip")
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 50))
+    assert.equal(vi.mocked(createTrackedWorker).mock.calls.length, callsBeforeFourth)
+
+    const worker4Promise = queueNextWorker()
+    worker1.emit("message", { type: "finished", path: join(versionsFolder, "one.zip") })
+    const worker4 = await worker4Promise
+
+    worker2.emit("message", { type: "finished", path: join(versionsFolder, "two.zip") })
+    worker3.emit("message", { type: "finished", path: join(versionsFolder, "three.zip") })
+    worker4.emit("message", { type: "finished", path: join(versionsFolder, "four.zip") })
+
+    assert.equal(await result1, join(versionsFolder, "one.zip"))
+    assert.equal(await result2, join(versionsFolder, "two.zip"))
+    assert.equal(await result3, join(versionsFolder, "three.zip"))
+    assert.equal(await result4, join(versionsFolder, "four.zip"))
+  })
+})
+
 describe("RUN_INSTALLER", () => {
   it("resolves not-windows on a non-Windows host, before any worker or spawn", async () => {
     // assertManagedPath for the installer path requires it to exist (it is
