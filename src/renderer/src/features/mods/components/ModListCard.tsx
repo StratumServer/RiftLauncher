@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { useTranslation } from "react-i18next"
 import { PiDownloadDuotone, PiStarDuotone, PiChatCenteredTextDuotone, PiUserCircleDuotone } from "react-icons/pi"
 import { FiExternalLink } from "react-icons/fi"
@@ -12,7 +13,14 @@ function formatStat(value: number): string {
   return value > 10000 ? `${Math.floor(value / 1000)}K` : `${value}`
 }
 
-/** One Mod in the ModDB grid: art, favorite/ModDB actions, and its stats. */
+/**
+ * One Mod in the ModDB grid: art, favorite/ModDB actions, and its stats.
+ *
+ * Memoized because the grid can hold hundreds of these: onSelect/onToggleFav/onOpenModDb
+ * take the mod as an argument instead of being pre-bound per card, so ModsGrid can hand
+ * every card the same stable callback reference and let memo actually skip cards untouched
+ * by whatever caused the grid to re-render.
+ */
 function ModListCard({
   mod,
   installed,
@@ -24,14 +32,14 @@ function ModListCard({
   mod: DownloadableModOnListType
   installed: boolean
   isFav: boolean
-  onSelect: () => void
-  onToggleFav: () => void
-  onOpenModDb: () => void
+  onSelect: (mod: DownloadableModOnListType) => void
+  onToggleFav: (mod: DownloadableModOnListType) => void
+  onOpenModDb: (mod: DownloadableModOnListType) => void
 }): JSX.Element {
   const { t } = useTranslation()
 
   return (
-    <GridItem onClick={onSelect} selected={installed} size="w-[18rem] max-w-[26rem]" className="group overflow-hidden">
+    <GridItem onClick={() => onSelect(mod)} selected={installed} size="w-[18rem] max-w-[26rem]" className="group overflow-hidden">
       <div className="relative w-full aspect-[3/2] skip-offscreen-render">
         <img src={mod.logo ? `${mod.logo}` : "https://mods.vintagestory.at/web/img/mod-default.png"} alt={mod.name} loading="lazy" className="w-full h-full object-cover object-top" />
 
@@ -40,7 +48,7 @@ function ModListCard({
             title={t("generic.favorite")}
             onClick={(e) => {
               e.stopPropagation()
-              onToggleFav()
+              onToggleFav(mod)
             }}
             className={clsx("p-1 text-lg", !isFav && "opacity-0 group-hover:opacity-100 duration-200")}
             type={isFav ? "warn" : "normal"}
@@ -52,7 +60,7 @@ function ModListCard({
             title={t("features.mods.openOnTheModDB")}
             onClick={(e) => {
               e.stopPropagation()
-              onOpenModDb()
+              onOpenModDb(mod)
             }}
             className="p-1 text-lg opacity-0 group-hover:opacity-100 duration-200"
           >
@@ -96,4 +104,4 @@ function ModListCard({
   )
 }
 
-export default ModListCard
+export default memo(ModListCard)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useTranslation } from "react-i18next"
 
 import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
@@ -153,6 +153,36 @@ function ListMods(): JSX.Element {
     setInstallationInstalledMods(mods.mods)
   }
 
+  // Stable references so ModsGrid can hand every ModListCard the same callback and let
+  // its React.memo actually skip cards untouched by whatever caused ListMods to re-render.
+  // Depends on hasInstallation (a primitive), not `installation` itself: that object is
+  // rebuilt by useMemo above on every edit to *any* installation, unrelated fields
+  // included, which would otherwise re-identify this callback on every such edit too.
+  const hasInstallation = Boolean(installation)
+  const onSelectMod = useCallback(
+    (mod: DownloadableModOnListType): void => {
+      if (!hasInstallation) {
+        addNotification(t("features.installations.noInstallationSelected"), "error")
+        return
+      }
+      setModToInstall(mod)
+    },
+    [hasInstallation, addNotification, t]
+  )
+
+  const onToggleFavMod = useCallback(
+    (mod: DownloadableModOnListType): void => {
+      if (favMods.some((modid) => modid === mod.modid)) {
+        configDispatch({ type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: mod.modid } })
+      } else {
+        configDispatch({ type: CONFIG_ACTIONS.ADD_FAV_MOD, payload: { modid: mod.modid } })
+      }
+    },
+    [favMods, configDispatch]
+  )
+
+  const onOpenModDb = useCallback((mod: DownloadableModOnListType): void => openModOnModDb(mod.assetid), [openModOnModDb])
+
   function clearFilters(): void {
     setTextFilter("")
     setAuthorFilter({ userid: "", name: "" })
@@ -215,18 +245,9 @@ function ListMods(): JSX.Element {
           searching={searching}
           isModInstalled={(mod) => Boolean(installationInstalledMods?.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid)))}
           isModFav={(mod) => favMods.some((modid) => modid === mod.modid)}
-          onSelectMod={(mod) => {
-            if (!installation) return addNotification(t("features.installations.noInstallationSelected"), "error")
-            setModToInstall(mod)
-          }}
-          onToggleFavMod={(mod) => {
-            if (favMods.some((modid) => modid === mod.modid)) {
-              configDispatch({ type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: mod.modid } })
-            } else {
-              configDispatch({ type: CONFIG_ACTIONS.ADD_FAV_MOD, payload: { modid: mod.modid } })
-            }
-          }}
-          onOpenModDb={(mod) => openModOnModDb(mod.assetid)}
+          onSelectMod={onSelectMod}
+          onToggleFavMod={onToggleFavMod}
+          onOpenModDb={onOpenModDb}
         />
 
         <InstallModPopup

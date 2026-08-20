@@ -36,17 +36,7 @@ function ModsGrid({
         ) : (
           mods
             .slice(0, visibleCount)
-            .map((mod) => (
-              <ModListCard
-                key={mod.modid}
-                mod={mod}
-                installed={isModInstalled(mod)}
-                isFav={isModFav(mod)}
-                onSelect={() => onSelectMod(mod)}
-                onToggleFav={() => onToggleFavMod(mod)}
-                onOpenModDb={() => onOpenModDb(mod)}
-              />
-            ))
+            .map((mod) => <ModListCard key={mod.modid} mod={mod} installed={isModInstalled(mod)} isFav={isModFav(mod)} onSelect={onSelectMod} onToggleFav={onToggleFavMod} onOpenModDb={onOpenModDb} />)
         )}
       </GridGroup>
     </GridWrapper>
