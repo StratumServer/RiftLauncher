@@ -66,7 +66,10 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     appUpdater: {
       onUpdateAvailable: vi.fn(noopUnsubscribe),
+      onUpdateDownloadProgress: vi.fn(noopUnsubscribe),
+      onUpdateError: vi.fn(noopUnsubscribe),
       onUpdateDownloaded: vi.fn(noopUnsubscribe),
+      downloadUpdate: vi.fn(),
       updateAndRestart: vi.fn()
     },
     configManager: {

@@ -1,0 +1,316 @@
+import type { ReactElement, ReactNode } from "react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { act, fireEvent, render, screen } from "@testing-library/react"
+
+import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import type { NotificationType } from "@renderer/contexts/NotificationsContext"
+import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
+import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
+import TasksMenu from "@renderer/components/ui/TasksMenu"
+
+import { installMockWindowApi } from "./helpers/windowApi"
+import type { MockedBridgeAPI } from "./helpers/windowApi"
+
+// Registers the i18n instance useTranslation() reads inside both providers,
+// the same way renderWithProviders (./helpers/render) does.
+import "@renderer/i18n"
+
+/**
+ * The renderer half of issues #184 and #185, mounted the way App.tsx mounts it:
+ * NotificationsProvider outside TaskProvider, with the overlay that draws the
+ * toasts and the menu that draws the task list both on screen.
+ *
+ * Fake timers, because the consent toast is deliberately held back for two
+ * seconds (App.tsx's start-up loader covers the whole window for that long) and
+ * because letting an unanswered offer expire is one of the behaviors under test.
+ *
+ * A toast leaving is read off `liveNotifications` rather than off the DOM.
+ * NotificationsOverlay wraps its toasts in AnimatePresence, whose exit
+ * animation never reports itself finished while the timers are fake, so a
+ * dismissed toast stays in the document as a leftover of an animation that
+ * cannot end. Its removal from the notification list is the actual behavior;
+ * the leftover node is a fake-timer artifact. Everything else here is asserted
+ * against the DOM.
+ */
+let liveNotifications: NotificationType[] = []
+
+function NotificationsProbe(): null {
+  liveNotifications = useNotificationsContext().notifications
+  return null
+}
+
+function wrapper({ children }: { children: ReactNode }): ReactElement {
+  return (
+    <NotificationsProvider>
+      <TaskProvider>{children}</TaskProvider>
+    </NotificationsProvider>
+  )
+}
+
+function renderUpdateSurfaces(): ReturnType<typeof render> {
+  return render(
+    <>
+      <NotificationsProbe />
+      <NotificationsOverlay />
+      <TasksMenu />
+    </>,
+    { wrapper }
+  )
+}
+
+/**
+ * `downloaded` is a list, not one callback: both providers subscribe to
+ * update-downloaded (the notification provider to offer the restart, the task
+ * provider to complete the task), exactly as the preload's own subscribe does,
+ * and keeping only the last one to register would quietly test half of it.
+ */
+type Listeners = {
+  updateAvailable?: UpdateAvailableCallback
+  progress?: UpdateProgressCallback
+  downloaded: Array<() => void>
+  error?: () => void
+}
+
+/** Installs a window.api whose updater subscriptions hand their callback back to the test. */
+function installUpdaterApi(unsubscribe: () => void = () => {}): { api: MockedBridgeAPI; listeners: Listeners } {
+  const listeners: Listeners = { downloaded: [] }
+
+  const api = installMockWindowApi({
+    appUpdater: {
+      onUpdateAvailable: vi.fn((callback: UpdateAvailableCallback): Unsubscribe => {
+        listeners.updateAvailable = callback
+        return unsubscribe
+      }),
+      onUpdateDownloadProgress: vi.fn((callback: UpdateProgressCallback): Unsubscribe => {
+        listeners.progress = callback
+        return unsubscribe
+      }),
+      onUpdateDownloaded: vi.fn((callback: () => void): Unsubscribe => {
+        listeners.downloaded.push(callback)
+        return unsubscribe
+      }),
+      onUpdateError: vi.fn((callback: () => void): Unsubscribe => {
+        listeners.error = callback
+        return unsubscribe
+      })
+    }
+  })
+
+  return { api, listeners }
+}
+
+/** Fires update-available and lets the toast's own two second hold elapse. */
+function offerUpdate(listeners: Listeners, version = "1.7.0-beta.3"): void {
+  act(() => listeners.updateAvailable?.({ version }))
+  act(() => {
+    vi.advanceTimersByTime(2_000)
+  })
+}
+
+/** Fires update-downloaded at every provider that subscribed to it. */
+function fireDownloaded(listeners: Listeners): void {
+  act(() => listeners.downloaded.forEach((callback) => callback()))
+}
+
+/** True while the update offer is still in the notification list waiting for an answer. */
+function offerIsLive(): boolean {
+  return liveNotifications.some((notification) => notification.body.includes("is available"))
+}
+
+/** Opens the task menu popover, which is where every task's progress bar lives. */
+function openTasksMenu(): void {
+  fireEvent.click(screen.getByRole("button", { name: "Tasks" }))
+}
+
+/** The task list's progress bar, or null when no task is running. */
+function progressBar(): HTMLElement | null {
+  return screen.queryByRole("progressbar")
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  liveNotifications = []
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+describe("the update offer (#184)", () => {
+  it("asks before downloading anything, offering both an accept and a refusal", () => {
+    const { api, listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    // Nothing is offered until the main process says an update exists.
+    expect(screen.queryByText(/is available/)).toBeNull()
+
+    offerUpdate(listeners)
+
+    expect(screen.getByText("RiftLauncher 1.7.0-beta.3 is available. Do you want to download it now?")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Update now" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Not now" })).toBeTruthy()
+    // Merely being offered one must never start a download.
+    expect(api.appUpdater.downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it("asks the main process to download only once the offer is accepted", () => {
+    const { api, listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    offerUpdate(listeners)
+    fireEvent.click(screen.getByRole("button", { name: "Update now" }))
+
+    expect(api.appUpdater.downloadUpdate).toHaveBeenCalledTimes(1)
+    // The offer has been answered, so it goes, and says where to watch instead.
+    expect(offerIsLive()).toBe(false)
+    expect(screen.getByText("Starting download: RiftLauncher 1.7.0-beta.3!")).toBeTruthy()
+  })
+
+  it("downloads nothing when the offer is refused, and does not ask again on its own", () => {
+    const { api, listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    offerUpdate(listeners)
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }))
+
+    expect(api.appUpdater.downloadUpdate).not.toHaveBeenCalled()
+    expect(offerIsLive()).toBe(false)
+
+    // Two more minutes of the session going by bring no second prompt.
+    act(() => {
+      vi.advanceTimersByTime(120_000)
+    })
+    expect(offerIsLive()).toBe(false)
+    expect(api.appUpdater.downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it("downloads nothing when the offer is simply left to expire", () => {
+    const { api, listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    offerUpdate(listeners)
+    expect(offerIsLive()).toBe(true)
+
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
+
+    expect(offerIsLive()).toBe(false)
+    expect(api.appUpdater.downloadUpdate).not.toHaveBeenCalled()
+  })
+})
+
+describe("the download's progress bar (#185)", () => {
+  it("draws a task whose bar follows the update's progress, and completes it when the update lands", () => {
+    const { listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    offerUpdate(listeners)
+    fireEvent.click(screen.getByRole("button", { name: "Update now" }))
+
+    openTasksMenu()
+    expect(screen.getByText("There are no tasks queued!")).toBeTruthy()
+
+    act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 12 }))
+
+    expect(screen.queryByText("There are no tasks queued!")).toBeNull()
+    expect(screen.getByText("RiftLauncher 1.7.0-beta.3")).toBeTruthy()
+    expect(screen.getByText("Downloading")).toBeTruthy()
+    expect(progressBar()?.getAttribute("aria-valuenow")).toBe("12")
+
+    act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 68 }))
+    expect(progressBar()?.getAttribute("aria-valuenow")).toBe("68")
+
+    // The downloaded event is what completes the task, so a last tick under
+    // 100 cannot leave the bar running for ever.
+    fireDownloaded(listeners)
+
+    expect(progressBar()).toBeNull()
+    expect(screen.getByText("RiftLauncher 1.7.0-beta.3")).toBeTruthy()
+  })
+
+  it("completes the task on a final tick of 100 as well", () => {
+    const { listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    offerUpdate(listeners)
+    fireEvent.click(screen.getByRole("button", { name: "Update now" }))
+    openTasksMenu()
+
+    act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 30 }))
+    act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 100 }))
+
+    expect(progressBar()).toBeNull()
+  })
+
+  it("shows the restart affordance once the update is downloaded, and restarts when it is taken", () => {
+    const { api, listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    fireDownloaded(listeners)
+    act(() => {
+      vi.advanceTimersByTime(2_000)
+    })
+
+    const toast = screen.getByText("Update downloaded successfully! Click here to restart RiftLauncher and update it!")
+    fireEvent.click(toast)
+
+    expect(api.appUpdater.updateAndRestart).toHaveBeenCalledTimes(1)
+  })
+
+  it("fails the task when the download errors, instead of freezing the bar where it died", () => {
+    const { listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    offerUpdate(listeners)
+    fireEvent.click(screen.getByRole("button", { name: "Update now" }))
+
+    openTasksMenu()
+    act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 47 }))
+    expect(progressBar()?.getAttribute("aria-valuenow")).toBe("47")
+
+    act(() => listeners.error?.())
+
+    expect(progressBar()).toBeNull()
+    expect(screen.getByText("An error has occurred during the process!")).toBeTruthy()
+  })
+
+  it("keeps one task for the whole download, however many ticks arrive", () => {
+    const { listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    offerUpdate(listeners)
+    fireEvent.click(screen.getByRole("button", { name: "Update now" }))
+    openTasksMenu()
+
+    for (const progress of [3, 17, 41, 82]) {
+      act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress }))
+    }
+
+    expect(screen.getAllByText("RiftLauncher 1.7.0-beta.3")).toHaveLength(1)
+    expect(progressBar()?.getAttribute("aria-valuenow")).toBe("82")
+  })
+
+  it("still names the task when the feed gave no version to name it with", () => {
+    const { listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    openTasksMenu()
+    act(() => listeners.progress?.({ version: "", progress: 25 }))
+
+    expect(screen.getByText("RiftLauncher")).toBeTruthy()
+    expect(progressBar()?.getAttribute("aria-valuenow")).toBe("25")
+  })
+
+  it("unsubscribes from every updater channel when the providers unmount", () => {
+    const unsubscribe = vi.fn()
+    installUpdaterApi(unsubscribe)
+
+    const { unmount } = renderUpdateSurfaces()
+    unmount()
+
+    // Two from NotificationsProvider (available, downloaded) and three from
+    // TaskProvider (progress, downloaded, error).
+    expect(unsubscribe).toHaveBeenCalledTimes(5)
+  })
+})

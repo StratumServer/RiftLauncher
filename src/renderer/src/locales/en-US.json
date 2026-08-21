@@ -334,6 +334,7 @@
       "infoAndHelpDesc": "RiftLauncher help and info"
     },
     "tasksMenu": {
+      "title": "Tasks",
       "downloading": "Downloading",
       "extracting": "Extracting",
       "compressing": "Compressing",
@@ -348,7 +349,7 @@
   "notifications": {
     "body": {
       "folderDoesntExists": "The folder you're trying to open does not exists!",
-      "updateAvailable": "New update available! Downloading...",
+      "updateAvailableConsent": "RiftLauncher {{version}} is available. Do you want to download it now?",
       "updateDownloaded": "Update downloaded successfully! Click here to restart RiftLauncher and update it!",
       "downloading": "Starting download: {{downloadName}}!",
       "downloaded": "Finished download: {{downloadName}}!",
@@ -375,6 +376,10 @@
       "noFileSelected": "No file selected!",
       "coulndtCopyIcon": "That icon couldn't be copied to the icons folder!",
       "appClosePrevented": "You can't close RiftLauncher either because you're playing Vintage Story or because there's a task in progress!"
+    },
+    "actions": {
+      "updateNow": "Update now",
+      "notNow": "Not now"
     },
     "discard": "Discard notification"
   },

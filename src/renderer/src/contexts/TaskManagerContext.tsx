@@ -1,8 +1,9 @@
-import React, { createContext, useReducer, useContext, useEffect } from "react"
+import React, { createContext, useReducer, useContext, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { v4 as uuidv4 } from "uuid"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { LAUNCHER_UPDATE_TASK_ID, launcherUpdateName } from "@renderer/utils/launcherUpdateTask"
 
 export interface TaskType {
   id: string
@@ -163,6 +164,16 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
 
   const [tasks, tasksDispatch] = useReducer(taskReducer, initialState)
 
+  /**
+   * Whether the launcher-update task has been added to the list yet. The
+   * update download is the one task nothing in the renderer starts, so there
+   * is no call site to add it from: the first progress tick to arrive is what
+   * creates it, and every tick after that updates it. A ref, not state,
+   * because the listener below is subscribed once and must not be resubscribed
+   * to see the flag change.
+   */
+  const launcherUpdateTaskAdded = useRef(false)
+
   useEffect((): (() => void) => {
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for download progress.`)
     const removeDownloadProgressListener = window.api.pathsManager.onDownloadProgress(({ id, progress }) => {
@@ -182,10 +193,42 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
 
+    // The launcher's own update (#185). It gets a task like any other download
+    // so it draws the same progress bar, in the same list, rather than a
+    // one-off widget that only ever appears for this one case.
+    window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for launcher update progress.`)
+    const removeUpdateProgressListener = window.api.appUpdater.onUpdateDownloadProgress(({ version, progress }) => {
+      if (!launcherUpdateTaskAdded.current) {
+        launcherUpdateTaskAdded.current = true
+        return tasksDispatch({
+          type: ACTIONS.ADD_TASK,
+          payload: { id: LAUNCHER_UPDATE_TASK_ID, name: launcherUpdateName(version), desc: launcherUpdateName(version), type: "download", progress, status: "in-progress" }
+        })
+      }
+      if (progress >= 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id: LAUNCHER_UPDATE_TASK_ID, updates: COMPLETED } })
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id: LAUNCHER_UPDATE_TASK_ID, updates: { progress, status: "in-progress" } } })
+    })
+
+    // What actually completes the task, the same way a resolved downloadOnPath
+    // does for every flow below: a last tick under 100 must not leave the
+    // update showing as still running.
+    const removeUpdateDownloadedListener = window.api.appUpdater.onUpdateDownloaded(() => {
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id: LAUNCHER_UPDATE_TASK_ID, updates: COMPLETED } })
+    })
+
+    // A check that failed before any offer was made lands here too, on a task
+    // that does not exist; the reducer's missing-id arm makes that a no-op.
+    const removeUpdateErrorListener = window.api.appUpdater.onUpdateError(() => {
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id: LAUNCHER_UPDATE_TASK_ID, updates: { status: "failed" } } })
+    })
+
     return () => {
       removeDownloadProgressListener()
       removeExtractProgressListener()
       removeCompressProgressListener()
+      removeUpdateProgressListener()
+      removeUpdateDownloadedListener()
+      removeUpdateErrorListener()
     }
   }, [])
 

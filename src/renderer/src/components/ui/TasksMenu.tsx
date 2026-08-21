@@ -35,7 +35,10 @@ function TasksMenu(): JSX.Element {
     <Popover className="relative">
       {({ open }) => (
         <>
-          <PopoverButton className="w-8 h-8 aspect-square flex items-center justify-center gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer">
+          <PopoverButton
+            title={t("components.tasksMenu.title")}
+            className="w-8 h-8 aspect-square flex items-center justify-center gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer"
+          >
             <PiDownloadDuotone />
           </PopoverButton>
 
@@ -74,7 +77,14 @@ function TasksMenu(): JSX.Element {
                               )}
                             </div>
                             {task.status === "in-progress" && (
-                              <div className="w-full h-1 bg-zinc-900 rounded-full">
+                              <div
+                                className="w-full h-1 bg-zinc-900 rounded-full"
+                                role="progressbar"
+                                aria-label={task.desc || t(NAME_BY_TYPE[task.type])}
+                                aria-valuenow={task.progress}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                              >
                                 <motion.div
                                   className={`h-full bg-vs rounded-full`}
                                   initial={{ width: `${task.progress}%` }}

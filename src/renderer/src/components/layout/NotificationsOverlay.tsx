@@ -54,8 +54,29 @@ function NotificationsOverlay(): JSX.Element {
           >
             <div className="flex items-center gap-2 text-start">
               <span className={clsx("text-4xl p-1 rounded-full", FONT_COLOR_TYPES[type])}>{ICON_TYPES[type]}</span>
-              <div className="flex flex-col items-start justify-center">
+              <div className="flex flex-col items-start justify-center gap-2">
                 <p className="text-xs text-zinc-400">{body}</p>
+                {options?.actions && options.actions.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {options.actions.map((action) => (
+                      <NormalButton
+                        key={action.label}
+                        className="px-2 py-1 text-xs bg-zinc-800/60 border border-zinc-400/10 hover:bg-zinc-700/60"
+                        title={action.label}
+                        onClick={(e) => {
+                          // Without this the click also reaches the toast's own
+                          // onClick above, which would run the notification's
+                          // generic action on the way past.
+                          e.stopPropagation()
+                          action.onClick?.()
+                          removeNotification(id)
+                        }}
+                      >
+                        {action.label}
+                      </NormalButton>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <NormalButton
