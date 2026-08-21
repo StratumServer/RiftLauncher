@@ -186,6 +186,7 @@
       "modTaskName": "{{name}} Mod {{version}} on {{out}}",
       "modDownloadDesc": "Downloading {{name}} Mod {{version}} on {{out}}!",
       "installationPopupDesc": "List of versions of the {{modName}} Mod",
+      "versionsLoadFailed": "This Mod's version list couldn't be loaded. Check your connection and try again.",
       "manageMods": "Manage Mods",
       "noModsInstalled": "You've no mods installed here! You can install some on the <link /> page!",
       "noModsFound": "No Mods found!",
