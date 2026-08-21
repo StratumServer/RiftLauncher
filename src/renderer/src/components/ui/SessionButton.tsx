@@ -55,7 +55,10 @@ function SessionButton(): JSX.Element {
 
       await saveLogin(result.account)
     } catch {
-      addNotification(t("features.config.invalidEmailPass"), "error")
+      // A throw here means the request never produced a verdict (network down,
+      // firewall, service unreachable): the credentials were never judged, so
+      // saying they were wrong sends the user to reset a working password.
+      addNotification(t("features.config.loginUnreachable"), "error")
     } finally {
       setPassword("")
       setTwofacode("")
@@ -65,7 +68,7 @@ function SessionButton(): JSX.Element {
 
   async function handleLogout(): Promise<void> {
     const loggedOut = await logout()
-    if (!loggedOut) return addNotification(t("features.config.invalidEmailPass"), "error")
+    if (!loggedOut) return addNotification(t("features.config.logoutFailed"), "error")
     configDispatch({ type: CONFIG_ACTIONS.SET_ACCOUNT, payload: null })
     addNotification(t("features.config.loggedout"), "success")
     setLogOutOpen(false)
