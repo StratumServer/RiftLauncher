@@ -102,12 +102,15 @@ describe("interpretFirstPass", () => {
   })
 
   it("reads a refused login as bad credentials", () => {
-    assert.deepEqual(interpretFirstPass(EMAIL, refusalBody("invalidemailorpassword"), { twoFactorCodeProvided: false }), { status: "bad-credentials" })
+    assert.deepEqual(interpretFirstPass(EMAIL, refusalBody("invalidemailorpassword"), { twoFactorCodeProvided: false }), { status: "bad-credentials", serverReason: "invalidemailorpassword" })
   })
 
   it("collapses every refusal it does not name into bad credentials, lockouts included", () => {
     for (const reason of ["accountlocked", "toomanyattempts", "", null, 7]) {
-      assert.deepEqual(interpretFirstPass(EMAIL, refusalBody(reason), { twoFactorCodeProvided: true }), { status: "bad-credentials" }, `reason ${String(reason)}`)
+      // serverReason carries the service's own string verbatim so the host can
+      // log which refusal was collapsed; a non-string reason normalizes to "".
+      const expectedReason = typeof reason === "string" ? reason : ""
+      assert.deepEqual(interpretFirstPass(EMAIL, refusalBody(reason), { twoFactorCodeProvided: true }), { status: "bad-credentials", serverReason: expectedReason }, `reason ${String(reason)}`)
     }
   })
 
@@ -115,7 +118,7 @@ describe("interpretFirstPass", () => {
     for (const valid of [0, "0", false]) {
       assert.deepEqual(
         interpretFirstPass(EMAIL, JSON.stringify({ valid, reason: "invalidemailorpassword" }), { twoFactorCodeProvided: false }),
-        { status: "bad-credentials" },
+        { status: "bad-credentials", serverReason: "invalidemailorpassword" },
         `valid ${String(valid)}`
       )
     }
@@ -141,11 +144,11 @@ describe("interpretSecondPass", () => {
   it("does not ask for a third request when the service repeats requiretotpcode", () => {
     const verdict = interpretSecondPass(EMAIL, refusalBody("requiretotpcode", { prelogintoken: "fake-prelogin-token" }))
 
-    assert.deepEqual(verdict, { status: "bad-credentials" })
+    assert.deepEqual(verdict, { status: "bad-credentials", serverReason: "requiretotpcode" })
   })
 
   it("reads any other refusal as bad credentials", () => {
-    assert.deepEqual(interpretSecondPass(EMAIL, refusalBody("invalidemailorpassword")), { status: "bad-credentials" })
+    assert.deepEqual(interpretSecondPass(EMAIL, refusalBody("invalidemailorpassword")), { status: "bad-credentials", serverReason: "invalidemailorpassword" })
   })
 })
 
