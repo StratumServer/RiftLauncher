@@ -297,8 +297,17 @@ app.whenReady().then(async () => {
     // promise, so the two calls now do exactly the same thing. Saying
     // checkForUpdates keeps that honest, and leaves no second, OS-level
     // announcement racing the in-app one the renderer draws.
+    //
+    // The catch is not optional. Launching a packaged build with no network at
+    // all rejects this promise, and an unhandled rejection in the main process
+    // is a crash report waiting to happen for what is an entirely ordinary
+    // situation. electron-updater's own "error" event still fires, so the
+    // renderer hears about it the usual way; this only keeps the rejection of
+    // that same failure from going nowhere.
     const updateCheckTimer = setTimeout(() => {
-      void autoUpdater.checkForUpdates()
+      void autoUpdater.checkForUpdates().catch((error) => {
+        logMessage("info", `[back] [index] [main/index.ts] [whenReady] Update check failed: ${error instanceof Error ? error.message : String(error)}.`)
+      })
     }, 5_000)
     updateCheckTimer.unref()
   } else {

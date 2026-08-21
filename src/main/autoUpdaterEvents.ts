@@ -1,7 +1,7 @@
 import { autoUpdater } from "electron-updater"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
-import { markUpdateAvailable, markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
+import { markUpdateAvailable, markUpdateDownloaded, resetUpdateDownload } from "@src/ipc/handlers/appUpdaterHandlers"
 
 /** Sends one main-to-renderer message, or does nothing when there is no live window to send it to. */
 export type SendToRenderer = (channel: string, payload?: unknown) => void
@@ -58,7 +58,14 @@ export function registerAutoUpdaterEvents(send: SendToRenderer): void {
   // frozen at whatever percentage it reached. A failed check (no window of
   // consent open yet) forwards too, and lands on a task that is not there,
   // which the renderer's reducer treats as a no-op.
+  //
+  // The reset is what makes a second attempt possible without relaunching:
+  // the re-entrancy guard would otherwise still think a download is in flight
+  // and refuse the retry the renderer is about to offer. Doing it from the
+  // event rather than relying on downloadUpdate's rejection covers the failures
+  // electron-updater reports through the event alone.
   autoUpdater.on("error", () => {
+    resetUpdateDownload()
     send(IPC_CHANNELS.APP_UPDATER.UPDATE_ERROR)
   })
 }

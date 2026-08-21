@@ -135,6 +135,33 @@ describe("DOWNLOAD_UPDATE", () => {
     assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
   })
 
+  it("lets a later accept through once a failed download has been reset", async () => {
+    const handlers = await loadHandlers()
+    handlers.markUpdateAvailable()
+    const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
+
+    // What the updater's error event calls, so the retry the renderer puts on
+    // screen after a failed download is one the main process will honour.
+    handlers.resetUpdateDownload()
+    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+
+    assert.equal(mockState.downloadUpdate.mock.calls.length, 2)
+  })
+
+  it("does not let a reset stand in for an offer that was never made", async () => {
+    const handlers = await loadHandlers()
+    handlers.resetUpdateDownload()
+    const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+
+    assert.equal(mockState.downloadUpdate.mock.calls.length, 0)
+  })
+
   it("lets a later accept through when the download itself failed", async () => {
     mockState.downloadUpdate.mockImplementationOnce(() => Promise.reject(new Error("connection reset")))
 
