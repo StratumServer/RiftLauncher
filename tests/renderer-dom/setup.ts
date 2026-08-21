@@ -1,7 +1,14 @@
 // Runs once per test file in the renderer-dom Vitest project (jsdom
 // environment only -- the node project never loads this file).
-import { afterEach } from "vitest"
+import { afterEach, beforeEach } from "vitest"
 import { cleanup } from "@testing-library/react"
+import { clearQueryCache } from "@renderer/features/mods/hooks/useQueryMods"
+
+// useQueryMods keeps its result cache at module scope. Reset it for every
+// renderer-dom test so one file cannot leak a cached response into another.
+beforeEach(() => {
+  clearQueryCache()
+})
 
 // jsdom does not implement matchMedia. motion/react (framer-motion) reads it
 // to resolve the user's reduced-motion preference on every mount.
