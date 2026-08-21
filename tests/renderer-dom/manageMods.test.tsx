@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen, waitFor, within } from "@testing-library/react"
+import { cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
@@ -89,7 +89,7 @@ function queryModDb(url: string): Promise<string> {
  * to gate mounting behind the Installations being in context, because the scan effect now re-runs
  * once the config's loaded state flips (#58).
  */
-function renderManageMods(overrides: WindowApiOverrides = {}): void {
+function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof renderWithProviders> {
   installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
     modsManager: { getInstalledMods: vi.fn(async () => aModScan()) },
@@ -97,7 +97,7 @@ function renderManageMods(overrides: WindowApiOverrides = {}): void {
     ...overrides
   })
 
-  renderWithProviders(
+  return renderWithProviders(
     <Routes>
       <Route
         path="/installations/mods/:id"
@@ -191,5 +191,18 @@ describe("ManageMods", () => {
     // Gamma had no compatible update, so the bulk run never touched it.
     expect(downloadOnPath).toHaveBeenCalledTimes(2)
     expect(deletePath.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([ALPHA_PATH, BETA_PATH]))
+  })
+
+  it("clears the mod icon memory cache when leaving the page", async () => {
+    const rendered = renderManageMods()
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    const clearCache = window.api.modsManager.clearModIconMemoryCache
+    expect(clearCache).not.toHaveBeenCalled()
+
+    rendered.unmount()
+    expect(clearCache).toHaveBeenCalledTimes(1)
+
+    cleanup()
   })
 })

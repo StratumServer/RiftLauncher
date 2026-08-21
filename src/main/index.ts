@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, protocol, net, session, Menu } from "electron"
+import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain } from "electron"
 import { dirname, join } from "node:path"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import { autoUpdater } from "electron-updater"
@@ -15,7 +15,7 @@ import icon from "../../resources/icon.png?asset"
 import { logMessage } from "@src/utils/logManager"
 import { createUpdaterLogger } from "@src/utils/updaterLogger"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
-import { registerTrustedWebContents } from "@src/ipc/ipcSecurity"
+import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
@@ -23,6 +23,7 @@ import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
+import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
 import fse from "fs-extra"
 
 import "@src/ipc"
@@ -48,6 +49,8 @@ let mainWindow: BrowserWindow
 const modIconMemoryCache = new IconMemoryCache()
 const packagedRendererPath = join(__dirname, "../renderer/index.html")
 const packagedRendererRoot = dirname(packagedRendererPath)
+
+ipcMain.on(IPC_CHANNELS.MODS_MANAGER.CLEAR_MOD_ICON_MEMORY_CACHE, createClearModIconMemoryCacheHandler(modIconMemoryCache, isTrustedIpcSender))
 
 if (!is.dev) {
   protocol.registerSchemesAsPrivileged([
@@ -316,6 +319,7 @@ app.on("window-all-closed", () => {
   }
 
   logMessage("info", "[back] [index] [main/index.ts] [window-all-closed] All windows closed.")
+  clearModIconMemoryCache(modIconMemoryCache)
   if (process.platform !== "darwin") {
     app.quit()
   }

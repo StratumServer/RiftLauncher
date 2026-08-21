@@ -19,6 +19,7 @@ export const MOD_ICON_MEMORY_CACHE_MAX_BYTES = 16 * 1024 * 1024
 export class IconMemoryCache {
   private readonly entries = new Map<string, Buffer>()
   private totalBytes = 0
+  private clearGeneration = 0
 
   constructor(private readonly maxBytes: number = MOD_ICON_MEMORY_CACHE_MAX_BYTES) {}
 
@@ -34,8 +35,11 @@ export class IconMemoryCache {
   }
 
   set(key: string, bytes: Buffer): void {
-    const existing = this.entries.get(key)
-    if (existing) this.totalBytes -= existing.length
+    this.remove(key)
+
+    // A single icon larger than the whole budget must not remain in the cache by
+    // itself, and replacing an existing key with one must not retain the old entry.
+    if (bytes.length > this.maxBytes) return
 
     this.entries.set(key, bytes)
     this.totalBytes += bytes.length
@@ -59,6 +63,19 @@ export class IconMemoryCache {
   clear(): void {
     this.entries.clear()
     this.totalBytes = 0
+    this.clearGeneration += 1
+  }
+
+  get generation(): number {
+    return this.clearGeneration
+  }
+
+  private remove(key: string): void {
+    const existing = this.entries.get(key)
+    if (!existing) return
+
+    this.entries.delete(key)
+    this.totalBytes -= existing.length
   }
 }
 
@@ -72,7 +89,8 @@ export async function readIconWithMemoryCache(cache: IconMemoryCache, key: strin
   const cached = cache.get(key)
   if (cached) return cached
 
+  const generation = cache.generation
   const bytes = await readBytes()
-  cache.set(key, bytes)
+  if (cache.generation === generation) cache.set(key, bytes)
   return bytes
 }

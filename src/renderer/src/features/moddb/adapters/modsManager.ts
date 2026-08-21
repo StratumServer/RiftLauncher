@@ -10,3 +10,7 @@ export function fetchInstalledMods(path: string): Promise<{ mods: InstalledModTy
 export function exportModpackArchive(manifest: ModpackManifestType): Promise<{ success: boolean; path?: string }> {
   return window.api.modsManager.exportModpack(manifest)
 }
+
+export function clearModIconMemoryCache(): void {
+  window.api.modsManager.clearModIconMemoryCache()
+}
