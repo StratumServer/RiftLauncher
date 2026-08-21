@@ -1,22 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import ListMods from "@renderer/features/mods/pages/ListMods"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
-import { clearQueryCache } from "@renderer/features/mods/hooks/useQueryMods"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
-
-// useQueryMods' cache is shared across every ListMods instance on purpose (see its own
-// comment), which means it also outlives a single `it()` here unless cleared: without this,
-// a test asserting on a fresh query can silently get another test's cached result instead of
-// ever calling its own queryURL mock.
-beforeEach(() => {
-  clearQueryCache()
-})
 
 /** One `/api/mods` entry, just enough of the shape parseModListResponse and ListMods both read. */
 const MOD_RESPONSE = {
