@@ -62,6 +62,10 @@ async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
     case "two-factor-rejected":
       return twoFactorRejectedResult()
     case "bad-credentials":
+      // The toast collapses every refusal into "invalid email or password"; the
+      // service's own reason string is the only way to tell a real credential
+      // mismatch from anything else it may refuse for. Server enum, never user data.
+      logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] Service refused the login, reason: "${verdict.serverReason}".`)
       return badCredentialsResult()
     case "unreadable-response": {
       const outcome = unexpectedResponseOutcome(verdict)
