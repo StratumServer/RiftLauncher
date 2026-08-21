@@ -61,7 +61,7 @@ describe("decodeLzma1", () => {
     // decoder has to stop when its input stops.
     const decoded = decodeLzma1(alone.subarray(0, 5), alone.subarray(13), 64 * 1024 * 1024)
 
-    expect(decoded.length).toBe(expected.length)
+    expect(decoded).toHaveLength(expected.length)
     expect(Buffer.from(decoded).equals(expected)).toBe(true)
   })
 
@@ -119,7 +119,7 @@ describe("decodeLzma1", () => {
 
     const decoded = decodeLzma1(large.subarray(0, 5), large.subarray(13), 64 * 1024 * 1024)
 
-    expect(decoded.length).toBe(expectedLarge.length)
+    expect(decoded).toHaveLength(expectedLarge.length)
     expect(Buffer.from(decoded).equals(expectedLarge)).toBe(true)
   })
 })
@@ -131,7 +131,7 @@ describe("Lzma2Decoder", () => {
     // Preset 6 asks for an 8 MiB dictionary, which the format names with 22.
     const decoded = await decodeLzma2(readFixture("sample.lzma2"), 22)
 
-    expect(decoded.length).toBe(expected.length)
+    expect(decoded).toHaveLength(expected.length)
     expect(Buffer.from(decoded).equals(expected)).toBe(true)
   })
 
@@ -253,7 +253,7 @@ describe("Lzma2Decoder", () => {
     const expectedLarge = Buffer.from(lzmaLargeSampleText(), "utf8")
     const decoded = await decodeLzma2(readFixture("sample-large.lzma2"), 22)
 
-    expect(decoded.length).toBe(expectedLarge.length)
+    expect(decoded).toHaveLength(expectedLarge.length)
     expect(Buffer.from(decoded).equals(expectedLarge)).toBe(true)
   })
 
@@ -263,7 +263,7 @@ describe("Lzma2Decoder", () => {
     // the ring underneath has to wrap around dozens of times to produce it.
     const decoded = await decodeLzma2(readFixture("sample-small-dict.lzma2"), 0)
 
-    expect(decoded.length).toBe(expectedLarge.length)
+    expect(decoded).toHaveLength(expectedLarge.length)
     expect(Buffer.from(decoded).equals(expectedLarge)).toBe(true)
   })
 
@@ -276,7 +276,7 @@ describe("Lzma2Decoder", () => {
     // `xz` preset 1 for.
     const decoded = await decodeLzma2(readFixture("sample-mixed.lzma2"), 16)
 
-    expect(decoded.length).toBe(expected.length)
+    expect(decoded).toHaveLength(expected.length)
     expect(Buffer.from(decoded).equals(expected)).toBe(true)
   })
 
@@ -295,7 +295,7 @@ describe("Lzma2Decoder", () => {
     const decoded = await decodeLzma2(doubled, 22)
     const once = Buffer.from(lzmaSampleText(), "utf8")
 
-    expect(decoded.length).toBe(once.length * 2)
+    expect(decoded).toHaveLength(once.length * 2)
     expect(Buffer.from(decoded.subarray(0, once.length)).equals(once)).toBe(true)
     expect(Buffer.from(decoded.subarray(once.length)).equals(once)).toBe(true)
   })
@@ -307,7 +307,7 @@ describe("Lzma2Decoder", () => {
 
     const decoded = await decodeLzma2(readFixture("sample-leading-random.lzma2"), 16)
 
-    expect(decoded.length).toBe(expected.length)
+    expect(decoded).toHaveLength(expected.length)
     expect(Buffer.from(decoded).equals(expected)).toBe(true)
   })
 })

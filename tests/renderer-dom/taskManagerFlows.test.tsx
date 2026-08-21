@@ -143,7 +143,7 @@ describe("progress event handling", () => {
       void result.current.task.startDownload("Name", "desc", "none", "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
     expect(result.current.task.tasks[0]!.status).toBe("pending")
 
@@ -190,7 +190,7 @@ describe("progress event handling", () => {
       void result.current.task.startExtract("Name", "desc", "none", "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 50 }))
@@ -231,7 +231,7 @@ describe("progress event handling", () => {
       void result.current.task.startCompress("Name", "desc", "none", "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 10 }))
@@ -282,7 +282,7 @@ describe("completion driven by the resolved operation", () => {
       void result.current.task.startDownload("Name", "desc", "none", "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 97 }))
@@ -319,7 +319,7 @@ describe("completion driven by the resolved operation", () => {
       void result.current.task.startExtract("Name", "desc", "none", "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 97 }))
@@ -355,7 +355,7 @@ describe("completion driven by the resolved operation", () => {
       void result.current.task.startCompress("Name", "desc", "none", "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 97 }))
@@ -407,7 +407,7 @@ describe("completion driven by the resolved operation", () => {
       void result.current.task.startDownload("Name", "desc", "none", "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 100 }))
@@ -448,7 +448,7 @@ describe("completion driven by the resolved operation", () => {
       void result.current.task.startDownload("Name", "desc", "all", "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 62 }))
@@ -635,10 +635,10 @@ describe("removeTask", () => {
       void result.current.task.startDownload("Name", "desc", "none", "https://x", "/tmp/out", "file.zip", vi.fn())
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const id = result.current.task.tasks[0]!.id
 
     act(() => result.current.task.removeTask(id))
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(0))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(0))
   })
 })
