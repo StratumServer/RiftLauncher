@@ -195,6 +195,7 @@ function ListMods(): JSX.Element {
                   <InstallModPopup
                     modToInstall={modToUpdate?.modid || null}
                     setModToInstall={() => setModToUpdate(null)}
+                    modName={modToUpdate?.name}
                     installation={{
                       installation: installation,
                       oldMod: installedMods.find((iMod) => iMod.modid === modToUpdate?.modid)

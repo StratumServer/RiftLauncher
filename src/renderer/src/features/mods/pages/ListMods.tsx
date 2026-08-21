@@ -283,6 +283,7 @@ function ListMods(): JSX.Element {
         <InstallModPopup
           modToInstall={modToInstall?.modid || null}
           setModToInstall={() => setModToInstall(null)}
+          modName={modToInstall?.name}
           installation={
             installation && {
               installation: installation,
