@@ -76,6 +76,15 @@ const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
  * spawn a 7-Zip subprocess and compete for the same CPU cores, so the resource that
  * actually needs bounding is "concurrent 7-Zip processes", not "concurrent extractions"
  * and "concurrent compressions" separately.
+ *
+ * RUN_INSTALLER's payload read shares that lane too, even though it spawns no 7-Zip. What
+ * it does instead is decode the installer's LZMA2 payload with the plain-TypeScript decoder
+ * in src/domain/inno and CRC32 every chunk on the way through, so it saturates a core inside
+ * its worker thread for the whole read (41 seconds for a 598 MB installer, per
+ * WORKER_TIMEOUTS_MS above). Read the limit as "concurrent CPU-bound archive readers" rather
+ * than "concurrent 7-Zip processes" and it clearly belongs: an install starting while two mod
+ * extractions were already running used to put three of those on the machine at once, against
+ * a bound written to allow two.
  */
 const DOWNLOAD_CONCURRENCY_LIMIT = 3
 const ARCHIVE_CONCURRENCY_LIMIT = 2
@@ -103,7 +112,9 @@ app.on("before-quit", () => {
  * behind them, so pooling either would buy one saved worker spawn per game install and pay
  * for it with a resident idle isolate. They still go through the pooled protocol below so
  * there is only one worker protocol in the app; 0 just means every release terminates,
- * exactly like before this file started pooling anything.
+ * exactly like before this file started pooling anything. RUN_INSTALLER joining the archive
+ * lane leaves those sums alone for the same reason: at 0 it never contributes an idle worker
+ * to weigh against the two-slot limit.
  */
 const WORKER_POOL_MAX_IDLE: Record<string, number> = {
   DOWNLOAD_ON_PATH: DOWNLOAD_CONCURRENCY_LIMIT,
@@ -421,6 +432,22 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, async (event, id: strin
 /**
  * Reads the game out of the installer instead of running it.
  *
+ * Bounded by archiveConcurrency, the same lane EXTRACT_ON_PATH and COMPRESS_ON_PATH
+ * queue in: this decodes an LZMA2 stream in a worker thread and is the same kind of
+ * CPU-bound archive reading their limit exists to cap.
+ *
+ * Queueing here is safe with respect to the read's own timeout. ConcurrencyLimiter.run
+ * awaits acquire() before it ever calls the task, and runTrackedWorker arms its
+ * WORKER_TIMEOUTS_MS bound inside the promise it builds when called, so the clock starts
+ * on the slot and not on the call: time spent waiting in line cannot expire a read that
+ * has not begun. acquireWorker sits inside that same task too, so a queued read holds no
+ * worker thread while it waits, and the wait costs nothing but latency.
+ *
+ * The limiter's own shutdown rejection lands in the catch below and comes back as
+ * `failed`, deliberately not `format-refused`: a queued install caught by before-quit
+ * reports a failed install rather than falling through to spawning a real installer
+ * process while the app is trying to close.
+ *
  * @returns `extracted` or `failed` once the attempt is over, or `format-refused`
  * when the reader declined the file and the caller should run the installer.
  */
@@ -432,27 +459,33 @@ async function extractInstallerPayload(
   shouldDeleteInstaller: boolean
 ): Promise<"extracted" | "failed" | "format-refused"> {
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracting the installer payload instead of running it.`)
-  sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
 
   try {
-    return await runTrackedWorker(
-      event,
-      safeId,
-      IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
-      innoExtractWorker,
-      { filePath: safeFilePath, outputPath: safeOutputPath, deleteInstaller: shouldDeleteInstaller },
-      "RUN_INSTALLER",
-      (message) => {
-        if (message.verdict === "format-refused") {
-          const reason = typeof message.reason === "string" ? message.reason : "no reason given"
-          logMessage("warn", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
-          return "format-refused"
+    return await archiveConcurrency.run(() => {
+      // Inside the slot, not before it: a 0 tick flips TaskManagerContext's task from
+      // "pending" to "in-progress" at 0%, and a read still waiting for a slot has not
+      // started. Pending is what a queued task is supposed to look like.
+      sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
+
+      return runTrackedWorker(
+        event,
+        safeId,
+        IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
+        innoExtractWorker,
+        { filePath: safeFilePath, outputPath: safeOutputPath, deleteInstaller: shouldDeleteInstaller },
+        "RUN_INSTALLER",
+        (message) => {
+          if (message.verdict === "format-refused") {
+            const reason = typeof message.reason === "string" ? message.reason : "no reason given"
+            logMessage("warn", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
+            return "format-refused"
+          }
+          if (message.verdict !== "extracted") throw new Error("Installer payload extraction returned an unknown verdict")
+          logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
+          return "extracted"
         }
-        if (message.verdict !== "extracted") throw new Error("Installer payload extraction returned an unknown verdict")
-        logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
-        return "extracted"
-      }
-    )
+      )
+    })
   } catch (err) {
     logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Installer payload extraction failed.`)
     logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
@@ -466,6 +499,17 @@ async function extractInstallerPayload(
  * Kept for the file this reader cannot follow. Issue #8 is exactly what happens
  * here when the uninstall key is already set, so this is the fallback and not
  * the way in.
+ *
+ * Deliberately outside archiveConcurrency, unlike the payload read above. Three reasons,
+ * in order of weight. It is not the workload that limit describes: this waits on a real
+ * installer process and, for 1.18.15, the bundled .NET runtime sub-installer it launches,
+ * which spend their time in Windows Installer and on the disk rather than pinning a core
+ * on an LZMA2 decode. It only ever runs after the reader returned format-refused and gave
+ * its slot back, so taking a slot here would make a single install queue twice, on the
+ * path that is already the degraded one. And this function resolves rather than rejects on
+ * every outcome, including its own timeout; putting it behind a limiter that rejects
+ * queued work at before-quit would add a rejection out of RUN_INSTALLER that the channel's
+ * InstallerRunResult contract does not have.
  */
 function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath: string, safeOutputPath: string, shouldDeleteInstaller: boolean): Promise<InstallerRunResult> {
   return new Promise((resolvePromise) => {
