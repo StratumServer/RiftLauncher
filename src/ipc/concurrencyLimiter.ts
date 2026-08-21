@@ -102,10 +102,9 @@ export class ConcurrencyLimiter {
   private release(): void {
     this.active--
 
-    // Not redundant with shutdown()'s own drain: an in-flight task rejected by
-    // terminateActiveWorkers lands here *after* shutdown, and dequeuing on its way out is
-    // the precise path that used to start work behind the sweep. Refusing here also makes
-    // the fix independent of before-quit listener ordering.
+    // Defensive hardening for shutdown ordering: shutdown() drains the queue before any
+    // in-flight task can release its slot, so this normally sees no waiter. If another
+    // caller ever changes that ordering, a release after shutdown must still not start work.
     if (this.shuttingDown) return
 
     const next = this.queue.shift()

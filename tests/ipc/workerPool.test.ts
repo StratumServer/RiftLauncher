@@ -194,8 +194,9 @@ describe("WorkerPool", () => {
     const pool = new WorkerPool(() => fakeWorker())
 
     const idleLease = pool.acquire("script.js", 2)
-    idleLease.release("reuse")
     const busyLease = pool.acquire("script.js", 2)
+    assert.notEqual(idleLease.worker, busyLease.worker)
+    idleLease.release("reuse")
 
     pool.terminateAll()
 

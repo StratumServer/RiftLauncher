@@ -95,8 +95,9 @@ app.on("before-quit", () => {
 
 /**
  * How many idle workers of each kind stay warm, waiting for the next task instead of being
- * terminated right away. The invariant: never keep more idle than could be busy at once,
- * which is exactly what the concurrency limits above already decide.
+ * terminated right away. Downloads have their own three-slot lane. Extraction and
+ * compression share a two-slot archive lane but use different worker scripts, so one idle
+ * worker per archive operation keeps the combined idle count within that shared limit.
  *
  * CHANGE_PERMS and RUN_INSTALLER are 0 on purpose. Both run once per install with no burst
  * behind them, so pooling either would buy one saved worker spawn per game install and pay
@@ -106,7 +107,7 @@ app.on("before-quit", () => {
  */
 const WORKER_POOL_MAX_IDLE: Record<string, number> = {
   DOWNLOAD_ON_PATH: DOWNLOAD_CONCURRENCY_LIMIT,
-  EXTRACT_ON_PATH: ARCHIVE_CONCURRENCY_LIMIT,
+  EXTRACT_ON_PATH: 1,
   COMPRESS_ON_PATH: 1,
   CHANGE_PERMS: 0,
   RUN_INSTALLER: 0
