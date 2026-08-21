@@ -21,6 +21,7 @@ import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { IconMemoryCache, readIconWithMemoryCache } from "@domain/mods/iconMemoryCache"
 import fse from "fs-extra"
 
 import "@src/ipc"
@@ -43,6 +44,7 @@ logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${descr
 autoUpdater.logger = createUpdaterLogger()
 
 let mainWindow: BrowserWindow
+const modIconMemoryCache = new IconMemoryCache()
 const packagedRendererPath = join(__dirname, "../renderer/index.html")
 const packagedRendererRoot = dirname(packagedRendererPath)
 
@@ -233,13 +235,26 @@ app.whenReady().then(async () => {
     })
   }
 
-  // Handler for mod icons
+  // Handler for mod icons. Names in this folder are content-addressed (see iconCache.ts's
+  // CONTENT_ADDRESSED_NAME), so a hit in modIconMemoryCache can never serve stale bytes:
+  // nothing can rewrite a name's content without changing the name. That's what lets this
+  // skip straight to the cached bytes, disk read and net.fetch call both, on a hit.
   protocol.handle("cachemodimg", async (req) => {
     const srcPath = join(app.getPath("userData"), "Cache", "Images", "Mods")
     const filePath = resolveContainedPath(srcPath, new URL(req.url).pathname)
     if (!filePath || !filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
     if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
-    return net.fetch(pathToFileURL(filePath).toString())
+
+    try {
+      const bytes = await readIconWithMemoryCache(modIconMemoryCache, filePath, async () => {
+        const response = await net.fetch(pathToFileURL(filePath).toString())
+        if (!response.ok) throw new Error(`Failed to read icon: ${response.status}`)
+        return Buffer.from(await response.arrayBuffer())
+      })
+      return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "image/png", "Content-Length": String(bytes.length) } })
+    } catch {
+      return new Response(null, { status: 404 })
+    }
   })
 
   // Handler for custom icons

@@ -16,7 +16,7 @@ function InstalledModItem({ iMod, onDeleteClick, onUpdateClick }: { iMod: Instal
 
   return (
     <ListItem key={iMod.modid + iMod.path}>
-      <div className={clsx("h-20 flex gap-4 p-2 justify-between items-center whitespace-nowrap", iMod._updatableTo ? "bg-lime-600/25" : iMod._lastVersion && "bg-yellow-400/25")}>
+      <div className={clsx("h-20 flex gap-4 p-2 justify-between items-center whitespace-nowrap skip-offscreen-render", iMod._updatableTo ? "bg-lime-600/25" : iMod._lastVersion && "bg-yellow-400/25")}>
         <div className="shrink-0">
           {iMod._image ? (
             <img src={`cachemodimg:${iMod._image}`} alt={iMod.name} loading="lazy" className="w-16 h-16 object-cover rounded-sm" />

@@ -1,16 +1,11 @@
-import { parentPort, workerData } from "worker_threads"
-
+import { serveTasks } from "@src/ipc/workers/workerHost"
 import { runDownload } from "@src/ipc/workers/download"
 
-const { url, outputPath, fileName, expectedMd5 } = workerData
-
-runDownload({
-  url,
-  outputPath,
-  fileName,
-  expectedMd5,
-  onProgress: (progress) => parentPort?.postMessage({ type: "progress", progress })
-}).then(
-  (path) => parentPort?.postMessage({ type: "finished", path }),
-  () => parentPort?.postMessage({ type: "error", message: "Download failed" })
+serveTasks(
+  async (payload, onProgress) => {
+    const { url, outputPath, fileName, expectedMd5 } = payload as { url: unknown; outputPath: string; fileName: unknown; expectedMd5?: unknown }
+    const path = await runDownload({ url, outputPath, fileName, expectedMd5, onProgress })
+    return { path }
+  },
+  () => "Download failed"
 )

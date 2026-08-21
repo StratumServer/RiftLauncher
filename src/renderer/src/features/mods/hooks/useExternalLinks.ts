@@ -1,3 +1,5 @@
+import { useCallback } from "react"
+
 import { useExternalLinks as useAppExternalLinks } from "@renderer/hooks/useExternalLinks"
 
 const MODDB_MOD_PAGE_BASE = "https://mods.vintagestory.at/show/mod"
@@ -6,7 +8,7 @@ const MODDB_MOD_PAGE_BASE = "https://mods.vintagestory.at/show/mod"
 export function useExternalLinks(): { openModOnModDb: (assetid: number | string) => void } {
   const { openOnBrowser } = useAppExternalLinks()
 
-  return {
-    openModOnModDb: (assetid: number | string): void => openOnBrowser(`${MODDB_MOD_PAGE_BASE}/${assetid}`)
-  }
+  const openModOnModDb = useCallback((assetid: number | string): void => openOnBrowser(`${MODDB_MOD_PAGE_BASE}/${assetid}`), [openOnBrowser])
+
+  return { openModOnModDb }
 }

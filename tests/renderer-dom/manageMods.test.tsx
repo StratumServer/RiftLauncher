@@ -133,6 +133,12 @@ describe("ManageMods", () => {
     // The unreadable archive is listed by its file name, under its own heading.
     expect(screen.getByText("Mods with errors")).toBeTruthy()
     expect(screen.getByText("broken.zip")).toBeTruthy()
+
+    // A list this long (the installed-mods folder, not the ModDB grid) can also run into the
+    // hundreds, so each row skips layout/paint once scrolled out of view the same way
+    // ModListCard's own content already does.
+    const alphaRow = screen.getByText("Alpha Mod").closest("li")?.firstElementChild
+    expect(alphaRow?.className).toContain("skip-offscreen-render")
   })
 
   it("leaves the Mod on disk until the delete confirm dialog is accepted", async () => {
