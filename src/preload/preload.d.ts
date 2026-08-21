@@ -3,6 +3,16 @@ declare global {
     (payload: { id: string; progress: number }): void
   }
 
+  /** The update the main process found and is offering, before anything has been downloaded. */
+  type UpdateAvailableCallback = {
+    (payload: { version: string; releaseName?: string }): void
+  }
+
+  /** One tick of the accepted launcher update's download, as a whole percentage. */
+  type UpdateProgressCallback = {
+    (payload: { version: string; progress: number }): void
+  }
+
   type Unsubscribe = () => void
 
   type BridgeAPI = {
@@ -16,8 +26,11 @@ declare global {
       onPreventedAppClose: (callback: () => void) => Unsubscribe
     }
     appUpdater: {
-      onUpdateAvailable: (callback: () => void) => Unsubscribe
+      onUpdateAvailable: (callback: UpdateAvailableCallback) => Unsubscribe
+      onUpdateDownloadProgress: (callback: UpdateProgressCallback) => Unsubscribe
+      onUpdateError: (callback: () => void) => Unsubscribe
       onUpdateDownloaded: (callback: () => void) => Unsubscribe
+      downloadUpdate: () => void
       updateAndRestart: () => void
     }
     configManager: {

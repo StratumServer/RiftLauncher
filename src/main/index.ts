@@ -18,7 +18,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
-import { markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
+import { registerAutoUpdaterEvents } from "@src/main/autoUpdaterEvents"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
@@ -285,20 +285,20 @@ app.whenReady().then(async () => {
     linuxPackageType: process.platform === "linux" ? readLinuxPackageType() : undefined
   })
   if (updateDecision.ok) {
-    // If there is an update available send an event to the client.
-    autoUpdater.on("update-available", () => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE)
-    })
-
-    // If there is an update downloaded send an event to the client.
-    autoUpdater.on("update-downloaded", () => {
-      markUpdateDownloaded()
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED)
+    registerAutoUpdaterEvents((channel, payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
     })
 
     // Defer the network check until the initial window has had time to become interactive.
+    //
+    // checkForUpdates, not checkForUpdatesAndNotify: the "AndNotify" half only
+    // ever fires an OS notification off the download promise the check returns,
+    // and with autoDownload off (registerAutoUpdaterEvents) there is no such
+    // promise, so the two calls now do exactly the same thing. Saying
+    // checkForUpdates keeps that honest, and leaves no second, OS-level
+    // announcement racing the in-app one the renderer draws.
     const updateCheckTimer = setTimeout(() => {
-      void autoUpdater.checkForUpdatesAndNotify()
+      void autoUpdater.checkForUpdates()
     }, 5_000)
     updateCheckTimer.unref()
   } else {

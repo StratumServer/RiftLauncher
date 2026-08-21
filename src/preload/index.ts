@@ -26,8 +26,11 @@ const api: BridgeAPI = {
     onPreventedAppClose: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.UTILS.PREVENTED_APP_CLOSE, callback)
   },
   appUpdater: {
-    onUpdateAvailable: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE, callback),
+    onUpdateAvailable: (callback: UpdateAvailableCallback): Unsubscribe => subscribe(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE, callback),
+    onUpdateDownloadProgress: (callback: UpdateProgressCallback): Unsubscribe => subscribe(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOAD_PROGRESS, callback),
+    onUpdateError: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.APP_UPDATER.UPDATE_ERROR, callback),
     onUpdateDownloaded: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED, callback),
+    downloadUpdate: (): void => ipcRenderer.send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE),
     updateAndRestart: () => ipcRenderer.send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART)
   },
   configManager: {
