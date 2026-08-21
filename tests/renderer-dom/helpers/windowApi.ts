@@ -40,6 +40,7 @@ export function createMockConfig(overrides: Partial<ConfigType> = {}): ConfigTyp
     installations: [],
     gameVersions: [],
     favMods: [],
+    suspendedModUpdates: [],
     customIcons: [],
     ...overrides
   }

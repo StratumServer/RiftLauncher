@@ -21,6 +21,9 @@ export enum CONFIG_ACTIONS {
   ADD_FAV_MOD = "ADD_FAV_MOD",
   REMOVE_FAV_MOD = "REMOVE_FAV_MOD",
 
+  ADD_SUSPENDED_MOD_UPDATE = "ADD_SUSPENDED_MOD_UPDATE",
+  REMOVE_SUSPENDED_MOD_UPDATE = "REMOVE_SUSPENDED_MOD_UPDATE",
+
   ADD_CUSTOM_ICON = "ADD_CUSTOM_ICON",
   DELETE_CUSTOM_ICON = "DELETE_CUSTOM_ICON",
 
@@ -144,6 +147,21 @@ export interface RemoveFavMod {
   }
 }
 
+/** Holds one Mod back: Update All skips it until the suspension is lifted. Its own row can still update it. */
+export interface AddSuspendedModUpdate {
+  type: CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE
+  payload: {
+    modid: string
+  }
+}
+
+export interface RemoveSuspendedModUpdate {
+  type: CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE
+  payload: {
+    modid: string
+  }
+}
+
 /**
  * Records that the player has been told about mod updates for one
  * installation, so GlobalModUpdateChecker's de-dupe survives a revisit
@@ -179,6 +197,8 @@ export type ConfigAction =
   | EditGameVersion
   | AddFavMod
   | RemoveFavMod
+  | AddSuspendedModUpdate
+  | RemoveSuspendedModUpdate
   | AddNotifiedModUpdate
 
 /**
@@ -273,6 +293,16 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
         ...config,
         favMods: config.favMods.filter((fm) => fm !== action.payload.modid)
       }
+    case CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE:
+      return {
+        ...config,
+        suspendedModUpdates: [...config.suspendedModUpdates, action.payload.modid]
+      }
+    case CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE:
+      return {
+        ...config,
+        suspendedModUpdates: config.suspendedModUpdates.filter((modid) => modid !== action.payload.modid)
+      }
     case CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE: {
       const notified = config._notifiedModUpdatesInstallations ?? []
       if (notified.includes(action.payload.installationId)) return config
@@ -302,5 +332,6 @@ export const initialState: ConfigType = {
   installations: [],
   gameVersions: [],
   favMods: [],
+  suspendedModUpdates: [],
   customIcons: []
 }

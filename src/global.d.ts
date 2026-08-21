@@ -7,6 +7,15 @@ declare global {
     defaultVersionsFolder: string
     backupsFolder: string
     favMods: number[]
+    /**
+     * Modids (the string id a Mod declares, not the ModDB numeric one) the player has held back:
+     * Update All leaves them alone until the suspension is lifted, one row at a time.
+     *
+     * ponytail: launcher-wide, not per installation. Same shape as favMods, and a modid held at an
+     * older version in one Installation is normally held in every other. Move it onto the
+     * Installation if someone actually needs the two to disagree.
+     */
+    suspendedModUpdates: string[]
     _notifiedModUpdatesInstallations?: string[]
   }
 

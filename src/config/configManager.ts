@@ -24,6 +24,7 @@ const defaultConfig: ConfigType = {
   installations: [],
   gameVersions: [],
   favMods: [],
+  suspendedModUpdates: [],
   customIcons: []
 }
 
@@ -310,6 +311,9 @@ export function normalizeConfig(config: unknown): ConfigType {
     installations,
     gameVersions,
     favMods: Array.isArray(rawConfig.favMods) ? rawConfig.favMods.filter((modId): modId is number => typeof modId === "number" && Number.isSafeInteger(modId)).slice(0, 10_000) : defaultConfig.favMods,
+    suspendedModUpdates: Array.isArray(rawConfig.suspendedModUpdates)
+      ? rawConfig.suspendedModUpdates.filter((modid): modid is string => typeof modid === "string" && modid.length > 0).slice(0, 10_000)
+      : defaultConfig.suspendedModUpdates,
     customIcons
   }
 
