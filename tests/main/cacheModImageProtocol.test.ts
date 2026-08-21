@@ -137,11 +137,22 @@ describe("cachemodimg protocol handler", () => {
     const fetchFile = vi.fn<FetchFile>(async () => new Response(Buffer.from("unexpected")))
     const handler = createHandler(fetchFile)
 
-    for (const path of ["/%2e%2e/outside.png", "/%ZZ.png", "/", "/aa.jpg"]) {
+    for (const path of ["/%2e%2e/outside.png", "/%ZZ.png", "/"]) {
       const response = await handler(request(path))
       assert.equal(response.status, 404, path)
     }
 
+    assert.equal(fetchFile.mock.calls.length, 0)
+  })
+
+  it("rejects a real non-PNG file without fetching it", async () => {
+    const filePath = iconPath("aa.jpg")
+    writeFileSync(filePath, "not an icon")
+    const fetchFile = vi.fn<FetchFile>(async () => new Response(Buffer.from("unexpected")))
+
+    const response = await createHandler(fetchFile)(request("/aa.jpg"))
+
+    assert.equal(response.status, 404)
     assert.equal(fetchFile.mock.calls.length, 0)
   })
 

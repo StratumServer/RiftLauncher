@@ -24,6 +24,7 @@ export function createCacheModImageProtocolHandler({ cache, getUserDataPath, fet
         if (!response.ok) throw new Error(`Failed to read icon: ${response.status}`)
         return Buffer.from(await response.arrayBuffer())
       })
+      // Copy the cached bytes before handing them to Response so a transferred or detached body cannot affect the shared cache Buffer.
       return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "image/png", "Content-Length": String(bytes.length) } })
     } catch {
       return new Response(null, { status: 404 })
