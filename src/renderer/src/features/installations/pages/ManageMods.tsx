@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
@@ -10,6 +10,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useManageInstalledMods } from "@renderer/features/mods/hooks/useManageInstalledMods"
 import { useBulkUpdateMods } from "@renderer/features/mods/hooks/useBulkUpdateMods"
 import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpackImportPicker"
+import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
 
 import { useDeleteInstalledModFile } from "@renderer/features/installations/hooks/useDeleteInstalledModFile"
 import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
@@ -54,6 +55,10 @@ function ListMods(): JSX.Element {
   const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    return (): void => clearModIconMemoryCache()
+  }, [])
 
   const updatableMods = installedMods.filter((iMod) => iMod._updatableTo).sort(byName)
   const incompatibleMods = installedMods.filter((iMod) => !iMod._updatableTo && iMod._lastVersion).sort(byName)

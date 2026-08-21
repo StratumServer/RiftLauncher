@@ -54,6 +54,24 @@ describe("IconMemoryCache", () => {
     assert.equal(cache.size, 1)
   })
 
+  it("does not retain an icon larger than the whole budget", () => {
+    const cache = new IconMemoryCache(10)
+    cache.set("a", Buffer.alloc(11))
+
+    assert.equal(cache.size, 0)
+    assert.equal(cache.bytes, 0)
+  })
+
+  it("removes an existing icon when its replacement is too large", () => {
+    const cache = new IconMemoryCache(10)
+    cache.set("a", Buffer.alloc(5))
+    cache.set("a", Buffer.alloc(11))
+
+    assert.equal(cache.get("a"), undefined)
+    assert.equal(cache.size, 0)
+    assert.equal(cache.bytes, 0)
+  })
+
   it("clear empties the cache", () => {
     const cache = new IconMemoryCache(10)
     cache.set("a", Buffer.alloc(5))
@@ -89,5 +107,37 @@ describe("readIconWithMemoryCache", () => {
     await readIconWithMemoryCache(cache, "/cache/cc.png", readBytes)
 
     assert.equal(readBytes.mock.calls.length, 3)
+  })
+
+  it("does not repopulate the cache after it is cleared during an in-flight read", async () => {
+    const cache = new IconMemoryCache(1_000)
+    let finishRead!: (bytes: Buffer) => void
+    const readBytes = vi.fn(
+      () =>
+        new Promise<Buffer>((resolve) => {
+          finishRead = resolve
+        })
+    )
+
+    const pending = readIconWithMemoryCache(cache, "/cache/aa.png", readBytes)
+    cache.clear()
+    finishRead(Buffer.from("icon bytes"))
+
+    assert.deepEqual(await pending, Buffer.from("icon bytes"))
+    assert.equal(cache.get("/cache/aa.png"), undefined)
+    assert.equal(cache.size, 0)
+  })
+
+  it("repopulates the cache after clear and serves later requests from memory", async () => {
+    const cache = new IconMemoryCache(1_000)
+    const readBytes = vi.fn(async () => Buffer.from("icon bytes"))
+
+    await readIconWithMemoryCache(cache, "/cache/aa.png", readBytes)
+    cache.clear()
+    await readIconWithMemoryCache(cache, "/cache/aa.png", readBytes)
+    await readIconWithMemoryCache(cache, "/cache/aa.png", readBytes)
+
+    assert.equal(readBytes.mock.calls.length, 2)
+    assert.deepEqual(cache.get("/cache/aa.png"), Buffer.from("icon bytes"))
   })
 })

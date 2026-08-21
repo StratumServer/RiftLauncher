@@ -28,6 +28,7 @@ declare global {
       getInstalledMods: (path: string) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }>
       exportModpack: (manifest: ModpackManifestType) => Promise<{ success: boolean; path?: string }>
       importModpack: () => Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }>
+      clearModIconMemoryCache: () => void
     }
     pathsManager: {
       getCurrentUserDataPath: () => Promise<string>
