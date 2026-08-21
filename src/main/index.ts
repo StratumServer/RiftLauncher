@@ -21,7 +21,8 @@ import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
-import { IconMemoryCache, readIconWithMemoryCache } from "@domain/mods/iconMemoryCache"
+import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
+import { createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import fse from "fs-extra"
 
 import "@src/ipc"
@@ -235,27 +236,16 @@ app.whenReady().then(async () => {
     })
   }
 
-  // Handler for mod icons. Names in this folder are content-addressed (see iconCache.ts's
-  // CONTENT_ADDRESSED_NAME), so a hit in modIconMemoryCache can never serve stale bytes:
-  // nothing can rewrite a name's content without changing the name. That's what lets this
-  // skip straight to the cached bytes, disk read and net.fetch call both, on a hit.
-  protocol.handle("cachemodimg", async (req) => {
-    const srcPath = join(app.getPath("userData"), "Cache", "Images", "Mods")
-    const filePath = resolveContainedPath(srcPath, new URL(req.url).pathname)
-    if (!filePath || !filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
-    if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
-
-    try {
-      const bytes = await readIconWithMemoryCache(modIconMemoryCache, filePath, async () => {
-        const response = await net.fetch(pathToFileURL(filePath).toString())
-        if (!response.ok) throw new Error(`Failed to read icon: ${response.status}`)
-        return Buffer.from(await response.arrayBuffer())
-      })
-      return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "image/png", "Content-Length": String(bytes.length) } })
-    } catch {
-      return new Response(null, { status: 404 })
-    }
-  })
+  // Handler for mod icons. Names in this folder are content-addressed, so a hit in
+  // modIconMemoryCache can never serve stale bytes.
+  protocol.handle(
+    "cachemodimg",
+    createCacheModImageProtocolHandler({
+      cache: modIconMemoryCache,
+      getUserDataPath: () => app.getPath("userData"),
+      fetchFile: (url) => net.fetch(url)
+    })
+  )
 
   // Handler for custom icons
   protocol.handle("icons", async (req) => {
@@ -365,15 +355,4 @@ async function saveCurrentWindowState(): Promise<void> {
   }
 
   saveConfig(config)
-}
-
-async function isSafeProtocolFile(filePath: string): Promise<boolean> {
-  try {
-    const stats = await fse.lstat(filePath)
-    if (!stats.isFile() || stats.isSymbolicLink()) return false
-    const realPath = await fse.realpath(filePath)
-    return realPath === filePath || (process.platform === "win32" && realPath.toLowerCase() === filePath.toLowerCase())
-  } catch {
-    return false
-  }
 }
