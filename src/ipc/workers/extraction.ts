@@ -12,12 +12,13 @@
 import Seven from "node-7z"
 import fse from "fs-extra"
 import { createReadStream, mkdtempSync } from "fs"
-import { isAbsolute, join, relative, resolve, sep } from "path"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { tmpdir } from "os"
 import * as tar from "tar"
 
 // Relative so the module stays importable from a plain test run, like validation.ts.
 import { isSafeTarEntryType, isTarGzName } from "../validation"
+import { validateArchive } from "../archiveValidation"
 
 const MAX_ARCHIVE_ENTRIES = 100_000
 const MAX_ARCHIVE_ENTRY_BYTES = 512 * 1024 * 1024
@@ -42,10 +43,10 @@ export function assertNoSymlinkComponents(pathValue: string): void {
   if (fse.lstatSync(current).isSymbolicLink()) throw new Error("Symbolic links are not allowed")
 }
 
-export type ArchiveStats = { entries: number; bytes: number; inodes: Set<string> }
+export type ArchiveStats = { entries: number; bytes: number }
 
 export function validateTree(root: string): ArchiveStats {
-  const stats: ArchiveStats = { entries: 0, bytes: 0, inodes: new Set<string>() }
+  const stats: ArchiveStats = { entries: 0, bytes: 0 }
   const visit = (current: string): void => {
     const entry = fse.lstatSync(current)
     if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) throw new Error("Archive contains an unsafe filesystem entry")
@@ -54,9 +55,11 @@ export function validateTree(root: string): ArchiveStats {
     if (stats.entries > MAX_ARCHIVE_ENTRIES) throw new Error("Archive contains too many entries")
     if (entry.isFile()) {
       if (entry.size > MAX_ARCHIVE_ENTRY_BYTES || stats.bytes + entry.size > MAX_ARCHIVE_TOTAL_BYTES) throw new Error("Archive is too large")
-      const inode = `${entry.dev}:${entry.ino}`
-      if (stats.inodes.has(inode)) throw new Error("Archive contains hard links")
-      stats.inodes.add(inode)
+      // entry.nlink is the OS's own hard-link count, unlike tracking dev:ino pairs by hand:
+      // Windows has reused the same ino for two freshly written, otherwise-unrelated files
+      // during a real install (nlink stayed 1 on both), which turned every install on Windows
+      // into a false "hard links" refusal. nlink is what actually answers the question.
+      if (entry.nlink > 1) throw new Error("Archive contains hard links")
       stats.bytes += entry.size
       return
     }
@@ -231,6 +234,12 @@ export interface ExtractionOptions {
 export async function runExtraction(options: ExtractionOptions): Promise<void> {
   const { filePath, outputPath, deleteArchive, sevenZipBin, onProgress } = options
   let temporaryRoot: string | undefined
+
+  // The first of two validation gates (see archiveValidation.ts's own comment): reads the
+  // archive's table of contents and refuses it, before a single byte is written anywhere,
+  // if it names an entry outside its root, repeats a name, carries a link, or busts the
+  // entry/size bounds.
+  await validateArchive(filePath, sevenZipBin)
 
   try {
     assertNoSymlinkComponents(outputPath)

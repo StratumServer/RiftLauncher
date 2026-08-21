@@ -10,7 +10,8 @@ import {
   FLOAT_ERA_CONFIG_SCHEMA,
   floatMarkerToIntegerSchema,
   MAX_CONFIG_SCHEMA,
-  migrateConfigDocument
+  migrateConfigDocument,
+  stampLinkedOnExternalVersions
 } from "../../../src/domain/config/migrations"
 import type { ConfigMigration } from "../../../src/domain/config/migrations"
 
@@ -140,7 +141,10 @@ describe("migrateConfigDocument on real configs", () => {
     assert.equal(result.outcome, "migrated")
     assert.equal(result.schema, CURRENT_CONFIG_SCHEMA)
     assert.deepEqual(result.detected, { era: "float", schema: FLOAT_ERA_CONFIG_SCHEMA })
-    assert.deepEqual(result.applied, [{ fromSchema: 1, toSchema: 2 }])
+    assert.deepEqual(result.applied, [
+      { fromSchema: 1, toSchema: 2 },
+      { fromSchema: 2, toSchema: 3 }
+    ])
 
     const doc = result.doc as Record<string, unknown>
     assert.equal(doc.schemaVersion, CURRENT_CONFIG_SCHEMA)
@@ -154,7 +158,10 @@ describe("migrateConfigDocument on real configs", () => {
 
     assert.equal(result.outcome, "migrated")
     assert.equal(result.detected.era, "absent")
-    assert.deepEqual(result.doc, { installations: [], favMods: [], schemaVersion: CURRENT_CONFIG_SCHEMA })
+    const doc = result.doc as Record<string, unknown>
+    assert.equal(doc.schemaVersion, CURRENT_CONFIG_SCHEMA)
+    assert.deepEqual(doc.installations, [])
+    assert.deepEqual(doc.favMods, [])
   })
 
   it("leaves a config already at the current schema alone", () => {
@@ -196,9 +203,83 @@ describe("migrateConfigDocument on real configs", () => {
   it("ships exactly the migrations the current schema needs, in order", () => {
     assert.deepEqual(
       CONFIG_MIGRATIONS.map((migration) => [migration.fromSchema, migration.toSchema]),
-      [[FLOAT_ERA_CONFIG_SCHEMA, FIRST_INTEGER_CONFIG_SCHEMA]]
+      [
+        [FLOAT_ERA_CONFIG_SCHEMA, FIRST_INTEGER_CONFIG_SCHEMA],
+        [2, 3]
+      ]
     )
     assert.equal(CONFIG_MIGRATIONS[CONFIG_MIGRATIONS.length - 1]?.toSchema, CURRENT_CONFIG_SCHEMA)
+  })
+})
+
+describe("stampLinkedOnExternalVersions", () => {
+  it("steps from schema 2 to 3", () => {
+    assert.equal(stampLinkedOnExternalVersions.fromSchema, 2)
+    assert.equal(stampLinkedOnExternalVersions.toSchema, 3)
+  })
+
+  it("stamps linked on versions outside the managed folder", () => {
+    const doc = {
+      defaultVersionsFolder: "/home/user/VSLGameVersions",
+      gameVersions: [
+        { version: "1.20.0", path: "/home/user/VSLGameVersions/1.20.0" },
+        { version: "1.19.0", path: "/opt/games/vintagestory" }
+      ]
+    }
+    const result = stampLinkedOnExternalVersions.migrate(doc) as Record<string, unknown>
+    const versions = result.gameVersions as Array<Record<string, unknown>>
+
+    assert.equal(versions[0]!.linked, undefined)
+    assert.equal(versions[1]!.linked, true)
+  })
+
+  it("leaves versions already marked linked alone", () => {
+    const doc = {
+      defaultVersionsFolder: "/home/user/VSLGameVersions",
+      gameVersions: [{ version: "1.19.0", path: "/opt/games/vs", linked: true }]
+    }
+    const result = stampLinkedOnExternalVersions.migrate(doc) as Record<string, unknown>
+    const versions = result.gameVersions as Array<Record<string, unknown>>
+
+    assert.equal(versions[0]!.linked, true)
+  })
+
+  it("treats all versions as external when defaultVersionsFolder is missing", () => {
+    const doc = {
+      gameVersions: [
+        { version: "1.20.0", path: "/home/user/VSLGameVersions/1.20.0" },
+        { version: "1.19.0", path: "/opt/games/vs" }
+      ]
+    }
+    const result = stampLinkedOnExternalVersions.migrate(doc) as Record<string, unknown>
+    const versions = result.gameVersions as Array<Record<string, unknown>>
+
+    assert.equal(versions[0]!.linked, true)
+    assert.equal(versions[1]!.linked, true)
+  })
+
+  it("handles an empty gameVersions array", () => {
+    const doc = { defaultVersionsFolder: "/x", gameVersions: [] }
+    const result = stampLinkedOnExternalVersions.migrate(doc) as Record<string, unknown>
+    assert.deepEqual(result, { defaultVersionsFolder: "/x", gameVersions: [] })
+  })
+
+  it("handles a document with no gameVersions at all", () => {
+    const doc = { defaultVersionsFolder: "/x", installations: [] }
+    const result = stampLinkedOnExternalVersions.migrate(doc) as Record<string, unknown>
+    assert.deepEqual(result.installations, [])
+  })
+
+  it("does not mutate the input document", () => {
+    const version = { version: "1.19.0", path: "/opt/games/vs" }
+    const doc = { defaultVersionsFolder: "/managed", gameVersions: [version] }
+    stampLinkedOnExternalVersions.migrate(doc)
+    assert.equal("linked" in version, false)
+  })
+
+  it("hands back non-objects untouched", () => {
+    assert.equal(stampLinkedOnExternalVersions.migrate(null), null)
+    assert.equal(stampLinkedOnExternalVersions.migrate("config"), "config")
   })
 })
 
@@ -269,5 +350,37 @@ describe("migrateConfigDocument chaining", () => {
   it("has nothing to do when the target is behind an empty migration list", () => {
     const result = migrateConfigDocument({ schemaVersion: 2 }, { migrations: [], targetSchema: 2 })
     assert.equal(result.outcome, "already-current")
+  })
+})
+
+describe("stampLinkedOnExternalVersions boundary checks", () => {
+  it("does not match a sibling-prefix folder as managed", () => {
+    const doc = {
+      defaultVersionsFolder: "C:/Games/VS",
+      gameVersions: [
+        { version: "1.20.0", path: "C:/Games/VS/1.20.0" },
+        { version: "1.21.0", path: "C:/Games/VSCustom/1.21.0" }
+      ]
+    }
+    const result = stampLinkedOnExternalVersions.migrate(doc) as Record<string, unknown>
+    const versions = result.gameVersions as Array<Record<string, unknown>>
+
+    assert.equal(versions[0]!.linked, undefined)
+    assert.equal(versions[1]!.linked, true)
+  })
+
+  it("treats all versions as external when defaultVersionsFolder is empty string", () => {
+    const doc = {
+      defaultVersionsFolder: "",
+      gameVersions: [
+        { version: "1.20.0", path: "/home/user/versions/1.20.0" },
+        { version: "1.19.0", path: "/opt/games/vs" }
+      ]
+    }
+    const result = stampLinkedOnExternalVersions.migrate(doc) as Record<string, unknown>
+    const versions = result.gameVersions as Array<Record<string, unknown>>
+
+    assert.equal(versions[0]!.linked, true)
+    assert.equal(versions[1]!.linked, true)
   })
 })

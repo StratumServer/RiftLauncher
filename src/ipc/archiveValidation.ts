@@ -3,9 +3,17 @@
  *
  * Nothing is written to disk here. An archive that names an entry outside its
  * root, repeats a name, carries a link, or busts the entry and size bounds is
- * refused while it is still just a file, and the extraction worker is never
- * started. The worker validates the extracted tree again in its temporary
- * folder, so this is the first of two gates rather than the only one.
+ * refused while it is still just a file, before the extraction worker
+ * (runExtraction, in workers/extraction.ts) does anything else. The worker
+ * validates the extracted tree again in its own temporary folder once
+ * extraction finishes, so this is the first of two gates rather than the
+ * only one.
+ *
+ * Called from inside the worker rather than from the IPC handler before it
+ * starts one: validateSevenZipArchive's own parse of a `7z l` listing can run
+ * to 100,000 entries over up to 4MB of text, real CPU work that has no
+ * business running on the main process's event loop when a worker thread is
+ * about to exist for this archive regardless.
  *
  * Which reader runs is decided by the file name, which is exactly why the name
  * has to be the real one: a `.tar.gz` saved as `.zip` used to be handed to a

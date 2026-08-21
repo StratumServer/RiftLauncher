@@ -82,6 +82,10 @@ describe("ListMods", () => {
     const modCard = await screen.findByText("Better Ruins", {}, { timeout: 3000 })
     expect(modCard).toBeTruthy()
     expect(screen.getByText("Someone")).toBeTruthy()
+
+    // The ModDB grid can grow into the hundreds on scroll, so its logo image must stay
+    // off the initial paint until it nears the viewport.
+    expect(screen.getByAltText("Better Ruins").getAttribute("loading")).toBe("lazy")
   })
 
   it("shows the no-matching-filters state when the ModDB query comes back empty", async () => {
@@ -99,6 +103,46 @@ describe("ListMods", () => {
     )
 
     expect(await screen.findByText("There are no Mods that match your filters!", {}, { timeout: 3000 })).toBeTruthy()
+  })
+
+  it("does not let a slower, superseded search overwrite a newer, faster one", async () => {
+    const user = userEvent.setup()
+    let resolveOldSearch: ((value: string) => void) | undefined
+
+    const queryURL = vi.fn(async (url: string) => {
+      if (!url.includes("/api/mods")) return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+      if (url.includes("text=old")) return new Promise<string>((resolve) => (resolveOldSearch = resolve))
+      if (url.includes("text=new")) return JSON.stringify({ statuscode: "200", mods: [{ ...MOD_RESPONSE.mods[0], modid: 456, assetid: 456, name: "New Mod" }] })
+      return JSON.stringify({ statuscode: "200", mods: [] })
+    })
+
+    installMockWindowApi({ netManager: { queryURL } })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    const input = screen.getByPlaceholderText("Text")
+    await user.type(input, "old")
+
+    // Waits for the "old" search's debounce to actually fire the request (still unresolved).
+    await waitFor(() => expect(resolveOldSearch).toBeTruthy(), { timeout: 3000 })
+
+    await user.clear(input)
+    await user.type(input, "new")
+
+    // The newer search resolves and renders while "old" is still pending.
+    expect(await screen.findByText("New Mod", {}, { timeout: 3000 })).toBeTruthy()
+
+    // The stale search finally comes back. It must be ignored, not overwrite the current list.
+    resolveOldSearch?.(JSON.stringify({ statuscode: "200", mods: [{ ...MOD_RESPONSE.mods[0], name: "Old Mod" }] }))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(screen.queryByText("Old Mod")).toBeNull()
+    expect(screen.getByText("New Mod")).toBeTruthy()
   })
 
   it("picks up an edit to the current installation without lastUsedInstallation changing", async () => {
@@ -148,5 +192,52 @@ describe("ListMods", () => {
       const cardAfter = screen.getByText("Better Ruins").closest("li")?.firstElementChild as HTMLElement
       expect(cardAfter.className).toContain("bg-vsd/50")
     })
+  })
+
+  it("un-favorites a mod on the second click instead of favoriting it a second time", async () => {
+    const user = userEvent.setup()
+
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ favMods: [] }))
+      },
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    await screen.findByText("Better Ruins", {}, { timeout: 3000 })
+    const favoriteButton = screen.getByTitle("Favorite")
+    expect(favoriteButton.className).not.toContain("text-yellow-400")
+
+    // configReducer's ADD_FAV_MOD pushes onto favMods without checking for an existing
+    // entry: onToggleFavMod only stays correct because it reads a live favMods off its own
+    // useCallback dependency array, not a stale closure from the render that first mounted
+    // the button. A regression there would either favorite twice in a row (a duplicate modid
+    // sitting in favMods) or never flip back, and this round trip is what would catch it.
+    await user.click(favoriteButton)
+    await waitFor(() => expect(api.configManager.saveConfig).toHaveBeenCalled())
+    await waitFor(() => {
+      const lastSavedConfig = vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0]
+      expect(lastSavedConfig?.favMods).toEqual([123])
+    })
+    expect(screen.getByTitle("Favorite").className).toContain("text-yellow-400")
+
+    await user.click(screen.getByTitle("Favorite"))
+    await waitFor(() => {
+      const lastSavedConfig = vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0]
+      expect(lastSavedConfig?.favMods).toEqual([])
+    })
+    expect(screen.getByTitle("Favorite").className).not.toContain("text-yellow-400")
   })
 })

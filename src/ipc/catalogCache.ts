@@ -1,7 +1,7 @@
 import { createHash } from "crypto"
 import { app } from "electron"
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 
 import { isRecord, MAX_MODS_CATALOG_RESPONSE_BYTES } from "@src/ipc/validation"
 

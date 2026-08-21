@@ -94,26 +94,6 @@ function recordingIcons(options: { failing?: boolean } = {}): { icons: IconStore
   }
 }
 
-/** Same as {@link recordingIcons}, plus a `prune` that remembers every call it got. */
-function recordingIconsWithPrune(): { icons: IconStore; pruned: (readonly string[])[] } {
-  const pruned: (readonly string[])[] = []
-  let next = 0
-
-  return {
-    pruned,
-    icons: {
-      store: async (): Promise<string | undefined> => {
-        next += 1
-        return `icon-${next}.png`
-      },
-      prune: async (liveNames: readonly string[]): Promise<void> => {
-        trace.push(`icon-prune:${liveNames.join(",")}`)
-        pruned.push(liveNames)
-      }
-    }
-  }
-}
-
 /** Builds ports over a folder described as file name to archive contents. */
 function fakePorts(folder: Record<string, FakeArchive>, overrides: Partial<ScanInstalledModsPorts> = {}): ScanInstalledModsPorts & { readsOf: () => string[]; peak: () => number } {
   const byPath: Record<string, FakeArchive> = {}
@@ -309,7 +289,6 @@ describe("scanInstalledMods problem kinds", () => {
       fakePorts({
         "gone.zip": { problem: "unreadable-archive" },
         "huge-info.zip": { problem: "modinfo-too-large" },
-        "huge-icon.zip": { problem: "icon-too-large" },
         "resources.zip": {},
         "broken.zip": { modinfo: "{ not json" },
         "nameless.zip": { modinfo: JSON.stringify({ version: "1.0.0" }) }
@@ -319,13 +298,28 @@ describe("scanInstalledMods problem kinds", () => {
 
     assert.deepEqual(
       result.errors.map((archive) => `${archive.zipname}:${archive.problem}`),
+      ["gone.zip:unreadable-archive", "huge-info.zip:modinfo-too-large", "resources.zip:modinfo-missing", "broken.zip:modinfo-invalid", "nameless.zip:modinfo-incomplete"]
+    )
+  })
+
+  it("lists a mod with an oversized declared icon without an icon, not as an error", async () => {
+    const result = await scanInstalledMods(
+      fakePorts({
+        "huge-icon.zip": { modinfo: modinfoText({ modid: "hugeicon" }) },
+        "normal.zip": { modinfo: modinfoText({ modid: "normal" }), icon: ICON }
+      }),
+      { folder: FOLDER }
+    )
+
+    assert.deepEqual(
+      result.errors.map((e) => e.zipname),
+      []
+    )
+    assert.deepEqual(
+      result.mods.map((m) => ({ id: m.modid, hasIcon: m.image !== undefined })),
       [
-        "gone.zip:unreadable-archive",
-        "huge-info.zip:modinfo-too-large",
-        "huge-icon.zip:icon-too-large",
-        "resources.zip:modinfo-missing",
-        "broken.zip:modinfo-invalid",
-        "nameless.zip:modinfo-incomplete"
+        { id: "hugeicon", hasIcon: false },
+        { id: "normal", hasIcon: true }
       ]
     )
   })
@@ -365,69 +359,6 @@ describe("scanInstalledMods icons", () => {
     assert.equal(result.mods.length, 1)
     assert.equal(result.mods[0]?.image, undefined)
     assert.deepEqual(result.errors, [])
-  })
-})
-
-/**
- * Per issue #26, the icon store also owns pruning: nothing else in the process
- * ever sees a scan's final result as a whole, so the scan is the one place that
- * can hand the store the live set to sweep against. `IconStore.prune` is
- * optional precisely so a fake that skips it (every other `recordingIcons` in
- * this file) never has to grow one just to keep compiling.
- */
-describe("scanInstalledMods icon pruning", () => {
-  it("hands the icon store every icon name the scan's mods still point to", async () => {
-    const { icons, pruned } = recordingIconsWithPrune()
-    const ports = fakePorts(
-      {
-        "first.zip": { modinfo: modinfoText({ modid: "first" }), icon: ICON },
-        "second.zip": { modinfo: modinfoText({ modid: "second" }), icon: ICON }
-      },
-      { icons }
-    )
-
-    const result = await scanInstalledMods(ports, { folder: FOLDER })
-
-    assert.deepEqual(pruned, [["icon-1.png", "icon-2.png"]])
-    assert.deepEqual(
-      result.mods.map((mod) => mod.image),
-      ["icon-1.png", "icon-2.png"]
-    )
-  })
-
-  it("leaves out mods with no icon and archives that never became one", async () => {
-    const { icons, pruned } = recordingIconsWithPrune()
-    const ports = fakePorts(
-      {
-        "has-icon.zip": { modinfo: modinfoText({ modid: "hasicon" }), icon: ICON },
-        "no-icon.zip": { modinfo: modinfoText({ modid: "noicon" }) },
-        "broken.zip": { modinfo: "{ not json", icon: ICON }
-      },
-      { icons }
-    )
-
-    await scanInstalledMods(ports, { folder: FOLDER })
-
-    assert.deepEqual(pruned, [["icon-1.png"]])
-  })
-
-  it("prunes down to nothing for a folder with no mods in it", async () => {
-    const { icons, pruned } = recordingIconsWithPrune()
-    const ports = fakePorts({}, { icons })
-
-    await scanInstalledMods(ports, { folder: FOLDER })
-
-    assert.deepEqual(pruned, [[]])
-  })
-
-  it("runs after every mod has been identified, not alongside them", async () => {
-    const { icons, pruned } = recordingIconsWithPrune()
-    const ports = fakePorts({ "amod.zip": { modinfo: modinfoText(), icon: ICON } }, { icons })
-
-    await scanInstalledMods(ports, { folder: FOLDER }, recordingEvents())
-
-    assert.equal(pruned.length, 1)
-    assert.equal(trace[trace.length - 1], `icon-prune:icon-1.png`)
   })
 })
 

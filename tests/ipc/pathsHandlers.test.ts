@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import type { IpcMainInvokeEvent } from "electron"
 
 import "./helpers/electronMock"
-import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
+import { clearAppEventListeners, createTrustedEvent, createUntrustedEvent, emitAppEvent, getIpcHandler, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 
 // After "./helpers/electronMock": that side-effect import is what registers
 // the vi.mock("electron", ...) factory, and it has to run before this file's
@@ -32,10 +32,12 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
  * message-handling logic (progress validation, "finished"/"error"/unknown
  * message shapes, the worker's own "error" event), which DOWNLOAD_ON_PATH/
  * EXTRACT_ON_PATH/COMPRESS_ON_PATH/CHANGE_PERMS all funnel through:
- * `@src/ipc/workerManager` is mocked so `createTrackedWorker` hands back a
- * plain `EventEmitter` a test drives directly instead of a real
+ * `@src/ipc/workerManager` is mocked so `acquireWorker` hands back a lease
+ * wrapping a plain `EventEmitter` a test drives directly instead of a real
  * `worker_threads.Worker`, which is what runTrackedWorker only ever calls
- * `.on`/`.once`/`.removeAllListeners` on anyway.
+ * `.on`/`.off` on anyway. The pool's own reuse/discard bookkeeping lives in
+ * workerPool.test.ts; this file only checks that runTrackedWorker asks for
+ * the right one at each settle path (see the `release` assertions below).
  *
  * Left uncovered: RUN_INSTALLER's payload-extraction and direct-spawn bodies
  * (`extractInstallerPayload`/`spawnInstaller`), which only run on
@@ -52,23 +54,32 @@ vi.mock("@src/ipc/workers/changePermsWorker?modulePath", () => ({ default: "chan
 vi.mock("@src/ipc/workers/downloadWorker?modulePath", () => ({ default: "downloadWorker-path" }))
 
 vi.mock("@src/ipc/workerManager", () => ({
-  createTrackedWorker: vi.fn(),
-  disposeTrackedWorker: vi.fn()
+  acquireWorker: vi.fn()
 }))
 
+let nextLeaseToken = 1
+
 /**
- * Waits for the next `createTrackedWorker(...)` call (made by
- * `runTrackedWorker` once a channel's own validation/authorization has
- * passed) and hands back a fake worker the test can `.emit(...)` messages
- * and events on, standing in for the real `worker_threads.Worker`.
+ * Waits for the next `acquireWorker(...)` call (made by `runTrackedWorker` once a
+ * channel's own validation/authorization has passed) and hands back a fake worker the
+ * test can `.emit(...)` messages and events on, standing in for the real
+ * `worker_threads.Worker`. The returned object also carries `release`, the lease's own
+ * mock, for tests that check whether a worker was handed back for reuse or discarded.
  */
-async function nextTrackedWorker(): Promise<EventEmitter> {
-  const { createTrackedWorker } = await import("@src/ipc/workerManager")
+async function nextTrackedWorker(): Promise<EventEmitter & { release: ReturnType<typeof vi.fn> }> {
+  const { acquireWorker } = await import("@src/ipc/workerManager")
+  const token = nextLeaseToken++
   return new Promise((resolvePromise) => {
-    vi.mocked(createTrackedWorker).mockImplementationOnce(() => {
-      const worker = new EventEmitter()
+    vi.mocked(acquireWorker).mockImplementationOnce(() => {
+      const release = vi.fn()
+      const worker = Object.assign(new EventEmitter(), { release })
       resolvePromise(worker)
-      return worker as unknown as import("worker_threads").Worker
+      return {
+        worker: worker as unknown as import("worker_threads").Worker,
+        token,
+        dispatch: vi.fn(),
+        release
+      }
     })
   })
 }
@@ -116,6 +127,11 @@ function handler<R = Promise<unknown>>(channel: string): Handler<R> {
 }
 
 beforeEach(async () => {
+  // Cleared before pathsHandlers.ts's fresh import below registers its own before-quit
+  // listener: without this, a listener from a previous test's now-shut-down limiters would
+  // still be sitting in the map and fire again on this test's emitAppEvent call.
+  clearAppEventListeners()
+
   temporaryRoot = mkdtempSync(join(tmpdir(), "paths-handlers-"))
   managedFolder = join(temporaryRoot, "Installations")
   versionsFolder = join(temporaryRoot, "Versions")
@@ -136,9 +152,8 @@ beforeEach(async () => {
   // @src/ipc/workerManager is a vi.mock, which -- like the electron mock --
   // stays the same object across vi.resetModules(); clear its call history
   // explicitly rather than relying on afterEach's ordering.
-  const { createTrackedWorker, disposeTrackedWorker } = await import("@src/ipc/workerManager")
-  vi.mocked(createTrackedWorker).mockReset()
-  vi.mocked(disposeTrackedWorker).mockReset()
+  const { acquireWorker } = await import("@src/ipc/workerManager")
+  vi.mocked(acquireWorker).mockReset()
 
   vi.resetModules()
   await import("@src/ipc/handlers/pathsHandlers")
@@ -183,6 +198,29 @@ describe("FORMAT_PATH: assertion throws", () => {
   it("joins valid parts", async () => {
     const event = await createTrustedEvent()
     assert.equal(handler<string>(IPC_CHANNELS.PATHS_MANAGER.FORMAT_PATH)(event, ["a", "b"]), join("a", "b"))
+  })
+})
+
+describe("REMOVE_FILE_FROM_PATH", () => {
+  it("throws Unauthorized IPC sender for an untrusted caller", async () => {
+    assert.throws(() => handler<string>(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH)(createUntrustedEvent(), join(temporaryRoot, "file.txt")), /Unauthorized IPC sender/)
+  })
+
+  it("throws when the path fails validation", async () => {
+    const event = await createTrustedEvent()
+    assert.throws(() => handler<string>(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH)(event, ""), /Invalid path/)
+  })
+
+  it("returns the parent of a file in the root directory", async () => {
+    const event = await createTrustedEvent()
+    const filePath = join(temporaryRoot, "file.txt")
+    assert.equal(handler<string>(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH)(event, filePath), temporaryRoot)
+  })
+
+  it("returns the parent of a file in a nested directory", async () => {
+    const event = await createTrustedEvent()
+    const filePath = join(temporaryRoot, "nested", "file.txt")
+    assert.equal(handler<string>(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH)(event, filePath), join(temporaryRoot, "nested"))
   })
 })
 
@@ -439,8 +477,10 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
 
     assert.equal(await resultPromise, true)
 
-    const { disposeTrackedWorker } = await import("@src/ipc/workerManager")
-    assert.equal(vi.mocked(disposeTrackedWorker).mock.calls.length, 1)
+    // A clean finish releases the worker for reuse, not a hard terminate: that is the
+    // whole point of pooling it in the first place.
+    assert.equal(worker.release.mock.calls.length, 1)
+    assert.equal(worker.release.mock.calls[0]?.[0], "reuse")
   })
 
   it("rejects when the worker emits an 'error' event", async () => {
@@ -456,6 +496,8 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("error", new Error("worker crashed"))
 
     await assert.rejects(() => resultPromise, /worker crashed/)
+    // An uncaught exception in the worker leaves it in an unknown state: never reused.
+    assert.equal(worker.release.mock.calls[0]?.[0], "discard")
   })
 
   it("rejects on a worker message with no recognizable type", async () => {
@@ -471,6 +513,7 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("message", { type: "not-a-real-type" })
 
     await assert.rejects(() => resultPromise, /returned an unknown worker message/)
+    assert.equal(worker.release.mock.calls[0]?.[0], "discard")
   })
 
   it("rejects when the worker exits before ever settling", async () => {
@@ -486,6 +529,8 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("exit", 1)
 
     await assert.rejects(() => resultPromise, /worker exited with code 1/)
+    // The thread is gone; nothing left to reuse.
+    assert.equal(worker.release.mock.calls[0]?.[0], "discard")
   })
 
   it("rejects a worker message that is not even a record", async () => {
@@ -548,6 +593,9 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("message", { type: "error", message: "disk is full" })
 
     await assert.rejects(() => resultPromise, /disk is full/)
+    // A reported task failure ran the worker's own error path and left it fit to reuse:
+    // every logic module under src/ipc/workers/ cleans up its own temp state on failure.
+    assert.equal(worker.release.mock.calls[0]?.[0], "reuse")
   })
 
   it("rejects on an explicit 'error' type message with no usable message string, falling back to a generic reason", async () => {
@@ -563,6 +611,43 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("message", { type: "error" })
 
     await assert.rejects(() => resultPromise, /EXTRACT_ON_PATH failed/)
+  })
+
+  it("discards, not reuses, a worker whose error message sets retire", async () => {
+    const archivePath = join(managedFolder, "archive.zip")
+    copyFileSync(resolvePath(__dirname, "../fixtures/valid-mod.zip"), archivePath)
+    const outputPath = join(versionsFolder, "extracted-10")
+
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH)(event, "task-10", archivePath, outputPath, false)
+
+    const worker = await workerPromise
+    // workerHost.ts posts this when a worker receives a task while already busy on
+    // another one -- a state the worker itself is saying it should not serve again.
+    worker.emit("message", { type: "error", message: "Worker received a task while busy", retire: true })
+
+    await assert.rejects(() => resultPromise, /Worker received a task while busy/)
+    assert.equal(worker.release.mock.calls[0]?.[0], "discard")
+  })
+
+  it("ignores a message tagged with another task's token, then still resolves on its own", async () => {
+    const archivePath = join(managedFolder, "archive.zip")
+    copyFileSync(resolvePath(__dirname, "../fixtures/valid-mod.zip"), archivePath)
+    const outputPath = join(versionsFolder, "extracted-11")
+
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH)(event, "task-11", archivePath, outputPath, false)
+
+    const worker = await workerPromise
+    // A message stamped with a token this lease never had: exactly what a reused
+    // worker's abandoned previous task would still be capable of posting.
+    worker.emit("message", { type: "progress", token: -1, progress: 90 })
+    worker.emit("message", { type: "finished" })
+
+    assert.equal(await resultPromise, true)
+    assert.equal(vi.mocked(event.sender.send).mock.calls.length, 0)
   })
 })
 
@@ -623,6 +708,122 @@ describe("DOWNLOAD_ON_PATH: runTrackedWorker via a fake worker", () => {
   })
 })
 
+describe("DOWNLOAD_ON_PATH: concurrency limit", () => {
+  const DOWNLOAD_URL = "https://moddbcdn.vintagestory.at/some-mod-1.0.0.zip"
+
+  it("caps concurrent downloads at 3 and starts a 4th only once a slot frees", async () => {
+    const event = await createTrustedEvent()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+
+    // A local, synchronous stand-in for the shared nextTrackedWorker() helper above: that
+    // one does `await import(...)` before registering its mockImplementationOnce, which is
+    // invisible with one call in flight (every other test here) but races a handler that
+    // reaches acquireWorker before that import's microtask settles once several calls
+    // overlap, exactly what this test needs to fire at once.
+    function queueNextWorker(): Promise<EventEmitter> {
+      return new Promise((resolvePromise) => {
+        vi.mocked(acquireWorker).mockImplementationOnce(() => {
+          const worker = new EventEmitter()
+          resolvePromise(worker)
+          return {
+            worker: worker as unknown as import("worker_threads").Worker,
+            token: nextLeaseToken++,
+            dispatch: vi.fn(),
+            release: vi.fn()
+          }
+        })
+      })
+    }
+
+    const worker1Promise = queueNextWorker()
+    const result1 = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-1", DOWNLOAD_URL, versionsFolder, "one.zip")
+    const worker1 = await worker1Promise
+
+    const worker2Promise = queueNextWorker()
+    const result2 = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-2", DOWNLOAD_URL, versionsFolder, "two.zip")
+    const worker2 = await worker2Promise
+
+    const worker3Promise = queueNextWorker()
+    const result3 = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-3", DOWNLOAD_URL, versionsFolder, "three.zip")
+    const worker3 = await worker3Promise
+
+    // 3 active downloads is the configured limit: a 4th call must stay queued,
+    // never reaching acquireWorker, until one of the first 3 finishes.
+    const callsBeforeFourth = vi.mocked(acquireWorker).mock.calls.length
+    const result4 = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-4", DOWNLOAD_URL, versionsFolder, "four.zip")
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 50))
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeFourth)
+
+    const worker4Promise = queueNextWorker()
+    worker1.emit("message", { type: "finished", path: join(versionsFolder, "one.zip") })
+    const worker4 = await worker4Promise
+
+    worker2.emit("message", { type: "finished", path: join(versionsFolder, "two.zip") })
+    worker3.emit("message", { type: "finished", path: join(versionsFolder, "three.zip") })
+    worker4.emit("message", { type: "finished", path: join(versionsFolder, "four.zip") })
+
+    assert.equal(await result1, join(versionsFolder, "one.zip"))
+    assert.equal(await result2, join(versionsFolder, "two.zip"))
+    assert.equal(await result3, join(versionsFolder, "three.zip"))
+    assert.equal(await result4, join(versionsFolder, "four.zip"))
+  })
+})
+
+describe("before-quit: the limiters stop admitting work", () => {
+  it("DOWNLOAD_ON_PATH rejects a call still queued when before-quit fires, and never reaches acquireWorker for it", async () => {
+    const event = await createTrustedEvent()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    const DOWNLOAD_URL = "https://moddbcdn.vintagestory.at/some-mod-1.0.0.zip"
+
+    function queueNextWorker(): Promise<EventEmitter> {
+      return new Promise((resolvePromise) => {
+        vi.mocked(acquireWorker).mockImplementationOnce(() => {
+          const worker = new EventEmitter()
+          resolvePromise(worker)
+          return {
+            worker: worker as unknown as import("worker_threads").Worker,
+            token: nextLeaseToken++,
+            dispatch: vi.fn(),
+            release: vi.fn()
+          }
+        })
+      })
+    }
+
+    // Fill the download limit (3) so the 4th call queues instead of starting.
+    const worker1Promise = queueNextWorker()
+    handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-1", DOWNLOAD_URL, versionsFolder, "one.zip")
+    await worker1Promise
+    const worker2Promise = queueNextWorker()
+    handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-2", DOWNLOAD_URL, versionsFolder, "two.zip")
+    await worker2Promise
+    const worker3Promise = queueNextWorker()
+    handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-3", DOWNLOAD_URL, versionsFolder, "three.zip")
+    await worker3Promise
+
+    const callsBeforeQueued = vi.mocked(acquireWorker).mock.calls.length
+    const queuedResult = handler<Promise<string>>(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-4", DOWNLOAD_URL, versionsFolder, "four.zip")
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10))
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeQueued)
+
+    emitAppEvent("before-quit")
+    await assert.rejects(queuedResult, /Cancelled because the app is quitting/)
+    // Shutdown ran before the freed download slot (if any) could ever reach it.
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeQueued)
+  })
+
+  it("COMPRESS_ON_PATH rejects a call arriving after before-quit, without ever calling acquireWorker", async () => {
+    const event = await createTrustedEvent()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+
+    emitAppEvent("before-quit")
+
+    const result = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH)(event, "task-1", managedFolder, versionsFolder, "archive.zip", 4)
+    await assert.rejects(result, /Cancelled because the app is quitting/)
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0)
+  })
+})
+
 describe("RUN_INSTALLER", () => {
   it("resolves not-windows on a non-Windows host, before any worker or spawn", async () => {
     // assertManagedPath for the installer path requires it to exist (it is
@@ -635,7 +836,7 @@ describe("RUN_INSTALLER", () => {
     const result = await handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-1", installerPath, versionsFolder, false)
     assert.deepEqual(result, { ok: false, reason: "not-windows" })
 
-    const { createTrackedWorker } = await import("@src/ipc/workerManager")
-    assert.equal(vi.mocked(createTrackedWorker).mock.calls.length, 0)
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0)
   })
 })

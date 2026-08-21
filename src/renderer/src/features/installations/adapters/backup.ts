@@ -58,7 +58,7 @@ export function toInstallationSnapshot(installation: InstallationType): Installa
     path: installation.path,
     backupsLimit: installation.backupsLimit,
     compressionLevel: installation.compressionLevel,
-    backups: installation.backups,
+    backups: installation.backups.map((backup) => ({ id: backup.id, date: backup.date, path: backup.path, isDeleting: backup._deleting ?? false, isRestoring: backup._restoring ?? false })),
     isBackingUp: installation._backuping ?? false,
     isPlaying: installation._playing ?? false,
     isRestoringBackup: installation._restoringBackup ?? false

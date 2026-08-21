@@ -66,8 +66,15 @@ export function GridItem({
   onClick?: () => void
 }): JSX.Element {
   const ref = useRef(null)
+  // once: true, not the useInView default of false. With false, motion/react's inView()
+  // never unobserves the card (see node_modules/motion's render/dom/viewport/index.mjs):
+  // the IntersectionObserver it creates per card stays live for the card's whole lifetime,
+  // firing on every single scroll past it and replaying the entrance fade each time. A card
+  // that's already been seen once doesn't need to keep being watched, and repeatedly
+  // re-fading in content the user has already scrolled past isn't a look anything here asks
+  // for on purpose, it's just what the hook's default happens to do.
   const isInView = useInView(ref, {
-    once: false
+    once: true
   })
 
   return (

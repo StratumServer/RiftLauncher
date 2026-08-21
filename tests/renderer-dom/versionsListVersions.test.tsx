@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import ListVersions from "@renderer/features/versions/pages/ListVersions"
@@ -28,6 +28,26 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
 }
 
 describe("ListVersions", () => {
+  it("renders without crashing when a version string is not valid semver", async () => {
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [
+              { version: "1.20.4", path: "/versions/1.20.4" },
+              { version: "Vintage Story 1.21.0", path: "/versions/custom" }
+            ]
+          })
+        )
+      }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    await screen.findByText("1.20.4")
+    expect(screen.getByText("Vintage Story 1.21.0")).toBeTruthy()
+  })
+
   it("deletes a version once the uninstall confirmation is accepted", async () => {
     const user = userEvent.setup()
     const api = installMockWindowApi({
@@ -112,5 +132,25 @@ describe("ListVersions", () => {
 
     await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
     expect(api.pathsManager.deletePath).toHaveBeenCalledWith("/versions/1.20.4")
+  })
+
+  it("unregisters a linked version without deleting its folder", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/games/vintagestory", linked: true }] })) },
+      pathsManager: { deletePath: vi.fn(async () => true) }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    await screen.findByText("1.20.4")
+
+    await user.click(screen.getByTitle("Remove from List"))
+    await screen.findByText("Are you sure you want to remove this VS Version from the list?")
+
+    await user.click(within(screen.getByRole("dialog")).getByTitle("Remove from List"))
+
+    await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
   })
 })

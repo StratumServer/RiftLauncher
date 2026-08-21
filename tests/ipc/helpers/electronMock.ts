@@ -21,6 +21,24 @@ export { createTrustedEvent, createUntrustedEvent } from "./trustedEvent"
 const state = { userDataPath: "" }
 const namedPaths: Record<string, string> = {}
 
+/**
+ * Listeners handed to `app.on(event, listener)`, keyed by event name. Real enough to let a
+ * test fire the same `before-quit` event both `workerManager.ts` and
+ * `ipc/handlers/pathsHandlers.ts` register a listener for at module load, and see both
+ * fire, the same as a real Electron quit would trigger every registered handler.
+ */
+const appEventListeners = new Map<string, Array<(...args: unknown[]) => void>>()
+
+/** Invokes every listener registered for `event` via `app.on`, in registration order. */
+export function emitAppEvent(event: string, ...args: unknown[]): void {
+  for (const listener of appEventListeners.get(event) ?? []) listener(...args)
+}
+
+/** Drops every recorded `app.on` listener. Call in `beforeEach`, before the module under test re-registers its own. */
+export function clearAppEventListeners(): void {
+  appEventListeners.clear()
+}
+
 /** Points `app.getPath("userData")` (and every other path electron-log asks for) at `path`. */
 export function setElectronUserDataPath(path: string): void {
   state.userDataPath = path
@@ -87,7 +105,11 @@ vi.mock("electron", () => {
      * at module load, for the same reason.
      */
     isReady: (): boolean => true,
-    on: (): void => {},
+    on: (event: string, listener: (...args: unknown[]) => void): void => {
+      const listeners = appEventListeners.get(event) ?? []
+      listeners.push(listener)
+      appEventListeners.set(event, listeners)
+    },
     off: (): void => {},
     once: (): void => {}
   }

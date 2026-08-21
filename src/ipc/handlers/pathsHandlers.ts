@@ -1,7 +1,7 @@
 import { ipcMain, app, shell } from "electron"
 import { path7za } from "7zip-bin"
 import fse from "fs-extra"
-import { basename, extname, join, resolve, sep } from "path"
+import { basename, extname, join, resolve, sep } from "node:path"
 import os from "os"
 import { spawn } from "child_process"
 import type { IpcMainInvokeEvent } from "electron"
@@ -9,8 +9,9 @@ import type { IpcMainInvokeEvent } from "electron"
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { createTrackedWorker, disposeTrackedWorker } from "@src/ipc/workerManager"
-import { validateArchive } from "@src/ipc/archiveValidation"
+import { acquireWorker } from "@src/ipc/workerManager"
+import type { WorkerDisposition } from "@src/ipc/workerManager"
+import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
 import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
@@ -64,8 +65,58 @@ const EXTRACT_INSTALLER_PAYLOAD = true
  */
 const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
 
+/**
+ * Nothing capped how many DOWNLOAD_ON_PATH/EXTRACT_ON_PATH/COMPRESS_ON_PATH calls the
+ * renderer could fire at once (a mod update-all, say): each one spun up its own worker
+ * thread with no ceiling. A queued call just shows up to the caller as a promise that
+ * hasn't resolved yet, and TaskManagerContext already renders that as "pending" until the
+ * first progress event, so this needs no renderer-side change to look right.
+ *
+ * Extraction and compression share one limiter instead of each getting their own: both
+ * spawn a 7-Zip subprocess and compete for the same CPU cores, so the resource that
+ * actually needs bounding is "concurrent 7-Zip processes", not "concurrent extractions"
+ * and "concurrent compressions" separately.
+ */
+const DOWNLOAD_CONCURRENCY_LIMIT = 3
+const ARCHIVE_CONCURRENCY_LIMIT = 2
+
+const downloadConcurrency = new ConcurrencyLimiter(DOWNLOAD_CONCURRENCY_LIMIT)
+const archiveConcurrency = new ConcurrencyLimiter(ARCHIVE_CONCURRENCY_LIMIT)
+
+// before-quit can preventDefault (the config flush in main/index.ts), so quitting isn't
+// instant: without this, a queued download or extraction could still be handed a slot and
+// start writing to disk during that window. Shutting both limiters down here means every
+// queued task rejects immediately, and any DOWNLOAD_ON_PATH/EXTRACT_ON_PATH/COMPRESS_ON_PATH
+// call that arrives after this point rejects on arrival instead of queueing behind it.
+app.on("before-quit", () => {
+  downloadConcurrency.shutdown()
+  archiveConcurrency.shutdown()
+})
+
+/**
+ * How many idle workers of each kind stay warm, waiting for the next task instead of being
+ * terminated right away. Downloads have their own three-slot lane. Extraction and
+ * compression share a two-slot archive lane but use different worker scripts, so one idle
+ * worker per archive operation keeps the combined idle count within that shared limit.
+ *
+ * CHANGE_PERMS and RUN_INSTALLER are 0 on purpose. Both run once per install with no burst
+ * behind them, so pooling either would buy one saved worker spawn per game install and pay
+ * for it with a resident idle isolate. They still go through the pooled protocol below so
+ * there is only one worker protocol in the app; 0 just means every release terminates,
+ * exactly like before this file started pooling anything.
+ */
+const WORKER_POOL_MAX_IDLE: Record<string, number> = {
+  DOWNLOAD_ON_PATH: DOWNLOAD_CONCURRENCY_LIMIT,
+  EXTRACT_ON_PATH: 1,
+  COMPRESS_ON_PATH: 1,
+  CHANGE_PERMS: 0,
+  RUN_INSTALLER: 0
+}
+
 type WorkerMessage = {
   type: unknown
+  token?: unknown
+  retire?: unknown
   progress?: unknown
   path?: unknown
   message?: unknown
@@ -88,43 +139,60 @@ function runTrackedWorker<T>(
   operationName: string,
   onFinished: (message: WorkerMessage) => T
 ): Promise<T> {
-  const worker = createTrackedWorker(workerPath, workerData)
+  const lease = acquireWorker(workerPath, WORKER_POOL_MAX_IDLE[operationName] ?? 0)
+  const worker = lease.worker
 
   return new Promise((resolvePromise, rejectPromise) => {
     let settled = false
     let lastProgress = 0
     const timeout = setTimeout(
       () => {
-        rejectOnce(new Error(`${operationName} timed out`))
+        // Never reused: the abandoned task is still running inside this thread (still
+        // holding a socket or a 7-Zip child), so its eventual message could still arrive
+        // after some later task has been dispatched to the same worker.
+        rejectOnce(new Error(`${operationName} timed out`), "discard")
       },
       WORKER_TIMEOUTS_MS[operationName] ?? 30 * 60 * 1_000
     )
 
-    const cleanup = (): void => {
+    // Named removals, never removeAllListeners(): the pool keeps its own "error" and
+    // "exit" listeners on this worker for as long as the thread lives, and a reused worker
+    // must not lose them between tasks. This runs synchronously, before the lease is
+    // released, so no message can be delivered to a half-detached task.
+    const cleanup = (disposition: WorkerDisposition): void => {
       clearTimeout(timeout)
-      worker.removeAllListeners()
-      disposeTrackedWorker(worker)
+      worker.off("message", onMessage)
+      worker.off("error", onError)
+      worker.off("exit", onExit)
+      lease.release(disposition)
     }
 
     const resolveOnce = (value: T): void => {
       if (settled) return
       settled = true
-      cleanup()
+      cleanup("reuse")
       resolvePromise(value)
     }
 
-    const rejectOnce = (error: unknown): void => {
+    const rejectOnce = (error: unknown, disposition: WorkerDisposition = "discard"): void => {
       if (settled) return
       settled = true
-      cleanup()
+      cleanup(disposition)
       rejectPromise(error instanceof Error ? error : new Error(`${operationName} failed`))
     }
 
-    worker.on("message", (message: unknown) => {
+    const onMessage = (message: unknown): void => {
       if (!isRecord(message) || typeof message.type !== "string") {
         rejectOnce(new Error(`${operationName} returned an invalid worker message`))
         return
       }
+
+      // A pooled worker outlives its task, so a message tagged with another task's token
+      // was posted by a task this handler already gave up on, and it belongs to nobody
+      // now. A message with no token at all is accepted rather than dropped, so a worker
+      // shim that ever stopped echoing one degrades to plain delivery instead of hanging
+      // this call for its full timeout.
+      if (typeof message.token === "number" && message.token !== lease.token) return
 
       const workerMessage = message as WorkerMessage
 
@@ -150,22 +218,35 @@ function runTrackedWorker<T>(
       }
 
       if (workerMessage.type === "error") {
-        rejectOnce(new Error(typeof workerMessage.message === "string" ? workerMessage.message : `${operationName} failed`))
+        // A reported failure ran the worker's own error path: workerHost caught the
+        // rejection and the worker went back to waiting for another task. Every logic
+        // module under src/ipc/workers/ releases its temp dir, file handle, or partial
+        // download in a finally block or its own fail() path, so the worker is fit to
+        // reuse unless it says otherwise with retire.
+        rejectOnce(new Error(typeof workerMessage.message === "string" ? workerMessage.message : `${operationName} failed`), workerMessage.retire === true ? "discard" : "reuse")
         return
       }
 
       rejectOnce(new Error(`${operationName} returned an unknown worker message`))
-    })
+    }
 
-    worker.once("error", (error) => {
+    const onError = (error: Error): void => {
       logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operationName}] Worker error.`)
       logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operationName}] ${getErrorMessage(error)}`)
       rejectOnce(error)
-    })
+    }
 
-    worker.once("exit", (code) => {
+    const onExit = (code: number): void => {
       if (!settled) rejectOnce(new Error(`${operationName} worker exited with code ${code}`))
-    })
+    }
+
+    worker.on("message", onMessage)
+    worker.on("error", onError)
+    worker.on("exit", onExit)
+
+    // Dispatched last, only once every listener above is attached: nothing the worker
+    // posts back can arrive before there is something here to receive it.
+    lease.dispatch(workerData)
   })
 }
 
@@ -270,17 +351,19 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   const expectedMd5 = await getTrustedDownloadHash(safeUrl)
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DOWNLOAD_ON_PATH] [${safeId}] Starting a bounded download.`)
-  const downloadedPath = await runTrackedWorker(
-    event,
-    safeId,
-    IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS,
-    downloadWorkerPath,
-    { id: safeId, url: safeUrl.toString(), outputPath: safeOutputPath, fileName: safeFileName, expectedMd5 },
-    "DOWNLOAD_ON_PATH",
-    (message) => {
-      if (typeof message.path !== "string") throw new Error("Download returned an invalid path")
-      return message.path
-    }
+  const downloadedPath = await downloadConcurrency.run(() =>
+    runTrackedWorker(
+      event,
+      safeId,
+      IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS,
+      downloadWorkerPath,
+      { id: safeId, url: safeUrl.toString(), outputPath: safeOutputPath, fileName: safeFileName, expectedMd5 },
+      "DOWNLOAD_ON_PATH",
+      (message) => {
+        if (typeof message.path !== "string") throw new Error("Download returned an invalid path")
+        return message.path
+      }
+    )
   )
   if (expectedMd5) await recordVerifiedArtifact(downloadedPath, safeUrl, expectedMd5)
   return downloadedPath
@@ -294,17 +377,21 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
   const shouldDeleteZip = assertBoolean(deleteZip, "delete archive flag")
 
   if (resolve(safeFilePath) === resolve(safeOutputPath)) throw new TypeError("Archive and output paths must differ")
-  await validateArchive(safeFilePath, sevenZipBin)
+  // validateArchive runs inside the extraction worker now (workers/extraction.ts's
+  // runExtraction), not here: its 7z-listing parse is real CPU work that has no business
+  // blocking the main process's event loop.
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
-  await runTrackedWorker(
-    event,
-    safeId,
-    IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
-    extractWorker,
-    { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, sevenZipBin },
-    "EXTRACT_ON_PATH",
-    () => true
+  await archiveConcurrency.run(() =>
+    runTrackedWorker(
+      event,
+      safeId,
+      IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
+      extractWorker,
+      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, sevenZipBin },
+      "EXTRACT_ON_PATH",
+      () => true
+    )
   )
   return true
 })
@@ -435,14 +522,16 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH, async (event, id: st
   const safeCompressionLevel = assertInteger(compressionLevel, "compression level", 0, 9)
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
-  await runTrackedWorker(
-    event,
-    safeId,
-    IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
-    compressWorker,
-    { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel, sevenZipBin },
-    "COMPRESS_ON_PATH",
-    () => true
+  await archiveConcurrency.run(() =>
+    runTrackedWorker(
+      event,
+      safeId,
+      IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
+      compressWorker,
+      { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel, sevenZipBin },
+      "COMPRESS_ON_PATH",
+      () => true
+    )
   )
   return true
 })

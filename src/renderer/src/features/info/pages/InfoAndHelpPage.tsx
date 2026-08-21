@@ -12,7 +12,6 @@ import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
 
 function InfoAndHelpPage(): JSX.Element {
   const { t } = useTranslation()
-  const { openOnBrowser } = useExternalLinks()
   const { vslVersion, os, openLogsFolder } = useAppInfo()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -39,7 +38,7 @@ function InfoAndHelpPage(): JSX.Element {
 
           <div className="w-full shrink-0 flex flex-wrap items-center justify-center gap-2">
             <SocialButtons icon={<PiGithubLogoDuotone />} to="https://github.com/StratumServer/RiftLauncher/issues" text={t("generic.issues")} />
-            <SocialButtons icon={<PiInfoDuotone />} to="https://vsldocs.xurxomf.xyz/" text={t("generic.guides")} />
+            <SocialButtons icon={<PiInfoDuotone />} to="https://github.com/StratumServer/RiftLauncher/wiki" text={t("generic.guides")} />
             <SocialButtons icon={<PiDiscordLogoDuotone />} to="https://discord.gg/vQm6z2urZs" text={t("generic.discordContact")} />
             <SocialButtons icon={<PiUsersThreeDuotone />} to="https://github.com/StratumServer/RiftLauncher/blob/main/docs/important-info/contributors.md" text={t("generic.contributors")} />
             <SocialButtons icon={<PiCodeDuotone />} to="https://github.com/StratumServer/RiftLauncher" text={t("generic.source")} />
@@ -66,19 +65,6 @@ function InfoAndHelpPage(): JSX.Element {
               />
             </p>
           </DropdownSection>
-
-          <span className="flex gap-1 items-center flex-wrap justify-center animate-pulse">
-            <Trans
-              i18nKey="generic.tryMVL"
-              components={{
-                link: (
-                  <NormalButton title="MVL" onClick={() => openOnBrowser("https://mods.vintagestory.at/mvl")} className="text-vsl">
-                    MVL
-                  </NormalButton>
-                )
-              }}
-            />
-          </span>
         </div>
       </div>
     </ScrollableContainer>

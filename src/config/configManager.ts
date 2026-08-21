@@ -1,6 +1,6 @@
 import { app } from "electron"
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@src/ipc/accountTypes"
 import { saveAccountSecrets } from "@src/ipc/accountStore"
@@ -10,9 +10,9 @@ import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from 
 const defaultConfig: ConfigType = {
   schemaVersion: CURRENT_CONFIG_SCHEMA,
   lastUsedInstallation: null,
-  defaultInstallationsFolder: join(app.getPath("appData"), "VSLInstallations"),
-  defaultVersionsFolder: join(app.getPath("appData"), "VSLGameVersions"),
-  backupsFolder: join(app.getPath("appData"), "VSLBackups"),
+  defaultInstallationsFolder: join(app.getPath("appData"), "RiftLauncherInstallations"),
+  defaultVersionsFolder: join(app.getPath("appData"), "RiftLauncherGameVersions"),
+  backupsFolder: join(app.getPath("appData"), "RiftLauncherBackups"),
   window: {
     width: 1280,
     height: 720,
@@ -68,7 +68,8 @@ async function writeConfig(normalizedConfig: ConfigType): Promise<void> {
 }
 
 function scheduleConfigWrite(): Promise<void> {
-  if (scheduledConfigWrite) return scheduledConfigWrite
+  // Compared against null rather than tested for truthiness: the question is whether a write is already scheduled, not whether a promise is truthy (it always is).
+  if (scheduledConfigWrite !== null) return scheduledConfigWrite
 
   const write = configWriteQueue.then(async () => {
     // Config state can change several times during one renderer interaction. Coalesce those transitions into one atomic write.
@@ -256,6 +257,10 @@ function normalizeGameVersion(value: unknown): GameVersionType | null {
     version: asString(value.version, "", 128),
     path: asString(value.path, "")
   }
+  // Only set when true so a plain version, or an unset one, doesn't grow a `linked: false`
+  // it never had. This flag is what keeps a player's own install off the delete path, so
+  // dropping it silently on the next load would turn "remove from list" back into deletion.
+  if (asBoolean(value.linked, false)) gameVersion.linked = true
   return gameVersion.version && gameVersion.path ? gameVersion : null
 }
 

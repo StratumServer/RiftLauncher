@@ -55,6 +55,26 @@ describe("taskReducer", () => {
     const result = taskReducer(state, { type: "NOT_A_REAL_ACTION" })
     expect(result).toBe(state)
   })
+
+  it("UPDATE_TASK returns the same state array when every updated field already holds that value", () => {
+    const done: TaskType = { ...baseTask, progress: 100, status: "completed" }
+    const state = [done]
+    const result = taskReducer(state, { type: ACTIONS.UPDATE_TASK, payload: { id: "a", updates: { progress: 100, status: "completed" } } })
+    expect(result).toBe(state)
+  })
+
+  it("UPDATE_TASK still rewrites the task when one field of several differs", () => {
+    const state = [{ ...baseTask, progress: 97, status: "in-progress" as const }]
+    const result = taskReducer(state, { type: ACTIONS.UPDATE_TASK, payload: { id: "a", updates: { progress: 100, status: "completed" } } })
+    expect(result).not.toBe(state)
+    expect(result[0]).toMatchObject({ progress: 100, status: "completed" })
+  })
+
+  it("UPDATE_TASK for an id that is not in state returns the same state array", () => {
+    const state = [baseTask]
+    const result = taskReducer(state, { type: ACTIONS.UPDATE_TASK, payload: { id: "nope", updates: { status: "completed" } } })
+    expect(result).toBe(state)
+  })
 })
 
 describe("useTaskContext", () => {
@@ -123,7 +143,7 @@ describe("progress event handling", () => {
       void result.current.task.startDownload("Name", "desc", "none", "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
     expect(result.current.task.tasks[0]!.status).toBe("pending")
 
@@ -170,7 +190,7 @@ describe("progress event handling", () => {
       void result.current.task.startExtract("Name", "desc", "none", "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 50 }))
@@ -211,7 +231,7 @@ describe("progress event handling", () => {
       void result.current.task.startCompress("Name", "desc", "none", "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 10 }))
@@ -226,6 +246,222 @@ describe("progress event handling", () => {
 
     act(() => resolveCompress(true))
     await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, null))
+  })
+})
+
+/**
+ * Issue #108: a task used to reach "completed" only through a progress event
+ * landing exactly on 100. Any run whose last tick came in under 100 (rounding,
+ * a source with no terminal tick, an installer whose payload was read out
+ * rather than run) left the task manager showing work that had actually
+ * finished as still running. Each flow now completes its own task when the
+ * call it awaited resolves, which makes the progress events cosmetic.
+ */
+describe("completion driven by the resolved operation", () => {
+  it("completes a download whose last progress event stopped at 97", async () => {
+    let progressHandler: ProgressCallback | undefined
+    let resolveDownload: (path: string) => void = () => {}
+    const downloadPromise = new Promise<string>((resolvePromise) => {
+      resolveDownload = resolvePromise
+    })
+
+    installMockWindowApi({
+      pathsManager: {
+        onDownloadProgress: vi.fn((callback: ProgressCallback): Unsubscribe => {
+          progressHandler = callback
+          return () => {}
+        }),
+        downloadOnPath: vi.fn(() => downloadPromise)
+      }
+    })
+
+    const { result } = renderTaskProbe()
+    const onFinish = vi.fn()
+
+    act(() => {
+      void result.current.task.startDownload("Name", "desc", "none", "https://x", "/tmp/out", "file.zip", onFinish)
+    })
+
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
+    const taskId = result.current.task.tasks[0]!.id
+
+    act(() => progressHandler?.({ id: taskId, progress: 97 }))
+    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("in-progress"))
+
+    await act(async () => resolveDownload("/tmp/out/file.zip"))
+
+    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, "/tmp/out/file.zip", null))
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "completed" })
+  })
+
+  it("completes an extraction whose last progress event stopped at 97", async () => {
+    let progressHandler: ProgressCallback | undefined
+    let resolveExtract: (ok: boolean) => void = () => {}
+    const extractPromise = new Promise<boolean>((resolvePromise) => {
+      resolveExtract = resolvePromise
+    })
+
+    installMockWindowApi({
+      pathsManager: {
+        onExtractProgress: vi.fn((callback: ProgressCallback): Unsubscribe => {
+          progressHandler = callback
+          return () => {}
+        }),
+        extractOnPath: vi.fn(() => extractPromise),
+        changePerms: vi.fn(async () => true)
+      }
+    })
+
+    const { result } = renderTaskProbe()
+    const onFinish = vi.fn()
+
+    act(() => {
+      void result.current.task.startExtract("Name", "desc", "none", "/tmp/a.zip", "/tmp/out", false, onFinish)
+    })
+
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
+    const taskId = result.current.task.tasks[0]!.id
+
+    act(() => progressHandler?.({ id: taskId, progress: 97 }))
+    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("in-progress"))
+
+    await act(async () => resolveExtract(true))
+
+    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, null))
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "completed" })
+  })
+
+  it("completes a compression whose last progress event stopped at 97", async () => {
+    let progressHandler: ProgressCallback | undefined
+    let resolveCompress: (ok: boolean) => void = () => {}
+    const compressPromise = new Promise<boolean>((resolvePromise) => {
+      resolveCompress = resolvePromise
+    })
+
+    installMockWindowApi({
+      pathsManager: {
+        onCompressProgress: vi.fn((callback: ProgressCallback): Unsubscribe => {
+          progressHandler = callback
+          return () => {}
+        }),
+        compressOnPath: vi.fn(() => compressPromise)
+      }
+    })
+
+    const { result } = renderTaskProbe()
+    const onFinish = vi.fn()
+
+    act(() => {
+      void result.current.task.startCompress("Name", "desc", "none", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+    })
+
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
+    const taskId = result.current.task.tasks[0]!.id
+
+    act(() => progressHandler?.({ id: taskId, progress: 97 }))
+    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("in-progress"))
+
+    await act(async () => resolveCompress(true))
+
+    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, null))
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "completed" })
+  })
+
+  it("completes an installation, which gets no progress event of its own when the payload is read out", async () => {
+    installMockWindowApi({
+      pathsManager: { runInstaller: vi.fn(async () => ({ ok: true }) as InstallerRunResult) }
+    })
+
+    const { result } = renderTaskProbe()
+    const onFinish = vi.fn()
+
+    await act(async () => {
+      await result.current.task.startInstall("Install", "desc", "none", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+    })
+
+    expect(onFinish).toHaveBeenCalledWith(true, null)
+    expect(result.current.task.tasks[0]).toMatchObject({ progress: 100, status: "completed" })
+  })
+
+  it("completes once when a 100 event and the resolved download both land, leaving the state array untouched the second time", async () => {
+    let progressHandler: ProgressCallback | undefined
+    let resolveDownload: (path: string) => void = () => {}
+    const downloadPromise = new Promise<string>((resolvePromise) => {
+      resolveDownload = resolvePromise
+    })
+
+    installMockWindowApi({
+      pathsManager: {
+        onDownloadProgress: vi.fn((callback: ProgressCallback): Unsubscribe => {
+          progressHandler = callback
+          return () => {}
+        }),
+        downloadOnPath: vi.fn(() => downloadPromise)
+      }
+    })
+
+    const { result } = renderTaskProbe()
+    const onFinish = vi.fn()
+
+    act(() => {
+      void result.current.task.startDownload("Name", "desc", "none", "https://x", "/tmp/out", "file.zip", onFinish)
+    })
+
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
+    const taskId = result.current.task.tasks[0]!.id
+
+    act(() => progressHandler?.({ id: taskId, progress: 100 }))
+    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("completed"))
+    const tasksAfterTheEvent = result.current.task.tasks
+
+    await act(async () => resolveDownload("/tmp/out/file.zip"))
+    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, "/tmp/out/file.zip", null))
+
+    // Same array instance: the success path's dispatch found nothing to change,
+    // so useReducer had no new state to render and the task never flickered
+    // out of "completed" and back into it.
+    expect(result.current.task.tasks).toBe(tasksAfterTheEvent)
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "completed" })
+  })
+
+  it("leaves a rejected download failed, at the progress it died on", async () => {
+    let progressHandler: ProgressCallback | undefined
+    let rejectDownload: (err: Error) => void = () => {}
+    const downloadPromise = new Promise<string>((_resolvePromise, rejectPromise) => {
+      rejectDownload = rejectPromise
+    })
+
+    installMockWindowApi({
+      pathsManager: {
+        onDownloadProgress: vi.fn((callback: ProgressCallback): Unsubscribe => {
+          progressHandler = callback
+          return () => {}
+        }),
+        downloadOnPath: vi.fn(() => downloadPromise)
+      }
+    })
+
+    const { result } = renderTaskProbe()
+    const onFinish = vi.fn()
+
+    act(() => {
+      void result.current.task.startDownload("Name", "desc", "all", "https://x", "/tmp/out", "file.zip", onFinish)
+    })
+
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
+    const taskId = result.current.task.tasks[0]!.id
+
+    act(() => progressHandler?.({ id: taskId, progress: 62 }))
+    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)?.progress).toBe(62))
+
+    await act(async () => rejectDownload(new Error("connection reset")))
+
+    await waitFor(() => expect(onFinish).toHaveBeenCalled())
+    const [status, , error] = onFinish.mock.calls[0] as [boolean, string, Error | null]
+    expect(status).toBe(false)
+    expect(error?.message).toContain("connection reset")
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 62, status: "failed" })
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "error"])
   })
 })
 
@@ -399,10 +635,10 @@ describe("removeTask", () => {
       void result.current.task.startDownload("Name", "desc", "none", "https://x", "/tmp/out", "file.zip", vi.fn())
     })
 
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(1))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const id = result.current.task.tasks[0]!.id
 
     act(() => result.current.task.removeTask(id))
-    await waitFor(() => expect(result.current.task.tasks.length).toBe(0))
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(0))
   })
 })

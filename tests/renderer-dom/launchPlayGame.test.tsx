@@ -180,6 +180,30 @@ describe("MainMenu Play button", () => {
     expect(readProbe().lastTimePlayed).toBeGreaterThan(-1)
   })
 
+  it("refuses to play an Installation with no VS Version set and names the state instead of a blank version", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation({ version: "" })],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText("This Installation has no VS Version set!")
+    expect(executeGame).not.toHaveBeenCalled()
+  })
+
   const REFUSAL_CASES: { reason: GameExecutionFailureReason; message: string }[] = [
     { reason: "unsupported-platform", message: "Vintage Story can't run on this platform yet. Try it from Windows or Linux!" },
     { reason: "no-executable", message: "Couldn't find Vintage Story in this version's folder. Try reinstalling it!" },

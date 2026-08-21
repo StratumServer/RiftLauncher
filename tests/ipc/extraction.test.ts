@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
@@ -100,6 +100,21 @@ describe("validateTree", () => {
 
     assert.throws(() => validateTree(workspacePath("payload")), /unsafe filesystem entry/)
   })
+
+  it("refuses a real hard link, by nlink rather than by a reused dev:ino pair", () => {
+    writeTree(workspacePath("payload"), { "real.txt": "body" })
+    linkSync(workspacePath("payload", "real.txt"), workspacePath("payload", "linked.txt"))
+
+    assert.throws(() => validateTree(workspacePath("payload")), /hard links/)
+  })
+
+  it("passes distinct zero-byte files, which platform quirks can report under a reused dev:ino pair without being hard links", () => {
+    writeTree(workspacePath("payload"), { "empty-a.txt": "", "empty-b.txt": "", "empty-c.txt": "" })
+
+    const stats = validateTree(workspacePath("payload"))
+
+    assert.equal(stats.entries, 4)
+  })
 })
 
 describe("runExtraction on a gzipped tar", () => {
@@ -174,8 +189,11 @@ describe("runExtraction on a gzipped tar", () => {
   it("writes nothing into the target when the archive cannot be read", async () => {
     writeFileSync(workspacePath("broken.tar.gz"), "not a gzip stream at all")
 
-    await assert.rejects(runExtraction({ filePath: workspacePath("broken.tar.gz"), outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin }), /Extraction failed/)
-    assert.deepEqual(readdirSync(workspacePath("target")), [])
+    // Caught by runExtraction's own pre-extraction validateArchive call, before it even
+    // creates the target directory, let alone extracts (and its generic "Extraction failed")
+    // is ever reached.
+    await assert.rejects(runExtraction({ filePath: workspacePath("broken.tar.gz"), outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin }), /Archive could not be read/)
+    assert.equal(existsSync(workspacePath("target")), false)
   })
 
   it("leaves no temporary workspace behind", async () => {

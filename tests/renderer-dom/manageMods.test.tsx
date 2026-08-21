@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen, waitFor, within } from "@testing-library/react"
+import { cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
@@ -38,7 +38,7 @@ function anInstallation(): InstallationType {
 function aModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
   return {
     mods: [
-      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, description: "The first one.", authors: ["Ann"], contributors: [] },
+      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, description: "The first one.", authors: ["Ann"], contributors: [], _image: "alpha.png" },
       { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, description: "The second one.", authors: ["Bob"], contributors: [] },
       { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: "/games/a/Mods/gamma-3.0.0.zip", authors: ["Cal"], contributors: [] }
     ],
@@ -89,7 +89,7 @@ function queryModDb(url: string): Promise<string> {
  * to gate mounting behind the Installations being in context, because the scan effect now re-runs
  * once the config's loaded state flips (#58).
  */
-function renderManageMods(overrides: WindowApiOverrides = {}): void {
+function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof renderWithProviders> {
   installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
     modsManager: { getInstalledMods: vi.fn(async () => aModScan()) },
@@ -97,7 +97,7 @@ function renderManageMods(overrides: WindowApiOverrides = {}): void {
     ...overrides
   })
 
-  renderWithProviders(
+  return renderWithProviders(
     <Routes>
       <Route
         path="/installations/mods/:id"
@@ -121,12 +121,24 @@ describe("ManageMods", () => {
     expect(screen.getByText("Beta Mod")).toBeTruthy()
     expect(screen.getByText("Gamma Mod")).toBeTruthy()
 
+    // Alpha is the only fixture with a cached icon, so its <img> is the one path that exercises
+    // the loading="lazy" branch instead of the placeholder <div>.
+    const alphaImage = screen.getByAltText("Alpha Mod")
+    expect(alphaImage.getAttribute("src")).toBe("cachemodimg:alpha.png")
+    expect(alphaImage.getAttribute("loading")).toBe("lazy")
+
     expect(screen.getByText("Mods with updates")).toBeTruthy()
     expect(screen.getByText("Mods with incompatible updates")).toBeTruthy()
 
     // The unreadable archive is listed by its file name, under its own heading.
     expect(screen.getByText("Mods with errors")).toBeTruthy()
     expect(screen.getByText("broken.zip")).toBeTruthy()
+
+    // A list this long (the installed-mods folder, not the ModDB grid) can also run into the
+    // hundreds, so each row skips layout/paint once scrolled out of view the same way
+    // ModListCard's own content already does.
+    const alphaRow = screen.getByText("Alpha Mod").closest("li")?.firstElementChild
+    expect(alphaRow?.className).toContain("skip-offscreen-render")
   })
 
   it("leaves the Mod on disk until the delete confirm dialog is accepted", async () => {
@@ -179,5 +191,18 @@ describe("ManageMods", () => {
     // Gamma had no compatible update, so the bulk run never touched it.
     expect(downloadOnPath).toHaveBeenCalledTimes(2)
     expect(deletePath.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([ALPHA_PATH, BETA_PATH]))
+  })
+
+  it("clears the mod icon memory cache when leaving the page", async () => {
+    const rendered = renderManageMods()
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    const clearCache = window.api.modsManager.clearModIconMemoryCache
+    expect(clearCache).not.toHaveBeenCalled()
+
+    rendered.unmount()
+    expect(clearCache).toHaveBeenCalledTimes(1)
+
+    cleanup()
   })
 })

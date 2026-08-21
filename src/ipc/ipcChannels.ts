@@ -20,7 +20,8 @@ export const IPC_CHANNELS = {
   MODS_MANAGER: {
     GET_INSTALLED_MODS: "get-installed-mods",
     EXPORT_MODPACK: "export-modpack",
-    IMPORT_MODPACK: "import-modpack"
+    IMPORT_MODPACK: "import-modpack",
+    CLEAR_MOD_ICON_MEMORY_CACHE: "clear-mod-icon-memory-cache"
   },
   PATHS_MANAGER: {
     GET_CURRENT_USER_DATA_PATH: "get-current-user-data-path",

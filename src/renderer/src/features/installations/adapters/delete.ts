@@ -10,7 +10,7 @@ export function createDeleteInstallationPorts(): DeleteInstallationPorts {
 export function toInstallationDeleteSnapshot(installation: InstallationType): InstallationDeleteSnapshot {
   return {
     path: installation.path,
-    backups: installation.backups.map((backup) => ({ path: backup.path })),
+    backups: installation.backups.map((backup) => ({ id: backup.id, path: backup.path, isDeleting: backup._deleting ?? false, isRestoring: backup._restoring ?? false })),
     isPlaying: installation._playing ?? false,
     isBackingUp: installation._backuping ?? false,
     isRestoringBackup: installation._restoringBackup ?? false

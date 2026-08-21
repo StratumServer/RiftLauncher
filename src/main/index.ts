@@ -1,29 +1,33 @@
-import { app, shell, BrowserWindow, protocol, net, session, Menu } from "electron"
-import { dirname, join } from "path"
+import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain } from "electron"
+import { dirname, join } from "node:path"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import { autoUpdater } from "electron-updater"
 import Logger from "electron-log"
 import { pathToFileURL } from "url"
+import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMigration"
 
-const customUserDataPath = join(app.getPath("appData"), "VSLauncher")
-app.setPath("userData", customUserDataPath)
+const userDataSetup = setUpUserDataFolder(app.getPath("appData"))
+app.setPath("userData", userDataSetup.path)
 
 import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { logMessage } from "@src/utils/logManager"
+import { createUpdaterLogger } from "@src/utils/updaterLogger"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
-import { registerTrustedWebContents } from "@src/ipc/ipcSecurity"
+import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
+import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
+import { pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
+import { createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
+import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
 import fse from "fs-extra"
 
 import "@src/ipc"
 import { clearTimeout, setTimeout } from "timers"
-
-autoUpdater.logger = Logger
-autoUpdater.logger.info("Logger configured for auto-updater")
 
 Logger.transports.file.resolvePathFn = (variables, message): string => {
   const logsPath = join(variables.userData, "Logs")
@@ -31,9 +35,22 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
   return join(logsPath, `${message.level}.log`)
 }
 
+logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
+
+// electron-updater's own constructor already attaches an "error" listener that logs
+// error.stack || error.message through whatever logger it is given, so a hand-written
+// listener here would be redundant. What it was given until now was the raw electron-log
+// instance, the one component writing to disk without passing through logMessage, so the
+// updater's cache paths and feed URLs escaped the redaction every other line gets.
+// Placed after resolvePathFn so nothing is logged before the app's Logs directory exists.
+autoUpdater.logger = createUpdaterLogger()
+
 let mainWindow: BrowserWindow
+const modIconMemoryCache = new IconMemoryCache()
 const packagedRendererPath = join(__dirname, "../renderer/index.html")
 const packagedRendererRoot = dirname(packagedRendererPath)
+
+ipcMain.on(IPC_CHANNELS.MODS_MANAGER.CLEAR_MOD_ICON_MEMORY_CACHE, createClearModIconMemoryCacheHandler(modIconMemoryCache, isTrustedIpcSender))
 
 if (!is.dev) {
   protocol.registerSchemesAsPrivileged([
@@ -66,6 +83,15 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The launcher has no prose input (installation names, start params and env vars
+      // are the only text fields) and no context menu anywhere in the app, so spelling
+      // suggestions were never reachable. What it did cost was real: a fresh profile
+      // downloads a multi-megabyte hunspell dictionary from a third-party CDN into
+      // userData/Dictionaries at startup and keeps the spellcheck service alive for it.
+      // This flag alone does not stop that download. The call that stops it is
+      // setSpellCheckerLanguages([]) in the whenReady handler below, which empties the
+      // session's language list so there is no dictionary left to fetch.
+      spellcheck: false,
       preload: join(__dirname, "../preload/index.js")
     }
   })
@@ -162,12 +188,39 @@ const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) app.quit()
 
+/**
+ * Reads electron-builder's `package-type` marker next to the packaged app, when the deb,
+ * rpm or pacman targets wrote one. Its absence just means an AppImage, a flatpak, or a dev
+ * run, all of which canAutoUpdate treats the same as "no marker".
+ */
+function readLinuxPackageType(): string | undefined {
+  try {
+    const markerPath = join(process.resourcesPath, "package-type")
+    if (!fse.existsSync(markerPath)) return undefined
+    return fse.readFileSync(markerPath, "utf-8").trim()
+  } catch {
+    return undefined
+  }
+}
+
 // This method will be called when Electron has finished initialization and is ready to create browser windows. Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   logMessage("info", "[back] [index] [main/index.ts] [whenReady] Electron ready.")
 
   session.defaultSession.setPermissionCheckHandler(() => false)
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+  // webPreferences.spellcheck: false alone does not stop Electron from fetching a
+  // hunspell dictionary at startup (electron/electron#22995, electron/electron#24931).
+  // setSpellCheckerLanguages([]) is the call that stops it: the fetch follows the session's
+  // language list, so an empty list leaves nothing to download. That is the whole fix, not
+  // an edge case on top of the toggle below it. A fresh profile with spellcheck: false and
+  // setSpellCheckerEnabled(false) set, language list untouched, downloaded the dictionary
+  // anyway, reproduced twice (#132). setSpellCheckerEnabled(false) stays as the documented
+  // session-level toggle, but it is the redundant half of the pair. Tidying away the
+  // language list line brings the download back, and tests/security-boundaries.test.ts
+  // now fails if either call goes missing.
+  session.defaultSession.setSpellCheckerEnabled(false)
+  session.defaultSession.setSpellCheckerLanguages([])
 
   if (!is.dev) {
     protocol.handle("app", async (request) => {
@@ -186,14 +239,16 @@ app.whenReady().then(async () => {
     })
   }
 
-  // Handler for mod icons
-  protocol.handle("cachemodimg", async (req) => {
-    const srcPath = join(app.getPath("userData"), "Cache", "Images", "Mods")
-    const filePath = resolveContainedPath(srcPath, new URL(req.url).pathname)
-    if (!filePath || !filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
-    if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
-    return net.fetch(pathToFileURL(filePath).toString())
-  })
+  // Handler for mod icons. Names in this folder are content-addressed, so a hit in
+  // modIconMemoryCache can never serve stale bytes.
+  protocol.handle(
+    "cachemodimg",
+    createCacheModImageProtocolHandler({
+      cache: modIconMemoryCache,
+      getUserDataPath: () => app.getPath("userData"),
+      fetchFile: (url) => net.fetch(url)
+    })
+  )
 
   // Handler for custom icons
   protocol.handle("icons", async (req) => {
@@ -217,7 +272,19 @@ app.whenReady().then(async () => {
 
   createWindow()
 
-  if (process.env["UPDATE"] !== "false") {
+  // Fire and forget, after the window exists so it stays off the first paint path
+  // and before the renderer's first scan 2.5 seconds later. This is the only
+  // sweep of the shared mod icon cache: a scan reads one installation and the
+  // folder holds every installation's icons, so a scan can never decide what is
+  // dead there (#117).
+  void pruneModIconCache()
+
+  const updateDecision = canAutoUpdate({
+    platform: process.platform,
+    env: { UPDATE: process.env["UPDATE"], APPIMAGE: process.env["APPIMAGE"] },
+    linuxPackageType: process.platform === "linux" ? readLinuxPackageType() : undefined
+  })
+  if (updateDecision.ok) {
     // If there is an update available send an event to the client.
     autoUpdater.on("update-available", () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE)
@@ -234,6 +301,8 @@ app.whenReady().then(async () => {
       void autoUpdater.checkForUpdatesAndNotify()
     }, 5_000)
     updateCheckTimer.unref()
+  } else {
+    logMessage("info", `[back] [index] [main/index.ts] [whenReady] Auto-update disabled: ${updateDecision.reason}.`)
   }
 
   app.on("activate", function () {
@@ -250,6 +319,7 @@ app.on("window-all-closed", () => {
   }
 
   logMessage("info", "[back] [index] [main/index.ts] [window-all-closed] All windows closed.")
+  clearModIconMemoryCache(modIconMemoryCache)
   if (process.platform !== "darwin") {
     app.quit()
   }
@@ -262,7 +332,7 @@ app.on("before-quit", (event) => {
 
   if (isWaitingForConfigFlush) return
   const pendingConfigWrite = flushConfigWrites()
-  if (!pendingConfigWrite) return
+  if (pendingConfigWrite === null) return
 
   event.preventDefault()
   isWaitingForConfigFlush = true
@@ -289,15 +359,4 @@ async function saveCurrentWindowState(): Promise<void> {
   }
 
   saveConfig(config)
-}
-
-async function isSafeProtocolFile(filePath: string): Promise<boolean> {
-  try {
-    const stats = await fse.lstat(filePath)
-    if (!stats.isFile() || stats.isSymbolicLink()) return false
-    const realPath = await fse.realpath(filePath)
-    return realPath === filePath || (process.platform === "win32" && realPath.toLowerCase() === filePath.toLowerCase())
-  } catch {
-    return false
-  }
 }

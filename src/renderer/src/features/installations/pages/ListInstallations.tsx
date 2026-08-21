@@ -1,12 +1,23 @@
 import { useState, useRef } from "react"
 import { Input } from "@headlessui/react"
-import { PiFolderOpenDuotone, PiPlusCircleDuotone, PiPencilDuotone, PiBoxArrowDownDuotone, PiArrowCounterClockwiseDuotone, PiWrenchDuotone, PiXCircleDuotone, PiTrashDuotone } from "react-icons/pi"
+import {
+  PiFolderOpenDuotone,
+  PiPlusCircleDuotone,
+  PiPencilDuotone,
+  PiBoxArrowDownDuotone,
+  PiArrowCounterClockwiseDuotone,
+  PiWrenchDuotone,
+  PiXCircleDuotone,
+  PiTrashDuotone,
+  PiWarningDuotone
+} from "react-icons/pi"
 import { useTranslation } from "react-i18next"
+import clsx from "clsx"
 
 import { deleteInstallation } from "@domain/installations/delete"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
-import { useInstallations, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
@@ -28,6 +39,7 @@ function ListInslallations(): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const installations = useInstallations()
+  const gameVersions = useGameVersions()
   const customIcons = useCustomIcons()
   const configDispatch = useConfigDispatch()
 
@@ -100,88 +112,98 @@ function ListInslallations(): JSX.Element {
               </LinkButton>
             </ListItem>
 
-            {installations.map((installation) => (
-              <ListItem key={installation.id}>
-                <div className="h-16 flex gap-2 p-1 justify-between items-center whitespace-nowrap">
-                  <img
-                    src={
-                      INSTALLATION_ICONS.some((ii) => ii.id === installation.icon)
-                        ? INSTALLATION_ICONS.find((ii) => ii.id === installation.icon)?.icon
-                        : customIcons.some((ii) => ii.id === installation.icon)
-                          ? `icons:${customIcons.find((ii) => ii.id === installation.icon)?.icon}`
-                          : INSTALLATION_ICONS[0].icon
-                    }
-                    alt={t("generic.icon")}
-                    className="h-full aspect-square object-cover rounded-sm"
-                  />
+            {installations.map((installation) => {
+              const isVersionMissing = !gameVersions.some((gv) => gv.version === installation.version)
 
-                  <ThinSeparator />
+              return (
+                <ListItem key={installation.id}>
+                  <div className="h-16 flex gap-2 p-1 justify-between items-center whitespace-nowrap">
+                    <img
+                      src={
+                        INSTALLATION_ICONS.some((ii) => ii.id === installation.icon)
+                          ? INSTALLATION_ICONS.find((ii) => ii.id === installation.icon)?.icon
+                          : customIcons.some((ii) => ii.id === installation.icon)
+                            ? `icons:${customIcons.find((ii) => ii.id === installation.icon)?.icon}`
+                            : INSTALLATION_ICONS[0].icon
+                      }
+                      alt={t("generic.icon")}
+                      className="h-full aspect-square object-cover rounded-sm"
+                    />
 
-                  <div className="w-full flex flex-col items-start justify-center gap-1 overflow-hidden">
-                    <div className="w-full flex gap-1 items-center justify-start">
-                      <p className="font-bold">{installation.name}</p>
+                    <ThinSeparator />
+
+                    <div className="w-full flex flex-col items-start justify-center gap-1 overflow-hidden">
+                      <div className="w-full flex gap-1 items-center justify-start">
+                        <p className="font-bold">{installation.name}</p>
+                      </div>
+
+                      <div className="w-full flex gap-1 items-center justify-start text-sm text-zinc-400">
+                        <p>{installation.lastTimePlayed === -1 ? t("generic.notPlayedYet") : new Date(installation.lastTimePlayed).toLocaleString("es")}</p>
+
+                        <span>·</span>
+
+                        <p>{t("generic.totalTime", { total: installation.totalTimePlayed > 1000 ? formatMilliseconds(installation.totalTimePlayed) : "0s" })}</p>
+                      </div>
                     </div>
 
-                    <div className="w-full flex gap-1 items-center justify-start text-sm text-zinc-400">
-                      <p>{installation.lastTimePlayed === -1 ? t("generic.notPlayedYet") : new Date(installation.lastTimePlayed).toLocaleString("es")}</p>
+                    <ThinSeparator />
 
-                      <span>·</span>
-
-                      <p>{t("generic.totalTime", { total: installation.totalTimePlayed > 1000 ? formatMilliseconds(installation.totalTimePlayed) : "0s" })}</p>
-                    </div>
-                  </div>
-
-                  <ThinSeparator />
-
-                  <div className="shrink-0 w-22 flex flex-col items-center justify-center gap-1">
-                    <p className="font-bold">{installation.version}</p>
-                    <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount as number })}</p>
-                  </div>
-
-                  <ThinSeparator />
-
-                  <div className="shrink-0 w-fit h-full flex gap-1 items-center text-lg">
-                    <div className="flex flex-col gap-1">
-                      <NormalButton
-                        className="p-1"
-                        title={t("features.installations.backupInstallation")}
-                        onClick={async () => {
-                          if (!(await checkPathExists(installation.path))) return addNotification(t("features.backups.folderDoesntExists"), "error")
-                          makeInstallationBackup(installation.id)
-                        }}
+                    <div className="shrink-0 w-22 flex flex-col items-center justify-center gap-1">
+                      <p
+                        className={clsx("font-bold flex items-center gap-1", isVersionMissing && "text-orange-300")}
+                        title={isVersionMissing ? t("features.versions.versionNotInstalled", { version: installation.version }) : undefined}
                       >
-                        <PiBoxArrowDownDuotone />
-                      </NormalButton>
-                      <LinkButton to={`/installations/backups/${installation.id}`} className="p-1" title={t("features.backups.manageBackups")}>
-                        <PiArrowCounterClockwiseDuotone />
-                      </LinkButton>
+                        {isVersionMissing && <PiWarningDuotone className="shrink-0" />}
+                        {installation.version}
+                      </p>
+                      <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount as number })}</p>
                     </div>
-                    <div className="flex flex-col gap-1">
-                      <LinkButton to={`/installations/mods/${installation.id}`} title={t("features.mods.manageMods")} className="p-1">
-                        <PiWrenchDuotone />
-                      </LinkButton>
-                      <NormalButton onClick={() => openPathInExplorer(installation.path)} title={`${t("generic.openOnFileExplorer")} · ${installation.path}`} className="p-1">
-                        <PiFolderOpenDuotone />
-                      </NormalButton>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <LinkButton to={`/installations/edit/${installation.id}`} title={t("features.installations.editInstallation")} className="p-1">
-                        <PiPencilDuotone />
-                      </LinkButton>
-                      <NormalButton
-                        className="p-1"
-                        title={t("features.installations.deleteInstallation")}
-                        onClick={async () => {
-                          setInstallationToDelete(installation)
-                        }}
-                      >
-                        <PiTrashDuotone />
-                      </NormalButton>
+
+                    <ThinSeparator />
+
+                    <div className="shrink-0 w-fit h-full flex gap-1 items-center text-lg">
+                      <div className="flex flex-col gap-1">
+                        <NormalButton
+                          className="p-1"
+                          title={t("features.installations.backupInstallation")}
+                          onClick={async () => {
+                            if (!(await checkPathExists(installation.path))) return addNotification(t("features.backups.folderDoesntExists"), "error")
+                            makeInstallationBackup(installation.id)
+                          }}
+                        >
+                          <PiBoxArrowDownDuotone />
+                        </NormalButton>
+                        <LinkButton to={`/installations/backups/${installation.id}`} className="p-1" title={t("features.backups.manageBackups")}>
+                          <PiArrowCounterClockwiseDuotone />
+                        </LinkButton>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <LinkButton to={`/installations/mods/${installation.id}`} title={t("features.mods.manageMods")} className="p-1">
+                          <PiWrenchDuotone />
+                        </LinkButton>
+                        <NormalButton onClick={() => openPathInExplorer(installation.path)} title={`${t("generic.openOnFileExplorer")} · ${installation.path}`} className="p-1">
+                          <PiFolderOpenDuotone />
+                        </NormalButton>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <LinkButton to={`/installations/edit/${installation.id}`} title={t("features.installations.editInstallation")} className="p-1">
+                          <PiPencilDuotone />
+                        </LinkButton>
+                        <NormalButton
+                          className="p-1"
+                          title={t("features.installations.deleteInstallation")}
+                          onClick={async () => {
+                            setInstallationToDelete(installation)
+                          }}
+                        >
+                          <PiTrashDuotone />
+                        </NormalButton>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </ListItem>
-            ))}
+                </ListItem>
+              )
+            })}
           </ListGroup>
         </ListWrapper>
 

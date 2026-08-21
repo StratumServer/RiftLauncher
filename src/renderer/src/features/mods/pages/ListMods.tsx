@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useTranslation } from "react-i18next"
 
 import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
@@ -58,6 +58,7 @@ function ListMods(): JSX.Element {
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const queryTokenRef = useRef<number>(0)
 
   const handleScroll = (): void => {
     if (!scrollRef.current) return
@@ -69,6 +70,11 @@ function ListMods(): JSX.Element {
     if (scrollRef.current) scrollRef.current.addEventListener("scroll", handleScroll)
 
     return (): void => {
+      // scrollRef is the ScrollableContainer's own ref, stable for ListMods' whole mounted
+      // life; the element this attaches to and the element this detaches from are always
+      // the same node, so a value read at cleanup time can never differ from the one the
+      // listener was actually added to.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       if (scrollRef.current) scrollRef.current.removeEventListener("scroll", handleScroll)
     }
   }, [])
@@ -84,6 +90,12 @@ function ListMods(): JSX.Element {
     return (): void => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
+    // triggerQueryMods is a plain function redeclared every render, not a useCallback: it
+    // always closes over this render's own filter values, so calling it from here already
+    // reads the current textFilter/authorFilter/etc. Listing it as a dependency would only
+    // make this effect refire on ListMods' own re-renders, not on anything it doesn't
+    // already refire on through the filters below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textFilter, authorFilter, versionsFilter, tagsFilter, sideFilter, installedFilter, onlyFav, orderBy, orderByOrder])
 
   // Keyed on id/path, not on `installation` itself: triggerGetInstalledMods calls
@@ -95,10 +107,19 @@ function ListMods(): JSX.Element {
   useEffect(() => {
     if (!installation) return setInstallationInstalledMods([])
     triggerGetInstalledMods()
+    // triggerGetInstalledMods is excluded for the same reason as the effects above: a plain
+    // function redeclared every render, already closing over the current `installation`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installation?.id, installation?.path])
 
   useEffect(() => {
     if (installedFilter !== "all") triggerQueryMods(false)
+    // installedFilter changing on its own is already covered by the debounced-query effect
+    // above (it lists installedFilter in its own deps); this effect exists only to redo an
+    // "installed"/"not-installed" filter once a fresh installationInstalledMods scan comes
+    // in, so listing installedFilter here too would just fire triggerQueryMods twice for
+    // the same change. triggerQueryMods is excluded for the same reason as the effect above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installationInstalledMods])
 
   async function triggerQueryMods(resetScroll: boolean = true): Promise<void> {
@@ -112,6 +133,12 @@ function ListMods(): JSX.Element {
 
     setSearching(true)
 
+    // Nothing stops a second triggerQueryMods (a filter changed again before the first
+    // request came back) from landing after this one. Without this token, whichever
+    // resolves last wins regardless of which was asked for last, so a slow, already-stale
+    // query could overwrite a filter the user has since moved past.
+    const queryToken = ++queryTokenRef.current
+
     let mods = await queryMods({
       textFilter,
       authorFilter,
@@ -120,12 +147,15 @@ function ListMods(): JSX.Element {
       orderBy,
       orderByOrder,
       onFinish: () => {
+        if (queryToken !== queryTokenRef.current) return
         if (resetScroll) {
           scrollRef.current?.scrollTo({ top: 0 })
           setVisibleMods(DEFAULT_LOADED_MODS)
         }
       }
     })
+
+    if (queryToken !== queryTokenRef.current) return
 
     if (sideFilter !== "any") mods = mods.filter((mod) => mod.side === sideFilter)
 
@@ -152,6 +182,36 @@ function ListMods(): JSX.Element {
 
     setInstallationInstalledMods(mods.mods)
   }
+
+  // Stable references so ModsGrid can hand every ModListCard the same callback and let
+  // its React.memo actually skip cards untouched by whatever caused ListMods to re-render.
+  // Depends on hasInstallation (a primitive), not `installation` itself: that object is
+  // rebuilt by useMemo above on every edit to *any* installation, unrelated fields
+  // included, which would otherwise re-identify this callback on every such edit too.
+  const hasInstallation = Boolean(installation)
+  const onSelectMod = useCallback(
+    (mod: DownloadableModOnListType): void => {
+      if (!hasInstallation) {
+        addNotification(t("features.installations.noInstallationSelected"), "error")
+        return
+      }
+      setModToInstall(mod)
+    },
+    [hasInstallation, addNotification, t]
+  )
+
+  const onToggleFavMod = useCallback(
+    (mod: DownloadableModOnListType): void => {
+      if (favMods.some((modid) => modid === mod.modid)) {
+        configDispatch({ type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: mod.modid } })
+      } else {
+        configDispatch({ type: CONFIG_ACTIONS.ADD_FAV_MOD, payload: { modid: mod.modid } })
+      }
+    },
+    [favMods, configDispatch]
+  )
+
+  const onOpenModDb = useCallback((mod: DownloadableModOnListType): void => openModOnModDb(mod.assetid), [openModOnModDb])
 
   function clearFilters(): void {
     setTextFilter("")
@@ -215,18 +275,9 @@ function ListMods(): JSX.Element {
           searching={searching}
           isModInstalled={(mod) => Boolean(installationInstalledMods?.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid)))}
           isModFav={(mod) => favMods.some((modid) => modid === mod.modid)}
-          onSelectMod={(mod) => {
-            if (!installation) return addNotification(t("features.installations.noInstallationSelected"), "error")
-            setModToInstall(mod)
-          }}
-          onToggleFavMod={(mod) => {
-            if (favMods.some((modid) => modid === mod.modid)) {
-              configDispatch({ type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: mod.modid } })
-            } else {
-              configDispatch({ type: CONFIG_ACTIONS.ADD_FAV_MOD, payload: { modid: mod.modid } })
-            }
-          }}
-          onOpenModDb={(mod) => openModOnModDb(mod.assetid)}
+          onSelectMod={onSelectMod}
+          onToggleFavMod={onToggleFavMod}
+          onOpenModDb={onOpenModDb}
         />
 
         <InstallModPopup

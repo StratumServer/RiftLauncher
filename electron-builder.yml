@@ -43,10 +43,12 @@ linux:
   target:
     - AppImage
     - deb
+    - rpm
+    - pacman
     - flatpak
   maintainer: Zaldaryon
   category: Game
-  icon: resources/icon.icns
+  icon: build/icons
 appImage:
   artifactName: ${name}-${version}.${ext}
 flatpak:

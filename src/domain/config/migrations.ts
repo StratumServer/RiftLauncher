@@ -18,7 +18,7 @@
  */
 
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 2
+export const CURRENT_CONFIG_SCHEMA = 3
 
 /**
  * First schema expressed as an integer.
@@ -181,8 +181,44 @@ export const floatMarkerToIntegerSchema: ConfigMigration = {
   }
 }
 
+/**
+ * Stamps `linked: true` on game versions whose path sits outside `defaultVersionsFolder`.
+ *
+ * Before this schema existed, registered folders were stored without a `linked` flag.
+ * On uninstall the launcher checked `linked` to decide whether to delete the folder or
+ * just remove it from the list. Without the flag, a folder the user pointed us at would
+ * have been deleted on removal. This migration back-fills the intent: if the version
+ * lives under the managed folder it was downloaded by the launcher and stays unlinked;
+ * anything else was brought in by the user and gets the flag.
+ */
+export const stampLinkedOnExternalVersions: ConfigMigration = {
+  fromSchema: 2,
+  toSchema: 3,
+  migrate(doc: unknown): unknown {
+    if (!isRecord(doc)) return doc
+
+    const versions = doc.gameVersions
+    if (!Array.isArray(versions) || versions.length === 0) return { ...doc }
+
+    const raw = typeof doc.defaultVersionsFolder === "string" ? doc.defaultVersionsFolder : ""
+    const managedRoot = raw.length > 0 ? raw : null
+
+    const stamped = versions.map((entry: unknown) => {
+      if (!isRecord(entry)) return entry
+      const path = entry.path
+      if (typeof path !== "string" || !path) return entry
+      if (entry.linked === true) return entry
+
+      const isManaged = managedRoot !== null && (path === managedRoot || path.startsWith(managedRoot + "/") || path.startsWith(managedRoot + "\\"))
+      return isManaged ? entry : { ...entry, linked: true }
+    })
+
+    return { ...doc, gameVersions: stamped }
+  }
+}
+
 /** Every migration the launcher knows, lowest schema first. */
-export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema]
+export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {
   return new Map(migrations.map((migration) => [migration.fromSchema, migration]))

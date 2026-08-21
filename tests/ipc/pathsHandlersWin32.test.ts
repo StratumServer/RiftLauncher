@@ -45,8 +45,7 @@ vi.mock("@src/ipc/workers/changePermsWorker?modulePath", () => ({ default: "chan
 vi.mock("@src/ipc/workers/downloadWorker?modulePath", () => ({ default: "downloadWorker-path" }))
 
 vi.mock("@src/ipc/workerManager", () => ({
-  createTrackedWorker: vi.fn(),
-  disposeTrackedWorker: vi.fn()
+  acquireWorker: vi.fn()
 }))
 
 vi.mock("child_process", () => ({ spawn: vi.fn() }))
@@ -54,14 +53,17 @@ vi.mock("child_process", () => ({ spawn: vi.fn() }))
 /** RUN_INSTALLER's own bound on the fallback spawn, mirrored from pathsHandlers.ts (not exported). */
 const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
 
-/** Waits for the next `createTrackedWorker(...)` call and hands back a fake worker to drive, same as pathsHandlers.test.ts. */
+let nextLeaseToken = 1
+
+/** Waits for the next `acquireWorker(...)` call and hands back a fake worker to drive, same as pathsHandlers.test.ts. */
 async function nextTrackedWorker(): Promise<EventEmitter> {
-  const { createTrackedWorker } = await import("@src/ipc/workerManager")
+  const { acquireWorker } = await import("@src/ipc/workerManager")
+  const token = nextLeaseToken++
   return new Promise((resolvePromise) => {
-    vi.mocked(createTrackedWorker).mockImplementationOnce(() => {
+    vi.mocked(acquireWorker).mockImplementationOnce(() => {
       const worker = new EventEmitter()
       resolvePromise(worker)
-      return worker as unknown as Worker
+      return { worker: worker as unknown as Worker, token, dispatch: vi.fn(), release: vi.fn() }
     })
   })
 }
@@ -92,7 +94,7 @@ let userDataFolder: string
 
 function writeConfig(config: Partial<ConfigType>): void {
   const fullConfig = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     lastUsedInstallation: null,
     defaultInstallationsFolder: managedFolder,
     defaultVersionsFolder: versionsFolder,
@@ -154,9 +156,8 @@ beforeEach(async () => {
   // the same object across vi.resetModules(); clear their call history
   // explicitly rather than relying on afterEach's ordering (same reasoning
   // as pathsHandlers.test.ts's beforeEach).
-  const { createTrackedWorker, disposeTrackedWorker } = await import("@src/ipc/workerManager")
-  vi.mocked(createTrackedWorker).mockReset()
-  vi.mocked(disposeTrackedWorker).mockReset()
+  const { acquireWorker } = await import("@src/ipc/workerManager")
+  vi.mocked(acquireWorker).mockReset()
   const { spawn } = await import("child_process")
   vi.mocked(spawn).mockReset()
 
@@ -190,8 +191,8 @@ describe("RUN_INSTALLER on win32: pre-flight branches", () => {
     const result = await handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-1", installerPath, versionsFolder, false)
     assert.deepEqual(result, { ok: false, reason: "installer-missing" })
 
-    const { createTrackedWorker } = await import("@src/ipc/workerManager")
-    assert.equal(vi.mocked(createTrackedWorker).mock.calls.length, 0)
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0)
     const { spawn } = await import("child_process")
     assert.equal(vi.mocked(spawn).mock.calls.length, 0)
   })
@@ -227,8 +228,8 @@ describe("RUN_INSTALLER on win32: payload extraction", () => {
 
     assert.deepEqual(await resultPromise, { ok: true })
 
-    const { createTrackedWorker } = await import("@src/ipc/workerManager")
-    assert.equal(vi.mocked(createTrackedWorker).mock.calls.length, 1)
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 1)
     const { spawn } = await import("child_process")
     assert.equal(vi.mocked(spawn).mock.calls.length, 0)
   })
@@ -404,7 +405,7 @@ describe("CHANGE_PERMS on win32", () => {
     const result = await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [managedFolder], 0o755)
     assert.equal(result, false)
 
-    const { createTrackedWorker } = await import("@src/ipc/workerManager")
-    assert.equal(vi.mocked(createTrackedWorker).mock.calls.length, 0)
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0)
   })
 })

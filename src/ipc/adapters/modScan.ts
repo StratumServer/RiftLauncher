@@ -1,11 +1,13 @@
 import { createHash } from "crypto"
 import { app } from "electron"
 import fse from "fs-extra"
-import { join } from "path"
+import { join } from "node:path"
 import yauzl from "yauzl"
 
 import type { DirectoryReader, IconStore, ModArchiveContent, ModArchiveReader, ModArchiveResult, PathBuilder } from "@domain/ports"
+import type { CachedIcon } from "@domain/mods/iconCache"
 import type { ScanInstalledModsPorts } from "@domain/mods/scanInstalled"
+import { MOD_ICON_CACHE_MAX_BYTES, planIconCacheEviction } from "@domain/mods/iconCache"
 import { assertSafeFileName } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
 
@@ -19,7 +21,7 @@ const MODICON_ENTRY = "modicon.png"
 const MAX_MODINFO_BYTES = 1 * 1024 * 1024
 
 /** Past this, a mod icon is not an icon any more. */
-const MAX_MOD_IMAGE_BYTES = 8 * 1024 * 1024
+const MAX_MOD_IMAGE_BYTES = 512 * 1024
 
 /** Folder mod icons are cached under, inside the launcher's own user data. */
 function modImagesFolder(): string {
@@ -116,7 +118,11 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
         }
 
         if (entry.fileName === MODICON_ENTRY && content.icon === undefined) {
-          if (!declaredSizeAllowed(entry, MAX_MOD_IMAGE_BYTES)) return settle({ ok: false, problem: "icon-too-large" })
+          if (!declaredSizeAllowed(entry, MAX_MOD_IMAGE_BYTES)) {
+            // An oversized icon costs the mod its picture, never its place in
+            // the list: skip the icon and keep extracting metadata.
+            return advance()
+          }
 
           return collect(
             entry,
@@ -125,7 +131,8 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
               content.icon = bytes
               advance()
             },
-            () => settle({ ok: false, problem: "icon-too-large" }),
+            // Runtime size exceeds the limit: skip the icon, keep the mod.
+            () => advance(),
             // An icon that will not read costs the mod its picture, never its
             // place in the list: the metadata may still be perfectly readable.
             () => advance()
@@ -172,53 +179,116 @@ export function createIconStorePort(): IconStore {
         await fse.ensureDir(folder)
         const target = join(folder, imageName)
         // The name is the content: whatever already sits at that path is these
-        // same bytes, so a rescan has nothing left to write.
-        if (!(await fse.pathExists(target))) await fse.writeFile(target, bytes)
+        // same bytes, so a rescan has nothing left to write. It is touched
+        // instead, which is what makes the sweep's eviction order mean
+        // something: an icon that is still installed but never rewritten would
+        // otherwise look older than one for a mod uninstalled last week. A
+        // failed touch must not cost the mod its icon.
+        if (await fse.pathExists(target)) {
+          const now = new Date()
+          await fse.utimes(target, now, now).catch(() => undefined)
+        } else {
+          await fse.writeFile(target, bytes)
+        }
         return imageName
       } catch (err) {
         logMessage("error", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon.`)
         logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon: ${err}`)
         return undefined
       }
-    },
-
-    prune: async (liveNames: readonly string[]): Promise<void> => {
-      const folder = modImagesFolder()
-      let entries: string[]
-      try {
-        entries = await fse.readdir(folder)
-      } catch {
-        // No cache folder yet, or it just vanished: nothing to sweep either way.
-        return
-      }
-
-      const live = new Set(liveNames)
-      const strangers = entries.filter((entry) => {
-        try {
-          assertSafeFileName(entry)
-          return !live.has(entry)
-        } catch {
-          // A name too strange to be one this store ever wrote is a stranger too.
-          return true
-        }
-      })
-
-      // Deleted individually and in parallel rather than as one recursive
-      // removal of the folder: each target stays a single, safe join onto a
-      // name `readdir` itself just handed back, so this can never reach outside
-      // modImagesFolder(), and one file another process is mid-delete on never
-      // takes the rest of the sweep down with it.
-      await Promise.all(
-        strangers.map(async (entry) => {
-          try {
-            await fse.remove(join(folder, entry))
-          } catch (err) {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Could not prune ${entry} from the icon cache: ${err}`)
-          }
-        })
-      )
     }
   }
+}
+
+/**
+ * Deletes what the shared mod icon cache no longer earns its keep on.
+ *
+ * The rule is age and size, never a live set. The cache folder is shared by every installation
+ * while a scan only ever reads one of them, so a caller that swept against the names one scan
+ * produced would delete the icons every other installation is pointing at, which is what #117
+ * reports. What this deletes instead is anything the current store could not have written, then the
+ * least recently scanned icons once the folder is over budget. `createIconStorePort().store` moves
+ * an icon's timestamp forward every time a scan points at it again, so an icon that is still
+ * installed keeps looking young whichever installation holds it.
+ *
+ * Safe to call repeatedly: concurrent calls coalesce into at most one active sweep plus one
+ * trailing re-run (in case a scan wrote icons while the sweep was in flight). Icons whose mtime
+ * moved since the snapshot are skipped rather than removed, closing the race where a concurrent
+ * scan touches an icon the sweep already planned to delete.
+ *
+ * Best effort throughout: this runs at startup and after each scan, and a cache sweep must never
+ * be able to break a launch, so every filesystem error is logged and swallowed.
+ *
+ * @param maxBytes Budget the survivors have to fit in. Only tests pass this.
+ */
+let _pruneInFlight: Promise<void> | null = null
+let _pruneAgain = false
+
+export async function pruneModIconCache(maxBytes: number = MOD_ICON_CACHE_MAX_BYTES): Promise<void> {
+  if (_pruneInFlight !== null) {
+    _pruneAgain = true
+    return _pruneInFlight
+  }
+
+  _pruneInFlight = doPruneModIconCache(maxBytes)
+  try {
+    await _pruneInFlight
+  } finally {
+    _pruneInFlight = null
+  }
+
+  if (_pruneAgain) {
+    _pruneAgain = false
+    return pruneModIconCache(maxBytes)
+  }
+}
+
+async function doPruneModIconCache(maxBytes: number): Promise<void> {
+  const folder = modImagesFolder()
+
+  let names: string[]
+  try {
+    names = await fse.readdir(folder)
+  } catch {
+    // No cache folder yet, or it just vanished: nothing to sweep either way.
+    return
+  }
+
+  const entries: CachedIcon[] = []
+  for (const name of names) {
+    try {
+      assertSafeFileName(name)
+      const stats = await fse.stat(join(folder, name))
+      if (stats.isFile()) entries.push({ name, bytes: stats.size, modifiedAt: stats.mtimeMs })
+    } catch (err) {
+      logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Skipping ${name}: ${err}`)
+    }
+  }
+
+  const doomed = planIconCacheEviction(entries, maxBytes)
+  if (doomed.length === 0) return
+
+  const mtimeByName = new Map(entries.map((entry) => [entry.name, entry.modifiedAt]))
+  const bytesByName = new Map(entries.map((entry) => [entry.name, entry.bytes]))
+  let reclaimed = 0
+
+  await Promise.all(
+    doomed.map(async (name) => {
+      try {
+        // Re-stat before removal: if mtime moved since the snapshot, a
+        // concurrent scan just touched/recreated this icon. Skip it.
+        const current = await fse.stat(join(folder, name))
+        if (current.mtimeMs !== mtimeByName.get(name)) return
+
+        await fse.remove(join(folder, name))
+        reclaimed += bytesByName.get(name) ?? 0
+      } catch (err) {
+        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Could not remove ${name} from the icon cache: ${err}`)
+      }
+    })
+  )
+
+  logMessage("info", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Removed ${doomed.length} icons from the cache, ${reclaimed} bytes reclaimed.`)
 }
 
 /**

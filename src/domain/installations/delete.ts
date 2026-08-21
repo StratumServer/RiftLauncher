@@ -1,10 +1,11 @@
 import type { FileSystem } from "../ports"
 import type { BackupRecord } from "./backup"
+import { deleteInstallationBackup } from "./backupDeletion"
 
 /** The installation state a delete decision needs, copied out of wherever it lives. */
 export interface InstallationDeleteSnapshot {
   path: string
-  backups: readonly Pick<BackupRecord, "path">[]
+  backups: readonly (Pick<BackupRecord, "id" | "path"> & { isDeleting?: boolean; isRestoring?: boolean })[]
   isPlaying: boolean
   isBackingUp: boolean
   isRestoringBackup: boolean
@@ -80,7 +81,19 @@ export async function deleteInstallation(ports: DeleteInstallationPorts, input: 
   const failedBackupPaths: string[] = []
 
   for (const backup of installation.backups) {
-    if (await ports.fileSystem.remove(backup.path)) {
+    const result = await deleteInstallationBackup(
+      { fileSystem: ports.fileSystem },
+      { backup: { id: backup.id, path: backup.path, isDeleting: backup.isDeleting ?? false, isRestoring: backup.isRestoring ?? false } }
+    )
+
+    // Already on its way out, or in, through another operation (a manual
+    // delete or restore in flight). Neither this operation's success nor its
+    // failure, so it is reported as neither: removing it here would race the
+    // same file, and counting it as a failure would be misleading when the
+    // other operation is the one that actually succeeds.
+    if (!result.ok && result.reason === "backup-in-use") continue
+
+    if (result.ok) {
       events.onBackupDeleted?.(backup.path)
     } else {
       failedBackupPaths.push(backup.path)
