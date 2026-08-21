@@ -48,7 +48,7 @@ describe("AddInstallation", () => {
     const user = userEvent.setup()
     const ensurePathExists = vi.fn(async () => true)
     installMockWindowApi({
-      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }] })) },
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }] })) },
       pathsManager: { ensurePathExists }
     })
 
@@ -71,7 +71,7 @@ describe("AddInstallation", () => {
   it("notifies the name length failure and stays on the form when the name is too short", async () => {
     const user = userEvent.setup()
     installMockWindowApi({
-      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }] })) }
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }] })) }
     })
 
     renderAddInstallation()
@@ -92,7 +92,13 @@ describe("AddInstallation", () => {
     const user = userEvent.setup()
     installMockWindowApi({
       configManager: {
-        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }], installations: [anInstallation({ path: "/games/collision" })] }))
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            defaultInstallationsFolder: "/installations",
+            gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }],
+            installations: [anInstallation({ path: "/games/collision" })]
+          })
+        )
       },
       utils: { selectFolderDialog: vi.fn(async () => ["/games/collision"]) },
       pathsManager: { checkPathEmpty: vi.fn(async () => true) }

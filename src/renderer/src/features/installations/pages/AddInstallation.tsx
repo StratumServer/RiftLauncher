@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
@@ -10,7 +10,8 @@ import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useInstallations, useGameVersions, useCustomIcons, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { createCreateInstallationPorts, describeCreateInstallationFailure, toFoldersInUse, toInstallationType } from "@renderer/features/installations/adapters/create"
-import { useDefaultInstallationPath, useEnsurePathExists, usePickEmptyFolder } from "@renderer/features/installations/hooks/usePathActions"
+import { useEnsurePathExists } from "@renderer/features/installations/hooks/usePathActions"
+import { useInstallationFolder } from "@renderer/features/installations/hooks/useInstallationFolder"
 import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
 import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
 import { useInstallationFormFields } from "@renderer/features/installations/hooks/useInstallationFormFields"
@@ -47,8 +48,6 @@ function AddInslallation(): JSX.Element {
   const settings = useSettingsConfig()
   const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
-  const defaultInstallationPath = useDefaultInstallationPath()
-  const pickEmptyFolder = usePickEmptyFolder()
   const ensurePathExists = useEnsurePathExists()
   const openExternalLink = useOpenExternalLink()
   const logMessage = useLogMessage()
@@ -65,16 +64,9 @@ function AddInslallation(): JSX.Element {
     envVars: ""
   })
 
-  const [path, setPath] = useState<string>("")
-  const [folderByUser, setFolderByUser] = useState<boolean>(false)
+  const { folder: path, setFolder: setPath, browseFolder } = useInstallationFolder(fields.name, settings.defaultInstallationsFolder)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    ;(async (): Promise<void> => {
-      if (fields.name && !folderByUser) setPath(await defaultInstallationPath(settings.defaultInstallationsFolder, fields.name))
-    })()
-  }, [fields.name])
 
   const handleAddInstallation = async (): Promise<void> => {
     if (!fields.name || !path || !fields.version || !fields.backupsLimit || fields.backupsAuto === undefined) return addNotification(t("notifications.body.missingFields"), "error")
@@ -160,17 +152,7 @@ function AddInslallation(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton
-                    onClick={async () => {
-                      const selectedPath = await pickEmptyFolder()
-                      if (selectedPath) {
-                        setPath(selectedPath)
-                        setFolderByUser(true)
-                      }
-                    }}
-                    title={t("generic.browse")}
-                    className="h-8 px-2 py-1"
-                  >
+                  <FormButton onClick={browseFolder} title={t("generic.browse")} className="h-8 px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText placeholder={t("features.installations.installationFolder")} value={path} onChange={(e) => setPath(e.target.value)} minLength={1} className="w-full" />

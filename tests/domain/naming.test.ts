@@ -23,6 +23,26 @@ describe("cleanFolderName", () => {
   it("can return an empty string", () => {
     assert.equal(cleanFolderName("   "), "")
   })
+
+  it("empties a name made only of characters it has to replace", () => {
+    assert.equal(cleanFolderName("***"), "")
+  })
+
+  it("empties the dot segments the path layer refuses", () => {
+    // assertSafeFileName rejects "." and ".."; "..." would go through as a
+    // real folder, which is no better a name to hand someone.
+    assert.equal(cleanFolderName("."), "")
+    assert.equal(cleanFolderName(".."), "")
+    assert.equal(cleanFolderName("..."), "")
+  })
+
+  it("cuts a name down to the 255 characters a file name may hold", () => {
+    assert.equal(cleanFolderName("a".repeat(300)), "a".repeat(255))
+  })
+
+  it("does not leave the dash the cut lands on", () => {
+    assert.equal(cleanFolderName(`${"a".repeat(254)} bcd`), "a".repeat(254))
+  })
 })
 
 describe("formatTimestampForFilename", () => {
