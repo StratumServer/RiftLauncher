@@ -110,4 +110,12 @@ describe("startup network boundaries", () => {
     assert.notEqual(windowClosedStart, -1, "src/main/index.ts stopped registering the window-close handler")
     assert.equal(MAIN_SOURCE.slice(windowClosedStart).includes("clearModIconMemoryCache(modIconMemoryCache)"), true, "src/main/index.ts stopped clearing the mod icon cache when all windows close")
   })
+
+  // An offline launch of a packaged build rejects the update check, and a
+  // rejection nobody catches takes the main process down with it. Matched on
+  // the call plus its catch rather than the two separately, so that a catch
+  // somewhere else in the file cannot satisfy it.
+  it("keeps the startup update check from rejecting into nothing", () => {
+    assert.equal(MAIN_SOURCE.includes("autoUpdater.checkForUpdates().catch("), true, "src/main/index.ts stopped catching the startup update check's rejection")
+  })
 })

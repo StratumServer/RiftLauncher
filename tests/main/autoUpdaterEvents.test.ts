@@ -181,6 +181,24 @@ describe("the handshake, end to end", () => {
     assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
   })
 
+  it("lets a failed download be accepted a second time in the same session", async () => {
+    emit("update-available", { version: "1.7.0-beta.3" })
+
+    await sendFromRenderer(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE)
+    const beforeTheFailure = mockState.downloadUpdate.mock.calls.length
+
+    // The re-entrancy guard is still set here, so this one is refused. That is
+    // the guard doing its job, and it is also what left a failed download with
+    // nowhere to go before the error event started clearing it.
+    await sendFromRenderer(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE)
+    assert.equal(mockState.downloadUpdate.mock.calls.length, beforeTheFailure)
+
+    emit("error", new Error("connection reset"))
+    await sendFromRenderer(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE)
+
+    assert.equal(mockState.downloadUpdate.mock.calls.length, beforeTheFailure + 1)
+  })
+
   it("lets the renderer restart into the update once it has been downloaded", async () => {
     emit("update-downloaded", { version: "1.7.0-beta.3" })
 
