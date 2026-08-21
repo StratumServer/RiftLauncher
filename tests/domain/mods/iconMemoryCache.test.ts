@@ -127,4 +127,17 @@ describe("readIconWithMemoryCache", () => {
     assert.equal(cache.get("/cache/aa.png"), undefined)
     assert.equal(cache.size, 0)
   })
+
+  it("repopulates the cache after clear and serves later requests from memory", async () => {
+    const cache = new IconMemoryCache(1_000)
+    const readBytes = vi.fn(async () => Buffer.from("icon bytes"))
+
+    await readIconWithMemoryCache(cache, "/cache/aa.png", readBytes)
+    cache.clear()
+    await readIconWithMemoryCache(cache, "/cache/aa.png", readBytes)
+    await readIconWithMemoryCache(cache, "/cache/aa.png", readBytes)
+
+    assert.equal(readBytes.mock.calls.length, 2)
+    assert.deepEqual(cache.get("/cache/aa.png"), Buffer.from("icon bytes"))
+  })
 })

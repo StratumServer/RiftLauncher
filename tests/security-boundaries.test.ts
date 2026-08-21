@@ -102,4 +102,12 @@ describe("startup network boundaries", () => {
     assert.equal(MAIN_SOURCE.includes("session.defaultSession.setSpellCheckerLanguages([])"), true, "src/main/index.ts stopped clearing the spellchecker language list")
     assert.equal(MAIN_SOURCE.includes("session.defaultSession.setSpellCheckerEnabled(false)"), true, "src/main/index.ts stopped disabling the session spellchecker")
   })
+
+  it("keeps the mod icon cache lifecycle wiring in the main process", () => {
+    assert.equal(MAIN_SOURCE.includes("ipcMain.on(IPC_CHANNELS.MODS_MANAGER.CLEAR_MOD_ICON_MEMORY_CACHE"), true, "src/main/index.ts stopped registering the trusted mod icon cache clear handler")
+
+    const windowClosedStart = MAIN_SOURCE.indexOf('app.on("window-all-closed"')
+    assert.notEqual(windowClosedStart, -1, "src/main/index.ts stopped registering the window-close handler")
+    assert.equal(MAIN_SOURCE.slice(windowClosedStart).includes("clearModIconMemoryCache(modIconMemoryCache)"), true, "src/main/index.ts stopped clearing the mod icon cache when all windows close")
+  })
 })
