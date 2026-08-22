@@ -5,6 +5,7 @@ import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
 
+import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH } from "@domain/installations/create"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
@@ -38,8 +39,14 @@ export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, cust
 
       <FormBody>
         <FormFieldGroupWithDescription>
-          <FormInputText value={name} onChange={(e) => onNameChange(e.target.value)} placeholder={t("features.installations.defaultName")} minLength={5} maxLength={50} />
-          <FormFieldDescription content={t("generic.minMaxLength", { min: 5, max: 50 })} />
+          <FormInputText
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder={t("features.installations.defaultName")}
+            minLength={INSTALLATION_NAME_MIN_LENGTH}
+            maxLength={INSTALLATION_NAME_MAX_LENGTH}
+          />
+          <FormFieldDescription content={t("generic.minMaxLength", { min: INSTALLATION_NAME_MIN_LENGTH, max: INSTALLATION_NAME_MAX_LENGTH })} />
         </FormFieldGroupWithDescription>
       </FormBody>
 

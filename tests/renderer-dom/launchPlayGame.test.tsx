@@ -11,9 +11,9 @@ import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 /**
- * Exercises src/renderer/src/features/launch/{adapters/launch.ts, hooks/useLaunchGame.ts}
- * through MainMenu's Play button and its quick-backup icon, the only two call sites those
- * files have. Nothing here mocks the launch feature itself: window.api is the only seam,
+ * Exercises src/renderer/src/features/launch/adapters/launch.ts through MainMenu's Play
+ * button and its quick-backup icon, the only two call sites that file has. Nothing here
+ * mocks the launch feature itself: window.api is the only seam,
  * so a real click runs the real adapter functions end to end.
  */
 

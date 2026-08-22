@@ -1,6 +1,5 @@
 import { createContext, useState, useEffect, useContext, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { v4 as uuidv4 } from "uuid"
 
 import { launcherUpdateName } from "@renderer/utils/launcherUpdateTask"
 
@@ -121,7 +120,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   }, [])
 
   const addNotification = (body: string, type: NotificationTypes, options?: NotificationOptions): void => {
-    const id = uuidv4()
+    const id = crypto.randomUUID()
     const duration = options?.duration || 6000
     const onClick = options?.onClick
     const actions = options?.actions

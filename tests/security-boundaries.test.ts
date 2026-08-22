@@ -4,7 +4,7 @@ import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { describe, it } from "vitest"
 
-import { parseLegacyAccount, parseLoginAccount } from "../src/ipc/accountTypes"
+import { parseLegacyAccount, parseLoginAccount } from "../src/domain/account/credentials"
 import { isAllowedRendererUrl, parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "../src/ipc/validation"
 
 describe("credential boundaries", () => {

@@ -2,7 +2,7 @@ import { app, safeStorage } from "electron"
 import fse from "fs-extra"
 import { join } from "node:path"
 
-import { parseStoredSecrets, type AccountSecrets } from "@src/ipc/accountTypes"
+import { parseStoredSecrets, type AccountSecrets } from "@domain/account/credentials"
 
 type EncryptedAccountFile = {
   version: 1

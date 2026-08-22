@@ -15,6 +15,8 @@ import Seven from "node-7z"
 import fse from "fs-extra"
 import { join } from "node:path"
 
+import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
+
 const MAX_ITEMS = 100_000
 
 /** The `Seven.add` shape, so a test can drive the progress and end events without spawning 7-Zip. */
@@ -70,7 +72,7 @@ export interface CompressionOptions {
  * failure alike. The caller reports "Compression failed" either way.
  */
 export function runCompression(options: CompressionOptions): Promise<void> {
-  const { inputPath, outputPath, outputFileName, compressionLevel = 6, sevenZipBin, addArchive = Seven.add, onProgress } = options
+  const { inputPath, outputPath, outputFileName, compressionLevel = DEFAULT_COMPRESSION_LEVEL, sevenZipBin, addArchive = Seven.add, onProgress } = options
 
   return new Promise<void>((resolvePromise, rejectPromise) => {
     assertSafeCompressionTree(inputPath)
