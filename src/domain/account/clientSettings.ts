@@ -135,7 +135,7 @@ export function mergeSessionIntoClientSettings(existingDocument: unknown, sessio
  * missing or different is left alone and overwritten, which is what the
  * launcher has always done.
  *
- * ponytail: newer is inferred, never verified. There is no endpoint here to ask
+ * Known limit: newer is inferred, never verified. There is no endpoint here to ask
  * whether a key is still live, so "the game wrote it, so the service accepted
  * it" is the whole argument. If the adopted key was itself invalidated in the
  * meantime the player gets one more prompt and the game writes another one,
