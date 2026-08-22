@@ -61,7 +61,7 @@ declare global {
       onExtractProgress: (callback: ProgressCallback) => Unsubscribe
       onCompressProgress: (callback: ProgressCallback) => Unsubscribe
       changePerms: (paths: string[], perms: number) => Promise<boolean>
-      copyToIcons: (path: string, name: string) => Promise<{ status: true; file: string } | { status: false }>
+      copyToIcons: (path: string, name: string) => Promise<CustomIconCopyResult>
     }
     gameManager: {
       executeGame: (version: GameVersionType, installation: InstallationType) => Promise<GameExecutionResult>

@@ -592,14 +592,36 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS, async (event, paths: str
   return true
 })
 
-ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, async (event, pathValue: string, name: string): Promise<{ status: true; file: string } | { status: false }> => {
+/**
+ * Names a refused icon on the wire and puts the error behind it in the log at
+ * debug. The reason is what the player is told; the cause is what whoever reads
+ * the log afterwards needs, and it is the half that was missing entirely.
+ */
+function refuseIconCopy(reason: CustomIconCopyFailureReason, cause: unknown): { status: false; reason: CustomIconCopyFailureReason } {
+  logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COPY_TO_ICONS] Refused an icon (${reason}): ${cause instanceof Error ? cause.message : String(cause)}.`)
+  return { status: false, reason }
+}
+
+ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, async (event, pathValue: string, name: string): Promise<CustomIconCopyResult> => {
   assertTrustedIpcSender(event)
 
-  try {
-    const safePath = await assertManagedPath(pathValue, "icon path")
-    const safeName = assertSafeFileName(name, "icon name")
-    if (extname(safePath).toLowerCase() !== ".png") throw new TypeError("Invalid icon file")
+  let safePath: string
+  let safeName: string
 
+  try {
+    safePath = await assertManagedPath(pathValue, "icon path")
+    safeName = assertSafeFileName(name, "icon name")
+  } catch (error) {
+    return refuseIconCopy("source-unavailable", error)
+  }
+
+  // Case-insensitive on purpose: an icon carried over from another launcher is
+  // as likely to be named ICON.PNG as icon.png, and the Icons folder, the
+  // `icons:` protocol and the config's own normalizer all lower case before
+  // they compare too.
+  if (extname(safePath).toLowerCase() !== ".png") return refuseIconCopy("unsupported-format", new TypeError(`Icon file is "${extname(safePath) || "extensionless"}", not ".png"`))
+
+  try {
     const destinationDirectory = await assertManagedPath(join(app.getPath("userData"), "Icons"), "icons directory", { allowMissing: true })
     const file = `${safeName}.png`
     await fse.ensureDir(destinationDirectory)
@@ -611,7 +633,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, async (event, pathValue
     }
     await fse.copyFile(safePath, destinationPath)
     return { status: true, file }
-  } catch {
-    return { status: false }
+  } catch (error) {
+    return refuseIconCopy("copy-failed", error)
   }
 })

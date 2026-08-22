@@ -36,11 +36,15 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
  * than faking Electron's safeStorage API around it.
  */
 vi.mock("@src/ipc/accountStore", () => ({
-  getAccountSecrets: vi.fn(async () => ({ mptoken: null, sessionKey: "session-key", sessionSignature: "session-signature" }))
+  getAccountSecrets: vi.fn(async () => ({ mptoken: null, sessionKey: "session-key", sessionSignature: "session-signature" })),
+  saveAccountSecrets: vi.fn(async () => undefined)
 }))
 
 type ExecuteGameHandler = (event: IpcMainInvokeEvent, version: unknown, installation: unknown) => Promise<GameExecutionResult>
 type LookForAGameVersionHandler = (event: IpcMainInvokeEvent, path: unknown) => Promise<{ exists: boolean; installedGameVersion?: string }>
+
+/** The key the game writes after prompting the player, which the launcher has never seen. */
+const GAME_REFRESHED_KEY = "game-session-key"
 
 let temporaryRoot: string
 let managedFolder: string
@@ -257,6 +261,83 @@ describe("EXECUTE_GAME", () => {
       assert.deepEqual(result, { ok: false, reason: "session-write-failed" })
     } finally {
       chmodSync(installationFolder, 0o700)
+    }
+  })
+
+  /**
+   * Issue #204: the launcher's stored session gets invalidated by a login
+   * somewhere else, the game asks the player to log in and writes a working
+   * session into clientsettings.json, and the next launch through the launcher
+   * used to put the dead one straight back. These two pin the way out: the
+   * game's session stays in the file and moves into the launcher's own store.
+   */
+  it("adopts the session the game refreshed instead of overwriting it", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      account: { email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false } as unknown as ConfigType["account"]
+    })
+    // What the game leaves behind after prompting: same account (playeruid "1"
+    // is the one in the config above), a key the launcher has never seen.
+    writeFileSync(
+      join(installationFolder, "clientsettings.json"),
+      JSON.stringify({
+        stringSettings: { sessionkey: GAME_REFRESHED_KEY, sessionsignature: "game-session-signature", mptoken: "game-mp-token", playeruid: "1", playername: "Player" },
+        intSettings: { maxFps: 60 }
+      }),
+      "utf-8"
+    )
+
+    const { saveAccountSecrets } = await import("@src/ipc/accountStore")
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+
+    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [[{ sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token" }]])
+
+    const { readFileSync } = await import("node:fs")
+    const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
+    assert.equal(settings.stringSettings.sessionkey, GAME_REFRESHED_KEY, "the launcher must not put its stale key back over the game's fresh one")
+    assert.deepEqual(settings.intSettings, { maxFps: 60 })
+  })
+
+  it("says an adoption happened without ever putting the session in a log line", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      account: { email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false } as unknown as ConfigType["account"]
+    })
+    writeFileSync(
+      join(installationFolder, "clientsettings.json"),
+      JSON.stringify({ stringSettings: { sessionkey: GAME_REFRESHED_KEY, sessionsignature: "game-session-signature", mptoken: "game-mp-token", playeruid: "1" } }),
+      "utf-8"
+    )
+
+    // Spied at the source, ahead of redactSensitiveText, so this asserts on
+    // what the handler chose to say rather than on what the redactor saved it
+    // from.
+    const logSpy = vi.spyOn(await import("@src/utils/logManager"), "logMessage")
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+
+    const logged = logSpy.mock.calls.map(([, message]) => message)
+    assert.ok(
+      logged.some((message) => message.includes("Adopted it instead of overwriting it")),
+      "an adoption should leave a trail"
+    )
+    for (const secret of [GAME_REFRESHED_KEY, "game-session-signature", "game-mp-token", "session-key"]) {
+      assert.equal(
+        logged.some((message) => message.includes(secret)),
+        false,
+        `a session value reached the log: ${secret}`
+      )
     }
   })
 })

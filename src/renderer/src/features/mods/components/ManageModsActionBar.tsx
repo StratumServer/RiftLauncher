@@ -60,7 +60,7 @@ function ManageModsActionBar({
         </FormButton>
 
         <FormButton
-          title={t("features.mods.updateAll")}
+          title={t("features.mods.openModsFolder")}
           className="w-8 h-8"
           onClick={async () => {
             const path = await resolveModsFolder(installation.path)

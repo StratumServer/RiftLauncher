@@ -266,7 +266,7 @@ describe("the download's progress bar (#185)", () => {
     expect(screen.getByText("RiftLauncher 1.7.0-beta.3")).toBeTruthy()
   })
 
-  it("completes the task on a final tick of 100 as well", () => {
+  it("does not complete the task on a tick of 100, only the downloaded event does (#200)", () => {
     const { listeners } = installUpdaterApi()
     renderUpdateSurfaces()
 
@@ -275,9 +275,20 @@ describe("the download's progress bar (#185)", () => {
     openTasksMenu()
 
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 30 }))
+
+    // 100 is what a raw 99.6 percent arrives as, since the main process rounds
+    // the percentage on the way out (see toTaskProgress in tests/main). Bytes
+    // are still moving here, and on Windows the installer's signature is still
+    // being checked, so the bar has to stay running.
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 100 }))
 
+    expect(progressBar()?.getAttribute("aria-valuenow")).toBe("100")
+    expect(screen.queryByTitle("Discard")).toBeNull()
+
+    fireDownloaded(listeners)
+
     expect(progressBar()).toBeNull()
+    expect(screen.getByTitle("Discard")).toBeTruthy()
   })
 
   it("shows the restart affordance once the update is downloaded, and restarts when it is taken", () => {

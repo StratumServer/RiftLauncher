@@ -411,16 +411,72 @@ describe("OPEN_PATH_ON_FILE_EXPLORER", () => {
 })
 
 describe("COPY_TO_ICONS", () => {
-  it("returns status: false for a non-png source file", async () => {
+  /** Runs the channel and hands back its verdict plus whatever it wrote at debug. */
+  async function copyIcon(sourceFile: string): Promise<{ result: unknown; debugLines: string[] }> {
+    const Logger = (await import("electron-log")).default
+    const debug = vi.spyOn(Logger, "debug").mockImplementation(() => undefined)
+
+    try {
+      const event = await createTrustedEvent()
+      const result = await handler(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS)(event, sourceFile, "my-icon")
+      return { result, debugLines: debug.mock.calls.map((call) => String(call[0])) }
+    } finally {
+      debug.mockRestore()
+    }
+  }
+
+  /** Every refusal names itself to the caller and puts its cause in the log. */
+  function assert_refused(outcome: { result: unknown; debugLines: string[] }, reason: string): void {
+    assert.deepEqual(outcome.result, { status: false, reason })
+    const refusalLines = outcome.debugLines.filter((line) => line.includes("[COPY_TO_ICONS] Refused an icon"))
+    assert.equal(refusalLines.length, 1, `expected one refusal line at debug, got ${refusalLines.length}: ${outcome.debugLines.join(" / ")}`)
+    assert.ok(refusalLines[0]?.includes(`(${reason})`), `refusal line does not name the reason: ${refusalLines[0]}`)
+  }
+
+  it("refuses a non-png source file as unsupported-format", async () => {
     const sourceFile = join(managedFolder, "icon.txt")
     writeFileSync(sourceFile, "not a png", "utf-8")
 
-    const event = await createTrustedEvent()
-    const result = await handler<Promise<{ status: boolean }>>(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS)(event, sourceFile, "my-icon")
-    assert.deepEqual(result, { status: false })
+    assert_refused(await copyIcon(sourceFile), "unsupported-format")
   })
 
-  it("returns status: false when a symlink already occupies the destination", async () => {
+  it("refuses a source file with no extension at all as unsupported-format", async () => {
+    const sourceFile = join(managedFolder, "icon")
+    writeFileSync(sourceFile, "not a png", "utf-8")
+
+    assert_refused(await copyIcon(sourceFile), "unsupported-format")
+  })
+
+  it("refuses a source file outside every managed folder as source-unavailable", async () => {
+    const outsideFolder = join(temporaryRoot, "Elsewhere")
+    mkdirSync(outsideFolder, { recursive: true })
+    const sourceFile = join(outsideFolder, "icon.png")
+    writeFileSync(sourceFile, "fake-png-bytes", "utf-8")
+
+    assert_refused(await copyIcon(sourceFile), "source-unavailable")
+  })
+
+  it("refuses a source file that is not there as source-unavailable", async () => {
+    assert_refused(await copyIcon(join(managedFolder, "gone.png")), "source-unavailable")
+  })
+
+  it("refuses a source reached through a symlinked folder as source-unavailable", async () => {
+    const realFolder = join(temporaryRoot, "RealPictures")
+    mkdirSync(realFolder, { recursive: true })
+    writeFileSync(join(realFolder, "icon.png"), "fake-png-bytes", "utf-8")
+    symlinkSync(realFolder, join(managedFolder, "Pictures"))
+
+    assert_refused(await copyIcon(join(managedFolder, "Pictures", "icon.png")), "source-unavailable")
+  })
+
+  it("refuses a folder that happens to be named like a png as copy-failed", async () => {
+    const sourceFolder = join(managedFolder, "folder.png")
+    mkdirSync(sourceFolder, { recursive: true })
+
+    assert_refused(await copyIcon(sourceFolder), "copy-failed")
+  })
+
+  it("refuses as copy-failed when a symlink already occupies the destination", async () => {
     const sourceFile = join(managedFolder, "icon.png")
     writeFileSync(sourceFile, "fake-png-bytes", "utf-8")
 
@@ -433,9 +489,7 @@ describe("COPY_TO_ICONS", () => {
     // the isSymbolicLink() check exists to refuse.
     symlinkSync(decoyTarget, join(iconsDirectory, "my-icon.png"))
 
-    const event = await createTrustedEvent()
-    const result = await handler<Promise<{ status: boolean }>>(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS)(event, sourceFile, "my-icon")
-    assert.deepEqual(result, { status: false })
+    assert_refused(await copyIcon(sourceFile), "copy-failed")
   })
 
   it("copies an authorized png source into the Icons folder", async () => {
@@ -450,6 +504,20 @@ describe("COPY_TO_ICONS", () => {
     const destination = join(userDataFolder, "Icons", "my-icon.png")
     assert.equal(existsSync(destination), true)
     assert.equal(readFileSync(destination, "utf-8"), "fake-png-bytes")
+  })
+
+  // The acceptance row for the extension gate: an icon carried over from
+  // another launcher is as likely to be named ICON.PNG as icon.png, and every
+  // other .png check in the flow (the `icons:` protocol, normalizeIcon) lower
+  // cases before it compares. Re-tightening the gate to a case-sensitive
+  // ".png" fails here.
+  it("copies a source named with an upper case .PNG extension", async () => {
+    const sourceFile = join(managedFolder, "ICON.PNG")
+    writeFileSync(sourceFile, "fake-png-bytes", "utf-8")
+
+    const event = await createTrustedEvent()
+    const result = await handler<Promise<{ status: boolean; file?: string }>>(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS)(event, sourceFile, "my-icon")
+    assert.deepEqual(result, { status: true, file: "my-icon.png" })
   })
 })
 
