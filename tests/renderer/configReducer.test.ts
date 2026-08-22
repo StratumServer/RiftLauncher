@@ -169,6 +169,61 @@ describe("configReducer: installations", () => {
     assert.deepEqual(result.installations, config.installations)
   })
 
+  it("MOVE_INSTALLATION up swaps a middle installation with the one above it", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" }), installation({ id: "c" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "b", direction: "up" } })
+    assert.deepEqual(
+      result.installations.map((i) => i.id),
+      ["b", "a", "c"]
+    )
+  })
+
+  it("MOVE_INSTALLATION down swaps a middle installation with the one below it", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" }), installation({ id: "c" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "b", direction: "down" } })
+    assert.deepEqual(
+      result.installations.map((i) => i.id),
+      ["a", "c", "b"]
+    )
+  })
+
+  it("MOVE_INSTALLATION moves the entries themselves, not copies of them", () => {
+    const first = installation({ id: "a" })
+    const second = installation({ id: "b" })
+    const config = baseConfig({ installations: [first, second] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "b", direction: "up" } })
+    assert.equal(result.installations[0], second)
+    assert.equal(result.installations[1], first)
+  })
+
+  it("MOVE_INSTALLATION up on the first installation is a no-op, same state object back", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "a", direction: "up" } })
+    assert.equal(result, config, "nothing moved, so nothing downstream should see new state")
+  })
+
+  it("MOVE_INSTALLATION down on the last installation is a no-op, same state object back", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "b", direction: "down" } })
+    assert.equal(result, config)
+  })
+
+  it("MOVE_INSTALLATION on an id naming nothing leaves the order untouched", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "missing", direction: "up" } })
+    assert.equal(result, config)
+    assert.deepEqual(
+      result.installations.map((i) => i.id),
+      ["a", "b"]
+    )
+  })
+
   it("ADD_INSTALLATION_BACKUP prepends a backup onto the matching installation only", () => {
     const target = installation({ id: "target", backups: [] })
     const other = installation({ id: "other", backups: [backup({ id: "existing" })] })

@@ -170,7 +170,9 @@
       "envVarsDesc": "List of ENV variables separated with ,",
       "envVarsPlaceholder": "ENV_1=something, ENV_2=anotherthing",
       "backupInstallation": "Backup Installation",
-      "editInstallation": "Edit Installation"
+      "editInstallation": "Edit Installation",
+      "moveInstallationUp": "Move Installation up",
+      "moveInstallationDown": "Move Installation down"
     },
     "mods": {
       "modsCount": "{{count}} Mods",
