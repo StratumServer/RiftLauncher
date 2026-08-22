@@ -71,6 +71,33 @@ describe("LookForAVersion", () => {
     expect(addedVersion!.path).toBe("/games/unreleased-build")
   })
 
+  it("refuses a hand-typed version that is nothing but whitespace", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      utils: { selectFolderDialog: vi.fn(async () => ["/games/unreleased-build"]) },
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: false as const })) },
+      configManager: { saveConfig }
+    })
+
+    renderWithProviders(
+      <>
+        <LookForAVersion />
+        <NotificationsOverlay />
+      </>,
+      { route: "/versions/look-for-a-version" }
+    )
+
+    await user.click(screen.getByTitle("Browse"))
+    await screen.findByDisplayValue("/games/unreleased-build")
+
+    await user.type(screen.getByPlaceholderText("VS Version found"), "   ")
+    await user.click(screen.getByTitle("Add"))
+
+    expect(await screen.findByText("You've no folder selected or there is no VS Version installed on the one you've selected!")).toBeTruthy()
+    expect(saveConfig).not.toHaveBeenCalled()
+  })
+
   it("dispatches ADD_GAME_VERSION with linked: true when registering", async () => {
     const user = userEvent.setup()
     const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)

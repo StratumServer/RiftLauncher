@@ -51,18 +51,24 @@ export function useLookForAVersion(): UseLookForAVersionResult {
 
   async function addVersion(): Promise<void> {
     try {
-      if (!folder || !versionFound) return addNotification(t("features.versions.missingFolderOrVersion"), "error")
+      // Trimmed before the guard, not just before the write: a hand-typed version that is
+      // only spaces is falsy to a person and truthy to `!versionFound`, so without this it
+      // sailed past the guard and got registered whitespace and all, which then failed to
+      // match the same version typed cleanly anywhere else.
+      const version = versionFound.trim()
 
-      if (gameVersions.some((gv) => gv.version === versionFound)) return addNotification(t("features.versions.versionAlreadyInstalled", { version: versionFound }), "error")
+      if (!folder || !version) return addNotification(t("features.versions.missingFolderOrVersion"), "error")
+
+      if (gameVersions.some((gv) => gv.version === version)) return addNotification(t("features.versions.versionAlreadyInstalled", { version }), "error")
 
       const newGameVersion: GameVersionType = {
-        version: versionFound,
+        version,
         path: folder,
         linked: true
       }
 
       configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: newGameVersion })
-      addNotification(t("features.versions.versionSuccessfullyAdded", { version: versionFound }), "success")
+      addNotification(t("features.versions.versionSuccessfullyAdded", { version }), "success")
       navigate("/versions")
     } catch (err) {
       window.api.utils.logMessage("error", `${LOG_TAG} Error looking for a version.`)

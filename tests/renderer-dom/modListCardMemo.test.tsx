@@ -11,11 +11,11 @@ import ModListCard from "@renderer/features/mods/components/ModListCard"
 import "@renderer/i18n"
 
 /**
- * modsGridMemoization.test.tsx (the suite this one exists alongside) mocks ModListCard
+ * modsGridCardPropIdentity.test.tsx (the suite this one exists alongside) mocks ModListCard
  * itself and wraps ITS OWN mock function in `memo()` before asserting the mock only ran
- * once. That proves memo works on a spy, not that the real export is memoized: mutating the
- * real ModListCard.tsx to drop its `memo()` wrapper leaves that suite green, since the mock
- * module the test actually imports never changes.
+ * once. That pins the props ModsGrid hands each card, not the memo on the real export:
+ * mutating the real ModListCard.tsx to drop its `memo()` wrapper leaves that suite green,
+ * since the mock module the test actually imports never changes.
  *
  * This suite imports the real, unmocked ModListCard and wraps the `mod` object it renders
  * in a Proxy that counts property reads instead. Only the component's own function body
