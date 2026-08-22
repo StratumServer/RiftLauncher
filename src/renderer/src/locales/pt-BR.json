@@ -221,6 +221,7 @@
       "exportModpackSuccess": "Modpack exportado com sucesso!",
       "exportServerModpack": "Exportar apenas os mods de servidor e universais como um arquivo de modpack",
       "exportServerModpackButton": "Exportar Modpack do Servidor",
+      "openModsFolder": "Abrir a pasta onde ficam os Mods desta Instalação",
       "importModpack": "Importar um arquivo de modpack para instalar todos os seus Mods",
       "importModpackAlreadyPresent": "Já instalado",
       "importModpackButton": "Importar Modpack",
