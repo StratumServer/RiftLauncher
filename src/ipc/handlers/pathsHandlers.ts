@@ -1,6 +1,7 @@
 import { ipcMain, app, shell } from "electron"
 import { path7za } from "7zip-bin"
 import fse from "fs-extra"
+import { open } from "node:fs/promises"
 import { basename, extname, join, resolve, sep } from "node:path"
 import os from "os"
 import { spawn } from "child_process"
@@ -16,6 +17,7 @@ import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, ass
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
 import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
+import { isPngBytes, PNG_SIGNATURE_BYTES } from "@domain/backgrounds"
 
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
@@ -620,6 +622,21 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, async (event, pathValue
   // `icons:` protocol and the config's own normalizer all lower case before
   // they compare too.
   if (extname(safePath).toLowerCase() !== ".png") return refuseIconCopy("unsupported-format", new TypeError(`Icon file is "${extname(safePath) || "extensionless"}", not ".png"`))
+
+  try {
+    // Only the signature is read, never the whole file: an icon has no size
+    // ceiling of its own, and the copy below streams rather than buffers.
+    const header = Buffer.alloc(PNG_SIGNATURE_BYTES)
+    const source = await open(safePath, "r")
+    try {
+      await source.read(header, 0, header.length, 0)
+    } finally {
+      await source.close()
+    }
+    if (!isPngBytes(header)) return refuseIconCopy("unsupported-format", new TypeError("Icon file is named .png but does not start with the PNG signature"))
+  } catch (error) {
+    return refuseIconCopy("copy-failed", error)
+  }
 
   try {
     const destinationDirectory = await assertManagedPath(join(app.getPath("userData"), "Icons"), "icons directory", { allowMissing: true })

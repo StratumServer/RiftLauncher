@@ -411,6 +411,9 @@ describe("OPEN_PATH_ON_FILE_EXPLORER", () => {
 })
 
 describe("COPY_TO_ICONS", () => {
+  /** Real PNG bytes: the eight-byte signature, then a payload no decoder is asked to read. */
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("fixture-icon-not-a-real-png")])
+
   /** Runs the channel and hands back its verdict plus whatever it wrote at debug. */
   async function copyIcon(sourceFile: string): Promise<{ result: unknown; debugLines: string[] }> {
     const Logger = (await import("electron-log")).default
@@ -476,9 +479,29 @@ describe("COPY_TO_ICONS", () => {
     assert_refused(await copyIcon(sourceFolder), "copy-failed")
   })
 
+  // The parity row for the background flow's magic-byte gate (#211): the name
+  // says .png, the bytes say otherwise, and nothing reaches the Icons folder.
+  // Deleting the signature check in COPY_TO_ICONS fails here.
+  it("refuses a file named .png whose bytes are not a PNG as unsupported-format", async () => {
+    const sourceFile = join(managedFolder, "icon.png")
+    writeFileSync(sourceFile, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]))
+
+    assert_refused(await copyIcon(sourceFile), "unsupported-format")
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(join(userDataFolder, "Icons", "my-icon.png")), false)
+  })
+
+  it("refuses a .png too short to carry the whole signature as unsupported-format", async () => {
+    const sourceFile = join(managedFolder, "icon.png")
+    writeFileSync(sourceFile, PNG.subarray(0, 4))
+
+    assert_refused(await copyIcon(sourceFile), "unsupported-format")
+  })
+
   it("refuses as copy-failed when a symlink already occupies the destination", async () => {
     const sourceFile = join(managedFolder, "icon.png")
-    writeFileSync(sourceFile, "fake-png-bytes", "utf-8")
+    writeFileSync(sourceFile, PNG)
 
     const iconsDirectory = join(userDataFolder, "Icons")
     mkdirSync(iconsDirectory, { recursive: true })
@@ -494,7 +517,7 @@ describe("COPY_TO_ICONS", () => {
 
   it("copies an authorized png source into the Icons folder", async () => {
     const sourceFile = join(managedFolder, "icon.png")
-    writeFileSync(sourceFile, "fake-png-bytes", "utf-8")
+    writeFileSync(sourceFile, PNG)
 
     const event = await createTrustedEvent()
     const result = await handler<Promise<{ status: boolean; file?: string }>>(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS)(event, sourceFile, "my-icon")
@@ -503,7 +526,7 @@ describe("COPY_TO_ICONS", () => {
     const { existsSync, readFileSync } = await import("node:fs")
     const destination = join(userDataFolder, "Icons", "my-icon.png")
     assert.equal(existsSync(destination), true)
-    assert.equal(readFileSync(destination, "utf-8"), "fake-png-bytes")
+    assert.deepEqual(readFileSync(destination), PNG)
   })
 
   // The acceptance row for the extension gate: an icon carried over from
@@ -513,7 +536,7 @@ describe("COPY_TO_ICONS", () => {
   // ".png" fails here.
   it("copies a source named with an upper case .PNG extension", async () => {
     const sourceFile = join(managedFolder, "ICON.PNG")
-    writeFileSync(sourceFile, "fake-png-bytes", "utf-8")
+    writeFileSync(sourceFile, PNG)
 
     const event = await createTrustedEvent()
     const result = await handler<Promise<{ status: boolean; file?: string }>>(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS)(event, sourceFile, "my-icon")

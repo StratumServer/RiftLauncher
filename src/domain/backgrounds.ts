@@ -68,6 +68,23 @@ export function isJpegBytes(bytes: Uint8Array): boolean {
   return bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
 }
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+
+/** How much of a file has to be read before {@link isPngBytes} can answer. */
+export const PNG_SIGNATURE_BYTES = PNG_SIGNATURE.length
+
+/**
+ * True when these bytes start with the PNG signature.
+ *
+ * The sibling of {@link isJpegBytes}, and here for the same reason: the custom installation icon
+ * the player picks is checked by extension alone, so a file renamed to `.png` clears every gate on
+ * the way into the Icons folder and out again through the `icons:` protocol. Two flows this close
+ * together should not disagree about how hard they look (#211).
+ */
+export function isPngBytes(bytes: Uint8Array): boolean {
+  return bytes.length >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)
+}
+
 /** Anything that is not a usable id, missing included, becomes the built-in default. */
 export function normalizeBackgroundId(value: unknown): string {
   return isBackgroundId(value) ? value : DEFAULT_BACKGROUND_ID

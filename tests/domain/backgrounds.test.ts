@@ -11,6 +11,7 @@ import {
   isBackgroundId,
   isCatalogBackgroundId,
   isJpegBytes,
+  isPngBytes,
   normalizeBackgroundId,
   parseBackgroundManifest
 } from "@domain/backgrounds"
@@ -125,5 +126,19 @@ describe("isJpegBytes", () => {
     assert.equal(isJpegBytes(Uint8Array.from([0x89, 0x50, 0x4e, 0x47])), false)
     assert.equal(isJpegBytes(Uint8Array.from([0xff, 0xd8, 0xff])), false)
     assert.equal(isJpegBytes(Uint8Array.from([])), false)
+  })
+})
+
+describe("isPngBytes", () => {
+  const SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+
+  it("recognises the PNG signature and nothing else", () => {
+    assert.equal(isPngBytes(Uint8Array.from([...SIGNATURE, 0x00, 0x00])), true)
+    // A JPEG, the signature one byte short, a signature with a byte flipped,
+    // and an empty file: all named .png, none of them one.
+    assert.equal(isPngBytes(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46])), false)
+    assert.equal(isPngBytes(Uint8Array.from(SIGNATURE.slice(0, 7))), false)
+    assert.equal(isPngBytes(Uint8Array.from([...SIGNATURE.slice(0, 7), 0x0b])), false)
+    assert.equal(isPngBytes(Uint8Array.from([])), false)
   })
 })
