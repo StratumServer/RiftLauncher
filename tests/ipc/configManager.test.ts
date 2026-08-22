@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import "./helpers/electronMock"
 import { setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
+import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 
 /**
  * src/config/configManager.ts against a mocked electron (see
@@ -185,7 +186,7 @@ describe("normalizeConfig: installations", () => {
     })
     const installation = result.installations[0]!
     assert.equal(installation.backupsLimit, 3, "out of range falls back to the default")
-    assert.equal(installation.compressionLevel, 4)
+    assert.equal(installation.compressionLevel, DEFAULT_COMPRESSION_LEVEL, "the same level the add form proposes, not a second number")
     assert.equal(installation.lastTimePlayed, -1)
 
     const inRange = normalizeConfig({ installations: [{ id: "a", path: "/a", backupsLimit: 7, compressionLevel: 8.9, lastTimePlayed: 12_345 }] })

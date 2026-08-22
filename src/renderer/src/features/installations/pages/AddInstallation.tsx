@@ -5,6 +5,7 @@ import { PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } f
 import semver from "semver"
 
 import { createInstallation, INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH } from "@domain/installations/create"
+import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -57,7 +58,7 @@ function AddInslallation(): JSX.Element {
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
-    compressionLevel: 6,
+    compressionLevel: DEFAULT_COMPRESSION_LEVEL,
     mesaGlThread: false,
     envVars: ""
   })

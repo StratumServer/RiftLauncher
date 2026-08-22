@@ -5,6 +5,7 @@ import { Button } from "@headlessui/react"
 import { PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH, validateInstallationFields } from "@domain/installations/create"
+import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -49,7 +50,7 @@ function EditInslallation(): JSX.Element {
     startParams: "",
     backupsLimit: 0,
     backupsAuto: false,
-    compressionLevel: 6,
+    compressionLevel: DEFAULT_COMPRESSION_LEVEL,
     mesaGlThread: false,
     envVars: ""
   })
@@ -73,7 +74,7 @@ function EditInslallation(): JSX.Element {
     fields.setStartParams(installation?.startParams ?? "")
     fields.setBackupsLimit(installation?.backupsLimit ?? 0)
     fields.setBackupsAuto(installation?.backupsAuto ?? false)
-    fields.setCompressionLevel(installation?.compressionLevel ?? 6)
+    fields.setCompressionLevel(installation?.compressionLevel ?? DEFAULT_COMPRESSION_LEVEL)
     fields.setMesaGlThread(installation?.mesaGlThread ?? false)
     fields.setEnvVars(installation?.envVars ?? "")
   }, [installation])
