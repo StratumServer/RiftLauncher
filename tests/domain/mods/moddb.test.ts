@@ -1,7 +1,15 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { parseAuthorsResponse, parseGameVersionsResponse, parseModDetailResponse, parseModListResponse, parseTagsResponse } from "../../../src/domain/mods/moddb"
+import {
+  type ModDbModDetail,
+  newestReleaseFileId,
+  parseAuthorsResponse,
+  parseGameVersionsResponse,
+  parseModDetailResponse,
+  parseModListResponse,
+  parseTagsResponse
+} from "../../../src/domain/mods/moddb"
 
 describe("v1 envelope handling", () => {
   it("names an application error carried by a real HTTP 200, the ModDB's core quirk", () => {
@@ -127,6 +135,38 @@ describe("parseModDetailResponse", () => {
   it("names a mod whose releases is not an array as malformed", () => {
     const result = parseModDetailResponse(JSON.stringify({ statuscode: "200", mod: { modid: 1783, name: "Config lib", releases: "none" } }))
     assert.deepEqual(result, { ok: false, reason: "malformed-response", statusCode: "200" })
+  })
+})
+
+describe("newestReleaseFileId", () => {
+  function detail(releases: unknown[]): ModDbModDetail {
+    const result = parseModDetailResponse(JSON.stringify({ statuscode: "200", mod: { modid: 11016, name: "RiftLauncher", releases } }))
+    if (!result.ok) throw new Error("unreachable")
+    return result.payload
+  }
+
+  it("reads the file id off the newest release, which the API serves first", () => {
+    assert.equal(
+      newestReleaseFileId(
+        detail([
+          { releaseid: 9, fileid: 116745 },
+          { releaseid: 8, fileid: 100000 }
+        ])
+      ),
+      116745
+    )
+  })
+
+  it("answers undefined for a listing with no releases at all", () => {
+    assert.equal(newestReleaseFileId(detail([])), undefined)
+  })
+
+  it("refuses a file id that is not a usable positive integer, since it ends up in a URL", () => {
+    for (const fileid of ["116745", 0, -3, 1.5, Number.MAX_SAFE_INTEGER + 2, null, undefined]) {
+      assert.equal(newestReleaseFileId(detail([{ releaseid: 9, fileid }])), undefined, String(fileid))
+    }
+
+    assert.equal(newestReleaseFileId(detail(["not a release"])), undefined)
   })
 })
 

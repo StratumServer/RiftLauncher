@@ -51,7 +51,8 @@ export const IPC_CHANNELS = {
     LOOK_FOR_A_GAME_VERSION: "look-for-a-game-version"
   },
   NET_MANAGER: {
-    QUERY_URL: "query-url"
+    QUERY_URL: "query-url",
+    FETCH_MODDB_LISTING_ARCHIVE: "fetch-moddb-listing-archive"
   },
   BACKGROUNDS_MANAGER: {
     ENSURE_BACKGROUND: "ensure-background",

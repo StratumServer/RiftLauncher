@@ -3,8 +3,10 @@ import { ipcMain } from "electron"
 import { IPC_CHANNELS } from "../ipcChannels"
 import { readCatalogCache, writeCatalogCache } from "@src/ipc/catalogCache"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { requestBoundedText } from "@src/ipc/network"
-import { assertAllowedApiUrl, getApiUrlMaxBytes } from "@src/ipc/validation"
+import { requestBoundedBuffer, requestBoundedText } from "@src/ipc/network"
+import { assertAllowedApiUrl, assertAllowedDownloadUrl, getApiUrlMaxBytes, MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"
+import { newestReleaseFileId, parseModDetailResponse } from "@domain/mods/moddb"
+import { MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl } from "@domain/moddbVisibility"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
 const MOD_CATALOG_HOSTNAME = "mods.vintagestory.at"
@@ -45,6 +47,64 @@ export async function queryUrl(url: unknown): Promise<string> {
     throw err
   }
 }
+
+/**
+ * Whether this process has already made the courtesy request. Guards a double click on a prompt
+ * that is only meant to be answerable once; the config answer is what stops it happening on any
+ * later launch. Never reset: one increment per player, ever (#219).
+ */
+let listingArchiveRequested = false
+
+/**
+ * Fetches the launcher's own ModDB listing archive once, which is what registers a download
+ * against that listing (see src/domain/moddbVisibility.ts for why it is the only URL that counts).
+ *
+ * Only ever reached from an explicit click on the prompt, and only from the "count me in" answer.
+ * Nothing calls it at startup, on update, or on any schedule.
+ *
+ * Everything it can go wrong on is swallowed: an unreachable API, a listing with no readable
+ * release, a refused download, a redirect (`requestBoundedBuffer` follows none, and the counter has
+ * already been incremented by the time the site issues one, so the CDN bytes are never even
+ * transferred). This is a courtesy the player offered, not a task they are waiting on, so a failure
+ * is logged at debug and forgotten rather than retried or reported.
+ */
+export async function fetchModDbListingArchive(): Promise<void> {
+  if (listingArchiveRequested) return
+  listingArchiveRequested = true
+
+  try {
+    const detailUrl = assertAllowedApiUrl(MODDB_LISTING_DETAIL_URL)
+    const detail = parseModDetailResponse(await requestBoundedText(detailUrl, { maxBytes: getApiUrlMaxBytes(detailUrl) }))
+    if (!detail.ok) return
+
+    const fileId = newestReleaseFileId(detail.payload)
+    if (fileId === undefined) return
+
+    await requestBoundedBuffer(assertAllowedDownloadUrl(moddbListingDownloadUrl(fileId)), { maxBytes: MAX_MODDB_LISTING_RESPONSE_BYTES })
+  } catch (err) {
+    const message = getErrorMessage(err)
+
+    // ModDB answers the counting endpoint with a 302 to its CDN, and the bounded network layer
+    // refuses to follow redirects, so this rejection is what a counted request looks like from
+    // here rather than a failure. Reading the message is the only signal available; if Electron
+    // ever rewords it the request still behaves exactly the same and only this line falls back
+    // to the branch below.
+    if (message.toLowerCase().includes("redirect")) {
+      logMessage(
+        "debug",
+        "[back] [ipc] [ipc/handlers/netHandlers.ts] [FETCH_MODDB_LISTING_ARCHIVE] The listing download endpoint answered with its redirect, which is the counted outcome. Not followed on purpose."
+      )
+      return
+    }
+
+    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [FETCH_MODDB_LISTING_ARCHIVE] ${message}`)
+  }
+}
+
+ipcMain.handle(IPC_CHANNELS.NET_MANAGER.FETCH_MODDB_LISTING_ARCHIVE, async (event): Promise<void> => {
+  assertTrustedIpcSender(event)
+  await fetchModDbListingArchive()
+})
 
 ipcMain.handle(IPC_CHANNELS.NET_MANAGER.QUERY_URL, async (event, url: unknown): Promise<string> => {
   assertTrustedIpcSender(event)

@@ -23,6 +23,12 @@ export const MAX_BACKGROUND_MANIFEST_BYTES = 32 * 1024
 // roughly triple the largest of them, and well under the generic 4 MB ceiling this would
 // otherwise inherit.
 export const MAX_BACKGROUND_IMAGE_BYTES = 2 * 1024 * 1024
+// The pointer archive on the launcher's own ModDB listing (#219), which is 315 bytes of text
+// pointing at the releases page. 256 KB is three orders of magnitude of headroom and still refuses
+// anything that could pass for a real download, which this endpoint must never be used to pull.
+// The rule it applies to (mods.vintagestory.at/download) is shared with the mod downloader, which
+// streams to disk under its own limits, so this ceiling is passed per call rather than per rule.
+export const MAX_MODDB_LISTING_RESPONSE_BYTES = 256 * 1024
 
 export type UrlRule = Readonly<{
   hostname: string
