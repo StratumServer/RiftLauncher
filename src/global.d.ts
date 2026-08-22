@@ -353,8 +353,11 @@ declare global {
    * the log, so eight different refusals reached the player as one sentence
    * that named none of them (#202).
    *
-   * - `unsupported-format`: the picked file is not a `.png`. The extension is
-   *   matched case-insensitively, so `.PNG` is a png like any other.
+   * - `unsupported-format`: the picked file is not a PNG. The extension is
+   *   matched case-insensitively, so `.PNG` is a png like any other, and the
+   *   first eight bytes have to be the PNG signature too, so a file renamed to
+   *   `.png` is refused the same way the background flow refuses a `.jpg` that
+   *   is not a JPEG (#211).
    * - `source-unavailable`: the path policy refused the picked file, or it is
    *   gone, or a folder on the way to it is a symbolic link. Nothing was read.
    * - `copy-failed`: the file was readable and the write still failed. A
