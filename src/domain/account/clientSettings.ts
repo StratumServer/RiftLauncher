@@ -19,6 +19,17 @@
  * which is the behaviour the launcher has always had: losing somebody's game
  * settings to install a session in them would be a very bad trade.
  *
+ * ## The game's own session wins
+ *
+ * The file is not only written, it is read first, and what it already carries
+ * decides what happens next. A `sessionkey` that is not the launcher's own, on
+ * the account the launcher is logged in as, can only have got there one way:
+ * the game asked the player to log in and stored what the auth service handed
+ * back. That key is newer than the launcher's and it is known good, so the
+ * write is skipped and the caller is told to adopt it instead. Overwriting it
+ * is what turned one invalidated session into a login prompt on every single
+ * launch, forever (issue #204).
+ *
  * ## Shapes nobody expects
  *
  * A document that is not an object at all, and a `stringSettings` that is an
@@ -29,6 +40,8 @@
  * leaving the code where it was.
  */
 
+import { parseStoredSecrets } from "./credentials"
+import type { AccountSecrets } from "./credentials"
 import type { JsonFile } from "../ports"
 
 /** Name of the game's settings file, inside an installation's data folder. */
@@ -101,15 +114,61 @@ export function mergeSessionIntoClientSettings(existingDocument: unknown, sessio
 }
 
 /**
- * Why the session was not installed.
+ * The session already in the file, when it is one worth keeping over ours.
  *
- * `unreadable-settings` means the file is there and holds something that is not
- * JSON, so nothing was written. `write-failed` means the merged document could
- * not be put back.
+ * Null covers every other case, all of which end in the launcher's own session
+ * being written exactly as before: no session in the file, our own session
+ * already in it, a session belonging to somebody else, or one too incomplete to
+ * store.
+ *
+ * ## Which fields say "somebody else"
+ *
+ * `sessionkey` alone says the session CHANGED. It cannot say whose it is now,
+ * and that distinction decides whether adopting is a repair or a hijack: the
+ * launcher's secret store holds a session key with no account attached to it,
+ * so adopting one issued for a different player would leave the launcher
+ * showing one name while carrying another player's credentials. `playeruid` is
+ * checked against ours for that reason, and it is the right field for it: the
+ * game writes it out of the same login response the key came from, and unlike
+ * `useremail` (which the launcher fills in from what the user typed, not from
+ * the response) it is the account's own identifier. A file whose `playeruid` is
+ * missing or different is left alone and overwritten, which is what the
+ * launcher has always done.
+ *
+ * ponytail: newer is inferred, never verified. There is no endpoint here to ask
+ * whether a key is still live, so "the game wrote it, so the service accepted
+ * it" is the whole argument. If the adopted key was itself invalidated in the
+ * meantime the player gets one more prompt and the game writes another one,
+ * which still terminates. Validating before adopting needs a session-check
+ * endpoint mapped first.
  */
-export type WriteClientSettingsSessionFailure = "unreadable-settings" | "write-failed"
+function sessionToAdopt(existingDocument: unknown, session: AccountSessionFields): AccountSecrets | null {
+  const stringSettings = existingStringSettings(existingDocument)
+  if (stringSettings.sessionkey === session.sessionKey) return null
+  if (stringSettings.playeruid !== session.playerUid) return null
 
-export type WriteClientSettingsSessionResult = { ok: true } | { ok: false; reason: WriteClientSettingsSessionFailure }
+  return parseStoredSecrets({
+    sessionKey: stringSettings.sessionkey,
+    sessionSignature: stringSettings.sessionsignature,
+    mptoken: stringSettings.mptoken
+  })
+}
+
+/**
+ * What became of the session.
+ *
+ * `written` is the ordinary outcome: the launcher's session is now in the file.
+ * `adopted` means the file already held a newer one for this same account and
+ * nothing was written, so the caller has to store the carried secrets as its
+ * own or the next launch will stomp them again. `unreadable-settings` means the
+ * file is there and holds something that is not JSON. `write-failed` means the
+ * merged document could not be put back.
+ *
+ * One tagged field, no `ok` boolean, because `adopted` is neither a success a
+ * caller may ignore nor a failure it may report: it carries work. A caller that
+ * switches on this cannot quietly skip it.
+ */
+export type WriteClientSettingsSessionResult = { outcome: "written" } | { outcome: "adopted"; secrets: AccountSecrets } | { outcome: "unreadable-settings" } | { outcome: "write-failed" }
 
 export interface WriteClientSettingsSessionPorts {
   jsonFile: JsonFile
@@ -122,17 +181,21 @@ export interface WriteClientSettingsSessionInput {
 }
 
 /**
- * Reads the settings file, lays the session over it, and writes it back.
+ * Reads the settings file, and either lays the session over it and writes it
+ * back, or steps aside for the session the game put there.
  *
  * @param ports Host capabilities the work runs on.
  * @param input Where the file is and what to install into it.
- * @returns Success, or the reason the session was not installed.
+ * @returns What became of the session, adoption included.
  */
 export async function writeClientSettingsSession(ports: WriteClientSettingsSessionPorts, input: WriteClientSettingsSessionInput): Promise<WriteClientSettingsSessionResult> {
   const existing = await ports.jsonFile.read(input.settingsPath)
-  if (!existing.ok) return { ok: false, reason: "unreadable-settings" }
+  if (!existing.ok) return { outcome: "unreadable-settings" }
+
+  const adoptable = sessionToAdopt(existing.document, input.session)
+  if (adoptable) return { outcome: "adopted", secrets: adoptable }
 
   const written = await ports.jsonFile.write(input.settingsPath, mergeSessionIntoClientSettings(existing.document, input.session))
 
-  return written.ok ? { ok: true } : { ok: false, reason: "write-failed" }
+  return written.ok ? { outcome: "written" } : { outcome: "write-failed" }
 }

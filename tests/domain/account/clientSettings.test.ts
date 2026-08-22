@@ -167,7 +167,7 @@ describe("writeClientSettingsSession", () => {
 
     const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
 
-    assert.deepEqual(result, { ok: true })
+    assert.deepEqual(result, { outcome: "written" })
     assert.equal(writes.length, 1)
     assert.equal(writes[0]?.path, SETTINGS_PATH)
     assert.deepEqual(writes[0]?.document, { intSettings: { maxFps: 60 }, stringSettings: WRITTEN_SESSION })
@@ -178,7 +178,7 @@ describe("writeClientSettingsSession", () => {
 
     const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
 
-    assert.deepEqual(result, { ok: true })
+    assert.deepEqual(result, { outcome: "written" })
     assert.deepEqual(writes[0]?.document, { stringSettings: WRITTEN_SESSION })
   })
 
@@ -187,7 +187,7 @@ describe("writeClientSettingsSession", () => {
 
     const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
 
-    assert.deepEqual(result, { ok: false, reason: "unreadable-settings" })
+    assert.deepEqual(result, { outcome: "unreadable-settings" })
     assert.deepEqual(writes, [])
   })
 
@@ -196,6 +196,86 @@ describe("writeClientSettingsSession", () => {
 
     const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
 
-    assert.deepEqual(result, { ok: false, reason: "write-failed" })
+    assert.deepEqual(result, { outcome: "write-failed" })
+  })
+})
+
+/**
+ * The loop from issue #204: the game refreshes an invalidated session into its
+ * own settings file, and the launcher writes the dead one back over it on the
+ * next launch, so the player is asked to log in every single time. These pin
+ * the side the launcher now takes.
+ */
+describe("writeClientSettingsSession when the game refreshed the session itself", () => {
+  /** What the game leaves behind after asking the player to log in: same account, new key. */
+  const GAME_REFRESHED = {
+    ...WRITTEN_SESSION,
+    mptoken: "game-mp-token",
+    sessionkey: "game-session-key",
+    sessionsignature: "game-session-signature"
+  }
+
+  it("keeps the game's session and hands it back to be adopted", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_REFRESHED } })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "adopted", secrets: { sessionKey: "game-session-key", sessionSignature: "game-session-signature", mptoken: "game-mp-token" } })
+    assert.deepEqual(writes, [], "the game's session must survive the launch it was written before")
+  })
+
+  it("adopts a refreshed session that carries no multiplayer token", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: { ...GAME_REFRESHED, mptoken: null } } })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "adopted", secrets: { sessionKey: "game-session-key", sessionSignature: "game-session-signature", mptoken: null } })
+  })
+
+  it("writes ours over a session belonging to another player, uid and all", async () => {
+    // Adopting here would leave the launcher showing one account's name while
+    // holding another account's key, which is worse than the loop it fixes.
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: { ...GAME_REFRESHED, playeruid: "uid-2", playername: "Someone Else" } } })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "written" })
+    assert.deepEqual(stringSettingsOf(writes[0]?.document as Record<string, unknown>), WRITTEN_SESSION)
+  })
+
+  it("writes ours when the file carries a session but no uid to attach it to", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: { sessionkey: "orphan-key", sessionsignature: "orphan-signature" } } })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "written" })
+    assert.equal(stringSettingsOf(writes[0]?.document as Record<string, unknown>).sessionkey, "session-key")
+  })
+
+  it("writes ours when the file's session is too incomplete to store", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: { ...GAME_REFRESHED, sessionsignature: "" } } })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "written" })
+    assert.equal(stringSettingsOf(writes[0]?.document as Record<string, unknown>).sessionkey, "session-key")
+  })
+
+  it("writes ours, unchanged, when the file already holds our own session", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: { ...WRITTEN_SESSION, language: "es-es" } } })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "written" })
+    assert.deepEqual(stringSettingsOf(writes[0]?.document as Record<string, unknown>), { ...WRITTEN_SESSION, language: "es-es" })
+  })
+
+  it("writes ours when the file holds every other setting but no session at all", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: { language: "es-es" }, intSettings: { maxFps: 60 } } })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "written" })
+    assert.deepEqual(writes[0]?.document, { intSettings: { maxFps: 60 }, stringSettings: { language: "es-es", ...WRITTEN_SESSION } })
   })
 })
