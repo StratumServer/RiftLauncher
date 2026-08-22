@@ -10,6 +10,9 @@ export const IPC_CHANNELS = {
   },
   APP_UPDATER: {
     UPDATE_AVAILABLE: "update-available",
+    DOWNLOAD_UPDATE: "download-update",
+    UPDATE_DOWNLOAD_PROGRESS: "update-download-progress",
+    UPDATE_ERROR: "update-error",
     UPDATE_DOWNLOADED: "update-downloaded",
     UPDATE_AND_RESTART: "update-and-restart"
   },
@@ -49,6 +52,10 @@ export const IPC_CHANNELS = {
   },
   NET_MANAGER: {
     QUERY_URL: "query-url"
+  },
+  BACKGROUNDS_MANAGER: {
+    ENSURE_BACKGROUND: "ensure-background",
+    COPY_CUSTOM_BACKGROUND: "copy-custom-background"
   },
   ACCOUNT_MANAGER: {
     LOGIN: "account-login",

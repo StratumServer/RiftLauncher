@@ -1,6 +1,6 @@
 {
   "name": "riftlauncher",
-  "version": "1.7.0-beta.2",
+  "version": "1.7.0-beta.3",
   "description": "RiftLauncher for Vintage Story",
   "overrides": {
     "js-yaml": "4.3.1",

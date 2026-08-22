@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
 import { FiLoader } from "react-icons/fi"
 
-import { useInstallations } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useConfigDispatch, useInstallations, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
 import { useManageInstalledMods } from "@renderer/features/mods/hooks/useManageInstalledMods"
@@ -38,6 +38,8 @@ function byName(a: InstalledModType, b: InstalledModType): number {
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
   const installations = useInstallations()
+  const suspendedModUpdates = useSuspendedModUpdates()
+  const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
   const deleteInstalledModFile = useDeleteInstalledModFile()
@@ -60,9 +62,26 @@ function ListMods(): JSX.Element {
     return (): void => clearModIconMemoryCache()
   }, [])
 
+  // Deliberately blind to suspension: a held-back Mod still belongs under "Mods with updates",
+  // because watching for the new version is exactly why the player suspended it (#194).
   const updatableMods = installedMods.filter((iMod) => iMod._updatableTo).sort(byName)
   const incompatibleMods = installedMods.filter((iMod) => !iMod._updatableTo && iMod._lastVersion).sort(byName)
   const upToDateMods = installedMods.filter((iMod) => !iMod._updatableTo && !iMod._lastVersion).sort(byName)
+
+  /** Every list below renders its rows the same way, suspension state and all. */
+  function modRow(iMod: InstalledModType): JSX.Element {
+    const suspended = suspendedModUpdates.includes(iMod.modid)
+    return (
+      <InstalledModItem
+        key={iMod.modid + iMod.path}
+        iMod={iMod}
+        suspended={suspended}
+        onToggleSuspendClick={() => configDispatch({ type: suspended ? CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE : CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE, payload: { modid: iMod.modid } })}
+        onDeleteClick={() => setModToDelete(iMod)}
+        onUpdateClick={() => setModToUpdate(iMod)}
+      />
+    )
+  }
 
   async function DeleteModHandler(): Promise<void> {
     if (!modToDelete) return addNotification(t("features.mods.noModSelected"), "error")
@@ -160,9 +179,7 @@ function ListMods(): JSX.Element {
                           descriptionKey="features.mods.modsWithUpdatesDescription"
                           reportKey="features.mods.modsWithUpdatesDescriptionReport"
                         />
-                        {updatableMods.map((iMod) => (
-                          <InstalledModItem key={iMod.modid + iMod.path} iMod={iMod} onDeleteClick={() => setModToDelete(iMod)} onUpdateClick={() => setModToUpdate(iMod)} />
-                        ))}
+                        {updatableMods.map(modRow)}
                       </ListGroup>
                     </ListWrapper>
                   )}
@@ -175,26 +192,21 @@ function ListMods(): JSX.Element {
                           descriptionKey="features.mods.modsWithIncompatibleUpdatesDescription"
                           reportKey="features.mods.modsWithUpdatesDescriptionReport"
                         />
-                        {incompatibleMods.map((iMod) => (
-                          <InstalledModItem key={iMod.modid + iMod.path} iMod={iMod} onDeleteClick={() => setModToDelete(iMod)} onUpdateClick={() => setModToUpdate(iMod)} />
-                        ))}
+                        {incompatibleMods.map(modRow)}
                       </ListGroup>
                     </ListWrapper>
                   )}
 
                   {upToDateMods.length > 0 && (
                     <ListWrapper className="w-full">
-                      <ListGroup>
-                        {upToDateMods.map((iMod) => (
-                          <InstalledModItem key={iMod.modid + iMod.path} iMod={iMod} onDeleteClick={() => setModToDelete(iMod)} onUpdateClick={() => setModToUpdate(iMod)} />
-                        ))}
-                      </ListGroup>
+                      <ListGroup>{upToDateMods.map(modRow)}</ListGroup>
                     </ListWrapper>
                   )}
 
                   <InstallModPopup
                     modToInstall={modToUpdate?.modid || null}
                     setModToInstall={() => setModToUpdate(null)}
+                    modName={modToUpdate?.name}
                     installation={{
                       installation: installation,
                       oldMod: installedMods.find((iMod) => iMod.modid === modToUpdate?.modid)

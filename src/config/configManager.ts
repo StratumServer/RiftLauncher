@@ -6,6 +6,7 @@ import { parseLegacyAccount, toPublicAccount } from "@src/ipc/accountTypes"
 import { saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from "@domain/config/migrations"
+import { DEFAULT_BACKGROUND_ID, normalizeBackgroundId } from "@domain/backgrounds"
 
 const defaultConfig: ConfigType = {
   schemaVersion: CURRENT_CONFIG_SCHEMA,
@@ -24,6 +25,8 @@ const defaultConfig: ConfigType = {
   installations: [],
   gameVersions: [],
   favMods: [],
+  suspendedModUpdates: [],
+  background: DEFAULT_BACKGROUND_ID,
   customIcons: []
 }
 
@@ -310,6 +313,14 @@ export function normalizeConfig(config: unknown): ConfigType {
     installations,
     gameVersions,
     favMods: Array.isArray(rawConfig.favMods) ? rawConfig.favMods.filter((modId): modId is number => typeof modId === "number" && Number.isSafeInteger(modId)).slice(0, 10_000) : defaultConfig.favMods,
+    suspendedModUpdates: Array.isArray(rawConfig.suspendedModUpdates)
+      ? rawConfig.suspendedModUpdates.filter((modid): modid is string => typeof modid === "string" && modid.length > 0).slice(0, 10_000)
+      : defaultConfig.suspendedModUpdates,
+    // A stored id survives whether or not the catalog still lists it: the manifest is not
+    // readable from here, and a scene retired from the branch for a week should not silently
+    // reset a player's choice. Anything that is not a usable id falls back to the bundled scene,
+    // which is also what the renderer paints when the cached file for an id has gone missing.
+    background: normalizeBackgroundId(rawConfig.background),
     customIcons
   }
 

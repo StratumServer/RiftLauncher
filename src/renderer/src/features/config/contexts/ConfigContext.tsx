@@ -5,6 +5,7 @@ import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstall
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { configSaveFailureMessageKey, initialConfigSaveHealthState, updateConfigSaveHealth } from "@renderer/features/config/utils/saveHealth"
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "@renderer/features/config/contexts/configReducer"
+import { applyBackground } from "@renderer/utils/backgroundStyle"
 
 // Re-exported so a consumer needs one import to read a slice and dispatch onto it.
 export { CONFIG_ACTIONS } from "@renderer/features/config/contexts/configReducer"
@@ -18,6 +19,9 @@ export interface ConfigSettingsType {
   defaultVersionsFolder: string
   backupsFolder: string
   window: WindowType
+  background: string
+  /** Changes on every background selection, so a replaced custom picture still repaints. */
+  backgroundRevision: number
 }
 
 // Stable identity for the "nobody has been notified yet" case, so a consumer
@@ -33,6 +37,7 @@ const GameVersionsContext = createContext<GameVersionType[] | null>(null)
 const AccountContext = createContext<{ account: AccountType | null } | null>(null)
 const SettingsContext = createContext<ConfigSettingsType | null>(null)
 const FavModsContext = createContext<number[] | null>(null)
+const SuspendedModUpdatesContext = createContext<string[] | null>(null)
 const CustomIconsContext = createContext<IconType[] | null>(null)
 const NotifiedModUpdatesContext = createContext<string[] | null>(null)
 
@@ -98,6 +103,12 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
     }
   }, [isConfigLoaded])
 
+  // Paints the stored choice. Reads nothing but the config, so a launch with no network shows the
+  // chosen scene straight from the cache, or the bundled one when that file is not there.
+  useEffect(() => {
+    applyBackground(config.background, config._backgroundRevision ?? 0)
+  }, [config.background, config._backgroundRevision])
+
   useEffect(() => {
     const firstInstallation = config.installations[0]
     if ((!config.lastUsedInstallation || !config.installations.some((i) => i.id === config.lastUsedInstallation)) && firstInstallation)
@@ -116,9 +127,20 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       defaultInstallationsFolder: config.defaultInstallationsFolder,
       defaultVersionsFolder: config.defaultVersionsFolder,
       backupsFolder: config.backupsFolder,
-      window: config.window
+      window: config.window,
+      background: config.background,
+      backgroundRevision: config._backgroundRevision ?? 0
     }),
-    [config.schemaVersion, config.lastUsedInstallation, config.defaultInstallationsFolder, config.defaultVersionsFolder, config.backupsFolder, config.window]
+    [
+      config.schemaVersion,
+      config.lastUsedInstallation,
+      config.defaultInstallationsFolder,
+      config.defaultVersionsFolder,
+      config.backupsFolder,
+      config.window,
+      config.background,
+      config._backgroundRevision
+    ]
   )
 
   return (
@@ -129,7 +151,9 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
             <InstallationsContext.Provider value={config.installations}>
               <GameVersionsContext.Provider value={config.gameVersions}>
                 <FavModsContext.Provider value={config.favMods}>
-                  <CustomIconsContext.Provider value={config.customIcons}>{children}</CustomIconsContext.Provider>
+                  <SuspendedModUpdatesContext.Provider value={config.suspendedModUpdates}>
+                    <CustomIconsContext.Provider value={config.customIcons}>{children}</CustomIconsContext.Provider>
+                  </SuspendedModUpdatesContext.Provider>
                 </FavModsContext.Provider>
               </GameVersionsContext.Provider>
             </InstallationsContext.Provider>
@@ -159,9 +183,12 @@ const useSettingsConfig = (): ConfigSettingsType => requireProvider(useContext(S
 
 const useFavMods = (): number[] => requireProvider(useContext(FavModsContext), "useFavMods")
 
+/** Modids the player holds back from Update All. Their update notices are unaffected. */
+const useSuspendedModUpdates = (): string[] => requireProvider(useContext(SuspendedModUpdatesContext), "useSuspendedModUpdates")
+
 const useCustomIcons = (): IconType[] => requireProvider(useContext(CustomIconsContext), "useCustomIcons")
 
 /** Ids of installations the player has already been told about mod updates for, this session. */
 const useNotifiedModUpdates = (): string[] => requireProvider(useContext(NotifiedModUpdatesContext), "useNotifiedModUpdates")
 
-export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccount, useSettingsConfig, useFavMods, useCustomIcons, useNotifiedModUpdates }
+export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccount, useSettingsConfig, useFavMods, useSuspendedModUpdates, useCustomIcons, useNotifiedModUpdates }

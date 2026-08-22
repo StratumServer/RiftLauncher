@@ -13,6 +13,8 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
+import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "../../src/renderer/src/features/config/contexts/configReducer"
 
 function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
@@ -27,6 +29,8 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     installations: [],
     gameVersions: [],
     favMods: [],
+    suspendedModUpdates: [],
+    background: DEFAULT_BACKGROUND_ID,
     customIcons: [],
     ...overrides
   }
@@ -69,6 +73,10 @@ describe("configReducer: initialState", () => {
     assert.equal(initialState.schemaVersion, 0)
     assert.deepEqual(initialState.installations, [])
   })
+
+  it("starts on the bundled background, so the first paint needs no network", () => {
+    assert.equal(initialState.background, DEFAULT_BACKGROUND_ID)
+  })
 })
 
 describe("configReducer: SET_CONFIG", () => {
@@ -106,6 +114,28 @@ describe("configReducer: scalar setters", () => {
     const config = baseConfig()
     const result = configReducer(config, { type: CONFIG_ACTIONS.SET_DEFAULT_BACKUPS_FOLDER, payload: "/new-backups" })
     assert.equal(result.backupsFolder, "/new-backups")
+  })
+
+  it("SET_BACKGROUND overwrites background only", () => {
+    const config = baseConfig()
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_BACKGROUND, payload: "village-lane" })
+
+    assert.equal(result.background, "village-lane")
+    assert.equal(result.defaultInstallationsFolder, config.defaultInstallationsFolder)
+    assert.equal(result.customIcons, config.customIcons)
+  })
+
+  it("SET_BACKGROUND bumps the revision, even when the id does not change", () => {
+    const config = baseConfig({ background: CUSTOM_BACKGROUND_ID })
+
+    const first = configReducer(config, { type: CONFIG_ACTIONS.SET_BACKGROUND, payload: CUSTOM_BACKGROUND_ID })
+    const second = configReducer(first, { type: CONFIG_ACTIONS.SET_BACKGROUND, payload: CUSTOM_BACKGROUND_ID })
+
+    // Re-picking writes over the one file the custom slot owns, so this counter is the only thing
+    // that tells the renderer the picture behind an unchanged id is a different picture.
+    assert.equal(first._backgroundRevision, 1)
+    assert.equal(second._backgroundRevision, 2)
+    assert.equal(second.background, CUSTOM_BACKGROUND_ID)
   })
 
   it("SET_ACCOUNT accepts an account and null alike", () => {
@@ -166,6 +196,61 @@ describe("configReducer: installations", () => {
     const config = baseConfig({ installations: [installation()] })
     const result = configReducer(config, { type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: "missing", updates: { name: "X" } } })
     assert.deepEqual(result.installations, config.installations)
+  })
+
+  it("MOVE_INSTALLATION up swaps a middle installation with the one above it", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" }), installation({ id: "c" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "b", direction: "up" } })
+    assert.deepEqual(
+      result.installations.map((i) => i.id),
+      ["b", "a", "c"]
+    )
+  })
+
+  it("MOVE_INSTALLATION down swaps a middle installation with the one below it", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" }), installation({ id: "c" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "b", direction: "down" } })
+    assert.deepEqual(
+      result.installations.map((i) => i.id),
+      ["a", "c", "b"]
+    )
+  })
+
+  it("MOVE_INSTALLATION moves the entries themselves, not copies of them", () => {
+    const first = installation({ id: "a" })
+    const second = installation({ id: "b" })
+    const config = baseConfig({ installations: [first, second] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "b", direction: "up" } })
+    assert.equal(result.installations[0], second)
+    assert.equal(result.installations[1], first)
+  })
+
+  it("MOVE_INSTALLATION up on the first installation is a no-op, same state object back", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "a", direction: "up" } })
+    assert.equal(result, config, "nothing moved, so nothing downstream should see new state")
+  })
+
+  it("MOVE_INSTALLATION down on the last installation is a no-op, same state object back", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "b", direction: "down" } })
+    assert.equal(result, config)
+  })
+
+  it("MOVE_INSTALLATION on an id naming nothing leaves the order untouched", () => {
+    const config = baseConfig({ installations: [installation({ id: "a" }), installation({ id: "b" })] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: "missing", direction: "up" } })
+    assert.equal(result, config)
+    assert.deepEqual(
+      result.installations.map((i) => i.id),
+      ["a", "b"]
+    )
   })
 
   it("ADD_INSTALLATION_BACKUP prepends a backup onto the matching installation only", () => {
@@ -339,6 +424,33 @@ describe("configReducer: favourite mods", () => {
     const config = baseConfig({ favMods: [1, 2] })
     const result = configReducer(config, { type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: 999 } })
     assert.deepEqual(result.favMods, [1, 2])
+  })
+})
+
+describe("configReducer: suspended mod updates", () => {
+  it("ADD_SUSPENDED_MOD_UPDATE appends the modid", () => {
+    const config = baseConfig({ suspendedModUpdates: ["alpha"] })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE, payload: { modid: "beta" } })
+    assert.deepEqual(result.suspendedModUpdates, ["alpha", "beta"])
+  })
+
+  it("REMOVE_SUSPENDED_MOD_UPDATE removes every occurrence of the modid", () => {
+    const config = baseConfig({ suspendedModUpdates: ["alpha", "beta", "alpha"] })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE, payload: { modid: "alpha" } })
+    assert.deepEqual(result.suspendedModUpdates, ["beta"])
+  })
+
+  it("REMOVE_SUSPENDED_MOD_UPDATE on a modid naming nothing leaves the list as it was", () => {
+    const config = baseConfig({ suspendedModUpdates: ["alpha"] })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE, payload: { modid: "gamma" } })
+    assert.deepEqual(result.suspendedModUpdates, ["alpha"])
+  })
+
+  it("leaves the other slices referentially untouched", () => {
+    const config = baseConfig({ installations: [installation()] })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE, payload: { modid: "alpha" } })
+    assert.equal(result.installations, config.installations)
+    assert.equal(result.favMods, config.favMods)
   })
 })
 

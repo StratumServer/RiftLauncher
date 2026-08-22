@@ -18,11 +18,11 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
-import { markUpdateDownloaded } from "@src/ipc/handlers/appUpdaterHandlers"
+import { registerAutoUpdaterEvents } from "@src/main/autoUpdaterEvents"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
-import { createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
+import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
 import fse from "fs-extra"
 
@@ -52,19 +52,34 @@ const packagedRendererRoot = dirname(packagedRendererPath)
 
 ipcMain.on(IPC_CHANNELS.MODS_MANAGER.CLEAR_MOD_ICON_MEMORY_CACHE, createClearModIconMemoryCacheHandler(modIconMemoryCache, isTrustedIpcSender))
 
-if (!is.dev) {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: "app",
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        codeCache: true
-      }
+// One call, whatever the build: registerSchemesAsPrivileged replaces the list rather than adding
+// to it, so a second call would take the app scheme back out.
+const privilegedSchemes: Electron.CustomScheme[] = [
+  {
+    // Not `standard`, on purpose. The handler reads the file name straight off
+    // `new URL(request.url).pathname`, the shape a non-standard scheme gives it and the same one
+    // cachemodimg: and icons: rely on; making it standard would turn `background:scene.jpg` into
+    // a host and change that parse.
+    scheme: "background",
+    privileges: {
+      secure: true
     }
-  ])
+  }
+]
+
+if (!is.dev) {
+  privilegedSchemes.push({
+    scheme: "app",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      codeCache: true
+    }
+  })
 }
+
+protocol.registerSchemesAsPrivileged(privilegedSchemes)
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -250,6 +265,15 @@ app.whenReady().then(async () => {
     })
   )
 
+  // Handler for the chosen launcher background, downloaded or supplied by the player.
+  protocol.handle(
+    "background",
+    createBackgroundProtocolHandler({
+      getUserDataPath: () => app.getPath("userData"),
+      fetchFile: (url) => net.fetch(url)
+    })
+  )
+
   // Handler for custom icons
   protocol.handle("icons", async (req) => {
     const srcPath = join(app.getPath("userData"), "Icons")
@@ -285,20 +309,29 @@ app.whenReady().then(async () => {
     linuxPackageType: process.platform === "linux" ? readLinuxPackageType() : undefined
   })
   if (updateDecision.ok) {
-    // If there is an update available send an event to the client.
-    autoUpdater.on("update-available", () => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE)
-    })
-
-    // If there is an update downloaded send an event to the client.
-    autoUpdater.on("update-downloaded", () => {
-      markUpdateDownloaded()
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED)
+    registerAutoUpdaterEvents((channel, payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
     })
 
     // Defer the network check until the initial window has had time to become interactive.
+    //
+    // checkForUpdates, not checkForUpdatesAndNotify: the "AndNotify" half only
+    // ever fires an OS notification off the download promise the check returns,
+    // and with autoDownload off (registerAutoUpdaterEvents) there is no such
+    // promise, so the two calls now do exactly the same thing. Saying
+    // checkForUpdates keeps that honest, and leaves no second, OS-level
+    // announcement racing the in-app one the renderer draws.
+    //
+    // The catch is not optional. Launching a packaged build with no network at
+    // all rejects this promise, and an unhandled rejection in the main process
+    // is a crash report waiting to happen for what is an entirely ordinary
+    // situation. electron-updater's own "error" event still fires, so the
+    // renderer hears about it the usual way; this only keeps the rejection of
+    // that same failure from going nowhere.
     const updateCheckTimer = setTimeout(() => {
-      void autoUpdater.checkForUpdatesAndNotify()
+      void autoUpdater.checkForUpdates().catch((error) => {
+        logMessage("info", `[back] [index] [main/index.ts] [whenReady] Update check failed: ${error instanceof Error ? error.message : String(error)}.`)
+      })
     }, 5_000)
     updateCheckTimer.unref()
   } else {

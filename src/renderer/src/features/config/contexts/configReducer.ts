@@ -1,3 +1,5 @@
+import { DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
 
@@ -6,10 +8,12 @@ export enum CONFIG_ACTIONS {
   SET_DEFAULT_VERSIONS_FOLDER = "SET_DEFAULT_VERSIONS_FOLDER",
   SET_DEFAULT_BACKUPS_FOLDER = "SET_DEFAULT_BACKUPS_FOLDER",
   SET_ACCOUNT = "SET_ACCOUNT",
+  SET_BACKGROUND = "SET_BACKGROUND",
 
   ADD_INSTALLATION = "ADD_INSTALLATION",
   DELETE_INSTALLATION = "DELETE_INSTALLATION",
   EDIT_INSTALLATION = "EDIT_INSTALLATION",
+  MOVE_INSTALLATION = "MOVE_INSTALLATION",
   ADD_INSTALLATION_BACKUP = "ADD_INSTALLATION_BACKUP",
   DELETE_INSTALLATION_BACKUP = "DELETE_INSTALLATION_BACKUP",
   EDIT_INSTALLATION_BACKUP = "EDIT_INSTALLATION_BACKUP",
@@ -20,6 +24,9 @@ export enum CONFIG_ACTIONS {
 
   ADD_FAV_MOD = "ADD_FAV_MOD",
   REMOVE_FAV_MOD = "REMOVE_FAV_MOD",
+
+  ADD_SUSPENDED_MOD_UPDATE = "ADD_SUSPENDED_MOD_UPDATE",
+  REMOVE_SUSPENDED_MOD_UPDATE = "REMOVE_SUSPENDED_MOD_UPDATE",
 
   ADD_CUSTOM_ICON = "ADD_CUSTOM_ICON",
   DELETE_CUSTOM_ICON = "DELETE_CUSTOM_ICON",
@@ -57,6 +64,18 @@ export interface SetAccount {
   payload: AccountType | null
 }
 
+/**
+ * Picks the background: the bundled default, a catalog id, or the reserved custom id.
+ *
+ * Also bumps `_backgroundRevision`, including when the id has not changed. Re-picking a new
+ * picture writes over the one file the custom slot owns, so the id alone cannot tell the renderer
+ * that anything happened, and the URL it paints has to move for the new bytes to be read.
+ */
+export interface SetBackground {
+  type: CONFIG_ACTIONS.SET_BACKGROUND
+  payload: string
+}
+
 export interface AddInstallation {
   type: CONFIG_ACTIONS.ADD_INSTALLATION
   payload: InstallationType
@@ -72,6 +91,19 @@ export interface EditInstallation {
   payload: {
     id: string
     updates: Partial<Omit<InstallationType, "id">>
+  }
+}
+
+/**
+ * Swaps one installation with its neighbour. The array order is the display
+ * order (nothing sorts `installations` on the way to the screen), so this is
+ * the whole of "reorder the list" as far as state goes.
+ */
+export interface MoveInstallation {
+  type: CONFIG_ACTIONS.MOVE_INSTALLATION
+  payload: {
+    id: string
+    direction: "up" | "down"
   }
 }
 
@@ -144,6 +176,21 @@ export interface RemoveFavMod {
   }
 }
 
+/** Holds one Mod back: Update All skips it until the suspension is lifted. Its own row can still update it. */
+export interface AddSuspendedModUpdate {
+  type: CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE
+  payload: {
+    modid: string
+  }
+}
+
+export interface RemoveSuspendedModUpdate {
+  type: CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE
+  payload: {
+    modid: string
+  }
+}
+
 /**
  * Records that the player has been told about mod updates for one
  * installation, so GlobalModUpdateChecker's de-dupe survives a revisit
@@ -166,9 +213,11 @@ export type ConfigAction =
   | SetDefaultVersionsFolder
   | SetDefaultBackupsFolder
   | SetAccount
+  | SetBackground
   | AddInstallation
   | DeleteInstallation
   | EditInstallation
+  | MoveInstallation
   | AddInstallationBackup
   | DeleteInstallationBackup
   | EditInslallationBackup
@@ -179,6 +228,8 @@ export type ConfigAction =
   | EditGameVersion
   | AddFavMod
   | RemoveFavMod
+  | AddSuspendedModUpdate
+  | RemoveSuspendedModUpdate
   | AddNotifiedModUpdate
 
 /**
@@ -201,6 +252,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, backupsFolder: action.payload }
     case CONFIG_ACTIONS.SET_ACCOUNT:
       return { ...config, account: action.payload }
+    case CONFIG_ACTIONS.SET_BACKGROUND:
+      return { ...config, background: action.payload, _backgroundRevision: (config._backgroundRevision ?? 0) + 1 }
     case CONFIG_ACTIONS.ADD_INSTALLATION:
       return { ...config, installations: [action.payload, ...config.installations] }
     case CONFIG_ACTIONS.DELETE_INSTALLATION:
@@ -213,6 +266,19 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
         ...config,
         installations: config.installations.map((installation) => (installation.id === action.payload.id ? { ...installation, ...action.payload.updates } : installation))
       }
+    case CONFIG_ACTIONS.MOVE_INSTALLATION: {
+      const from = config.installations.findIndex((installation) => installation.id === action.payload.id)
+      const to = from + (action.payload.direction === "up" ? -1 : 1)
+      // An id naming nothing, or a row already at the end it is being pushed
+      // towards: same state object back, so nothing re-renders for a no-op.
+      if (from === -1 || to < 0 || to >= config.installations.length) return config
+
+      const installations = [...config.installations]
+      const moved = installations[from]!
+      installations[from] = installations[to]!
+      installations[to] = moved
+      return { ...config, installations }
+    }
     case CONFIG_ACTIONS.ADD_INSTALLATION_BACKUP:
       return {
         ...config,
@@ -273,6 +339,16 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
         ...config,
         favMods: config.favMods.filter((fm) => fm !== action.payload.modid)
       }
+    case CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE:
+      return {
+        ...config,
+        suspendedModUpdates: [...config.suspendedModUpdates, action.payload.modid]
+      }
+    case CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE:
+      return {
+        ...config,
+        suspendedModUpdates: config.suspendedModUpdates.filter((modid) => modid !== action.payload.modid)
+      }
     case CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE: {
       const notified = config._notifiedModUpdatesInstallations ?? []
       if (notified.includes(action.payload.installationId)) return config
@@ -302,5 +378,7 @@ export const initialState: ConfigType = {
   installations: [],
   gameVersions: [],
   favMods: [],
+  suspendedModUpdates: [],
+  background: DEFAULT_BACKGROUND_ID,
   customIcons: []
 }

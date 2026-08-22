@@ -8,7 +8,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
 import { parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
-import { getAccountSecrets } from "@src/ipc/accountStore"
+import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
@@ -21,6 +21,7 @@ import {
   noExecutableResult,
   sessionWriteFailedResult
 } from "@src/ipc/handlers/gameExecutionOutcome"
+import type { AccountSecrets } from "@domain/account/credentials"
 import type {
   GameProcess,
   GameProcessOutcome,
@@ -68,6 +69,30 @@ function realJsonFile(): JsonFile {
         return { ok: false, error: getErrorMessage(err) }
       }
     }
+  }
+}
+
+/**
+ * Stores the session the game refreshed for this account, so the next launch
+ * stops overwriting it.
+ *
+ * This is the same encrypted store LOGIN writes to and the same function it
+ * calls, which is the point: there is one place a session is kept and one way
+ * in. The launch goes ahead whether this lands or not. The game's own settings
+ * file already holds the working session, so a store that refuses the update
+ * costs the player another login prompt next launch, and failing the launch
+ * over it would cost them the game they asked for.
+ *
+ * Nothing here goes near the key itself. What gets logged is that an adoption
+ * happened, never what was adopted.
+ */
+async function adoptRefreshedSession(secrets: AccountSecrets): Promise<void> {
+  try {
+    await saveAccountSecrets(secrets)
+    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] The game had already refreshed this account's session. Adopted it instead of overwriting it.`)
+  } catch (err) {
+    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not store the session the game refreshed. Launching anyway.`)
+    logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
   }
 }
 
@@ -207,10 +232,17 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       }
     )
 
-    if (!written.ok) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
-      logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${written.reason}.`)
-      return sessionWriteFailedResult()
+    switch (written.outcome) {
+      case "written":
+        break
+      case "adopted":
+        await adoptRefreshedSession(written.secrets)
+        break
+      case "unreadable-settings":
+      case "write-failed":
+        logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
+        logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${written.outcome}.`)
+        return sessionWriteFailedResult()
     }
   }
 

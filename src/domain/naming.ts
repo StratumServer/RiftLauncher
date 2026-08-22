@@ -1,16 +1,33 @@
+/** The longest name assertSafeFileName (src/ipc/validation.ts) lets through. */
+const MAX_FOLDER_NAME_LENGTH = 255
+
 /**
  * Strips characters a folder name cannot carry and collapses the leftovers into
  * single dashes.
+ *
+ * What comes out is what the path layer already accepts: no path separator and
+ * no other character Windows refuses, no run of whitespace, no leading or
+ * trailing dash, and nothing longer than assertSafeFileName's 255 characters.
+ * The two names that layer refuses outright, "." and "..", come back empty
+ * along with anything else made only of dots, since a segment of pure
+ * punctuation is a worse folder name than no segment at all. Callers decide
+ * what an empty result means for them: appending nothing, or falling back to
+ * something of their own.
  *
  * @param folderName Raw name, typically typed by the user.
  * @returns The sanitised name, possibly empty.
  */
 export function cleanFolderName(folderName: string): string {
-  return folderName
+  const cleaned = folderName
     .replace(/[<>:"/\\|?*]/g, "-")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
+    .slice(0, MAX_FOLDER_NAME_LENGTH)
+    // The slice can land mid-name and leave the dash the trim above just removed.
+    .replace(/-$/, "")
+
+  return /^\.+$/.test(cleaned) ? "" : cleaned
 }
 
 /**

@@ -32,6 +32,39 @@ export function createCacheModImageProtocolHandler({ cache, getUserDataPath, fet
   }
 }
 
+export type BackgroundProtocolPorts = {
+  getUserDataPath: () => string
+  fetchFile: (url: string) => Promise<Response>
+}
+
+/**
+ * Serves the background the player chose out of userData/Cache/Backgrounds.
+ *
+ * Same shape as {@link createCacheModImageProtocolHandler} and same order of checks: containment
+ * first, then the extension gate, then the file-system safety check, and only then a read. What is
+ * deliberately missing is the memory cache. Mod icons are content-addressed, so a hit can never be
+ * stale; the custom background keeps one stable name whose bytes are replaced whenever the player
+ * picks another picture, and a cache keyed on that name would serve the old one forever.
+ */
+export function createBackgroundProtocolHandler({ getUserDataPath, fetchFile }: BackgroundProtocolPorts): (request: Request) => Promise<Response> {
+  return async (request) => {
+    const srcPath = join(getUserDataPath(), "Cache", "Backgrounds")
+    const filePath = resolveContainedPath(srcPath, new URL(request.url).pathname)
+    if (!filePath || !filePath.toLowerCase().endsWith(".jpg")) return new Response(null, { status: 404 })
+    if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
+
+    try {
+      const response = await fetchFile(pathToFileURL(filePath).toString())
+      if (!response.ok) throw new Error(`Failed to read background: ${response.status}`)
+      const bytes = Buffer.from(await response.arrayBuffer())
+      // Copy the bytes before handing them to Response so a transferred or detached body cannot reach back into the Buffer this read produced.
+      return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "image/jpeg", "Content-Length": String(bytes.length) } })
+    } catch {
+      return new Response(null, { status: 404 })
+    }
+  }
+}
+
 export async function isSafeProtocolFile(filePath: string): Promise<boolean> {
   try {
     const stats = await fse.lstat(filePath)

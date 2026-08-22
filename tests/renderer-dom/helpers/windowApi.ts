@@ -40,6 +40,8 @@ export function createMockConfig(overrides: Partial<ConfigType> = {}): ConfigTyp
     installations: [],
     gameVersions: [],
     favMods: [],
+    suspendedModUpdates: [],
+    background: "default",
     customIcons: [],
     ...overrides
   }
@@ -66,7 +68,10 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     appUpdater: {
       onUpdateAvailable: vi.fn(noopUnsubscribe),
+      onUpdateDownloadProgress: vi.fn(noopUnsubscribe),
+      onUpdateError: vi.fn(noopUnsubscribe),
       onUpdateDownloaded: vi.fn(noopUnsubscribe),
+      downloadUpdate: vi.fn(),
       updateAndRestart: vi.fn()
     },
     configManager: {
@@ -105,6 +110,10 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     netManager: {
       queryURL: vi.fn(notMocked("netManager.queryURL"))
+    },
+    backgroundsManager: {
+      ensureBackground: vi.fn(notMocked("backgroundsManager.ensureBackground")),
+      copyCustomBackground: vi.fn(notMocked("backgroundsManager.copyCustomBackground"))
     },
     accountManager: {
       login: vi.fn(notMocked("accountManager.login")),

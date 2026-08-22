@@ -63,8 +63,14 @@ export type LoginSuccess = { status: "success"; credentials: AccountCredentials 
 /** The account has two-factor enabled and the user has not given a code yet. Terminal: ask them for one. */
 export type NeedsTwoFactor = { status: "needs-two-factor" }
 
-/** The service refused, for a reason this module does not tell apart. See the module note. */
-export type BadCredentials = { status: "bad-credentials" }
+/**
+ * The service refused, for a reason this module does not tell apart. See the
+ * module note. `serverReason` carries the service's own reason string verbatim
+ * (a server-side enum like "invalidemailorpassword", never user data) so the
+ * host can log which refusal actually happened: the user-facing message
+ * collapses them all, and field reports were undiagnosable without it.
+ */
+export type BadCredentials = { status: "bad-credentials"; serverReason: string }
 
 /** The six-digit code was refused. */
 export type TwoFactorRejected = { status: "two-factor-rejected" }
@@ -170,7 +176,7 @@ export function interpretFirstPass(email: string, rawResponse: string, input: Fi
   if (!body) return UNREADABLE
 
   if (!refused(body)) return establish(email, body)
-  if (refusalReason(body) !== REQUIRE_TWO_FACTOR_REASON) return { status: "bad-credentials" }
+  if (refusalReason(body) !== REQUIRE_TWO_FACTOR_REASON) return { status: "bad-credentials", serverReason: refusalReason(body) }
   if (!input.twoFactorCodeProvided) return { status: "needs-two-factor" }
 
   return { status: "complete-two-factor", preLoginToken: typeof body.prelogintoken === "string" ? body.prelogintoken : undefined }
@@ -192,5 +198,5 @@ export function interpretSecondPass(email: string, rawResponse: string): LoginVe
 
   if (!refused(body)) return establish(email, body)
 
-  return refusalReason(body) === WRONG_TWO_FACTOR_REASON ? { status: "two-factor-rejected" } : { status: "bad-credentials" }
+  return refusalReason(body) === WRONG_TWO_FACTOR_REASON ? { status: "two-factor-rejected" } : { status: "bad-credentials", serverReason: refusalReason(body) }
 }

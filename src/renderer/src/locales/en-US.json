@@ -170,7 +170,9 @@
       "envVarsDesc": "List of ENV variables separated with ,",
       "envVarsPlaceholder": "ENV_1=something, ENV_2=anotherthing",
       "backupInstallation": "Backup Installation",
-      "editInstallation": "Edit Installation"
+      "editInstallation": "Edit Installation",
+      "moveInstallationUp": "Move Installation up",
+      "moveInstallationDown": "Move Installation down"
     },
     "mods": {
       "modsCount": "{{count}} Mods",
@@ -186,6 +188,7 @@
       "modTaskName": "{{name}} Mod {{version}} on {{out}}",
       "modDownloadDesc": "Downloading {{name}} Mod {{version}} on {{out}}!",
       "installationPopupDesc": "List of versions of the {{modName}} Mod",
+      "versionsLoadFailed": "This Mod's version list couldn't be loaded. Check your connection and try again.",
       "manageMods": "Manage Mods",
       "noModsInstalled": "You've no mods installed here! You can install some on the <link /> page!",
       "noModsFound": "No Mods found!",
@@ -222,6 +225,8 @@
       "errorUpdatingMod": "An error has occurred updating the Mod {{mod}}!",
       "errorUpdatingMods": "An error has occurred updating the Mods!",
       "updateAllButton": "Update all",
+      "suspendUpdates": "Suspend updates for this Mod: Update all will skip it, you can still update it from here",
+      "resumeUpdates": "Resume updates for this Mod: Update all will include it again",
       "modsUpdatedSuccessfully": "All the Mods were updated successfully!",
       "modsPartiallyUpdated": "{{updated}} Mods updated, {{failed}} left as they were. The summary says which ones.",
       "errorReplacingOldModVersion": "The old version of {{mod}} is still on disk, so it was left alone. Close Vintage Story and anything else holding that file, then update it again.",
@@ -231,6 +236,7 @@
       "exportServerModpackButton": "Export Server Modpack",
       "exportModpackSuccess": "Modpack exported successfully!",
       "exportModpackError": "An error has occurred exporting the modpack!",
+      "openModsFolder": "Open the folder where the Mods for this Installation are",
       "importModpack": "Import a modpack file to install all its Mods",
       "importModpackButton": "Import Modpack",
       "importModpackTitle": "Import Modpack",
@@ -267,10 +273,15 @@
       "loggingin": "Logging in!",
       "wrongtwofa": "Wrong 2FA code!",
       "invalidEmailPass": "Invalid email or password!",
+      "loginUnreachable": "Couldn't reach the login service. Check your connection or firewall and try again.",
+      "logoutFailed": "Couldn't log out. Try again.",
       "unexpectedResponse": "The account service answered in a way this launcher couldn't read. Your password was not rejected. Try again after an update.",
       "loggedin": "Logged in as {{user}}!",
       "onlyIfEnabledTwoFA": "Fill this field only if you have 2FA enabled!",
       "uiScale": "UI Scale",
+      "background": "Background",
+      "ownImage": "Your own image",
+      "backgroundsLoadFailed": "The background list couldn't be loaded. Check your connection and try again.",
       "language": "Language",
       "areYouSureLogout": "Are you sure you want to log out?",
       "loginoutNotReversible": "Logging out is not reversible but you can log back in again with the same Vintage Story account again!"
@@ -334,6 +345,7 @@
       "infoAndHelpDesc": "RiftLauncher help and info"
     },
     "tasksMenu": {
+      "title": "Tasks",
       "downloading": "Downloading",
       "extracting": "Extracting",
       "compressing": "Compressing",
@@ -348,7 +360,8 @@
   "notifications": {
     "body": {
       "folderDoesntExists": "The folder you're trying to open does not exists!",
-      "updateAvailable": "New update available! Downloading...",
+      "updateAvailableConsent": "RiftLauncher {{version}} is available. Do you want to download it now?",
+      "updateDownloadFailedRetry": "The download of RiftLauncher {{version}} failed. Do you want to try again?",
       "updateDownloaded": "Update downloaded successfully! Click here to restart RiftLauncher and update it!",
       "downloading": "Starting download: {{downloadName}}!",
       "downloaded": "Finished download: {{downloadName}}!",
@@ -372,9 +385,18 @@
       "compressError": "Error compressing: {{compressName}}!",
       "folderNotEmpty": "The folder you've selected is not empty! Make sure you've nothing important on there.",
       "installationFolderCreateFailed": "Couldn't create the folder for this Installation! Check that RiftLauncher can write to that location, then try again.",
-      "noFileSelected": "No file selected!",
-      "coulndtCopyIcon": "That icon couldn't be copied to the icons folder!",
+      "noFileSelected": "No file selected! Custom icons have to be PNG images, so the picker only lists .png files.",
+      "coulndtCopyIcon": "That icon couldn't be copied to the icons folder! Check that RiftLauncher can read the file and write to its data folder, then try again.",
+      "iconNotAPng": "That file isn't a PNG! Custom icons have to be .png images, so convert it or pick another file.",
+      "iconSourceUnavailable": "RiftLauncher couldn't read that file! Move it somewhere RiftLauncher can reach, then pick it again.",
+      "iconAddFailed": "Something went wrong adding that icon! Restart RiftLauncher, and let us know if it keeps happening.",
+      "backgroundDownloadFailed": "That background couldn't be downloaded. Check your connection and try again.",
+      "backgroundCopyFailed": "That image couldn't be used as a background. It has to be a JPEG under 2 MB.",
       "appClosePrevented": "You can't close RiftLauncher either because you're playing Vintage Story or because there's a task in progress!"
+    },
+    "actions": {
+      "updateNow": "Update now",
+      "notNow": "Not now"
     },
     "discard": "Discard notification"
   },

@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useEffect, useState } from "react"
+import { Dispatch, SetStateAction } from "react"
 import { useTranslation } from "react-i18next"
 import { PiDownloadDuotone, PiArrowClockwiseDuotone } from "react-icons/pi"
 import { FiLoader } from "react-icons/fi"
@@ -10,11 +10,12 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
 
 import { useInstallMod } from "../hooks/useInstallMod"
-import { useQueryMod } from "../hooks/useQueryMod"
+import { useModReleaseCatalog } from "../hooks/useModReleaseCatalog"
 
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { FormButton } from "@renderer/components/ui/FormComponents"
+import { ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 /** Button styling for what the author declared about a release. Undeclared keeps its long-standing red. */
 const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { type: "success" | "warn" | "error"; titleKey: string }> = {
@@ -34,6 +35,7 @@ interface IInstallationToInstallModIn {
  * @param {Object} props
  * @param {number | string | null} [props.modToInstall] useState with the ModID of the mod to install. String from modinfo.json like mycoolmod, number or null if the popup is closed.
  * @param {() => void} [props.setModToInstall] Function called to close the popup. Set modToInstall to null when it's called.
+ * @param {string} [props.modName] Name of the mod as the clicked row already knows it, shown until (or instead of) the ModDB answers.
  * @param {IInstallationToInstallModIn} [props.installation] Installation data to install a mod on it.
  * @param {string} [props.installation.pathToIsntall] Path to look for mods. /Mods will be added at the end.
  * @param {string} [props.installation.version] Installation/Server version to check if there are compatible updates WITHOUT "v"! Example: ~~v1.2.3~~ 1.2.3
@@ -45,11 +47,13 @@ interface IInstallationToInstallModIn {
 function InstallModPopup({
   modToInstall,
   setModToInstall,
+  modName,
   installation,
   onFinishInstallation
 }: {
   modToInstall: number | string | null
   setModToInstall: Dispatch<SetStateAction<number | string | null>>
+  modName?: string
   installation?: IInstallationToInstallModIn
   onFinishInstallation?: () => void
 }): JSX.Element {
@@ -57,17 +61,12 @@ function InstallModPopup({
   const { addNotification } = useNotificationsContext()
 
   const installMod = useInstallMod()
-  const queryMod = useQueryMod()
+  const { mod: downloadableModToInstall, loading, failed, retry } = useModReleaseCatalog(modToInstall)
 
-  const [downloadableModToInstall, setDownloadableModToInstall] = useState<DownloadableModType | null>(null)
-
-  useEffect(() => {
-    if (!modToInstall) return
-    ;(async (): Promise<void> => {
-      const mod = await queryMod({ modid: modToInstall })
-      setDownloadableModToInstall(mod || null)
-    })()
-  }, [modToInstall])
+  // The ModDB name is the nicest one, but it only exists once the query lands. The row the user
+  // clicked already carries a name, and failing that there is always the ModID they clicked, so
+  // there is never a reason to tell them the mod was not found when they just picked it off a list.
+  const displayedModName = downloadableModToInstall?.name || modName || String(modToInstall ?? "")
 
   return (
     <PopupDialogPanel
@@ -75,12 +74,11 @@ function InstallModPopup({
       isOpen={modToInstall !== null}
       close={() => {
         setModToInstall(null)
-        setDownloadableModToInstall(null)
       }}
       fixedWidth={false}
     >
       <>
-        <p>{t("features.mods.installationPopupDesc", { modName: downloadableModToInstall?.name || "MOD NOT FOUND" })}</p>
+        <p>{t("features.mods.installationPopupDesc", { modName: displayedModName })}</p>
         <TableWrapper className="w-[50rem]">
           <TableHead>
             <TableHeadRow>
@@ -91,7 +89,12 @@ function InstallModPopup({
             </TableHeadRow>
           </TableHead>
 
-          {!downloadableModToInstall ? (
+          {failed ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10">
+              <p className="text-sm text-zinc-400">{t("features.mods.versionsLoadFailed")}</p>
+              <ReloadButton onClick={retry} reloading={loading} />
+            </div>
+          ) : !downloadableModToInstall ? (
             <div className="flex items-center justify-center py-10">
               <FiLoader className="animate-spin text-3xl text-zinc-400" />
             </div>
@@ -117,7 +120,6 @@ function InstallModPopup({
                             const oldMod = installation.oldMod
 
                             setModToInstall(null)
-                            setDownloadableModToInstall(null)
 
                             // Deliberately not awaited: the popup closes on the click and the download
                             // runs on in the task list, which is what this flow has always done.

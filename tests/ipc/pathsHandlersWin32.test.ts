@@ -55,6 +55,9 @@ const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
 
 let nextLeaseToken = 1
 
+/** The mocked `acquireWorker`, as the concurrency tests below pass it around. */
+type AcquireWorker = typeof import("@src/ipc/workerManager").acquireWorker
+
 /** Waits for the next `acquireWorker(...)` call and hands back a fake worker to drive, same as pathsHandlers.test.ts. */
 async function nextTrackedWorker(): Promise<EventEmitter> {
   const { acquireWorker } = await import("@src/ipc/workerManager")
@@ -263,6 +266,140 @@ describe("RUN_INSTALLER on win32: payload extraction", () => {
     worker.emit("message", { type: "finished", verdict: "not-a-real-verdict" })
 
     assert.deepEqual(await resultPromise, { ok: false, reason: "installer-failed" })
+  })
+})
+
+describe("RUN_INSTALLER on win32: the payload read shares the archive concurrency lane", () => {
+  /**
+   * A synchronous stand-in for the shared nextTrackedWorker() helper above, which awaits an
+   * import before registering its mockImplementationOnce. That is invisible with one call in
+   * flight (every other test in this file) but races a handler reaching acquireWorker before
+   * the import's microtask settles once several calls overlap, which is exactly what these
+   * tests fire. The DOWNLOAD_ON_PATH concurrency test in pathsHandlers.test.ts keeps a local
+   * copy for the same reason.
+   */
+  function queueNextWorker(acquireWorker: AcquireWorker): Promise<EventEmitter> {
+    return new Promise((resolvePromise) => {
+      vi.mocked(acquireWorker).mockImplementationOnce(() => {
+        const worker = new EventEmitter()
+        resolvePromise(worker)
+        return { worker: worker as unknown as Worker, token: nextLeaseToken++, dispatch: vi.fn(), release: vi.fn() }
+      })
+    })
+  }
+
+  /** Two extractions, which is the whole archive lane (ARCHIVE_CONCURRENCY_LIMIT is 2). */
+  async function fillArchiveLane(event: IpcMainInvokeEvent, acquireWorker: AcquireWorker): Promise<{ workers: EventEmitter[]; results: Promise<boolean>[] }> {
+    const workers: EventEmitter[] = []
+    const results: Promise<boolean>[] = []
+
+    for (const name of ["one", "two"]) {
+      const archivePath = join(managedFolder, `${name}.zip`)
+      writeFileSync(archivePath, "", "utf-8")
+      const workerPromise = queueNextWorker(acquireWorker)
+      results.push(handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH)(event, `extract-${name}`, archivePath, join(versionsFolder, name), false))
+      workers.push(await workerPromise)
+    }
+
+    return { workers, results }
+  }
+
+  it("keeps the payload read queued while two extractions hold both slots, and starts it once one frees", async () => {
+    const installerPath = join(managedFolder, "setup.exe")
+    await writeVerifiedInstaller(installerPath)
+
+    const event = await createTrustedEvent()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    const { workers, results } = await fillArchiveLane(event, acquireWorker)
+
+    // With both slots taken, an install must not reach acquireWorker at all: a third
+    // CPU-bound archive reader on the machine is exactly what the limit rules out.
+    const callsBeforeInstaller = vi.mocked(acquireWorker).mock.calls.length
+    const installResult = handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "install-1", installerPath, versionsFolder, false)
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 50))
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeInstaller)
+    // And nothing was reported to the renderer for it: a queued read reads as pending, not 0%.
+    assert.equal(vi.mocked(event.sender.send).mock.calls.filter((call) => (call[1] as { id: string }).id === "install-1").length, 0)
+
+    const installerWorkerPromise = queueNextWorker(acquireWorker)
+    workers[0]!.emit("message", { type: "finished" })
+    const installerWorker = await installerWorkerPromise
+
+    installerWorker.emit("message", { type: "finished", verdict: "extracted", filesWritten: 12, bytesWritten: 4096 })
+    workers[1]!.emit("message", { type: "finished" })
+
+    assert.deepEqual(await installResult, { ok: true })
+    assert.equal(await results[0], true)
+    assert.equal(await results[1], true)
+
+    const { spawn } = await import("child_process")
+    assert.equal(vi.mocked(spawn).mock.calls.length, 0)
+  })
+
+  it("starts the read's own timeout clock on the slot, so a long wait in the queue cannot expire it", async () => {
+    const installerPath = join(managedFolder, "setup.exe")
+    await writeVerifiedInstaller(installerPath)
+
+    const event = await createTrustedEvent()
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+
+    // Captured before the fake clock takes over: the handlers below still do real
+    // filesystem work (the config read, the installer's digest check), and letting the
+    // event loop actually turn is the only way to know a call has settled into the queue
+    // rather than merely not having got there yet.
+    const realSetTimeout = globalThis.setTimeout
+    const settle = (): Promise<void> => new Promise((resolvePromise) => realSetTimeout(resolvePromise, 50))
+
+    vi.useFakeTimers()
+    try {
+      const { workers, results } = await fillArchiveLane(event, acquireWorker)
+      await settle()
+
+      const callsBeforeInstaller = vi.mocked(acquireWorker).mock.calls.length
+      const timersBeforeInstaller = vi.getTimerCount()
+      const installResult = handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "install-1", installerPath, versionsFolder, false)
+      let installSettled = false
+      void installResult.then(() => {
+        installSettled = true
+      })
+      await settle()
+
+      // The load-bearing assertion: queued, and with no timer of its own armed.
+      // runTrackedWorker builds its WORKER_TIMEOUTS_MS bound inside the promise it returns,
+      // and ConcurrencyLimiter.run only calls the task after acquire() resolves, so a call
+      // waiting in line has no clock running against it.
+      assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeInstaller)
+      assert.equal(vi.getTimerCount(), timersBeforeInstaller)
+
+      // 20 minutes spent in the queue. Under the two extraction bounds (30 minutes each)
+      // so neither of them expires and hands the slot over for the wrong reason.
+      await vi.advanceTimersByTimeAsync(20 * 60 * 1_000)
+      assert.equal(vi.mocked(acquireWorker).mock.calls.length, callsBeforeInstaller)
+      assert.equal(installSettled, false)
+
+      const installerWorkerPromise = queueNextWorker(acquireWorker)
+      workers[0]!.emit("message", { type: "finished" })
+      const installerWorker = await installerWorkerPromise
+      workers[1]!.emit("message", { type: "finished" })
+      assert.equal(await results[0], true)
+      assert.equal(await results[1], true)
+
+      // Both extractions are done and their bounds cleared, so the only timer left is the
+      // read's own, armed just now rather than 20 minutes ago.
+      assert.equal(vi.getTimerCount(), 1)
+
+      // 25 more minutes: 45 in total since RUN_INSTALLER was called, well past the
+      // 30-minute WORKER_TIMEOUTS_MS.RUN_INSTALLER bound, yet only 25 minutes of the read's
+      // own clock. Arming that bound before the queue wait instead would have expired it
+      // here and turned a perfectly good install into installer-failed.
+      await vi.advanceTimersByTimeAsync(25 * 60 * 1_000)
+      assert.equal(installSettled, false)
+
+      installerWorker.emit("message", { type: "finished", verdict: "extracted", filesWritten: 12, bytesWritten: 4096 })
+      assert.deepEqual(await installResult, { ok: true })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

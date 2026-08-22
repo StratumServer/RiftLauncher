@@ -1,21 +1,6 @@
 import { useTranslation } from "react-i18next"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { useCleanFolderName } from "@renderer/hooks/useCleanFolderName"
-
-/**
- * The auto-suggested install folder for a new Installation: the configured
- * base folder joined with the cleaned-up Installation name.
- */
-export function useDefaultInstallationPath(): (baseFolder: string, name: string) => Promise<string> {
-  const cleanFolderName = useCleanFolderName()
-
-  async function defaultInstallationPath(baseFolder: string, name: string): Promise<string> {
-    return window.api.pathsManager.formatPath([baseFolder, await cleanFolderName({ folderName: name })])
-  }
-
-  return defaultInstallationPath
-}
 
 /**
  * Opens the native folder picker and warns (without blocking the pick) when the

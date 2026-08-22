@@ -11,9 +11,16 @@ import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 /**
- * Replaces the real ModListCard with a spy so this suite can count how many times a
- * given card's render body actually runs. Scoped to this file only (vi.mock is
- * per-module-per-test-file), so other suites still exercise the real component.
+ * Replaces the real ModListCard with a spy and wraps that spy in memo(), so the only thing
+ * that can make the spy run again is a prop whose identity changed. The real ModListCard's
+ * own memo() is out of the picture here: this file never imports it. That makes this suite a
+ * probe on what ModsGrid hands each card (the mod object plus the three callbacks ListMods
+ * builds with useCallback), not a check that the shipped component is memoized. The memo on
+ * the real export is pinned separately, against the unmocked component, in
+ * modListCardMemo.test.tsx.
+ *
+ * The mock is scoped to this file only (vi.mock is per-module-per-test-file), so other
+ * suites still exercise the real component.
  */
 const { cardRenderSpy } = vi.hoisted(() => ({
   cardRenderSpy: vi.fn((props: { mod: { modid: number; name: string } }) => createElement("div", { "data-testid": `mod-card-${props.mod.modid}` }, props.mod.name))
@@ -64,17 +71,17 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
 
 /**
  * Edits a field ModsGrid's props never depend on (start params), so the only thing this
- * proves is whether an unrelated ListMods re-render leaks into a card that memo should
- * have skipped. id and path stay untouched, so the installed-mods rescan effect
- * (keyed on installation?.id/path) never refires either.
+ * proves is whether an unrelated ListMods re-render hands a card a prop it did not have
+ * before. id and path stay untouched, so the installed-mods rescan effect (keyed on
+ * installation?.id/path) never refires either.
  */
 function EditInstallationStartParamsButton(): JSX.Element {
   const configDispatch = useConfigDispatch()
   return <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: "install-a", updates: { startParams: "--unrelated-flag" } } })}>edit start params</button>
 }
 
-describe("ModsGrid card memoization", () => {
-  it("does not re-render a mod card when ListMods re-renders for an unrelated reason", async () => {
+describe("ModsGrid card prop identity", () => {
+  it("hands a mod card the same props when ListMods re-renders for an unrelated reason", async () => {
     const user = userEvent.setup()
 
     installMockWindowApi({

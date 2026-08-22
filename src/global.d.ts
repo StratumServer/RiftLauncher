@@ -7,7 +7,29 @@ declare global {
     defaultVersionsFolder: string
     backupsFolder: string
     favMods: number[]
+    /**
+     * Modids (the string id a Mod declares, not the ModDB numeric one) the player has held back:
+     * Update All leaves them alone until the suspension is lifted, one row at a time.
+     *
+     * ponytail: launcher-wide, not per installation. Same shape as favMods, and a modid held at an
+     * older version in one Installation is normally held in every other. Move it onto the
+     * Installation if someone actually needs the two to disagree.
+     */
+    suspendedModUpdates: string[]
+    /**
+     * Which background the launcher paints: `default` for the bundled scene, `custom` for the
+     * player's own picture, or a catalog id off the repository's `backgrounds` branch. See
+     * src/domain/backgrounds.ts.
+     */
+    background: string
     _notifiedModUpdatesInstallations?: string[]
+    /**
+     * Bumped by every background selection so a re-pick of the same id still repaints. The custom
+     * slot keeps one stable file name, so without this the CSS URL would not change and the
+     * renderer would keep showing the picture that name used to hold. Session-only, like
+     * `_notifiedModUpdatesInstallations`: normalizeConfig never writes it back out.
+     */
+    _backgroundRevision?: number
   }
 
   type WindowType = {
@@ -221,6 +243,13 @@ declare global {
     custom?: boolean
   }
 
+  /** One scene as the `backgrounds` branch manifest lists it. `file` is its name on that branch. */
+  type BackgroundType = {
+    id: string
+    name: string
+    file: string
+  }
+
   type ModpackModEntryType = {
     modid: string
     version: string
@@ -318,7 +347,34 @@ declare global {
   /** SAVE_CONFIG's verdict. `ok: false` means nothing was written to disk. */
   type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason }
 
+  /**
+   * Why COPY_TO_ICONS refused to put a picked file in the Icons folder. Every
+   * gate there used to answer a bare `{ status: false }` and write nothing to
+   * the log, so eight different refusals reached the player as one sentence
+   * that named none of them (#202).
+   *
+   * - `unsupported-format`: the picked file is not a PNG. The extension is
+   *   matched case-insensitively, so `.PNG` is a png like any other, and the
+   *   first eight bytes have to be the PNG signature too, so a file renamed to
+   *   `.png` is refused the same way the background flow refuses a `.jpg` that
+   *   is not a JPEG (#211).
+   * - `source-unavailable`: the path policy refused the picked file, or it is
+   *   gone, or a folder on the way to it is a symbolic link. Nothing was read.
+   * - `copy-failed`: the file was readable and the write still failed. A
+   *   folder or a symlink already sitting on the destination name, no
+   *   permission to read the source, a full disk.
+   */
+  type CustomIconCopyFailureReason = "unsupported-format" | "source-unavailable" | "copy-failed"
+
+  /** COPY_TO_ICONS' verdict. `status: false` means nothing was written to the Icons folder. */
+  type CustomIconCopyResult = { status: true; file: string } | { status: false; reason: CustomIconCopyFailureReason }
+
   declare module "*.png" {
+    const value: string
+    export default value
+  }
+
+  declare module "*.jpg" {
     const value: string
     export default value
   }

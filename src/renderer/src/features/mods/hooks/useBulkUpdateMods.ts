@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useConfigDispatch, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
 import { useLogMods } from "@renderer/features/mods/hooks/useLogMods"
@@ -30,6 +30,7 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const configDispatch = useConfigDispatch()
+  const suspendedModUpdates = useSuspendedModUpdates()
 
   const installMod = useInstallMod()
   const logMods = useLogMods()
@@ -47,7 +48,9 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
     try {
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _updatingMods: true } } })
 
-      const modsToUpdate = installedMods.filter((iMod) => iMod._updatableTo)
+      // A suspended Mod is held back here and nowhere else: it keeps its update notice, and its own
+      // row keeps updating it on demand, which is the whole point of suspending it (#194).
+      const modsToUpdate = installedMods.filter((iMod) => iMod._updatableTo && !suspendedModUpdates.includes(iMod.modid))
 
       await Promise.all(
         modsToUpdate.map(async (modToUpdate) => {

@@ -3,6 +3,16 @@ declare global {
     (payload: { id: string; progress: number }): void
   }
 
+  /** The update the main process found and is offering, before anything has been downloaded. */
+  type UpdateAvailableCallback = {
+    (payload: { version: string; releaseName?: string }): void
+  }
+
+  /** One tick of the accepted launcher update's download, as a whole percentage. */
+  type UpdateProgressCallback = {
+    (payload: { version: string; progress: number }): void
+  }
+
   type Unsubscribe = () => void
 
   type BridgeAPI = {
@@ -16,8 +26,11 @@ declare global {
       onPreventedAppClose: (callback: () => void) => Unsubscribe
     }
     appUpdater: {
-      onUpdateAvailable: (callback: () => void) => Unsubscribe
+      onUpdateAvailable: (callback: UpdateAvailableCallback) => Unsubscribe
+      onUpdateDownloadProgress: (callback: UpdateProgressCallback) => Unsubscribe
+      onUpdateError: (callback: () => void) => Unsubscribe
       onUpdateDownloaded: (callback: () => void) => Unsubscribe
+      downloadUpdate: () => void
       updateAndRestart: () => void
     }
     configManager: {
@@ -48,7 +61,7 @@ declare global {
       onExtractProgress: (callback: ProgressCallback) => Unsubscribe
       onCompressProgress: (callback: ProgressCallback) => Unsubscribe
       changePerms: (paths: string[], perms: number) => Promise<boolean>
-      copyToIcons: (path: string, name: string) => Promise<{ status: true; file: string } | { status: false }>
+      copyToIcons: (path: string, name: string) => Promise<CustomIconCopyResult>
     }
     gameManager: {
       executeGame: (version: GameVersionType, installation: InstallationType) => Promise<GameExecutionResult>
@@ -56,6 +69,12 @@ declare global {
     }
     netManager: {
       queryURL: (url: string) => Promise<string>
+    }
+    backgroundsManager: {
+      /** Downloads one catalog scene into the cache if it is not already there. False if it could not be. */
+      ensureBackground: (id: string, file: string) => Promise<boolean>
+      /** Copies the player's own picture into the cache under the reserved custom name. */
+      copyCustomBackground: (path: string) => Promise<boolean>
     }
     accountManager: {
       login: (email: string, password: string, twoFactorCode?: string) => Promise<AccountLoginResult>

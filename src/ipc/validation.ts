@@ -15,6 +15,14 @@ export const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 // 16 MB gives years of headroom while staying a bounded, allow-listed exception rather
 // than an unbounded response.
 export const MAX_MODS_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024
+// The background manifest is a list of {id, name, file} rows, about 1 KB for the eleven scenes
+// on the branch today. 32 KB is room for hundreds of them and still refuses anything that is
+// not a small list of names.
+export const MAX_BACKGROUND_MANIFEST_BYTES = 32 * 1024
+// One background scene. The branch's own files run 400 to 720 KB at 2560x1440, so 2 MB is
+// roughly triple the largest of them, and well under the generic 4 MB ceiling this would
+// otherwise inherit.
+export const MAX_BACKGROUND_IMAGE_BYTES = 2 * 1024 * 1024
 
 export type UrlRule = Readonly<{
   hostname: string
@@ -27,7 +35,12 @@ export const API_URL_RULES: readonly UrlRule[] = [
   { hostname: "api.vintagestory.at", pathPrefixes: ["/stable.json", "/unstable.json"] },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api"] },
-  { hostname: "auth3.vintagestory.at", pathPrefixes: ["/v2/gamelogin"] }
+  { hostname: "auth3.vintagestory.at", pathPrefixes: ["/v2/gamelogin"] },
+  // The launcher's own background catalog, on this repository's `backgrounds` branch and nothing
+  // else raw.githubusercontent.com serves. The manifest rule sits first so its much smaller
+  // ceiling wins the match; findMatchingRule takes the first rule that covers the path.
+  { hostname: "raw.githubusercontent.com", pathPrefixes: ["/StratumServer/RiftLauncher/backgrounds/manifest.json"], maxBytes: MAX_BACKGROUND_MANIFEST_BYTES },
+  { hostname: "raw.githubusercontent.com", pathPrefixes: ["/StratumServer/RiftLauncher/backgrounds"], maxBytes: MAX_BACKGROUND_IMAGE_BYTES }
 ]
 
 export const DOWNLOAD_URL_RULES: readonly UrlRule[] = [

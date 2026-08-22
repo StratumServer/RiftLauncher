@@ -128,6 +128,11 @@ function readModDetail(value: unknown): ModDbModDetail | undefined {
   const { modid, name } = value
   if (typeof modid !== "number" || typeof name !== "string" || name.trim().length === 0) return undefined
 
+  // The install popup maps `releases` directly, so a detail without the array would crash it
+  // instead of reaching its failure state. Unlike modid and name this is not a field the API is
+  // known to always send, hence the explicit check rather than trusting the shape.
+  if (!Array.isArray(value["releases"])) return undefined
+
   return { ...value, modid, name }
 }
 

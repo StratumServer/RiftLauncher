@@ -26,8 +26,11 @@ const api: BridgeAPI = {
     onPreventedAppClose: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.UTILS.PREVENTED_APP_CLOSE, callback)
   },
   appUpdater: {
-    onUpdateAvailable: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE, callback),
+    onUpdateAvailable: (callback: UpdateAvailableCallback): Unsubscribe => subscribe(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE, callback),
+    onUpdateDownloadProgress: (callback: UpdateProgressCallback): Unsubscribe => subscribe(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOAD_PROGRESS, callback),
+    onUpdateError: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.APP_UPDATER.UPDATE_ERROR, callback),
     onUpdateDownloaded: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED, callback),
+    downloadUpdate: (): void => ipcRenderer.send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE),
     updateAndRestart: () => ipcRenderer.send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART)
   },
   configManager: {
@@ -61,7 +64,7 @@ const api: BridgeAPI = {
     onExtractProgress: (callback: ProgressCallback): Unsubscribe => subscribe(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, callback),
     onCompressProgress: (callback: ProgressCallback): Unsubscribe => subscribe(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS, callback),
     changePerms: (paths: string[], perms: number): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS, paths, perms),
-    copyToIcons: (path: string, name: string): Promise<{ status: true; file: string } | { status: false }> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, path, name)
+    copyToIcons: (path: string, name: string): Promise<CustomIconCopyResult> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, path, name)
   },
   gameManager: {
     executeGame: (version: GameVersionType, installation: InstallationType): Promise<GameExecutionResult> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation),
@@ -70,6 +73,10 @@ const api: BridgeAPI = {
   },
   netManager: {
     queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url)
+  },
+  backgroundsManager: {
+    ensureBackground: (id: string, file: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, id, file),
+    copyCustomBackground: (path: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.COPY_CUSTOM_BACKGROUND, path)
   },
   accountManager: {
     login: (email: string, password: string, twoFactorCode?: string): Promise<AccountLoginResult> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, email, password, twoFactorCode),
