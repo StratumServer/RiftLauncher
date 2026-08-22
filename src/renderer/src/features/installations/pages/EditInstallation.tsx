@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { Button } from "@headlessui/react"
 import { PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
 
-import { validateInstallationFields } from "@domain/installations/create"
+import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH, validateInstallationFields } from "@domain/installations/create"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -97,7 +97,7 @@ function EditInslallation(): JSX.Element {
     const result = validateInstallationFields({ name: fields.name, startParams: fields.startParams })
     if (!result.ok) {
       const { messageKey } = describeInstallationFieldsFailure(result.reason)
-      return addNotification(t(messageKey, { min: 5, max: 50 }), "error")
+      return addNotification(t(messageKey, { min: INSTALLATION_NAME_MIN_LENGTH, max: INSTALLATION_NAME_MAX_LENGTH }), "error")
     }
 
     try {

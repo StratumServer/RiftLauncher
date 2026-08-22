@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
 import semver from "semver"
 
-import { createInstallation } from "@domain/installations/create"
+import { createInstallation, INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH } from "@domain/installations/create"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -85,7 +85,7 @@ function AddInslallation(): JSX.Element {
 
     if (!result.ok) {
       const { messageKey } = describeCreateInstallationFailure(result.reason)
-      return addNotification(t(messageKey, { min: 5, max: 50 }), "error")
+      return addNotification(t(messageKey, { min: INSTALLATION_NAME_MIN_LENGTH, max: INSTALLATION_NAME_MAX_LENGTH }), "error")
     }
 
     try {
