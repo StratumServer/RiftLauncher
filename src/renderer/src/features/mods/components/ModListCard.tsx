@@ -28,14 +28,14 @@ function ModListCard({
   onSelect,
   onToggleFav,
   onOpenModDb
-}: {
+}: Readonly<{
   mod: DownloadableModOnListType
   installed: boolean
   isFav: boolean
   onSelect: (mod: DownloadableModOnListType) => void
   onToggleFav: (mod: DownloadableModOnListType) => void
   onOpenModDb: (mod: DownloadableModOnListType) => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   return (

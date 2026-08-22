@@ -10,7 +10,7 @@ import DropdownSection from "@renderer/components/ui/DropdownSection"
  * @param {string} [props.className] - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FromWrapper({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function FromWrapper({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return <div className={clsx("mx-auto flex flex-col gap-4 items-center justify-center", className)}>{children}</div>
 }
 
@@ -23,7 +23,7 @@ export function FromWrapper({ children, className }: { children: React.ReactNode
  * @param {"x" | "y"} [props.alignment] - Alignment of the children. Can be "x" or "y".
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FromGroup({ children, className, alignment = "x" }: { children: React.ReactNode; className?: string; alignment?: "x" | "y" }): JSX.Element {
+export function FromGroup({ children, className, alignment = "x" }: Readonly<{ children: React.ReactNode; className?: string; alignment?: "x" | "y" }>): JSX.Element {
   return <div className={clsx("w-full flex gap-2", alignment === "y" && "flex-col", className)}>{children}</div>
 }
 
@@ -44,13 +44,13 @@ export function FormGroupWrapper({
   className,
   bgDark = true,
   startOpen = true
-}: {
+}: Readonly<{
   children: React.ReactNode
   title?: string
   className?: string
   bgDark?: boolean
   startOpen?: boolean
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <DropdownSection title={title} className={className} bgDark={bgDark} startOpen={startOpen}>
       {children}
@@ -66,7 +66,7 @@ export function FormGroupWrapper({
  * @param {string} [props.className] - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FormHead({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function FormHead({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return <div className={clsx("relative w-1/5 flex flex-col gap-2 shrink-0", className)}>{children}</div>
 }
 
@@ -78,7 +78,7 @@ export function FormHead({ children, className }: { children: React.ReactNode; c
  * @param {string} [props.className] - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FormBody({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function FormBody({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return <div className={clsx("relative w-4/5 flex flex-col gap-2", className)}>{children}</div>
 }
 
@@ -90,7 +90,7 @@ export function FormBody({ children, className }: { children: React.ReactNode; c
  * @param {string} props.content - The content of the label.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FormLabel({ className, content }: { className?: string; content: string }): JSX.Element {
+export function FormLabel({ className, content }: Readonly<{ className?: string; content: string }>): JSX.Element {
   return (
     <div className={clsx("w-full h-8 flex gap-1 items-center flex-wrap justify-end text-right", className)}>
       <p className="whitespace-nowrap overflow-hidden text-ellipsis" title={content}>
@@ -110,7 +110,7 @@ export function FormLabel({ className, content }: { className?: string; content:
  * @param {"x" | "y"} [props.alignment] - Alignment of the children. Can be "x" or "y".
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FormFieldGroup({ children, className, alignment = "y" }: { children: React.ReactNode; className?: string; alignment?: "x" | "y" }): JSX.Element {
+export function FormFieldGroup({ children, className, alignment = "y" }: Readonly<{ children: React.ReactNode; className?: string; alignment?: "x" | "y" }>): JSX.Element {
   return <div className={clsx("flex gap-2", alignment === "y" && "flex-col", className)}>{children}</div>
 }
 
@@ -126,7 +126,7 @@ export function FormFieldGroup({ children, className, alignment = "y" }: { child
  * @param {"x" | "y"} [props.alignment] - Alignment of the children. Can be "x" or "y".
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FormFieldGroupWithDescription({ children, className, alignment = "y" }: { children: React.ReactNode; className?: string; alignment?: "x" | "y" }): JSX.Element {
+export function FormFieldGroupWithDescription({ children, className, alignment = "y" }: Readonly<{ children: React.ReactNode; className?: string; alignment?: "x" | "y" }>): JSX.Element {
   return <div className={clsx("flex gap-1", alignment === "y" ? "flex-col" : "items-center", className)}>{children}</div>
 }
 
@@ -138,6 +138,6 @@ export function FormFieldGroupWithDescription({ children, className, alignment =
  * @param {JSX.Element | string} props.content - The content of the button. Use ONLY with text, t() or <Trans />
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FormFieldDescription({ className, content }: { className?: string; content: JSX.Element | string }): JSX.Element {
+export function FormFieldDescription({ className, content }: Readonly<{ className?: string; content: JSX.Element | string }>): JSX.Element {
   return <p className={clsx("flex gap-1 items-center flex-wrap justify-start text-xs text-zinc-400 pl-1", className)}>{content}</p>
 }

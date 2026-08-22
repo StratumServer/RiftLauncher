@@ -32,7 +32,7 @@ function ModsFilterBar({
   orderByOrder,
   setOrderByOrder,
   onClearFilters
-}: {
+}: Readonly<{
   textFilter: string
   setTextFilter: Dispatch<SetStateAction<string>>
   authorFilter: DownloadableModAuthorType
@@ -52,7 +52,7 @@ function ModsFilterBar({
   orderByOrder: string
   setOrderByOrder: Dispatch<SetStateAction<string>>
   onClearFilters: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   return (

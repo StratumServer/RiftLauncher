@@ -12,7 +12,14 @@ export interface BackupsSettingsSectionProps {
 }
 
 /** The Backups FormGroupWrapper shared by AddInstallation and EditInstallation. */
-export function BackupsSettingsSection({ backupsLimit, onBackupsLimitChange, backupsAuto, onBackupsAutoChange, compressionLevel, onCompressionLevelChange }: BackupsSettingsSectionProps): JSX.Element {
+export function BackupsSettingsSection({
+  backupsLimit,
+  onBackupsLimitChange,
+  backupsAuto,
+  onBackupsAutoChange,
+  compressionLevel,
+  onCompressionLevelChange
+}: Readonly<BackupsSettingsSectionProps>): JSX.Element {
   const { t } = useTranslation()
 
   return (

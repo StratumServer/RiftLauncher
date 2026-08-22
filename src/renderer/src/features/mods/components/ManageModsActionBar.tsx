@@ -20,12 +20,12 @@ function ManageModsActionBar({
   installedMods,
   onUpdateAll,
   onImportModpack
-}: {
+}: Readonly<{
   installation: InstallationType
   installedMods: InstalledModType[]
   onUpdateAll: () => void
   onImportModpack: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   const exportModpack = useExportModpack()

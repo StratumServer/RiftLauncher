@@ -3,7 +3,7 @@ import { dirname, join } from "node:path"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import { autoUpdater } from "electron-updater"
 import Logger from "electron-log"
-import { pathToFileURL } from "url"
+import { pathToFileURL } from "node:url"
 import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMigration"
 
 const userDataSetup = setUpUserDataFolder(app.getPath("appData"))
@@ -27,7 +27,7 @@ import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@
 import fse from "fs-extra"
 
 import "@src/ipc"
-import { clearTimeout, setTimeout } from "timers"
+import { clearTimeout, setTimeout } from "node:timers"
 
 Logger.transports.file.resolvePathFn = (variables, message): string => {
   const logsPath = join(variables.userData, "Logs")

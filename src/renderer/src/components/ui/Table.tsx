@@ -10,7 +10,7 @@ import { AnimatePresence, motion } from "motion/react"
  * @param {string} props.className - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function TableWrapper({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function TableWrapper({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return (
     <div className={clsx("rounded-sm bg-zinc-950/50 border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none duration-200 overflow-hidden backdrop-blur-xs", className)}>{children}</div>
   )
@@ -24,7 +24,7 @@ export function TableWrapper({ children, className }: { children: React.ReactNod
  * @param {string} props.className - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function TableHead({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function TableHead({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return <ul className={clsx("sticky top-0 z-10 bg-zinc-950/50 flex flex-col pr-[10px]", className)}>{children}</ul>
 }
 
@@ -36,7 +36,7 @@ export function TableHead({ children, className }: { children: React.ReactNode; 
  * @param {string} props.className - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function TableHeadRow({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function TableHeadRow({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return <li className={clsx("flex border-l-4 border-transparent", className)}>{children}</li>
 }
 
@@ -48,7 +48,7 @@ export function TableHeadRow({ children, className }: { children: React.ReactNod
  * @param {string} props.className - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function TableBody({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function TableBody({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return (
     <motion.ul variants={TABLEBODY_VARIANTS} initial="initial" animate="animate" exit="exit" className={clsx("flex flex-col overflow-x-hidden overflow-y-scroll", className)}>
       <AnimatePresence>{children}</AnimatePresence>
@@ -75,14 +75,14 @@ export function TableBodyRow({
   disabled,
   title,
   onClick
-}: {
+}: Readonly<{
   children: React.ReactNode
   className?: string
   selected?: boolean
   disabled?: boolean
   title?: string
   onClick?: () => void
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <motion.li
       variants={TABLEROW_VARIANTS}
@@ -108,6 +108,6 @@ export function TableBodyRow({
  * @param {string} props.className - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function TableCell({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function TableCell({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return <div className={clsx("shrink-0 p-1 overflow-hidden", className)}>{children}</div>
 }

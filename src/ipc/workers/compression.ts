@@ -10,7 +10,7 @@
  * unbounded tree would keep the worker busy indefinitely.
  */
 
-import type { EventEmitter } from "events"
+import type { EventEmitter } from "node:events"
 import Seven from "node-7z"
 import fse from "fs-extra"
 import { join } from "node:path"

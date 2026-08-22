@@ -13,12 +13,12 @@
  * run.
  */
 
-import { createHash } from "crypto"
+import { createHash } from "node:crypto"
 import fse from "fs-extra"
-import { mkdtempSync } from "fs"
-import { open } from "fs/promises"
+import { mkdtempSync } from "node:fs"
+import { open } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { tmpdir } from "os"
+import { tmpdir } from "node:os"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
 import { extractInnoPayload } from "../../domain/inno/extract"

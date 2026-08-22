@@ -21,13 +21,13 @@ function DropdownSection({
   className,
   bgDark = true,
   startOpen = true
-}: {
+}: Readonly<{
   children: React.ReactNode
   title?: string
   className?: string
   bgDark?: boolean
   startOpen?: boolean
-}): JSX.Element {
+}>): JSX.Element {
   const [open, setOpen] = useState(startOpen)
 
   const hasMounted = useRef(!startOpen)

@@ -50,13 +50,13 @@ function InstallModPopup({
   modName,
   installation,
   onFinishInstallation
-}: {
+}: Readonly<{
   modToInstall: number | string | null
   setModToInstall: Dispatch<SetStateAction<number | string | null>>
   modName?: string
   installation?: IInstallationToInstallModIn
   onFinishInstallation?: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
 

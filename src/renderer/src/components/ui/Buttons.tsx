@@ -28,14 +28,14 @@ export function NormalButton({
   title,
   disabled,
   type
-}: {
+}: Readonly<{
   children: React.ReactNode
   className?: string
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   title: string
   disabled?: boolean
   type?: "normal" | "error" | "warn" | "success"
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <HButton
       disabled={disabled}
@@ -65,13 +65,13 @@ export function LinkButton({
   to,
   title,
   type
-}: {
+}: Readonly<{
   children: React.ReactNode
   className?: string
   to: string
   title: string
   type?: "normal" | "error" | "warn" | "success"
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <Link to={to} title={title} className={clsx("flex items-center justify-center rounded-sm enabled:cursor-pointer", type && COLOR_BY_TYPE[type], className)}>
       {children}

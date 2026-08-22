@@ -7,7 +7,7 @@ import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headless
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
-function SideFilter({ sideFilter, setSideFilter, size = "w-full h-8" }: { sideFilter: string; setSideFilter: Dispatch<SetStateAction<string>>; size?: string }): JSX.Element {
+function SideFilter({ sideFilter, setSideFilter, size = "w-full h-8" }: Readonly<{ sideFilter: string; setSideFilter: Dispatch<SetStateAction<string>>; size?: string }>): JSX.Element {
   const { t } = useTranslation()
 
   const SIDE_FILTERS = [
