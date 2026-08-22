@@ -45,7 +45,7 @@ describe("the login handler cannot retry", () => {
  * `unreadable-response` used to fall out of `settle`'s switch as a thrown
  * Error, which the handler's own catch block (and, after that, the
  * renderer's) collapsed into the same generic failure as a wrong password.
- * That is the live bug this stage fixes: a real success payload that failed
+ * That is the live bug this pins: a real success payload that failed
  * to parse told the player their credentials were wrong. Source-grepped for
  * the same reason as the retry guard above, `settle` cannot be imported
  * without a running Electron main process.

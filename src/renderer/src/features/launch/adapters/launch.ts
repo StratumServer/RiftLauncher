@@ -3,10 +3,10 @@
  * GlobalActionsWrapper's "your close was prevented" notice need.
  *
  * Lives in its own feature rather than features/versions (which owns "is this game version
- * ready to run") or features/installations (which owns the backup itself): features/versions is
- * being worked on by another agent in parallel, and "launch the game, keep the app open while it
- * runs, tell the user why it couldn't close" is a distinct concern from either one. It also keeps
- * every window.api touch out of src/renderer/src/components, which this stage's exit gate checks.
+ * ready to run") or features/installations (which owns the backup itself): "launch the game, keep
+ * the app open while it runs, tell the user why it couldn't close" is a distinct concern from
+ * either one. It also keeps
+ * every window.api touch out of src/renderer/src/components, where none is allowed.
  */
 
 export function preventAppClose(action: "add" | "remove", id: string, desc: string): void {
