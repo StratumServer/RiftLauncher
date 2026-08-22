@@ -118,6 +118,16 @@ describe("parseModDetailResponse", () => {
     const result = parseModDetailResponse(JSON.stringify({ statuscode: "200", mod: { modid: 1783, name: "   " } }))
     assert.deepEqual(result, { ok: false, reason: "malformed-response", statusCode: "200" })
   })
+
+  it("names a mod with no releases field as malformed, since the install popup maps it", () => {
+    const result = parseModDetailResponse(JSON.stringify({ statuscode: "200", mod: { modid: 1783, name: "Config lib" } }))
+    assert.deepEqual(result, { ok: false, reason: "malformed-response", statusCode: "200" })
+  })
+
+  it("names a mod whose releases is not an array as malformed", () => {
+    const result = parseModDetailResponse(JSON.stringify({ statuscode: "200", mod: { modid: 1783, name: "Config lib", releases: "none" } }))
+    assert.deepEqual(result, { ok: false, reason: "malformed-response", statusCode: "200" })
+  })
 })
 
 describe("parseAuthorsResponse", () => {
