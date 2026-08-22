@@ -14,6 +14,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED } from "@domain/moddbVisibility"
 
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "../../src/renderer/src/features/config/contexts/configReducer"
 
@@ -31,6 +32,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     favMods: [],
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
+    moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     customIcons: [],
     ...overrides
   }
@@ -76,6 +78,10 @@ describe("configReducer: initialState", () => {
 
   it("starts on the bundled background, so the first paint needs no network", () => {
     assert.equal(initialState.background, DEFAULT_BACKGROUND_ID)
+  })
+
+  it("starts with the ModDB listing question unanswered", () => {
+    assert.equal(initialState.moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER)
   })
 })
 
@@ -136,6 +142,15 @@ describe("configReducer: scalar setters", () => {
     assert.equal(first._backgroundRevision, 1)
     assert.equal(second._backgroundRevision, 2)
     assert.equal(second.background, CUSTOM_BACKGROUND_ID)
+  })
+
+  it("SET_MODDB_VISIBILITY_ANSWER records the answer and touches nothing else", () => {
+    const config = baseConfig()
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER, payload: MODDB_VISIBILITY_ACCEPTED })
+
+    assert.equal(result.moddbVisibilityAnswer, MODDB_VISIBILITY_ACCEPTED)
+    assert.equal(result.background, config.background)
+    assert.equal(result.installations, config.installations)
   })
 
   it("SET_ACCOUNT accepts an account and null alike", () => {

@@ -69,6 +69,11 @@ declare global {
     }
     netManager: {
       queryURL: (url: string) => Promise<string>
+      /**
+       * Requests the launcher's ModDB listing archive once, which registers one download there.
+       * Answers nothing: a failure is the player's courtesy going unnoticed, not their problem.
+       */
+      fetchModDbListingArchive: () => Promise<void>
     }
     backgroundsManager: {
       /** Downloads one catalog scene into the cache if it is not already there. False if it could not be. */

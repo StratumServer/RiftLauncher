@@ -22,6 +22,8 @@ export interface ConfigSettingsType {
   background: string
   /** Changes on every background selection, so a replaced custom picture still repaints. */
   backgroundRevision: number
+  /** The stored answer to the one-time ModDB listing question. See src/domain/moddbVisibility.ts. */
+  moddbVisibilityAnswer: string
 }
 
 // Stable identity for the "nobody has been notified yet" case, so a consumer
@@ -129,7 +131,8 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       backupsFolder: config.backupsFolder,
       window: config.window,
       background: config.background,
-      backgroundRevision: config._backgroundRevision ?? 0
+      backgroundRevision: config._backgroundRevision ?? 0,
+      moddbVisibilityAnswer: config.moddbVisibilityAnswer
     }),
     [
       config.schemaVersion,
@@ -139,7 +142,8 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config.backupsFolder,
       config.window,
       config.background,
-      config._backgroundRevision
+      config._backgroundRevision,
+      config.moddbVisibilityAnswer
     ]
   )
 

@@ -1,4 +1,5 @@
 import { DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+import { DEFAULT_MODDB_VISIBILITY_ANSWER, type ModDbVisibilityAnswer } from "@domain/moddbVisibility"
 
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
@@ -9,6 +10,7 @@ export enum CONFIG_ACTIONS {
   SET_DEFAULT_BACKUPS_FOLDER = "SET_DEFAULT_BACKUPS_FOLDER",
   SET_ACCOUNT = "SET_ACCOUNT",
   SET_BACKGROUND = "SET_BACKGROUND",
+  SET_MODDB_VISIBILITY_ANSWER = "SET_MODDB_VISIBILITY_ANSWER",
 
   ADD_INSTALLATION = "ADD_INSTALLATION",
   DELETE_INSTALLATION = "DELETE_INSTALLATION",
@@ -74,6 +76,16 @@ export interface SetAccount {
 export interface SetBackground {
   type: CONFIG_ACTIONS.SET_BACKGROUND
   payload: string
+}
+
+/**
+ * Records the answer to the one-time ModDB listing question, which is what stops it being asked
+ * again. Dispatched from the three buttons on the prompt and from nowhere else: closing it without
+ * answering must leave the config alone so the question survives to the next launch.
+ */
+export interface SetModDbVisibilityAnswer {
+  type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER
+  payload: ModDbVisibilityAnswer
 }
 
 export interface AddInstallation {
@@ -214,6 +226,7 @@ export type ConfigAction =
   | SetDefaultBackupsFolder
   | SetAccount
   | SetBackground
+  | SetModDbVisibilityAnswer
   | AddInstallation
   | DeleteInstallation
   | EditInstallation
@@ -254,6 +267,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, account: action.payload }
     case CONFIG_ACTIONS.SET_BACKGROUND:
       return { ...config, background: action.payload, _backgroundRevision: (config._backgroundRevision ?? 0) + 1 }
+    case CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER:
+      return { ...config, moddbVisibilityAnswer: action.payload }
     case CONFIG_ACTIONS.ADD_INSTALLATION:
       return { ...config, installations: [action.payload, ...config.installations] }
     case CONFIG_ACTIONS.DELETE_INSTALLATION:
@@ -380,5 +395,6 @@ export const initialState: ConfigType = {
   favMods: [],
   suspendedModUpdates: [],
   background: DEFAULT_BACKGROUND_ID,
+  moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
   customIcons: []
 }

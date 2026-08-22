@@ -7,6 +7,7 @@ import { saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from "@domain/config/migrations"
 import { DEFAULT_BACKGROUND_ID, normalizeBackgroundId } from "@domain/backgrounds"
+import { DEFAULT_MODDB_VISIBILITY_ANSWER, normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
 
 const defaultConfig: ConfigType = {
   schemaVersion: CURRENT_CONFIG_SCHEMA,
@@ -27,6 +28,7 @@ const defaultConfig: ConfigType = {
   favMods: [],
   suspendedModUpdates: [],
   background: DEFAULT_BACKGROUND_ID,
+  moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
   customIcons: []
 }
 
@@ -321,6 +323,9 @@ export function normalizeConfig(config: unknown): ConfigType {
     // reset a player's choice. Anything that is not a usable id falls back to the bundled scene,
     // which is also what the renderer paints when the cached file for an id has gone missing.
     background: normalizeBackgroundId(rawConfig.background),
+    // Anything unreadable becomes "not asked yet", which costs one question and never invents a
+    // consent. The prompt is the only thing that ever writes a real answer here.
+    moddbVisibilityAnswer: normalizeModDbVisibilityAnswer(rawConfig.moddbVisibilityAnswer),
     customIcons
   }
 

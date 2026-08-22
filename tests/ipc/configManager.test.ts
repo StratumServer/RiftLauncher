@@ -33,6 +33,7 @@ vi.mock("@src/ipc/accountStore", () => ({
 
 import { saveAccountSecrets } from "@src/ipc/accountStore"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
 
 let temporaryRoot: string
 let userDataFolder: string
@@ -77,6 +78,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     favMods: [],
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
+    moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     customIcons: [],
     ...overrides
   }
@@ -326,6 +328,29 @@ describe("normalizeConfig: background", () => {
   it("never writes the session-only revision counter back out", async () => {
     const { normalizeConfig } = await freshConfigManager()
     assert.equal(normalizeConfig({ background: "village-lane", _backgroundRevision: 4 })._backgroundRevision, undefined)
+  })
+})
+
+describe("normalizeConfig: moddbVisibilityAnswer", () => {
+  it("reads a config written before the field existed as not asked yet", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER)
+  })
+
+  it("keeps every answer the prompt can record, so none of the three is ever asked twice", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const answer of [MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_DECLINED, MODDB_VISIBILITY_ALREADY_DONE]) {
+      assert.equal(normalizeConfig({ moddbVisibilityAnswer: answer }).moddbVisibilityAnswer, answer)
+    }
+  })
+
+  it("falls back to not-asked-yet for anything else, rather than inventing a consent", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const value of ["yes", "ACCEPTED", "", 1, true, null, {}, ["accepted"]]) {
+      assert.equal(normalizeConfig({ moddbVisibilityAnswer: value }).moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER, String(value))
+    }
   })
 })
 
