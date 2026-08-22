@@ -10,6 +10,8 @@
 [![CI](https://github.com/StratumServer/RiftLauncher/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/StratumServer/RiftLauncher/actions/workflows/ci.yml)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=StratumServer_RiftLauncher&metric=coverage)](https://sonarcloud.io/summary/overall?id=StratumServer_RiftLauncher)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=StratumServer_RiftLauncher&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=StratumServer_RiftLauncher)
+[![Downloads](https://img.shields.io/github/downloads/StratumServer/RiftLauncher/total?logo=github&label=downloads)](https://github.com/StratumServer/RiftLauncher/releases)
+[![Latest release](https://img.shields.io/github/v/release/StratumServer/RiftLauncher?include_prereleases&logo=github&label=latest)](https://github.com/StratumServer/RiftLauncher/releases/latest)
 [![Support on OpenCollective](https://img.shields.io/badge/Support-OpenCollective-7FADF2?logo=opencollective&logoColor=white)](https://opencollective.com/stratum)
 
 ## What's RiftLauncher?
