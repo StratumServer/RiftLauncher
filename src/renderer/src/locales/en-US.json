@@ -234,6 +234,7 @@
       "exportServerModpackButton": "Export Server Modpack",
       "exportModpackSuccess": "Modpack exported successfully!",
       "exportModpackError": "An error has occurred exporting the modpack!",
+      "openModsFolder": "Open the folder where the Mods for this Installation are",
       "importModpack": "Import a modpack file to install all its Mods",
       "importModpackButton": "Import Modpack",
       "importModpackTitle": "Import Modpack",
