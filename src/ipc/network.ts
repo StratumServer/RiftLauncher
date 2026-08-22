@@ -5,13 +5,26 @@ import { MAX_RESPONSE_BYTES } from "@src/ipc/validation"
 
 const REQUEST_TIMEOUT_MS = 15_000
 
+const DEFAULT_ACCEPT_HEADER = "application/json, text/plain;q=0.9"
+
 type BoundedRequestOptions = {
   method?: "GET" | "POST"
   body?: string
   maxBytes?: number
+  /** Overrides the JSON/text default for a caller that is not asking for text. */
+  accept?: string
 }
 
 export function requestBoundedText(url: URL, options: BoundedRequestOptions = {}): Promise<string> {
+  return requestBoundedBuffer(url, options).then((bytes) => bytes.toString("utf8"))
+}
+
+/**
+ * {@link requestBoundedText} without the utf8 decode, for the one caller that fetches an image.
+ * Same ceiling, same wall-clock timeout, same refusal to follow a redirect: the decode was always
+ * the only thing separating the two, and a JPEG does not survive it.
+ */
+export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = {}): Promise<Buffer> {
   const method = options.method ?? "GET"
   const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES
 
@@ -39,7 +52,7 @@ export function requestBoundedText(url: URL, options: BoundedRequestOptions = {}
       if (error) {
         reject(error)
       } else {
-        resolve(Buffer.concat(chunks).toString("utf8"))
+        resolve(Buffer.concat(chunks))
       }
     }
 
@@ -80,7 +93,7 @@ export function requestBoundedText(url: URL, options: BoundedRequestOptions = {}
     request.on("error", (error) => finish(error))
     request.on("login", (_authInfo, callback) => callback())
 
-    request.setHeader("Accept", "application/json, text/plain;q=0.9")
+    request.setHeader("Accept", options.accept ?? DEFAULT_ACCEPT_HEADER)
     if (options.body !== undefined) {
       request.setHeader("Content-Type", "application/x-www-form-urlencoded")
       request.end(options.body)
@@ -133,7 +146,7 @@ export function requestBoundedTextViaNode(url: URL, options: BoundedRequestOptio
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
   const transport = url.protocol === "http:" ? httpRequest : httpsRequest
 
-  const headers: Record<string, string> = { Accept: "application/json, text/plain;q=0.9" }
+  const headers: Record<string, string> = { Accept: options.accept ?? DEFAULT_ACCEPT_HEADER }
   if (options.body !== undefined) headers["Content-Type"] = "application/x-www-form-urlencoded"
 
   return new Promise((resolve, reject) => {

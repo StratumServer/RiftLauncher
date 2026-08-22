@@ -13,6 +13,8 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
+import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "../../src/renderer/src/features/config/contexts/configReducer"
 
 function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
@@ -28,6 +30,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     gameVersions: [],
     favMods: [],
     suspendedModUpdates: [],
+    background: DEFAULT_BACKGROUND_ID,
     customIcons: [],
     ...overrides
   }
@@ -70,6 +73,10 @@ describe("configReducer: initialState", () => {
     assert.equal(initialState.schemaVersion, 0)
     assert.deepEqual(initialState.installations, [])
   })
+
+  it("starts on the bundled background, so the first paint needs no network", () => {
+    assert.equal(initialState.background, DEFAULT_BACKGROUND_ID)
+  })
 })
 
 describe("configReducer: SET_CONFIG", () => {
@@ -107,6 +114,28 @@ describe("configReducer: scalar setters", () => {
     const config = baseConfig()
     const result = configReducer(config, { type: CONFIG_ACTIONS.SET_DEFAULT_BACKUPS_FOLDER, payload: "/new-backups" })
     assert.equal(result.backupsFolder, "/new-backups")
+  })
+
+  it("SET_BACKGROUND overwrites background only", () => {
+    const config = baseConfig()
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_BACKGROUND, payload: "village-lane" })
+
+    assert.equal(result.background, "village-lane")
+    assert.equal(result.defaultInstallationsFolder, config.defaultInstallationsFolder)
+    assert.equal(result.customIcons, config.customIcons)
+  })
+
+  it("SET_BACKGROUND bumps the revision, even when the id does not change", () => {
+    const config = baseConfig({ background: CUSTOM_BACKGROUND_ID })
+
+    const first = configReducer(config, { type: CONFIG_ACTIONS.SET_BACKGROUND, payload: CUSTOM_BACKGROUND_ID })
+    const second = configReducer(first, { type: CONFIG_ACTIONS.SET_BACKGROUND, payload: CUSTOM_BACKGROUND_ID })
+
+    // Re-picking writes over the one file the custom slot owns, so this counter is the only thing
+    // that tells the renderer the picture behind an unchanged id is a different picture.
+    assert.equal(first._backgroundRevision, 1)
+    assert.equal(second._backgroundRevision, 2)
+    assert.equal(second.background, CUSTOM_BACKGROUND_ID)
   })
 
   it("SET_ACCOUNT accepts an account and null alike", () => {

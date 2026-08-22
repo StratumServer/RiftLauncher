@@ -74,6 +74,10 @@ const api: BridgeAPI = {
   netManager: {
     queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url)
   },
+  backgroundsManager: {
+    ensureBackground: (id: string, file: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, id, file),
+    copyCustomBackground: (path: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.COPY_CUSTOM_BACKGROUND, path)
+  },
   accountManager: {
     login: (email: string, password: string, twoFactorCode?: string): Promise<AccountLoginResult> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, email, password, twoFactorCode),
     logout: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGOUT)

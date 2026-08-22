@@ -1,5 +1,6 @@
 import "./handlers/appUpdaterHandlers"
 import "./handlers/accountHandlers"
+import "./handlers/backgroundHandlers"
 import "./handlers/configHandlers"
 import "./handlers/gameHandlers"
 import "./handlers/modsHandlers"

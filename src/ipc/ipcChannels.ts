@@ -53,6 +53,10 @@ export const IPC_CHANNELS = {
   NET_MANAGER: {
     QUERY_URL: "query-url"
   },
+  BACKGROUNDS_MANAGER: {
+    ENSURE_BACKGROUND: "ensure-background",
+    COPY_CUSTOM_BACKGROUND: "copy-custom-background"
+  },
   ACCOUNT_MANAGER: {
     LOGIN: "account-login",
     LOGOUT: "account-logout"
