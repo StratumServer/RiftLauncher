@@ -327,6 +327,25 @@ declare global {
   /** SAVE_CONFIG's verdict. `ok: false` means nothing was written to disk. */
   type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason }
 
+  /**
+   * Why COPY_TO_ICONS refused to put a picked file in the Icons folder. Every
+   * gate there used to answer a bare `{ status: false }` and write nothing to
+   * the log, so eight different refusals reached the player as one sentence
+   * that named none of them (#202).
+   *
+   * - `unsupported-format`: the picked file is not a `.png`. The extension is
+   *   matched case-insensitively, so `.PNG` is a png like any other.
+   * - `source-unavailable`: the path policy refused the picked file, or it is
+   *   gone, or a folder on the way to it is a symbolic link. Nothing was read.
+   * - `copy-failed`: the file was readable and the write still failed. A
+   *   folder or a symlink already sitting on the destination name, no
+   *   permission to read the source, a full disk.
+   */
+  type CustomIconCopyFailureReason = "unsupported-format" | "source-unavailable" | "copy-failed"
+
+  /** COPY_TO_ICONS' verdict. `status: false` means nothing was written to the Icons folder. */
+  type CustomIconCopyResult = { status: true; file: string } | { status: false; reason: CustomIconCopyFailureReason }
+
   declare module "*.png" {
     const value: string
     export default value

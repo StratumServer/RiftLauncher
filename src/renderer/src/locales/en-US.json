@@ -380,8 +380,11 @@
       "compressError": "Error compressing: {{compressName}}!",
       "folderNotEmpty": "The folder you've selected is not empty! Make sure you've nothing important on there.",
       "installationFolderCreateFailed": "Couldn't create the folder for this Installation! Check that RiftLauncher can write to that location, then try again.",
-      "noFileSelected": "No file selected!",
-      "coulndtCopyIcon": "That icon couldn't be copied to the icons folder!",
+      "noFileSelected": "No file selected! Custom icons have to be PNG images, so the picker only lists .png files.",
+      "coulndtCopyIcon": "That icon couldn't be copied to the icons folder! Check that RiftLauncher can read the file and write to its data folder, then try again.",
+      "iconNotAPng": "That file isn't a PNG! Custom icons have to be .png images, so convert it or pick another file.",
+      "iconSourceUnavailable": "RiftLauncher couldn't read that file! Move it somewhere RiftLauncher can reach, then pick it again.",
+      "iconAddFailed": "Something went wrong adding that icon! Restart RiftLauncher, and let us know if it keeps happening.",
       "appClosePrevented": "You can't close RiftLauncher either because you're playing Vintage Story or because there's a task in progress!"
     },
     "actions": {
