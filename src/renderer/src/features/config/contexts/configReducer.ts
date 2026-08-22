@@ -1,3 +1,5 @@
+import { DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
 
@@ -6,6 +8,7 @@ export enum CONFIG_ACTIONS {
   SET_DEFAULT_VERSIONS_FOLDER = "SET_DEFAULT_VERSIONS_FOLDER",
   SET_DEFAULT_BACKUPS_FOLDER = "SET_DEFAULT_BACKUPS_FOLDER",
   SET_ACCOUNT = "SET_ACCOUNT",
+  SET_BACKGROUND = "SET_BACKGROUND",
 
   ADD_INSTALLATION = "ADD_INSTALLATION",
   DELETE_INSTALLATION = "DELETE_INSTALLATION",
@@ -58,6 +61,18 @@ export interface SetDefaultBackupsFolder {
 export interface SetAccount {
   type: CONFIG_ACTIONS.SET_ACCOUNT
   payload: AccountType | null
+}
+
+/**
+ * Picks the background: the bundled default, a catalog id, or the reserved custom id.
+ *
+ * Also bumps `_backgroundRevision`, including when the id has not changed. Re-picking a new
+ * picture writes over the one file the custom slot owns, so the id alone cannot tell the renderer
+ * that anything happened, and the URL it paints has to move for the new bytes to be read.
+ */
+export interface SetBackground {
+  type: CONFIG_ACTIONS.SET_BACKGROUND
+  payload: string
 }
 
 export interface AddInstallation {
@@ -184,6 +199,7 @@ export type ConfigAction =
   | SetDefaultVersionsFolder
   | SetDefaultBackupsFolder
   | SetAccount
+  | SetBackground
   | AddInstallation
   | DeleteInstallation
   | EditInstallation
@@ -221,6 +237,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, backupsFolder: action.payload }
     case CONFIG_ACTIONS.SET_ACCOUNT:
       return { ...config, account: action.payload }
+    case CONFIG_ACTIONS.SET_BACKGROUND:
+      return { ...config, background: action.payload, _backgroundRevision: (config._backgroundRevision ?? 0) + 1 }
     case CONFIG_ACTIONS.ADD_INSTALLATION:
       return { ...config, installations: [action.payload, ...config.installations] }
     case CONFIG_ACTIONS.DELETE_INSTALLATION:
@@ -333,5 +351,6 @@ export const initialState: ConfigType = {
   gameVersions: [],
   favMods: [],
   suspendedModUpdates: [],
+  background: DEFAULT_BACKGROUND_ID,
   customIcons: []
 }

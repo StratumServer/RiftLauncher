@@ -32,6 +32,7 @@ vi.mock("@src/ipc/accountStore", () => ({
 }))
 
 import { saveAccountSecrets } from "@src/ipc/accountStore"
+import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 
 let temporaryRoot: string
 let userDataFolder: string
@@ -75,6 +76,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     gameVersions: [],
     favMods: [],
     suspendedModUpdates: [],
+    background: DEFAULT_BACKGROUND_ID,
     customIcons: [],
     ...overrides
   }
@@ -296,6 +298,34 @@ describe("normalizeConfig: custom icons", () => {
     const many = Array.from({ length: 1_005 }, (_, i) => ({ id: `i${i}`, name: `I${i}`, icon: `i${i}.png` }))
     const result = normalizeConfig({ customIcons: many })
     assert.equal(result.customIcons.length, 1_000)
+  })
+})
+
+describe("normalizeConfig: background", () => {
+  it("defaults to the bundled scene when the field is missing, so an upgrade looks like it always did", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).background, DEFAULT_BACKGROUND_ID)
+  })
+
+  it("keeps a catalog id and the reserved custom id", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({ background: "village-lane" }).background, "village-lane")
+    assert.equal(normalizeConfig({ background: CUSTOM_BACKGROUND_ID }).background, CUSTOM_BACKGROUND_ID)
+  })
+
+  it("falls back to the default for anything that is not a usable id", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    // A path, a traversal, an uppercase or space-carrying name, a non-string, and an id past the
+    // length ceiling. None of these can name a file in the cache, so none survives normalization.
+    for (const value of ["../../etc/passwd", "Village Lane", "village_lane", "-leading-dash", "trailing-dash-", "", 7, null, {}, "a".repeat(65)]) {
+      assert.equal(normalizeConfig({ background: value }).background, DEFAULT_BACKGROUND_ID, String(value))
+    }
+  })
+
+  it("never writes the session-only revision counter back out", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({ background: "village-lane", _backgroundRevision: 4 })._backgroundRevision, undefined)
   })
 })
 

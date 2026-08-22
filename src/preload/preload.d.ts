@@ -70,6 +70,12 @@ declare global {
     netManager: {
       queryURL: (url: string) => Promise<string>
     }
+    backgroundsManager: {
+      /** Downloads one catalog scene into the cache if it is not already there. False if it could not be. */
+      ensureBackground: (id: string, file: string) => Promise<boolean>
+      /** Copies the player's own picture into the cache under the reserved custom name. */
+      copyCustomBackground: (path: string) => Promise<boolean>
+    }
     accountManager: {
       login: (email: string, password: string, twoFactorCode?: string) => Promise<AccountLoginResult>
       logout: () => Promise<boolean>

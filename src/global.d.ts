@@ -16,7 +16,20 @@ declare global {
      * Installation if someone actually needs the two to disagree.
      */
     suspendedModUpdates: string[]
+    /**
+     * Which background the launcher paints: `default` for the bundled scene, `custom` for the
+     * player's own picture, or a catalog id off the repository's `backgrounds` branch. See
+     * src/domain/backgrounds.ts.
+     */
+    background: string
     _notifiedModUpdatesInstallations?: string[]
+    /**
+     * Bumped by every background selection so a re-pick of the same id still repaints. The custom
+     * slot keeps one stable file name, so without this the CSS URL would not change and the
+     * renderer would keep showing the picture that name used to hold. Session-only, like
+     * `_notifiedModUpdatesInstallations`: normalizeConfig never writes it back out.
+     */
+    _backgroundRevision?: number
   }
 
   type WindowType = {
@@ -230,6 +243,13 @@ declare global {
     custom?: boolean
   }
 
+  /** One scene as the `backgrounds` branch manifest lists it. `file` is its name on that branch. */
+  type BackgroundType = {
+    id: string
+    name: string
+    file: string
+  }
+
   type ModpackModEntryType = {
     modid: string
     version: string
@@ -347,6 +367,11 @@ declare global {
   type CustomIconCopyResult = { status: true; file: string } | { status: false; reason: CustomIconCopyFailureReason }
 
   declare module "*.png" {
+    const value: string
+    export default value
+  }
+
+  declare module "*.jpg" {
     const value: string
     export default value
   }

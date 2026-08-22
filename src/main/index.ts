@@ -22,7 +22,7 @@ import { registerAutoUpdaterEvents } from "@src/main/autoUpdaterEvents"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
-import { createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
+import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
 import fse from "fs-extra"
 
@@ -52,19 +52,34 @@ const packagedRendererRoot = dirname(packagedRendererPath)
 
 ipcMain.on(IPC_CHANNELS.MODS_MANAGER.CLEAR_MOD_ICON_MEMORY_CACHE, createClearModIconMemoryCacheHandler(modIconMemoryCache, isTrustedIpcSender))
 
-if (!is.dev) {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: "app",
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        codeCache: true
-      }
+// One call, whatever the build: registerSchemesAsPrivileged replaces the list rather than adding
+// to it, so a second call would take the app scheme back out.
+const privilegedSchemes: Electron.CustomScheme[] = [
+  {
+    // Not `standard`, on purpose. The handler reads the file name straight off
+    // `new URL(request.url).pathname`, the shape a non-standard scheme gives it and the same one
+    // cachemodimg: and icons: rely on; making it standard would turn `background:scene.jpg` into
+    // a host and change that parse.
+    scheme: "background",
+    privileges: {
+      secure: true
     }
-  ])
+  }
+]
+
+if (!is.dev) {
+  privilegedSchemes.push({
+    scheme: "app",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      codeCache: true
+    }
+  })
 }
+
+protocol.registerSchemesAsPrivileged(privilegedSchemes)
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -245,6 +260,15 @@ app.whenReady().then(async () => {
     "cachemodimg",
     createCacheModImageProtocolHandler({
       cache: modIconMemoryCache,
+      getUserDataPath: () => app.getPath("userData"),
+      fetchFile: (url) => net.fetch(url)
+    })
+  )
+
+  // Handler for the chosen launcher background, downloaded or supplied by the player.
+  protocol.handle(
+    "background",
+    createBackgroundProtocolHandler({
       getUserDataPath: () => app.getPath("userData"),
       fetchFile: (url) => net.fetch(url)
     })

@@ -277,6 +277,9 @@
       "loggedin": "Logged in as {{user}}!",
       "onlyIfEnabledTwoFA": "Fill this field only if you have 2FA enabled!",
       "uiScale": "UI Scale",
+      "background": "Background",
+      "ownImage": "Your own image",
+      "backgroundsLoadFailed": "The background list couldn't be loaded. Check your connection and try again.",
       "language": "Language",
       "areYouSureLogout": "Are you sure you want to log out?",
       "loginoutNotReversible": "Logging out is not reversible but you can log back in again with the same Vintage Story account again!"
@@ -385,6 +388,8 @@
       "iconNotAPng": "That file isn't a PNG! Custom icons have to be .png images, so convert it or pick another file.",
       "iconSourceUnavailable": "RiftLauncher couldn't read that file! Move it somewhere RiftLauncher can reach, then pick it again.",
       "iconAddFailed": "Something went wrong adding that icon! Restart RiftLauncher, and let us know if it keeps happening.",
+      "backgroundDownloadFailed": "That background couldn't be downloaded. Check your connection and try again.",
+      "backgroundCopyFailed": "That image couldn't be used as a background. It has to be a JPEG under 2 MB.",
       "appClosePrevented": "You can't close RiftLauncher either because you're playing Vintage Story or because there's a task in progress!"
     },
     "actions": {
