@@ -29,7 +29,8 @@ import { MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl } from "@domain/moddb
 const mockState = vi.hoisted(() => ({
   requestBoundedText: vi.fn<(url: URL, options?: unknown) => Promise<string>>(),
   requestBoundedBuffer: vi.fn<(url: URL, options?: unknown) => Promise<Buffer>>(),
-  urls: [] as string[]
+  urls: [] as string[],
+  logLines: [] as string[]
 }))
 
 vi.mock("@src/ipc/network", () => ({
@@ -41,6 +42,16 @@ vi.mock("@src/ipc/network", () => ({
     mockState.urls.push(url.toString())
     return mockState.requestBoundedBuffer(url, options)
   }
+}))
+
+// Mocked beside the transport, and for the same reason: freshHandlers() resets the module registry
+// between tests, so a spy installed on the real module would watch an instance the handler no
+// longer imports.
+vi.mock("@src/utils/logManager", () => ({
+  logMessage: (_level: string, message: string): void => {
+    mockState.logLines.push(message)
+  },
+  getErrorMessage: (error: unknown): string => (error instanceof Error ? error.message : String(error))
 }))
 
 const FILE_ID = 116745
@@ -69,6 +80,7 @@ beforeEach(() => {
   userDataFolder = mkdtempSync(join(tmpdir(), "moddb-listing-archive-"))
   setElectronUserDataPath(userDataFolder)
   mockState.urls.length = 0
+  mockState.logLines.length = 0
   mockState.requestBoundedText.mockReset()
   mockState.requestBoundedBuffer.mockReset()
   mockState.requestBoundedText.mockResolvedValue(listingDetail())
@@ -135,6 +147,22 @@ describe("fetchModDbListingArchive", () => {
     const { fetchModDbListingArchive } = await freshHandlers()
 
     await assert.doesNotReject(() => fetchModDbListingArchive())
+  })
+
+  it("reads the refused redirect as the counted outcome rather than as a failure", async () => {
+    // ModDB answers the counting endpoint with a 302 and the transport refuses to follow it, so
+    // this rejection is what success looks like here. Logging it like any other error sends the
+    // next person debugging something else down a false trail.
+    mockState.requestBoundedBuffer.mockRejectedValue(new Error("Attempted to redirect, but redirect policy was 'error'"))
+    const { fetchModDbListingArchive } = await freshHandlers()
+
+    await fetchModDbListingArchive()
+
+    assert.equal(
+      mockState.logLines.some((line) => line.includes("counted outcome")),
+      true,
+      `expected the counted-outcome line, got ${JSON.stringify(mockState.logLines)}`
+    )
   })
 })
 

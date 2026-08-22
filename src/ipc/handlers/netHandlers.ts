@@ -82,7 +82,22 @@ export async function fetchModDbListingArchive(): Promise<void> {
 
     await requestBoundedBuffer(assertAllowedDownloadUrl(moddbListingDownloadUrl(fileId)), { maxBytes: MAX_MODDB_LISTING_RESPONSE_BYTES })
   } catch (err) {
-    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [FETCH_MODDB_LISTING_ARCHIVE] ${getErrorMessage(err)}`)
+    const message = getErrorMessage(err)
+
+    // ModDB answers the counting endpoint with a 302 to its CDN, and the bounded network layer
+    // refuses to follow redirects, so this rejection is what a counted request looks like from
+    // here rather than a failure. Reading the message is the only signal available; if Electron
+    // ever rewords it the request still behaves exactly the same and only this line falls back
+    // to the branch below.
+    if (message.toLowerCase().includes("redirect")) {
+      logMessage(
+        "debug",
+        "[back] [ipc] [ipc/handlers/netHandlers.ts] [FETCH_MODDB_LISTING_ARCHIVE] The listing download endpoint answered with its redirect, which is the counted outcome. Not followed on purpose."
+      )
+      return
+    }
+
+    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [FETCH_MODDB_LISTING_ARCHIVE] ${message}`)
   }
 }
 
