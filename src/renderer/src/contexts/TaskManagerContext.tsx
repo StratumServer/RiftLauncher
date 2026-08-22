@@ -205,13 +205,17 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
           payload: { id: LAUNCHER_UPDATE_TASK_ID, name: launcherUpdateName(version), desc: launcherUpdateName(version), type: "download", progress, status: "in-progress" }
         })
       }
-      if (progress >= 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id: LAUNCHER_UPDATE_TASK_ID, updates: COMPLETED } })
+      // No completion arm here on purpose (#200). The percentage is rounded on
+      // the way out of the main process, so a tick at 99.6 arrives as 100 while
+      // bytes are still moving, and on Windows the last stretch of a real
+      // download overlaps the installer's signature check. Only
+      // update-downloaded below knows the file is actually there.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id: LAUNCHER_UPDATE_TASK_ID, updates: { progress, status: "in-progress" } } })
     })
 
-    // What actually completes the task, the same way a resolved downloadOnPath
-    // does for every flow below: a last tick under 100 must not leave the
-    // update showing as still running.
+    // What completes the task, and the only thing that does, the same way a
+    // resolved downloadOnPath does for every flow below: a last tick under 100
+    // must not leave the update showing as still running.
     const removeUpdateDownloadedListener = window.api.appUpdater.onUpdateDownloaded(() => {
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id: LAUNCHER_UPDATE_TASK_ID, updates: COMPLETED } })
     })
