@@ -9,7 +9,9 @@ import {
   PiWrenchDuotone,
   PiXCircleDuotone,
   PiTrashDuotone,
-  PiWarningDuotone
+  PiWarningDuotone,
+  PiArrowUpDuotone,
+  PiArrowDownDuotone
 } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
 import clsx from "clsx"
@@ -112,7 +114,7 @@ function ListInslallations(): JSX.Element {
               </LinkButton>
             </ListItem>
 
-            {installations.map((installation) => {
+            {installations.map((installation, index) => {
               const isVersionMissing = !gameVersions.some((gv) => gv.version === installation.version)
 
               return (
@@ -162,6 +164,24 @@ function ListInslallations(): JSX.Element {
                     <ThinSeparator />
 
                     <div className="shrink-0 w-fit h-full flex gap-1 items-center text-lg">
+                      <div className="flex flex-col gap-1">
+                        <NormalButton
+                          className="p-1"
+                          title={t("features.installations.moveInstallationUp")}
+                          disabled={index === 0}
+                          onClick={() => configDispatch({ type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: installation.id, direction: "up" } })}
+                        >
+                          <PiArrowUpDuotone />
+                        </NormalButton>
+                        <NormalButton
+                          className="p-1"
+                          title={t("features.installations.moveInstallationDown")}
+                          disabled={index === installations.length - 1}
+                          onClick={() => configDispatch({ type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: installation.id, direction: "down" } })}
+                        >
+                          <PiArrowDownDuotone />
+                        </NormalButton>
+                      </div>
                       <div className="flex flex-col gap-1">
                         <NormalButton
                           className="p-1"

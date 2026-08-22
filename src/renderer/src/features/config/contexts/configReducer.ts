@@ -13,6 +13,7 @@ export enum CONFIG_ACTIONS {
   ADD_INSTALLATION = "ADD_INSTALLATION",
   DELETE_INSTALLATION = "DELETE_INSTALLATION",
   EDIT_INSTALLATION = "EDIT_INSTALLATION",
+  MOVE_INSTALLATION = "MOVE_INSTALLATION",
   ADD_INSTALLATION_BACKUP = "ADD_INSTALLATION_BACKUP",
   DELETE_INSTALLATION_BACKUP = "DELETE_INSTALLATION_BACKUP",
   EDIT_INSTALLATION_BACKUP = "EDIT_INSTALLATION_BACKUP",
@@ -90,6 +91,19 @@ export interface EditInstallation {
   payload: {
     id: string
     updates: Partial<Omit<InstallationType, "id">>
+  }
+}
+
+/**
+ * Swaps one installation with its neighbour. The array order is the display
+ * order (nothing sorts `installations` on the way to the screen), so this is
+ * the whole of "reorder the list" as far as state goes.
+ */
+export interface MoveInstallation {
+  type: CONFIG_ACTIONS.MOVE_INSTALLATION
+  payload: {
+    id: string
+    direction: "up" | "down"
   }
 }
 
@@ -203,6 +217,7 @@ export type ConfigAction =
   | AddInstallation
   | DeleteInstallation
   | EditInstallation
+  | MoveInstallation
   | AddInstallationBackup
   | DeleteInstallationBackup
   | EditInslallationBackup
@@ -251,6 +266,19 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
         ...config,
         installations: config.installations.map((installation) => (installation.id === action.payload.id ? { ...installation, ...action.payload.updates } : installation))
       }
+    case CONFIG_ACTIONS.MOVE_INSTALLATION: {
+      const from = config.installations.findIndex((installation) => installation.id === action.payload.id)
+      const to = from + (action.payload.direction === "up" ? -1 : 1)
+      // An id naming nothing, or a row already at the end it is being pushed
+      // towards: same state object back, so nothing re-renders for a no-op.
+      if (from === -1 || to < 0 || to >= config.installations.length) return config
+
+      const installations = [...config.installations]
+      const moved = installations[from]!
+      installations[from] = installations[to]!
+      installations[to] = moved
+      return { ...config, installations }
+    }
     case CONFIG_ACTIONS.ADD_INSTALLATION_BACKUP:
       return {
         ...config,
