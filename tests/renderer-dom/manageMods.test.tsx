@@ -13,6 +13,8 @@ import { renderWithProviders } from "./helpers/render"
 const INSTALLATION_PATH = "/games/a"
 const ALPHA_PATH = "/games/a/Mods/alpha-1.0.0.zip"
 const BETA_PATH = "/games/a/Mods/beta-2.0.0.zip"
+const SUSPEND_TITLE = "Suspend updates for this Mod: Update all will skip it, you can still update it from here"
+const RESUME_TITLE = "Resume updates for this Mod: Update all will include it again"
 
 function anInstallation(): InstallationType {
   return {
@@ -192,7 +194,89 @@ describe("ManageMods", () => {
     expect(downloadOnPath).toHaveBeenCalledTimes(2)
     expect(deletePath.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([ALPHA_PATH, BETA_PATH]))
   })
+})
 
+/** Issue #194: a Mod the player holds at its current version, without going blind to what is out there. */
+describe("ManageMods: suspended Mod updates", () => {
+  /** The row for one Mod, found by its name. */
+  async function rowFor(name: string): Promise<HTMLElement> {
+    return (await screen.findByText(name, {}, { timeout: 3000 })).closest("li") as HTMLElement
+  }
+
+  it("toggles the suspension from the row, and says which state the row is in", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const alphaRow = await rowFor("Alpha Mod")
+    expect(within(alphaRow).getByTitle(SUSPEND_TITLE)).toBeTruthy()
+
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+
+    expect(within(alphaRow).getByTitle(RESUME_TITLE)).toBeTruthy()
+    // Marked at a glance, in the same tint family the row already uses for its update states.
+    expect(alphaRow.firstElementChild?.className).toContain("bg-sky-500/25")
+
+    await user.click(within(alphaRow).getByTitle(RESUME_TITLE))
+
+    expect(within(alphaRow).getByTitle(SUSPEND_TITLE)).toBeTruthy()
+    expect(alphaRow.firstElementChild?.className).not.toContain("bg-sky-500/25")
+  })
+
+  it("leaves a suspended Mod out of Update all and updates the rest", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn(async (_id: string, url: string) => (url.includes("alpha") ? "/games/a/Mods/alpha-1.1.0.zip" : "/games/a/Mods/beta-2.1.0.zip"))
+    renderManageMods({ pathsManager: { deletePath, downloadOnPath } })
+
+    const alphaRow = await rowFor("Alpha Mod")
+    await screen.findByText("Beta Mod")
+
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+
+    // Beta was updated, Alpha was not touched at all.
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(downloadOnPath.mock.calls[0]?.[1]).toContain("beta")
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([BETA_PATH])
+  })
+
+  it("still lists a suspended Mod under the Mods with updates heading", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const alphaRow = await rowFor("Alpha Mod")
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+
+    // Watching for the new version is the reason to suspend, so the notice has to survive it.
+    const updatesSection = screen.getByText("Mods with updates").closest("ul") as HTMLElement
+    expect(within(updatesSection).getByText("Alpha Mod")).toBeTruthy()
+  })
+
+  it("updates a suspended Mod from its own row and keeps it suspended afterwards", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn(async () => "/games/a/Mods/alpha-1.1.0.zip")
+    renderManageMods({ pathsManager: { deletePath, downloadOnPath } })
+
+    const alphaRow = await rowFor("Alpha Mod")
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+
+    await user.click(within(alphaRow).getByTitle("Update"))
+
+    const popup = await screen.findByRole("dialog")
+    await user.click(within(popup).getByTitle("Author tagged it as compatible with your selected Vintage Story Version!"))
+
+    await waitFor(() => expect(downloadOnPath).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(deletePath).toHaveBeenCalledWith(ALPHA_PATH))
+
+    // The suspension is lifted by the player, never by an update they asked for themselves.
+    expect(within(await rowFor("Alpha Mod")).getByTitle(RESUME_TITLE)).toBeTruthy()
+  })
+})
+
+describe("ManageMods: icon cache", () => {
   it("clears the mod icon memory cache when leaving the page", async () => {
     const rendered = renderManageMods()
 

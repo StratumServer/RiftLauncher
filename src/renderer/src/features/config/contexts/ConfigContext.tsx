@@ -33,6 +33,7 @@ const GameVersionsContext = createContext<GameVersionType[] | null>(null)
 const AccountContext = createContext<{ account: AccountType | null } | null>(null)
 const SettingsContext = createContext<ConfigSettingsType | null>(null)
 const FavModsContext = createContext<number[] | null>(null)
+const SuspendedModUpdatesContext = createContext<string[] | null>(null)
 const CustomIconsContext = createContext<IconType[] | null>(null)
 const NotifiedModUpdatesContext = createContext<string[] | null>(null)
 
@@ -129,7 +130,9 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
             <InstallationsContext.Provider value={config.installations}>
               <GameVersionsContext.Provider value={config.gameVersions}>
                 <FavModsContext.Provider value={config.favMods}>
-                  <CustomIconsContext.Provider value={config.customIcons}>{children}</CustomIconsContext.Provider>
+                  <SuspendedModUpdatesContext.Provider value={config.suspendedModUpdates}>
+                    <CustomIconsContext.Provider value={config.customIcons}>{children}</CustomIconsContext.Provider>
+                  </SuspendedModUpdatesContext.Provider>
                 </FavModsContext.Provider>
               </GameVersionsContext.Provider>
             </InstallationsContext.Provider>
@@ -159,9 +162,12 @@ const useSettingsConfig = (): ConfigSettingsType => requireProvider(useContext(S
 
 const useFavMods = (): number[] => requireProvider(useContext(FavModsContext), "useFavMods")
 
+/** Modids the player holds back from Update All. Their update notices are unaffected. */
+const useSuspendedModUpdates = (): string[] => requireProvider(useContext(SuspendedModUpdatesContext), "useSuspendedModUpdates")
+
 const useCustomIcons = (): IconType[] => requireProvider(useContext(CustomIconsContext), "useCustomIcons")
 
 /** Ids of installations the player has already been told about mod updates for, this session. */
 const useNotifiedModUpdates = (): string[] => requireProvider(useContext(NotifiedModUpdatesContext), "useNotifiedModUpdates")
 
-export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccount, useSettingsConfig, useFavMods, useCustomIcons, useNotifiedModUpdates }
+export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccount, useSettingsConfig, useFavMods, useSuspendedModUpdates, useCustomIcons, useNotifiedModUpdates }

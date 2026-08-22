@@ -27,6 +27,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     installations: [],
     gameVersions: [],
     favMods: [],
+    suspendedModUpdates: [],
     customIcons: [],
     ...overrides
   }
@@ -339,6 +340,33 @@ describe("configReducer: favourite mods", () => {
     const config = baseConfig({ favMods: [1, 2] })
     const result = configReducer(config, { type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: 999 } })
     assert.deepEqual(result.favMods, [1, 2])
+  })
+})
+
+describe("configReducer: suspended mod updates", () => {
+  it("ADD_SUSPENDED_MOD_UPDATE appends the modid", () => {
+    const config = baseConfig({ suspendedModUpdates: ["alpha"] })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE, payload: { modid: "beta" } })
+    assert.deepEqual(result.suspendedModUpdates, ["alpha", "beta"])
+  })
+
+  it("REMOVE_SUSPENDED_MOD_UPDATE removes every occurrence of the modid", () => {
+    const config = baseConfig({ suspendedModUpdates: ["alpha", "beta", "alpha"] })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE, payload: { modid: "alpha" } })
+    assert.deepEqual(result.suspendedModUpdates, ["beta"])
+  })
+
+  it("REMOVE_SUSPENDED_MOD_UPDATE on a modid naming nothing leaves the list as it was", () => {
+    const config = baseConfig({ suspendedModUpdates: ["alpha"] })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE, payload: { modid: "gamma" } })
+    assert.deepEqual(result.suspendedModUpdates, ["alpha"])
+  })
+
+  it("leaves the other slices referentially untouched", () => {
+    const config = baseConfig({ installations: [installation()] })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE, payload: { modid: "alpha" } })
+    assert.equal(result.installations, config.installations)
+    assert.equal(result.favMods, config.favMods)
   })
 })
 

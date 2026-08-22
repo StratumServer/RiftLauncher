@@ -223,6 +223,8 @@
       "errorUpdatingMod": "An error has occurred updating the Mod {{mod}}!",
       "errorUpdatingMods": "An error has occurred updating the Mods!",
       "updateAllButton": "Update all",
+      "suspendUpdates": "Suspend updates for this Mod: Update all will skip it, you can still update it from here",
+      "resumeUpdates": "Resume updates for this Mod: Update all will include it again",
       "modsUpdatedSuccessfully": "All the Mods were updated successfully!",
       "modsPartiallyUpdated": "{{updated}} Mods updated, {{failed}} left as they were. The summary says which ones.",
       "errorReplacingOldModVersion": "The old version of {{mod}} is still on disk, so it was left alone. Close Vintage Story and anything else holding that file, then update it again.",

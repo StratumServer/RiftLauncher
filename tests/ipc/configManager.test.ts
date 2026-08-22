@@ -74,6 +74,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     installations: [],
     gameVersions: [],
     favMods: [],
+    suspendedModUpdates: [],
     customIcons: [],
     ...overrides
   }
@@ -145,6 +146,21 @@ describe("normalizeConfig: the document itself", () => {
 
     const tooMany = Array.from({ length: 10_005 }, (_, i) => i)
     assert.equal(normalizeConfig({ favMods: tooMany }).favMods.length, 10_000)
+  })
+
+  it("keeps suspendedModUpdates only when it is an array of non-empty strings, capping at 10,000", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    assert.deepEqual(normalizeConfig({ suspendedModUpdates: "not an array" }).suspendedModUpdates, [])
+    assert.deepEqual(normalizeConfig({ suspendedModUpdates: ["alpha", 3, "", null, "beta"] }).suspendedModUpdates, ["alpha", "beta"])
+
+    const tooMany = Array.from({ length: 10_005 }, (_, i) => `mod-${i}`)
+    assert.equal(normalizeConfig({ suspendedModUpdates: tooMany }).suspendedModUpdates.length, 10_000)
+  })
+
+  it("normalizes a config with no suspendedModUpdates field at all to an empty list", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.deepEqual(normalizeConfig({}).suspendedModUpdates, [])
   })
 })
 
