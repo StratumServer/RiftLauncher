@@ -26,7 +26,7 @@ export interface NameAndIconPickerProps {
 }
 
 /** The name field and icon picker shared by AddInstallation and EditInstallation. */
-export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, customIcons, iconButtonClassName }: NameAndIconPickerProps): JSX.Element {
+export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, customIcons, iconButtonClassName }: Readonly<NameAndIconPickerProps>): JSX.Element {
   const { t } = useTranslation()
   const [addIcon, setAddIcon] = useState<boolean>(false)
 

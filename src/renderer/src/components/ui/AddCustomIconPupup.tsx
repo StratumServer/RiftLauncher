@@ -9,7 +9,7 @@ import { useAddCustomIcon } from "@renderer/features/config/hooks/useAddCustomIc
 import PopupDialogPanel from "./PopupDialogPanel"
 import { ButtonsWrapper, FormBody, FormButton, FormFieldGroup, FormGroupWrapper, FormHead, FormInputText, FormLabel, FromGroup, FromWrapper } from "./FormComponents"
 
-export function AddCustomIconPupup({ open, setOpen }: { open: boolean; setOpen: Dispatch<SetStateAction<boolean>> }): JSX.Element {
+export function AddCustomIconPupup({ open, setOpen }: Readonly<{ open: boolean; setOpen: Dispatch<SetStateAction<boolean>> }>): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const configDispatch = useConfigDispatch()

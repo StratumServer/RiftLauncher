@@ -5,7 +5,7 @@ import { ListItem } from "@renderer/components/ui/List"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 
 /** An archive the scan could not read: only its file name is known, so only deleting it is offered. */
-function ErrorInstalledModItem({ iModE, onDeleteClick }: { iModE: ErrorInstalledModType; onDeleteClick: () => void }): JSX.Element {
+function ErrorInstalledModItem({ iModE, onDeleteClick }: Readonly<{ iModE: ErrorInstalledModType; onDeleteClick: () => void }>): JSX.Element {
   const { t } = useTranslation()
 
   return (

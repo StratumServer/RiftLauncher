@@ -20,7 +20,7 @@
  * zip reader that could not read it, and the install died there.
  */
 
-import { spawn } from "child_process"
+import { spawn } from "node:child_process"
 import yauzl from "yauzl"
 import * as tar from "tar"
 

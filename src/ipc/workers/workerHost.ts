@@ -13,7 +13,7 @@
  * started MessagePort refs the worker's event loop.
  */
 
-import { parentPort } from "worker_threads"
+import { parentPort } from "node:worker_threads"
 
 /** Reports 0 to 100 for the task currently running. Ignored once that task has settled. */
 export type ProgressReporter = (progress: number) => void

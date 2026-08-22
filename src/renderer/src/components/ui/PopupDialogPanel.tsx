@@ -9,13 +9,13 @@ function PopupDialogPanel({
   isOpen,
   close,
   fixedWidth = true
-}: {
+}: Readonly<{
   children: React.ReactElement
   title: JSX.Element | string
   isOpen: boolean
   close: (value: boolean) => void
   fixedWidth?: boolean
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <AnimatePresence>
       {isOpen && (

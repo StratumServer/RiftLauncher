@@ -1,6 +1,6 @@
 import { net } from "electron"
-import { request as httpRequest } from "http"
-import { request as httpsRequest } from "https"
+import { request as httpRequest } from "node:http"
+import { request as httpsRequest } from "node:https"
 import { MAX_RESPONSE_BYTES } from "@src/ipc/validation"
 
 const REQUEST_TIMEOUT_MS = 15_000

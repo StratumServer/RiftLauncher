@@ -12,11 +12,11 @@ function AuthorFilter({
   authorFilter,
   setAuthorFilter,
   size = "w-full h-8"
-}: {
+}: Readonly<{
   authorFilter: DownloadableModAuthorType
   setAuthorFilter: Dispatch<SetStateAction<DownloadableModAuthorType>>
   size?: string
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   const authorsList = useAuthorsLookup()

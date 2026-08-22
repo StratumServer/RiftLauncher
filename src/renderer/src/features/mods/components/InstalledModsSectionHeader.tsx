@@ -14,7 +14,7 @@ const DISCORD_URL = "https://discord.gg/vQm6z2urZs"
  * The three sections carried the same twenty-line `<Trans>` with the Issues and Discord links
  * spelled out again each time, differing only in which sentence wraps them.
  */
-function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: { titleKey: string; descriptionKey: string; reportKey: string }): JSX.Element {
+function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: Readonly<{ titleKey: string; descriptionKey: string; reportKey: string }>): JSX.Element {
   const { t } = useTranslation()
   const openExternalLink = useOpenExternalLink()
 

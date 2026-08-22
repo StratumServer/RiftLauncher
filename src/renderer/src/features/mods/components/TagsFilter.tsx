@@ -12,11 +12,11 @@ function TagsFilter({
   tagsFilter,
   setTagsFilter,
   size = "w-full h-8"
-}: {
+}: Readonly<{
   tagsFilter: DownloadableModTagType[]
   setTagsFilter: Dispatch<SetStateAction<DownloadableModTagType[]>>
   size?: string
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   const tagsList = useTagsLookup()

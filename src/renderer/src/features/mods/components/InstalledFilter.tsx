@@ -7,7 +7,11 @@ import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headless
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
-function InstalledFilter({ installedFilter, setInstalledFilter, size = "w-full h-8" }: { installedFilter: string; setInstalledFilter: Dispatch<SetStateAction<string>>; size?: string }): JSX.Element {
+function InstalledFilter({
+  installedFilter,
+  setInstalledFilter,
+  size = "w-full h-8"
+}: Readonly<{ installedFilter: string; setInstalledFilter: Dispatch<SetStateAction<string>>; size?: string }>): JSX.Element {
   const { t } = useTranslation()
 
   const INSTALLED_FILTERS = [
