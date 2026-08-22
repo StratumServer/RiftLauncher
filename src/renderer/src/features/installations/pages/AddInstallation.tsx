@@ -12,8 +12,7 @@ import { useInstallations, useGameVersions, useCustomIcons, useSettingsConfig, u
 import { createCreateInstallationPorts, describeCreateInstallationFailure, toFoldersInUse, toInstallationType } from "@renderer/features/installations/adapters/create"
 import { useEnsurePathExists } from "@renderer/features/installations/hooks/usePathActions"
 import { useInstallationFolder } from "@renderer/features/installations/hooks/useInstallationFolder"
-import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
-import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
+import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 import { useInstallationFormFields } from "@renderer/features/installations/hooks/useInstallationFormFields"
 import { NameAndIconPicker } from "@renderer/features/installations/components/NameAndIconPicker"
 import { GameVersionPicker } from "@renderer/features/installations/components/GameVersionPicker"
@@ -49,8 +48,7 @@ function AddInslallation(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
   const ensurePathExists = useEnsurePathExists()
-  const openExternalLink = useOpenExternalLink()
-  const logMessage = useLogMessage()
+  const { openOnBrowser: openExternalLink } = useExternalLinks()
 
   const fields = useInstallationFormFields({
     icon: INSTALLATION_ICONS[0],
@@ -104,8 +102,8 @@ function AddInslallation(): JSX.Element {
       addNotification(t("features.installations.installationSuccessfullyAdded"), "success")
       navigate("/installations")
     } catch (error) {
-      logMessage("error", `${LOG_TAG} [handleAddInstallation] Error adding an Installation.`)
-      logMessage("debug", `${LOG_TAG} [handleAddInstallation] Error adding the Installation at ${path}: ${error}.`)
+      window.api.utils.logMessage("error", `${LOG_TAG} [handleAddInstallation] Error adding an Installation.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [handleAddInstallation] Error adding the Installation at ${path}: ${error}.`)
       addNotification(t("features.installations.errorAddingInstallation"), "error")
     }
   }

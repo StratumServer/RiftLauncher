@@ -9,7 +9,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
-import { useLaunchGame } from "@renderer/features/launch/hooks/useLaunchGame"
+import { checkInstallationPathExists, logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
 
 import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
 import TasksMenu from "@renderer/components/ui/TasksMenu"
@@ -33,7 +33,6 @@ function MainMenu(): JSX.Element {
   const { addNotification } = useNotificationsContext()
 
   const makeInstallationBackup = useMakeInstallationBackup()
-  const { preventAppClose, runGame, checkInstallationPathExists, logLaunch } = useLaunchGame()
 
   const [selectedInstallation, setSelectedInstallation] = useState<InstallationType | undefined>(undefined)
 

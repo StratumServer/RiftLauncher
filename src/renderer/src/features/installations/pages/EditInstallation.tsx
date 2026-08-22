@@ -10,8 +10,7 @@ import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, useSettingsConfig, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { describeInstallationFieldsFailure } from "@renderer/features/installations/adapters/create"
-import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
-import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
+import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 import { useInstallationFormFields } from "@renderer/features/installations/hooks/useInstallationFormFields"
 import { NameAndIconPicker } from "@renderer/features/installations/components/NameAndIconPicker"
 import { GameVersionPicker } from "@renderer/features/installations/components/GameVersionPicker"
@@ -33,8 +32,7 @@ function EditInslallation(): JSX.Element {
   const customIcons = useCustomIcons()
   const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
-  const openExternalLink = useOpenExternalLink()
-  const logMessage = useLogMessage()
+  const { openOnBrowser: openExternalLink } = useExternalLinks()
   const { schemaVersion } = useSettingsConfig()
   const isConfigLoaded = schemaVersion !== 0
 
@@ -126,8 +124,8 @@ function EditInslallation(): JSX.Element {
       if (!fields.version) addNotification(t("features.versions.versionLeftUnchanged"), "warning")
       navigate("/installations")
     } catch (error) {
-      logMessage("error", `${LOG_TAG} [handleEditInstallation] Error editing an Installation.`)
-      logMessage("debug", `${LOG_TAG} [handleEditInstallation] Error editing the Installation ${id}: ${error}.`)
+      window.api.utils.logMessage("error", `${LOG_TAG} [handleEditInstallation] Error editing an Installation.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [handleEditInstallation] Error editing the Installation ${id}: ${error}.`)
       addNotification(t("features.installations.errorEditingInstallation"), "error")
     }
   }

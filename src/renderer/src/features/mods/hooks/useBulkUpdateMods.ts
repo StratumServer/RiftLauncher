@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { CONFIG_ACTIONS, useConfigDispatch, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
-import { useLogMods } from "@renderer/features/mods/hooks/useLogMods"
+import { logMods } from "@renderer/features/moddb/adapters/log"
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
 
 const LOG_TAG = "[front] [mods] [features/mods/hooks/useBulkUpdateMods.ts]"
@@ -33,7 +33,6 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
   const suspendedModUpdates = useSuspendedModUpdates()
 
   const installMod = useInstallMod()
-  const logMods = useLogMods()
 
   const [summaryEntries, setSummaryEntries] = useState<ModChangeSummaryEntry[]>([])
   const [showSummary, setShowSummary] = useState(false)

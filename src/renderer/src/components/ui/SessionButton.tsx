@@ -4,7 +4,7 @@ import { PiFloppyDiskBackDuotone, PiTrashDuotone, PiUserDuotone, PiXCircleDuoton
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { CONFIG_ACTIONS, useAccount, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
-import { useAccountSession } from "@renderer/features/account/hooks/useAccountSession"
+import { loginToAccount as login, logoutOfAccount as logout } from "@renderer/features/account/adapters/account"
 
 import {
   ButtonsWrapper,
@@ -28,7 +28,6 @@ function SessionButton(): JSX.Element {
   const account = useAccount()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
-  const { login, logout } = useAccountSession()
 
   // Log In states
   const [email, setEmail] = useState("")
