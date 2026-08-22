@@ -1,6 +1,5 @@
 import React, { createContext, useReducer, useContext, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { v4 as uuidv4 } from "uuid"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { LAUNCHER_UPDATE_TASK_ID, launcherUpdateName } from "@renderer/utils/launcherUpdateTask"
@@ -245,7 +244,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     fileName: string,
     onFinish: (status: boolean, path: string, error: Error | null) => void
   ): Promise<void> {
-    const id = uuidv4()
+    const id = crypto.randomUUID()
 
     try {
       window.api.utils.setPreventAppClose("add", id, "Started download.")
@@ -284,7 +283,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     deleteZip: boolean,
     onFinish: (status: boolean, error: Error | null) => void
   ): Promise<void> {
-    const id = uuidv4()
+    const id = crypto.randomUUID()
 
     try {
       window.api.utils.setPreventAppClose("add", id, "Started extraction.")
@@ -329,7 +328,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     deleteInstaller: boolean,
     onFinish: (status: boolean, error: Error | null) => void
   ): Promise<void> {
-    const id = uuidv4()
+    const id = crypto.randomUUID()
 
     try {
       window.api.utils.setPreventAppClose("add", id, "Started installation.")
@@ -374,7 +373,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     onFinish: (status: boolean, error: Error | null) => void,
     compressionLevel?: number
   ): Promise<void> {
-    const id = uuidv4()
+    const id = crypto.randomUUID()
 
     try {
       window.api.utils.setPreventAppClose("add", id, "Started compression.")

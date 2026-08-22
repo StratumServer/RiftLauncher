@@ -2,7 +2,6 @@ import { ReactNode, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation } from "react-router-dom"
 import { PiBoxArrowDownDuotone, PiFolderOpenDuotone, PiGearDuotone, PiWrenchDuotone, PiGitForkDuotone, PiHouseLineDuotone, PiPencilDuotone, PiPlusCircleDuotone, PiInfoDuotone } from "react-icons/pi"
-import { v4 as uuidv4 } from "uuid"
 import clsx from "clsx"
 
 import { useInstallations, useGameVersions, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
@@ -53,7 +52,7 @@ function MainMenu(): JSX.Element {
   ]
 
   async function PlayHandler(): Promise<void> {
-    const id = uuidv4()
+    const id = crypto.randomUUID()
     preventAppClose("add", id, "Started playing Vintage Story.")
 
     // Only set once _playing has actually been flipped to true below, so the
