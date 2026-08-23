@@ -30,7 +30,7 @@ const MAX_ARCHIVE_ENTRIES = 100_000
 const MAX_LISTING_BYTES = 4 * 1024 * 1024
 
 function comparableArchiveEntry(entryName: string): string {
-  const normalizedName = entryName.replace(/\\/g, "/")
+  const normalizedName = entryName.replaceAll("\\", "/")
   return process.platform === "win32" ? normalizedName.toLowerCase() : normalizedName
 }
 

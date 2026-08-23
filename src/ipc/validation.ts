@@ -340,7 +340,7 @@ export function resolveContainedPath(root: string, relativePath: string): string
 export function isSafeArchiveEntry(entryName: unknown): entryName is string {
   if (typeof entryName !== "string" || entryName.length === 0 || entryName.length > MAX_PATH_LENGTH || entryName.includes("\0")) return false
 
-  const normalizedName = entryName.replace(/\\/g, "/")
+  const normalizedName = entryName.replaceAll("\\", "/")
   if (normalizedName.startsWith("/") || /^[A-Za-z]:\//.test(normalizedName)) return false
 
   return !normalizedName.split("/").includes("..")
