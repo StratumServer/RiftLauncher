@@ -4,7 +4,7 @@ import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from "@headless
 import { AnimatePresence, motion } from "motion/react"
 import clsx from "clsx"
 
-import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
+import { installationIconSrc } from "@renderer/utils/installationIcons"
 import { DROPUP_MENU_ITEM_VARIANTS, DROPUP_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
 import { useInstallations, useCustomIcons, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
@@ -56,17 +56,7 @@ function InstallationsDropdownMenu(): JSX.Element {
                     key={current.id}
                     className="w-full h-14 p-1 pr-2 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none text-sm text-start cursor-pointer"
                   >
-                    <img
-                      src={
-                        INSTALLATION_ICONS.some((ii) => ii.id === current.icon)
-                          ? INSTALLATION_ICONS.find((ii) => ii.id === current.icon)?.icon
-                          : customIcons.some((ii) => ii.id === current.icon)
-                            ? `icons:${customIcons.find((ii) => ii.id === current.icon)?.icon}`
-                            : INSTALLATION_ICONS[0].icon
-                      }
-                      alt={t("generic.icon")}
-                      className="h-full aspect-square object-cover rounded-sm"
-                    />
+                    <img src={installationIconSrc(current.icon, customIcons)} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
 
                     <div key={current.id} className="w-full flex flex-col justify-around overflow-hidden">
                       <p className="font-bold overflow-hidden whitespace-nowrap text-ellipsis">{current.name}</p>
@@ -98,17 +88,7 @@ function InstallationsDropdownMenu(): JSX.Element {
                           variants={DROPUP_MENU_ITEM_VARIANTS}
                           className="w-full min-h-14 h-14 p-1 flex items-center justify-between gap-2 overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer text-start border border-transparent"
                         >
-                          <img
-                            src={
-                              INSTALLATION_ICONS.some((ii) => ii.id === current.icon)
-                                ? INSTALLATION_ICONS.find((ii) => ii.id === current.icon)?.icon
-                                : customIcons.some((ii) => ii.id === current.icon)
-                                  ? `icons:${customIcons.find((ii) => ii.id === current.icon)?.icon}`
-                                  : INSTALLATION_ICONS[0].icon
-                            }
-                            alt={t("generic.icon")}
-                            className="h-full aspect-square object-cover rounded-sm"
-                          />
+                          <img src={installationIconSrc(current.icon, customIcons)} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
 
                           <div key={current.id} className="w-full flex flex-col justify-around overflow-hidden">
                             <p className="font-bold overflow-hidden whitespace-nowrap text-ellipsis">{current.name}</p>

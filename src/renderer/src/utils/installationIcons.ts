@@ -15,3 +15,20 @@ export const INSTALLATION_ICONS: [IconType, ...IconType[]] = [
   { id: "temporal", name: "Temporal gear", icon: temporal },
   { id: "soil", name: "Soil", icon: soil }
 ]
+
+/**
+ * The image source for the icon an installation names.
+ *
+ * Built-in icons carry their own bundled source; a custom one is a file the
+ * launcher copied, reached through the `icons:` protocol. An id that matches
+ * neither falls back to the first built-in rather than rendering nothing.
+ */
+export function installationIconSrc(iconId: string, customIcons: readonly IconType[]): string {
+  const builtIn = INSTALLATION_ICONS.find((icon) => icon.id === iconId)
+  if (builtIn) return builtIn.icon
+
+  const custom = customIcons.find((icon) => icon.id === iconId)
+  if (custom) return `icons:${custom.icon}`
+
+  return INSTALLATION_ICONS[0].icon
+}
