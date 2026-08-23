@@ -180,21 +180,15 @@ async function writePlan(
   onProgress?: (fraction: number) => void
 ): Promise<number> {
   const cursor = new InstallerCursor(ports.installer)
+  const report = percentProgress(totalBytes, onProgress)
   let done = 0
-  let lastPercent = -1
   let filesWritten = 0
-  let index = 0
 
-  while (index < planned.length) {
-    const chunkOffset = planned[index]!.entry.chunkOffset
-    let last = index
-    while (last + 1 < planned.length && planned[last + 1]!.entry.chunkOffset === chunkOffset) last++
-
-    const stream = await openChunk(cursor, script, dataOffset, planned[index]!.entry)
+  for (const run of chunkRuns(planned)) {
+    const stream = await openChunk(cursor, script, dataOffset, run[0]!.entry)
     let position = 0
 
-    for (let at = index; at <= last; at++) {
-      const { entry, paths } = planned[at]!
+    for (const { entry, paths } of run) {
       if (entry.fileOffset < position) throw InnoFormatError.corrupt("the entries of a block do not follow each other")
 
       await stream.discard(entry.fileOffset - position)
@@ -210,22 +204,52 @@ async function writePlan(
       }
 
       done += entry.fileSize
-      if (onProgress && totalBytes > 0) {
-        const percent = Math.floor((done / totalBytes) * 100)
-        // One install lays down twenty thousand files, and every report crosses
-        // a thread boundary. Reporting per file would flood the display to paint
-        // the same pixel a hundred times.
-        if (percent !== lastPercent) {
-          lastPercent = percent
-          onProgress(done / totalBytes)
-        }
-      }
+      report(done)
     }
-
-    index = last + 1
   }
 
   return filesWritten
+}
+
+/**
+ * Cuts the plan into the runs of neighbours that share one data block.
+ *
+ * The plan arrives in stream order, so everything a block holds already sits
+ * together; a run is exactly what one unrolling of that block covers.
+ */
+function chunkRuns(planned: readonly PlannedFile[]): PlannedFile[][] {
+  const runs: PlannedFile[][] = []
+  let index = 0
+
+  while (index < planned.length) {
+    const chunkOffset = planned[index]!.entry.chunkOffset
+    let last = index
+    while (last + 1 < planned.length && planned[last + 1]!.entry.chunkOffset === chunkOffset) last++
+
+    runs.push(planned.slice(index, last + 1))
+    index = last + 1
+  }
+
+  return runs
+}
+
+/**
+ * Progress that only speaks up when the whole percent changes.
+ *
+ * One install lays down twenty thousand files, and every report crosses a
+ * thread boundary. Reporting per file would flood the display to paint the same
+ * pixel a hundred times.
+ */
+function percentProgress(totalBytes: number, onProgress?: (fraction: number) => void): (done: number) => void {
+  if (!onProgress || totalBytes <= 0) return (): void => {}
+
+  let lastPercent = -1
+  return (done: number): void => {
+    const percent = Math.floor((done / totalBytes) * 100)
+    if (percent === lastPercent) return
+    lastPercent = percent
+    onProgress(done / totalBytes)
+  }
 }
 
 function verifyDigest(ports: InnoExtractionPorts, contents: Uint8Array, entry: InnoDataEntry, relativePath: string): void {
