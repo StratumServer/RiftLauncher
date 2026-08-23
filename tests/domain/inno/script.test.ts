@@ -84,26 +84,12 @@ describe("readSetupScript: every table the primary block can carry", () => {
 })
 
 describe("readSetupScript: version switches", () => {
-  it("reads 6.4.0's layout: old wizard colours, no CloseApplicationsFilterExcludes, old location record", () => {
-    const spec: InstallerSpec = { version: "6.4.0", files: ONE_FILE }
-    const { primary, secondary } = blocksFor(spec)
-    const script = readSetupScript(parseVersion(spec.version), primary, secondary)
-
-    expect(script.files).toHaveLength(1)
-    expect(script.dataEntries).toHaveLength(1)
-  })
-
-  it("reads 6.4.2's layout: flat wizard colours, CloseApplicationsFilterExcludes present, still the old location record", () => {
-    const spec: InstallerSpec = { version: "6.4.2", files: ONE_FILE }
-    const { primary, secondary } = blocksFor(spec)
-    const script = readSetupScript(parseVersion(spec.version), primary, secondary)
-
-    expect(script.files).toHaveLength(1)
-    expect(script.dataEntries).toHaveLength(1)
-  })
-
-  it("reads 6.4.3's layout: the compact location record", () => {
-    const spec: InstallerSpec = { version: "6.4.3", files: ONE_FILE }
+  it.each([
+    ["6.4.0", "old wizard colours, no CloseApplicationsFilterExcludes, old location record"],
+    ["6.4.2", "flat wizard colours, CloseApplicationsFilterExcludes present, still the old location record"],
+    ["6.4.3", "the compact location record"]
+  ])("reads %s's layout: %s", (version) => {
+    const spec: InstallerSpec = { version, files: ONE_FILE }
     const { primary, secondary } = blocksFor(spec)
     const script = readSetupScript(parseVersion(spec.version), primary, secondary)
 
