@@ -104,12 +104,34 @@ export async function extractInnoPayload(ports: InnoExtractionPorts, options: In
  * of no interest, unrolls it once.
  */
 export function buildPlan(script: InnoSetupScript): PlannedFile[] {
-  // One data entry can serve SEVERAL destinations: the installer stores content
-  // it lays down twice only once, and the game's fonts are exactly that case,
-  // one copy under {app} and one in the system font folder. Indexing by location
-  // rather than by destination is what keeps the stream read to one pass, but
-  // every destination of each has to be kept, otherwise the day two paths under
-  // {app} share content one of them would go missing without a word.
+  const destinations = collectDestinationsByLocation(script)
+  if (destinations.size === 0) throw InnoFormatError.corrupt("no file destined for the install folder")
+
+  const planned: PlannedFile[] = []
+  for (const [location, paths] of destinations) {
+    const entry = script.dataEntries[location]!
+    if (entry.encrypted) throw InnoFormatError.unsupported("encrypted data")
+    if (entry.fileSize > MAX_FILE_BYTES) throw InnoFormatError.corrupt(`an entry of ${entry.fileSize} bytes`)
+    planned.push({ entry, paths })
+  }
+
+  planned.sort(byStreamOrder)
+
+  return planned
+}
+
+/**
+ * Gathers every destination under the version folder, keyed by the data entry
+ * that feeds it.
+ *
+ * One data entry can serve SEVERAL destinations: the installer stores content
+ * it lays down twice only once, and the game's fonts are exactly that case,
+ * one copy under {app} and one in the system font folder. Indexing by location
+ * rather than by destination is what keeps the stream read to one pass, but
+ * every destination of each has to be kept, otherwise the day two paths under
+ * {app} share content one of them would go missing without a word.
+ */
+function collectDestinationsByLocation(script: InnoSetupScript): Map<number, string[]> {
   const destinations = new Map<number, string[]>()
 
   for (const file of script.files) {
@@ -131,27 +153,22 @@ export function buildPlan(script: InnoSetupScript): PlannedFile[] {
     if (!paths.some((known) => known.toLowerCase() === relativePath.toLowerCase())) paths.push(relativePath)
   }
 
-  if (destinations.size === 0) throw InnoFormatError.corrupt("no file destined for the install folder")
+  return destinations
+}
 
-  const planned: PlannedFile[] = []
-  for (const [location, paths] of destinations) {
-    const entry = script.dataEntries[location]!
-    if (entry.encrypted) throw InnoFormatError.unsupported("encrypted data")
-    if (entry.fileSize > MAX_FILE_BYTES) throw InnoFormatError.corrupt(`an entry of ${entry.fileSize} bytes`)
-    planned.push({ entry, paths })
-  }
-
-  // The size breaks ties, and that is not a flourish: an EMPTY file shares its
-  // offset with the one that follows, since it takes up nothing. Sorting by
-  // growing size puts the empty file first, where reading zero bytes bothers
-  // nobody.
-  planned.sort((left, right) => {
-    if (left.entry.chunkOffset !== right.entry.chunkOffset) return left.entry.chunkOffset - right.entry.chunkOffset
-    if (left.entry.fileOffset !== right.entry.fileOffset) return left.entry.fileOffset - right.entry.fileOffset
-    return left.entry.fileSize - right.entry.fileSize
-  })
-
-  return planned
+/**
+ * Orders two planned files the way the stream hands them over: by block, then
+ * by position inside the block.
+ *
+ * The size breaks ties, and that is not a flourish: an EMPTY file shares its
+ * offset with the one that follows, since it takes up nothing. Sorting by
+ * growing size puts the empty file first, where reading zero bytes bothers
+ * nobody.
+ */
+function byStreamOrder(left: PlannedFile, right: PlannedFile): number {
+  if (left.entry.chunkOffset !== right.entry.chunkOffset) return left.entry.chunkOffset - right.entry.chunkOffset
+  if (left.entry.fileOffset !== right.entry.fileOffset) return left.entry.fileOffset - right.entry.fileOffset
+  return left.entry.fileSize - right.entry.fileSize
 }
 
 async function writePlan(
