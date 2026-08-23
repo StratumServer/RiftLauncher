@@ -114,7 +114,8 @@ export function useQueryMods(): ({
       filters.push(`orderby=${orderBy}`)
       filters.push(`orderdirection=${orderByOrder}`)
 
-      const requestPath = `/mods${filters.length > 0 && `?${filters.join("&")}`}`
+      const queryString = filters.length > 0 ? `?${filters.join("&")}` : ""
+      const requestPath = `/mods${queryString}`
 
       const cached = getCachedQuery(requestPath)
       if (cached) {
