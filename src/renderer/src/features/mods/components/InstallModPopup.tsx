@@ -113,7 +113,7 @@ function InstallModPopup({
                     <TableCell className="w-2/12 flex gap-2 items-center justify-center text-lg">
                       {installation && compatibility && (
                         <FormButton
-                          disabled={installation.oldMod && installation.oldMod.version === release.modversion}
+                          disabled={installation.oldMod?.version === release.modversion}
                           onClick={async () => {
                             if (installation.installation._backuping || installation.installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
 
