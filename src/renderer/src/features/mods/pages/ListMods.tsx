@@ -164,7 +164,7 @@ function ListMods(): JSX.Element {
     if (installedFilter === "not-installed")
       mods = mods.filter((mod) => !installationInstalledMods.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid)))
 
-    if (onlyFav) mods = mods.filter((mod) => favMods.some((fm) => fm === mod.modid))
+    if (onlyFav) mods = mods.filter((mod) => favMods.includes(mod.modid))
 
     setModsList(mods)
     setSearching(false)
@@ -202,7 +202,7 @@ function ListMods(): JSX.Element {
 
   const onToggleFavMod = useCallback(
     (mod: DownloadableModOnListType): void => {
-      if (favMods.some((modid) => modid === mod.modid)) {
+      if (favMods.includes(mod.modid)) {
         configDispatch({ type: CONFIG_ACTIONS.REMOVE_FAV_MOD, payload: { modid: mod.modid } })
       } else {
         configDispatch({ type: CONFIG_ACTIONS.ADD_FAV_MOD, payload: { modid: mod.modid } })
@@ -274,7 +274,7 @@ function ListMods(): JSX.Element {
           visibleCount={visibleMods}
           searching={searching}
           isModInstalled={(mod) => Boolean(installationInstalledMods?.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid)))}
-          isModFav={(mod) => favMods.some((modid) => modid === mod.modid)}
+          isModFav={(mod) => favMods.includes(mod.modid)}
           onSelectMod={onSelectMod}
           onToggleFavMod={onToggleFavMod}
           onOpenModDb={onOpenModDb}
@@ -287,7 +287,7 @@ function ListMods(): JSX.Element {
           installation={
             installation && {
               installation: installation,
-              oldMod: installationInstalledMods?.find((iMod) => modToInstall?.modidstrs.some((modidstr) => modidstr === iMod.modid))
+              oldMod: installationInstalledMods?.find((iMod) => modToInstall?.modidstrs.includes(iMod.modid))
             }
           }
           onFinishInstallation={() => {

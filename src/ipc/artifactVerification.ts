@@ -42,7 +42,7 @@ function findManifestHash(value: unknown, downloadUrl: string): string | undefin
   const urls = value.urls
   if (isRecord(urls)) {
     const candidateUrls = [urls.cdn, urls.local]
-    if (candidateUrls.some((candidate) => candidate === downloadUrl) && isMd5(value.md5)) return value.md5.toLowerCase()
+    if (candidateUrls.includes(downloadUrl) && isMd5(value.md5)) return value.md5.toLowerCase()
   }
 
   for (const child of Object.values(value)) {
