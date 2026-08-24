@@ -11,8 +11,8 @@ const LOG_TAG = "[front] [config] [features/config/hooks/useAddCustomIcon.ts] [u
  * `CONFIG_ACTIONS.ADD_CUSTOM_ICON`.
  *
  * Kept in features/config/hooks rather than under components/ui, where AddCustomIconPupup.tsx
- * lives: stage 4's exit gate fails if anything under src/renderer/src/components mentions the
- * preload bridge directly.
+ * lives, because nothing under src/renderer/src/components may touch the preload bridge
+ * directly.
  */
 export function useAddCustomIcon(): () => Promise<{ id: string; file: string } | undefined> {
   const { t } = useTranslation()
