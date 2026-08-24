@@ -42,7 +42,7 @@ export function AddCustomIconPupup({ open, setOpen }: Readonly<{ open: boolean; 
                   }}
                   className="w-14 h-14 p-1 shrink-0"
                 >
-                  {file ? <img src={`icons:${file}`} alt={t("generic.icon")} /> : <PiPlusCircleDuotone className="text-3xl text-zinc-400/25 group-hover:scale-95 duration-200" />}
+                  {file ? <img src={`icons:${file}`} alt={t("generic.icon")} /> : <PiPlusCircleDuotone className="text-3xl text-zinc-400/70 group-hover:scale-95 duration-200" />}
                 </FormButton>
                 <FormInputText value={name} onChange={(e) => setName(e.target.value)} placeholder={t("generic.iconName")} className="w-full" />
               </FormFieldGroup>

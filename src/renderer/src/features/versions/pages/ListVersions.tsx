@@ -83,12 +83,12 @@ function ListVersions(): JSX.Element {
             <div className="flex gap-2">
               <ListItem className="group">
                 <LinkButton to="/versions/add" title={t("features.versions.installNewVersion")} className="w-full h-8">
-                  <PiPlusCircleDuotone className="text-xl text-zinc-400/25 group-hover:scale-95 duration-200" />
+                  <PiPlusCircleDuotone className="text-xl text-zinc-400/70 group-hover:scale-95 duration-200" />
                 </LinkButton>
               </ListItem>
               <ListItem className="group">
                 <LinkButton to="/versions/look-for-a-version" title={t("features.versions.searchForAGameVersion")} className="w-full h-8">
-                  <PiMagnifyingGlassDuotone className="text-xl text-zinc-400/25 group-hover:scale-95 duration-200" />
+                  <PiMagnifyingGlassDuotone className="text-xl text-zinc-400/70 group-hover:scale-95 duration-200" />
                 </LinkButton>
               </ListItem>
             </div>

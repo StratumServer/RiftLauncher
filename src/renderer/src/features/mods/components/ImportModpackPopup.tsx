@@ -270,7 +270,7 @@ function statusColor(status: ModStatus): string {
     case "downloading":
       return "text-blue-400"
     case "pending":
-      return "text-zinc-500"
+      return "text-zinc-400"
     default:
       return "text-red-400"
   }

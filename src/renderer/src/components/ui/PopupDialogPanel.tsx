@@ -27,7 +27,7 @@ function PopupDialogPanel({
             exit="exit"
             className={clsx(
               "relative w-full h-full flex flex-col justify-center items-center rounded-md bg-image-vs bg-center bg-cover",
-              "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:backdrop-blur-[2px] before:bg-zinc-950/15"
+              "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:backdrop-blur-[2px] before:bg-zinc-950/70"
             )}
           >
             <motion.div
@@ -37,7 +37,7 @@ function PopupDialogPanel({
               exit="exit"
               className={clsx(
                 "relative flex flex-col justify-center items-center rounded-md p-2",
-                "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:rounded-md before:backdrop-blur-sm before:bg-zinc-950/15 before:shadow-sm before:shadow-zinc-950/50 before:border before:border-zinc-400/5"
+                "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:rounded-md before:backdrop-blur-sm before:bg-zinc-950/40 before:shadow-sm before:shadow-zinc-950/50 before:border before:border-zinc-400/5"
               )}
             >
               <DialogPanel className={clsx("relative flex flex-col gap-4 text-center p-6 rounded-lg backdrop-blur-x", fixedWidth && "w-[40rem]")}>
