@@ -18,7 +18,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
-import { registerAutoUpdaterEvents } from "@src/main/autoUpdaterEvents"
+import { registerAutoUpdaterEvents, scheduleUpdateCheck } from "@src/main/autoUpdaterEvents"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
@@ -314,34 +314,13 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
     })
 
-    // Said out loud rather than left to electron-updater, which reads it off the running version
-    // alone: that leaves someone on a stable build with no way to ask for betas, and someone who
-    // tried one beta signed up for every beta after it. The stored answer wins when there is one,
-    // and the running version still decides when there is not. Only which builds are offered moves
-    // here; allowDowngrade stays untouched, so this can never walk an install backwards.
-    autoUpdater.allowPrerelease = resolveAllowPrerelease((await getConfig()).receiveBetaUpdates, app.getVersion())
-
-    // Defer the network check until the initial window has had time to become interactive.
-    //
-    // checkForUpdates, not checkForUpdatesAndNotify: the "AndNotify" half only
-    // ever fires an OS notification off the download promise the check returns,
-    // and with autoDownload off (registerAutoUpdaterEvents) there is no such
-    // promise, so the two calls now do exactly the same thing. Saying
-    // checkForUpdates keeps that honest, and leaves no second, OS-level
-    // announcement racing the in-app one the renderer draws.
-    //
-    // The catch is not optional. Launching a packaged build with no network at
-    // all rejects this promise, and an unhandled rejection in the main process
-    // is a crash report waiting to happen for what is an entirely ordinary
-    // situation. electron-updater's own "error" event still fires, so the
-    // renderer hears about it the usual way; this only keeps the rejection of
-    // that same failure from going nowhere.
-    const updateCheckTimer = setTimeout(() => {
-      void autoUpdater.checkForUpdates().catch((error) => {
-        logMessage("info", `[back] [index] [main/index.ts] [whenReady] Update check failed: ${error instanceof Error ? error.message : String(error)}.`)
-      })
-    }, 5_000)
-    updateCheckTimer.unref()
+    // Who gets offered a beta, said out loud rather than left to electron-updater, which reads it
+    // off the running version alone: that leaves someone on a stable build with no way to ask for
+    // betas, and someone who tried one beta signed up for every beta after it. The stored answer
+    // wins when there is one, and the running version still decides when there is not. Read inside
+    // the callback, so the answer the check uses is the one the settings page has stored by then
+    // rather than the one it had at launch.
+    scheduleUpdateCheck(async () => resolveAllowPrerelease((await getConfig()).receiveBetaUpdates, app.getVersion()))
   } else {
     logMessage("info", `[back] [index] [main/index.ts] [whenReady] Auto-update disabled: ${updateDecision.reason}.`)
   }

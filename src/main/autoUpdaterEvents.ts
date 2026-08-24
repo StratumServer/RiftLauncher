@@ -1,7 +1,9 @@
 import { autoUpdater } from "electron-updater"
+import { setTimeout } from "node:timers"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { markUpdateAvailable, markUpdateDownloaded, resetUpdateDownload } from "@src/ipc/handlers/appUpdaterHandlers"
+import { logMessage } from "@src/utils/logManager"
 
 /** Sends one main-to-renderer message, or does nothing when there is no live window to send it to. */
 export type SendToRenderer = (channel: string, payload?: unknown) => void
@@ -13,6 +15,47 @@ export type SendToRenderer = (channel: string, payload?: unknown) => void
  * have to reconstruct which offer a stream of percentages belongs to.
  */
 let offeredVersion = ""
+
+/** How long a launch gets to become interactive before the check goes anywhere near the network. */
+const UPDATE_CHECK_DELAY_MS = 5_000
+
+/**
+ * Arms the one update check a launch makes.
+ *
+ * `readAllowPrerelease` is called when the check fires, not when it is armed, and that is the whole
+ * point of it being a function. The answer comes from a setting the player can change while the
+ * launcher is running, and reading it early would mean a change made in that window is silently
+ * ignored with nothing on screen saying so. Resolving it is a config read and a string check, so
+ * doing it per check costs nothing worth saving.
+ *
+ * Only which builds are offered moves here; allowDowngrade stays untouched, so this can never walk
+ * an install backwards.
+ *
+ * Deferred so the initial window has had time to become interactive.
+ *
+ * checkForUpdates, not checkForUpdatesAndNotify: the "AndNotify" half only ever fires an OS
+ * notification off the download promise the check returns, and with autoDownload off
+ * (registerAutoUpdaterEvents) there is no such promise, so the two calls now do exactly the same
+ * thing. Saying checkForUpdates keeps that honest, and leaves no second, OS-level announcement
+ * racing the in-app one the renderer draws.
+ *
+ * The catch is not optional. Launching a packaged build with no network at all rejects this
+ * promise, and an unhandled rejection in the main process is a crash report waiting to happen for
+ * what is an entirely ordinary situation. electron-updater's own "error" event still fires, so the
+ * renderer hears about it the usual way; this only keeps the rejection of that same failure from
+ * going nowhere.
+ */
+export function scheduleUpdateCheck(readAllowPrerelease: () => Promise<boolean>, delayMs: number = UPDATE_CHECK_DELAY_MS): void {
+  const timer = setTimeout(() => {
+    void (async (): Promise<void> => {
+      autoUpdater.allowPrerelease = await readAllowPrerelease()
+      await autoUpdater.checkForUpdates()
+    })().catch((error) => {
+      logMessage("info", `[back] [autoUpdaterEvents] [main/autoUpdaterEvents.ts] [scheduleUpdateCheck] Update check failed: ${error instanceof Error ? error.message : String(error)}.`)
+    })
+  }, delayMs)
+  timer.unref()
+}
 
 /** Percent as a whole number between 0 and 100, the shape every other task in the app reports. */
 export function toTaskProgress(percent: number): number {
