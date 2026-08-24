@@ -1,5 +1,6 @@
 /**
- * The up/down controls on the Installations list (issue #203).
+ * The up/down controls on the Installations list (issue #203), and the
+ * main-menu picker showing that same order rather than its mirror (issue #214).
  *
  * The list renders `installations` in array order with nothing sorting it, so
  * these tests read the order straight off the rendered rows and off the config
@@ -15,6 +16,7 @@ import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import ListInstallations from "@renderer/features/installations/pages/ListInstallations"
+import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
@@ -110,5 +112,21 @@ describe("ListInstallations reordering", () => {
     expect(buttonsOf(rows[0]!)[1]!.hasAttribute("disabled")).toBe(false)
     expect(buttonsOf(rows[2]!)[0]!.hasAttribute("disabled")).toBe(false)
     expect(buttonsOf(rows[2]!)[1]!.hasAttribute("disabled")).toBe(true)
+  })
+})
+
+describe("main menu Installations picker", () => {
+  it("lists the Installations in the order the config holds, so both screens agree", async () => {
+    const user = userEvent.setup()
+    const installations = [anInstallation(), anInstallation({ id: "install-b", name: "Install B", path: "/games/b" }), anInstallation({ id: "install-c", name: "Install C", path: "/games/c" })]
+
+    installMockWindowApi({ configManager: { getConfig: vi.fn(async () => createMockConfig({ installations, lastUsedInstallation: "install-a" })) } })
+    renderWithProviders(<InstallationsDropdownMenu />)
+
+    // The only button here is the picker's own, showing the selected Installation.
+    await user.click(await screen.findByRole("button"))
+
+    const options = await screen.findAllByRole("option")
+    expect(options.map((option) => within(option).getByText(/^Install [A-Z]$/).textContent)).toEqual(["Install A", "Install B", "Install C"])
   })
 })
