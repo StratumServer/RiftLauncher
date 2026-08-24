@@ -10,7 +10,7 @@
  */
 export function normalizeFolderForComparison(folder: string, platform: "win32" | "posix" = detectPlatform(folder)): string {
   let normalized = folder.replace(/[\\/]+$/, "")
-  if (platform === "win32") normalized = normalized.replace(/\\/g, "/").toLowerCase()
+  if (platform === "win32") normalized = normalized.replaceAll("\\", "/").toLowerCase()
   return normalized
 }
 

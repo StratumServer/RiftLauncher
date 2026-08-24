@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next"
 import clsx from "clsx"
 
 import { deleteInstallation } from "@domain/installations/delete"
-import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
+import { installationIconSrc } from "@renderer/utils/installationIcons"
 
 import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -118,17 +118,7 @@ function ListInslallations(): JSX.Element {
               return (
                 <ListItem key={installation.id}>
                   <div className="h-16 flex gap-2 p-1 justify-between items-center whitespace-nowrap">
-                    <img
-                      src={
-                        INSTALLATION_ICONS.some((ii) => ii.id === installation.icon)
-                          ? INSTALLATION_ICONS.find((ii) => ii.id === installation.icon)?.icon
-                          : customIcons.some((ii) => ii.id === installation.icon)
-                            ? `icons:${customIcons.find((ii) => ii.id === installation.icon)?.icon}`
-                            : INSTALLATION_ICONS[0].icon
-                      }
-                      alt={t("generic.icon")}
-                      className="h-full aspect-square object-cover rounded-sm"
-                    />
+                    <img src={installationIconSrc(installation.icon, customIcons)} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
 
                     <ThinSeparator />
 

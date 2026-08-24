@@ -332,7 +332,7 @@ export function resolveContainedPath(root: string, relativePath: string): string
   if (decodedPath.includes("\0")) return null
 
   const safeRelativePath = decodedPath.replace(/^[/\\]+/, "")
-  if (!safeRelativePath || safeRelativePath.split(/[\\/]+/).some((part) => part === "..")) return null
+  if (!safeRelativePath || safeRelativePath.split(/[\\/]+/).includes("..")) return null
 
   const resolvedRoot = resolve(root)
   const resolvedPath = resolve(resolvedRoot, safeRelativePath)
@@ -346,10 +346,10 @@ export function resolveContainedPath(root: string, relativePath: string): string
 export function isSafeArchiveEntry(entryName: unknown): entryName is string {
   if (typeof entryName !== "string" || entryName.length === 0 || entryName.length > MAX_PATH_LENGTH || entryName.includes("\0")) return false
 
-  const normalizedName = entryName.replace(/\\/g, "/")
+  const normalizedName = entryName.replaceAll("\\", "/")
   if (normalizedName.startsWith("/") || /^[A-Za-z]:\//.test(normalizedName)) return false
 
-  return !normalizedName.split("/").some((part) => part === "..")
+  return !normalizedName.split("/").includes("..")
 }
 
 const RESTORE_WORKSPACE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/

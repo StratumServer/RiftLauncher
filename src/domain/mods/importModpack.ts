@@ -109,7 +109,7 @@ function installedFor(installed: readonly InstalledModSnapshot[], modid: string)
 
 /** The installed copy that already answers this entry exactly, when there is one and nothing has to happen. */
 function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | undefined): InstalledModSnapshot | undefined {
-  return existing !== undefined && existing.version === entry.version ? existing : undefined
+  return existing?.version === entry.version ? existing : undefined
 }
 
 /**

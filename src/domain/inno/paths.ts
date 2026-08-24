@@ -32,7 +32,7 @@ export function relativeAppPath(destination: string): string | undefined {
  * @returns Forward slash path, or undefined when it must not be written.
  */
 export function safeRelativePath(storedPath: string): string | undefined {
-  const normalized = storedPath.replace(/\\/g, "/")
+  const normalized = storedPath.replaceAll("\\", "/")
   // Refused rather than quietly turned relative: an entry naming the root meant
   // to write to the root.
   if (normalized.startsWith("/")) return undefined

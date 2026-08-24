@@ -24,7 +24,7 @@ function GlobalModUpdateChecker(): null {
       path: lastUsedInstallation.path,
       version: lastUsedInstallation.version,
       onFinish: (updates) => {
-        if (updates > 0 && !notifiedInstallations.some((installationId) => installationId === lastUsedInstallation.id)) {
+        if (updates > 0 && !notifiedInstallations.includes(lastUsedInstallation.id)) {
           configDispatch({ type: CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE, payload: { installationId: lastUsedInstallation.id } })
           window.setTimeout(() => {
             addNotification(t("features.mods.updatesAvailableInstallation", { count: updates }), "info", {
