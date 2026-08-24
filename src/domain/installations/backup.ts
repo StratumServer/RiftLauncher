@@ -88,6 +88,44 @@ function refuse(reason: MakeInstallationBackupFailure, deletedBackupIds: string[
   return { ok: false, reason, deletedBackupIds }
 }
 
+/** What pruning removed, and whether it got all the way to the limit. */
+type PruneOutcome = { ok: true; deletedBackupIds: string[] } | { ok: false; reason: "prune-failed"; deletedBackupIds: string[] }
+
+/**
+ * Removes archives from the oldest end until the installation has room for one
+ * more under its limit.
+ *
+ * Archives are held newest first, so the walk runs backwards from the end.
+ * Whatever came off is reported either way, since a caller that gives up
+ * halfway still has to mirror the deletions that did happen.
+ */
+async function pruneOldestBackups(fileSystem: FileSystem, installation: InstallationSnapshot, events: MakeInstallationBackupEvents): Promise<PruneOutcome> {
+  const deletedBackupIds: string[] = []
+  let remaining = installation.backups.length
+
+  while (remaining > 0 && remaining >= installation.backupsLimit) {
+    const oldest = installation.backups[remaining - 1]
+    if (!oldest) break
+    remaining--
+
+    const result = await deleteInstallationBackup({ fileSystem }, { backup: { id: oldest.id, path: oldest.path, isDeleting: oldest.isDeleting ?? false, isRestoring: oldest.isRestoring ?? false } })
+
+    // Already on its way out, or in, through another operation (a manual
+    // delete or restore in flight). Removing it here too would race the
+    // same file; counting it toward `remaining` without touching it is
+    // correct either way, since it will not be there (or will still be
+    // there, untouched) once that other operation finishes.
+    if (!result.ok && result.reason === "backup-in-use") continue
+
+    if (!result.ok) return { ok: false, reason: "prune-failed", deletedBackupIds }
+
+    deletedBackupIds.push(oldest.id)
+    events.onBackupDeleted?.(oldest)
+  }
+
+  return { ok: true, deletedBackupIds }
+}
+
 /**
  * Prunes old archives then compresses an installation into a new one.
  *
@@ -110,33 +148,10 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
   const release = ports.closeGuard.acquire(BACKUP_CLOSE_GUARD_REASON)
   events.onStarted?.()
 
-  const deletedBackupIds: string[] = []
-
   try {
-    let remaining = installation.backups.length
-
-    while (remaining > 0 && remaining >= installation.backupsLimit) {
-      const oldest = installation.backups[remaining - 1]
-      if (!oldest) break
-      remaining--
-
-      const result = await deleteInstallationBackup(
-        { fileSystem: ports.fileSystem },
-        { backup: { id: oldest.id, path: oldest.path, isDeleting: oldest.isDeleting ?? false, isRestoring: oldest.isRestoring ?? false } }
-      )
-
-      // Already on its way out, or in, through another operation (a manual
-      // delete or restore in flight). Removing it here too would race the
-      // same file; counting it toward `remaining` without touching it is
-      // correct either way, since it will not be there (or will still be
-      // there, untouched) once that other operation finishes.
-      if (!result.ok && result.reason === "backup-in-use") continue
-
-      if (!result.ok) return refuse("prune-failed", deletedBackupIds)
-
-      deletedBackupIds.push(oldest.id)
-      events.onBackupDeleted?.(oldest)
-    }
+    const pruned = await pruneOldestBackups(ports.fileSystem, installation, events)
+    const { deletedBackupIds } = pruned
+    if (!pruned.ok) return refuse(pruned.reason, deletedBackupIds)
 
     const date = ports.clock.now()
     // Falls back to a slice of the installation id when the name sanitises
