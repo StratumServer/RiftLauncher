@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
+import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve as resolvePath } from "node:path"
@@ -16,6 +17,7 @@ import { clearAppEventListeners, createTrustedEvent, createUntrustedEvent, emitA
 import { shell } from "electron"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
 
 /**
  * Branch coverage for src/ipc/handlers/pathsHandlers.ts, previously entirely
@@ -472,11 +474,51 @@ describe("COPY_TO_ICONS", () => {
     assert_refused(await copyIcon(join(managedFolder, "Pictures", "icon.png")), "source-unavailable")
   })
 
-  it("refuses a folder that happens to be named like a png as copy-failed", async () => {
+  // Nothing is read from a source that is not a plain file. Deleting the
+  // isFile() check in COPY_TO_ICONS fails this row and the FIFO one below.
+  it("refuses a folder that happens to be named like a png as source-unavailable", async () => {
     const sourceFolder = join(managedFolder, "folder.png")
     mkdirSync(sourceFolder, { recursive: true })
 
-    assert_refused(await copyIcon(sourceFolder), "copy-failed")
+    assert_refused(await copyIcon(sourceFolder), "source-unavailable")
+  })
+
+  it.skipIf(process.platform === "win32")("refuses a FIFO named like a png as source-unavailable", async () => {
+    const fifo = join(managedFolder, "pipe.png")
+    execFileSync("mkfifo", [fifo])
+
+    assert_refused(await copyIcon(fifo), "source-unavailable")
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(join(userDataFolder, "Icons", "my-icon.png")), false)
+  })
+
+  // Two checks refuse this, and removing either one on its own leaves the row
+  // green: the path policy's symlink walk gets there first, and the isFile()
+  // check above catches it after, since lstat reports a symlink as not a file.
+  // Only deleting both lets the link through.
+  it.skipIf(process.platform === "win32")("refuses a symlink standing in for the picked png as source-unavailable", async () => {
+    const target = join(managedFolder, "real.png")
+    writeFileSync(target, PNG)
+    symlinkSync(target, join(managedFolder, "link.png"))
+
+    assert_refused(await copyIcon(join(managedFolder, "link.png")), "source-unavailable")
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(join(userDataFolder, "Icons", "my-icon.png")), false)
+  })
+
+  // The parity row for the background flow's ceiling: refused on the size lstat
+  // reports, before a byte of it is read. Deleting the MAX_CUSTOM_ICON_BYTES
+  // check fails here.
+  it("refuses a png past the icon ceiling as too-large", async () => {
+    const sourceFile = join(managedFolder, "icon.png")
+    writeFileSync(sourceFile, Buffer.concat([PNG, Buffer.alloc(MAX_CUSTOM_ICON_BYTES)]))
+
+    assert_refused(await copyIcon(sourceFile), "too-large")
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(join(userDataFolder, "Icons", "my-icon.png")), false)
   })
 
   // The parity row for the background flow's magic-byte gate (#211): the name
