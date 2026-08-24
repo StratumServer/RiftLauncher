@@ -184,6 +184,23 @@ describe("fetchModDbListingArchive", () => {
       `expected the counted-outcome line, got ${JSON.stringify(mockState.logLines)}`
     )
   })
+
+  it("does not read a redirect out of the detail request as a count, since nothing was requested yet", async () => {
+    // The detail request runs before any file id exists, so it cannot have registered anything. A
+    // redirect there means the API moved. Calling it counted would put a download in the log that
+    // never happened, and would quietly retire the question on a launch that achieved nothing.
+    mockState.requestBoundedText.mockRejectedValue(new Error("Attempted to redirect, but redirect policy was 'error'"))
+    const { fetchModDbListingArchive } = await freshHandlers()
+
+    await fetchModDbListingArchive()
+
+    assert.equal(mockState.requestBoundedBuffer.mock.calls.length, 0)
+    assert.equal(
+      mockState.logLines.some((line) => line.includes("counted outcome")),
+      false,
+      `expected no counted-outcome line, got ${JSON.stringify(mockState.logLines)}`
+    )
+  })
 })
 
 describe("acceptModDbVisibility", () => {

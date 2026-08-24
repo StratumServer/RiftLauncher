@@ -69,19 +69,28 @@ let listingArchiveRequested = false
  * already been incremented by the time the site issues one, so the CDN bytes are never even
  * transferred). This is a courtesy the player offered, not a task they are waiting on, so a failure
  * is logged at debug and forgotten rather than retried or reported.
+ *
+ * The two requests get a `try` each rather than sharing one, so which of them failed is never in
+ * doubt. Only the second can be a counted outcome: the first runs before any file id exists, and a
+ * redirect out of it means the API moved, not that anything was registered.
  */
 export async function fetchModDbListingArchive(): Promise<void> {
   if (listingArchiveRequested) return
   listingArchiveRequested = true
 
+  let fileId: number | undefined
+
   try {
     const detailUrl = assertAllowedApiUrl(MODDB_LISTING_DETAIL_URL)
     const detail = parseModDetailResponse(await requestBoundedText(detailUrl, { maxBytes: getApiUrlMaxBytes(detailUrl) }))
-    if (!detail.ok) return
+    if (detail.ok) fileId = newestReleaseFileId(detail.payload)
+  } catch (err) {
+    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [ACCEPT_MODDB_VISIBILITY] ${getErrorMessage(err)}`)
+  }
 
-    const fileId = newestReleaseFileId(detail.payload)
-    if (fileId === undefined) return
+  if (fileId === undefined) return
 
+  try {
     await requestBoundedBuffer(assertAllowedDownloadUrl(moddbListingDownloadUrl(fileId)), { maxBytes: MAX_MODDB_LISTING_RESPONSE_BYTES })
   } catch (err) {
     const message = getErrorMessage(err)
