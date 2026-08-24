@@ -22,5 +22,5 @@ description: Small index of terms used in the launcher.
 **Servers** contains both the **Version** and the **Installation** on the same folder and they will only work as server, not as client.
 
 {% hint style="info" %}
-Servers are under development. They will be available in the future.
+RiftLauncher does not create or manage **Servers** today, and nothing on the issue tracker is building it. The term is here because you'll meet it around the game and because the Mods page can export a server-side modpack.
 {% endhint %}

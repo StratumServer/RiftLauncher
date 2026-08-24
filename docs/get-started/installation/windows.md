@@ -19,16 +19,14 @@ On that page you'll see all the available versions to download.
 
 ### Download the Windows version
 
-On the releases page, the first version is always the last one. There you'll see a table with the different files to download. Just click on the Windows one like on the next image:
-
-![](../../.gitbook/assets/imagen.png)
+On the releases page, the first version is always the last one. There you'll see a table with the different files to download. The Windows one is `riftlauncher-X.X.X-setup.exe`, where `X.X.X` is the version number.
 {% endstep %}
 
 {% step %}
 
 ### Install the downloaded file
 
-Double click the downloaded file and RiftLauncher will be automátically installed and opened.
+Double click the downloaded file. The installer lets you pick where to install RiftLauncher, then puts a desktop and a Start menu shortcut called **RiftLauncher** in place and opens the launcher when it's done.
 {% endstep %}
 
 {% step %}
