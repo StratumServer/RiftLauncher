@@ -1,6 +1,6 @@
 import { Trans, useTranslation } from "react-i18next"
 
-import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
+import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 
 import { NormalButton } from "@renderer/components/ui/Buttons"
 
@@ -16,7 +16,7 @@ const DISCORD_URL = "https://discord.gg/vQm6z2urZs"
  */
 function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: Readonly<{ titleKey: string; descriptionKey: string; reportKey: string }>): JSX.Element {
   const { t } = useTranslation()
-  const openExternalLink = useOpenExternalLink()
+  const { openOnBrowser: openExternalLink } = useExternalLinks()
 
   return (
     <div className="flex flex-col gap-1">

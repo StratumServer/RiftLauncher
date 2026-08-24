@@ -25,7 +25,6 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { createDeleteInstallationPorts, describeDeleteInstallationFailure, toInstallationDeleteSnapshot } from "@renderer/features/installations/adapters/delete"
 import { useCheckPathExists, useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
-import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -48,7 +47,6 @@ function ListInslallations(): JSX.Element {
   const makeInstallationBackup = useMakeInstallationBackup()
   const checkPathExists = useCheckPathExists()
   const openPathInExplorer = useOpenPathInExplorer()
-  const logMessage = useLogMessage()
 
   const [installationToDelete, setInstallationToDelete] = useState<InstallationType | null>(null)
   const [deleteData, setDeleData] = useState<boolean>(false)
@@ -67,8 +65,8 @@ function ListInslallations(): JSX.Element {
         const { messageKey, logged } = describeDeleteInstallationFailure(result.reason)
 
         if (logged) {
-          logMessage("error", `${LOG_TAG} Error deleting an Installation.`)
-          logMessage("debug", `${LOG_TAG} Error deleting Installation ${installation.id}: ${result.reason}.`)
+          window.api.utils.logMessage("error", `${LOG_TAG} Error deleting an Installation.`)
+          window.api.utils.logMessage("debug", `${LOG_TAG} Error deleting Installation ${installation.id}: ${result.reason}.`)
         }
 
         return addNotification(t(messageKey), "error")
@@ -77,8 +75,8 @@ function ListInslallations(): JSX.Element {
       configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION, payload: { id: installation.id } })
 
       if (result.failedBackupPaths.length > 0) {
-        logMessage("error", `${LOG_TAG} Installation deleted but some backups survived.`)
-        logMessage("debug", `${LOG_TAG} Backups left over for Installation ${installation.id}: ${result.failedBackupPaths.join(", ")}.`)
+        window.api.utils.logMessage("error", `${LOG_TAG} Installation deleted but some backups survived.`)
+        window.api.utils.logMessage("debug", `${LOG_TAG} Backups left over for Installation ${installation.id}: ${result.failedBackupPaths.join(", ")}.`)
         return addNotification(t("features.installations.installationDeletedBackupsLeftOver", { count: result.failedBackupPaths.length }), "warning")
       }
 

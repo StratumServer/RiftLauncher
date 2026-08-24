@@ -1,5 +1,4 @@
 import { useTranslation } from "react-i18next"
-import { v4 as uuidv4 } from "uuid"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { describeAddCustomIconFailure, type AddCustomIconFailure } from "@renderer/features/config/adapters/customIcon"
@@ -44,7 +43,7 @@ export function useAddCustomIcon(): () => Promise<{ id: string; file: string } |
 
     if (!selectedPath || selectedPath.length < 1) return refuse("no-file-selected")
 
-    const id = uuidv4()
+    const id = crypto.randomUUID()
 
     try {
       const result = await window.api.pathsManager.copyToIcons(selectedPath, id)

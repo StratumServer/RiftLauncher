@@ -164,32 +164,16 @@ declare global {
     text: string
     author: string
     urlalias: string | null
-    logofilename: string | null
-    logofile: string | null
     homepageurl: string | null
     sourcecodeurl: string | null
-    trailervideourl: string | null
-    issuetrackerurl: string | null
-    wikiurl: string | null
     downloads: number
     follows: number
     trendingpoints: number
     comments: number
     side: string
-    tuype: string
     createdat: string
-    lasmodified: string
     tags: string[]
     releases: DownloadableModReleaseType[]
-    screenshots: DownloadableModScreenshotType[]
-  }
-
-  type DownloadableModScreenshotType = {
-    fileid: number
-    mainfile: string
-    filename: string
-    thumbnailfile: string
-    createdat: string
   }
 
   type DownloadableModReleaseType = {

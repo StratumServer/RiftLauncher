@@ -36,7 +36,7 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.startInstall("Install", "desc", "none", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, null))
@@ -51,7 +51,7 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.startInstall("Install", "desc", "none", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalled())
@@ -69,7 +69,7 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.startInstall("Install", "desc", "none", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalled())
@@ -79,12 +79,11 @@ describe("TaskManagerContext.startInstall", () => {
   })
 
   /**
-   * The tests above all pass notifications: "none", so they never exercise
-   * showsStart/showsSuccess/showsError's true side for startInstall (PR #41's
-   * gating). These two pin that a verbose mode shows the same start/success/
-   * error toasts startDownload/startExtract/startCompress show.
+   * The tests above only ever look at onFinish, so they never pin which toasts
+   * startInstall raises (PR #41's gating). These two pin that both modes gate
+   * startInstall the same way startDownload/startExtract/startCompress are gated.
    */
-  it("shows the start and success toasts when RUN_INSTALLER reports ok with a verbose mode", async () => {
+  it("shows the start and success toasts when RUN_INSTALLER reports ok in mode=progress", async () => {
     installMockWindowApi({
       pathsManager: { runInstaller: vi.fn(async () => ({ ok: true }) as InstallerRunResult) }
     })
@@ -93,14 +92,14 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.task.startInstall("Install", "desc", "all", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.task.startInstall("Install", "desc", "progress", "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, null))
     expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "success"])
   })
 
-  it("shows the error toast when RUN_INSTALLER fails with a verbose mode", async () => {
+  it("shows the error toast when RUN_INSTALLER fails in mode=end", async () => {
     installMockWindowApi({
       pathsManager: { runInstaller: vi.fn(async () => ({ ok: false, reason: "installer-failed" }) as InstallerRunResult) }
     })
@@ -109,10 +108,10 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.task.startInstall("Install", "desc", "all", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.task.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalled())
-    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "error"])
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["error"])
   })
 })

@@ -7,7 +7,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useQueryMods } from "@renderer/features/mods/hooks/useQueryMods"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
 import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
-import { useLogMods } from "@renderer/features/mods/hooks/useLogMods"
+import { logMods } from "@renderer/features/moddb/adapters/log"
 import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
 
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -29,7 +29,6 @@ function ListMods(): JSX.Element {
   const queryMods = useQueryMods()
   const getInstalledMods = useGetInstalledMods()
   const syncModsCount = useSyncModsCount()
-  const logMods = useLogMods()
   const { openModOnModDb } = useExternalLinks()
 
   const [modsList, setModsList] = useState<DownloadableModOnListType[]>([])

@@ -10,7 +10,6 @@ import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstall
 import { toBackupSnapshot, toInstallationSnapshot } from "@renderer/features/installations/adapters/backup"
 import { createBackupDeletionPorts, createRestorePorts, describeBackupDeletionFailure, describeRestoreFailure } from "@renderer/features/installations/adapters/restore"
 import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
-import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
 
 import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -37,7 +36,6 @@ function ManageInstallationBackups(): JSX.Element {
 
   const getInstalledMods = useGetInstalledMods()
   const openPathInExplorer = useOpenPathInExplorer()
-  const logMessage = useLogMessage()
 
   const [backupToRestore, setBackupToRestore] = useState<BackupType | null>(null)
   const [backupToDelete, setBackupToDelete] = useState<BackupType | null>(null)
@@ -68,7 +66,7 @@ function ManageInstallationBackups(): JSX.Element {
           configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _restoringBackup: true } } })
           configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _restoring: true } } })
         },
-        onTemporaryFolderLeft: (path) => logMessage("error", `${LOG_TAG} [RestoreBackupHandler] Could not remove the temporary folder ${path}.`)
+        onTemporaryFolderLeft: (path) => window.api.utils.logMessage("error", `${LOG_TAG} [RestoreBackupHandler] Could not remove the temporary folder ${path}.`)
       }
     )
 
@@ -85,8 +83,8 @@ function ManageInstallationBackups(): JSX.Element {
     const { messageKey, logged } = describeRestoreFailure(result.reason)
 
     if (logged) {
-      logMessage("error", `${LOG_TAG} [RestoreBackupHandler] Error restoring a backup.`)
-      logMessage("debug", `${LOG_TAG} [RestoreBackupHandler] Error restoring a backup: ${result.reason}.`)
+      window.api.utils.logMessage("error", `${LOG_TAG} [RestoreBackupHandler] Error restoring a backup.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [RestoreBackupHandler] Error restoring a backup: ${result.reason}.`)
     }
 
     addNotification(t(messageKey, { path: result.strandedPath ?? "" }), "error")
@@ -110,8 +108,8 @@ function ManageInstallationBackups(): JSX.Element {
     const { messageKey, logged } = describeBackupDeletionFailure(result.reason)
 
     if (logged) {
-      logMessage("error", `${LOG_TAG} [DeleteBackupHandler] Error deleting a backup.`)
-      logMessage("debug", `${LOG_TAG} [DeleteBackupHandler] Error deleting the backup file ${backup.path}.`)
+      window.api.utils.logMessage("error", `${LOG_TAG} [DeleteBackupHandler] Error deleting a backup.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [DeleteBackupHandler] Error deleting the backup file ${backup.path}.`)
     }
 
     addNotification(t(messageKey), "error")
