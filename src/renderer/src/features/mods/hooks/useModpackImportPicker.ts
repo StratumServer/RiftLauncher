@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { importModpackArchive } from "@renderer/features/moddb/adapters/modsManager"
 
 export interface ModpackImportPicker {
   /** The manifest the user picked, or null while no import is being reviewed. */
@@ -24,7 +25,7 @@ export function useModpackImportPicker(): ModpackImportPicker {
   const [manifest, setManifest] = useState<ModpackManifestType | null>(null)
 
   async function pickModpack(): Promise<void> {
-    const result = await window.api.modsManager.importModpack()
+    const result = await importModpackArchive()
     if (result.success && result.manifest) {
       setManifest(result.manifest)
     } else if (result.error) {
