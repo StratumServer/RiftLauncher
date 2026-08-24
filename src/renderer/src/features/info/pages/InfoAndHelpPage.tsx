@@ -71,7 +71,7 @@ function InfoAndHelpPage(): JSX.Element {
   )
 }
 
-function SocialButtons({ icon, to, text }: { icon: JSX.Element; to: string; text: string }): JSX.Element {
+function SocialButtons({ icon, to, text }: Readonly<{ icon: JSX.Element; to: string; text: string }>): JSX.Element {
   const { openOnBrowser } = useExternalLinks()
 
   return (

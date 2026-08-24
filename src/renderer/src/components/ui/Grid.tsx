@@ -11,7 +11,7 @@ import { useRef } from "react"
  * @param {string} [props.className] - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function GridWrapper({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function GridWrapper({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return (
     <div
       className={clsx(
@@ -33,7 +33,7 @@ export function GridWrapper({ children, className }: { children: React.ReactNode
  * @param {string} [props.className] - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function GridGroup({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function GridGroup({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return (
     <motion.ul variants={GRIDGROUP_VARIANTS} initial="initial" animate="animate" exit="exit" className={clsx("relative w-full flex flex-row flex-wrap justify-center gap-4", className)}>
       <AnimatePresence>{children}</AnimatePresence>
@@ -58,13 +58,13 @@ export function GridItem({
   selected = false,
   size,
   onClick
-}: {
+}: Readonly<{
   children: React.ReactNode
   className?: string
   selected?: boolean
   size?: string
   onClick?: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const ref = useRef(null)
   // once: true, not the useInView default of false. With false, motion/react's inView()
   // never unobserves the card (see node_modules/motion's render/dom/viewport/index.mjs):

@@ -1,4 +1,4 @@
-import { createHash } from "crypto"
+import { createHash } from "node:crypto"
 import { app } from "electron"
 import fse from "fs-extra"
 import { join } from "node:path"

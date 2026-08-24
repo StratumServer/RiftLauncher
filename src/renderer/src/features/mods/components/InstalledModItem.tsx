@@ -16,14 +16,14 @@ function InstalledModItem({
   onToggleSuspendClick,
   onDeleteClick,
   onUpdateClick
-}: {
+}: Readonly<{
   iMod: InstalledModType
   /** Update All skips this Mod. The row still says an update exists, and still offers it. */
   suspended: boolean
   onToggleSuspendClick: () => void
   onDeleteClick: () => void
   onUpdateClick: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
   const openExternalLink = useOpenExternalLink()
 

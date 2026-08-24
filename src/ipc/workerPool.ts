@@ -6,7 +6,7 @@
  * the actual `new Worker(...)` call injected so it stays testable with a fake factory.
  */
 
-import type { Worker } from "worker_threads"
+import type { Worker } from "node:worker_threads"
 
 /** Whether a finished task's worker goes back in the pool or gets terminated. */
 export type WorkerDisposition = "reuse" | "discard"

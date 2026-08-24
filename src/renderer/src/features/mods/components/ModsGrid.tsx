@@ -14,7 +14,7 @@ function ModsGrid({
   onSelectMod,
   onToggleFavMod,
   onOpenModDb
-}: {
+}: Readonly<{
   mods: DownloadableModOnListType[]
   visibleCount: number
   searching: boolean
@@ -23,7 +23,7 @@ function ModsGrid({
   onSelectMod: (mod: DownloadableModOnListType) => void
   onToggleFavMod: (mod: DownloadableModOnListType) => void
   onOpenModDb: (mod: DownloadableModOnListType) => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   return (

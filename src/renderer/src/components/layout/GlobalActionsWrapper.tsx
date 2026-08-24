@@ -12,7 +12,7 @@ import { useNotifyOnPreventedAppClose } from "@renderer/features/launch/hooks/us
  * @param {ReactNode} [props.children] All the content to be rendered.
  * @returns {JSX.Element} Wrapper with NOTHING. Literally nothing. Just children. return <>{children}</>
  */
-function GlobalActionsWrapper({ children }: { children: ReactNode }): JSX.Element {
+function GlobalActionsWrapper({ children }: Readonly<{ children: ReactNode }>): JSX.Element {
   useNotifyOnPreventedAppClose()
 
   return <>{children}</>

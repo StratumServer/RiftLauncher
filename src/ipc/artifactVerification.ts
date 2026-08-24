@@ -1,6 +1,6 @@
-import { createHash } from "crypto"
+import { createHash } from "node:crypto"
 import fse from "fs-extra"
-import { createReadStream } from "fs"
+import { createReadStream } from "node:fs"
 
 import { requestBoundedText } from "@src/ipc/network"
 import { isRecord, MAX_RESPONSE_BYTES } from "@src/ipc/validation"

@@ -1,5 +1,5 @@
 import { app } from "electron"
-import { Worker } from "worker_threads"
+import { Worker } from "node:worker_threads"
 
 import { WorkerPool } from "@src/ipc/workerPool"
 import type { WorkerLease } from "@src/ipc/workerPool"

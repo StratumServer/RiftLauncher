@@ -15,7 +15,7 @@ function toVersionColor(entry: ModChangeSummaryEntry): string {
   return "text-green-400"
 }
 
-function ModChangeSummaryPopup({ isOpen, close, title, entries }: { isOpen: boolean; close: () => void; title: string; entries: ModChangeSummaryEntry[] }): JSX.Element {
+function ModChangeSummaryPopup({ isOpen, close, title, entries }: Readonly<{ isOpen: boolean; close: () => void; title: string; entries: ModChangeSummaryEntry[] }>): JSX.Element {
   const { t } = useTranslation()
   const { openModOnModDb } = useExternalLinks()
 

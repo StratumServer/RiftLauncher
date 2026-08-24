@@ -183,7 +183,7 @@ interface LinkContentProps {
   link: string
 }
 
-function LinkContent({ icon, text, desc, link }: LinkContentProps): JSX.Element {
+function LinkContent({ icon, text, desc, link }: Readonly<LinkContentProps>): JSX.Element {
   const location = useLocation()
 
   function currentLocation(): boolean {

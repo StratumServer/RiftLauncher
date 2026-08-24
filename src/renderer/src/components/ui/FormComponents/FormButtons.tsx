@@ -19,7 +19,7 @@ const COLOR_BY_TYPE = {
  * @param {boolean} [props.bgDark] - Add or not the darker background.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function ButtonsWrapper({ children, className, bgDark = true }: { children: React.ReactNode; className?: string; bgDark?: boolean }): JSX.Element {
+export function ButtonsWrapper({ children, className, bgDark = true }: Readonly<{ children: React.ReactNode; className?: string; bgDark?: boolean }>): JSX.Element {
   return (
     <div
       className={clsx(
@@ -53,14 +53,14 @@ export function FormButton({
   title,
   disabled,
   type
-}: {
+}: Readonly<{
   children: React.ReactNode
   className?: string
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   title: string
   disabled?: boolean
   type?: "normal" | "error" | "warn" | "success"
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <HButton
       disabled={disabled}
@@ -94,13 +94,13 @@ export function FormLinkButton({
   to,
   title,
   type
-}: {
+}: Readonly<{
   children: React.ReactNode
   className?: string
   to: string
   title: string
   type?: "normal" | "error" | "warn" | "success"
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <Link
       to={to}
