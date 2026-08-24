@@ -19,9 +19,7 @@ On that page you'll see all the available versions to download.
 
 ### Download the Windows version
 
-On the releases page, the first version is always the last one. There you'll see a table with the different files to download. The Windows one is `riftlauncher-X.X.X-setup.exe`, where `X.X.X` is the version number:
-
-![](../../.gitbook/assets/imagen.png)
+On the releases page, the first version is always the last one. There you'll see a table with the different files to download. The Windows one is `riftlauncher-X.X.X-setup.exe`, where `X.X.X` is the version number.
 {% endstep %}
 
 {% step %}

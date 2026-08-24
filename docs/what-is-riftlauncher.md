@@ -15,5 +15,5 @@ RiftLauncher uses the official game files so you need an official account to pla
 {% endhint %}
 
 {% hint style="info" %}
-RiftLauncher installs alongside VS Launcher instead of replacing it, and keeps its own data folder. The first time you open it, it copies VS Launcher's settings and installation icons over and leaves VS Launcher's own folder untouched, so you can keep using both. Your account is the one thing that doesn't come across, so you'll be asked to log in again.
+RiftLauncher installs alongside VS Launcher instead of replacing it, and keeps its own data folder. The first time you open it, it copies VS Launcher's settings and installation icons over and leaves VS Launcher's own folder untouched, so you can keep using both. Your account comes across by name only: the launcher will show it, but the encrypted session credentials stay in VS Launcher's folder, so you'll need to log in again before you can play.
 {% endhint %}

@@ -23,9 +23,7 @@ On that page you'll see all the available versions to download.
 {% step %}
 **Download the Linux version**
 
-On the releases page, the first version is always the latest one. There you'll see a table with the different files to download. The one you want is `riftlauncher-X.X.X.AppImage`, where `X.X.X` is the version number:
-
-<div align="left"><img src="../../.gitbook/assets/imagen (1).png" alt=""></div>
+On the releases page, the first version is always the latest one. There you'll see a table with the different files to download. The one you want is `riftlauncher-X.X.X.AppImage`, where `X.X.X` is the version number.
 
 {% hint style="info" %}
 Every release ships four Linux builds: `riftlauncher-X.X.X.AppImage`, `.deb`, `.x86_64.rpm` and `.pacman`. There is no Flatpak build; the runtimes it needs aren't available on our build machines.
