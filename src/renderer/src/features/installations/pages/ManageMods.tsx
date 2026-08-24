@@ -25,13 +25,18 @@ import ErrorInstalledModItem from "@renderer/features/mods/components/ErrorInsta
 import InstalledModsSectionHeader from "@renderer/features/mods/components/InstalledModsSectionHeader"
 import ManageModsActionBar from "@renderer/features/mods/components/ManageModsActionBar"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
-import { FormButton } from "@renderer/components/ui/FormComponents"
+import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 const LOG_TAG = "[front] [mods] [features/installations/pages/ManageMods.tsx]"
 
 function byName(a: InstalledModType, b: InstalledModType): number {
   return a.name.localeCompare(b.name)
+}
+
+/** What the player types matched against what they can see of a Mod: its name, and the id the folder names it by. */
+function matchesSearch(iMod: InstalledModType, search: string): boolean {
+  return iMod.name.toLowerCase().includes(search) || iMod.modid.toLowerCase().includes(search)
 }
 
 function ListMods(): JSX.Element {
@@ -46,7 +51,17 @@ function ListMods(): JSX.Element {
   const installation = installations.find((i) => i.id === id)
 
   const { installedMods, modsWithErrors, gettingMods, refresh } = useManageInstalledMods(installation)
-  const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, installedMods)
+
+  const [search, setSearch] = useState("")
+
+  // One list feeds everything below: the three sections, and the buttons that act on the folder at
+  // once. What a player sees is what those buttons touch, filtered or not (#228).
+  const query = search.trim().toLowerCase()
+  const visibleMods = query ? installedMods.filter((iMod) => matchesSearch(iMod, query)) : installedMods
+  const visibleModsWithErrors = query ? modsWithErrors.filter((iModE) => iModE.zipname.toLowerCase().includes(query)) : modsWithErrors
+  const nothingMatches = query.length > 0 && visibleMods.length < 1 && visibleModsWithErrors.length < 1
+
+  const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, visibleMods)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
   const [modToDelete, setModToDelete] = useState<InstalledModType | ErrorInstalledModType | null>(null)
@@ -60,9 +75,9 @@ function ListMods(): JSX.Element {
 
   // Deliberately blind to suspension: a held-back Mod still belongs under "Mods with updates",
   // because watching for the new version is exactly why the player suspended it (#194).
-  const updatableMods = installedMods.filter((iMod) => iMod._updatableTo).sort(byName)
-  const incompatibleMods = installedMods.filter((iMod) => !iMod._updatableTo && iMod._lastVersion).sort(byName)
-  const upToDateMods = installedMods.filter((iMod) => !iMod._updatableTo && !iMod._lastVersion).sort(byName)
+  const updatableMods = visibleMods.filter((iMod) => iMod._updatableTo).sort(byName)
+  const incompatibleMods = visibleMods.filter((iMod) => !iMod._updatableTo && iMod._lastVersion).sort(byName)
+  const upToDateMods = visibleMods.filter((iMod) => !iMod._updatableTo && !iMod._lastVersion).sort(byName)
 
   /** Every list below renders its rows the same way, suspension state and all. */
   function modRow(iMod: InstalledModType): JSX.Element {
@@ -124,7 +139,19 @@ function ListMods(): JSX.Element {
             </StickyMenuGroup>
           </StickyMenuGroupWrapper>
 
-          {installation && <ManageModsActionBar installation={installation} installedMods={installedMods} onUpdateAll={updateAllMods} onImportModpack={pickModpack} />}
+          {installation && (
+            <>
+              <ManageModsActionBar installation={installation} installedMods={visibleMods} onUpdateAll={updateAllMods} onImportModpack={pickModpack} />
+
+              {installedMods.length + modsWithErrors.length > 0 && (
+                <StickyMenuGroupWrapper type="centered">
+                  <StickyMenuGroup>
+                    <FormInputText placeholder={t("features.mods.searchInstalledMods")} value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 h-8" />
+                  </StickyMenuGroup>
+                </StickyMenuGroupWrapper>
+              )}
+            </>
+          )}
         </StickyMenuWrapper>
 
         <div className="max-w-[50rem] w-full flex flex-col items-center justify-center gap-2 m-auto">
@@ -152,7 +179,17 @@ function ListMods(): JSX.Element {
                 <>
                   {installedMods.length < 1 && modsWithErrors.length < 1 && <NoInstalledModsNotice gettingMods={gettingMods} />}
 
-                  {modsWithErrors.length > 0 && (
+                  {nothingMatches && (
+                    <ListWrapper className="w-full">
+                      <ListGroup>
+                        <div className="w-full flex flex-col items-center justify-center gap-2 rounded-sm p-4">
+                          <p className="text-2xl">{t("features.mods.noMatchingFilters")}</p>
+                        </div>
+                      </ListGroup>
+                    </ListWrapper>
+                  )}
+
+                  {visibleModsWithErrors.length > 0 && (
                     <ListWrapper className="w-full">
                       <ListGroup>
                         <InstalledModsSectionHeader
@@ -160,7 +197,7 @@ function ListMods(): JSX.Element {
                           descriptionKey="features.mods.modsWithErrorsDescription"
                           reportKey="features.mods.modsWithErrorsDescriptionReport"
                         />
-                        {modsWithErrors.map((iModE) => (
+                        {visibleModsWithErrors.map((iModE) => (
                           <ErrorInstalledModItem key={iModE.zipname + iModE.zipname} iModE={iModE} onDeleteClick={() => setModToDelete(iModE)} />
                         ))}
                       </ListGroup>

@@ -13,6 +13,8 @@ import { renderWithProviders } from "./helpers/render"
 const INSTALLATION_PATH = "/games/a"
 const ALPHA_PATH = "/games/a/Mods/alpha-1.0.0.zip"
 const BETA_PATH = "/games/a/Mods/beta-2.0.0.zip"
+const DELTA_PATH = "/games/a/Mods/delta-4.0.0.zip"
+const SEARCH_PLACEHOLDER = "Search by name or id"
 const SUSPEND_TITLE = "Suspend updates for this Mod: Update all will skip it, you can still update it from here"
 const RESUME_TITLE = "Resume updates for this Mod: Update all will include it again"
 
@@ -36,13 +38,15 @@ function anInstallation(): InstallationType {
   }
 }
 
-/** What the folder scan comes back with: two updatable Mods, one only-incompatible, one unreadable archive. */
+/** What the folder scan comes back with: two updatable Mods, one only-incompatible, one up to date, one unreadable archive. */
 function aModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
   return {
     mods: [
       { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, description: "The first one.", authors: ["Ann"], contributors: [], _image: "alpha.png" },
       { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, description: "The second one.", authors: ["Bob"], contributors: [] },
-      { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: "/games/a/Mods/gamma-3.0.0.zip", authors: ["Cal"], contributors: [] }
+      { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: "/games/a/Mods/gamma-3.0.0.zip", authors: ["Cal"], contributors: [] },
+      // Its id shares nothing with its name, so a search hitting it can only have matched the id.
+      { name: "Delta Mod", modid: "quirkid", version: "4.0.0", path: DELTA_PATH, authors: ["Dee"], contributors: [] }
     ],
     errors: [{ zipname: "broken.zip", path: "/games/a/Mods/broken.zip" }]
   }
@@ -273,6 +277,115 @@ describe("ManageMods: suspended Mod updates", () => {
 
     // The suspension is lifted by the player, never by an update they asked for themselves.
     expect(within(await rowFor("Alpha Mod")).getByTitle(RESUME_TITLE)).toBeTruthy()
+  })
+})
+
+/** Issue #228: finding one Mod in a long installed list, without knowing which section it landed in. */
+describe("ManageMods: searching the installed Mods", () => {
+  /** Waits for the scan to land, then types into the search field. */
+  async function searchFor(user: ReturnType<typeof userEvent.setup>, text: string): Promise<HTMLElement> {
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    const field = screen.getByPlaceholderText(SEARCH_PLACEHOLDER)
+    await user.type(field, text)
+    return field
+  }
+
+  it("narrows every section at once and leaves the emptied ones out", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    // "ta" is in Beta (updatable) and Delta (up to date), in neither Gamma nor the unreadable archive.
+    await searchFor(user, "ta")
+
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    expect(screen.getByText("Beta Mod")).toBeTruthy()
+    expect(screen.getByText("Delta Mod")).toBeTruthy()
+    expect(screen.queryByText("Gamma Mod")).toBeNull()
+    expect(screen.queryByText("broken.zip")).toBeNull()
+
+    // No heading is left standing over a section the search emptied.
+    expect(screen.queryByText("Mods with incompatible updates")).toBeNull()
+    expect(screen.queryByText("Mods with errors")).toBeNull()
+    expect(screen.getByText("Mods with updates")).toBeTruthy()
+
+    // What the sections add up to is what the player can see, one row each.
+    const updatesSection = screen.getByText("Mods with updates").closest("ul") as HTMLElement
+    expect(within(updatesSection).getAllByRole("listitem")).toHaveLength(1)
+    expect(screen.getAllByRole("listitem")).toHaveLength(2)
+  })
+
+  it("finds a Mod by its id, not only by its name", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await searchFor(user, "quirk")
+
+    // Delta's name has no "quirk" in it, so only its modid can have matched.
+    expect(await screen.findByText("Delta Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    expect(screen.getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("ignores case, on the name and on the id alike", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await searchFor(user, "BETA")
+
+    expect(await screen.findByText("Beta Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Gamma Mod")).toBeNull())
+
+    await user.clear(screen.getByPlaceholderText(SEARCH_PLACEHOLDER))
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "QUIRKID")
+
+    expect(await screen.findByText("Delta Mod")).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("says so when nothing matches, instead of showing empty sections", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await searchFor(user, "nothinglikethis")
+
+    expect(await screen.findByText("There are no Mods that match your filters!")).toBeTruthy()
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0)
+    expect(screen.queryByText("Mods with updates")).toBeNull()
+  })
+
+  it("puts the whole list back when the field is cleared", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const field = await searchFor(user, "ta")
+    await waitFor(() => expect(screen.queryByText("Gamma Mod")).toBeNull())
+
+    await user.clear(field)
+
+    expect(await screen.findByText("Gamma Mod")).toBeTruthy()
+    expect(screen.getByText("Alpha Mod")).toBeTruthy()
+    expect(screen.getByText("Mods with incompatible updates")).toBeTruthy()
+    expect(screen.getByText("broken.zip")).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(5)
+  })
+
+  it("updates only the Mods the search left on screen", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn(async (_id: string, url: string) => (url.includes("alpha") ? "/games/a/Mods/alpha-1.1.0.zip" : "/games/a/Mods/beta-2.1.0.zip"))
+    renderManageMods({ pathsManager: { deletePath, downloadOnPath } })
+
+    await searchFor(user, "alpha")
+    await waitFor(() => expect(screen.queryByText("Beta Mod")).toBeNull())
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+
+    // Beta is updatable too, but it is not what the player is looking at.
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(downloadOnPath.mock.calls[0]?.[1]).toContain("alpha")
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ALPHA_PATH])
   })
 })
 
