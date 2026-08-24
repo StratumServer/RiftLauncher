@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
@@ -41,6 +43,16 @@ function savedAnswer(api: MockedBridgeAPI): string | undefined {
 }
 
 describe("ModDbVisibilityPrompt", () => {
+  it("reaches the bridge through the feature adapter instead of across the preload boundary", () => {
+    // Read as text, the way tests/security-boundaries.test.ts checks the main process wiring: a
+    // mounted component calls the same mock whichever side of the boundary it went through, so
+    // nothing at runtime can tell the two apart.
+    const source = readFileSync(resolve(__dirname, "../../src/renderer/src/components/layout/ModDbVisibilityPrompt.tsx"), "utf8")
+
+    expect(source).not.toContain("window.api")
+    expect(source).toContain('from "@renderer/features/moddb/adapters/moddb"')
+  })
+
   it("asks when the question has never been answered", async () => {
     mountWith("unasked")
     expect(await screen.findByText(/RiftLauncher is listed on ModDB/)).toBeTruthy()

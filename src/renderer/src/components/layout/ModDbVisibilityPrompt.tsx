@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { CONFIG_ACTIONS, useConfigDispatch, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
+import { acceptModDbVisibility } from "@renderer/features/moddb/adapters/moddb"
 import { MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED, MODDB_VISIBILITY_UNASKED, type ModDbVisibilityAnswer } from "@domain/moddbVisibility"
 
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
@@ -43,7 +44,7 @@ function ModDbVisibilityPrompt(): JSX.Element {
   // and a refused write leaves it unrecorded, which is the same as never having been asked.
   const accept = (): void => {
     setDismissed(true)
-    void window.api.netManager.acceptModDbVisibility().then((recorded) => {
+    void acceptModDbVisibility().then((recorded) => {
       if (recorded) answer(MODDB_VISIBILITY_ACCEPTED)
     })
   }

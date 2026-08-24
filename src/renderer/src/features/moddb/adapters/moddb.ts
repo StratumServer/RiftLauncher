@@ -14,3 +14,14 @@ const MODDB_API_BASE = "https://mods.vintagestory.at/api"
 export function queryModDb(path: string): Promise<string> {
   return window.api.netManager.queryURL(`${MODDB_API_BASE}${path}`)
 }
+
+/**
+ * Hands the accepted answer to the one-time listing question over to the main process, which
+ * writes it and then makes the single request that registers a download on the listing (#219).
+ *
+ * True once that answer is on disk. False means nothing was written and nothing was requested, so
+ * the caller has no answer to remember.
+ */
+export function acceptModDbVisibility(): Promise<boolean> {
+  return window.api.netManager.acceptModDbVisibility()
+}
