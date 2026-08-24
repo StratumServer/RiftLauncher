@@ -7,3 +7,4 @@ coverage
 repo
 .flatpak-builder
 build-dir
+*.tsbuildinfo
