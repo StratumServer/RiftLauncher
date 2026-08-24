@@ -6,7 +6,8 @@ import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { requestBoundedBuffer, requestBoundedText } from "@src/ipc/network"
 import { assertAllowedApiUrl, assertAllowedDownloadUrl, getApiUrlMaxBytes, MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"
 import { newestReleaseFileId, parseModDetailResponse } from "@domain/mods/moddb"
-import { MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl } from "@domain/moddbVisibility"
+import { MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_UNASKED } from "@domain/moddbVisibility"
+import { getConfig, saveConfig } from "@src/config/configManager"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
 const MOD_CATALOG_HOSTNAME = "mods.vintagestory.at"
@@ -59,8 +60,9 @@ let listingArchiveRequested = false
  * Fetches the launcher's own ModDB listing archive once, which is what registers a download
  * against that listing (see src/domain/moddbVisibility.ts for why it is the only URL that counts).
  *
- * Only ever reached from an explicit click on the prompt, and only from the "count me in" answer.
- * Nothing calls it at startup, on update, or on any schedule.
+ * Only ever reached through {@link acceptModDbVisibility}, which means only from an explicit click
+ * on the prompt and only once the acceptance is on disk. Nothing calls it at startup, on update, or
+ * on any schedule.
  *
  * Everything it can go wrong on is swallowed: an unreachable API, a listing with no readable
  * release, a refused download, a redirect (`requestBoundedBuffer` follows none, and the counter has
@@ -92,18 +94,47 @@ export async function fetchModDbListingArchive(): Promise<void> {
     if (message.toLowerCase().includes("redirect")) {
       logMessage(
         "debug",
-        "[back] [ipc] [ipc/handlers/netHandlers.ts] [FETCH_MODDB_LISTING_ARCHIVE] The listing download endpoint answered with its redirect, which is the counted outcome. Not followed on purpose."
+        "[back] [ipc] [ipc/handlers/netHandlers.ts] [ACCEPT_MODDB_VISIBILITY] The listing download endpoint answered with its redirect, which is the counted outcome. Not followed on purpose."
       )
       return
     }
 
-    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [FETCH_MODDB_LISTING_ARCHIVE] ${message}`)
+    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [ACCEPT_MODDB_VISIBILITY] ${message}`)
   }
 }
 
-ipcMain.handle(IPC_CHANNELS.NET_MANAGER.FETCH_MODDB_LISTING_ARCHIVE, async (event): Promise<void> => {
-  assertTrustedIpcSender(event)
+/**
+ * Writes the accepted answer to the config, and only then makes the one courtesy request.
+ *
+ * The order is the whole point. The answer on disk is the ledger that says this player has had
+ * their one chance, so nothing may be requested until that ledger entry is durable: a crash, or a
+ * disk that refuses the write, between the request and the write would leave the counter
+ * incremented and the question still unanswered, and the next launch would ask and count again.
+ *
+ * Owned by the main process for the same reason. The renderer's config saves are coalesced and
+ * fire-and-forget, which is right for a window size and wrong for a one-per-player promise.
+ *
+ * Answers whether the acceptance is on disk. False means nothing was requested and nothing was
+ * recorded, so the question comes back next launch, which is the honest outcome: no count was
+ * registered either. A config that already carries any answer is refused outright, since the one
+ * chance was spent on this launch or an earlier one.
+ *
+ * The reverse loss, a write that lands and a crash before the request, costs the listing one
+ * uncounted download. That direction is the acceptable one: the promise is one count per player at
+ * most, not at least.
+ */
+export async function acceptModDbVisibility(): Promise<boolean> {
+  const config = await getConfig()
+  if (config.moddbVisibilityAnswer !== MODDB_VISIBILITY_UNASKED) return false
+  if (!(await saveConfig({ ...config, moddbVisibilityAnswer: MODDB_VISIBILITY_ACCEPTED }))) return false
+
   await fetchModDbListingArchive()
+  return true
+}
+
+ipcMain.handle(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY, async (event): Promise<boolean> => {
+  assertTrustedIpcSender(event)
+  return await acceptModDbVisibility()
 })
 
 ipcMain.handle(IPC_CHANNELS.NET_MANAGER.QUERY_URL, async (event, url: unknown): Promise<string> => {

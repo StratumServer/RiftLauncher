@@ -15,15 +15,19 @@ import { renderWithProviders } from "./helpers/render"
  *
  * The recorded answer is read off `saveConfig`, which ConfigProvider calls with the whole config
  * whenever it changes. Nothing calling it at all is exactly what "records nothing" means here.
+ *
+ * "Count me in" is the exception: the main process writes that answer itself, before it requests
+ * anything, so what this file checks there is that the component asks for it and only mirrors it
+ * into the config once the main process says it reached disk.
  */
 const ACCEPT = "Count me in"
 const DECLINE = "No thanks"
 const ALREADY_DONE = "Already did it"
 
-function mountWith(moddbVisibilityAnswer: string): MockedBridgeAPI {
+function mountWith(moddbVisibilityAnswer: string, accepted = true): MockedBridgeAPI {
   const api = installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ moddbVisibilityAnswer })) },
-    netManager: { fetchModDbListingArchive: vi.fn(async () => undefined) }
+    netManager: { acceptModDbVisibility: vi.fn(async () => accepted) }
   })
 
   renderWithProviders(<ModDbVisibilityPrompt />)
@@ -72,7 +76,7 @@ describe("ModDbVisibilityPrompt", () => {
     expect(buttons.some((button) => button === document.activeElement)).toBe(false)
   })
 
-  it("fetches the listing archive exactly once when the player accepts, and records the answer", async () => {
+  it("hands the acceptance to the main process exactly once, and mirrors it once it is on disk", async () => {
     const user = userEvent.setup()
     const api = mountWith("unasked")
     await screen.findByText(/RiftLauncher is listed on ModDB/)
@@ -80,8 +84,25 @@ describe("ModDbVisibilityPrompt", () => {
     await user.click(screen.getByRole("button", { name: ACCEPT }))
 
     await waitFor(() => expect(savedAnswer(api)).toBe("accepted"))
-    expect(vi.mocked(api.netManager.fetchModDbListingArchive)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(api.netManager.acceptModDbVisibility)).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(screen.queryByText(/RiftLauncher is listed on ModDB/)).toBeNull())
+  })
+
+  it("leaves the answer unrecorded when the main process could not write it, so the question survives", async () => {
+    // A refused write means nothing was requested either, so there is no count to remember and no
+    // answer to keep. Mirroring it here anyway would silence a question that was never answered.
+    const user = userEvent.setup()
+    const api = mountWith("unasked", false)
+    await screen.findByText(/RiftLauncher is listed on ModDB/)
+
+    await user.click(screen.getByRole("button", { name: ACCEPT }))
+
+    await waitFor(() => expect(vi.mocked(api.netManager.acceptModDbVisibility)).toHaveBeenCalled())
+    expect(savedAnswer(api)).toBeUndefined()
+
+    // A relaunch is a fresh mount reading the same stored answer: still unasked, so still asked.
+    mountWith("unasked")
+    expect(await screen.findByText(/RiftLauncher is listed on ModDB/)).toBeTruthy()
   })
 
   it("records a refusal without fetching anything", async () => {
@@ -92,7 +113,7 @@ describe("ModDbVisibilityPrompt", () => {
     await user.click(screen.getByRole("button", { name: DECLINE }))
 
     await waitFor(() => expect(savedAnswer(api)).toBe("declined"))
-    expect(vi.mocked(api.netManager.fetchModDbListingArchive)).not.toHaveBeenCalled()
+    expect(vi.mocked(api.netManager.acceptModDbVisibility)).not.toHaveBeenCalled()
   })
 
   it("records an already-done without fetching anything, since that download is already counted", async () => {
@@ -103,7 +124,7 @@ describe("ModDbVisibilityPrompt", () => {
     await user.click(screen.getByRole("button", { name: ALREADY_DONE }))
 
     await waitFor(() => expect(savedAnswer(api)).toBe("already-done"))
-    expect(vi.mocked(api.netManager.fetchModDbListingArchive)).not.toHaveBeenCalled()
+    expect(vi.mocked(api.netManager.acceptModDbVisibility)).not.toHaveBeenCalled()
   })
 
   it("treats a dialog closed without an answer as no answer at all, so the question survives", async () => {
@@ -115,7 +136,7 @@ describe("ModDbVisibilityPrompt", () => {
 
     await waitFor(() => expect(screen.queryByText(/RiftLauncher is listed on ModDB/)).toBeNull())
     expect(vi.mocked(api.configManager.saveConfig)).not.toHaveBeenCalled()
-    expect(vi.mocked(api.netManager.fetchModDbListingArchive)).not.toHaveBeenCalled()
+    expect(vi.mocked(api.netManager.acceptModDbVisibility)).not.toHaveBeenCalled()
 
     // A relaunch is a fresh mount reading the same stored answer: still unasked, so still asked.
     mountWith("unasked")

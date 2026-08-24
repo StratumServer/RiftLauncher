@@ -111,7 +111,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     netManager: {
       queryURL: vi.fn(notMocked("netManager.queryURL")),
-      fetchModDbListingArchive: vi.fn(notMocked("netManager.fetchModDbListingArchive"))
+      acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility"))
     },
     backgroundsManager: {
       ensureBackground: vi.fn(notMocked("backgroundsManager.ensureBackground")),

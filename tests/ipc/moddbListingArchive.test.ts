@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -11,20 +11,26 @@ import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronUse
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"
-import { MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl } from "@domain/moddbVisibility"
+import { MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_DECLINED, MODDB_VISIBILITY_UNASKED } from "@domain/moddbVisibility"
 
 /**
- * FETCH_MODDB_LISTING_ARCHIVE (src/ipc/handlers/netHandlers.ts), the one request the ModDB
- * visibility prompt makes when a player answers "count me in" (#219).
+ * ACCEPT_MODDB_VISIBILITY (src/ipc/handlers/netHandlers.ts), the one request the ModDB visibility
+ * prompt makes when a player answers "count me in" (#219), and the config write that has to land
+ * before it.
  *
  * The transport is mocked, the way tests/ipc/backgroundHandlers.test.ts mocks it, so the two URLs
  * and their order are observable: the file id has to be resolved from the API before the download
  * endpoint is touched, because that endpoint is the only thing that increments the counter and a
  * stale id would count towards the wrong entry.
  *
+ * configManager.ts is not mocked. The point of these tests is that the answer is on disk before
+ * anything is requested, which a fake store would assert about itself rather than about the file a
+ * later launch actually reads, so the temp userData folder holds a real config.json throughout.
+ *
  * `vi.resetModules()` between tests because netHandlers.ts keeps the "already asked once this
  * process" flag in module state, which is the point of it: without a fresh module every test would
- * be measuring the first one's guard.
+ * be measuring the first one's guard. Re-importing it against the same temp folder is also what a
+ * relaunch looks like from here: new process state, same config on disk.
  */
 const mockState = vi.hoisted(() => ({
   requestBoundedText: vi.fn<(url: URL, options?: unknown) => Promise<string>>(),
@@ -68,12 +74,26 @@ function listingDetail(
 
 let userDataFolder: string
 
-type FetchHandler = (event: IpcMainInvokeEvent) => Promise<void>
+type AcceptHandler = (event: IpcMainInvokeEvent) => Promise<boolean>
 
 /** A netHandlers.ts with its once-per-process flag unset, plus the function the IPC handler delegates to. */
 async function freshHandlers(): Promise<typeof import("@src/ipc/handlers/netHandlers")> {
   vi.resetModules()
   return import("@src/ipc/handlers/netHandlers")
+}
+
+/** The answer sitting in the temp folder's config.json, or undefined when there is no config there. */
+function storedAnswer(): string | undefined {
+  try {
+    return JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8")).moddbVisibilityAnswer
+  } catch {
+    return undefined
+  }
+}
+
+/** Puts a config carrying `answer` on disk, the way a launch that was already answered would find it. */
+function storeAnswer(answer: string): void {
+  writeFileSync(join(userDataFolder, "config.json"), JSON.stringify({ schemaVersion: 1, moddbVisibilityAnswer: answer }))
 }
 
 beforeEach(() => {
@@ -166,20 +186,78 @@ describe("fetchModDbListingArchive", () => {
   })
 })
 
-describe("FETCH_MODDB_LISTING_ARCHIVE ipcMain.handle wrapper", () => {
+describe("acceptModDbVisibility", () => {
+  it("has the answer on disk before it touches the counting endpoint", async () => {
+    const { acceptModDbVisibility } = await freshHandlers()
+
+    // The transport records the answer it could read at the moment it was called, which is the
+    // only way to see the ordering rather than just the end state.
+    let answerWhenRequested: string | undefined
+    mockState.requestBoundedBuffer.mockImplementation(async () => {
+      answerWhenRequested = storedAnswer()
+      return Buffer.from("pointer archive")
+    })
+
+    assert.equal(await acceptModDbVisibility(), true)
+    assert.equal(answerWhenRequested, MODDB_VISIBILITY_ACCEPTED)
+  })
+
+  it("requests nothing when the answer cannot be written, and records nothing either", async () => {
+    // A userData folder that does not exist, so every write into it fails the way a full or
+    // read-only disk would.
+    setElectronUserDataPath(join(userDataFolder, "not-a-folder"))
+    const { acceptModDbVisibility } = await freshHandlers()
+
+    assert.equal(await acceptModDbVisibility(), false)
+    assert.deepEqual(mockState.urls, [])
+    assert.equal(storedAnswer(), undefined)
+  })
+
+  it("asks and counts once across a relaunch, since the answer outlives the process", async () => {
+    const firstLaunch = await freshHandlers()
+    assert.equal(await firstLaunch.acceptModDbVisibility(), true)
+    assert.deepEqual(mockState.urls, [MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl(FILE_ID)])
+
+    mockState.urls.length = 0
+    const secondLaunch = await freshHandlers()
+
+    // Still accepted on disk, so the prompt never shows again, and the answer being there is
+    // exactly what refuses a second count.
+    assert.equal(storedAnswer(), MODDB_VISIBILITY_ACCEPTED)
+    assert.notEqual(storedAnswer(), MODDB_VISIBILITY_UNASKED)
+    assert.equal(await secondLaunch.acceptModDbVisibility(), false)
+    assert.deepEqual(mockState.urls, [])
+  })
+})
+
+describe("ACCEPT_MODDB_VISIBILITY ipcMain.handle wrapper", () => {
   it("refuses an untrusted caller before making any request", async () => {
     await freshHandlers()
-    const handler = getIpcHandler<FetchHandler>(IPC_CHANNELS.NET_MANAGER.FETCH_MODDB_LISTING_ARCHIVE)
+    const handler = getIpcHandler<AcceptHandler>(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY)
 
     await assert.rejects(() => handler(createUntrustedEvent()), /Unauthorized IPC sender/)
     assert.deepEqual(mockState.urls, [])
   })
 
-  it("makes the request for a trusted caller and answers nothing", async () => {
+  it("records the answer and makes the request for a trusted caller", async () => {
     await freshHandlers()
-    const handler = getIpcHandler<FetchHandler>(IPC_CHANNELS.NET_MANAGER.FETCH_MODDB_LISTING_ARCHIVE)
+    const handler = getIpcHandler<AcceptHandler>(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY)
 
-    assert.equal(await handler(await createTrustedEvent()), undefined)
+    assert.equal(await handler(await createTrustedEvent()), true)
     assert.deepEqual(mockState.urls, [MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl(FILE_ID)])
+    assert.equal(storedAnswer(), MODDB_VISIBILITY_ACCEPTED)
+  })
+
+  it("refuses a direct call that no unanswered prompt stands behind, and leaves the stored answer alone", async () => {
+    // The channel is the only door to the counting endpoint, and it opens on one transition only:
+    // a config with no answer becoming an accepted one. Anything else, including a caller invoking
+    // it straight off the bridge after the question was settled, gets nothing.
+    storeAnswer(MODDB_VISIBILITY_DECLINED)
+    await freshHandlers()
+    const handler = getIpcHandler<AcceptHandler>(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY)
+
+    assert.equal(await handler(await createTrustedEvent()), false)
+    assert.deepEqual(mockState.urls, [])
+    assert.equal(storedAnswer(), MODDB_VISIBILITY_DECLINED)
   })
 })

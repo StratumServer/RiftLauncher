@@ -70,10 +70,13 @@ declare global {
     netManager: {
       queryURL: (url: string) => Promise<string>
       /**
-       * Requests the launcher's ModDB listing archive once, which registers one download there.
-       * Answers nothing: a failure is the player's courtesy going unnoticed, not their problem.
+       * Records the accepted answer to the one-time ModDB listing question and, once it is on
+       * disk, requests the listing archive once, which registers one download there. True when the
+       * answer was written; false means nothing was written and nothing was requested, so the
+       * question survives to the next launch. The request itself never fails out loud: it is the
+       * player's courtesy going unnoticed, not their problem.
        */
-      fetchModDbListingArchive: () => Promise<void>
+      acceptModDbVisibility: () => Promise<boolean>
     }
     backgroundsManager: {
       /** Downloads one catalog scene into the cache if it is not already there. False if it could not be. */

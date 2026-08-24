@@ -15,6 +15,12 @@ import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponen
  * pre-selected, and no download count on screen to turn a question into a scoreboard. Only "count
  * me in" fetches anything, and it fetches once whether that attempt succeeds or not.
  *
+ * The two answers that record nothing but a preference go through the config the way every other
+ * setting does. "Count me in" does not: the main process writes it and only then requests, because
+ * a request the config never remembers is a second question and a second count later on. This
+ * component only mirrors the answer once the main process says it is on disk, so the two copies of
+ * the config never disagree.
+ *
  * Closing the dialog (Escape, or the area around it) writes nothing, so the question comes back
  * next launch. Silence is not consent, and it is not a refusal either.
  */
@@ -31,7 +37,15 @@ function ModDbVisibilityPrompt(): JSX.Element {
 
   const answer = (value: ModDbVisibilityAnswer): void => {
     configDispatch({ type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER, payload: value })
-    if (value === MODDB_VISIBILITY_ACCEPTED) void window.api.netManager.fetchModDbListingArchive()
+  }
+
+  // Closes at once rather than waiting on the network: the answer is the main process's to record,
+  // and a refused write leaves it unrecorded, which is the same as never having been asked.
+  const accept = (): void => {
+    setDismissed(true)
+    void window.api.netManager.acceptModDbVisibility().then((recorded) => {
+      if (recorded) answer(MODDB_VISIBILITY_ACCEPTED)
+    })
   }
 
   return (
@@ -40,7 +54,7 @@ function ModDbVisibilityPrompt(): JSX.Element {
         <p className="text-left text-zinc-300">{t("components.moddbVisibility.body")}</p>
 
         <ButtonsWrapper className="text-lg self-center" bgDark={false}>
-          <FormButton onClick={() => answer(MODDB_VISIBILITY_ACCEPTED)} title={t("components.moddbVisibility.accept")} className="p-2 px-4">
+          <FormButton onClick={accept} title={t("components.moddbVisibility.accept")} className="p-2 px-4">
             {t("components.moddbVisibility.accept")}
           </FormButton>
           <FormButton onClick={() => answer(MODDB_VISIBILITY_DECLINED)} title={t("components.moddbVisibility.decline")} className="p-2 px-4">

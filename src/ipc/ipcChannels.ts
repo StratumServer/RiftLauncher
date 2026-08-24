@@ -52,7 +52,7 @@ export const IPC_CHANNELS = {
   },
   NET_MANAGER: {
     QUERY_URL: "query-url",
-    FETCH_MODDB_LISTING_ARCHIVE: "fetch-moddb-listing-archive"
+    ACCEPT_MODDB_VISIBILITY: "accept-moddb-visibility"
   },
   BACKGROUNDS_MANAGER: {
     ENSURE_BACKGROUND: "ensure-background",
