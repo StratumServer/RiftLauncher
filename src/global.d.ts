@@ -349,12 +349,16 @@ declare global {
    *   `.png` is refused the same way the background flow refuses a `.jpg` that
    *   is not a JPEG (#211).
    * - `source-unavailable`: the path policy refused the picked file, or it is
-   *   gone, or a folder on the way to it is a symbolic link. Nothing was read.
+   *   gone, or a folder on the way to it is a symbolic link, or the path is
+   *   not a plain file (a folder, a FIFO, a device). Nothing was read.
+   * - `too-large`: the file is past MAX_CUSTOM_ICON_BYTES. Its own reason
+   *   rather than `unsupported-format`, since a PNG the player has to shrink
+   *   is not the same problem as a file that was never a PNG (#215).
    * - `copy-failed`: the file was readable and the write still failed. A
    *   folder or a symlink already sitting on the destination name, no
    *   permission to read the source, a full disk.
    */
-  type CustomIconCopyFailureReason = "unsupported-format" | "source-unavailable" | "copy-failed"
+  type CustomIconCopyFailureReason = "unsupported-format" | "source-unavailable" | "too-large" | "copy-failed"
 
   /** COPY_TO_ICONS' verdict. `status: false` means nothing was written to the Icons folder. */
   type CustomIconCopyResult = { status: true; file: string } | { status: false; reason: CustomIconCopyFailureReason }

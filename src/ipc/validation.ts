@@ -23,6 +23,11 @@ export const MAX_BACKGROUND_MANIFEST_BYTES = 32 * 1024
 // roughly triple the largest of them, and well under the generic 4 MB ceiling this would
 // otherwise inherit.
 export const MAX_BACKGROUND_IMAGE_BYTES = 2 * 1024 * 1024
+// One custom installation icon. A quarter of the background ceiling above, because an icon is
+// drawn a few dozen pixels wide next to an installation name rather than filling a window: the
+// seven icons the launcher ships run 12 to 52 KB at 512x512, so 512 KB is ten times the largest
+// of them and still leaves room for a 1024x1024 export nobody bothered to compress.
+export const MAX_CUSTOM_ICON_BYTES = 512 * 1024
 // The pointer archive on the launcher's own ModDB listing (#219), which is 315 bytes of text
 // pointing at the releases page. 256 KB is three orders of magnitude of headroom and still refuses
 // anything that could pass for a real download, which this endpoint must never be used to pull.

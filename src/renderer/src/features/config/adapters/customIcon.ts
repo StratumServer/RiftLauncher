@@ -27,6 +27,8 @@ export function describeAddCustomIconFailure(reason: AddCustomIconFailure): AddC
       return { messageKey: "notifications.body.iconNotAPng", logged: false }
     case "source-unavailable":
       return { messageKey: "notifications.body.iconSourceUnavailable", logged: false }
+    case "too-large":
+      return { messageKey: "notifications.body.iconTooLarge", logged: false }
     case "copy-failed":
       return { messageKey: "notifications.body.coulndtCopyIcon", logged: true }
     case "bridge-failed":

@@ -2,6 +2,7 @@ import { ipcMain, app, shell } from "electron"
 import { path7za } from "7zip-bin"
 import fse from "fs-extra"
 import { open } from "node:fs/promises"
+import type { Stats } from "node:fs"
 import { basename, extname, join, resolve, sep } from "node:path"
 import os from "node:os"
 import { spawn } from "node:child_process"
@@ -13,7 +14,7 @@ import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { acquireWorker } from "@src/ipc/workerManager"
 import type { WorkerDisposition } from "@src/ipc/workerManager"
 import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
-import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord } from "@src/ipc/validation"
+import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord, MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
 import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
@@ -627,9 +628,23 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, async (event, pathValue
   // they compare too.
   if (extname(safePath).toLowerCase() !== ".png") return refuseIconCopy("unsupported-format", new TypeError(`Icon file is "${extname(safePath) || "extensionless"}", not ".png"`))
 
+  let stats: Stats
   try {
-    // Only the signature is read, never the whole file: an icon has no size
-    // ceiling of its own, and the copy below streams rather than buffers.
+    stats = await fse.lstat(safePath)
+    // lstat, so this is the picked path itself and not whatever it points at:
+    // a folder, a FIFO or a symlink all fail isFile() here, before anything is
+    // read from a source that may not behave like a file at all.
+    if (!stats.isFile()) throw new TypeError("Icon path is not a plain file")
+  } catch (error) {
+    return refuseIconCopy("source-unavailable", error)
+  }
+
+  // Checked before the read, the way COPY_CUSTOM_BACKGROUND checks its own ceiling.
+  if (stats.size > MAX_CUSTOM_ICON_BYTES) return refuseIconCopy("too-large", new TypeError(`Icon file is ${stats.size} bytes, over the ${MAX_CUSTOM_ICON_BYTES} byte ceiling`))
+
+  try {
+    // Only the signature is read, never the whole file: the ceiling above is
+    // what bounds the icon, and the copy below streams rather than buffers.
     const header = Buffer.alloc(PNG_SIGNATURE_BYTES)
     const source = await open(safePath, "r")
     try {
