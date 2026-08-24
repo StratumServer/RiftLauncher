@@ -43,10 +43,11 @@ function aModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[]
   return {
     mods: [
       { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, description: "The first one.", authors: ["Ann"], contributors: [], _image: "alpha.png" },
-      { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, description: "The second one.", authors: ["Bob"], contributors: [] },
+      { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, description: "The second one.", side: "Server", authors: ["Bob"], contributors: [] },
+      // No declared side at all, which the server export reads as "the server loads it".
       { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: "/games/a/Mods/gamma-3.0.0.zip", authors: ["Cal"], contributors: [] },
       // Its id shares nothing with its name, so a search hitting it can only have matched the id.
-      { name: "Delta Mod", modid: "quirkid", version: "4.0.0", path: DELTA_PATH, authors: ["Dee"], contributors: [] }
+      { name: "Delta Mod", modid: "quirkid", version: "4.0.0", path: DELTA_PATH, side: "Client", authors: ["Dee"], contributors: [] }
     ],
     errors: [{ zipname: "broken.zip", path: "/games/a/Mods/broken.zip" }]
   }
@@ -98,9 +99,11 @@ function queryModDb(url: string): Promise<string> {
 function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof renderWithProviders> {
   installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
-    modsManager: { getInstalledMods: vi.fn(async () => aModScan()) },
     netManager: { queryURL: vi.fn(queryModDb) },
-    ...overrides
+    ...overrides,
+    // Last, and merged rather than replaced: a test overriding one modsManager call still wants the
+    // folder scan the rest of this file is written against.
+    modsManager: { getInstalledMods: vi.fn(async () => aModScan()), ...overrides.modsManager }
   })
 
   return renderWithProviders(
@@ -386,6 +389,50 @@ describe("ManageMods: searching the installed Mods", () => {
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
     expect(downloadOnPath.mock.calls[0]?.[1]).toContain("alpha")
     expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ALPHA_PATH])
+  })
+
+  it("greys the server export out when the search leaves only a client Mod", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    // Delta is the only client-only Mod, and its id is the only thing "quirk" can match.
+    await searchFor(user, "quirk")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    // Nothing on screen would go into a server modpack, so there is nothing to export.
+    expect((screen.getByText("Export Server Modpack").closest("button") as HTMLButtonElement).disabled).toBe(true)
+
+    // The plain export ships the visible list itself, so one visible Mod is still one Mod to write.
+    const plainExport = screen.getByText("Export Modpack").closest("button") as HTMLButtonElement
+    expect(plainExport.disabled).toBe(false)
+
+    await user.click(plainExport)
+
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "quirkid", version: "4.0.0" }])
+  })
+
+  it("writes the server modpack from the same visible list that decides the button", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    // "ta" leaves Beta, which a server loads, next to Delta, which it does not.
+    await searchFor(user, "ta")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    const serverExport = screen.getByText("Export Server Modpack").closest("button") as HTMLButtonElement
+    expect(serverExport.disabled).toBe(false)
+
+    await user.click(serverExport)
+
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    const manifest = exportModpack.mock.calls[0]?.[0] as ModpackManifestType
+    expect(manifest.name).toBe("Install A (Server)")
+    // Beta and nothing else: not Delta, which is on screen but client-only, and not Alpha or Gamma,
+    // which a server would load but the search took away.
+    expect(manifest.mods).toEqual([{ modid: "beta", version: "2.0.0" }])
   })
 })
 
