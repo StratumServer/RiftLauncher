@@ -52,7 +52,7 @@ Add an already created Installation | VS Launcher Guides
 
 The `clientsettings.json` and `serverconfig.json` files in the copied installation are still configured for the game to search for mods in the old locations. You must update the `modPaths` in `clientsettings.json` and `ModPaths` in `serverconfig.json` so the game looks in the moved mods folder.
 
-Note: VS Launcher's replacement, Rustory, will handle this automatically.
+RiftLauncher does not rewrite these two fields for you, so this is a manual edit.
 
 {% endstep %}
 

@@ -10,7 +10,7 @@ RiftLauncher works on ANY Linux distro thanks to the AppImage compilation we're 
 Installing it on Linux is as easy as downloading the AppImage and double clicking it.... that's it. Let's get started:
 
 {% hint style="success" %}
-If you're using Arch Linux you can install it from AUR with `yay -S vs-launcher`. This is the original VS Launcher AUR package; whether it tracks RiftLauncher's releases has not been confirmed by the Stratum team. You'll need to manually update using yay tho.
+If you're using Arch Linux or a derivative there is a `.pacman` package on the releases page you can install with `sudo pacman -U riftlauncher-X.X.X.pacman`. There is no RiftLauncher package on the AUR: the `vs-launcher` AUR package belongs to the archived original project and does not track our releases.
 {% endhint %}
 
 {% stepper %}
@@ -23,24 +23,14 @@ On that page you'll see all the available versions to download.
 {% step %}
 **Download the Linux version**
 
-On the releases page, the first version is always the latest one. There you'll see a table with the different files to download. Just click on the Linux build as shown in the next image:
+On the releases page, the first version is always the latest one. There you'll see a table with the different files to download. The one you want is `riftlauncher-X.X.X.AppImage`, where `X.X.X` is the version number:
 
 <div align="left"><img src="../../.gitbook/assets/imagen (1).png" alt=""></div>
 
-{% hint style="warning" %}
-`Flatpak` option is NOT packaged with .NET so if you're using an immutable distro Vintage Story will not work!
-
-I'm trying to add .NET to the `.flatpak` but idk if I'll be able to.
-{% endhint %}
-
 {% hint style="info" %}
-If you want you can use the `DEB` or `Flatpak` options but remember that `Flatpak` has no automatic updates for now (see below). `DEB` does update automatically, but since installing a `.deb` needs elevated privileges, RiftLauncher will show a system password prompt (`pkexec`, `sudo` or similar) each time it applies an update.
+Every release ships four Linux builds: `riftlauncher-X.X.X.AppImage`, `.deb`, `.x86_64.rpm` and `.pacman`. There is no Flatpak build; the runtimes it needs aren't available on our build machines.
 
-If you use any of this option just install it with double click or `flatpak install vs-launcher-X.X.X.flatpak` and then skip steps 3, 4 and 5. Just open it like any other app.
-{% endhint %}
-
-{% hint style="info" %}
-`Flatpak` will have automatic updates using Flathub bot for now on it'll need manual updates when a new version is released.
+If you prefer a packaged install over the AppImage, install the `.deb`, `.rpm` or `.pacman` with your usual package tool and then skip steps 3, 4 and 5. Just open it like any other app. All three update themselves the same way the AppImage does, except that replacing an installed package needs elevated privileges, so RiftLauncher will show a system password prompt (`pkexec`, `sudo` or similar) each time it applies an update.
 {% endhint %}
 {% endstep %}
 
@@ -60,7 +50,7 @@ Some users reported that AppImage Launcher is breaking automaitc updates so if y
 This should be done by default by sometimes you've to manually do it.
 
 ```sh
-chmod +x ./vs-launcher-X.X.X.AppImage
+chmod +x ./riftlauncher-X.X.X.AppImage
 ```
 
 {% endstep %}
@@ -68,7 +58,7 @@ chmod +x ./vs-launcher-X.X.X.AppImage
 {% step %}
 **Open RiftLauncher**
 
-Double click the AppImage and that's it, ready to use! (The file itself is still named after VS Launcher; see the note above.)
+Double click the AppImage and that's it, ready to use!
 {% endstep %}
 
 {% step %}
@@ -244,52 +234,11 @@ Note, that this will enable appimages system-wide, and all appimages will have d
 
 ---
 
-## Migrating from AppImage to Flatpak
+## Where RiftLauncher keeps its data
 
-**AppImage** and **DEB** options will use `/home/username/.config` as folder to store configs, game versions, installations... but Flatpak will use `/home/username/.var/app/xyz.xurxomf.vslauncher/config` for this (the Flatpak app ID is still the original VS Launcher one; renaming it is tracked separately) so, if you were using **AppImage** or **DEB** builds of RiftLauncher before and you install the **Flatpak** one you'll loose all your configs.
+Every Linux build stores its config, the list of your game versions and the list of your Installations in `/home/username/.config/RiftLauncher/`. Switching between the AppImage and a packaged build changes nothing about that, so you keep everything either way.
 
-To restore the config you've to move the config file to the new location manually.
-
-{% stepper %}
-{% step %}
-
-#### Find the old config file
-
-This one will be at `/home/username/.config/VSLauncher/config.json` and copy it or move it to a save location.
-{% endstep %}
-
-{% step %}
-
-#### Open the Flatpak installed RiftLauncher
-
-Open the RiftLauncher copy you've installed using Flatpak and wait one or two seconds for it to generate the config file.
-{% endstep %}
-
-{% step %}
-
-#### Go to the new config file location
-
-This one should be at `/home/username/.var/app/xyz.xurxomf.vslauncher/config/VSLauncher/config.json` . If it's not there go to the setting page on RiftLauncher and you'll have the 3 default folders. Just copy one of them as seen on the next video and open it.
-{% endstep %}
-
-{% step %}
-
-#### Replace the config.json with the old one.
-
-Just paste or move the old config file to the new location.
-{% endstep %}
-
-{% step %}
-
-#### Restart RiftLauncher
-
-Close and open RiftLauncher and magic, all your installations and versions are back!
-{% endstep %}
-{% endstepper %}
-
-{% embed url="https://www.youtube.com/watch?v=5NerBys57t4" %}
-Migrate to Flatpak | VS Launcher Guides
-{% endembed %}
+If you're coming from VS Launcher, its own folder is `/home/username/.config/VSLauncher/` and RiftLauncher never writes to it. The first time RiftLauncher starts it copies VS Launcher's `config.json` and its installation icons across into its own folder, so both launchers keep working and neither can overwrite the other's settings.
 
 ---
 
