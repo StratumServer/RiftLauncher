@@ -1,4 +1,5 @@
 import { DEFAULT_BACKGROUND_ID } from "../backgrounds"
+import { DEFAULT_MODDB_VISIBILITY_ANSWER } from "../moddbVisibility"
 
 /**
  * Everything a fresh config holds that does not depend on the host.
@@ -23,6 +24,7 @@ export const DEFAULT_CONFIG_BASE: Omit<ConfigType, "schemaVersion" | "defaultIns
   favMods: [],
   suspendedModUpdates: [],
   background: DEFAULT_BACKGROUND_ID,
+  moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
   customIcons: []
 }
 

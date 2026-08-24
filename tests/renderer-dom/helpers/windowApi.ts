@@ -42,6 +42,7 @@ export function createMockConfig(overrides: Partial<ConfigType> = {}): ConfigTyp
     favMods: [],
     suspendedModUpdates: [],
     background: "default",
+    moddbVisibilityAnswer: "unasked",
     customIcons: [],
     ...overrides
   }
@@ -109,7 +110,8 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
       lookForAGameVersion: vi.fn(async () => ({ exists: false as const }))
     },
     netManager: {
-      queryURL: vi.fn(notMocked("netManager.queryURL"))
+      queryURL: vi.fn(notMocked("netManager.queryURL")),
+      acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility"))
     },
     backgroundsManager: {
       ensureBackground: vi.fn(notMocked("backgroundsManager.ensureBackground")),

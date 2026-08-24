@@ -15,6 +15,7 @@ import NotificationsOverlay from "@renderer/components/layout/NotificationsOverl
 import MainMenu from "@renderer/components/layout/MainMenu"
 import GlobalActionsWrapper from "@renderer/components/layout/GlobalActionsWrapper"
 import DeferredGlobalModUpdateChecker from "@renderer/components/layout/DeferredGlobalModUpdateChecker"
+import ModDbVisibilityPrompt from "@renderer/components/layout/ModDbVisibilityPrompt"
 
 const HomePage = lazy(() => import("@renderer/features/home/pages/HomePage"))
 const ListInslallations = lazy(() => import("@renderer/features/installations/pages/ListInstallations"))
@@ -66,6 +67,8 @@ function App(): JSX.Element {
                   </main>
 
                   <NotificationsOverlay />
+
+                  <ModDbVisibilityPrompt />
                 </div>
               </div>
             </GlobalActionsWrapper>

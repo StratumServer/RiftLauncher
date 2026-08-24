@@ -72,7 +72,8 @@ const api: BridgeAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, path)
   },
   netManager: {
-    queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url)
+    queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url),
+    acceptModDbVisibility: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY)
   },
   backgroundsManager: {
     ensureBackground: (id: string, file: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, id, file),

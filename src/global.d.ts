@@ -22,6 +22,12 @@ declare global {
      * src/domain/backgrounds.ts.
      */
     background: string
+    /**
+     * What the player answered when asked, once, whether the launcher could fetch its own ModDB
+     * listing archive so that listing's download counter registers it: `unasked` until they answer,
+     * then `accepted`, `declined` or `already-done` forever. See src/domain/moddbVisibility.ts.
+     */
+    moddbVisibilityAnswer: string
     _notifiedModUpdatesInstallations?: string[]
     /**
      * Bumped by every background selection so a re-pick of the same id still repaints. The custom
