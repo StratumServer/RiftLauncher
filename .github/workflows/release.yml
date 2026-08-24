@@ -7,11 +7,9 @@ name: Release
 # (latest.yml, latest-linux.yml) are uploaded alongside the installers, which
 # is what lets installed copies discover the next release.
 #
-# Linux builds AppImage, deb, rpm and pacman: the flatpak target in
-# electron-builder.yml needs flatpak-builder and runtimes the runner does not
-# have. rpm needs rpmbuild (the `rpm` apt package) and pacman needs bsdtar
-# (the `libarchive-tools` apt package); neither ships on ubuntu-latest by
-# default. macOS is absent for the same reason it is manual-only in ci.yml:
+# Linux builds AppImage, deb, rpm and pacman. rpm needs rpmbuild (the `rpm`
+# apt package) and pacman needs bsdtar (the `libarchive-tools` apt package);
+# neither ships on ubuntu-latest by default. macOS is absent for the same reason it is manual-only in ci.yml:
 # 10x billing and the launcher cannot launch the game there yet.
 on:
   push:
