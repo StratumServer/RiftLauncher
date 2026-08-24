@@ -28,6 +28,12 @@ declare global {
      * then `accepted`, `declined` or `already-done` forever. See src/domain/moddbVisibility.ts.
      */
     moddbVisibilityAnswer: string
+    /**
+     * Whether update checks offer prerelease builds: `true` for yes, `false` for no, and `null`
+     * while nobody has said, which leaves the running version deciding the way electron-updater
+     * does on its own. See src/domain/appUpdate/betaUpdates.ts.
+     */
+    receiveBetaUpdates: boolean | null
     _notifiedModUpdatesInstallations?: string[]
     /**
      * Bumped by every background selection so a re-pick of the same id still repaints. The custom

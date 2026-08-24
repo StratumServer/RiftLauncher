@@ -281,6 +281,8 @@
       "onlyIfEnabledTwoFA": "Fill this field only if you have 2FA enabled!",
       "uiScale": "UI Scale",
       "background": "Background",
+      "receiveBetaUpdates": "Beta versions",
+      "receiveBetaUpdatesDesc": "Toggle on to be offered beta versions of the launcher when it checks for updates. Turning it off while you are on a beta stops the next ones being offered and keeps the one you have until a stable release arrives.",
       "ownImage": "Your own image",
       "backgroundsLoadFailed": "The background list couldn't be loaded. Check your connection and try again.",
       "language": "Language",

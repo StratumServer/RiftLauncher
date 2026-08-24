@@ -8,6 +8,7 @@ import { isRecord } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from "@domain/config/migrations"
 import { normalizeBackgroundId } from "@domain/backgrounds"
 import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
+import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 
 const defaultConfig: ConfigType = {
@@ -312,6 +313,9 @@ export function normalizeConfig(config: unknown): ConfigType {
     // Anything unreadable becomes "not asked yet", which costs one question and never invents a
     // consent. The prompt is the only thing that ever writes a real answer here.
     moddbVisibilityAnswer: normalizeModDbVisibilityAnswer(rawConfig.moddbVisibilityAnswer),
+    // Null for anything that is not an explicit yes or no, which is what every config written
+    // before the toggle existed says, and leaves the running version deciding as it always did.
+    receiveBetaUpdates: normalizeReceiveBetaUpdates(rawConfig.receiveBetaUpdates),
     customIcons
   }
 

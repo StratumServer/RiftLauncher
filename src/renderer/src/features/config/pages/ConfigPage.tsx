@@ -7,15 +7,29 @@ import { AnimatePresence, motion } from "motion/react"
 import clsx from "clsx"
 
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { backgroundImageSource } from "@renderer/utils/backgroundStyle"
 
-import { useSettingsConfig, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 
 import defaultBackground from "@renderer/assets/background.jpg"
 
-import { FormBody, FormFieldGroup, FormHead, FormLabel, FromGroup, FromWrapper, FormGroupWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
+import {
+  FormBody,
+  FormFieldDescription,
+  FormFieldGroup,
+  FormFieldGroupWithDescription,
+  FormHead,
+  FormLabel,
+  FromGroup,
+  FromWrapper,
+  FormGroupWrapper,
+  FormButton,
+  FormInputText,
+  FormToggle
+} from "@renderer/components/ui/FormComponents"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import LanguagesMenu from "@renderer/components/ui/LanguagesMenu"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
@@ -82,6 +96,16 @@ function ConfigPage(): JSX.Element {
                 <BackgroundPicker />
               </FormBody>
             </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.receiveBetaUpdates")} />
+              </FormHead>
+
+              <FormBody>
+                <BetaUpdatesToggle />
+              </FormBody>
+            </FromGroup>
           </FormGroupWrapper>
 
           <FormGroupWrapper title={t("generic.folders")}>
@@ -133,6 +157,39 @@ function ConfigPage(): JSX.Element {
         </FromWrapper>
       </div>
     </ScrollableContainer>
+  )
+}
+
+/**
+ * Whether update checks offer beta builds.
+ *
+ * Shows the state that is actually in force rather than the stored one, which is why it needs the
+ * running version: with nothing stored, a beta build is already being offered betas and a stable
+ * build is not, and a toggle that read `off` on a beta would be lying about what happens next.
+ * Touching it stores a real answer, so switching it off while running a beta is what stops the next
+ * ones being offered. It does not roll anything back: this build stays until a release it is
+ * allowed to see comes along.
+ */
+function BetaUpdatesToggle(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { receiveBetaUpdates } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+  const [runningVersion, setRunningVersion] = useState("")
+
+  useEffect(() => {
+    void window.api.utils.getAppVersion().then(setRunningVersion)
+  }, [])
+
+  return (
+    <FormFieldGroupWithDescription>
+      <FormToggle
+        title={t("features.config.receiveBetaUpdatesDesc")}
+        value={resolveAllowPrerelease(receiveBetaUpdates, runningVersion)}
+        onChange={(value) => configDispatch({ type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: value })}
+      />
+      <FormFieldDescription content={t("features.config.receiveBetaUpdatesDesc")} />
+    </FormFieldGroupWithDescription>
   )
 }
 

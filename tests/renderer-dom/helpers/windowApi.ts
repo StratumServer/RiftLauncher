@@ -43,6 +43,7 @@ export function createMockConfig(overrides: Partial<ConfigType> = {}): ConfigTyp
     suspendedModUpdates: [],
     background: "default",
     moddbVisibilityAnswer: "unasked",
+    receiveBetaUpdates: null,
     customIcons: [],
     ...overrides
   }

@@ -20,6 +20,7 @@ import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } f
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { registerAutoUpdaterEvents } from "@src/main/autoUpdaterEvents"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
+import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
@@ -312,6 +313,13 @@ app.whenReady().then(async () => {
     registerAutoUpdaterEvents((channel, payload) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
     })
+
+    // Said out loud rather than left to electron-updater, which reads it off the running version
+    // alone: that leaves someone on a stable build with no way to ask for betas, and someone who
+    // tried one beta signed up for every beta after it. The stored answer wins when there is one,
+    // and the running version still decides when there is not. Only which builds are offered moves
+    // here; allowDowngrade stays untouched, so this can never walk an install backwards.
+    autoUpdater.allowPrerelease = resolveAllowPrerelease((await getConfig()).receiveBetaUpdates, app.getVersion())
 
     // Defer the network check until the initial window has had time to become interactive.
     //

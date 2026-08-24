@@ -35,6 +35,7 @@ vi.mock("@src/ipc/accountStore", () => ({
 import { saveAccountSecrets } from "@src/ipc/accountStore"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
+import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
 
 let temporaryRoot: string
 let userDataFolder: string
@@ -80,6 +81,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
+    receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     customIcons: [],
     ...overrides
   }
@@ -351,6 +353,27 @@ describe("normalizeConfig: moddbVisibilityAnswer", () => {
 
     for (const value of ["yes", "ACCEPTED", "", 1, true, null, {}, ["accepted"]]) {
       assert.equal(normalizeConfig({ moddbVisibilityAnswer: value }).moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER, String(value))
+    }
+  })
+})
+
+describe("normalizeConfig: receiveBetaUpdates", () => {
+  it("reads a config written before the field existed as nobody having answered", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).receiveBetaUpdates, DEFAULT_RECEIVE_BETA_UPDATES)
+  })
+
+  it("keeps an explicit answer, both ways round, since each overrides what the running version would say", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({ receiveBetaUpdates: true }).receiveBetaUpdates, true)
+    assert.equal(normalizeConfig({ receiveBetaUpdates: false }).receiveBetaUpdates, false)
+  })
+
+  it("falls back to no answer for anything that is not a boolean", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const value of ["true", "false", "yes", 1, 0, null, {}, [true]]) {
+      assert.equal(normalizeConfig({ receiveBetaUpdates: value }).receiveBetaUpdates, DEFAULT_RECEIVE_BETA_UPDATES, String(value))
     }
   })
 })
