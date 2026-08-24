@@ -153,15 +153,17 @@ export function FormInputPassword({
  *
  * @param {object} props - The component props.
  * @param {number} props.value - The current value of the input field.
+ * @param {boolean} props.disabled - Refuses interaction, for a state the caller cannot vouch for yet.
  * @returns {JSX.Element} A JSX element representing the input field with specified styles and validation.
  */
-export function FormToggle({ value, title, onChange }: Readonly<{ className?: string; value: boolean; title: string; onChange: (e: boolean) => void }>): JSX.Element {
+export function FormToggle({ value, title, onChange, disabled }: Readonly<{ className?: string; value: boolean; title: string; onChange: (e: boolean) => void; disabled?: boolean }>): JSX.Element {
   return (
     <Switch
       checked={value}
       onChange={onChange}
       title={title}
-      className="shrink-0 group relative flex h-fit w-12 enabled:cursor-pointer backdrop-blur-xs rounded-full border border-zinc-400/5 bg-zinc-950/50 p-1 enabled:shadow-sm enabled:shadow-zinc-950/50 enabled:hover:shadow-none transition-colors duration-100 ease-in-out focus:outline-hidden data-focus:outline-1 data-focus:outline-white data-checked:bg-vs"
+      disabled={disabled}
+      className="shrink-0 group relative flex h-fit w-12 enabled:cursor-pointer backdrop-blur-xs rounded-full border border-zinc-400/5 bg-zinc-950/50 p-1 enabled:shadow-sm enabled:shadow-zinc-950/50 enabled:hover:shadow-none transition-colors duration-100 ease-in-out focus:outline-hidden data-focus:outline-1 data-focus:outline-white data-checked:bg-vs data-disabled:opacity-50"
     >
       <span
         aria-hidden="true"
