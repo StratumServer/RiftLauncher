@@ -31,6 +31,10 @@ function ManageModsActionBar({
   const exportModpack = useExportModpack()
   const openPathInExplorer = useOpenPathInExplorer()
 
+  // The server export ships this list and is greyed out by this list. Deriving it twice is how a
+  // search that leaves only client Mods once produced a live button and a `{ mods: [] }` manifest.
+  const serverMods = installedMods.filter((iMod) => isServerMod(iMod.side))
+
   return (
     <StickyMenuGroupWrapper type="centered">
       <StickyMenuGroup>
@@ -47,8 +51,8 @@ function ManageModsActionBar({
         <FormButton
           title={t("features.mods.exportServerModpack")}
           className="p-1 w-fit h-8"
-          onClick={() => exportModpack({ installedMods: installedMods.filter((m) => isServerMod(m.side)), installation: { ...installation, name: `${installation.name} (Server)` } })}
-          disabled={installedMods.length === 0}
+          onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` } })}
+          disabled={serverMods.length === 0}
         >
           <PiDesktopTowerDuotone className="text-xl" />
           <p>{t("features.mods.exportServerModpackButton")}</p>
