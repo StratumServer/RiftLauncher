@@ -1,5 +1,5 @@
 import { isAbsolute, relative, resolve, sep } from "node:path"
-import { fileURLToPath } from "url"
+import { fileURLToPath } from "node:url"
 
 import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
 

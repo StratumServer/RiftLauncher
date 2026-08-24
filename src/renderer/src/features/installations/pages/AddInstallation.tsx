@@ -4,7 +4,8 @@ import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
 import semver from "semver"
 
-import { createInstallation } from "@domain/installations/create"
+import { createInstallation, INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH } from "@domain/installations/create"
+import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -12,8 +13,7 @@ import { useInstallations, useGameVersions, useCustomIcons, useSettingsConfig, u
 import { createCreateInstallationPorts, describeCreateInstallationFailure, toFoldersInUse, toInstallationType } from "@renderer/features/installations/adapters/create"
 import { useEnsurePathExists } from "@renderer/features/installations/hooks/usePathActions"
 import { useInstallationFolder } from "@renderer/features/installations/hooks/useInstallationFolder"
-import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
-import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
+import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 import { useInstallationFormFields } from "@renderer/features/installations/hooks/useInstallationFormFields"
 import { NameAndIconPicker } from "@renderer/features/installations/components/NameAndIconPicker"
 import { GameVersionPicker } from "@renderer/features/installations/components/GameVersionPicker"
@@ -49,8 +49,7 @@ function AddInslallation(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
   const ensurePathExists = useEnsurePathExists()
-  const openExternalLink = useOpenExternalLink()
-  const logMessage = useLogMessage()
+  const { openOnBrowser: openExternalLink } = useExternalLinks()
 
   const fields = useInstallationFormFields({
     icon: INSTALLATION_ICONS[0],
@@ -59,7 +58,7 @@ function AddInslallation(): JSX.Element {
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
-    compressionLevel: 6,
+    compressionLevel: DEFAULT_COMPRESSION_LEVEL,
     mesaGlThread: false,
     envVars: ""
   })
@@ -87,7 +86,7 @@ function AddInslallation(): JSX.Element {
 
     if (!result.ok) {
       const { messageKey } = describeCreateInstallationFailure(result.reason)
-      return addNotification(t(messageKey, { min: 5, max: 50 }), "error")
+      return addNotification(t(messageKey, { min: INSTALLATION_NAME_MIN_LENGTH, max: INSTALLATION_NAME_MAX_LENGTH }), "error")
     }
 
     try {
@@ -104,8 +103,8 @@ function AddInslallation(): JSX.Element {
       addNotification(t("features.installations.installationSuccessfullyAdded"), "success")
       navigate("/installations")
     } catch (error) {
-      logMessage("error", `${LOG_TAG} [handleAddInstallation] Error adding an Installation.`)
-      logMessage("debug", `${LOG_TAG} [handleAddInstallation] Error adding the Installation at ${path}: ${error}.`)
+      window.api.utils.logMessage("error", `${LOG_TAG} [handleAddInstallation] Error adding an Installation.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [handleAddInstallation] Error adding the Installation at ${path}: ${error}.`)
       addNotification(t("features.installations.errorAddingInstallation"), "error")
     }
   }

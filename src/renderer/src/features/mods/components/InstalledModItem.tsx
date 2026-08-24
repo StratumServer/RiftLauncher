@@ -3,7 +3,7 @@ import { PiArrowClockwiseDuotone, PiMoonDuotone, PiTrashDuotone } from "react-ic
 import { FiExternalLink } from "react-icons/fi"
 import clsx from "clsx"
 
-import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
+import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 
 import { ListItem } from "@renderer/components/ui/List"
 import { NormalButton } from "@renderer/components/ui/Buttons"
@@ -16,16 +16,16 @@ function InstalledModItem({
   onToggleSuspendClick,
   onDeleteClick,
   onUpdateClick
-}: {
+}: Readonly<{
   iMod: InstalledModType
   /** Update All skips this Mod. The row still says an update exists, and still offers it. */
   suspended: boolean
   onToggleSuspendClick: () => void
   onDeleteClick: () => void
   onUpdateClick: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
-  const openExternalLink = useOpenExternalLink()
+  const { openOnBrowser: openExternalLink } = useExternalLinks()
 
   return (
     <ListItem key={iMod.modid + iMod.path}>

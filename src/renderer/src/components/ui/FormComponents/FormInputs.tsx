@@ -29,7 +29,7 @@ export function FormInputText({
   placeholder,
   disabled,
   readOnly = false
-}: {
+}: Readonly<{
   className?: string
   value: string
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
@@ -38,7 +38,7 @@ export function FormInputText({
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <Input
       type="text"
@@ -76,7 +76,7 @@ export function FormInputNumber({
   placeholder,
   disabled,
   readOnly = false
-}: {
+}: Readonly<{
   className?: string
   value: number
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
@@ -85,7 +85,7 @@ export function FormInputNumber({
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <Input
       type="number"
@@ -123,7 +123,7 @@ export function FormInputPassword({
   placeholder,
   disabled,
   readOnly = false
-}: {
+}: Readonly<{
   className?: string
   value: string
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
@@ -132,7 +132,7 @@ export function FormInputPassword({
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
-}): JSX.Element {
+}>): JSX.Element {
   return (
     <Input
       type="password"
@@ -155,7 +155,7 @@ export function FormInputPassword({
  * @param {number} props.value - The current value of the input field.
  * @returns {JSX.Element} A JSX element representing the input field with specified styles and validation.
  */
-export function FormToggle({ value, title, onChange }: { className?: string; value: boolean; title: string; onChange: (e: boolean) => void }): JSX.Element {
+export function FormToggle({ value, title, onChange }: Readonly<{ className?: string; value: boolean; title: string; onChange: (e: boolean) => void }>): JSX.Element {
   return (
     <Switch
       checked={value}

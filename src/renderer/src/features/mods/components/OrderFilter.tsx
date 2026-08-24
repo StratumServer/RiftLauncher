@@ -13,12 +13,12 @@ function OrderFilter({
   setOrderBy,
   orderByOrder,
   setOrderByOrder
-}: {
+}: Readonly<{
   orderBy: string
   setOrderBy: Dispatch<SetStateAction<string>>
   orderByOrder: string
   setOrderByOrder: Dispatch<SetStateAction<string>>
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   const ORDER_BY = [

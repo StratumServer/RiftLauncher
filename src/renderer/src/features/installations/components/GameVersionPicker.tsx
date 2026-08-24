@@ -19,7 +19,7 @@ export interface GameVersionPickerProps {
 }
 
 /** The game version table shared by AddInstallation and EditInstallation. */
-export function GameVersionPicker({ gameVersions, version, onSelect, missingVersion }: GameVersionPickerProps): JSX.Element {
+export function GameVersionPicker({ gameVersions, version, onSelect, missingVersion }: Readonly<GameVersionPickerProps>): JSX.Element {
   const { t } = useTranslation()
 
   return (

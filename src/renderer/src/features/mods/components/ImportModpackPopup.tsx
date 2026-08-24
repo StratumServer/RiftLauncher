@@ -27,14 +27,14 @@ function ImportModpackPopup({
   installation,
   installedMods,
   onFinish
-}: {
+}: Readonly<{
   isOpen: boolean
   manifest: ModpackManifestType | null
   close: () => void
   installation: InstallationType
   installedMods: InstalledModType[]
   onFinish: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
 
@@ -246,7 +246,7 @@ function ImportModpackPopup({
   )
 }
 
-function StatusIcon({ status }: { status: ModStatus }): JSX.Element {
+function StatusIcon({ status }: Readonly<{ status: ModStatus }>): JSX.Element {
   switch (status) {
     case "installed":
       return <PiCheckCircleDuotone />

@@ -1,5 +1,4 @@
 import { useTranslation } from "react-i18next"
-import { v4 as uuidv4 } from "uuid"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { describeAddCustomIconFailure, type AddCustomIconFailure } from "@renderer/features/config/adapters/customIcon"
@@ -11,8 +10,8 @@ const LOG_TAG = "[front] [config] [features/config/hooks/useAddCustomIcon.ts] [u
  * `CONFIG_ACTIONS.ADD_CUSTOM_ICON`.
  *
  * Kept in features/config/hooks rather than under components/ui, where AddCustomIconPupup.tsx
- * lives: stage 4's exit gate fails if anything under src/renderer/src/components mentions the
- * preload bridge directly.
+ * lives, because nothing under src/renderer/src/components may touch the preload bridge
+ * directly.
  */
 export function useAddCustomIcon(): () => Promise<{ id: string; file: string } | undefined> {
   const { t } = useTranslation()
@@ -44,7 +43,7 @@ export function useAddCustomIcon(): () => Promise<{ id: string; file: string } |
 
     if (!selectedPath || selectedPath.length < 1) return refuse("no-file-selected")
 
-    const id = uuidv4()
+    const id = crypto.randomUUID()
 
     try {
       const result = await window.api.pathsManager.copyToIcons(selectedPath, id)

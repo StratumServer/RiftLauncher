@@ -11,7 +11,7 @@ import { renderWithProviders } from "./helpers/render"
 /**
  * Guards the live-failure fix directly at the surface the player sees: a
  * login attempt whose response the launcher could not read must never show
- * the same toast as a wrong password. Before this stage, `unreadable-response`
+ * the same toast as a wrong password. Previously, `unreadable-response`
  * had no wire status of its own and fell into the generic catch in
  * SessionButton, which always reported "Invalid email or password!" even
  * though the service never actually refused the credentials.

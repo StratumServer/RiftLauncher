@@ -28,7 +28,7 @@ export function AdvancedSettingsSection({
   onMesaGlThreadChange,
   envVars,
   onEnvVarsChange
-}: AdvancedSettingsSectionProps): JSX.Element {
+}: Readonly<AdvancedSettingsSectionProps>): JSX.Element {
   const { t } = useTranslation()
 
   return (

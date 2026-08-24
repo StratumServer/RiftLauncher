@@ -1,5 +1,5 @@
 import { ipcMain, dialog, app, shell } from "electron"
-import { platform } from "os"
+import { platform } from "node:os"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, assertTrustedIpcSender } from "@src/ipc/ipcSecurity"

@@ -11,9 +11,9 @@
 
 import Seven from "node-7z"
 import fse from "fs-extra"
-import { createReadStream, mkdtempSync } from "fs"
+import { createReadStream, mkdtempSync } from "node:fs"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
-import { tmpdir } from "os"
+import { tmpdir } from "node:os"
 import * as tar from "tar"
 
 // Relative so the module stays importable from a plain test run, like validation.ts.

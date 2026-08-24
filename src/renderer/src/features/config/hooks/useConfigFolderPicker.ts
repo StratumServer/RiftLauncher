@@ -8,13 +8,12 @@ type FolderSettingActionType = CONFIG_ACTIONS.SET_DEFAULT_INSTALLATIONS_FOLDER |
 /**
  * Minimal local hook behind ConfigPage's three folder pickers (installations, versions, backups).
  *
- * The installations agent is centralizing this exact browse-and-warn-if-not-empty pattern in its
- * own feature as part of the same stage. Deliberately not importing from that file here since it
- * may not exist yet on this branch; once it lands, these three buttons are a natural follow-up to
- * point at it instead.
+ * The installations feature carries the same browse-and-warn-if-not-empty pattern. Sharing one
+ * implementation between the two is a natural follow-up, kept separate here so this hook does not
+ * depend on that file's shape.
  *
- * Lives outside features/config/pages on purpose: stage 4's exit gate fails if ConfigPage.tsx (or
- * anything else under that directory) mentions the preload bridge directly.
+ * Lives outside features/config/pages on purpose: neither ConfigPage.tsx nor anything else under
+ * that directory may mention the preload bridge directly.
  */
 export function useConfigFolderPicker(actionType: FolderSettingActionType): () => Promise<void> {
   const { t } = useTranslation()

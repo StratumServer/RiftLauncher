@@ -142,7 +142,7 @@ function ConfigPage(): JSX.Element {
  *
  * The manifest is fetched by the hook when this mounts, which is when the settings page opens.
  *
- * ponytail: a tile only shows its picture once that scene has been downloaded, which is when the
+ * Known limit: a tile only shows its picture once that scene has been downloaded, which is when the
  * player picks it, so a first visit is a grid of names. That is the price of not pulling seven
  * megabytes down the moment somebody opens their settings. If choosing blind turns out to bother
  * people, the fix is a small thumbnail beside each scene on the branch, not a prefetch.
@@ -206,7 +206,7 @@ function BackgroundPicker(): JSX.Element {
  * `alt=""` rather than the scene name: the name is already written under the picture, and an
  * empty alt is also what keeps a tile whose file is not cached from drawing a broken-image icon.
  */
-function BackgroundTile({ name, selected, onClick, source }: { name: string; selected: boolean; onClick: () => void; source?: string }): JSX.Element {
+function BackgroundTile({ name, selected, onClick, source }: Readonly<{ name: string; selected: boolean; onClick: () => void; source?: string }>): JSX.Element {
   return (
     <button
       type="button"

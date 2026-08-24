@@ -12,8 +12,7 @@ import { useBulkUpdateMods } from "@renderer/features/mods/hooks/useBulkUpdateMo
 import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpackImportPicker"
 import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
 
-import { useDeleteInstalledModFile } from "@renderer/features/installations/hooks/useDeleteInstalledModFile"
-import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
+import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 
 import { ListGroup, ListWrapper } from "@renderer/components/ui/List"
 import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeSummaryPopup"
@@ -41,9 +40,6 @@ function ListMods(): JSX.Element {
   const suspendedModUpdates = useSuspendedModUpdates()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
-
-  const deleteInstalledModFile = useDeleteInstalledModFile()
-  const logMessage = useLogMessage()
 
   const { id } = useParams()
 
@@ -91,15 +87,15 @@ function ListMods(): JSX.Element {
     if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantDeleteWhileinUse"), "error")
 
     try {
-      const deleted = await deleteInstalledModFile(modToDelete.path)
+      const deleted = await createFileSystemPort().remove(modToDelete.path)
       if (!deleted) throw new Error(`The host refused to delete ${modToDelete.path}.`)
 
       refresh()
 
       addNotification(t("features.mods.modSuccessfullyDeleted"), "success")
     } catch (err) {
-      logMessage("error", `${LOG_TAG} [DeleteModHandler] Error deleting a mod.`)
-      logMessage("debug", `${LOG_TAG} [DeleteModHandler] Error deleting the mod file ${modToDelete.path}: ${err}.`)
+      window.api.utils.logMessage("error", `${LOG_TAG} [DeleteModHandler] Error deleting a mod.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [DeleteModHandler] Error deleting the mod file ${modToDelete.path}: ${err}.`)
       addNotification(t("features.mods.errorDeletingMod"), "error")
     } finally {
       setModToDelete(null)

@@ -68,7 +68,7 @@ ipcMain.handle(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, async (event,
 /**
  * Copies the picture the player picked into the same cache, under the reserved custom name.
  *
- * ponytail: JPEG only, which is what the extension gate on the `background:` protocol serves and
+ * Known limit: JPEG only, which is what the extension gate on the `background:` protocol serves and
  * what the catalog itself is. The same shape the custom installation icons flow has always had
  * (PNG only, see COPY_TO_ICONS). If players turn up with PNG screenshots, the change is a second
  * cached name and a Content-Type chosen from the sniffed bytes, not a decoder.

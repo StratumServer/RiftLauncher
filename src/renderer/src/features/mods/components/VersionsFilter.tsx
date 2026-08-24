@@ -12,11 +12,11 @@ function VersionsFilter({
   versionsFilter,
   setVersionsFilter,
   size = "w-full h-8"
-}: {
+}: Readonly<{
   versionsFilter: DownloadableModGameVersionType[]
   setVersionsFilter: Dispatch<SetStateAction<DownloadableModGameVersionType[]>>
   size?: string
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   const gameVersionsList = useGameVersionsLookup()

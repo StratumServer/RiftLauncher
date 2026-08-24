@@ -104,12 +104,34 @@ export async function extractInnoPayload(ports: InnoExtractionPorts, options: In
  * of no interest, unrolls it once.
  */
 export function buildPlan(script: InnoSetupScript): PlannedFile[] {
-  // One data entry can serve SEVERAL destinations: the installer stores content
-  // it lays down twice only once, and the game's fonts are exactly that case,
-  // one copy under {app} and one in the system font folder. Indexing by location
-  // rather than by destination is what keeps the stream read to one pass, but
-  // every destination of each has to be kept, otherwise the day two paths under
-  // {app} share content one of them would go missing without a word.
+  const destinations = collectDestinationsByLocation(script)
+  if (destinations.size === 0) throw InnoFormatError.corrupt("no file destined for the install folder")
+
+  const planned: PlannedFile[] = []
+  for (const [location, paths] of destinations) {
+    const entry = script.dataEntries[location]!
+    if (entry.encrypted) throw InnoFormatError.unsupported("encrypted data")
+    if (entry.fileSize > MAX_FILE_BYTES) throw InnoFormatError.corrupt(`an entry of ${entry.fileSize} bytes`)
+    planned.push({ entry, paths })
+  }
+
+  planned.sort(byStreamOrder)
+
+  return planned
+}
+
+/**
+ * Gathers every destination under the version folder, keyed by the data entry
+ * that feeds it.
+ *
+ * One data entry can serve SEVERAL destinations: the installer stores content
+ * it lays down twice only once, and the game's fonts are exactly that case,
+ * one copy under {app} and one in the system font folder. Indexing by location
+ * rather than by destination is what keeps the stream read to one pass, but
+ * every destination of each has to be kept, otherwise the day two paths under
+ * {app} share content one of them would go missing without a word.
+ */
+function collectDestinationsByLocation(script: InnoSetupScript): Map<number, string[]> {
   const destinations = new Map<number, string[]>()
 
   for (const file of script.files) {
@@ -131,27 +153,22 @@ export function buildPlan(script: InnoSetupScript): PlannedFile[] {
     if (!paths.some((known) => known.toLowerCase() === relativePath.toLowerCase())) paths.push(relativePath)
   }
 
-  if (destinations.size === 0) throw InnoFormatError.corrupt("no file destined for the install folder")
+  return destinations
+}
 
-  const planned: PlannedFile[] = []
-  for (const [location, paths] of destinations) {
-    const entry = script.dataEntries[location]!
-    if (entry.encrypted) throw InnoFormatError.unsupported("encrypted data")
-    if (entry.fileSize > MAX_FILE_BYTES) throw InnoFormatError.corrupt(`an entry of ${entry.fileSize} bytes`)
-    planned.push({ entry, paths })
-  }
-
-  // The size breaks ties, and that is not a flourish: an EMPTY file shares its
-  // offset with the one that follows, since it takes up nothing. Sorting by
-  // growing size puts the empty file first, where reading zero bytes bothers
-  // nobody.
-  planned.sort((left, right) => {
-    if (left.entry.chunkOffset !== right.entry.chunkOffset) return left.entry.chunkOffset - right.entry.chunkOffset
-    if (left.entry.fileOffset !== right.entry.fileOffset) return left.entry.fileOffset - right.entry.fileOffset
-    return left.entry.fileSize - right.entry.fileSize
-  })
-
-  return planned
+/**
+ * Orders two planned files the way the stream hands them over: by block, then
+ * by position inside the block.
+ *
+ * The size breaks ties, and that is not a flourish: an EMPTY file shares its
+ * offset with the one that follows, since it takes up nothing. Sorting by
+ * growing size puts the empty file first, where reading zero bytes bothers
+ * nobody.
+ */
+function byStreamOrder(left: PlannedFile, right: PlannedFile): number {
+  if (left.entry.chunkOffset !== right.entry.chunkOffset) return left.entry.chunkOffset - right.entry.chunkOffset
+  if (left.entry.fileOffset !== right.entry.fileOffset) return left.entry.fileOffset - right.entry.fileOffset
+  return left.entry.fileSize - right.entry.fileSize
 }
 
 async function writePlan(
@@ -163,21 +180,15 @@ async function writePlan(
   onProgress?: (fraction: number) => void
 ): Promise<number> {
   const cursor = new InstallerCursor(ports.installer)
+  const report = percentProgress(totalBytes, onProgress)
   let done = 0
-  let lastPercent = -1
   let filesWritten = 0
-  let index = 0
 
-  while (index < planned.length) {
-    const chunkOffset = planned[index]!.entry.chunkOffset
-    let last = index
-    while (last + 1 < planned.length && planned[last + 1]!.entry.chunkOffset === chunkOffset) last++
-
-    const stream = await openChunk(cursor, script, dataOffset, planned[index]!.entry)
+  for (const run of chunkRuns(planned)) {
+    const stream = await openChunk(cursor, script, dataOffset, run[0]!.entry)
     let position = 0
 
-    for (let at = index; at <= last; at++) {
-      const { entry, paths } = planned[at]!
+    for (const { entry, paths } of run) {
       if (entry.fileOffset < position) throw InnoFormatError.corrupt("the entries of a block do not follow each other")
 
       await stream.discard(entry.fileOffset - position)
@@ -193,22 +204,52 @@ async function writePlan(
       }
 
       done += entry.fileSize
-      if (onProgress && totalBytes > 0) {
-        const percent = Math.floor((done / totalBytes) * 100)
-        // One install lays down twenty thousand files, and every report crosses
-        // a thread boundary. Reporting per file would flood the display to paint
-        // the same pixel a hundred times.
-        if (percent !== lastPercent) {
-          lastPercent = percent
-          onProgress(done / totalBytes)
-        }
-      }
+      report(done)
     }
-
-    index = last + 1
   }
 
   return filesWritten
+}
+
+/**
+ * Cuts the plan into the runs of neighbours that share one data block.
+ *
+ * The plan arrives in stream order, so everything a block holds already sits
+ * together; a run is exactly what one unrolling of that block covers.
+ */
+function chunkRuns(planned: readonly PlannedFile[]): PlannedFile[][] {
+  const runs: PlannedFile[][] = []
+  let index = 0
+
+  while (index < planned.length) {
+    const chunkOffset = planned[index]!.entry.chunkOffset
+    let last = index
+    while (last + 1 < planned.length && planned[last + 1]!.entry.chunkOffset === chunkOffset) last++
+
+    runs.push(planned.slice(index, last + 1))
+    index = last + 1
+  }
+
+  return runs
+}
+
+/**
+ * Progress that only speaks up when the whole percent changes.
+ *
+ * One install lays down twenty thousand files, and every report crosses a
+ * thread boundary. Reporting per file would flood the display to paint the same
+ * pixel a hundred times.
+ */
+function percentProgress(totalBytes: number, onProgress?: (fraction: number) => void): (done: number) => void {
+  if (!onProgress || totalBytes <= 0) return (): void => {}
+
+  let lastPercent = -1
+  return (done: number): void => {
+    const percent = Math.floor((done / totalBytes) * 100)
+    if (percent === lastPercent) return
+    lastPercent = percent
+    onProgress(done / totalBytes)
+  }
 }
 
 function verifyDigest(ports: InnoExtractionPorts, contents: Uint8Array, entry: InnoDataEntry, relativePath: string): void {

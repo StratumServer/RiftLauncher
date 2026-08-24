@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
-import type { AccountSecrets } from "@src/ipc/accountTypes"
+import type { AccountSecrets } from "@domain/account/credentials"
 
 /**
  * The encrypted account store, against a fake `safeStorage`.

@@ -11,10 +11,10 @@
  * trusts.
  */
 
-import { createWriteStream, lstatSync, renameSync, unlinkSync } from "fs"
-import { createHash } from "crypto"
-import type { ClientRequest, IncomingMessage, RequestOptions } from "http"
-import { request as httpsRequest } from "https"
+import { createWriteStream, lstatSync, renameSync, unlinkSync } from "node:fs"
+import { createHash } from "node:crypto"
+import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http"
+import { request as httpsRequest } from "node:https"
 import fse from "fs-extra"
 import { join } from "node:path"
 

@@ -3,8 +3,8 @@ import { path7za } from "7zip-bin"
 import fse from "fs-extra"
 import { open } from "node:fs/promises"
 import { basename, extname, join, resolve, sep } from "node:path"
-import os from "os"
-import { spawn } from "child_process"
+import os from "node:os"
+import { spawn } from "node:child_process"
 import type { IpcMainInvokeEvent } from "electron"
 
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
@@ -18,6 +18,7 @@ import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolic
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
 import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
 import { isPngBytes, PNG_SIGNATURE_BYTES } from "@domain/backgrounds"
+import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
@@ -559,28 +560,31 @@ function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath:
   })
 }
 
-ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH, async (event, id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel = 4): Promise<boolean> => {
-  assertTrustedIpcSender(event)
-  const safeId = assertSafeTaskId(id)
-  const safeInputPath = await assertManagedPath(inputPath, "input path")
-  const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
-  const safeOutputFileName = assertSafeFileName(outputFileName, "output file name")
-  const safeCompressionLevel = assertInteger(compressionLevel, "compression level", 0, 9)
+ipcMain.handle(
+  IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH,
+  async (event, id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel = DEFAULT_COMPRESSION_LEVEL): Promise<boolean> => {
+    assertTrustedIpcSender(event)
+    const safeId = assertSafeTaskId(id)
+    const safeInputPath = await assertManagedPath(inputPath, "input path")
+    const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
+    const safeOutputFileName = assertSafeFileName(outputFileName, "output file name")
+    const safeCompressionLevel = assertInteger(compressionLevel, "compression level", 0, 9)
 
-  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
-  await archiveConcurrency.run(() =>
-    runTrackedWorker(
-      event,
-      safeId,
-      IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
-      compressWorker,
-      { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel, sevenZipBin },
-      "COMPRESS_ON_PATH",
-      () => true
+    logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
+    await archiveConcurrency.run(() =>
+      runTrackedWorker(
+        event,
+        safeId,
+        IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
+        compressWorker,
+        { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel, sevenZipBin },
+        "COMPRESS_ON_PATH",
+        () => true
+      )
     )
-  )
-  return true
-})
+    return true
+  }
+)
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS, async (event, paths: string[], perms: number): Promise<boolean> => {
   assertTrustedIpcSender(event)

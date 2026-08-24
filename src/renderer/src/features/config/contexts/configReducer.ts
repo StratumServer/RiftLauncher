@@ -1,5 +1,5 @@
-import { DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
-import { DEFAULT_MODDB_VISIBILITY_ANSWER, type ModDbVisibilityAnswer } from "@domain/moddbVisibility"
+import { DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
+import { type ModDbVisibilityAnswer } from "@domain/moddbVisibility"
 
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
@@ -375,26 +375,12 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
 }
 
 export const initialState: ConfigType = {
+  ...DEFAULT_CONFIG_BASE,
   // Sentinel until the main process answers with the stored config: no real schema is 0.
   // The migration runner owns this marker; the renderer receives it through SET_CONFIG.
   schemaVersion: 0,
-  lastUsedInstallation: null,
+  // Empty until the main process sends the real ones: only it can resolve appData.
   defaultInstallationsFolder: "",
   defaultVersionsFolder: "",
-  backupsFolder: "",
-  window: {
-    width: 1280,
-    height: 720,
-    x: 0,
-    y: 0,
-    maximized: false
-  },
-  account: null,
-  installations: [],
-  gameVersions: [],
-  favMods: [],
-  suspendedModUpdates: [],
-  background: DEFAULT_BACKGROUND_ID,
-  moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
-  customIcons: []
+  backupsFolder: ""
 }

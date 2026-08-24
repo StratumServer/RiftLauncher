@@ -102,7 +102,7 @@ function AnimatedRoutes(): JSX.Element {
   )
 }
 
-function AnimatedRoute({ element }: { element: React.ReactElement }): JSX.Element {
+function AnimatedRoute({ element }: Readonly<{ element: React.ReactElement }>): JSX.Element {
   return (
     <motion.div transition={{ duration: 0.1 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full h-full">
       {element}

@@ -2,34 +2,20 @@ import { app } from "electron"
 import fse from "fs-extra"
 import { join } from "node:path"
 import { logMessage } from "@src/utils/logManager"
-import { parseLegacyAccount, toPublicAccount } from "@src/ipc/accountTypes"
+import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
 import { saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from "@domain/config/migrations"
-import { DEFAULT_BACKGROUND_ID, normalizeBackgroundId } from "@domain/backgrounds"
-import { DEFAULT_MODDB_VISIBILITY_ANSWER, normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
+import { normalizeBackgroundId } from "@domain/backgrounds"
+import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
+import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 
 const defaultConfig: ConfigType = {
+  ...DEFAULT_CONFIG_BASE,
   schemaVersion: CURRENT_CONFIG_SCHEMA,
-  lastUsedInstallation: null,
   defaultInstallationsFolder: join(app.getPath("appData"), "RiftLauncherInstallations"),
   defaultVersionsFolder: join(app.getPath("appData"), "RiftLauncherGameVersions"),
-  backupsFolder: join(app.getPath("appData"), "RiftLauncherBackups"),
-  window: {
-    width: 1280,
-    height: 720,
-    x: 0,
-    y: 0,
-    maximized: false
-  },
-  account: null,
-  installations: [],
-  gameVersions: [],
-  favMods: [],
-  suspendedModUpdates: [],
-  background: DEFAULT_BACKGROUND_ID,
-  moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
-  customIcons: []
+  backupsFolder: join(app.getPath("appData"), "RiftLauncherBackups")
 }
 
 const defaultInstallation: InstallationType = {
@@ -41,7 +27,7 @@ const defaultInstallation: InstallationType = {
   startParams: "",
   backupsLimit: 3,
   backupsAuto: false,
-  compressionLevel: 4,
+  compressionLevel: DEFAULT_COMPRESSION_LEVEL,
   backups: [],
   lastTimePlayed: -1,
   totalTimePlayed: 0,
