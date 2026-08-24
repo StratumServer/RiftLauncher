@@ -80,7 +80,7 @@ function InstallationsDropdownMenu(): JSX.Element {
                       exit="exit"
                       className="max-h-80 flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm overflow-y-scroll text-sm"
                     >
-                      {installations.toReversed().map((current) => (
+                      {installations.map((current) => (
                         <ListboxOption
                           key={current.id}
                           value={current.id}
