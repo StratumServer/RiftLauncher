@@ -4,10 +4,12 @@ import { describe, it } from "vitest"
 import {
   backgroundCacheFileName,
   backgroundImageUrl,
+  backgroundThumbnailUrl,
   BACKGROUNDS_MANIFEST_URL,
   CUSTOM_BACKGROUND_ID,
   DEFAULT_BACKGROUND_ID,
   isBackgroundFileName,
+  isBackgroundThumbnailFileName,
   isBackgroundId,
   isCatalogBackgroundId,
   isJpegBytes,
@@ -63,15 +65,28 @@ describe("background file names and URLs", () => {
     assert.equal(isBackgroundFileName(7), false)
   })
 
-  it("builds both URLs off the backgrounds branch of this repository", () => {
+  it("accepts only thumbnails inside the branch thumbnail directory", () => {
+    assert.equal(isBackgroundThumbnailFileName("thumbnails/village-lane.jpg"), true)
+    for (const value of ["village-lane.jpg", "thumbnails/../village-lane.jpg", "thumbnails/nested/village-lane.jpg", "thumbnails/village-lane.png", "thumbnails/Village-Lane.jpg", 7]) {
+      assert.equal(isBackgroundThumbnailFileName(value), false, String(value))
+    }
+  })
+
+  it("builds the catalog URLs off the backgrounds branch of this repository", () => {
     assert.equal(BACKGROUNDS_MANIFEST_URL, "https://raw.githubusercontent.com/StratumServer/RiftLauncher/backgrounds/manifest.json")
     assert.equal(backgroundImageUrl("village-lane.jpg"), "https://raw.githubusercontent.com/StratumServer/RiftLauncher/backgrounds/village-lane.jpg")
+    assert.equal(backgroundThumbnailUrl("thumbnails/village-lane.jpg"), "https://raw.githubusercontent.com/StratumServer/RiftLauncher/backgrounds/thumbnails/village-lane.jpg")
   })
 })
 
 describe("parseBackgroundManifest", () => {
   it("reads the rows a well-formed manifest carries, in order", () => {
-    const entries = parseBackgroundManifest(JSON.stringify([entry(), entry({ id: "river-sailboat", name: "River Sailboat", file: "river-sailboat.jpg" })]))
+    const entries = parseBackgroundManifest(
+      JSON.stringify([
+        entry({ thumbnail: "thumbnails/village-lane.jpg" }),
+        entry({ id: "river-sailboat", name: "River Sailboat", file: "river-sailboat.jpg", thumbnail: "thumbnails/river-sailboat.jpg" })
+      ])
+    )
 
     assert.deepEqual(
       entries.map((e) => e.id),
@@ -79,6 +94,15 @@ describe("parseBackgroundManifest", () => {
     )
     assert.equal(entries[0]!.name, "Village Lane")
     assert.equal(entries[0]!.file, "village-lane.jpg")
+    assert.equal(entries[0]!.thumbnail, "thumbnails/village-lane.jpg")
+    assert.equal(entries[1]!.thumbnail, "thumbnails/river-sailboat.jpg")
+  })
+
+  it("ignores an unsafe thumbnail path without dropping the usable scene", () => {
+    const [parsed] = parseBackgroundManifest(JSON.stringify([entry({ thumbnail: "../../outside.jpg" })]))
+
+    assert.equal(parsed?.id, "village-lane")
+    assert.equal(parsed?.thumbnail, undefined)
   })
 
   it("answers with an empty list for anything that is not an array of rows", () => {

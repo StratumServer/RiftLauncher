@@ -13,8 +13,8 @@ export type SelectBackgroundActions = {
   selectFromCatalog: (entry: BackgroundType) => Promise<void>
   /** Picks a JPEG off the player's disk, copies it into the cache and selects it. */
   pickCustom: () => Promise<void>
-  /** Re-downloads the cached file for a selected catalog scene when it has gone missing, returning whether it is available. */
-  ensureCached: (entry: BackgroundType) => Promise<boolean>
+  /** Re-downloads the cached file for a selected catalog scene when it has gone missing. */
+  ensureCached: (entry: BackgroundType) => Promise<void>
 }
 
 /**
@@ -57,10 +57,10 @@ export function useSelectBackground(): SelectBackgroundActions {
     configDispatch({ type: CONFIG_ACTIONS.SET_BACKGROUND, payload: CUSTOM_BACKGROUND_ID })
   }, [addNotification, configDispatch, t])
 
-  const ensureCached = useCallback(async (entry: BackgroundType): Promise<boolean> => {
+  const ensureCached = useCallback(async (entry: BackgroundType): Promise<void> => {
     // Silent on failure on purpose: nothing was asked for. The launcher is showing the bundled
     // scene in the meantime and will try again the next time this section is opened.
-    return window.api.backgroundsManager.ensureBackground(entry.id, entry.file).catch(() => false)
+    await window.api.backgroundsManager.ensureBackground(entry.id, entry.file).catch(() => false)
   }, [])
 
   return { selectDefault, selectFromCatalog, pickCustom, ensureCached }
