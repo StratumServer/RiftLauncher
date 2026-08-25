@@ -1,13 +1,13 @@
 [
-  { "id": "sunlit-highlands", "name": "Sunlit Highlands", "file": "sunlit-highlands.jpg" },
-  { "id": "frosted-sunrise", "name": "Frosted Sunrise", "file": "frosted-sunrise.jpg" },
-  { "id": "valley-ruins", "name": "Valley Ruins", "file": "valley-ruins.jpg" },
-  { "id": "village-lane", "name": "Village Lane", "file": "village-lane.jpg" },
-  { "id": "river-sailboat", "name": "River Sailboat", "file": "river-sailboat.jpg" },
-  { "id": "lava-springs", "name": "Lava Springs", "file": "lava-springs.jpg" },
-  { "id": "misty-woodland", "name": "Misty Woodland", "file": "misty-woodland.jpg" },
-  { "id": "crystal-cavern", "name": "Crystal Cavern", "file": "crystal-cavern.jpg" },
-  { "id": "overgrown-ruin", "name": "Overgrown Ruin", "file": "overgrown-ruin.jpg" },
-  { "id": "collapsed-storeroom", "name": "Collapsed Storeroom", "file": "collapsed-storeroom.jpg" },
-  { "id": "workshop-desk", "name": "Workshop Desk", "file": "workshop-desk.jpg" }
+  { "id": "sunlit-highlands", "name": "Sunlit Highlands", "file": "sunlit-highlands.jpg", "thumbnail": "thumbnails/sunlit-highlands.jpg" },
+  { "id": "frosted-sunrise", "name": "Frosted Sunrise", "file": "frosted-sunrise.jpg", "thumbnail": "thumbnails/frosted-sunrise.jpg" },
+  { "id": "valley-ruins", "name": "Valley Ruins", "file": "valley-ruins.jpg", "thumbnail": "thumbnails/valley-ruins.jpg" },
+  { "id": "village-lane", "name": "Village Lane", "file": "village-lane.jpg", "thumbnail": "thumbnails/village-lane.jpg" },
+  { "id": "river-sailboat", "name": "River Sailboat", "file": "river-sailboat.jpg", "thumbnail": "thumbnails/river-sailboat.jpg" },
+  { "id": "lava-springs", "name": "Lava Springs", "file": "lava-springs.jpg", "thumbnail": "thumbnails/lava-springs.jpg" },
+  { "id": "misty-woodland", "name": "Misty Woodland", "file": "misty-woodland.jpg", "thumbnail": "thumbnails/misty-woodland.jpg" },
+  { "id": "crystal-cavern", "name": "Crystal Cavern", "file": "crystal-cavern.jpg", "thumbnail": "thumbnails/crystal-cavern.jpg" },
+  { "id": "overgrown-ruin", "name": "Overgrown Ruin", "file": "overgrown-ruin.jpg", "thumbnail": "thumbnails/overgrown-ruin.jpg" },
+  { "id": "collapsed-storeroom", "name": "Collapsed Storeroom", "file": "collapsed-storeroom.jpg", "thumbnail": "thumbnails/collapsed-storeroom.jpg" },
+  { "id": "workshop-desk", "name": "Workshop Desk", "file": "workshop-desk.jpg", "thumbnail": "thumbnails/workshop-desk.jpg" }
 ]
