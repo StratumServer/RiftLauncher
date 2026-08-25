@@ -15,9 +15,9 @@ export const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 // 16 MB gives years of headroom while staying a bounded, allow-listed exception rather
 // than an unbounded response.
 export const MAX_MODS_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024
-// The background manifest is a list of {id, name, file} rows, about 1 KB for the eleven scenes
-// on the branch today. 32 KB is room for hundreds of them and still refuses anything that is
-// not a small list of names.
+// The background manifest is a list of {id, name, file, thumbnail} rows, about 1 KB for the eleven
+// scenes on the branch today. 32 KB is room for hundreds of them and still refuses anything that
+// is not a small list of names.
 export const MAX_BACKGROUND_MANIFEST_BYTES = 32 * 1024
 // One background scene. The branch's own files run 400 to 720 KB at 2560x1440, so 2 MB is
 // roughly triple the largest of them, and well under the generic 4 MB ceiling this would

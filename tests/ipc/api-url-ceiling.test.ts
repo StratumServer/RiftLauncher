@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
 import { assertAllowedApiUrl, getApiUrlMaxBytes, MAX_BACKGROUND_IMAGE_BYTES, MAX_BACKGROUND_MANIFEST_BYTES, MAX_MODS_CATALOG_RESPONSE_BYTES, MAX_RESPONSE_BYTES } from "../../src/ipc/validation"
-import { BACKGROUNDS_MANIFEST_URL, backgroundImageUrl } from "../../src/domain/backgrounds"
+import { BACKGROUNDS_MANIFEST_URL, backgroundImageUrl, backgroundThumbnailUrl } from "../../src/domain/backgrounds"
 
 describe("per-endpoint response ceilings (issue #24)", () => {
   it("keeps the generic 4 MB ceiling for ordinary allow-listed API endpoints", () => {
@@ -30,6 +30,7 @@ describe("the background catalog rules (issue #192)", () => {
   it("admits the manifest and the scenes beside it on the backgrounds branch", () => {
     assert.equal(assertAllowedApiUrl(BACKGROUNDS_MANIFEST_URL).hostname, "raw.githubusercontent.com")
     assert.equal(assertAllowedApiUrl(backgroundImageUrl("village-lane.jpg")).pathname, "/StratumServer/RiftLauncher/backgrounds/village-lane.jpg")
+    assert.equal(assertAllowedApiUrl(backgroundThumbnailUrl("thumbnails/village-lane.jpg")).pathname, "/StratumServer/RiftLauncher/backgrounds/thumbnails/village-lane.jpg")
   })
 
   it("refuses everything else raw.githubusercontent.com serves", () => {

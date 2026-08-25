@@ -11,6 +11,7 @@ import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { backgroundImageSource } from "@renderer/utils/backgroundStyle"
+import { backgroundThumbnailSource } from "@renderer/utils/backgroundThumbnail"
 
 import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 
@@ -222,10 +223,9 @@ function BetaUpdatesToggle(): JSX.Element {
  *
  * The manifest is fetched by the hook when this mounts, which is when the settings page opens.
  *
- * Known limit: a tile only shows its picture once that scene has been downloaded, which is when the
- * player picks it, so a first visit is a grid of names. That is the price of not pulling seven
- * megabytes down the moment somebody opens their settings. If choosing blind turns out to bother
- * people, the fix is a small thumbnail beside each scene on the branch, not a prefetch.
+ * Full-size scenes are downloaded only when the player picks them. The branch also carries a
+ * small preview for each catalog entry, and the picker requests those previews eagerly when this
+ * section opens so the grid is useful immediately without adding them to the launcher package.
  */
 function BackgroundPicker(): JSX.Element {
   const { t } = useTranslation()
@@ -233,23 +233,12 @@ function BackgroundPicker(): JSX.Element {
   const { background, backgroundRevision } = useSettingsConfig()
   const { entries, loading, failed, retry } = useBackgroundCatalog()
   const { selectDefault, selectFromCatalog, pickCustom, ensureCached } = useSelectBackground()
-  const [cachedBackgroundId, setCachedBackgroundId] = useState<string | null>(null)
 
   // Repairs a cached file that has gone missing under a still-selected scene. The launcher is
   // showing the bundled default until it lands, which is what the missing file already made it do.
   useEffect(() => {
     const selected = entries.find((entry) => entry.id === background)
-    setCachedBackgroundId(null)
-    if (!selected) return
-
-    let cancelled = false
-    void ensureCached(selected).then((cached) => {
-      if (!cancelled && cached) setCachedBackgroundId(selected.id)
-    })
-
-    return (): void => {
-      cancelled = true
-    }
+    if (selected) void ensureCached(selected)
   }, [entries, background, ensureCached])
 
   return (
@@ -263,7 +252,8 @@ function BackgroundPicker(): JSX.Element {
             name={entry.name}
             selected={background === entry.id}
             onClick={() => void selectFromCatalog(entry)}
-            source={cachedBackgroundId === entry.id ? backgroundImageSource(entry.id, backgroundRevision) : undefined}
+            source={backgroundThumbnailSource(entry.thumbnail)}
+            loading="eager"
           />
         ))}
 
@@ -294,10 +284,22 @@ function BackgroundPicker(): JSX.Element {
 /**
  * One choice.
  *
- * `alt=""` rather than the scene name: the name is already written under the picture. Uncached
- * tiles render no image while the selected scene is being repaired.
+ * `alt=""` rather than the scene name: the name is already written under the picture. A failed
+ * thumbnail is removed so the tile keeps its dark placeholder instead of drawing a broken-image icon.
  */
-function BackgroundTile({ name, selected, onClick, source }: Readonly<{ name: string; selected: boolean; onClick: () => void; source?: string }>): JSX.Element {
+function BackgroundTile({
+  name,
+  selected,
+  onClick,
+  source,
+  loading = "eager"
+}: Readonly<{ name: string; selected: boolean; onClick: () => void; source?: string; loading?: "eager" | "lazy" }>): JSX.Element {
+  const [imageFailed, setImageFailed] = useState(false)
+
+  useEffect(() => {
+    setImageFailed(false)
+  }, [source])
+
   return (
     <button
       type="button"
@@ -308,7 +310,7 @@ function BackgroundTile({ name, selected, onClick, source }: Readonly<{ name: st
         selected ? "border-vsl" : "border-zinc-400/5"
       )}
     >
-      {source && <img src={source} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+      {source && !imageFailed && <img src={source} alt="" loading={loading} decoding="async" onError={() => setImageFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
       <span className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-xs text-center bg-zinc-950/70 overflow-hidden whitespace-nowrap text-ellipsis">{name}</span>
     </button>
   )
