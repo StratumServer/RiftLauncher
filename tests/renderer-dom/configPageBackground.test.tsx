@@ -64,13 +64,13 @@ beforeEach(() => {
 })
 
 describe("ConfigPage background picker", () => {
-  it("renders a tile per manifest entry, each showing the image itself", async () => {
+  it("renders catalog tiles without image requests until a scene is cached", async () => {
     renderConfigPage()
 
     expect(await screen.findByRole("button", { name: "Village Lane" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "River Sailboat" })).toBeTruthy()
-    expect(tileImage("Village Lane")?.getAttribute("src")).toBe("background:village-lane.jpg?r=0")
-    expect(tileImage("River Sailboat")?.getAttribute("src")).toBe("background:river-sailboat.jpg?r=0")
+    expect(tileImage("Village Lane")).toBeNull()
+    expect(tileImage("River Sailboat")).toBeNull()
 
     // The bundled scene and the player's own slot sit in the same grid, and neither comes from the
     // manifest, so they are there whatever the branch lists.
@@ -95,6 +95,7 @@ describe("ConfigPage background picker", () => {
 
     await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg"))
     await waitFor(() => expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("true"))
+    await waitFor(() => expect(tileImage("Village Lane")?.getAttribute("src")).toBe("background:village-lane.jpg?r=1"))
     expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toContain('url("background:village-lane.jpg?r=1")')
   })
 
@@ -106,6 +107,7 @@ describe("ConfigPage background picker", () => {
 
     expect(await screen.findByText("That background couldn't be downloaded. Check your connection and try again.")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("false")
+    expect(tileImage("Village Lane")).toBeNull()
   })
 
   it("shows the failure and a retry rather than an endless spinner when the manifest cannot be read", async () => {
@@ -176,7 +178,22 @@ describe("ConfigPage background picker", () => {
     const api = renderConfigPage({ background: "river-sailboat" })
 
     await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg"))
+    await waitFor(() => expect(tileImage("River Sailboat")?.getAttribute("src")).toBe("background:river-sailboat.jpg?r=0"))
     expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps the selected tile without an image when repairing its cache fails", async () => {
+    let finishRepair: (cached: boolean) => void = () => undefined
+    const repair = new Promise<boolean>((resolve) => {
+      finishRepair = resolve
+    })
+    const api = renderConfigPage({ background: "river-sailboat", ensureBackground: () => repair })
+
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg"))
+    finishRepair(false)
+
+    await waitFor(() => expect(tileImage("River Sailboat")).toBeNull())
+    expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true")
   })
 
   it("goes back to the bundled scene, which clears the override entirely", async () => {

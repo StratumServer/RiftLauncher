@@ -233,12 +233,23 @@ function BackgroundPicker(): JSX.Element {
   const { background, backgroundRevision } = useSettingsConfig()
   const { entries, loading, failed, retry } = useBackgroundCatalog()
   const { selectDefault, selectFromCatalog, pickCustom, ensureCached } = useSelectBackground()
+  const [cachedBackgroundId, setCachedBackgroundId] = useState<string | null>(null)
 
   // Repairs a cached file that has gone missing under a still-selected scene. The launcher is
   // showing the bundled default until it lands, which is what the missing file already made it do.
   useEffect(() => {
     const selected = entries.find((entry) => entry.id === background)
-    if (selected) void ensureCached(selected)
+    setCachedBackgroundId(null)
+    if (!selected) return
+
+    let cancelled = false
+    void ensureCached(selected).then((cached) => {
+      if (!cancelled && cached) setCachedBackgroundId(selected.id)
+    })
+
+    return (): void => {
+      cancelled = true
+    }
   }, [entries, background, ensureCached])
 
   return (
@@ -252,7 +263,7 @@ function BackgroundPicker(): JSX.Element {
             name={entry.name}
             selected={background === entry.id}
             onClick={() => void selectFromCatalog(entry)}
-            source={backgroundImageSource(entry.id, backgroundRevision)}
+            source={cachedBackgroundId === entry.id ? backgroundImageSource(entry.id, backgroundRevision) : undefined}
           />
         ))}
 
@@ -283,8 +294,8 @@ function BackgroundPicker(): JSX.Element {
 /**
  * One choice.
  *
- * `alt=""` rather than the scene name: the name is already written under the picture, and an
- * empty alt is also what keeps a tile whose file is not cached from drawing a broken-image icon.
+ * `alt=""` rather than the scene name: the name is already written under the picture. Uncached
+ * tiles render no image while the selected scene is being repaired.
  */
 function BackgroundTile({ name, selected, onClick, source }: Readonly<{ name: string; selected: boolean; onClick: () => void; source?: string }>): JSX.Element {
   return (
