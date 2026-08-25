@@ -188,6 +188,24 @@ describe("runDownload", () => {
     )
   })
 
+  it("coalesces repeated percentages and reports completion once", async () => {
+    const progress: number[] = []
+    const payload = Array.from({ length: 1_000 }, () => Buffer.from("x"))
+    const transport = respondWith(new FakeResponse(200, { "content-length": "1000" }, payload))
+
+    await runDownload({
+      url: ALLOWED_URL,
+      outputPath: destination,
+      fileName: "game.tar.gz",
+      request: transport.fn,
+      onProgress: (value) => progress.push(value)
+    })
+
+    assert.equal(progress.at(-1), 100)
+    assert.equal(progress.filter((value) => value === 100).length, 1)
+    assert.equal(new Set(progress).size, progress.length)
+  })
+
   it("asks for the URL it was given, once", async () => {
     const payload = body("bytes")
     const transport = respondWith(new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks))
