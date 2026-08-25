@@ -67,7 +67,17 @@ describe("background file names and URLs", () => {
 
   it("accepts only thumbnails inside the branch thumbnail directory", () => {
     assert.equal(isBackgroundThumbnailFileName("thumbnails/village-lane.jpg"), true)
-    for (const value of ["village-lane.jpg", "thumbnails/../village-lane.jpg", "thumbnails/nested/village-lane.jpg", "thumbnails/village-lane.png", "thumbnails/Village-Lane.jpg", 7]) {
+    for (const value of [
+      "village-lane.jpg",
+      "evil/thumbnails/x.jpg",
+      "thumbnails/../village-lane.jpg",
+      "thumbnails/nested/village-lane.jpg",
+      "thumbnails/x.jpg/../../evil.jpg",
+      `thumbnails/${"a".repeat(65)}.jpg`,
+      "thumbnails/village-lane.png",
+      "thumbnails/Village-Lane.jpg",
+      7
+    ]) {
       assert.equal(isBackgroundThumbnailFileName(value), false, String(value))
     }
   })
