@@ -13,7 +13,7 @@ export type SelectBackgroundActions = {
   selectFromCatalog: (entry: BackgroundType) => Promise<void>
   /** Picks a JPEG off the player's disk, copies it into the cache and selects it. */
   pickCustom: () => Promise<void>
-  /** Re-downloads the cached file for a selected catalog scene when it has gone missing. */
+  /** Re-downloads the cached file for a selected catalog scene when it has gone missing, returning whether it is available. */
   ensureCached: (entry: BackgroundType) => Promise<boolean>
 }
 

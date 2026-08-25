@@ -214,8 +214,8 @@ function BackgroundPicker(): JSX.Element {
 /**
  * One choice.
  *
- * `alt=""` rather than the scene name: the name is already written under the picture, and an
- * empty alt is also what keeps a tile whose file is not cached from drawing a broken-image icon.
+ * `alt=""` rather than the scene name: the name is already written under the picture. Uncached
+ * tiles render no image while the selected scene is being repaired.
  */
 function BackgroundTile({ name, selected, onClick, source }: Readonly<{ name: string; selected: boolean; onClick: () => void; source?: string }>): JSX.Element {
   return (

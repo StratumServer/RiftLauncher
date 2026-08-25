@@ -182,6 +182,20 @@ describe("ConfigPage background picker", () => {
     expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledTimes(1)
   })
 
+  it("keeps the selected tile without an image when repairing its cache fails", async () => {
+    let finishRepair: (cached: boolean) => void = () => undefined
+    const repair = new Promise<boolean>((resolve) => {
+      finishRepair = resolve
+    })
+    const api = renderConfigPage({ background: "river-sailboat", ensureBackground: () => repair })
+
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg"))
+    finishRepair(false)
+
+    await waitFor(() => expect(tileImage("River Sailboat")).toBeNull())
+    expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true")
+  })
+
   it("goes back to the bundled scene, which clears the override entirely", async () => {
     const user = userEvent.setup()
     renderConfigPage({ background: "village-lane" })
