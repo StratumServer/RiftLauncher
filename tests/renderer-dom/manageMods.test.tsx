@@ -53,6 +53,16 @@ function aModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[]
   }
 }
 
+function duplicateModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
+  return {
+    mods: [
+      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, authors: [] },
+      { name: "Alpha Mod copy", modid: "alpha", version: "1.0.1", path: "/games/a/Mods/alpha-copy-1.0.1.zip", authors: [] }
+    ],
+    errors: []
+  }
+}
+
 /**
  * One `/api/mod/{id}` payload. `tags` carry no leading "v" because that is what
  * evaluateModCompatibility matches against the Installation's game version.
@@ -148,6 +158,18 @@ describe("ManageMods", () => {
     // ModListCard's own content already does.
     const alphaRow = screen.getByText("Alpha Mod").closest("li")?.firstElementChild
     expect(alphaRow?.className).toContain("skip-offscreen-render")
+  })
+
+  it("queries one ModDB detail for repeated installed mod ids", async () => {
+    const queryURL = vi.fn(queryModDb)
+    renderManageMods({
+      netManager: { queryURL },
+      modsManager: { getInstalledMods: vi.fn(async () => duplicateModScan()) }
+    })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("Alpha Mod copy", {}, { timeout: 3000 })).toBeTruthy()
+    await waitFor(() => expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/mod/alpha"))).toHaveLength(1))
   })
 
   it("leaves the Mod on disk until the delete confirm dialog is accepted", async () => {
