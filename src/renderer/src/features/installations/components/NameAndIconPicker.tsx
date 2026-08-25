@@ -83,7 +83,7 @@ export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, cust
                     >
                       <div className="w-full h-full flex items-center gap-2">
                         <span className="h-full aspect-square flex items-center justify-center">
-                          <PiPlusCircleDuotone className="text-3xl text-zinc-400/25 group-hover:scale-95 duration-200" />
+                          <PiPlusCircleDuotone className="text-3xl text-zinc-400/70 group-hover:scale-95 duration-200" />
                         </span>
                         <p>{t("generic.addIcon")}</p>
                       </div>

@@ -55,7 +55,7 @@ function App(): JSX.Element {
                   "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:backdrop-blur-[2px]"
                 )}
               >
-                <div className="w-full h-full flex bg-zinc-950/15">
+                <div className="w-full h-full flex bg-zinc-950/70">
                   <Loader />
 
                   <MainMenu />
@@ -136,7 +136,7 @@ function Loader(): JSX.Element {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { delay: 0.5 } }}
             exit={{ opacity: 0 }}
-            className="w-full h-full flex flex-col gap-4 items-center justify-center bg-zinc-950/50 backdrop-blur-xs"
+            className="w-full h-full flex flex-col gap-4 items-center justify-center bg-zinc-950/70 backdrop-blur-xs"
           >
             <h1 className="text-4xl">{t("components.loader.title")}</h1>
             <p className="text-xl">{t("components.loader.desc")}</p>

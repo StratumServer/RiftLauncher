@@ -108,7 +108,7 @@ function ListInslallations(): JSX.Element {
           <ListGroup>
             <ListItem className="group">
               <LinkButton to="/installations/add" title={t("features.installations.addNewInstallation")} className="w-full h-12">
-                <PiPlusCircleDuotone className="text-3xl text-zinc-400/25 group-hover:scale-95 duration-200" />
+                <PiPlusCircleDuotone className="text-3xl text-zinc-400/70 group-hover:scale-95 duration-200" />
               </LinkButton>
             </ListItem>
 

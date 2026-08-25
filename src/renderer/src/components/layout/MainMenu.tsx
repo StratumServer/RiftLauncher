@@ -118,7 +118,7 @@ function MainMenu(): JSX.Element {
   }
 
   return (
-    <header className="z-99 w-72 shrink-0 flex flex-col gap-4 p-2 bg-zinc-950/30 shadow-sm shadow-zinc-950/50 backdrop-blur-sm border-r border-zinc-400/5">
+    <header className="z-99 w-72 shrink-0 flex flex-col gap-4 p-2 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 backdrop-blur-sm border-r border-zinc-400/5">
       <div className="flex items-center shrink-0 gap-2">
         <SessionButton />
         <TasksMenu />
