@@ -98,7 +98,8 @@ export function runCompression(options: CompressionOptions): Promise<void> {
 
     stream.on("progress", ({ percent }: { percent: unknown }) => {
       const boundedPercent = Number(percent)
-      if (Number.isFinite(boundedPercent) && boundedPercent >= lastReportedProgress && boundedPercent <= 100) {
+      // The end event below owns the single terminal 100 report.
+      if (Number.isFinite(boundedPercent) && boundedPercent > lastReportedProgress && boundedPercent < 100) {
         lastReportedProgress = boundedPercent
         onProgress?.(boundedPercent)
       }

@@ -158,6 +158,8 @@ describe("runExtraction on a gzipped tar", () => {
     await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin, onProgress: (progress) => reported.push(progress) })
 
     assert.equal(reported.at(-1), 100)
+    assert.equal(reported.filter((progress) => progress === 100).length, 1)
+    assert.equal(new Set(reported).size, reported.length)
     assert.equal(
       reported.every((progress) => progress >= 0 && progress <= 100),
       true

@@ -137,7 +137,9 @@ function extractWithSevenZip(filePath: string, destination: string, sevenZipBin:
 
     stream.on("progress", ({ percent }) => {
       const boundedPercent = Number(percent)
-      if (Number.isFinite(boundedPercent) && boundedPercent >= lastReportedProgress && boundedPercent <= 100) {
+      // runExtraction emits the terminal 100 after validation and copying. Do not
+      // let 7-Zip publish a second terminal event before that point.
+      if (Number.isFinite(boundedPercent) && boundedPercent > lastReportedProgress && boundedPercent < 100) {
         lastReportedProgress = boundedPercent
         onProgress?.(boundedPercent)
       }

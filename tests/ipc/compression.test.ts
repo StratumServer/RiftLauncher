@@ -176,6 +176,15 @@ describe("runCompression", () => {
     assert.deepEqual(progress, [10, 55, 90, 100])
   })
 
+  it("coalesces repeated percentages and reports completion once", async () => {
+    const progress: number[] = []
+    const seven = fakeAdd(succeedsAt(0, 0, 10, 10, 50, 50, 100, 100))
+
+    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add, onProgress: (value) => progress.push(value) })
+
+    assert.deepEqual(progress, [10, 50, 100])
+  })
+
   it("ignores a progress report that goes backwards, past 100, or is not a number", async () => {
     const progress: number[] = []
     const seven = fakeAdd(succeedsAt(40, 20, 140, "not a number", undefined, 60))

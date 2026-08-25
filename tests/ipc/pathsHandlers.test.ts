@@ -616,6 +616,32 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     assert.equal(worker.release.mock.calls[0]?.[0], "reuse")
   })
 
+  it("forwards each progress percentage once, including one terminal 100", async () => {
+    const archivePath = join(managedFolder, "archive.zip")
+    copyFileSync(resolvePath(__dirname, "../fixtures/valid-mod.zip"), archivePath)
+    const outputPath = join(versionsFolder, "coalesced-progress")
+
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH)(event, "task-progress", archivePath, outputPath, false)
+
+    const worker = await workerPromise
+    worker.emit("message", { type: "progress", progress: 50 })
+    worker.emit("message", { type: "progress", progress: 50 })
+    worker.emit("message", { type: "progress", progress: 100 })
+    worker.emit("message", { type: "progress", progress: 100 })
+    worker.emit("message", { type: "finished" })
+
+    assert.equal(await resultPromise, true)
+    assert.deepEqual(
+      vi.mocked(event.sender.send).mock.calls.map(([, message]) => message),
+      [
+        { id: "task-progress", progress: 50 },
+        { id: "task-progress", progress: 100 }
+      ]
+    )
+  })
+
   it("rejects when the worker emits an 'error' event", async () => {
     const archivePath = join(managedFolder, "archive.zip")
     copyFileSync(resolvePath(__dirname, "../fixtures/valid-mod.zip"), archivePath)

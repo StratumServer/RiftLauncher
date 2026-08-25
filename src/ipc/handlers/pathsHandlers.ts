@@ -217,7 +217,7 @@ function runTrackedWorker<T>(
           return
         }
 
-        if (workerMessage.progress < lastProgress) return
+        if (workerMessage.progress <= lastProgress) return
         lastProgress = workerMessage.progress
         sendProgress(event, progressChannel, id, workerMessage.progress)
         return
