@@ -317,6 +317,27 @@ function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number, lzma
     end += bytes.length
   })
 
+  /**
+   * Pulls from the decoder until at least one byte lands in staging or the
+   * stream ends.
+   *
+   * A decoder that hands bytes back as soon as it has them, the TypeScript one
+   * included, satisfies this after exactly one `decodeChunk` call: `end` moves
+   * off zero the same call that produced anything. The injected native decoder
+   * does not, because its underlying library decodes off a worker thread that
+   * usually has nothing to report yet; it can call back into `decodeChunk`
+   * many times over a whole solid block, buffering the entire decompressed
+   * result internally, before draining begins and this loop sees output at
+   * all. For that stretch it is the decoder holding the block, not this
+   * staging buffer, so `STAGING_BYTES` still bounds one `onOutput` call but no
+   * longer bounds what a decoder may be sitting on while it decides to make
+   * one. That trade is deliberate: it is what lets a solid block of any size
+   * use the fast decoder, and the memory it costs is the block's own
+   * decompressed size, which for this reader's payload runs to the low
+   * hundreds of megabytes today. A decoder whose blocks could grow past what
+   * a player's machine can spare would need a size check before the fast path
+   * is offered at all; nothing here enforces one.
+   */
   const pump = async (): Promise<void> => {
     start = 0
     end = 0

@@ -581,10 +581,14 @@ export type Lzma2DecoderFactory = (dictionarySizeProperties: number, onOutput: (
  * are produced.
  *
  * The stream is a sequence of chunks, each one at most 2 MiB of output and at
- * most 64 KiB of input, so the driver never holds more than a chunk of either.
- * A control byte of zero ends the stream; the driver may also stop early once it
- * has read as much as it wanted, which is what the payload reader does with the
- * last file of a block.
+ * most 64 KiB of input, and this implementation hands each one to `onOutput`
+ * before reading the next, so it never holds more than a chunk of either. That
+ * bound is a property of this decoder, not of `Lzma2DecoderPort`: a decoder
+ * backed by a library that does not stream, such as the injected native one,
+ * can buffer a whole solid block before it starts draining, and its caller in
+ * `extract.ts` has to allow for that. A control byte of zero ends the stream;
+ * the driver may also stop early once it has read as much as it wanted, which
+ * is what the payload reader does with the last file of a block.
  */
 export class Lzma2Decoder implements Lzma2DecoderPort {
   private readonly model = new LzmaModel()
