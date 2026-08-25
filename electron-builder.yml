@@ -16,6 +16,7 @@ files:
 asarUnpack:
   - resources/**
   - node_modules/7zip-bin/**
+  - node_modules/@napi-rs/lzma-*/**
 win:
   executableName: RiftLauncher
   icon: resources/icon.ico

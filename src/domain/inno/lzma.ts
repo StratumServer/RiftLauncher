@@ -565,6 +565,17 @@ export interface Lzma2Input {
   readExactly(length: number): Promise<Uint8Array>
 }
 
+/** The decoder contract the domain can use without knowing whether it is native or TypeScript. */
+export interface Lzma2DecoderPort {
+  /** True after the stream's terminating control byte has been consumed. */
+  readonly finished: boolean
+  /** Reads and decodes one raw LZMA2 chunk. */
+  decodeChunk(input: Lzma2Input): Promise<number>
+}
+
+/** Allows the Node worker to inject an optional native decoder without leaking Node into domain code. */
+export type Lzma2DecoderFactory = (dictionarySizeProperties: number, onOutput: (bytes: Uint8Array) => void) => Lzma2DecoderPort
+
 /**
  * Decodes a raw LZMA2 stream, chunk by chunk, handing decoded bytes out as they
  * are produced.
@@ -575,7 +586,7 @@ export interface Lzma2Input {
  * has read as much as it wanted, which is what the payload reader does with the
  * last file of a block.
  */
-export class Lzma2Decoder {
+export class Lzma2Decoder implements Lzma2DecoderPort {
   private readonly model = new LzmaModel()
   private readonly range = new RangeDecoder()
   private readonly dictionary: RingDictionary

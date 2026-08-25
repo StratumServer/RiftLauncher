@@ -76,6 +76,14 @@ describe("runInnoExtraction", () => {
     assert.equal(existsSync(installerPath), true)
   })
 
+  it("extracts an LZMA2 payload through the native decoder when available", async () => {
+    const outcome = await runInnoExtraction({ filePath: installerFrom("lzma2-payload.bin"), outputPath: workspacePath("target"), deleteInstaller: false })
+
+    assert.equal(outcome.verdict, "extracted")
+    assert.equal(readFileSync(workspacePath("target", "first-compressed.txt"), "utf8"), "lzma2 first file, compressed for real\n".repeat(20))
+    assert.equal(readFileSync(workspacePath("target", "second-compressed.txt"), "utf8"), "lzma2 second file, sharing the same solid block\n".repeat(20))
+  })
+
   it("reports a refused format instead of failing, so the caller can run the installer", async () => {
     const outcome = await runInnoExtraction({ filePath: installerFrom("unsupported-version.bin"), outputPath: workspacePath("target"), deleteInstaller: false })
 
