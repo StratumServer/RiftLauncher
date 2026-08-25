@@ -16,14 +16,26 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
  * an update WAS downloading it (autoDownload defaults to true and nothing
  * turned it off), which is exactly what shipped in beta.2.
  */
-const mockState = vi.hoisted(() => ({
-  userDataDir: "",
-  updaterListeners: new Map<string, (payload?: unknown) => void>(),
-  onListeners: new Map<string, (...args: unknown[]) => void>(),
-  autoUpdater: { autoDownload: true } as { autoDownload: boolean },
-  downloadUpdate: vi.fn(() => Promise.resolve([] as string[])),
-  quitAndInstall: vi.fn()
-}))
+const mockState = vi.hoisted(() => {
+  const state = {
+    userDataDir: "",
+    updaterListeners: new Map<string, (payload?: unknown) => void>(),
+    onListeners: new Map<string, (...args: unknown[]) => void>(),
+    autoUpdater: { autoDownload: true, allowPrerelease: false } as { autoDownload: boolean; allowPrerelease: boolean },
+    downloadUpdate: vi.fn(() => Promise.resolve([] as string[])),
+    quitAndInstall: vi.fn(),
+    /** What allowPrerelease was at the moment each check went out, which is the only moment it matters. */
+    allowPrereleaseWhenChecked: [] as boolean[],
+    checkForUpdates: vi.fn((): Promise<unknown> => Promise.resolve(null))
+  }
+
+  state.checkForUpdates = vi.fn((): Promise<unknown> => {
+    state.allowPrereleaseWhenChecked.push(state.autoUpdater.allowPrerelease)
+    return Promise.resolve(null)
+  })
+
+  return state
+})
 
 vi.mock("electron", () => {
   const app = {
@@ -56,11 +68,12 @@ vi.mock("electron-updater", () => ({
       return mockState.autoUpdater
     },
     downloadUpdate: mockState.downloadUpdate,
-    quitAndInstall: mockState.quitAndInstall
+    quitAndInstall: mockState.quitAndInstall,
+    checkForUpdates: mockState.checkForUpdates
   })
 }))
 
-import { registerAutoUpdaterEvents, toTaskProgress } from "@src/main/autoUpdaterEvents"
+import { registerAutoUpdaterEvents, scheduleUpdateCheck, toTaskProgress } from "@src/main/autoUpdaterEvents"
 // Registers the renderer-facing half of the same flow (DOWNLOAD_UPDATE,
 // UPDATE_AND_RESTART), so the handshake can be followed end to end: an offer
 // the user accepts has to reach downloadUpdate, and one they never see must not.
@@ -90,6 +103,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockState.updaterListeners.clear()
   mockState.autoUpdater.autoDownload = true
+  mockState.autoUpdater.allowPrerelease = false
+  mockState.allowPrereleaseWhenChecked.length = 0
   temporaryRoot = mkdtempSync(join(tmpdir(), "auto-updater-events-"))
   mockState.userDataDir = join(temporaryRoot, "userData")
 
@@ -205,6 +220,48 @@ describe("the handshake, end to end", () => {
     await sendFromRenderer(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART)
 
     assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [false, true])
+  })
+})
+
+/**
+ * When the beta preference is read.
+ *
+ * It used to be read where the timer was armed, which meant a player who changed the setting while
+ * the launcher was starting up got the answer they had before, with nothing on screen saying the
+ * change waited for a relaunch. Reading it in the callback is what makes the toggle mean something
+ * the same session.
+ */
+describe("scheduling the update check", () => {
+  it("reads the preference when the check fires, not when it was armed", async () => {
+    let allowPrerelease = false
+    scheduleUpdateCheck(async () => allowPrerelease, 1)
+
+    // Arming touches nothing: this is still whatever electron-updater was left with.
+    assert.equal(mockState.autoUpdater.allowPrerelease, false)
+
+    // The player asks for betas while the launcher is still counting down to its check.
+    allowPrerelease = true
+
+    await vi.waitFor(() => assert.equal(mockState.checkForUpdates.mock.calls.length, 1))
+    assert.deepEqual(mockState.allowPrereleaseWhenChecked, [true])
+  })
+
+  it("carries an opt-out made in the same window through to the check", async () => {
+    let allowPrerelease = true
+    scheduleUpdateCheck(async () => allowPrerelease, 1)
+    allowPrerelease = false
+
+    await vi.waitFor(() => assert.equal(mockState.checkForUpdates.mock.calls.length, 1))
+    assert.deepEqual(mockState.allowPrereleaseWhenChecked, [false])
+  })
+
+  it("swallows a check that fails, the ordinary case of launching with no network", async () => {
+    mockState.checkForUpdates.mockRejectedValueOnce(new Error("getaddrinfo ENOTFOUND"))
+
+    scheduleUpdateCheck(async () => true, 1)
+
+    await vi.waitFor(() => assert.equal(mockState.checkForUpdates.mock.calls.length, 1))
+    assert.equal(mockState.autoUpdater.allowPrerelease, true)
   })
 })
 

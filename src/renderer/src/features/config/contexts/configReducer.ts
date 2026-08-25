@@ -11,6 +11,7 @@ export enum CONFIG_ACTIONS {
   SET_ACCOUNT = "SET_ACCOUNT",
   SET_BACKGROUND = "SET_BACKGROUND",
   SET_MODDB_VISIBILITY_ANSWER = "SET_MODDB_VISIBILITY_ANSWER",
+  SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
 
   ADD_INSTALLATION = "ADD_INSTALLATION",
   DELETE_INSTALLATION = "DELETE_INSTALLATION",
@@ -86,6 +87,17 @@ export interface SetBackground {
 export interface SetModDbVisibilityAnswer {
   type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER
   payload: ModDbVisibilityAnswer
+}
+
+/**
+ * Answers, once and for good, whether update checks may offer beta builds.
+ *
+ * Only ever an explicit true or false: the stored `null` this replaces means nobody has answered,
+ * and the toggle is what turns that into an answer. See src/domain/appUpdate/betaUpdates.ts.
+ */
+export interface SetReceiveBetaUpdates {
+  type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES
+  payload: boolean
 }
 
 export interface AddInstallation {
@@ -227,6 +239,7 @@ export type ConfigAction =
   | SetAccount
   | SetBackground
   | SetModDbVisibilityAnswer
+  | SetReceiveBetaUpdates
   | AddInstallation
   | DeleteInstallation
   | EditInstallation
@@ -269,6 +282,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, background: action.payload, _backgroundRevision: (config._backgroundRevision ?? 0) + 1 }
     case CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER:
       return { ...config, moddbVisibilityAnswer: action.payload }
+    case CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES:
+      return { ...config, receiveBetaUpdates: action.payload }
     case CONFIG_ACTIONS.ADD_INSTALLATION:
       return { ...config, installations: [action.payload, ...config.installations] }
     case CONFIG_ACTIONS.DELETE_INSTALLATION:

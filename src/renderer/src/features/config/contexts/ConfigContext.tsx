@@ -24,6 +24,8 @@ export interface ConfigSettingsType {
   backgroundRevision: number
   /** The stored answer to the one-time ModDB listing question. See src/domain/moddbVisibility.ts. */
   moddbVisibilityAnswer: string
+  /** Whether update checks may offer betas, or null while nobody has said. See src/domain/appUpdate/betaUpdates.ts. */
+  receiveBetaUpdates: boolean | null
 }
 
 // Stable identity for the "nobody has been notified yet" case, so a consumer
@@ -132,7 +134,8 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       window: config.window,
       background: config.background,
       backgroundRevision: config._backgroundRevision ?? 0,
-      moddbVisibilityAnswer: config.moddbVisibilityAnswer
+      moddbVisibilityAnswer: config.moddbVisibilityAnswer,
+      receiveBetaUpdates: config.receiveBetaUpdates
     }),
     [
       config.schemaVersion,
@@ -143,7 +146,8 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config.window,
       config.background,
       config._backgroundRevision,
-      config.moddbVisibilityAnswer
+      config.moddbVisibilityAnswer,
+      config.receiveBetaUpdates
     ]
   )
 

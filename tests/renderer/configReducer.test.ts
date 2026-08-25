@@ -15,6 +15,7 @@ import { describe, it } from "vitest"
 
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED } from "@domain/moddbVisibility"
+import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
 
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "../../src/renderer/src/features/config/contexts/configReducer"
 
@@ -33,6 +34,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
+    receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     customIcons: [],
     ...overrides
   }
@@ -151,6 +153,17 @@ describe("configReducer: scalar setters", () => {
     assert.equal(result.moddbVisibilityAnswer, MODDB_VISIBILITY_ACCEPTED)
     assert.equal(result.background, config.background)
     assert.equal(result.installations, config.installations)
+  })
+
+  it("SET_RECEIVE_BETA_UPDATES stores the answer, opting out included, over a config that had none", () => {
+    const config = baseConfig()
+    assert.equal(config.receiveBetaUpdates, null)
+
+    assert.equal(configReducer(config, { type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: true }).receiveBetaUpdates, true)
+
+    const optedOut = configReducer(config, { type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: false })
+    assert.equal(optedOut.receiveBetaUpdates, false)
+    assert.equal(optedOut.installations, config.installations)
   })
 
   it("SET_ACCOUNT accepts an account and null alike", () => {
