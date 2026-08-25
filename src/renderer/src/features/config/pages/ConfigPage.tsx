@@ -153,12 +153,23 @@ function BackgroundPicker(): JSX.Element {
   const { background, backgroundRevision } = useSettingsConfig()
   const { entries, loading, failed, retry } = useBackgroundCatalog()
   const { selectDefault, selectFromCatalog, pickCustom, ensureCached } = useSelectBackground()
+  const [cachedBackgroundId, setCachedBackgroundId] = useState<string | null>(null)
 
   // Repairs a cached file that has gone missing under a still-selected scene. The launcher is
   // showing the bundled default until it lands, which is what the missing file already made it do.
   useEffect(() => {
     const selected = entries.find((entry) => entry.id === background)
-    if (selected) void ensureCached(selected)
+    setCachedBackgroundId(null)
+    if (!selected) return
+
+    let cancelled = false
+    void ensureCached(selected).then((cached) => {
+      if (!cancelled && cached) setCachedBackgroundId(selected.id)
+    })
+
+    return (): void => {
+      cancelled = true
+    }
   }, [entries, background, ensureCached])
 
   return (
@@ -172,7 +183,7 @@ function BackgroundPicker(): JSX.Element {
             name={entry.name}
             selected={background === entry.id}
             onClick={() => void selectFromCatalog(entry)}
-            source={backgroundImageSource(entry.id, backgroundRevision)}
+            source={cachedBackgroundId === entry.id ? backgroundImageSource(entry.id, backgroundRevision) : undefined}
           />
         ))}
 
