@@ -332,10 +332,15 @@ function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number, lzma
    * staging buffer, so `STAGING_BYTES` still bounds one `onOutput` call but no
    * longer bounds what a decoder may be sitting on while it decides to make
    * one. That trade is deliberate: it is what lets a solid block of any size
-   * use the fast decoder, and the memory it costs is the block's own
-   * decompressed size, which for this reader's payload runs to the low
-   * hundreds of megabytes today. A decoder whose blocks could grow past what
-   * a player's machine can spare would need a size check before the fast path
+   * use the fast decoder, and the memory it costs is larger than the block
+   * itself. Measured on a 400 MB decompressed block, the native path peaked
+   * at 997 MB of RSS against 147 MB for the TypeScript decoder, roughly two
+   * copies of the block plus its compressed input. About half of that is the
+   * defensive copy `queue()` makes in `src/ipc/workers/nativeLzma2.ts`, which
+   * a later change can skip on the `finish()` path where the library is done
+   * with the buffer. The other half is the block itself, and that half is
+   * inherent to this loop. A decoder whose blocks could grow past what a
+   * player's machine can spare would need a size check before the fast path
    * is offered at all; nothing here enforces one.
    */
   const pump = async (): Promise<void> => {
