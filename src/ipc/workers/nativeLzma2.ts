@@ -11,6 +11,9 @@ interface NativeDecompressorConstructor {
   new (options: { dictSize: number }): NativeDecompressor
 }
 
+/** Keep each callback within the domain stream's fixed staging buffer. */
+const NATIVE_OUTPUT_BYTES = 2 * 1024 * 1024
+
 /** A native codec failure that is safe to retry with the TypeScript decoder. */
 export class NativeLzma2Error extends Error {
   constructor(message: string) {
@@ -36,23 +39,27 @@ function join(parts: readonly Uint8Array[]): Uint8Array {
 
 async function readFrame(input: Lzma2Input, control: number): Promise<Uint8Array> {
   if (control < 3) {
-    const header = await input.readExactly(2)
+    const header = Uint8Array.from(await input.readExactly(2))
     const size = ((header[0]! << 8) | header[1]!) + 1
     return join([Uint8Array.of(control), header, await input.readExactly(size)])
   }
 
   if (control < 0x80) throw InnoFormatError.corrupt(`invalid LZMA2 control byte (${control})`)
 
-  const header = await input.readExactly(4)
+  const header = Uint8Array.from(await input.readExactly(4))
   const inputSize = ((header[2]! << 8) | header[3]!) + 1
   const reset = (control >>> 5) & 3
-  const properties = reset >= 2 ? await input.readExactly(1) : new Uint8Array(0)
+  const properties = reset >= 2 ? Uint8Array.from(await input.readExactly(1)) : new Uint8Array(0)
 
   return join([Uint8Array.of(control), header, properties, await input.readExactly(inputSize)])
 }
 
 class NativeLzma2Decoder implements Lzma2DecoderPort {
   private readonly decoder: NativeDecompressor
+  private readonly pending: Uint8Array[] = []
+  private pendingOffset = 0
+  private pendingBytes = 0
+  private sourceEnded = false
   private ended = false
 
   constructor(
@@ -82,32 +89,60 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
     }
   }
 
+  private queue(bytes: Uint8Array): void {
+    if (bytes.length === 0) return
+    this.pending.push(Uint8Array.from(bytes))
+    this.pendingBytes += bytes.length
+  }
+
+  private flushPending(): number {
+    if (this.pendingBytes === 0) {
+      if (this.sourceEnded) this.ended = true
+      return 0
+    }
+
+    const first = this.pending[0]!
+    const available = first.length - this.pendingOffset
+    const take = Math.min(available, NATIVE_OUTPUT_BYTES)
+    this.emit(first.subarray(this.pendingOffset, this.pendingOffset + take))
+    this.pendingOffset += take
+    this.pendingBytes -= take
+
+    if (this.pendingOffset === first.length) {
+      this.pending.shift()
+      this.pendingOffset = 0
+    }
+    if (this.pendingBytes === 0 && this.sourceEnded) this.ended = true
+    return take
+  }
+
   async decodeChunk(input: Lzma2Input): Promise<number> {
     if (this.ended) return 0
-
-    const control = (await input.readExactly(1))[0]!
-    if (control === 0) {
-      let tail: Uint8Array
-      try {
-        this.emit(this.decoder.update(Uint8Array.of(0)))
-        tail = await this.decoder.finish()
-        this.emit(tail)
-      } catch {
-        throw new NativeLzma2Error("the native LZMA2 decoder rejected the stream")
-      }
+    if (this.pendingBytes > 0) return this.flushPending()
+    if (this.sourceEnded) {
       this.ended = true
       return 0
     }
 
+    const control = (await input.readExactly(1))[0]!
+    if (control === 0) {
+      try {
+        this.queue(this.decoder.update(Uint8Array.of(0)))
+        this.queue(await this.decoder.finish())
+      } catch {
+        throw new NativeLzma2Error("the native LZMA2 decoder rejected the stream")
+      }
+      this.sourceEnded = true
+      return this.flushPending()
+    }
+
     const frame = await readFrame(input, control)
-    let output: Uint8Array
     try {
-      output = this.decoder.update(frame)
-      this.emit(output)
+      this.queue(this.decoder.update(frame))
     } catch {
       throw new NativeLzma2Error("the native LZMA2 decoder rejected a chunk")
     }
-    return output.length
+    return this.flushPending()
   }
 }
 
