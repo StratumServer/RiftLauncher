@@ -636,6 +636,7 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     assert.deepEqual(
       vi.mocked(event.sender.send).mock.calls.map(([, message]) => message),
       [
+        { id: "task-progress", progress: 0 },
         { id: "task-progress", progress: 50 },
         { id: "task-progress", progress: 100 }
       ]
@@ -806,7 +807,10 @@ describe("EXTRACT_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("message", { type: "finished" })
 
     assert.equal(await resultPromise, true)
-    assert.equal(vi.mocked(event.sender.send).mock.calls.length, 0)
+    assert.deepEqual(
+      vi.mocked(event.sender.send).mock.calls.map(([, message]) => message),
+      [{ id: "task-11", progress: 0 }]
+    )
   })
 })
 
@@ -820,6 +824,10 @@ describe("COMPRESS_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("message", { type: "finished" })
 
     assert.equal(await resultPromise, true)
+    assert.deepEqual(
+      vi.mocked(event.sender.send).mock.calls.map(([, message]) => message),
+      [{ id: "task-1", progress: 0 }]
+    )
   })
 })
 
@@ -853,6 +861,10 @@ describe("DOWNLOAD_ON_PATH: runTrackedWorker via a fake worker", () => {
     worker.emit("message", { type: "finished", path: downloadedPath })
 
     assert.equal(await resultPromise, downloadedPath)
+    assert.deepEqual(
+      vi.mocked(event.sender.send).mock.calls.map(([, message]) => message),
+      [{ id: "task-1", progress: 0 }]
+    )
   })
 
   it("rejects when the worker's finished message carries no usable path", async () => {

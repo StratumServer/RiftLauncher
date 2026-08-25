@@ -366,8 +366,9 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   const expectedMd5 = await getTrustedDownloadHash(safeUrl)
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DOWNLOAD_ON_PATH] [${safeId}] Starting a bounded download.`)
-  const downloadedPath = await downloadConcurrency.run(() =>
-    runTrackedWorker(
+  const downloadedPath = await downloadConcurrency.run(() => {
+    sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS, safeId, 0)
+    return runTrackedWorker(
       event,
       safeId,
       IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS,
@@ -379,7 +380,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
         return message.path
       }
     )
-  )
+  })
   if (expectedMd5) await recordVerifiedArtifact(downloadedPath, safeUrl, expectedMd5)
   return downloadedPath
 })
@@ -397,8 +398,9 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
   // blocking the main process's event loop.
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
-  await archiveConcurrency.run(() =>
-    runTrackedWorker(
+  await archiveConcurrency.run(() => {
+    sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
+    return runTrackedWorker(
       event,
       safeId,
       IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
@@ -407,7 +409,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
       "EXTRACT_ON_PATH",
       () => true
     )
-  )
+  })
   return true
 })
 
@@ -572,8 +574,9 @@ ipcMain.handle(
     const safeCompressionLevel = assertInteger(compressionLevel, "compression level", 0, 9)
 
     logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
-    await archiveConcurrency.run(() =>
-      runTrackedWorker(
+    await archiveConcurrency.run(() => {
+      sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS, safeId, 0)
+      return runTrackedWorker(
         event,
         safeId,
         IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
@@ -582,7 +585,7 @@ ipcMain.handle(
         "COMPRESS_ON_PATH",
         () => true
       )
-    )
+    })
     return true
   }
 )

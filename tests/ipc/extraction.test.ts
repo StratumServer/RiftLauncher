@@ -220,6 +220,26 @@ describe("runExtraction on a zip", () => {
     assert.deepEqual(readdirSync(workspacePath("target")), ["vintagestory"])
     assert.equal(statSync(workspacePath("target", "vintagestory", "assets", "version-1.22.6.txt")).size, 0)
   })
+
+  it("coalesces 7-Zip progress and emits one terminal 100", async () => {
+    const source = workspacePath("many-files")
+    mkdirSync(source, { recursive: true })
+    for (let index = 0; index < 2_000; index++) writeFileSync(join(source, `file-${index}.bin`), Buffer.alloc(2_048, index % 251))
+
+    const archivePath = workspacePath("progress.zip")
+    execFileSync(sevenZipBin, ["a", "-tzip", archivePath, source], { stdio: "ignore" })
+    const reported: number[] = []
+
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin, onProgress: (progress) => reported.push(progress) })
+
+    assert.equal(reported.at(-1), 100)
+    assert.equal(reported.filter((progress) => progress === 100).length, 1)
+    assert.equal(new Set(reported).size, reported.length)
+    assert.equal(
+      reported.some((progress) => progress > 0 && progress < 100),
+      true
+    )
+  })
 })
 
 /**
