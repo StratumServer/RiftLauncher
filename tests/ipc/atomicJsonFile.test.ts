@@ -8,17 +8,19 @@ import { afterEach, beforeEach, describe, it } from "vitest"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 
 /**
- * writeJsonAtomic, the shared persistence adapter behind config, account secrets, and the
- * mod-catalog disk cache (docs/rift-launcher/library-performance-stability-review-2026-08-25.md,
- * P1). Two concerns: does the adapter call write-file-atomic correctly (JSON shape, mode,
- * overwrite), and does the crash guarantee it exists for actually hold against the real
- * dependency, not just its documentation.
+ * writeJsonAtomic, the shared persistence adapter behind config, account secrets, the
+ * mod-catalog disk cache, the game's own settings file, and modpack export. Two concerns:
+ * does the adapter call write-file-atomic correctly (JSON shape, mode, overwrite), and does
+ * the crash guarantee it exists for actually hold against the real dependency, not just its
+ * documentation.
  *
- * The crash cases spawn tests/fixtures/atomicJsonFileCrashChild.cjs, which calls
- * write-file-atomic directly and self-SIGKILLs at a chosen point via a patched fs.rename.
- * SIGKILL is uncatchable and skips all cleanup, the closest simulation of a real crash or
- * power loss available in-process; execFileSync throwing is the expected shape of "the
- * child died by signal" and is not itself a test failure.
+ * The crash cases spawn tests/fixtures/atomicJsonFileCrashChild.ts under tsx, which runs
+ * src/ipc/atomicJsonFile.ts itself (not write-file-atomic directly) and self-SIGKILLs at a
+ * chosen point via a patched fs.rename. That means these trials prove the shipped adapter is
+ * crash-safe, not only the dependency it wraps. SIGKILL is uncatchable and skips all cleanup,
+ * the closest simulation of a real crash or power loss available in-process; execFileSync
+ * throwing is the expected shape of "the child died by signal" and is not itself a test
+ * failure.
  */
 
 let temporaryRoot: string
@@ -72,9 +74,11 @@ describe("writeJsonAtomic", () => {
 })
 
 describe("writeJsonAtomic crash safety (real write-file-atomic, real SIGKILL)", () => {
+  const repoRoot = join(__dirname, "../..")
+
   function runCrashChild(destPath: string, killAt: "before-rename" | "after-rename"): void {
     try {
-      execFileSync(process.execPath, [join(__dirname, "../fixtures/atomicJsonFileCrashChild.cjs"), destPath, killAt], { stdio: "ignore" })
+      execFileSync(process.execPath, ["--import", "tsx", join(__dirname, "../fixtures/atomicJsonFileCrashChild.ts"), destPath, killAt], { cwd: repoRoot, stdio: "ignore" })
     } catch {
       // Expected: the child dies by SIGKILL on every trial.
     }
@@ -89,7 +93,7 @@ describe("writeJsonAtomic crash safety (real write-file-atomic, real SIGKILL)", 
 
     assert.equal(existsSync(dest), true, "the destination must never be observed missing")
     assert.deepEqual(JSON.parse(readFileSync(dest, "utf8")), { marker: "OLD-CONTENT" })
-  })
+  }, 20_000)
 
   it("lands the new file when the crash happens after rename completes", () => {
     const dest = join(temporaryRoot, "config.json")
@@ -99,11 +103,12 @@ describe("writeJsonAtomic crash safety (real write-file-atomic, real SIGKILL)", 
 
     assert.equal(existsSync(dest), true)
     assert.deepEqual(JSON.parse(readFileSync(dest, "utf8")), { marker: "NEW-CONTENT" })
-  })
+  }, 20_000)
 
   it("never observes the destination missing across repeated crashes before rename", () => {
     // Repeats the single-trial case enough times to rule out one lucky run: every one of
-    // these is a real child process, a real write-file-atomic call, and a real SIGKILL.
+    // these is a real child process, a real write-file-atomic call through the real
+    // adapter, and a real SIGKILL.
     const dest = join(temporaryRoot, "config.json")
 
     for (let trial = 0; trial < 10; trial++) {
@@ -112,5 +117,5 @@ describe("writeJsonAtomic crash safety (real write-file-atomic, real SIGKILL)", 
       assert.equal(existsSync(dest), true, `trial ${trial}: destination missing`)
       assert.deepEqual(JSON.parse(readFileSync(dest, "utf8")), { marker: "OLD-CONTENT" }, `trial ${trial}: destination corrupted`)
     }
-  })
+  }, 60_000)
 })

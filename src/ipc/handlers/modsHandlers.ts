@@ -2,6 +2,7 @@ import { dialog, ipcMain } from "electron"
 import fse from "fs-extra"
 import { IPC_CHANNELS } from "../ipcChannels"
 import { createScanInstalledModsPorts, pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
 import { assertString, isRecord } from "@src/ipc/validation"
@@ -85,7 +86,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
 
     registerUserSelectedPaths([result.filePath])
     const safeOutputPath = await assertManagedPath(result.filePath, "modpack path", { allowMissing: true })
-    await fse.writeFile(safeOutputPath, JSON.stringify(safeManifest, null, 2), "utf-8")
+    await writeJsonAtomic(safeOutputPath, safeManifest, { spaces: 2 })
 
     logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Modpack exported to ${result.filePath}.`)
     return { success: true, path: result.filePath }
