@@ -25,6 +25,7 @@ import { InstallerCursor } from "./cursor"
 import { InnoFormatError } from "./errors"
 import { findLoaderOffsets } from "./loader"
 import { Lzma2Decoder } from "./lzma"
+import type { Lzma2DecoderFactory } from "./lzma"
 import { relativeAppPath, safeRelativePath } from "./paths"
 import type { InnoExtractionPorts } from "./ports"
 import type { InnoCompression, InnoDataEntry, InnoSetupScript } from "./script"
@@ -63,6 +64,8 @@ export interface InnoExtractionResult {
 export interface InnoExtractionOptions {
   /** Called as the work advances, with a fraction between 0 and 1. */
   onProgress?: (fraction: number) => void
+  /** Optional host decoder; the domain keeps its TypeScript implementation as the default. */
+  lzma2DecoderFactory?: Lzma2DecoderFactory
 }
 
 /**
@@ -88,7 +91,7 @@ export async function extractInnoPayload(ports: InnoExtractionPorts, options: In
   const planned = buildPlan(script)
   const totalBytes = planned.reduce((sum, file) => sum + file.entry.fileSize, 0)
 
-  const written = await writePlan(ports, script, offsets.dataOffset, planned, totalBytes, options.onProgress)
+  const written = await writePlan(ports, script, offsets.dataOffset, planned, totalBytes, options.onProgress, options.lzma2DecoderFactory)
 
   return { version: formatVersion(version), compression: script.compression, filesWritten: written, bytesWritten: totalBytes }
 }
@@ -177,7 +180,8 @@ async function writePlan(
   dataOffset: number,
   planned: readonly PlannedFile[],
   totalBytes: number,
-  onProgress?: (fraction: number) => void
+  onProgress?: (fraction: number) => void,
+  lzma2DecoderFactory?: Lzma2DecoderFactory
 ): Promise<number> {
   const cursor = new InstallerCursor(ports.installer)
   const report = percentProgress(totalBytes, onProgress)
@@ -185,7 +189,7 @@ async function writePlan(
   let filesWritten = 0
 
   for (const run of chunkRuns(planned)) {
-    const stream = await openChunk(cursor, script, dataOffset, run[0]!.entry)
+    const stream = await openChunk(cursor, script, dataOffset, run[0]!.entry, lzma2DecoderFactory)
     let position = 0
 
     for (const { entry, paths } of run) {
@@ -266,7 +270,7 @@ interface ChunkStream {
   discard(count: number): Promise<void>
 }
 
-async function openChunk(cursor: InstallerCursor, script: InnoSetupScript, dataOffset: number, entry: InnoDataEntry): Promise<ChunkStream> {
+async function openChunk(cursor: InstallerCursor, script: InnoSetupScript, dataOffset: number, entry: InnoDataEntry, lzma2DecoderFactory?: Lzma2DecoderFactory): Promise<ChunkStream> {
   cursor.seek(dataOffset + entry.chunkOffset)
   const magic = await cursor.readExactly(4)
   for (let i = 0; i < CHUNK_MAGIC.length; i++) {
@@ -277,7 +281,7 @@ async function openChunk(cursor: InstallerCursor, script: InnoSetupScript, dataO
   if (script.compression !== "lzma2") throw InnoFormatError.unsupported(`${script.compression} compressed data`)
 
   const properties = await cursor.readExactly(1)
-  return lzma2Stream(cursor, properties[0]!)
+  return lzma2Stream(cursor, properties[0]!, lzma2DecoderFactory)
 }
 
 function storedStream(cursor: InstallerCursor): ChunkStream {
@@ -301,22 +305,51 @@ function storedStream(cursor: InstallerCursor): ChunkStream {
  * been drained, which is what lets the decoder hand out views onto its own
  * dictionary without anything copying them twice.
  */
-function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number): ChunkStream {
+function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number, lzma2DecoderFactory?: Lzma2DecoderFactory): ChunkStream {
   const staging = new Uint8Array(STAGING_BYTES)
   let start = 0
   let end = 0
 
-  const decoder = new Lzma2Decoder(dictionaryProperties, (bytes) => {
+  const createDecoder: Lzma2DecoderFactory = lzma2DecoderFactory ?? ((properties, onOutput): Lzma2Decoder => new Lzma2Decoder(properties, onOutput))
+  const decoder = createDecoder(dictionaryProperties, (bytes) => {
     if (end + bytes.length > staging.length) throw InnoFormatError.corrupt("an LZMA2 chunk produced more than the format allows")
     staging.set(bytes, end)
     end += bytes.length
   })
 
+  /**
+   * Pulls from the decoder until at least one byte lands in staging or the
+   * stream ends.
+   *
+   * A decoder that hands bytes back as soon as it has them, the TypeScript one
+   * included, satisfies this after exactly one `decodeChunk` call: `end` moves
+   * off zero the same call that produced anything. The injected native decoder
+   * does not, because its underlying library decodes off a worker thread that
+   * usually has nothing to report yet; it can call back into `decodeChunk`
+   * many times over a whole solid block, buffering the entire decompressed
+   * result internally, before draining begins and this loop sees output at
+   * all. For that stretch it is the decoder holding the block, not this
+   * staging buffer, so `STAGING_BYTES` still bounds one `onOutput` call but no
+   * longer bounds what a decoder may be sitting on while it decides to make
+   * one. That trade is deliberate: it is what lets a solid block of any size
+   * use the fast decoder, and the memory it costs is larger than the block
+   * itself. Measured on a 400 MB decompressed block, the native path peaked
+   * at 997 MB of RSS against 147 MB for the TypeScript decoder, roughly two
+   * copies of the block plus its compressed input. About half of that is the
+   * defensive copy `queue()` makes in `src/ipc/workers/nativeLzma2.ts`, which
+   * a later change can skip on the `finish()` path where the library is done
+   * with the buffer. The other half is the block itself, and that half is
+   * inherent to this loop. A decoder whose blocks could grow past what a
+   * player's machine can spare would need a size check before the fast path
+   * is offered at all; nothing here enforces one.
+   */
   const pump = async (): Promise<void> => {
     start = 0
     end = 0
-    const produced = await decoder.decodeChunk(cursor)
-    if (produced === 0 && end === 0) throw InnoFormatError.corrupt("the data stream ended before the entries it declares")
+    do {
+      await decoder.decodeChunk(cursor)
+    } while (end === 0 && !decoder.finished)
+    if (end === 0) throw InnoFormatError.corrupt("the data stream ended before the entries it declares")
   }
 
   return {

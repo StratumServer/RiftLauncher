@@ -23,8 +23,11 @@ import { tmpdir } from "node:os"
 // Relative so the module stays importable from a plain test run, like extraction.ts.
 import { extractInnoPayload } from "../../domain/inno/extract"
 import { isInnoFormatError } from "../../domain/inno/errors"
+import type { InnoExtractionResult } from "../../domain/inno/extract"
+import type { Lzma2DecoderFactory } from "../../domain/inno/lzma"
 import type { InnoInstallerFile } from "../../domain/inno/ports"
 import { assertNoSymlinkComponents, copyTree, validateTree } from "./extraction"
+import { isNativeLzma2Error, loadNativeLzma2DecoderFactory } from "./nativeLzma2"
 
 /**
  * How an attempt ended.
@@ -116,22 +119,36 @@ export async function runInnoExtraction(options: InnoExtractionOptions): Promise
     temporaryRoot = mkdtempSync(join(tmpdir(), "riftlauncher-inno-"))
     const payloadRoot = join(temporaryRoot, "payload")
     fse.ensureDirSync(payloadRoot)
+    const nativeLzma2DecoderFactory = await loadNativeLzma2DecoderFactory()
 
     const handle = await open(filePath, "r")
     let filesWritten: number
     let bytesWritten: number
     try {
       const stats = await handle.stat()
-      const result = await extractInnoPayload(
-        {
-          installer: installerFile(handle, stats.size),
-          digest: { hash: (bytes) => createHash("sha256").update(bytes).digest() },
-          sink: payloadSink(payloadRoot)
-        },
-        // Capped at 99: the last point belongs to the copy out of the temporary
-        // folder, which is not free on a folder holding twenty thousand files.
-        { onProgress: (fraction) => onProgress?.(Math.min(99, Math.floor(fraction * 99))) }
-      )
+      const installer = installerFile(handle, stats.size)
+      const digest = { hash: (bytes: Uint8Array): Uint8Array => createHash("sha256").update(bytes).digest() }
+      const extract = (lzma2DecoderFactory?: Lzma2DecoderFactory): Promise<InnoExtractionResult> =>
+        extractInnoPayload(
+          { installer, digest, sink: payloadSink(payloadRoot) },
+          // Capped at 99: the last point belongs to the copy out of the temporary
+          // folder, which is not free on a folder holding twenty thousand files.
+          { onProgress: (fraction) => onProgress?.(Math.min(99, Math.floor(fraction * 99))), lzma2DecoderFactory }
+        )
+
+      let result: InnoExtractionResult
+      try {
+        result = await extract(nativeLzma2DecoderFactory)
+      } catch (error) {
+        if (!nativeLzma2DecoderFactory || !isNativeLzma2Error(error)) throw error
+
+        // A platform binary can load and still reject a stream it cannot decode. Retry from an
+        // empty staging folder so a successful TypeScript fallback cannot inherit partial files.
+        fse.removeSync(payloadRoot)
+        fse.ensureDirSync(payloadRoot)
+        result = await extract()
+      }
+
       filesWritten = result.filesWritten
       bytesWritten = result.bytesWritten
     } catch (error) {
