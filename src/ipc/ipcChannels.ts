@@ -60,6 +60,6 @@ export const IPC_CHANNELS = {
   },
   ACCOUNT_MANAGER: {
     LOGIN: "account-login",
-    LOGOUT: "account-logout"
+    REMOVE_ACCOUNT: "account-remove"
   }
 }

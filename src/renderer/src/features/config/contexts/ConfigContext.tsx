@@ -39,6 +39,9 @@ const GameVersionsContext = createContext<GameVersionType[] | null>(null)
 // The account is wrapped: `null` is a legitimate value (logged out), so it
 // cannot double as the "no provider above me" sentinel the other contexts use.
 const AccountContext = createContext<{ account: AccountType | null } | null>(null)
+// Wrapped for the same reason: activeAccountId is legitimately null with a non-empty list, so
+// the wrapper (not the field) is what tells a missing provider apart from a real logged-out state.
+const AccountListContext = createContext<{ accounts: AccountPublicType[]; activeAccountId: string | null } | null>(null)
 const SettingsContext = createContext<ConfigSettingsType | null>(null)
 const FavModsContext = createContext<number[] | null>(null)
 const SuspendedModUpdatesContext = createContext<string[] | null>(null)
@@ -122,7 +125,9 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
   // The list slices are handed out as-is: the reducer never rebuilds an array
   // it did not change, so their identity already tracks their content. Only the
   // composed slices need memoising to stay stable across unrelated actions.
-  const account = useMemo(() => ({ account: config.account }), [config.account])
+  const activeAccount = useMemo(() => config.accounts.find((candidate) => candidate.playerUid === config.activeAccountId) ?? null, [config.accounts, config.activeAccountId])
+  const account = useMemo(() => ({ account: activeAccount }), [activeAccount])
+  const accountList = useMemo(() => ({ accounts: config.accounts, activeAccountId: config.activeAccountId }), [config.accounts, config.activeAccountId])
 
   const settings = useMemo<ConfigSettingsType>(
     () => ({
@@ -156,15 +161,17 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       <NotifiedModUpdatesContext.Provider value={config._notifiedModUpdatesInstallations ?? EMPTY_NOTIFIED_MOD_UPDATES}>
         <SettingsContext.Provider value={settings}>
           <AccountContext.Provider value={account}>
-            <InstallationsContext.Provider value={config.installations}>
-              <GameVersionsContext.Provider value={config.gameVersions}>
-                <FavModsContext.Provider value={config.favMods}>
-                  <SuspendedModUpdatesContext.Provider value={config.suspendedModUpdates}>
-                    <CustomIconsContext.Provider value={config.customIcons}>{children}</CustomIconsContext.Provider>
-                  </SuspendedModUpdatesContext.Provider>
-                </FavModsContext.Provider>
-              </GameVersionsContext.Provider>
-            </InstallationsContext.Provider>
+            <AccountListContext.Provider value={accountList}>
+              <InstallationsContext.Provider value={config.installations}>
+                <GameVersionsContext.Provider value={config.gameVersions}>
+                  <FavModsContext.Provider value={config.favMods}>
+                    <SuspendedModUpdatesContext.Provider value={config.suspendedModUpdates}>
+                      <CustomIconsContext.Provider value={config.customIcons}>{children}</CustomIconsContext.Provider>
+                    </SuspendedModUpdatesContext.Provider>
+                  </FavModsContext.Provider>
+                </GameVersionsContext.Provider>
+              </InstallationsContext.Provider>
+            </AccountListContext.Provider>
           </AccountContext.Provider>
         </SettingsContext.Provider>
       </NotifiedModUpdatesContext.Provider>
@@ -186,6 +193,9 @@ const useGameVersions = (): GameVersionType[] => requireProvider(useContext(Game
 
 const useAccount = (): AccountType | null => requireProvider(useContext(AccountContext), "useAccount").account
 
+/** Every saved account, and which one is active. For a switcher; a single logged-in read stays `useAccount`. */
+const useAccountList = (): { accounts: AccountPublicType[]; activeAccountId: string | null } => requireProvider(useContext(AccountListContext), "useAccountList")
+
 /** Folders, window geometry, schema version and the last used installation. */
 const useSettingsConfig = (): ConfigSettingsType => requireProvider(useContext(SettingsContext), "useSettingsConfig")
 
@@ -199,4 +209,16 @@ const useCustomIcons = (): IconType[] => requireProvider(useContext(CustomIconsC
 /** Ids of installations the player has already been told about mod updates for, this session. */
 const useNotifiedModUpdates = (): string[] => requireProvider(useContext(NotifiedModUpdatesContext), "useNotifiedModUpdates")
 
-export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccount, useSettingsConfig, useFavMods, useSuspendedModUpdates, useCustomIcons, useNotifiedModUpdates }
+export {
+  ConfigProvider,
+  useConfigDispatch,
+  useInstallations,
+  useGameVersions,
+  useAccount,
+  useAccountList,
+  useSettingsConfig,
+  useFavMods,
+  useSuspendedModUpdates,
+  useCustomIcons,
+  useNotifiedModUpdates
+}

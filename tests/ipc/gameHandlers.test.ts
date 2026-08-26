@@ -10,6 +10,7 @@ import "./helpers/electronMock"
 import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
 
 /**
  * Branch coverage for src/ipc/handlers/gameHandlers.ts (EXECUTE_GAME,
@@ -66,16 +67,24 @@ function baseInstallation(
   return { path: "", startParams: "", mesaGlThread: false, envVars: "", ...overrides }
 }
 
-/** Writes a fake config.json this run's configManager reads back through getConfig(). */
+/**
+ * Writes a fake config.json this run's configManager reads back through getConfig().
+ *
+ * Written already at the current schema, not an older one: the schema-3-to-4 migration
+ * unconditionally rebuilds `accounts`/`activeAccountId` from a legacy singular `account`
+ * field this fixture never has, so writing at an old schema would silently wipe whatever
+ * `accounts`/`activeAccountId` a test set here before the handler ever saw them.
+ */
 function writeConfig(config: Partial<ConfigType>): void {
   const fullConfig = {
-    schemaVersion: 2,
+    schemaVersion: CURRENT_CONFIG_SCHEMA,
     lastUsedInstallation: null,
     defaultInstallationsFolder: managedFolder,
     defaultVersionsFolder: versionsFolder,
     backupsFolder,
     window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
-    account: null,
+    accounts: [],
+    activeAccountId: null,
     installations: [],
     gameVersions: [],
     favMods: [],
@@ -225,7 +234,8 @@ describe("EXECUTE_GAME", () => {
     writeFileSync(executablePath, "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
-      account: { email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false } as unknown as ConfigType["account"]
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
+      activeAccountId: "1"
     })
 
     const event = await createTrustedEvent()
@@ -248,7 +258,8 @@ describe("EXECUTE_GAME", () => {
     writeFileSync(join(gameVersionFolder, "Vintagestory"), "", "utf-8")
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
-      account: { email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false } as unknown as ConfigType["account"]
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
+      activeAccountId: "1"
     })
 
     // Read-only installation folder: clientsettings.json does not exist yet,
@@ -261,6 +272,108 @@ describe("EXECUTE_GAME", () => {
       assert.deepEqual(result, { ok: false, reason: "session-write-failed" })
     } finally {
       chmodSync(installationFolder, 0o700)
+    }
+  })
+
+  /**
+   * With one saved account, a session store the launcher could not read was
+   * harmless: whatever stale session the settings file held was that same
+   * account's own. With more than one account possible, it can be a
+   * housemate's, since the game writes their session there directly on their
+   * own successful login. These three pin the guard that keeps a launch from
+   * silently starting the game already signed in as somebody else.
+   */
+  it("clears another player's session before launching with no session of our own", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
+      activeAccountId: "1"
+    })
+    writeFileSync(
+      join(installationFolder, "clientsettings.json"),
+      JSON.stringify({
+        stringSettings: { sessionkey: "housemate-session-key", sessionsignature: "housemate-session-signature", mptoken: null, playeruid: "housemate-uid", playername: "Housemate" },
+        intSettings: { maxFps: 60 }
+      }),
+      "utf-8"
+    )
+
+    const { getAccountSecrets } = await import("@src/ipc/accountStore")
+    vi.mocked(getAccountSecrets).mockResolvedValueOnce(null)
+
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+    assert.deepEqual(result, { ok: false, reason: "launch-failed" }, "the launch itself still proceeds; only the foreign session is cleared")
+
+    const { readFileSync } = await import("node:fs")
+    const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
+    assert.equal(settings.stringSettings.playeruid, undefined)
+    assert.equal(settings.stringSettings.sessionkey, undefined)
+    assert.deepEqual(settings.intSettings, { maxFps: 60 }, "everything else in the file survives")
+  })
+
+  it("leaves a settings file with no foreign session alone when we have none of our own", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
+      activeAccountId: "1"
+    })
+    // playeruid "1" is our own account: not foreign, so nothing should change here.
+    writeFileSync(
+      join(installationFolder, "clientsettings.json"),
+      JSON.stringify({ stringSettings: { sessionkey: "our-own-stale-key", sessionsignature: "our-own-signature", mptoken: null, playeruid: "1" } }),
+      "utf-8"
+    )
+
+    const { getAccountSecrets } = await import("@src/ipc/accountStore")
+    vi.mocked(getAccountSecrets).mockResolvedValueOnce(null)
+
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+    assert.deepEqual(result, { ok: false, reason: "launch-failed" })
+
+    const { readFileSync } = await import("node:fs")
+    const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
+    assert.equal(settings.stringSettings.sessionkey, "our-own-stale-key", "our own session, even a stale one, is left exactly as it was")
+  })
+
+  it("resolves session-write-failed when a foreign session cannot be cleared", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, "Vintagestory"), "", "utf-8")
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
+      activeAccountId: "1"
+    })
+    const settingsPath = join(installationFolder, "clientsettings.json")
+    writeFileSync(settingsPath, JSON.stringify({ stringSettings: { sessionkey: "housemate-key", playeruid: "housemate-uid" } }), "utf-8")
+
+    const { getAccountSecrets } = await import("@src/ipc/accountStore")
+    vi.mocked(getAccountSecrets).mockResolvedValueOnce(null)
+
+    // The file already exists, so it is the FILE's own permissions that gate the truncate-write
+    // the clear step needs, not the directory's: unlike the "cannot be written" test above, where
+    // the file has to be created from nothing and a read-only directory is what blocks that.
+    chmodSync(settingsPath, 0o400)
+    try {
+      const event = await createTrustedEvent()
+      const result = await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+      assert.deepEqual(result, { ok: false, reason: "session-write-failed" })
+    } finally {
+      chmodSync(settingsPath, 0o600)
     }
   })
 
@@ -279,7 +392,8 @@ describe("EXECUTE_GAME", () => {
     writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
-      account: { email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false } as unknown as ConfigType["account"]
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
+      activeAccountId: "1"
     })
     // What the game leaves behind after prompting: same account (playeruid "1"
     // is the one in the config above), a key the launcher has never seen.
@@ -296,7 +410,7 @@ describe("EXECUTE_GAME", () => {
     const event = await createTrustedEvent()
     await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
 
-    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [[{ sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token" }]])
+    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [["1", { sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token" }]])
 
     const { readFileSync } = await import("node:fs")
     const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
@@ -312,7 +426,8 @@ describe("EXECUTE_GAME", () => {
     writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
-      account: { email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false } as unknown as ConfigType["account"]
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
+      activeAccountId: "1"
     })
     writeFileSync(
       join(installationFolder, "clientsettings.json"),

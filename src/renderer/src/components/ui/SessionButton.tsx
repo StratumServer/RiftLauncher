@@ -1,10 +1,15 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { PiFloppyDiskBackDuotone, PiTrashDuotone, PiUserDuotone, PiXCircleDuotone } from "react-icons/pi"
+import { AnimatePresence, motion } from "motion/react"
+import clsx from "clsx"
+import { PiCaretDownDuotone, PiFloppyDiskBackDuotone, PiTrashDuotone, PiUserDuotone, PiUserPlusDuotone, PiXCircleDuotone } from "react-icons/pi"
+
+import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from "@headlessui/react"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { CONFIG_ACTIONS, useAccount, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
-import { loginToAccount as login, logoutOfAccount as logout } from "@renderer/features/account/adapters/account"
+import { CONFIG_ACTIONS, useAccountList, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
+import { loginToAccount as login, removeAccount as removeAccountSecrets } from "@renderer/features/account/adapters/account"
+import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
 import {
   ButtonsWrapper,
@@ -23,9 +28,15 @@ import {
 } from "@renderer/components/ui/FormComponents"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 
+// Sentinel option values a real playerUid cannot collide with in practice: `handleSelect` checks
+// list membership first regardless, so even a collision would resolve to the switch, never these.
+const ADD_ACCOUNT_OPTION = "__add-account__"
+const REMOVE_ACCOUNT_OPTION = "__remove-account__"
+
 function SessionButton(): JSX.Element {
   const { t } = useTranslation()
-  const account = useAccount()
+  const { accounts, activeAccountId } = useAccountList()
+  const activeAccount = accounts.find((account) => account.playerUid === activeAccountId) ?? null
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
@@ -36,7 +47,7 @@ function SessionButton(): JSX.Element {
 
   const [loggingIn, setLoggingIn] = useState(false)
   const [logInOpen, setLogInOpen] = useState(false)
-  const [logOutOpen, setLogOutOpen] = useState(false)
+  const [removeOpen, setRemoveOpen] = useState(false)
 
   async function handleLogin(): Promise<void> {
     setLoggingIn(true)
@@ -65,39 +76,114 @@ function SessionButton(): JSX.Element {
     }
   }
 
-  async function handleLogout(): Promise<void> {
-    const loggedOut = await logout()
-    if (!loggedOut) return addNotification(t("features.config.logoutFailed"), "error")
-    configDispatch({ type: CONFIG_ACTIONS.SET_ACCOUNT, payload: null })
-    addNotification(t("features.config.loggedout"), "success")
-    setLogOutOpen(false)
+  async function handleRemove(): Promise<void> {
+    if (!activeAccount) return
+    const removed = await removeAccountSecrets(activeAccount.playerUid)
+    if (!removed) return addNotification(t("features.config.removeAccountFailed"), "error")
+
+    // The IPC call lands first: dropping the config entry before the secrets are confirmed gone
+    // would leave a secret in the store with no account naming it and no way back to it.
+    configDispatch({ type: CONFIG_ACTIONS.REMOVE_ACCOUNT, payload: { playerUid: activeAccount.playerUid } })
+    addNotification(t("features.config.accountRemoved", { user: activeAccount.playerName }), "success")
+    setRemoveOpen(false)
   }
 
   async function saveLogin(newAccount: AccountPublicType): Promise<void> {
-    configDispatch({ type: CONFIG_ACTIONS.SET_ACCOUNT, payload: newAccount })
+    configDispatch({ type: CONFIG_ACTIONS.ADD_ACCOUNT, payload: newAccount })
 
     addNotification(t("features.config.loggedin", { user: newAccount.playerName }), "success")
     setLoggingIn(false)
     setLogInOpen(false)
   }
 
+  function handleSelect(value: string): void {
+    if (accounts.some((account) => account.playerUid === value)) {
+      configDispatch({ type: CONFIG_ACTIONS.SET_ACTIVE_ACCOUNT, payload: value })
+      return
+    }
+    if (value === ADD_ACCOUNT_OPTION) return setLogInOpen(true)
+    if (value === REMOVE_ACCOUNT_OPTION) setRemoveOpen(true)
+  }
+
   return (
     <>
-      <FormButton
-        onClick={() => {
-          if (!account) {
-            setLogInOpen(true)
-          } else {
-            setLogOutOpen(true)
-          }
-        }}
-        title={!account ? t("features.config.loginTitle") : t("features.config.logoutTitle")}
-        className="w-full h-8"
-      >
-        <PiUserDuotone />
+      {accounts.length < 1 ? (
+        <FormButton onClick={() => setLogInOpen(true)} title={t("features.config.loginTitle")} className="w-full h-8">
+          <PiUserDuotone />
+          <p className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">{t("features.config.loginTitle")}</p>
+        </FormButton>
+      ) : (
+        <Listbox value={activeAccountId} onChange={handleSelect}>
+          {({ open }) => (
+            <>
+              <ListboxButton
+                title={t("features.config.switchAccountTitle")}
+                className="w-full h-8 px-2 py-1 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer"
+              >
+                <p className="flex items-center gap-2 overflow-hidden">
+                  <PiUserDuotone className="shrink-0" />
+                  <span className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">{activeAccount?.playerName ?? t("features.config.loginTitle")}</span>
+                </p>
+                <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+              </ListboxButton>
 
-        <p className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">{!account ? t("features.config.loginTitle") : account.playerName}</p>
-      </FormButton>
+              <AnimatePresence>
+                {open && (
+                  <ListboxOptions static anchor="bottom" className="w-[var(--button-width)] z-600 mt-1 select-none rounded-sm overflow-hidden">
+                    <motion.ul
+                      variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      className="max-h-60 flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm overflow-y-scroll text-sm"
+                    >
+                      {accounts.map((account) => (
+                        <ListboxOption
+                          key={account.playerUid}
+                          value={account.playerUid}
+                          as={motion.li}
+                          variants={DROPDOWN_MENU_ITEM_VARIANTS}
+                          className={clsx(
+                            "w-full px-2 py-1 shrink-0 flex flex-col overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer",
+                            account.playerUid === activeAccountId && "text-vsl"
+                          )}
+                        >
+                          <span className="overflow-hidden text-ellipsis whitespace-nowrap">{account.playerName}</span>
+                          <span className="text-xs text-zinc-400 overflow-hidden text-ellipsis whitespace-nowrap">{account.email}</span>
+                        </ListboxOption>
+                      ))}
+
+                      <div className="w-full h-px bg-zinc-400/10 shrink-0" />
+
+                      <ListboxOption
+                        value={ADD_ACCOUNT_OPTION}
+                        as={motion.li}
+                        variants={DROPDOWN_MENU_ITEM_VARIANTS}
+                        className="w-full px-2 py-1 shrink-0 flex items-center gap-2 odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer"
+                      >
+                        <PiUserPlusDuotone className="shrink-0" />
+                        <span>{t("features.config.addAnotherAccount")}</span>
+                      </ListboxOption>
+
+                      {activeAccount && (
+                        <ListboxOption
+                          value={REMOVE_ACCOUNT_OPTION}
+                          as={motion.li}
+                          variants={DROPDOWN_MENU_ITEM_VARIANTS}
+                          className="w-full px-2 py-1 shrink-0 flex items-center gap-2 text-red-700 odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer"
+                        >
+                          <PiTrashDuotone className="shrink-0" />
+                          <span className="overflow-hidden text-ellipsis whitespace-nowrap">{t("features.config.removeAccountTitle", { user: activeAccount.playerName })}</span>
+                        </ListboxOption>
+                      )}
+                    </motion.ul>
+                  </ListboxOptions>
+                )}
+              </AnimatePresence>
+            </>
+          )}
+        </Listbox>
+      )}
 
       <PopupDialogPanel title={t("features.config.loginTitle")} isOpen={logInOpen} close={() => setLogInOpen(false)}>
         <FromWrapper className="w-full">
@@ -174,20 +260,20 @@ function SessionButton(): JSX.Element {
         </FromWrapper>
       </PopupDialogPanel>
 
-      <PopupDialogPanel title={t("features.config.logoutTitle")} isOpen={logOutOpen} close={() => setLogOutOpen(false)}>
+      <PopupDialogPanel title={t("features.config.removeAccountTitle", { user: activeAccount?.playerName ?? "" })} isOpen={removeOpen} close={() => setRemoveOpen(false)}>
         <>
-          <p>{t("features.config.areYouSureLogout")}</p>
-          <p className="text-zinc-400">{t("features.config.loginoutNotReversible")}</p>
+          <p>{t("features.config.areYouSureRemoveAccount", { user: activeAccount?.playerName ?? "" })}</p>
+          <p className="text-zinc-400">{t("features.config.removeAccountNotReversible")}</p>
           <div className="flex gap-4 items-center justify-center text-lg">
-            <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setLogOutOpen(false)} type="success">
+            <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setRemoveOpen(false)} type="success">
               <PiXCircleDuotone />
             </FormButton>
             <FormButton
-              title={t("features.config.logoutTitle")}
+              title={t("features.config.removeAccountTitle", { user: activeAccount?.playerName ?? "" })}
               className="p-2"
               onClick={(e) => {
                 e.stopPropagation()
-                handleLogout()
+                handleRemove()
               }}
               type="error"
             >

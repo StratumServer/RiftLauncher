@@ -8,16 +8,16 @@ import NotificationsOverlay from "@renderer/components/layout/NotificationsOverl
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
-const ACCOUNT: AccountPublicType = { playerName: "Steve" } as AccountPublicType
+const ACCOUNT: AccountPublicType = { email: "steve@example.com", playerName: "Steve", playerUid: "steve-uid", playerEntitlements: null, hostGameServer: false }
 
 describe("SessionButton", () => {
-  it("opens the logged-in menu and calls the account hook's logout on confirm", async () => {
+  it("opens the account switcher and calls the account hook's remove on confirm", async () => {
     const user = userEvent.setup()
-    const logout = vi.fn(async () => true)
+    const removeAccount = vi.fn(async () => true)
 
     installMockWindowApi({
-      configManager: { getConfig: async () => createMockConfig({ account: ACCOUNT }) },
-      accountManager: { logout }
+      configManager: { getConfig: async () => createMockConfig({ accounts: [ACCOUNT], activeAccountId: ACCOUNT.playerUid }) },
+      accountManager: { removeAccount }
     })
 
     renderWithProviders(<SessionButton />)
@@ -25,10 +25,13 @@ describe("SessionButton", () => {
     const button = await screen.findByRole("button", { name: "Steve" })
     await user.click(button)
 
-    const logoutConfirm = await screen.findByRole("button", { name: "Log out" })
-    await user.click(logoutConfirm)
+    const removeOption = await screen.findByRole("option", { name: "Remove Steve" })
+    await user.click(removeOption)
 
-    expect(logout).toHaveBeenCalledTimes(1)
+    const removeConfirm = await screen.findByRole("button", { name: "Remove Steve" })
+    await user.click(removeConfirm)
+
+    expect(removeAccount).toHaveBeenCalledWith("steve-uid")
   })
 
   it("reports the service as unreachable when the login call throws, not bad credentials", async () => {

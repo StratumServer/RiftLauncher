@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { parseLegacyAccount, parseLoginAccount, parseStoredSecrets, toPublicAccount } from "../../../src/domain/account/credentials"
+import { parseLegacyAccount, parseLoginAccount, parseStoredSecrets, parseStoredSecretsById, toPublicAccount } from "../../../src/domain/account/credentials"
 
 const EMAIL = "player@example.test"
 
@@ -118,6 +118,55 @@ describe("parseStoredSecrets", () => {
     assert.equal(parseStoredSecrets("ciphertext"), null)
     assert.equal(parseStoredSecrets({ sessionKey: "fake-key" }), null)
     assert.equal(parseStoredSecrets({ sessionKey: "", sessionSignature: "fake-signature" }), null)
+  })
+})
+
+describe("parseStoredSecretsById", () => {
+  const SECRETS_A = { sessionKey: "fake-key-a", sessionSignature: "fake-signature-a", mptoken: "fake-mptoken-a" }
+  const SECRETS_B = { sessionKey: "fake-key-b", sessionSignature: "fake-signature-b", mptoken: null }
+
+  it("reads every account keyed by its own id", () => {
+    const result = parseStoredSecretsById({
+      accounts: [
+        { id: "uid-a", secrets: SECRETS_A },
+        { id: "uid-b", secrets: SECRETS_B }
+      ]
+    })
+
+    assert.deepEqual(result.get("uid-a"), SECRETS_A)
+    assert.deepEqual(result.get("uid-b"), SECRETS_B)
+    assert.equal(result.size, 2)
+  })
+
+  it("returns an empty map for anything that is not the multi-account shape", () => {
+    for (const value of [null, "ciphertext", 7, [1, 2], {}, { accounts: "not an array" }, { accounts: null }]) {
+      assert.equal(parseStoredSecretsById(value).size, 0, String(value))
+    }
+  })
+
+  it("drops one unreadable entry without losing the others", () => {
+    const result = parseStoredSecretsById({
+      accounts: ["not a record", null, { id: "no-secrets" }, { id: "", secrets: SECRETS_A }, { id: "unreadable-secrets", secrets: { sessionKey: "only-a-key" } }, { id: "uid-b", secrets: SECRETS_B }]
+    })
+
+    assert.deepEqual(result, new Map([["uid-b", SECRETS_B]]))
+  })
+
+  it("keeps the first entry on a duplicate id", () => {
+    const result = parseStoredSecretsById({
+      accounts: [
+        { id: "uid-a", secrets: SECRETS_A },
+        { id: "uid-a", secrets: SECRETS_B }
+      ]
+    })
+
+    assert.deepEqual(result.get("uid-a"), SECRETS_A)
+    assert.equal(result.size, 1)
+  })
+
+  it("refuses an id past the maximum account field length", () => {
+    const result = parseStoredSecretsById({ accounts: [{ id: "u".repeat(300), secrets: SECRETS_A }] })
+    assert.equal(result.size, 0)
   })
 })
 

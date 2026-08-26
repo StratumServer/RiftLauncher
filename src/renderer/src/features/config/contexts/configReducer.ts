@@ -8,7 +8,9 @@ export enum CONFIG_ACTIONS {
   SET_DEFAULT_INSTALLATIONS_FOLDER = "SET_DEFAULT_INSTALLATIONS_FOLDER",
   SET_DEFAULT_VERSIONS_FOLDER = "SET_DEFAULT_VERSIONS_FOLDER",
   SET_DEFAULT_BACKUPS_FOLDER = "SET_DEFAULT_BACKUPS_FOLDER",
-  SET_ACCOUNT = "SET_ACCOUNT",
+  ADD_ACCOUNT = "ADD_ACCOUNT",
+  REMOVE_ACCOUNT = "REMOVE_ACCOUNT",
+  SET_ACTIVE_ACCOUNT = "SET_ACTIVE_ACCOUNT",
   SET_BACKGROUND = "SET_BACKGROUND",
   SET_MODDB_VISIBILITY_ANSWER = "SET_MODDB_VISIBILITY_ANSWER",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
@@ -62,9 +64,31 @@ export interface SetDefaultBackupsFolder {
   payload: string
 }
 
-export interface SetAccount {
-  type: CONFIG_ACTIONS.SET_ACCOUNT
-  payload: AccountType | null
+/**
+ * Saves a fresh login, or refreshes an already-saved account's session.
+ *
+ * Also chooses it: an account just proven by a successful login is the one
+ * the player wants to play as. The same `playerUid` twice replaces the entry
+ * in place rather than duplicating it, which is what a session refresh is.
+ */
+export interface AddAccount {
+  type: CONFIG_ACTIONS.ADD_ACCOUNT
+  payload: AccountPublicType
+}
+
+/**
+ * Drops one saved account. If it was the active one, the first remaining
+ * account is promoted; an empty list leaves `activeAccountId` null.
+ */
+export interface RemoveAccount {
+  type: CONFIG_ACTIONS.REMOVE_ACCOUNT
+  payload: { playerUid: string }
+}
+
+/** Chooses which saved account the next game launch writes into clientsettings.json. An id naming nobody is a no-op. */
+export interface SetActiveAccount {
+  type: CONFIG_ACTIONS.SET_ACTIVE_ACCOUNT
+  payload: string | null
 }
 
 /**
@@ -236,7 +260,9 @@ export type ConfigAction =
   | SetDefaultInstllationsFolder
   | SetDefaultVersionsFolder
   | SetDefaultBackupsFolder
-  | SetAccount
+  | AddAccount
+  | RemoveAccount
+  | SetActiveAccount
   | SetBackground
   | SetModDbVisibilityAnswer
   | SetReceiveBetaUpdates
@@ -276,8 +302,20 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, defaultVersionsFolder: action.payload }
     case CONFIG_ACTIONS.SET_DEFAULT_BACKUPS_FOLDER:
       return { ...config, backupsFolder: action.payload }
-    case CONFIG_ACTIONS.SET_ACCOUNT:
-      return { ...config, account: action.payload }
+    case CONFIG_ACTIONS.ADD_ACCOUNT: {
+      const others = config.accounts.filter((account) => account.playerUid !== action.payload.playerUid)
+      return { ...config, accounts: [...others, action.payload], activeAccountId: action.payload.playerUid }
+    }
+    case CONFIG_ACTIONS.REMOVE_ACCOUNT: {
+      const accounts = config.accounts.filter((account) => account.playerUid !== action.payload.playerUid)
+      const activeAccountId = config.activeAccountId === action.payload.playerUid ? (accounts[0]?.playerUid ?? null) : config.activeAccountId
+      return { ...config, accounts, activeAccountId }
+    }
+    case CONFIG_ACTIONS.SET_ACTIVE_ACCOUNT:
+      // An id naming nobody is a no-op returning the same object, so nothing re-renders for it,
+      // the same shape MOVE_INSTALLATION's guard above already uses.
+      if (action.payload !== null && !config.accounts.some((account) => account.playerUid === action.payload)) return config
+      return { ...config, activeAccountId: action.payload }
     case CONFIG_ACTIONS.SET_BACKGROUND:
       return { ...config, background: action.payload, _backgroundRevision: (config._backgroundRevision ?? 0) + 1 }
     case CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER:

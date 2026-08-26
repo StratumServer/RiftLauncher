@@ -81,7 +81,7 @@ const api: BridgeAPI = {
   },
   accountManager: {
     login: (email: string, password: string, twoFactorCode?: string): Promise<AccountLoginResult> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, email, password, twoFactorCode),
-    logout: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGOUT)
+    removeAccount: (accountId: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.REMOVE_ACCOUNT, accountId)
   }
 }
 
