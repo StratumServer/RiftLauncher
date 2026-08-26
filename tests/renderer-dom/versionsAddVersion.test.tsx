@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 
 import AddVersion from "@renderer/features/versions/pages/AddVersion"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
+import { parseGameVersionCatalog } from "@domain/versions/gameVersionCatalog"
 
 import { installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -26,6 +27,31 @@ function renderAddVersion(): void {
 }
 
 describe("AddVersion", () => {
+  it("rejects invalid catalog JSON", () => {
+    expect(() => parseGameVersionCatalog("{")).toThrow("Game version catalog is not valid JSON.")
+  })
+
+  it("validates the catalog boundary without stripping future fields", () => {
+    const catalog = parseGameVersionCatalog(
+      JSON.stringify({
+        "1.20.4": {
+          windows: {
+            filename: "vs.exe",
+            urls: { cdn: "https://cdn.example/vs.exe", local: "", future: true },
+            futureBuildField: "preserved"
+          },
+          futurePlatform: { enabled: true }
+        }
+      })
+    )
+
+    const version = catalog["1.20.4"]
+    expect(version).toBeDefined()
+    expect(version!.windows?.urls.future).toBe(true)
+    expect(version!.windows?.futureBuildField).toBe("preserved")
+    expect(version!.futurePlatform).toEqual({ enabled: true })
+  })
+
   it("renders the catalog list fetched through the netManager IPC channel", async () => {
     const queryURL = vi.fn(async (url: string) => (url.endsWith("stable.json") ? JSON.stringify(STABLE) : JSON.stringify({})))
     installMockWindowApi({ netManager: { queryURL } })
@@ -46,6 +72,25 @@ describe("AddVersion", () => {
 
     expect(await screen.findByText("The VS Version list couldn't be loaded. Check your connection and try again.")).toBeTruthy()
     expect(screen.getByTitle("Reload")).toBeTruthy()
+    expect(document.querySelector(".animate-spin")).toBeNull()
+  })
+
+  it("fails closed when the catalog response has an invalid shape", async () => {
+    const queryURL = vi.fn(async (url: string) => (url.endsWith("stable.json") ? JSON.stringify({ "1.20.4": { windows: { urls: null } } }) : JSON.stringify({})))
+    installMockWindowApi({ netManager: { queryURL } })
+
+    renderAddVersion()
+
+    expect(await screen.findByText("The VS Version list couldn't be loaded. Check your connection and try again.")).toBeTruthy()
+    expect(document.querySelector(".animate-spin")).toBeNull()
+  })
+
+  it("fails closed when both catalogs are empty", async () => {
+    installMockWindowApi({ netManager: { queryURL: vi.fn(async () => JSON.stringify({})) } })
+
+    renderAddVersion()
+
+    expect(await screen.findByText("The VS Version list couldn't be loaded. Check your connection and try again.")).toBeTruthy()
     expect(document.querySelector(".animate-spin")).toBeNull()
   })
 
