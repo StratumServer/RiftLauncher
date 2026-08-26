@@ -14,6 +14,7 @@ import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { logMessage } from "@src/utils/logManager"
 import { createUpdaterLogger } from "@src/utils/updaterLogger"
+import { makeConsoleOutputFaultTolerant } from "@src/utils/consoleTransportSafety"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
@@ -29,6 +30,14 @@ import fse from "fs-extra"
 
 import "@src/ipc"
 import { clearTimeout, setTimeout } from "node:timers"
+
+// #247: when the terminal that started the launcher exits, the next console write fails, and
+// Node reports that failure as an "error" event on process.stdout with no listener, i.e. an
+// uncaught exception Electron shows as "A JavaScript error occurred in the main process".
+// Placed before resolvePathFn rather than after it, unlike autoUpdater.logger below: this
+// guard touches no path and writes no file, so it has nothing to wait for, and running it
+// first means it is already in place for the very first line logged below.
+makeConsoleOutputFaultTolerant(Logger.transports.console)
 
 Logger.transports.file.resolvePathFn = (variables, message): string => {
   const logsPath = join(variables.userData, "Logs")
