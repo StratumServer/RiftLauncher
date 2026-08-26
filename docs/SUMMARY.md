@@ -28,3 +28,4 @@
 
 - [👤 Contributors](important-info/contributors.md)
 - [📝 Roadmap](important-info/roadmap.md)
+- [🔒 Privacy Policy](../PRIVACY.md)
