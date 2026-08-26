@@ -17,6 +17,13 @@ import { describe, it } from "vitest"
  *
  * WCAG AA is the bar: 4.5:1 for body text, 3:1 for large headings and for the icons that carry an
  * interactive control on their own.
+ *
+ * A ratio against the backdrop is necessary but not sufficient for a link: #248's fix lightened
+ * --color-vsl enough to clear the backdrop, but that same lightening brought it within 1.02:1 of
+ * the zinc-400 prose six of the eight links sit inside, so colour alone stopped marking them as
+ * links (WCAG 1.4.1). The eight text-vsl link call sites also carry `underline` for that reason;
+ * this file only checks the backdrop ratio, not the separation from surrounding text, since the
+ * underline is what carries that job now.
  */
 
 const RENDERER = resolve(__dirname, "..", "src", "renderer", "src")
@@ -158,7 +165,9 @@ const LIST_PANEL = [shell, listPanel] as const
 const SECTION_TABLE = [shell, section, tableFill] as const
 const MENU_CARD = [shell, menu, menuCard] as const
 const TOAST = [shell, toast] as const
-const TASKS_ROW = [shell, tasksPanel, rowTint] as const
+// TasksMenu renders inside MainMenu's own header scrim (`<TasksMenu />` in MainMenu.tsx), so the
+// real stack under a task row carries that scrim too, not just the popover panel's own.
+const TASKS_ROW = [shell, menu, tasksPanel, rowTint] as const
 
 describe("text over the player's background image", () => {
   it("keeps page text readable where the shell scrim is all there is", () => {
@@ -250,18 +259,21 @@ describe("prompts the player is meant to read and act on", () => {
 describe("the brand accent where it carries text", () => {
   it("keeps every accent link readable on the panel it ships on", () => {
     const accent: Layer = [themeColor("vsl"), 1]
+    // Every anchor requires "underline" right on the class string, not just "text-vsl": colour
+    // alone no longer separates this accent from the zinc-400/zinc-200 prose it sits inside (see
+    // the file header), so the underline is the part of each of these that actually marks a link.
     const links: ReadonlyArray<readonly [string, RegExp, string, readonly Layer[]]> = [
-      ["add installation start-params link", /Client_startup_parameters"\)\} className="text-vsl"/, "features/installations/pages/AddInstallation.tsx", FORM_SECTION],
-      ["edit installation start-params link", /Client_startup_parameters"\)\} className="text-vsl"/, "features/installations/pages/EditInstallation.tsx", FORM_SECTION],
-      ["logs folder link", /onClick=\{openLogsFolder\} className="text-vsl"/, "features/info/pages/InfoAndHelpPage.tsx", FORM_SECTION],
-      ["no installed mods link", /to="\/mods" className="text-vsl"/, "features/mods/components/NoInstalledModsNotice.tsx", LIST_PANEL],
-      ["mods section issues link", /openExternalLink\(ISSUES_URL\)[\s\S]*?className="text-vsl"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
-      ["mods section discord link", /openExternalLink\(DISCORD_URL\)[\s\S]*?className="text-vsl"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
-      ["no game versions link", /to="\/versions" className="text-vsl"/, "features/installations/components/GameVersionPicker.tsx", SECTION_TABLE],
-      ["no installations link", /to="\/installations" className="text-vsl"/, "features/installations/components/InstallationsDropdownMenu.tsx", MENU_CARD]
+      ["add installation start-params link", /Client_startup_parameters"\)\}[\s\S]*?className="text-vsl underline"/, "features/installations/pages/AddInstallation.tsx", FORM_SECTION],
+      ["edit installation start-params link", /Client_startup_parameters"\)\} className="text-vsl underline"/, "features/installations/pages/EditInstallation.tsx", FORM_SECTION],
+      ["logs folder link", /onClick=\{openLogsFolder\} className="text-vsl underline"/, "features/info/pages/InfoAndHelpPage.tsx", FORM_SECTION],
+      ["no installed mods link", /to="\/mods" className="text-vsl underline"/, "features/mods/components/NoInstalledModsNotice.tsx", LIST_PANEL],
+      ["mods section issues link", /openExternalLink\(ISSUES_URL\)[\s\S]*?className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["mods section discord link", /openExternalLink\(DISCORD_URL\)[\s\S]*?className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["no game versions link", /to="\/versions" className="text-vsl underline"/, "features/installations/components/GameVersionPicker.tsx", SECTION_TABLE],
+      ["no installations link", /to="\/installations" className="text-vsl underline"/, "features/installations/components/InstallationsDropdownMenu.tsx", MENU_CARD]
     ]
     for (const [label, anchor, file, stack] of links) {
-      match(file, anchor) // fails loudly, naming the file, if the link class has moved
+      match(file, anchor) // fails loudly, naming the file, if the link class or its underline has moved
       assertReadable(label, accent, stack, TEXT_FLOOR)
     }
   })
@@ -280,11 +292,15 @@ describe("the brand accent where it carries text", () => {
     const light = luminance(themeColor("vsl"))
     assert.ok(dark < base && base < light, "the vs/vsl/vsd ramp should stay dark-to-light in that order")
 
-    // Both borders below are decorative, not the sole indicator of the selected state, so neither
-    // gets a contrast assertion: the Grid border sits at 25% alpha alongside a bg-vsd/50 fill, and
-    // the ConfigPage tile border paints over an arbitrary user-chosen thumbnail with no fixed
-    // backdrop to measure against. This just pins that both still track --color-vsl.
+    // The Grid border is decorative, not the sole indicator of the selected state (it sits at 25%
+    // alpha alongside a bg-vsd/50 fill), so it gets no contrast assertion here, only a pin that it
+    // still tracks --color-vsl; its own non-text-contrast gap predates this change and is tracked
+    // separately (issue filed alongside this PR).
     match("components/ui/Grid.tsx", /selected \? "bg-vsd\/50 border-vsl\/(\d+)"/)
-    match("features/config/pages/ConfigPage.tsx", /selected \? "border-vsl" : "border-zinc-400\/5"/)
+    // The ConfigPage tile border paints over an arbitrary user-chosen thumbnail with no fixed
+    // backdrop to measure against either, but it IS the sole indicator of the selected state, so
+    // it doubles in width instead: this only pins that the selected border is still 2px and still
+    // --color-vsl, not a ratio.
+    match("features/config/pages/ConfigPage.tsx", /selected \? "border-2 border-vsl" : "border border-zinc-400\/5"/)
   })
 })

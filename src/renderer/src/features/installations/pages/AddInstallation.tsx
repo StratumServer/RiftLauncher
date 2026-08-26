@@ -173,7 +173,11 @@ function AddInslallation(): JSX.Element {
             startParams={fields.startParams}
             onStartParamsChange={fields.setStartParams}
             startParamsLink={
-              <NormalButton title={t("features.installations.startParamsLink")} onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")} className="text-vsl">
+              <NormalButton
+                title={t("features.installations.startParamsLink")}
+                onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")}
+                className="text-vsl underline"
+              >
                 {t("features.installations.startParamsLink")}
               </NormalButton>
             }

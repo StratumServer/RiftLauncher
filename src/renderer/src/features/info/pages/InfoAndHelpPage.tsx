@@ -57,7 +57,7 @@ function InfoAndHelpPage(): JSX.Element {
                 i18nKey="features.infoAndHelp.includeLogs"
                 components={{
                   folderlink: (
-                    <NormalButton title={t("features.infoAndHelp.logsFolderTitle")} onClick={openLogsFolder} className="text-vsl">
+                    <NormalButton title={t("features.infoAndHelp.logsFolderTitle")} onClick={openLogsFolder} className="text-vsl underline">
                       {t("features.infoAndHelp.thisFolder")}
                     </NormalButton>
                   )

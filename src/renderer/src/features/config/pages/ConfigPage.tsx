@@ -306,8 +306,11 @@ function BackgroundTile({
       onClick={onClick}
       aria-pressed={selected}
       className={clsx(
-        "relative aspect-video w-full rounded-sm overflow-hidden border bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
-        selected ? "border-vsl" : "border-zinc-400/5"
+        "relative aspect-video w-full rounded-sm overflow-hidden bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
+        // The selected border is thicker, not just recolored: against a light thumbnail
+        // --color-vsl reads 2.51:1, below the 3:1 non-text floor a 1px border would need, so the
+        // extra width is what keeps the selected state visible there (see text-contrast.test.ts).
+        selected ? "border-2 border-vsl" : "border border-zinc-400/5"
       )}
     >
       {source && !imageFailed && <img src={source} alt="" loading={loading} decoding="async" onError={() => setImageFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}

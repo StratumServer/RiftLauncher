@@ -187,7 +187,7 @@ function EditInslallation(): JSX.Element {
                 startParams={fields.startParams}
                 onStartParamsChange={fields.setStartParams}
                 startParamsLink={
-                  <Button onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")} className="text-vsl">
+                  <Button onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")} className="text-vsl underline">
                     {t("features.installations.startParamsLink")}
                   </Button>
                 }

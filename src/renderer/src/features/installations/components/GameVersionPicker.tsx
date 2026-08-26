@@ -52,7 +52,7 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
                     i18nKey="features.versions.noVersionsFoundDesc"
                     components={{
                       link: (
-                        <LinkButton title={t("components.mainMenu.versionsTitle")} to="/versions" className="text-vsl">
+                        <LinkButton title={t("components.mainMenu.versionsTitle")} to="/versions" className="text-vsl underline">
                           {t("components.mainMenu.versionsTitle")}
                         </LinkButton>
                       )
