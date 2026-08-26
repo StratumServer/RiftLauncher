@@ -66,7 +66,7 @@ export function serveTasks(handler: TaskHandler, describeFailure: FailureDescrib
       busy = false
       // The spread comes first on purpose: a handler's result cannot overwrite the real
       // type or token with a field of its own.
-      port.postMessage({ ...(result ?? {}), type: "finished", token })
+      port.postMessage(result ? { ...result, type: "finished", token } : { type: "finished", token })
     }
 
     const failTask = (error: unknown): void => {

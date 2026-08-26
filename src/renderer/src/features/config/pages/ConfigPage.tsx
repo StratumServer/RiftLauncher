@@ -330,7 +330,7 @@ function UIScale(): JSX.Element {
   const [selectedScale, setSelectedScale] = useState<number>(Number(window.localStorage.getItem("uiScale")) || 100)
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-uiscale", selectedScale.toString())
+    document.documentElement.dataset.uiscale = selectedScale.toString()
     window.localStorage.setItem("uiScale", selectedScale.toString())
   }, [selectedScale])
 

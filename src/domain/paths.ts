@@ -9,7 +9,8 @@
  * before handing paths into the domain.
  */
 export function normalizeFolderForComparison(folder: string, platform: "win32" | "posix" = detectPlatform(folder)): string {
-  let normalized = folder.replace(/[\\/]+$/, "")
+  let normalized = folder
+  while (normalized.endsWith("/") || normalized.endsWith("\\")) normalized = normalized.slice(0, -1)
   if (platform === "win32") normalized = normalized.replaceAll("\\", "/").toLowerCase()
   return normalized
 }

@@ -15,7 +15,7 @@
  * @returns Negative when `a` sorts before `b`, positive when it sorts after, zero when they tie.
  */
 export function compareVersions(a: string, b: string): number {
-  const parts = (version: string): number[] => version.replace(/-.*$/, "").split(".").map(Number)
+  const parts = (version: string): number[] => version.split("-", 1)[0]!.split(".").map(Number)
 
   const left = parts(a)
   const right = parts(b)

@@ -173,6 +173,7 @@ function ImportModpackPopup({
                   {t("features.mods.importModpackDowngradeWarning", { count: downgradedMods.length })}
                 </span>
                 <button
+                  type="button"
                   className="shrink-0 underline hover:text-orange-200 duration-150"
                   onClick={() => {
                     handleClose()

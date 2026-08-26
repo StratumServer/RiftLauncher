@@ -279,7 +279,7 @@ app.whenReady().then(async () => {
   protocol.handle("icons", async (req) => {
     const srcPath = join(app.getPath("userData"), "Icons")
     const filePath = resolveContainedPath(srcPath, new URL(req.url).pathname)
-    if (!filePath || !filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
+    if (!filePath?.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
     if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
     return net.fetch(pathToFileURL(filePath).toString())
   })

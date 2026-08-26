@@ -144,30 +144,29 @@ function ManageInstallationBackups(): JSX.Element {
             </div>
           )}
           <ListGroup>
-            {backups &&
-              backups.map((backup) => (
-                <ListItem key={backup.id}>
-                  <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
-                    <div className="w-full flex items-center justify-center text-start font-bold pl-1">
-                      <p className="w-full">{new Date(backup.date).toLocaleString("es")}</p>
-                    </div>
-
-                    <ThinSeparator />
-
-                    <div className="shrink-0 w-fit flex gap-1 text-lg">
-                      <NormalButton className="p-1" title={t("features.backups.restoreBackup")} onClick={() => setBackupToRestore(backup)} disabled={backup._deleting || backup._restoring}>
-                        <PiArrowCounterClockwiseDuotone />
-                      </NormalButton>
-                      <NormalButton onClick={() => setBackupToDelete(backup)} title={t("generic.delete")} className="p-1" disabled={backup._deleting || backup._restoring}>
-                        <PiTrashDuotone />
-                      </NormalButton>
-                      <NormalButton onClick={() => openPathInExplorer(backup.path, { parentOfFile: true })} title={`${t("generic.openOnFileExplorer")} · ${backup.path}`} className="p-1">
-                        <PiFolderOpenDuotone />
-                      </NormalButton>
-                    </div>
+            {backups?.map((backup) => (
+              <ListItem key={backup.id}>
+                <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
+                  <div className="w-full flex items-center justify-center text-start font-bold pl-1">
+                    <p className="w-full">{new Date(backup.date).toLocaleString("es")}</p>
                   </div>
-                </ListItem>
-              ))}
+
+                  <ThinSeparator />
+
+                  <div className="shrink-0 w-fit flex gap-1 text-lg">
+                    <NormalButton className="p-1" title={t("features.backups.restoreBackup")} onClick={() => setBackupToRestore(backup)} disabled={backup._deleting || backup._restoring}>
+                      <PiArrowCounterClockwiseDuotone />
+                    </NormalButton>
+                    <NormalButton onClick={() => setBackupToDelete(backup)} title={t("generic.delete")} className="p-1" disabled={backup._deleting || backup._restoring}>
+                      <PiTrashDuotone />
+                    </NormalButton>
+                    <NormalButton onClick={() => openPathInExplorer(backup.path, { parentOfFile: true })} title={`${t("generic.openOnFileExplorer")} · ${backup.path}`} className="p-1">
+                      <PiFolderOpenDuotone />
+                    </NormalButton>
+                  </div>
+                </div>
+              </ListItem>
+            ))}
           </ListGroup>
         </ListWrapper>
 

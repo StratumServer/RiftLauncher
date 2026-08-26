@@ -16,6 +16,7 @@ function HomePage(): JSX.Element {
       <p className="text-lg">{t("features.home.description")}</p>
 
       <button
+        type="button"
         className="relative max-w-full max-h-full h-1/2 aspect-video rounded-md shadow-md shadow-zinc-950/50 m-6 overflow-hidden group cursor-pointer"
         title={t("features.home.watchTrailer")}
         onClick={() => openOnBrowser(`https://www.youtube.com/watch?v=${VIDEO_ID}`)}
