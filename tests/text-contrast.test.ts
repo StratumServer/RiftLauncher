@@ -71,6 +71,13 @@ function foreground(file: string, anchor: RegExp): Layer {
   return [zinc(name, `${file} ${anchor}`), found[2] === undefined ? 1 : Number(found[2]) / 100]
 }
 
+/** One `--color-*` token from the `@theme` block, read as the hex that actually ships. */
+function themeColor(name: string): Rgb {
+  const found = match("styles.css", new RegExp(`--color-${name}:\\s*#([0-9a-fA-F]{6})`))
+  const hex = found[1] as string
+  return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)]
+}
+
 /** A layer this pass did not touch, kept here so the stacks below are the real ones. */
 function fixed(color: keyof typeof ZINC, alpha: number): Layer {
   return [ZINC[color], alpha]
@@ -141,6 +148,17 @@ const MOD_FILTER = [shell, stickyMenu, filterControl] as const
 const POPUP_TABLE_ROW = [popupShell, popupPanel, tableFill, rowTint] as const
 /** The thinnest stack any of the actionable icons sits on, so the worst of the five. */
 const ICON = [shell, section, dropdownFill, rowTint] as const
+
+// Scrims the vsl accent links and icons sit under, not touched by #236.
+const toast = scrim("components/layout/NotificationsOverlay.tsx", /text-center bg-zinc-950\/(\d+) backdrop-blur-sm/)
+const tasksPanel = scrim("components/ui/TasksMenu.tsx", /max-h-60 flex flex-col bg-zinc-950\/(\d+) backdrop-blur-md/)
+const menuCard = scrim("features/installations/components/InstallationsDropdownMenu.tsx", /backdrop-blur-xs bg-zinc-950\/(\d+) border border-zinc-400\/5 group/)
+
+const LIST_PANEL = [shell, listPanel] as const
+const SECTION_TABLE = [shell, section, tableFill] as const
+const MENU_CARD = [shell, menu, menuCard] as const
+const TOAST = [shell, toast] as const
+const TASKS_ROW = [shell, tasksPanel, rowTint] as const
 
 describe("text over the player's background image", () => {
   it("keeps page text readable where the shell scrim is all there is", () => {
@@ -216,5 +234,57 @@ describe("prompts the player is meant to read and act on", () => {
       ["choose a custom icon file", foreground("components/ui/AddCustomIconPupup.tsx", /PiPlusCircleDuotone className="text-3xl text-(zinc-\d+)(?:\/(\d+))?/)]
     ]
     for (const [label, icon] of icons) assertReadable(label, icon, ICON, NON_TEXT_FLOOR)
+  })
+})
+
+/**
+ * #248 follow-up to #236: --color-vsl (the brand accent used as text-vsl for links, plus two
+ * status icons) was left out of the original pass and read 3.15:1 on its binding stack. The fix
+ * lightens the token rather than darkening it, because every text-vsl call site renders through
+ * the same translucent zinc-950 scrim stack over the player's background image that the rest of
+ * this file measures, never on a real white surface: the worst case is that stack over a white
+ * image, not white itself. --color-vs and --color-vsd are separate tokens that style the active
+ * menu marker and the enabled toggle; they carry light text on top rather than being text
+ * themselves, so they are untouched here.
+ */
+describe("the brand accent where it carries text", () => {
+  it("keeps every accent link readable on the panel it ships on", () => {
+    const accent: Layer = [themeColor("vsl"), 1]
+    const links: ReadonlyArray<readonly [string, RegExp, string, readonly Layer[]]> = [
+      ["add installation start-params link", /Client_startup_parameters"\)\} className="text-vsl"/, "features/installations/pages/AddInstallation.tsx", FORM_SECTION],
+      ["edit installation start-params link", /Client_startup_parameters"\)\} className="text-vsl"/, "features/installations/pages/EditInstallation.tsx", FORM_SECTION],
+      ["logs folder link", /onClick=\{openLogsFolder\} className="text-vsl"/, "features/info/pages/InfoAndHelpPage.tsx", FORM_SECTION],
+      ["no installed mods link", /to="\/mods" className="text-vsl"/, "features/mods/components/NoInstalledModsNotice.tsx", LIST_PANEL],
+      ["mods section issues link", /openExternalLink\(ISSUES_URL\)[\s\S]*?className="text-vsl"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["mods section discord link", /openExternalLink\(DISCORD_URL\)[\s\S]*?className="text-vsl"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["no game versions link", /to="\/versions" className="text-vsl"/, "features/installations/components/GameVersionPicker.tsx", SECTION_TABLE],
+      ["no installations link", /to="\/installations" className="text-vsl"/, "features/installations/components/InstallationsDropdownMenu.tsx", MENU_CARD]
+    ]
+    for (const [label, anchor, file, stack] of links) {
+      match(file, anchor) // fails loudly, naming the file, if the link class has moved
+      assertReadable(label, accent, stack, TEXT_FLOOR)
+    }
+  })
+
+  it("keeps the accent status icons above the non-text bar", () => {
+    const accent: Layer = [themeColor("vsl"), 1]
+    match("components/layout/NotificationsOverlay.tsx", /info: "text-vsl"/)
+    assertReadable("info toast icon", accent, TOAST, NON_TEXT_FLOOR)
+    match("components/ui/TasksMenu.tsx", /pending: "text-vsl"/)
+    assertReadable("pending task icon", accent, TASKS_ROW, NON_TEXT_FLOOR)
+  })
+
+  it("keeps the accent ramp and its selected borders coherent", () => {
+    const dark = luminance(themeColor("vsd"))
+    const base = luminance(themeColor("vs"))
+    const light = luminance(themeColor("vsl"))
+    assert.ok(dark < base && base < light, "the vs/vsl/vsd ramp should stay dark-to-light in that order")
+
+    // Both borders below are decorative, not the sole indicator of the selected state, so neither
+    // gets a contrast assertion: the Grid border sits at 25% alpha alongside a bg-vsd/50 fill, and
+    // the ConfigPage tile border paints over an arbitrary user-chosen thumbnail with no fixed
+    // backdrop to measure against. This just pins that both still track --color-vsl.
+    match("components/ui/Grid.tsx", /selected \? "bg-vsd\/50 border-vsl\/(\d+)"/)
+    match("features/config/pages/ConfigPage.tsx", /selected \? "border-vsl" : "border-zinc-400\/5"/)
   })
 })
