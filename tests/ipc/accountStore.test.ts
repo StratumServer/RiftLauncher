@@ -290,6 +290,28 @@ describe("saveAccountSecrets rebuilding an unreadable store", () => {
     assert.equal(existsSync(unreadableBackupPath()), false)
     assert.equal(readFileSync(storePath(), "utf8"), original, "nothing was written over a file this could not back up first")
   })
+
+  it("does not snapshot or touch an intact store when only the keyring is locked", async () => {
+    // A locked keyring reads as unreadable-adjacent, but the file is fine: readStore returns
+    // early with unreadable:false so a later unlock still reaches it, and writeAccounts throws
+    // before it could overwrite anything. Without that split, the first locked-keyring login
+    // would copy the intact store to the one-shot snapshot slot and then fail the login anyway,
+    // stranding a stale copy where a genuine corruption event would later need one (#261 review).
+    const writer = await loadStore()
+    await writer.saveAccountSecrets("uid-a", ACCOUNT_A)
+    await writer.saveAccountSecrets("uid-b", ACCOUNT_B)
+    const onDisk = readFileSync(storePath(), "utf8")
+    const mode = statSync(storePath()).mode & 0o777
+
+    mockState.encryptionAvailable = false
+    const store = await loadStore()
+
+    await assert.rejects(store.saveAccountSecrets("uid-c", ACCOUNT_A), /Secure account storage is unavailable/)
+
+    assert.equal(existsSync(unreadableBackupPath()), false, "a locked keyring is not a corruption event")
+    assert.equal(readFileSync(storePath(), "utf8"), onDisk, "the real store is left byte-for-byte")
+    assert.equal(statSync(storePath()).mode & 0o777, mode, "and at the mode it had")
+  })
 })
 
 describe("getAccountSecrets", () => {
@@ -455,6 +477,19 @@ describe("removeAccountSecrets", () => {
     const store = await loadStore()
 
     assert.equal(await store.removeAccountSecrets("uid-a"), true)
+  })
+
+  it("reports failure, not a false success, when the store cannot be read", async () => {
+    // A locked keyring, or a file that stopped decrypting. The account asked for could be in
+    // those very bytes, so "nothing to remove" is not the truth. A false success would have
+    // the renderer drop it from config and tell the player it is gone (#253 review).
+    const original = JSON.stringify({ version: 2, ciphertext: Buffer.from("someone else's bytes", "utf8").toString("base64") })
+    writeFileSync(storePath(), original)
+    const store = await loadStore()
+
+    assert.equal(await store.removeAccountSecrets("uid-a"), false)
+    assert.equal(readFileSync(storePath(), "utf8"), original, "the unreadable file is left exactly as it was")
+    assert.equal(existsSync(unreadableBackupPath()), false, "removing an account never snapshots or rebuilds the store")
   })
 
   it.skipIf(process.platform !== "linux" || process.getuid?.() === 0)("reports failure when the file cannot be rewritten", async () => {

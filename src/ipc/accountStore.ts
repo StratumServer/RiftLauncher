@@ -118,9 +118,14 @@ async function readAccounts(): Promise<Map<string, AccountSecrets>> {
 /**
  * Copies the current, unreadable store file aside once, so a rebuild around a
  * new login never destroys bytes that might still hold other accounts'
- * sessions. `overwrite: false` keeps the first snapshot: the earliest
- * unreadable file is the one most likely to still hold every account that
- * was ever saved, and a later corruption event has nothing left to add.
+ * sessions. `overwrite: false` keeps the first snapshot and skips every later
+ * one. That is a deliberate one-shot: a second corruption event can land after
+ * the store has rebuilt and grown, so the skipped snapshot sometimes holds
+ * more than the kept one, which for a version-mismatch file (recoverable by
+ * the newer build that wrote it) is a real loss. The trade is accepted here
+ * because a single predictable recovery file beats an unbounded pile of them,
+ * and nothing in the app surfaces or clears these yet regardless (tracked as a
+ * follow-up on #259).
  *
  * Throws {@link AccountStoreUnreadableError} when the copy itself fails (a
  * permissions problem, most likely): that is the one case where proceeding
@@ -197,21 +202,26 @@ export async function getAccountSecrets(accountId: string): Promise<AccountSecre
 }
 
 /**
- * Drops one account's secrets. `true` when there was nothing to remove,
- * matching the old single-account store's `clearAccountSecrets`: a caller
- * asking to remove an account that already has no stored session is not a
- * failure. When the map empties, the file itself is removed rather than left
- * behind holding an empty list, so a never-used store and a fully-logged-out
- * one are byte-for-byte the same on disk.
+ * Drops one account's secrets. `true` when there was nothing to remove from a
+ * store that could actually be read, matching the old single-account store's
+ * `clearAccountSecrets`: a caller asking to remove an account that already has
+ * no stored session is not a failure. When the map empties, the file itself is
+ * removed rather than left behind holding an empty list, so a never-used store
+ * and a fully-logged-out one are byte-for-byte the same on disk.
  *
- * An unreadable store never reaches the write path here: the account this
- * was asked to remove cannot be found in an empty map either, so this
- * returns `true` and leaves the bad file exactly as it was, the same as any
- * other account already missing. Only `saveAccountSecrets` ever rebuilds it.
+ * `false` when the account is not in the map only because the store could not
+ * be read (a locked keyring, or bytes that stopped decrypting). The entry may
+ * well be sitting in those bytes, so "nothing to remove" is not the truth, and
+ * reporting success would have the renderer drop the account from config and
+ * tell the player it is gone while its session is still on disk under a uid
+ * nothing names any more. Refusing keeps the account and surfaces the store
+ * problem instead. This never rebuilds the file: only `saveAccountSecrets`,
+ * running for a login the player actually asked for, does that.
  */
 export async function removeAccountSecrets(accountId: string): Promise<boolean> {
-  const accounts = new Map(await readAccounts())
-  if (!accounts.delete(accountId)) return true
+  const store = await readStore()
+  const accounts = new Map(store.accounts)
+  if (!accounts.delete(accountId)) return !store.unreadable
 
   try {
     if (accounts.size === 0) {
