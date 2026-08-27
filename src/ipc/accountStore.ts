@@ -3,6 +3,7 @@ import fse from "fs-extra"
 import { join } from "node:path"
 
 import { parseStoredSecrets, parseStoredSecretsById, type AccountSecrets, type StoredAccountSecretsEntry } from "@domain/account/credentials"
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 
 type EncryptedAccountFile = {
   version: 2
@@ -87,18 +88,14 @@ async function writeAccounts(accounts: Map<string, AccountSecrets>): Promise<voi
   const payload: StoredAccountsPayload = { accounts: Array.from(accounts, ([id, secrets]) => ({ id, secrets })) }
   const encrypted = safeStorage.encryptString(JSON.stringify(payload)).toString("base64")
   const storePath = getAccountStorePath()
-  const temporaryPath = `${storePath}.${process.pid}.${Date.now()}.tmp`
   const contents: EncryptedAccountFile = { version: ACCOUNT_STORE_VERSION, ciphertext: encrypted }
 
-  try {
-    await fse.writeJSON(temporaryPath, contents, { spaces: 0, mode: 0o600 })
-    await fse.chmod(temporaryPath, 0o600).catch(() => undefined)
-    await fse.move(temporaryPath, storePath, { overwrite: true })
-    await fse.chmod(storePath, 0o600).catch(() => undefined)
-    cachedAccounts = accounts
-  } finally {
-    await fse.remove(temporaryPath).catch(() => undefined)
-  }
+  // write-file-atomic opens the temp file with this mode, so the file rename() lands
+  // is already 0600; the explicit chmod is defense in depth against a permissive umask,
+  // matching what this store did before.
+  await writeJsonAtomic(storePath, contents, { mode: 0o600 })
+  await fse.chmod(storePath, 0o600).catch(() => undefined)
+  cachedAccounts = accounts
 }
 
 /** Saves or replaces one account's secrets. Logging into an already-saved account overwrites its entry: a session refresh, not a duplicate. */

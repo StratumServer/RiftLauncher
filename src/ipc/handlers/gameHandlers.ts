@@ -4,6 +4,7 @@ import fse from "fs-extra"
 import { join } from "node:path"
 import os from "node:os"
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
@@ -63,7 +64,7 @@ function realJsonFile(): JsonFile {
     },
     write: async (path: string, document: unknown): Promise<JsonFileWriteResult> => {
       try {
-        await fse.writeJSON(path, document)
+        await writeJsonAtomic(path, document)
         return { ok: true }
       } catch (err) {
         return { ok: false, error: getErrorMessage(err) }

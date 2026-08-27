@@ -128,7 +128,7 @@ function AddVersion(): JSX.Element {
                               key={gv.version}
                               selected={version?.version === gv.version}
                               disabled={installedGameVersions.some((igv) => igv.version === gv.version)}
-                              onClick={() => !installedGameVersions.find((igv) => igv.version === gv.version) && setVersion(gv)}
+                              onClick={() => !installedGameVersions.some((igv) => igv.version === gv.version) && setVersion(gv)}
                             >
                               <TableCell className="w-1/2">{gv.version}</TableCell>
                               <TableCell className="w-1/2">{gv.type}</TableCell>

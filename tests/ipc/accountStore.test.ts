@@ -143,8 +143,10 @@ describe("saveAccountSecrets", () => {
 
     await store.saveAccountSecrets("uid-a", ACCOUNT_A)
 
+    // write-file-atomic names its temp sibling `<file>.<hash>`, never `<file>.tmp`, so a
+    // suffix filter would pass on anything: assert the store file is the only entry left.
     assert.deepEqual(
-      readdirSync(mockState.userDataDir).filter((entry) => entry.endsWith(".tmp")),
+      readdirSync(mockState.userDataDir).filter((entry) => entry !== "account-secrets.json"),
       []
     )
   })

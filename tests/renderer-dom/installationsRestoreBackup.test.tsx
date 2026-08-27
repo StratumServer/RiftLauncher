@@ -180,7 +180,7 @@ describe("ManageInstallationBackups", () => {
     await screen.findByText("Are you sure you want to delete this Backup?")
     await user.click(screen.getAllByTitle("Delete")[1]!)
     await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(screen.getByTitle("Delete")).toBeTruthy())
+    await screen.findByTitle("Delete")
 
     await user.click(screen.getByTitle("Delete"))
     await screen.findByText("Are you sure you want to delete this Backup?")

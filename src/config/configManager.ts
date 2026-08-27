@@ -1,6 +1,7 @@
 import { app } from "electron"
 import fse from "fs-extra"
 import { join } from "node:path"
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
@@ -49,14 +50,8 @@ async function writeConfig(normalizedConfig: ConfigType): Promise<void> {
       return key.startsWith("_") ? undefined : value
     })
   )
-  const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.tmp`
 
-  try {
-    await fse.writeJSON(temporaryPath, cleanedConfig)
-    await fse.move(temporaryPath, configPath, { overwrite: true })
-  } finally {
-    await fse.remove(temporaryPath).catch(() => undefined)
-  }
+  await writeJsonAtomic(configPath, cleanedConfig)
 }
 
 function scheduleConfigWrite(): Promise<void> {

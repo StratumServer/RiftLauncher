@@ -50,7 +50,7 @@ export const MODDB_VISIBILITY_ALREADY_DONE = "already-done"
 /** Not asked yet, and the answer anything unreadable falls back to. */
 export const DEFAULT_MODDB_VISIBILITY_ANSWER: ModDbVisibilityAnswer = MODDB_VISIBILITY_UNASKED
 
-const MODDB_VISIBILITY_ANSWERS: readonly string[] = [MODDB_VISIBILITY_UNASKED, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_DECLINED, MODDB_VISIBILITY_ALREADY_DONE]
+const MODDB_VISIBILITY_ANSWERS = new Set([MODDB_VISIBILITY_UNASKED, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_DECLINED, MODDB_VISIBILITY_ALREADY_DONE])
 
 /**
  * Anything that is not one of the four answers, missing included, becomes "not asked yet".
@@ -60,5 +60,5 @@ const MODDB_VISIBILITY_ANSWERS: readonly string[] = [MODDB_VISIBILITY_UNASKED, M
  * worse, let a hand-edited config claim a consent that was never given.
  */
 export function normalizeModDbVisibilityAnswer(value: unknown): ModDbVisibilityAnswer {
-  return typeof value === "string" && MODDB_VISIBILITY_ANSWERS.includes(value) ? (value as ModDbVisibilityAnswer) : DEFAULT_MODDB_VISIBILITY_ANSWER
+  return typeof value === "string" && MODDB_VISIBILITY_ANSWERS.has(value) ? (value as ModDbVisibilityAnswer) : DEFAULT_MODDB_VISIBILITY_ANSWER
 }

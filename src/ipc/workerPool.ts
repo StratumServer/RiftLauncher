@@ -108,7 +108,7 @@ export class WorkerPool {
   /** Kills every worker, idle or mid-task, and stops pooling. Call on app quit. */
   terminateAll(): void {
     this.shuttingDown = true
-    for (const pooled of [...this.live]) this.forget(pooled)
+    for (const pooled of this.live) this.forget(pooled)
     this.idle.clear()
   }
 
