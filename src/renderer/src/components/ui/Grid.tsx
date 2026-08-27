@@ -85,7 +85,11 @@ export function GridItem({
         exit="exit"
         className={clsx(
           "w-full h-full rounded-sm backdrop-blur-xs border cursor-pointer shadow-sm shadow-zinc-950/50 hover:shadow-none duration-200",
-          selected ? "bg-vsd/50 border-vsl/25" : "bg-zinc-950/50 border-zinc-400/5",
+          // Full opacity, not the /25 this used to carry: the fill and panel behind it are dark
+          // enough that a translucent border barely separated from them (issue #258, 1.53:1 worst
+          // case against the 3:1 WCAG 1.4.11 floor for a boundary that is the sole selected-state
+          // cue). Opaque clears it with room to spare; see text-contrast.test.ts.
+          selected ? "bg-vsd/50 border-vsl" : "bg-zinc-950/50 border-zinc-400/5",
           onClick && "cursor-pointer",
           className
         )}

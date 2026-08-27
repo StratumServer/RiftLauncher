@@ -288,17 +288,25 @@ describe("the brand accent where it carries text", () => {
     assertReadable("pending task icon", accent, TASKS_ROW, NON_TEXT_FLOOR)
   })
 
+  it("keeps the Grid selected-card border above the non-text bar", () => {
+    // #258: the border used to sit at partial alpha, which barely separated from the panel behind
+    // it (1.53:1 worst case, below the 3:1 floor for a boundary that is the sole selected-state
+    // cue: see ModListCard.tsx's `selected={installed}`). It is opaque now, but the backdrop it
+    // reads against is still the card's own bg-vsd/NN fill composited over the grid panel, not the
+    // panel alone: a border painted at the default border-box clip shows through the fill wherever
+    // the fill itself has any transparency, which bg-vsd/NN always does here.
+    const fillAlpha = Number(match("components/ui/Grid.tsx", /selected \? "bg-vsd\/(\d+) border-vsl"/)[1]) / 100
+    const fill: Layer = [themeColor("vsd"), fillAlpha]
+    const border: Layer = [themeColor("vsl"), 1]
+    assertReadable("Grid selected-card border", border, [shell, gridPanel, fill], NON_TEXT_FLOOR)
+  })
+
   it("keeps the accent ramp and its selected borders coherent", () => {
     const dark = luminance(themeColor("vsd"))
     const base = luminance(themeColor("vs"))
     const light = luminance(themeColor("vsl"))
     assert.ok(dark < base && base < light, "the vs/vsl/vsd ramp should stay dark-to-light in that order")
 
-    // The Grid border is decorative, not the sole indicator of the selected state (it sits at 25%
-    // alpha alongside a bg-vsd/50 fill), so it gets no contrast assertion here, only a pin that it
-    // still tracks --color-vsl; its own non-text-contrast gap predates this change and is tracked
-    // separately (issue filed alongside this PR).
-    match("components/ui/Grid.tsx", /selected \? "bg-vsd\/50 border-vsl\/(\d+)"/)
     // The ConfigPage tile border has a different backdrop on each of its two edges, so there is no
     // single ratio to assert here. Inside is the player's own thumbnail. Outside is the section panel
     // over the shell, which is FORM_SECTION above, so the accent's ratio on that edge is already
