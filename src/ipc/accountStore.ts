@@ -4,6 +4,7 @@ import { join } from "node:path"
 
 import { parseStoredSecrets, parseStoredSecretsById, type AccountSecrets, type StoredAccountSecretsEntry } from "@domain/account/credentials"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
+import { isRecord } from "@src/ipc/validation"
 
 type EncryptedAccountFile = {
   version: 2
@@ -25,13 +26,15 @@ const ACCOUNT_STORE_VERSION = 2
 const LEGACY_ACCOUNT_STORE_VERSION = 1
 
 /**
- * `undefined` means the file has not been read this process. A read that
- * cannot be decrypted, or finds nothing there, caches an empty map rather
- * than `undefined`, so a later call answers from memory instead of hitting
- * the disk again. A miss on one account cannot poison a later hit on another,
- * because the cache holds the whole file's contents, not one account's.
+ * `undefined` means the file has not been read this process. `unreadable`
+ * says whether the file existed but could not be trusted (wrong version,
+ * bad JSON, decrypt failure, a payload with no accounts list): a genuinely
+ * absent file is not unreadable, it is the ordinary no-accounts-yet case,
+ * and `readStore` never sets the flag for it. `saveAccountSecrets` is the
+ * only reader of the flag; every other caller only ever wants the map.
  */
-let cachedAccounts: Map<string, AccountSecrets> | undefined
+type StoreRead = { accounts: Map<string, AccountSecrets>; unreadable: boolean }
+let cachedRead: StoreRead | undefined
 
 function getAccountStorePath(): string {
   return join(app.getPath("userData"), "account-secrets.json")
@@ -49,38 +52,96 @@ function getAccountStoreBackupPath(): string {
   return join(app.getPath("userData"), "account-secrets.pre-migration.bak.json")
 }
 
+/**
+ * Where an unreadable store's bytes are kept before {@link saveAccountSecrets}
+ * rebuilds the file around a new login. A separate file from the
+ * pre-migration backup above on purpose: those are two different events (an
+ * old-format file being upgraded, versus a current-format file that stopped
+ * decrypting), and sharing one path would let whichever happens second
+ * silently erase the first one's snapshot.
+ */
+function getUnreadableStoreBackupPath(): string {
+  return join(app.getPath("userData"), "account-secrets.unreadable.bak.json")
+}
+
+/** The unreadable store's bytes could not be copied aside, so nothing was written over it. */
+export class AccountStoreUnreadableError extends Error {
+  constructor(cause?: unknown) {
+    super("The account store is unreadable and its bytes could not be preserved", { cause })
+    this.name = "AccountStoreUnreadableError"
+  }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return isRecord(error) && error.code === "ENOENT"
+}
+
 function assertSecureStorage(): void {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure account storage is unavailable")
   if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") throw new Error("A system password store is required for account storage")
 }
 
-async function readAccounts(): Promise<Map<string, AccountSecrets>> {
-  if (cachedAccounts !== undefined) return cachedAccounts
+async function readStore(): Promise<StoreRead> {
+  if (cachedRead !== undefined) return cachedRead
 
   try {
     assertSecureStorage()
+  } catch {
+    // Not the file's fault, and not cached: the keyring becoming available later must still
+    // reach the real file, and writeAccounts asserts the same thing before it could ever
+    // overwrite anything, so no save can destroy the store while this is true.
+    return { accounts: new Map(), unreadable: false }
+  }
+
+  try {
     const stored = (await fse.readJSON(getAccountStorePath(), "utf8")) as Partial<EncryptedAccountFile>
     if (stored.version !== ACCOUNT_STORE_VERSION || typeof stored.ciphertext !== "string") throw new Error("Invalid account store")
 
     const decrypted = safeStorage.decryptString(Buffer.from(stored.ciphertext, "base64"))
-    cachedAccounts = parseStoredSecretsById(JSON.parse(decrypted))
-  } catch {
-    cachedAccounts = new Map()
+    const payload: unknown = JSON.parse(decrypted)
+    // An entry parseStoredSecretsById itself drops is not corruption: a file holding one
+    // broken entry beside three good ones is still a store worth writing to. A payload with
+    // no accounts list at all is the file failing to be this store's shape in the first place.
+    if (!isRecord(payload) || !Array.isArray(payload.accounts)) throw new Error("Invalid account store payload")
+    cachedRead = { accounts: parseStoredSecretsById(payload), unreadable: false }
+  } catch (error) {
+    cachedRead = { accounts: new Map(), unreadable: !isMissingFileError(error) }
   }
 
-  return cachedAccounts
+  return cachedRead
+}
+
+async function readAccounts(): Promise<Map<string, AccountSecrets>> {
+  return (await readStore()).accounts
+}
+
+/**
+ * Copies the current, unreadable store file aside once, so a rebuild around a
+ * new login never destroys bytes that might still hold other accounts'
+ * sessions. `overwrite: false` keeps the first snapshot: the earliest
+ * unreadable file is the one most likely to still hold every account that
+ * was ever saved, and a later corruption event has nothing left to add.
+ *
+ * Throws {@link AccountStoreUnreadableError} when the copy itself fails (a
+ * permissions problem, most likely): that is the one case where proceeding
+ * to rebuild would destroy bytes rather than merely fail to read them, so
+ * the caller must not write anything.
+ */
+async function preserveUnreadableStore(): Promise<void> {
+  try {
+    await fse.copy(getAccountStorePath(), getUnreadableStoreBackupPath(), { overwrite: false, errorOnExist: false })
+  } catch (error) {
+    if (isMissingFileError(error)) return // Vanished since the read; nothing left to preserve.
+    throw new AccountStoreUnreadableError(error)
+  }
 }
 
 /**
  * Encrypts and writes the whole account map, atomically.
  *
- * If the file on disk exists but cannot be decrypted, this still overwrites
- * it: the old bytes are already unrecoverable, so refusing to write would
- * only leave the launcher permanently unable to save any account. At
- * multi-account scale this means one undecryptable file now costs every
- * saved account's session instead of the one account the old single-account
- * store held, which is a real change in blast radius worth this comment,
- * even though it is not a new kind of risk.
+ * Callers decide what "the whole account map" should contain before calling
+ * this; it always overwrites the file with exactly what it is given. See
+ * {@link saveAccountSecrets} for the policy on when that is safe to do.
  */
 async function writeAccounts(accounts: Map<string, AccountSecrets>): Promise<void> {
   assertSecureStorage()
@@ -95,14 +156,39 @@ async function writeAccounts(accounts: Map<string, AccountSecrets>): Promise<voi
   // matching what this store did before.
   await writeJsonAtomic(storePath, contents, { mode: 0o600 })
   await fse.chmod(storePath, 0o600).catch(() => undefined)
-  cachedAccounts = accounts
+  cachedRead = { accounts, unreadable: false }
 }
 
-/** Saves or replaces one account's secrets. Logging into an already-saved account overwrites its entry: a session refresh, not a duplicate. */
-export async function saveAccountSecrets(accountId: string, secrets: AccountSecrets): Promise<void> {
-  const accounts = new Map(await readAccounts())
+/** What {@link saveAccountSecrets} actually did: a plain save, or a save that first had to rebuild an unreadable store around it. */
+export type AccountSaveOutcome = "saved" | "saved-after-rebuild"
+
+/**
+ * Saves or replaces one account's secrets. Logging into an already-saved
+ * account overwrites its entry: a session refresh, not a duplicate.
+ *
+ * When the store is present but unreadable, the sessions it held are already
+ * gone the moment it stopped decrypting: refusing this write would not bring
+ * any of them back, only leave the launcher unable to save any account ever
+ * again, with nothing in the app to clear the dead file for it. So this
+ * preserves the unreadable bytes once (see {@link preserveUnreadableStore})
+ * and rebuilds the store around just the account logging in now, the same
+ * "never destroy without a snapshot" rule the rest of this file already
+ * follows. The caller is told which happened, so a login that quietly wiped
+ * a housemate's session is never reported as an ordinary one.
+ */
+export async function saveAccountSecrets(accountId: string, secrets: AccountSecrets): Promise<AccountSaveOutcome> {
+  const store = await readStore()
+  const accounts = new Map(store.accounts)
   accounts.set(accountId, secrets)
+
+  if (!store.unreadable) {
+    await writeAccounts(accounts)
+    return "saved"
+  }
+
+  await preserveUnreadableStore()
   await writeAccounts(accounts)
+  return "saved-after-rebuild"
 }
 
 /** Reads one account's secrets, or null when nothing is stored for it. */
@@ -117,6 +203,11 @@ export async function getAccountSecrets(accountId: string): Promise<AccountSecre
  * failure. When the map empties, the file itself is removed rather than left
  * behind holding an empty list, so a never-used store and a fully-logged-out
  * one are byte-for-byte the same on disk.
+ *
+ * An unreadable store never reaches the write path here: the account this
+ * was asked to remove cannot be found in an empty map either, so this
+ * returns `true` and leaves the bad file exactly as it was, the same as any
+ * other account already missing. Only `saveAccountSecrets` ever rebuilds it.
  */
 export async function removeAccountSecrets(accountId: string): Promise<boolean> {
   const accounts = new Map(await readAccounts())
@@ -125,7 +216,7 @@ export async function removeAccountSecrets(accountId: string): Promise<boolean> 
   try {
     if (accounts.size === 0) {
       await fse.remove(getAccountStorePath())
-      cachedAccounts = new Map()
+      cachedRead = { accounts: new Map(), unreadable: false }
     } else {
       await writeAccounts(accounts)
     }

@@ -2,13 +2,14 @@ import { ipcMain } from "electron"
 
 import { interpretFirstPass, interpretSecondPass } from "@domain/account/login"
 import type { LoginVerdict } from "@domain/account/login"
-import { badCredentialsResult, needsTwoFactorResult, twoFactorRejectedResult, unexpectedResponseOutcome } from "@src/ipc/handlers/accountLoginOutcome"
+import { badCredentialsResult, needsTwoFactorResult, sessionStoreUnreadableResult, twoFactorRejectedResult, unexpectedResponseOutcome } from "@src/ipc/handlers/accountLoginOutcome"
 import { buildLoginRequestBody } from "@src/ipc/handlers/loginRequestBody"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { requestBoundedTextViaNode } from "@src/ipc/network"
 import { assertString, MAX_LOGIN_RESPONSE_BYTES } from "@src/ipc/validation"
-import { removeAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
+import { AccountStoreUnreadableError, removeAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
+import type { AccountSaveOutcome } from "@src/ipc/accountStore"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
 const LOGIN_URL = new URL("https://auth3.vintagestory.at/v2/gamelogin")
@@ -54,12 +55,28 @@ async function requestLoginPass(email: string, password: string, twoFactorCode?:
  */
 async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
   switch (verdict.status) {
-    case "success":
+    case "success": {
       // Keyed by the uid this same response just carried, so the store can never
       // disagree with what the renderer is told. Logging into an account already
       // saved overwrites its entry in place: a session refresh, not a duplicate.
-      await saveAccountSecrets(verdict.credentials.publicAccount.playerUid, verdict.credentials.secrets)
-      return { status: "success", account: verdict.credentials.publicAccount }
+      let outcome: AccountSaveOutcome
+      try {
+        outcome = await saveAccountSecrets(verdict.credentials.publicAccount.playerUid, verdict.credentials.secrets)
+      } catch (error) {
+        // Only the narrow "could not even copy the unreadable file aside" case gets its own
+        // wire status: anything else (no keyring, disk full) is a genuine storage failure and
+        // falls through to the caller's catch, same as before this file could rebuild a store.
+        if (!(error instanceof AccountStoreUnreadableError)) throw error
+        logMessage("error", "[back] [ipc] [accountHandlers.ts] [LOGIN] The account store is unreadable and could not be copied aside, so it was left untouched. The session was not saved.")
+        logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] ${getErrorMessage(error)}`)
+        return sessionStoreUnreadableResult()
+      }
+
+      if (outcome === "saved-after-rebuild")
+        logMessage("warn", "[back] [ipc] [accountHandlers.ts] [LOGIN] The account store could not be read; it was copied aside and rebuilt around this login. Other saved accounts must log in again.")
+
+      return { status: "success", account: verdict.credentials.publicAccount, ...(outcome === "saved-after-rebuild" ? { storeRebuilt: true } : {}) }
+    }
     case "needs-two-factor":
       return needsTwoFactorResult()
     case "two-factor-rejected":

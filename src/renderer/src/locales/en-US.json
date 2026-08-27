@@ -275,6 +275,8 @@
       "invalidEmailPass": "Invalid email or password!",
       "loginUnreachable": "Couldn't reach the login service. Check your connection or firewall and try again.",
       "unexpectedResponse": "The account service answered in a way this launcher couldn't read. Your password was not rejected. Try again after an update.",
+      "sessionStoreUnreadable": "Your login worked, but the saved-accounts file can't be read and couldn't be backed up, so the launcher left it alone rather than overwrite it. Nothing was saved this time.",
+      "sessionStoreRebuilt": "The saved-accounts file couldn't be read. A copy was kept and the launcher started a fresh one, so any other accounts on this device need to log in again.",
       "loggedin": "Logged in as {{user}}!",
       "onlyIfEnabledTwoFA": "Fill this field only if you have 2FA enabled!",
       "uiScale": "UI Scale",

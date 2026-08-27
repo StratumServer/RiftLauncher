@@ -76,6 +76,10 @@ function backupPath(): string {
   return join(mockState.userDataDir, "account-secrets.pre-migration.bak.json")
 }
 
+function unreadableBackupPath(): string {
+  return join(mockState.userDataDir, "account-secrets.unreadable.bak.json")
+}
+
 /** Writes the store file directly, standing in for whatever left it in that state. */
 function writeStoreFile(contents: unknown): void {
   writeFileSync(storePath(), typeof contents === "string" ? contents : JSON.stringify(contents))
@@ -184,6 +188,107 @@ describe("saveAccountSecrets", () => {
 
     await assert.rejects(store.saveAccountSecrets("uid-a", ACCOUNT_A), /A system password store is required/)
     assert.equal(existsSync(storePath()), false)
+  })
+})
+
+/**
+ * #259: a store present but unreadable used to be indistinguishable from an absent one, so the
+ * next `saveAccountSecrets` silently overwrote it, losing every other account's session in one
+ * shot instead of just the one the old single-account store would have held. These pin the fix:
+ * the bytes are preserved once, the write still lands so the player logging in is not blocked,
+ * and the caller is told a rebuild happened rather than an ordinary save.
+ */
+describe("saveAccountSecrets rebuilding an unreadable store", () => {
+  it("copies an undecryptable store aside before rebuilding it around the new login", async () => {
+    const original = JSON.stringify({ version: 2, ciphertext: Buffer.from("someone else's bytes", "utf8").toString("base64") })
+    writeStoreFile(original)
+    const store = await loadStore()
+
+    const outcome = await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    assert.equal(outcome, "saved-after-rebuild")
+    assert.equal(readFileSync(unreadableBackupPath(), "utf8"), original, "the backup holds the exact bytes that were there, not a re-serialised guess at them")
+
+    const reader = await loadStore()
+    assert.deepEqual(await reader.getAccountSecrets("uid-a"), ACCOUNT_A)
+  })
+
+  it("does the same for a file that is not JSON at all", async () => {
+    writeStoreFile("{ not json at all")
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-after-rebuild")
+    assert.equal(existsSync(unreadableBackupPath()), true)
+  })
+
+  it("does the same for a store written by a version this build does not know", async () => {
+    writeStoreFile({ version: 3, ciphertext: Buffer.from("sealed:{}", "utf8").toString("base64") })
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-after-rebuild")
+    assert.equal(existsSync(unreadableBackupPath()), true)
+  })
+
+  it("treats a store whose entries it merely dropped as readable, not unreadable", async () => {
+    // Same fixture as the "drops one unreadable entry" case above: one bad entry beside one
+    // good one is a store worth writing to, not a store worth rebuilding around.
+    writeStoreFile({
+      version: 2,
+      ciphertext: Buffer.from(
+        `sealed:${JSON.stringify({
+          accounts: [
+            { id: "uid-a", secrets: { sessionKey: "only-a-key" } },
+            { id: "uid-b", secrets: ACCOUNT_B }
+          ]
+        })}`,
+        "utf8"
+      ).toString("base64")
+    })
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved")
+    assert.equal(existsSync(unreadableBackupPath()), false)
+
+    const reader = await loadStore()
+    assert.deepEqual(await reader.getAccountSecrets("uid-a"), ACCOUNT_A)
+    assert.deepEqual(await reader.getAccountSecrets("uid-b"), ACCOUNT_B, "the account the corrupt-entry check let through survives the save too")
+  })
+
+  it("keeps the first unreadable snapshot rather than overwriting it on a later corruption", async () => {
+    writeFileSync(unreadableBackupPath(), JSON.stringify({ sentinel: "already there" }))
+    writeStoreFile({ version: 2, ciphertext: Buffer.from("someone else's bytes", "utf8").toString("base64") })
+    const store = await loadStore()
+
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    assert.equal(readFileSync(unreadableBackupPath(), "utf8"), JSON.stringify({ sentinel: "already there" }))
+  })
+
+  it("never collides with the pre-migration backup file", async () => {
+    writeFileSync(backupPath(), JSON.stringify({ sentinel: "pre-migration snapshot" }))
+    writeStoreFile({ version: 2, ciphertext: Buffer.from("someone else's bytes", "utf8").toString("base64") })
+    const store = await loadStore()
+
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    assert.equal(readFileSync(backupPath(), "utf8"), JSON.stringify({ sentinel: "pre-migration snapshot" }), "the migration backup is a different event and a different file")
+    assert.equal(existsSync(unreadableBackupPath()), true)
+  })
+
+  it.skipIf(process.platform !== "linux" || process.getuid?.() === 0)("refuses to rebuild a store it cannot even copy aside", async () => {
+    const original = JSON.stringify({ version: 2, ciphertext: Buffer.from("someone else's bytes", "utf8").toString("base64") })
+    writeStoreFile(original)
+    chmodSync(mockState.userDataDir, 0o500) // read the file, but fse.copy cannot create a new one here
+    const store = await loadStore()
+
+    try {
+      await assert.rejects(store.saveAccountSecrets("uid-a", ACCOUNT_A), /could not be preserved/)
+    } finally {
+      chmodSync(mockState.userDataDir, 0o700)
+    }
+
+    assert.equal(existsSync(unreadableBackupPath()), false)
+    assert.equal(readFileSync(storePath(), "utf8"), original, "nothing was written over a file this could not back up first")
   })
 })
 

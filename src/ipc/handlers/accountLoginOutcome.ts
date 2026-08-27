@@ -44,3 +44,8 @@ export function unexpectedResponseOutcome(verdict: UnreadableResponse): { result
     logMessage: `Login response claimed success but could not be read${verdict.diagnosis ? `: ${verdict.diagnosis}` : ""}.`
   }
 }
+
+/** The credentials were accepted, but the local secret store could not be read or safely rebuilt, so nothing was saved. */
+export function sessionStoreUnreadableResult(): AccountLoginResult {
+  return { status: "session-store-unreadable" }
+}
