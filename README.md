@@ -37,6 +37,10 @@ RiftLauncher is unofficial and not affiliated with Anego Studios, the developers
 
 You can find a guide explaining how to download it here: [How to install RiftLauncher](docs/get-started/installation/README.md).
 
+## How does RiftLauncher handle privacy?
+
+Read the [RiftLauncher Privacy Policy](PRIVACY.md) for the data the launcher stores locally and the external services it contacts.
+
 ## How do I use RiftLauncher?
 
 We've made a little tutorial on how to use RiftLauncher here: [How to use RiftLauncher](docs/get-started/usage/README.md).
