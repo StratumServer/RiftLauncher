@@ -108,13 +108,16 @@ export async function getConfig(): Promise<ConfigType> {
     if (configCache) return normalizeConfig(configCache)
     const config = await fse.readJSON(configPath, "utf-8")
     const hadLegacyAccountSecrets = await migrateLegacyAccount(config)
-    const reKeyedAccountStore = await migrateAccountStore(config)
     const migration = migrateConfigDocument(config)
     logConfigMigration(migration)
-    if (migration.applied.length > 0) await backupConfigBeforeMigration()
     const ensuredConfig = normalizeConfig(migration.doc)
+    const reKeyedAccountStore = await migrateAccountStore(config, ensuredConfig)
+    // Every path that overwrites config.json gets the same backup, not just the schema pipeline:
+    // a re-key or a legacy-secrets migration writes just as real a document as a schema bump does.
+    const mustSave = hadLegacyAccountSecrets || reKeyedAccountStore || migration.applied.length > 0
+    if (mustSave) await backupConfigBeforeMigration()
     configCache = ensuredConfig
-    if (hadLegacyAccountSecrets || reKeyedAccountStore || migration.applied.length > 0) await saveConfig(ensuredConfig)
+    if (mustSave) await saveConfig(ensuredConfig)
     return ensuredConfig
   } catch (err) {
     logMessage("error", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at ${configPath}. Using default config.`)
@@ -199,26 +202,39 @@ async function migrateLegacyAccount(config: unknown): Promise<boolean> {
  *
  * The v1 store held one `AccountSecrets` with no account attached to it; the
  * v2 store (see `src/ipc/accountStore.ts`) holds entries keyed by
- * `playerUid`. The only place that missing key exists is
- * `config.account.playerUid`, which is why this runs here, reading the raw
- * pre-pipeline document exactly as {@link migrateLegacyAccount} does, and not
+ * `playerUid`. The only place that missing key exists pre-migration is
+ * `config.account.playerUid`, which is why this reads the raw pre-pipeline
+ * document first, exactly as {@link migrateLegacyAccount} does, and not
  * inside `accountStore.ts` itself: the store cannot name its own contents.
  * Kept out of the schema pipeline for the same reason `migrateLegacyAccount`
  * is: a side effect the pure domain layer is not allowed to have.
  *
- * A config with no readable account, or a v1 store that has already been
- * re-keyed (or never existed), makes this a safe no-op: `false` either way,
- * same as `migrateLegacyAccount` when there is nothing to do.
+ * Falls back to the already-migrated config's `activeAccountId` when the raw
+ * document has no legacy `account` field, which is what makes this retry
+ * automatically on every later launch rather than only the one that first
+ * saw the legacy field. `adoptLegacySingleAccountSecrets` is a no-op once the
+ * v1 file is gone or already re-keyed, so calling it again costs one failed
+ * read and nothing else; there is no separate "already migrated" flag to
+ * gate this on. Leaving the schema-4 commit itself ungated matters just as
+ * much as the retry: `normalizeConfig` drops any field it does not know,
+ * `account` included, so holding the document back at schema 3 would lose
+ * the account record outright on the very next save, which is worse than
+ * the stranded session this retry is fixing.
+ *
+ * A config with no readable account (raw or migrated), or a v1 store that
+ * has already been re-keyed (or never existed), makes this a safe no-op:
+ * `false` either way, same as `migrateLegacyAccount` when there is nothing
+ * to do.
  */
-async function migrateAccountStore(config: unknown): Promise<boolean> {
-  if (!isRecord(config) || !isRecord(config.account)) return false
-  const uid = config.account.playerUid
-  if (typeof uid !== "string" || uid.length === 0) return false
+async function migrateAccountStore(legacyDocument: unknown, config: ConfigType): Promise<boolean> {
+  const legacyUid = isRecord(legacyDocument) && isRecord(legacyDocument.account) ? legacyDocument.account.playerUid : null
+  const uid = typeof legacyUid === "string" && legacyUid.length > 0 ? legacyUid : config.activeAccountId
+  if (uid === null || uid.length === 0) return false
 
   try {
     return await adoptLegacySingleAccountSecrets(uid)
   } catch {
-    logMessage("warn", "[back] [config] [configManager.ts] The stored account session was not carried into the multi-account store.")
+    logMessage("warn", "[back] [config] [configManager.ts] The stored account session was not carried into the multi-account store. Retrying on the next launch.")
     return false
   }
 }

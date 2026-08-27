@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
-import { CONFIG_ACTIONS, useAccount, useConfigDispatch, useCustomIcons, useFavMods, useGameVersions, useInstallations, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useAccountList, useConfigDispatch, useCustomIcons, useFavMods, useGameVersions, useInstallations, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -68,7 +68,7 @@ function GameVersionsProbe({ log }: { log: RenderLog }): JSX.Element {
 function WholeConfigProbe({ log }: { log: RenderLog }): JSX.Element {
   useInstallations()
   useGameVersions()
-  useAccount()
+  useAccountList()
   useSettingsConfig()
   useFavMods()
   useCustomIcons()

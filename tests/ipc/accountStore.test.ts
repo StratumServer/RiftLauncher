@@ -158,7 +158,10 @@ describe("saveAccountSecrets", () => {
 
     const reader = await loadStore()
     assert.deepEqual(await reader.getAccountSecrets("uid-a"), { ...ACCOUNT_A, sessionKey: "placeholder-session-key-a-refreshed" })
-    assert.deepEqual(await reader.listStoredAccountIds(), ["uid-a"])
+
+    const stored = JSON.parse(readFileSync(storePath(), "utf8"))
+    const payload = JSON.parse(Buffer.from(stored.ciphertext, "base64").toString("utf8").slice("sealed:".length))
+    assert.equal(payload.accounts.length, 1, "one entry replaced in place, not a second one appended")
   })
 
   it("refuses to write when the platform offers no encryption", async () => {
@@ -359,21 +362,6 @@ describe("removeAccountSecrets", () => {
 
     chmodSync(mockState.userDataDir, 0o700)
     assert.deepEqual(await store.getAccountSecrets("uid-b"), ACCOUNT_B)
-  })
-})
-
-describe("listStoredAccountIds", () => {
-  it("lists every id the store currently holds secrets for", async () => {
-    const store = await loadStore()
-    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
-    await store.saveAccountSecrets("uid-b", ACCOUNT_B)
-
-    assert.deepEqual(new Set(await store.listStoredAccountIds()), new Set(["uid-a", "uid-b"]))
-  })
-
-  it("is empty when nothing has ever been saved", async () => {
-    const store = await loadStore()
-    assert.deepEqual(await store.listStoredAccountIds(), [])
   })
 })
 

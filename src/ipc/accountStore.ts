@@ -176,8 +176,3 @@ export async function adoptLegacySingleAccountSecrets(accountId: string): Promis
   await writeAccounts(new Map([[accountId, secrets]]))
   return true
 }
-
-/** Every account id the store currently holds secrets for. */
-export async function listStoredAccountIds(): Promise<string[]> {
-  return Array.from((await readAccounts()).keys())
-}

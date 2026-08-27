@@ -38,7 +38,8 @@ import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
  */
 vi.mock("@src/ipc/accountStore", () => ({
   getAccountSecrets: vi.fn(async () => ({ mptoken: null, sessionKey: "session-key", sessionSignature: "session-signature" })),
-  saveAccountSecrets: vi.fn(async () => undefined)
+  saveAccountSecrets: vi.fn(async () => undefined),
+  adoptLegacySingleAccountSecrets: vi.fn(async () => false)
 }))
 
 type ExecuteGameHandler = (event: IpcMainInvokeEvent, version: unknown, installation: unknown) => Promise<GameExecutionResult>
@@ -454,6 +455,88 @@ describe("EXECUTE_GAME", () => {
         `a session value reached the log: ${secret}`
       )
     }
+  })
+
+  /**
+   * The account a launch signs in as is the ACTIVE one, not the first saved one.
+   * Every other fixture in this file saves exactly one account, which makes those
+   * two indistinguishable: a handler that ignored activeAccountId entirely would
+   * stay green through all of them (PR #253 review, finding 1). Two accounts, and
+   * the uid that lands in clientsettings.json is what tells them apart.
+   */
+  it("signs in as the active account, not the first one saved", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      accounts: [
+        { email: "alice@example.com", playerName: "Alice", playerUid: "uid-a", playerEntitlements: null, hostGameServer: false },
+        { email: "bob@example.com", playerName: "Bob", playerUid: "uid-b", playerEntitlements: null, hostGameServer: false }
+      ],
+      activeAccountId: "uid-b"
+    })
+
+    const { getAccountSecrets } = await import("@src/ipc/accountStore")
+    vi.mocked(getAccountSecrets).mockClear()
+
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+
+    assert.deepEqual(vi.mocked(getAccountSecrets).mock.calls, [["uid-b"]], "the session is read out of the active account's store entry")
+
+    const { readFileSync } = await import("node:fs")
+    const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
+    assert.equal(settings.stringSettings.playeruid, "uid-b", "switch to Bob and the next launch signs Bob in")
+    assert.equal(settings.stringSettings.playername, "Bob")
+    assert.equal(settings.stringSettings.useremail, "bob@example.com")
+  })
+
+  /**
+   * Adoption is keyed on the account being launched, so a session the file holds
+   * for SOMEBODY ELSE is overwritten, never carried into our own store entry. The
+   * domain guard is pinned by clientSettings.test.ts (#209); this pins the call
+   * site, which a single-account fixture leaves free to be keyed on anything.
+   */
+  it("overwrites another player's refreshed session instead of adopting it into the active account", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      accounts: [
+        { email: "alice@example.com", playerName: "Alice", playerUid: "uid-a", playerEntitlements: null, hostGameServer: false },
+        { email: "bob@example.com", playerName: "Bob", playerUid: "uid-b", playerEntitlements: null, hostGameServer: false }
+      ],
+      activeAccountId: "uid-b"
+    })
+    // Alice logged in through the game on this installation: a key the launcher has never seen, under her uid.
+    writeFileSync(
+      join(installationFolder, "clientsettings.json"),
+      JSON.stringify({
+        stringSettings: { sessionkey: "alices-refreshed-key", sessionsignature: "alices-signature", mptoken: "alices-mp-token", playeruid: "uid-a", playername: "Alice" },
+        intSettings: { maxFps: 60 }
+      }),
+      "utf-8"
+    )
+
+    const { saveAccountSecrets } = await import("@src/ipc/accountStore")
+    vi.mocked(saveAccountSecrets).mockClear()
+
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+
+    const { readFileSync } = await import("node:fs")
+    const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
+    assert.equal(settings.stringSettings.playeruid, "uid-b", "a write, not an adoption")
+    assert.equal(settings.stringSettings.sessionkey, "session-key")
+    assert.equal(settings.stringSettings.playername, "Bob")
+    assert.deepEqual(settings.intSettings, { maxFps: 60 }, "everything else in the file survives")
+    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [], "another player's key never reaches the active account's store entry")
   })
 })
 

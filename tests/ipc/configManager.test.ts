@@ -676,6 +676,28 @@ describe("getConfig: account store re-key migration", () => {
 
     assert.equal(config.activeAccountId, "uid-throws", "the document still migrates even though re-keying the store failed")
   })
+
+  it("asks again on the next launch when a locked keyring burned the first attempt", async () => {
+    const legacyDoc = { ...minimalConfig(), account: { email: "a@b.c", playerName: "A", playerUid: "uid-retry", playerEntitlements: null, hostGameServer: false } }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+    vi.mocked(adoptLegacySingleAccountSecrets).mockRejectedValueOnce(new Error("keyring locked"))
+
+    const first = await freshConfigManager()
+    await first.getConfig()
+    await first.flushConfigWrites()
+
+    // The commit the retry has to survive: schema 4 on disk, with no `account` field left to key the store by.
+    const fse = (await import("fs-extra")).default
+    const onDisk = await fse.readJSON(join(userDataFolder, "config.json"))
+    assert.equal(onDisk.schemaVersion, CURRENT_CONFIG_SCHEMA)
+    assert.equal("account" in onDisk, false)
+
+    const second = await freshConfigManager()
+    const config = await second.getConfig()
+
+    assert.deepEqual(vi.mocked(adoptLegacySingleAccountSecrets).mock.calls, [["uid-retry"], ["uid-retry"]], "a v1 store still on disk is retried, keyed by the same account")
+    assert.equal(config.activeAccountId, "uid-retry")
+  })
 })
 
 describe("getConfig: config.json backup before a schema migration", () => {
