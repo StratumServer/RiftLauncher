@@ -562,6 +562,53 @@ describe("EXECUTE_GAME", () => {
     assert.deepEqual(settings.intSettings, { maxFps: 60 }, "everything else in the file survives")
     assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [], "another player's key never reaches the active account's store entry")
   })
+
+  /**
+   * The adoption is keyed on the account being launched, the same as the write above
+   * it. One saved account makes "the active account" and "the first saved account" the
+   * same uid, so a call site keyed on either stays green through every other fixture
+   * here; two accounts pull them apart. Keyed on the wrong one, the live session the
+   * game just refreshed for Bob lands in Alice's store entry, and the next launch as
+   * Alice signs the player in as Bob (PR #253 review, finding 1).
+   */
+  it("adopts the refreshed session under the active account's uid, not the first saved account's", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      accounts: [
+        { email: "alice@example.com", playerName: "Alice", playerUid: "uid-a", playerEntitlements: null, hostGameServer: false },
+        { email: "bob@example.com", playerName: "Bob", playerUid: "uid-b", playerEntitlements: null, hostGameServer: false }
+      ],
+      activeAccountId: "uid-b"
+    })
+    // Bob is the active account and the game refreshed HIS session on this installation:
+    // his own uid, and a key the launcher has never seen. The #204 adoption case exactly,
+    // only with a second account saved ahead of him.
+    writeFileSync(
+      join(installationFolder, "clientsettings.json"),
+      JSON.stringify({
+        stringSettings: { sessionkey: GAME_REFRESHED_KEY, sessionsignature: "game-session-signature", mptoken: "game-mp-token", playeruid: "uid-b", playername: "Bob" },
+        intSettings: { maxFps: 60 }
+      }),
+      "utf-8"
+    )
+
+    const { saveAccountSecrets } = await import("@src/ipc/accountStore")
+    vi.mocked(saveAccountSecrets).mockClear()
+
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+
+    assert.deepEqual(
+      vi.mocked(saveAccountSecrets).mock.calls,
+      [["uid-b", { sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token" }]],
+      "the adopted session is stored under the uid it was issued for, and under no other"
+    )
+  })
 })
 
 describe("LOOK_FOR_A_GAME_VERSION", () => {
