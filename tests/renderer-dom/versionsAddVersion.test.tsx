@@ -49,6 +49,37 @@ describe("AddVersion", () => {
     expect(document.querySelector(".animate-spin")).toBeNull()
   })
 
+  it("fails closed when a catalog is not an object of versions", async () => {
+    const queryURL = vi.fn(async (url: string) => (url.endsWith("stable.json") ? '"hello"' : JSON.stringify({})))
+    installMockWindowApi({ netManager: { queryURL } })
+
+    renderAddVersion()
+
+    expect(await screen.findByText("The VS Version list couldn't be loaded. Check your connection and try again.")).toBeTruthy()
+    expect(document.querySelector(".animate-spin")).toBeNull()
+  })
+
+  it("keeps the good versions when one row carries a malformed build", async () => {
+    const catalog = { ...STABLE, "1.20.5": { windows: { filename: "vs_client_win-x64_1.20.5.exe", urls: { cdn: 999, local: "" } } } }
+    const queryURL = vi.fn(async (url: string) => (url.endsWith("stable.json") ? JSON.stringify(catalog) : JSON.stringify({})))
+    installMockWindowApi({ netManager: { queryURL } })
+
+    renderAddVersion()
+
+    expect(await screen.findByText("1.20.5")).toBeTruthy()
+    expect(screen.getByText("1.20.4")).toBeTruthy()
+    expect(screen.queryByText("The VS Version list couldn't be loaded. Check your connection and try again.")).toBeNull()
+  })
+
+  it("fails closed when both catalogs are empty", async () => {
+    installMockWindowApi({ netManager: { queryURL: vi.fn(async () => JSON.stringify({})) } })
+
+    renderAddVersion()
+
+    expect(await screen.findByText("The VS Version list couldn't be loaded. Check your connection and try again.")).toBeTruthy()
+    expect(document.querySelector(".animate-spin")).toBeNull()
+  })
+
   it("retries and clears the error once the catalog fetch succeeds", async () => {
     const user = userEvent.setup()
     const queryURL = vi.fn(async (url: string) => {
