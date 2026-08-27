@@ -262,13 +262,15 @@ describe("the brand accent where it carries text", () => {
     // Every anchor requires "underline" right on the class string, not just "text-vsl": colour
     // alone no longer separates this accent from the zinc-400/zinc-200 prose it sits inside (see
     // the file header), so the underline is the part of each of these that actually marks a link.
+    // No anchor bridges more than whitespace between its call site and its class string, so none
+    // can slide past a link that lost its underline onto a later one in the same file that kept it.
     const links: ReadonlyArray<readonly [string, RegExp, string, readonly Layer[]]> = [
-      ["add installation start-params link", /Client_startup_parameters"\)\}[\s\S]*?className="text-vsl underline"/, "features/installations/pages/AddInstallation.tsx", FORM_SECTION],
+      ["add installation start-params link", /Client_startup_parameters"\)\}\s+className="text-vsl underline"/, "features/installations/pages/AddInstallation.tsx", FORM_SECTION],
       ["edit installation start-params link", /Client_startup_parameters"\)\} className="text-vsl underline"/, "features/installations/pages/EditInstallation.tsx", FORM_SECTION],
       ["logs folder link", /onClick=\{openLogsFolder\} className="text-vsl underline"/, "features/info/pages/InfoAndHelpPage.tsx", FORM_SECTION],
       ["no installed mods link", /to="\/mods" className="text-vsl underline"/, "features/mods/components/NoInstalledModsNotice.tsx", LIST_PANEL],
-      ["mods section issues link", /openExternalLink\(ISSUES_URL\)[\s\S]*?className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
-      ["mods section discord link", /openExternalLink\(DISCORD_URL\)[\s\S]*?className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["mods section issues link", /openExternalLink\(ISSUES_URL\)\s+\}\}\s+className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["mods section discord link", /openExternalLink\(DISCORD_URL\)\s+\}\}\s+className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
       ["no game versions link", /to="\/versions" className="text-vsl underline"/, "features/installations/components/GameVersionPicker.tsx", SECTION_TABLE],
       ["no installations link", /to="\/installations" className="text-vsl underline"/, "features/installations/components/InstallationsDropdownMenu.tsx", MENU_CARD]
     ]
