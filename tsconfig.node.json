@@ -8,7 +8,8 @@
     "src/config/**/*",
     "src/ipc/**/*",
     "src/domain/**/*",
-    "src/global.d.ts"
+    "src/global.d.ts",
+    "src/write-file-atomic.d.ts"
   ],
   "compilerOptions": {
     "composite": true,

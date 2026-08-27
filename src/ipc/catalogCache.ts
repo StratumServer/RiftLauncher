@@ -3,6 +3,7 @@ import { app } from "electron"
 import fse from "fs-extra"
 import { join } from "node:path"
 
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { isRecord, MAX_MODS_CATALOG_RESPONSE_BYTES } from "@src/ipc/validation"
 
 // Disk cache for the mods-catalog API response, used to serve the last good body when a
@@ -56,14 +57,8 @@ export async function writeCatalogCache(url: URL, body: string): Promise<void> {
 
   const cacheDirectory = getCacheDirectory()
   const filePath = getCacheFilePath(url)
-  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
   const entry: CatalogCacheEntry = { version: CACHE_STORE_VERSION, url: url.toString(), body }
 
-  try {
-    await fse.ensureDir(cacheDirectory)
-    await fse.writeJSON(temporaryPath, entry)
-    await fse.move(temporaryPath, filePath, { overwrite: true })
-  } finally {
-    await fse.remove(temporaryPath).catch(() => undefined)
-  }
+  await fse.ensureDir(cacheDirectory)
+  await writeJsonAtomic(filePath, entry)
 }

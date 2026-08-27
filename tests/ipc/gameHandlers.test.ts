@@ -10,6 +10,7 @@ import "./helpers/electronMock"
 import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 
 /**
  * Branch coverage for src/ipc/handlers/gameHandlers.ts (EXECUTE_GAME,
@@ -39,6 +40,14 @@ vi.mock("@src/ipc/accountStore", () => ({
   getAccountSecrets: vi.fn(async () => ({ mptoken: null, sessionKey: "session-key", sessionSignature: "session-signature" })),
   saveAccountSecrets: vi.fn(async () => undefined)
 }))
+
+// Real implementation, wrapped, so the crash-safety guarantee stays covered by
+// atomicJsonFile.test.ts and this file only asserts that the settings write
+// goes through the shared adapter rather than a bare fse.writeJSON.
+vi.mock("@src/ipc/atomicJsonFile", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@src/ipc/atomicJsonFile")>()
+  return { writeJsonAtomic: vi.fn(actual.writeJsonAtomic) }
+})
 
 type ExecuteGameHandler = (event: IpcMainInvokeEvent, version: unknown, installation: unknown) => Promise<GameExecutionResult>
 type LookForAGameVersionHandler = (event: IpcMainInvokeEvent, path: unknown) => Promise<{ exists: boolean; installedGameVersion?: string }>
@@ -102,6 +111,7 @@ beforeEach(async () => {
 
   vi.resetModules()
   await import("@src/ipc/handlers/gameHandlers")
+  vi.mocked(writeJsonAtomic).mockClear()
 })
 
 afterEach(() => {
@@ -235,6 +245,11 @@ describe("EXECUTE_GAME", () => {
     const { readFileSync } = await import("node:fs")
     const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
     assert.equal(settings.stringSettings.sessionkey, "session-key")
+
+    // The merged document lands through the shared atomic-write adapter, not
+    // a bare truncate write: this is the file that has no defaults to fall
+    // back to if a crash mid-write ever left it missing.
+    assert.deepEqual(vi.mocked(writeJsonAtomic).mock.calls.filter((call) => call[0] === join(installationFolder, "clientsettings.json")).length, 1)
   })
 
   it("resolves session-write-failed when the account session cannot be written into clientsettings.json", async () => {
@@ -302,6 +317,12 @@ describe("EXECUTE_GAME", () => {
     const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
     assert.equal(settings.stringSettings.sessionkey, GAME_REFRESHED_KEY, "the launcher must not put its stale key back over the game's fresh one")
     assert.deepEqual(settings.intSettings, { maxFps: 60 })
+
+    // Adoption is the no-write branch of writeClientSettingsSession: the file
+    // already held the newer session, so nothing is written back. Coverage
+    // for the write branch itself lives on the "writing the account session"
+    // test above, where a write actually happens.
+    assert.equal(vi.mocked(writeJsonAtomic).mock.calls.filter((call) => call[0] === join(installationFolder, "clientsettings.json")).length, 0)
   })
 
   it("says an adoption happened without ever putting the session in a log line", async () => {
