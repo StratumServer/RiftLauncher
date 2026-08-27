@@ -49,7 +49,7 @@ function ListInslallations(): JSX.Element {
   const openPathInExplorer = useOpenPathInExplorer()
 
   const [installationToDelete, setInstallationToDelete] = useState<InstallationType | null>(null)
-  const [deleteData, setDeleData] = useState<boolean>(false)
+  const [deleteData, setDeleteData] = useState<boolean>(false)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -83,7 +83,7 @@ function ListInslallations(): JSX.Element {
       addNotification(t("features.installations.installationSuccessfullyDeleted"), "success")
     } finally {
       setInstallationToDelete(null)
-      setDeleData(false)
+      setDeleteData(false)
     }
   }
 
@@ -220,7 +220,7 @@ function ListInslallations(): JSX.Element {
             <p>{t("features.installations.areYouSureDelete")}</p>
             <p className="text-zinc-400">{t("features.installations.deletingNotReversible")}</p>
             <div className="flex gap-2 items-center justify-center">
-              <Input id="delete-data" type="checkbox" checked={deleteData} onChange={(e) => setDeleData(e.target.checked)} />
+              <Input id="delete-data" type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} />
               <label htmlFor="delete-data">{t("features.installations.deleteData")}</label>
             </div>
             <div className="flex gap-4 items-center justify-center text-lg">

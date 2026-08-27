@@ -30,7 +30,7 @@ function AuthorFilter({
         })
 
   return (
-    <Combobox value={authorFilter} onChange={(value) => setAuthorFilter(value || { userid: "", name: "" })} onClose={() => setAuthorsQuery("")}>
+    <Combobox value={authorFilter} onChange={(value) => setAuthorFilter(value ?? { userid: "", name: "" })} onClose={() => setAuthorsQuery("")}>
       {({ open }) => (
         <>
           <div className={clsx("flex items-center justify-between rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none", size)}>

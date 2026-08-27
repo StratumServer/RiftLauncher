@@ -46,7 +46,7 @@ export interface UseInstallationFolderResult {
 export function useInstallationFolder(name: string, defaultInstallationsFolder: string): UseInstallationFolderResult {
   const pickEmptyFolder = usePickEmptyFolder()
 
-  const [folder, setSuggestedFolder] = useState<string>("")
+  const [suggestedFolder, setSuggestedFolder] = useState<string>("")
   const [folderByUser, setFolderByUser] = useState<boolean>(false)
 
   useEffect(() => {
@@ -76,5 +76,5 @@ export function useInstallationFolder(name: string, defaultInstallationsFolder: 
     if (selectedPath) takeFolderOver(selectedPath)
   }
 
-  return { folder, setFolder: takeFolderOver, browseFolder }
+  return { folder: suggestedFolder, setFolder: takeFolderOver, browseFolder }
 }

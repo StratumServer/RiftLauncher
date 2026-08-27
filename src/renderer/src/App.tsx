@@ -32,7 +32,7 @@ const InfoAndHelpPage = lazy(() => import("./features/info/pages/InfoAndHelpPage
 
 function App(): JSX.Element {
   useEffect(() => {
-    document.documentElement.setAttribute("data-uiscale", window.localStorage.getItem("uiScale") || "100")
+    document.documentElement.dataset.uiscale = window.localStorage.getItem("uiScale") || "100"
 
     const lang = window.localStorage.getItem("lang")
     if (lang) void changeLanguage(lang)

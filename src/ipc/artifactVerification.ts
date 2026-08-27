@@ -24,9 +24,7 @@ function isMd5(value: unknown): value is string {
 }
 
 async function getOfficialManifests(): Promise<unknown[]> {
-  if (!officialManifestCache) {
-    officialManifestCache = Promise.all(officialManifestUrls.map((url) => requestBoundedText(url, { maxBytes: MAX_RESPONSE_BYTES }).then((text) => JSON.parse(text))))
-  }
+  officialManifestCache ??= Promise.all(officialManifestUrls.map((url) => requestBoundedText(url, { maxBytes: MAX_RESPONSE_BYTES }).then((text) => JSON.parse(text))))
 
   try {
     return await officialManifestCache

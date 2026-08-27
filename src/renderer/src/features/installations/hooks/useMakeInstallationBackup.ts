@@ -20,7 +20,7 @@ const LOG_TAG = "[front] [backups] [features/installations/hooks/useMakeInstalla
  * from ever launching anything. A real failure (compress-failed, prune-failed)
  * still returns false and still blocks the launch, unchanged.
  */
-const NON_BLOCKING_REASONS: readonly MakeInstallationBackupFailure[] = ["installation-path-missing", "no-backups-folder", "backups-disabled"]
+const NON_BLOCKING_REASONS = new Set<MakeInstallationBackupFailure>(["installation-path-missing", "no-backups-folder", "backups-disabled"])
 
 export function useMakeInstallationBackup(): (installationId: string) => Promise<boolean> {
   const { t } = useTranslation()
@@ -81,7 +81,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
 
     if (messageKey) addNotification(t(messageKey), "error")
 
-    return NON_BLOCKING_REASONS.includes(result.reason)
+    return NON_BLOCKING_REASONS.has(result.reason)
   }
 
   return makeInstallationBackup

@@ -235,7 +235,7 @@ export function parseSafeEnvironment(value: string): Record<string, string> {
     const environmentValue = entry.slice(separator + 1)
     const normalizedKey = key.toUpperCase()
     if (
-      !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ||
+      !/^[A-Za-z_]\w*$/.test(key) ||
       DENIED_ENVIRONMENT_KEYS.has(normalizedKey) ||
       DENIED_ENVIRONMENT_PREFIXES.some((prefix) => normalizedKey.startsWith(prefix)) ||
       environmentValue.length > 2_048 ||
