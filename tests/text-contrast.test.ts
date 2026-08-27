@@ -299,10 +299,12 @@ describe("the brand accent where it carries text", () => {
     // still tracks --color-vsl; its own non-text-contrast gap predates this change and is tracked
     // separately (issue filed alongside this PR).
     match("components/ui/Grid.tsx", /selected \? "bg-vsd\/50 border-vsl\/(\d+)"/)
-    // The ConfigPage tile border paints over an arbitrary user-chosen thumbnail with no fixed
-    // backdrop to measure against either, but it IS the sole indicator of the selected state, so
-    // it doubles in width instead: this only pins that the selected border is still 2px and still
-    // --color-vsl, not a ratio.
+    // The ConfigPage tile border has a different backdrop on each of its two edges, so there is no
+    // single ratio to assert here. Inside is the player's own thumbnail. Outside is the section panel
+    // over the shell, which is FORM_SECTION above, so the accent's ratio on that edge is already
+    // pinned by the link assertions against a stricter floor than a border needs. What is left is the
+    // width, which is what keeps hue from being the only mark of the selected state, so this checks
+    // the border is still 2px and still --color-vsl.
     match("features/config/pages/ConfigPage.tsx", /selected \? "border-2 border-vsl" : "border border-zinc-400\/5"/)
   })
 })

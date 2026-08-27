@@ -307,9 +307,12 @@ function BackgroundTile({
       aria-pressed={selected}
       className={clsx(
         "relative aspect-video w-full rounded-sm overflow-hidden bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
-        // The selected border is thicker, not just recolored: against a light thumbnail
-        // --color-vsl reads 2.51:1, below the 3:1 non-text floor a 1px border would need, so the
-        // extra width is what keeps the selected state visible there (see text-contrast.test.ts).
+        // Two colours meet at this border and only one of them is unknown. Inside is the player's
+        // thumbnail, where --color-vsl can fall to 2.51:1 against a light image; outside is the
+        // section panel over the shell, the same fixed stack the accent links sit on, where it
+        // reads 4.85:1 whatever image was picked. A boundary that is unmistakable along one of its
+        // edges is perceivable (WCAG 1.4.11). The extra width raises no ratio: what it buys is
+        // 1.4.1, since the selected state stops being marked by hue alone. See text-contrast.test.ts.
         selected ? "border-2 border-vsl" : "border border-zinc-400/5"
       )}
     >
