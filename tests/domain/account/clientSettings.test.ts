@@ -1,7 +1,13 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { CLIENT_SETTINGS_FILE_NAME, mergeSessionIntoClientSettings, writeClientSettingsSession } from "../../../src/domain/account/clientSettings"
+import {
+  CLIENT_SETTINGS_FILE_NAME,
+  clearForeignClientSettingsSession,
+  mergeSessionIntoClientSettings,
+  removeSessionFromClientSettings,
+  writeClientSettingsSession
+} from "../../../src/domain/account/clientSettings"
 import type { AccountSessionFields } from "../../../src/domain/account/clientSettings"
 import type { JsonFile, JsonFileReadResult, JsonFileWriteResult } from "../../../src/domain/ports"
 
@@ -277,5 +283,115 @@ describe("writeClientSettingsSession when the game refreshed the session itself"
 
     assert.deepEqual(result, { outcome: "written" })
     assert.deepEqual(writes[0]?.document, { intSettings: { maxFps: 60 }, stringSettings: { language: "es-es", ...WRITTEN_SESSION } })
+  })
+})
+
+describe("removeSessionFromClientSettings", () => {
+  it("removes exactly the eight session keys and nothing else", () => {
+    const result = removeSessionFromClientSettings({ stringSettings: { ...WRITTEN_SESSION, language: "es-es" }, intSettings: { maxFps: 60 } })
+
+    assert.deepEqual(stringSettingsOf(result), { language: "es-es" })
+    assert.deepEqual(result.intSettings, { maxFps: 60 })
+    for (const key of GAME_SESSION_KEYS) assert.equal(key in stringSettingsOf(result), false, key)
+  })
+
+  it("produces an empty stringSettings section when there was nothing but a session", () => {
+    const result = removeSessionFromClientSettings({ stringSettings: WRITTEN_SESSION })
+    assert.deepEqual(stringSettingsOf(result), {})
+  })
+
+  it("is a no-op shape-wise on a document with no session to begin with", () => {
+    const result = removeSessionFromClientSettings({ stringSettings: { language: "es-es" } })
+    assert.deepEqual(stringSettingsOf(result), { language: "es-es" })
+  })
+
+  it("treats a missing or unreadable document as empty rather than throwing", () => {
+    assert.deepEqual(removeSessionFromClientSettings(undefined), { stringSettings: {} })
+    assert.deepEqual(removeSessionFromClientSettings(null), { stringSettings: {} })
+    assert.deepEqual(removeSessionFromClientSettings("not an object"), { stringSettings: {} })
+  })
+
+  it("leaves the document it was given alone", () => {
+    const original = { stringSettings: { ...WRITTEN_SESSION, language: "es-es" } }
+    removeSessionFromClientSettings(original)
+    assert.deepEqual(stringSettingsOf(original), { ...WRITTEN_SESSION, language: "es-es" })
+  })
+})
+
+/**
+ * With one saved account, a settings file the launcher could not update was
+ * harmless: whatever stale session it held was that same account's own. With
+ * more than one, it can be a housemate's, since the game writes their session
+ * there directly on their own successful login. This guards the launch path
+ * that keeps a locked or unreadable secret store from silently starting the
+ * game already signed in as somebody else.
+ */
+describe("clearForeignClientSettingsSession", () => {
+  const OUR_UID = "uid-1"
+  const FOREIGN_SESSION = { ...WRITTEN_SESSION, playeruid: "uid-housemate", playername: "Housemate" }
+
+  it("clears a session that belongs to a different player", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: { ...FOREIGN_SESSION, language: "es-es" }, intSettings: { maxFps: 60 } } })
+
+    const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+    assert.deepEqual(result, { outcome: "cleared" })
+    assert.equal(writes.length, 1)
+    const written = writes[0]?.document as Record<string, unknown>
+    assert.deepEqual(stringSettingsOf(written), { language: "es-es" })
+    assert.deepEqual(written.intSettings, { maxFps: 60 }, "everything else in the file survives")
+  })
+
+  it("leaves a file that already holds our own session alone", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: WRITTEN_SESSION } })
+
+    const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+    assert.deepEqual(result, { outcome: "not-foreign" })
+    assert.deepEqual(writes, [])
+  })
+
+  it("leaves a file with no session in it alone", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: { language: "es-es" } } })
+
+    const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+    assert.deepEqual(result, { outcome: "not-foreign" })
+    assert.deepEqual(writes, [])
+  })
+
+  it("leaves an entirely empty settings file alone", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: undefined })
+
+    const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+    assert.deepEqual(result, { outcome: "not-foreign" })
+    assert.deepEqual(writes, [])
+  })
+
+  it("reports the settings file as unreadable rather than guessing", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: false, error: "Unexpected token }" })
+
+    const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+    assert.deepEqual(result, { outcome: "unreadable-settings" })
+    assert.deepEqual(writes, [])
+  })
+
+  it("reports a clear that did not land", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: FOREIGN_SESSION } }, { ok: false, error: "EACCES" })
+
+    const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+    assert.deepEqual(result, { outcome: "write-failed" })
+  })
+
+  it("never writes a session of its own; that stays writeClientSettingsSession's job", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: FOREIGN_SESSION } })
+
+    await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+    const written = writes[0]?.document as Record<string, unknown>
+    for (const key of GAME_SESSION_KEYS) assert.equal(key in stringSettingsOf(written), false, key)
   })
 })

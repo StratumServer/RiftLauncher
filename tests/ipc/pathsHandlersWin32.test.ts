@@ -14,6 +14,7 @@ import "./helpers/electronMock"
 import { createTrustedEvent, getIpcHandler, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
 
 /**
  * Branch coverage for RUN_INSTALLER's win32-only arms in
@@ -95,15 +96,20 @@ let managedFolder: string
 let versionsFolder: string
 let userDataFolder: string
 
+// Written already at the current schema: an older schema number here would make every
+// getConfig() call run the schema pipeline for real, including its file-backup and
+// account-store side effects, which is extra async work these tests' real-timer budgets
+// were never sized to absorb.
 function writeConfig(config: Partial<ConfigType>): void {
   const fullConfig = {
-    schemaVersion: 3,
+    schemaVersion: CURRENT_CONFIG_SCHEMA,
     lastUsedInstallation: null,
     defaultInstallationsFolder: managedFolder,
     defaultVersionsFolder: versionsFolder,
     backupsFolder: join(temporaryRoot, "Backups"),
     window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
-    account: null,
+    accounts: [],
+    activeAccountId: null,
     installations: [],
     gameVersions: [],
     favMods: [],

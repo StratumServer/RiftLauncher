@@ -8,7 +8,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { requestBoundedTextViaNode } from "@src/ipc/network"
 import { assertString, MAX_LOGIN_RESPONSE_BYTES } from "@src/ipc/validation"
-import { clearAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
+import { removeAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
 const LOGIN_URL = new URL("https://auth3.vintagestory.at/v2/gamelogin")
@@ -55,7 +55,10 @@ async function requestLoginPass(email: string, password: string, twoFactorCode?:
 async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
   switch (verdict.status) {
     case "success":
-      await saveAccountSecrets(verdict.credentials.secrets)
+      // Keyed by the uid this same response just carried, so the store can never
+      // disagree with what the renderer is told. Logging into an account already
+      // saved overwrites its entry in place: a session refresh, not a duplicate.
+      await saveAccountSecrets(verdict.credentials.publicAccount.playerUid, verdict.credentials.secrets)
       return { status: "success", account: verdict.credentials.publicAccount }
     case "needs-two-factor":
       return needsTwoFactorResult()
@@ -103,7 +106,7 @@ ipcMain.handle(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, async (event, email: unknown,
   }
 })
 
-ipcMain.handle(IPC_CHANNELS.ACCOUNT_MANAGER.LOGOUT, async (event): Promise<boolean> => {
+ipcMain.handle(IPC_CHANNELS.ACCOUNT_MANAGER.REMOVE_ACCOUNT, async (event, accountId: unknown): Promise<boolean> => {
   assertTrustedIpcSender(event)
-  return await clearAccountSecrets()
+  return await removeAccountSecrets(assertString(accountId, "account id", 256))
 })

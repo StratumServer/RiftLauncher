@@ -195,6 +195,43 @@ export function parseStoredSecrets(value: unknown): AccountSecrets | null {
   }
 }
 
+/** One id-keyed entry as the multi-account encrypted store holds it. */
+export type StoredAccountSecretsEntry = { id: string; secrets: AccountSecrets }
+
+/**
+ * Reads the multi-account payload out of the decrypted store: `{ accounts: [{
+ * id, secrets }, ...] }`.
+ *
+ * An array of records rather than an object keyed by id on purpose: an object
+ * keyed by a service-supplied string invites a `__proto__`/`constructor` key,
+ * and an array has no such surface. An entry that does not parse is dropped
+ * rather than failing the whole read, the same reasoning `parseStoredSecrets`
+ * already gives for a single account: an unreadable entry logs that one
+ * account out, it does not cost every other saved account its session. On a
+ * duplicate id, the first entry wins.
+ */
+export function parseStoredSecretsById(value: unknown): Map<string, AccountSecrets> {
+  const result = new Map<string, AccountSecrets>()
+  if (!isRecord(value) || !Array.isArray(value.accounts)) return result
+
+  for (const entry of value.accounts) {
+    if (!isRecord(entry)) continue
+
+    let id: string
+    try {
+      id = accountString(entry.id, "account id", 256)
+    } catch {
+      continue
+    }
+    if (result.has(id)) continue
+
+    const secrets = parseStoredSecrets(entry.secrets)
+    if (secrets) result.set(id, secrets)
+  }
+
+  return result
+}
+
 /**
  * Reads the renderer-visible half out of stored config, dropping anything else
  * the object carried. A config file that still holds legacy session fields

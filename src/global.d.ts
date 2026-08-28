@@ -126,7 +126,21 @@ declare global {
 
   type ConfigType = BasicConfigType & {
     window: WindowType
-    account: AccountPublicType | null
+    /**
+     * Every saved account, public half only. Keyed by `playerUid` (no separate
+     * `id` field: two identifiers that must always agree is a bug waiting to
+     * happen, and `playerUid` is already what clientSettings.ts trusts as an
+     * account's identity). The encrypted store holds the matching secrets
+     * under the same key. Deduplicated and capped by normalizeConfig.
+     */
+    accounts: AccountPublicType[]
+    /**
+     * `playerUid` of the account the next game launch writes into
+     * `clientsettings.json`, or null when none is saved. normalizeConfig
+     * guarantees this either names an entry in `accounts` or is null, so
+     * every reader can look it up with a plain `find` and no fallback branch.
+     */
+    activeAccountId: string | null
     installations: InstallationType[]
     gameVersions: GameVersionType[]
     customIcons: IconType[]

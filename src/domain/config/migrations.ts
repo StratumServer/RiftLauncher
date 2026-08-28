@@ -18,7 +18,7 @@
  */
 
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 3
+export const CURRENT_CONFIG_SCHEMA = 4
 
 /**
  * First schema expressed as an integer.
@@ -217,8 +217,38 @@ export const stampLinkedOnExternalVersions: ConfigMigration = {
   }
 }
 
+/**
+ * One account becomes a list of accounts and a choice of which is active.
+ *
+ * The account's own `playerUid` is the key, because the launcher already
+ * treats it as the account's identity (see `sessionToAdopt` in
+ * `domain/account/clientSettings.ts`). A document with no readable account
+ * arrives at an empty list and no active choice, which is what a launcher
+ * nobody has logged into has always looked like. This step does not touch the
+ * account's session: that lives in the encrypted secret store, re-keyed
+ * separately by `migrateAccountStore` in `config/configManager.ts`, kept out
+ * of this pure pipeline for the same reason `migrateLegacyAccount` already
+ * is.
+ */
+export const singleAccountToAccountList: ConfigMigration = {
+  fromSchema: 3,
+  toSchema: 4,
+  migrate(doc: unknown): unknown {
+    if (!isRecord(doc)) return doc
+
+    const migrated = { ...doc }
+    const account = migrated.account
+    delete migrated.account
+
+    const uid = isRecord(account) && typeof account.playerUid === "string" && account.playerUid.length > 0 ? account.playerUid : null
+    migrated.accounts = uid ? [account] : []
+    migrated.activeAccountId = uid
+    return migrated
+  }
+}
+
 /** Every migration the launcher knows, lowest schema first. */
-export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions]
+export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions, singleAccountToAccountList]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {
   return new Map(migrations.map((migration) => [migration.fromSchema, migration]))

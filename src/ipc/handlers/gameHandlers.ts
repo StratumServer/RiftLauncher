@@ -13,7 +13,7 @@ import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
-import { CLIENT_SETTINGS_FILE_NAME, writeClientSettingsSession } from "@domain/account/clientSettings"
+import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
 import {
   gameProcessOutcomeToResult,
   invalidExecutableResult,
@@ -87,9 +87,9 @@ function realJsonFile(): JsonFile {
  * Nothing here goes near the key itself. What gets logged is that an adoption
  * happened, never what was adopted.
  */
-async function adoptRefreshedSession(secrets: AccountSecrets): Promise<void> {
+async function adoptRefreshedSession(accountId: string, secrets: AccountSecrets): Promise<void> {
   try {
-    await saveAccountSecrets(secrets)
+    await saveAccountSecrets(accountId, secrets)
     logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] The game had already refreshed this account's session. Adopted it instead of overwriting it.`)
   } catch (err) {
     logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not store the session the game refreshed. Launching anyway.`)
@@ -155,8 +155,9 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   const safeInstallation = validateGameInstallation(installation)
   safeVersion.path = await assertManagedPath(safeVersion.path, "game version path")
   safeInstallation.path = await assertManagedPath(safeInstallation.path, "installation path")
-  const account = (await getConfig()).account
-  const accountSecrets = account ? await getAccountSecrets() : null
+  const config = await getConfig()
+  const account = config.accounts.find((candidate) => candidate.playerUid === config.activeAccountId) ?? null
+  const accountSecrets = account ? await getAccountSecrets(account.playerUid) : null
   logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Trying to run Vintage Story ${safeVersion.version}.`)
 
   let processEnv: Record<string, string>
@@ -237,12 +238,44 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       case "written":
         break
       case "adopted":
-        await adoptRefreshedSession(written.secrets)
+        await adoptRefreshedSession(account.playerUid, written.secrets)
         break
       case "unreadable-settings":
       case "write-failed":
         logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
         logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${written.outcome}.`)
+        return sessionWriteFailedResult()
+    }
+  } else if (account && !accountSecrets) {
+    // The active account has no usable session (a locked keyring, or a store this build cannot
+    // read). With one saved account that was always harmless: whatever stale session the file
+    // already held was that same account's own. With more than one it can be a housemate's,
+    // since the game writes their session there directly on their own successful login, and
+    // launching without checking would start the game already signed in as somebody else.
+    // Narrow on purpose: this only clears the file when it demonstrably holds a DIFFERENT
+    // player's session, never our own and never an empty one, and it never writes a session of
+    // its own; that stays writeClientSettingsSession's job above.
+    let settingsPath: string
+    try {
+      settingsPath = await assertManagedPath(join(safeInstallation.path, CLIENT_SETTINGS_FILE_NAME), "client settings", { allowMissing: true })
+    } catch (err) {
+      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error checking for another player's session keys.`)
+      logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused the client settings path: ${getErrorMessage(err)}`)
+      return sessionWriteFailedResult()
+    }
+
+    const cleared = await clearForeignClientSettingsSession({ jsonFile: realJsonFile() }, { settingsPath, playerUid: account.playerUid })
+
+    switch (cleared.outcome) {
+      case "cleared":
+        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Cleared another player's session before launching without one of our own.`)
+        break
+      case "not-foreign":
+        break
+      case "unreadable-settings":
+      case "write-failed":
+        logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not confirm this installation is not still signed in as another player.`)
+        logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${cleared.outcome}.`)
         return sessionWriteFailedResult()
     }
   }

@@ -29,13 +29,15 @@ import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
  * import, not after.
  */
 vi.mock("@src/ipc/accountStore", () => ({
-  saveAccountSecrets: vi.fn(async () => undefined)
+  saveAccountSecrets: vi.fn(async () => undefined),
+  adoptLegacySingleAccountSecrets: vi.fn(async () => false)
 }))
 
-import { saveAccountSecrets } from "@src/ipc/accountStore"
+import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
+import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
 
 let temporaryRoot: string
 let userDataFolder: string
@@ -59,6 +61,8 @@ beforeEach(() => {
 
   vi.mocked(saveAccountSecrets).mockReset()
   vi.mocked(saveAccountSecrets).mockResolvedValue(undefined)
+  vi.mocked(adoptLegacySingleAccountSecrets).mockReset()
+  vi.mocked(adoptLegacySingleAccountSecrets).mockResolvedValue(false)
 })
 
 afterEach(() => {
@@ -74,7 +78,8 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     defaultVersionsFolder: join(appDataFolder, "VSLGameVersions"),
     backupsFolder: join(appDataFolder, "VSLBackups"),
     window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
-    account: null,
+    accounts: [],
+    activeAccountId: null,
     installations: [],
     gameVersions: [],
     favMods: [],
@@ -475,7 +480,7 @@ describe("getConfig: schema migration logging", () => {
 
     const { getConfig } = await freshConfigManager()
     const config = await getConfig()
-    assert.equal(config.schemaVersion, 3)
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
   })
 })
 
@@ -501,15 +506,19 @@ describe("getConfig: legacy account secrets migration", () => {
     const config = await getConfig()
 
     assert.equal(vi.mocked(saveAccountSecrets).mock.calls.length, 1)
-    assert.deepEqual(config.account, {
-      email: "player@example.test",
-      playerName: "TestPlayer",
-      playerUid: "uid-0001",
-      playerEntitlements: null,
-      hostGameServer: false
-    })
+    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls[0]![0], "uid-0001", "keyed by the account's own playerUid")
+    assert.deepEqual(config.accounts, [
+      {
+        email: "player@example.test",
+        playerName: "TestPlayer",
+        playerUid: "uid-0001",
+        playerEntitlements: null,
+        hostGameServer: false
+      }
+    ])
+    assert.equal(config.activeAccountId, "uid-0001")
     // The legacy secret fields never reach the renderer-visible account.
-    assert.equal("sessionKey" in (config.account as object), false)
+    assert.equal("sessionKey" in config.accounts[0]!, false)
   })
 
   it("discards an unparseable legacy account rather than migrate garbage", async () => {
@@ -525,7 +534,8 @@ describe("getConfig: legacy account secrets migration", () => {
     const config = await getConfig()
 
     assert.equal(vi.mocked(saveAccountSecrets).mock.calls.length, 0)
-    assert.equal(config.account, null)
+    assert.deepEqual(config.accounts, [])
+    assert.equal(config.activeAccountId, null)
   })
 
   it("logs a warning but still finishes when secure storage refuses the migrated secrets", async () => {
@@ -550,7 +560,8 @@ describe("getConfig: legacy account secrets migration", () => {
 
     assert.equal(vi.mocked(saveAccountSecrets).mock.calls.length, 1)
     // The public half still comes through even though the secrets could not be stored.
-    assert.equal(config.account?.playerUid, "uid-0002")
+    assert.equal(config.activeAccountId, "uid-0002")
+    assert.equal(config.accounts[0]?.playerUid, "uid-0002")
   })
 
   it("does not attempt a migration when the account carries none of the legacy secret fields", async () => {
@@ -561,5 +572,172 @@ describe("getConfig: legacy account secrets migration", () => {
     await getConfig()
 
     assert.equal(vi.mocked(saveAccountSecrets).mock.calls.length, 0)
+  })
+})
+
+describe("normalizeConfig: accounts", () => {
+  it("drops entries that are not readable accounts, and deduplicates by playerUid, first wins", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const account = { email: "a@b.c", playerName: "A", playerUid: "uid-a", playerEntitlements: null, hostGameServer: false }
+    const duplicate = { ...account, playerName: "A (stale)" }
+
+    const result = normalizeConfig({ accounts: ["not a record", null, { email: "no uid" }, account, duplicate] })
+
+    assert.deepEqual(
+      result.accounts.map((a) => a.playerName),
+      ["A"]
+    )
+  })
+
+  it("caps the accounts array at 50 entries", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const many = Array.from({ length: 55 }, (_, i) => ({ email: `p${i}@b.c`, playerName: `P${i}`, playerUid: `uid-${i}`, playerEntitlements: null, hostGameServer: false }))
+    const result = normalizeConfig({ accounts: many })
+    assert.equal(result.accounts.length, 50)
+  })
+
+  it("falls back to [] when accounts is not an array", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.deepEqual(normalizeConfig({ accounts: "nope" }).accounts, [])
+  })
+
+  it("strips session credentials from every entry, the same way a single account never carried them", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const withSecrets = {
+      email: "a@b.c",
+      playerName: "A",
+      playerUid: "uid-a",
+      playerEntitlements: null,
+      hostGameServer: false,
+      sessionKey: "fake-key",
+      sessionSignature: "fake-signature",
+      mptoken: "fake-mptoken"
+    }
+
+    const result = normalizeConfig({ accounts: [withSecrets] })
+
+    assert.equal(result.accounts.length, 1)
+    for (const field of ["sessionKey", "sessionSignature", "mptoken"]) assert.equal(field in result.accounts[0]!, false, field)
+  })
+})
+
+describe("normalizeConfig: activeAccountId", () => {
+  const accountA = { email: "a@b.c", playerName: "A", playerUid: "uid-a", playerEntitlements: null, hostGameServer: false }
+  const accountB = { email: "b@b.c", playerName: "B", playerUid: "uid-b", playerEntitlements: null, hostGameServer: false }
+
+  it("keeps an activeAccountId that names a saved account", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ accounts: [accountA, accountB], activeAccountId: "uid-b" })
+    assert.equal(result.activeAccountId, "uid-b")
+  })
+
+  it("falls back to the first saved account when the id names nobody", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ accounts: [accountA, accountB], activeAccountId: "uid-gone" })
+    assert.equal(result.activeAccountId, "uid-a")
+  })
+
+  it("is null when there are no saved accounts, whatever the stored id says", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({ accounts: [], activeAccountId: "uid-a" }).activeAccountId, null)
+    assert.equal(normalizeConfig({}).activeAccountId, null)
+  })
+})
+
+describe("getConfig: account store re-key migration", () => {
+  it("re-keys the secret store under the legacy account's playerUid", async () => {
+    const legacyDoc = { ...minimalConfig(), account: { email: "a@b.c", playerName: "A", playerUid: "uid-rekey", playerEntitlements: null, hostGameServer: false } }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+    vi.mocked(adoptLegacySingleAccountSecrets).mockResolvedValueOnce(true)
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    assert.equal(vi.mocked(adoptLegacySingleAccountSecrets).mock.calls.length, 1)
+    assert.equal(vi.mocked(adoptLegacySingleAccountSecrets).mock.calls[0]![0], "uid-rekey")
+  })
+
+  it("does nothing when there is no readable account to key the store by", async () => {
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(minimalConfig()), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    assert.equal(vi.mocked(adoptLegacySingleAccountSecrets).mock.calls.length, 0)
+  })
+
+  it("logs a warning but still finishes when re-keying throws", async () => {
+    const legacyDoc = { ...minimalConfig(), account: { email: "a@b.c", playerName: "A", playerUid: "uid-throws", playerEntitlements: null, hostGameServer: false } }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+    vi.mocked(adoptLegacySingleAccountSecrets).mockRejectedValueOnce(new Error("boom"))
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+
+    assert.equal(config.activeAccountId, "uid-throws", "the document still migrates even though re-keying the store failed")
+  })
+
+  it("asks again on the next launch when a locked keyring burned the first attempt", async () => {
+    const legacyDoc = { ...minimalConfig(), account: { email: "a@b.c", playerName: "A", playerUid: "uid-retry", playerEntitlements: null, hostGameServer: false } }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+    vi.mocked(adoptLegacySingleAccountSecrets).mockRejectedValueOnce(new Error("keyring locked"))
+
+    const first = await freshConfigManager()
+    await first.getConfig()
+    await first.flushConfigWrites()
+
+    // The commit the retry has to survive: schema 4 on disk, with no `account` field left to key the store by.
+    const fse = (await import("fs-extra")).default
+    const onDisk = await fse.readJSON(join(userDataFolder, "config.json"))
+    assert.equal(onDisk.schemaVersion, CURRENT_CONFIG_SCHEMA)
+    assert.equal("account" in onDisk, false)
+
+    const second = await freshConfigManager()
+    const config = await second.getConfig()
+
+    assert.deepEqual(vi.mocked(adoptLegacySingleAccountSecrets).mock.calls, [["uid-retry"], ["uid-retry"]], "a v1 store still on disk is retried, keyed by the same account")
+    assert.equal(config.activeAccountId, "uid-retry")
+  })
+})
+
+describe("getConfig: config.json backup before a schema migration", () => {
+  function backupPath(): string {
+    return join(userDataFolder, "config.pre-migration.bak.json")
+  }
+
+  it("copies the pre-migration document once a migration actually runs", async () => {
+    const legacyDoc = minimalConfig({ schemaVersion: 2 })
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    const fse = (await import("fs-extra")).default
+    assert.equal(await fse.pathExists(backupPath()), true)
+    const backed = await fse.readJSON(backupPath())
+    assert.equal(backed.schemaVersion, 2, "the backup holds the document exactly as it was before migrating, not the migrated result")
+  })
+
+  it("takes no backup when the document is already at the current schema", async () => {
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA })), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    const fse = (await import("fs-extra")).default
+    assert.equal(await fse.pathExists(backupPath()), false)
+  })
+
+  it("keeps the first backup rather than overwriting it on a later migration", async () => {
+    const fse = (await import("fs-extra")).default
+    await fse.ensureDir(userDataFolder)
+    await fse.writeJSON(backupPath(), { schemaVersion: 1, sentinel: "already there" })
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(minimalConfig({ schemaVersion: 2 })), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    const backed = await fse.readJSON(backupPath())
+    assert.equal(backed.sentinel, "already there")
   })
 })

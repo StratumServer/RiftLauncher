@@ -86,7 +86,8 @@ declare global {
     }
     accountManager: {
       login: (email: string, password: string, twoFactorCode?: string) => Promise<AccountLoginResult>
-      logout: () => Promise<boolean>
+      /** Drops one saved account's secrets, by its `playerUid`. */
+      removeAccount: (accountId: string) => Promise<boolean>
     }
   }
 

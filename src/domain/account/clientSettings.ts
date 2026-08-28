@@ -199,3 +199,62 @@ export async function writeClientSettingsSession(ports: WriteClientSettingsSessi
 
   return written.ok ? { outcome: "written" } : { outcome: "write-failed" }
 }
+
+/**
+ * The document with the eight session keys removed and everything else intact.
+ *
+ * The mirror image of {@link mergeSessionIntoClientSettings}'s read-modify-write
+ * discipline: every other setting the file carries survives untouched.
+ */
+export function removeSessionFromClientSettings(existingDocument: unknown): Record<string, unknown> {
+  const document = existingDocument && typeof existingDocument === "object" && !Array.isArray(existingDocument) ? (existingDocument as Record<string, unknown>) : {}
+  const stringSettings = { ...existingStringSettings(existingDocument) }
+
+  for (const key of ["mptoken", "sessionkey", "sessionsignature", "useremail", "entitlements", "playeruid", "playername", "hostgameserver"]) delete stringSettings[key]
+
+  return { ...document, [STRING_SETTINGS_SECTION]: stringSettings }
+}
+
+export type ClearClientSettingsSessionResult =
+  | { outcome: "cleared" }
+  // Covers both a file with no session in it, and one that already holds our own: neither can
+  // launch anyone into the wrong identity, so neither is touched.
+  | { outcome: "not-foreign" }
+  | { outcome: "unreadable-settings" }
+  | { outcome: "write-failed" }
+
+export interface ClearForeignClientSettingsSessionInput {
+  /** Full path of the settings file. The caller resolves it, so path policy stays on the host side. */
+  settingsPath: string
+  /** `playerUid` of the account the launcher is about to launch as. */
+  playerUid: string
+}
+
+/**
+ * Removes a session belonging to a DIFFERENT player from the settings file,
+ * and only that. Never writes our own account's session: that is
+ * {@link writeClientSettingsSession}'s job, and this function only runs when
+ * the caller has no secrets to write with (see gameHandlers.ts's EXECUTE_GAME).
+ *
+ * ## Why this exists
+ *
+ * With one saved account, a settings file the launcher could not update was
+ * harmless: whatever session it already held was that same account's own.
+ * With more than one, the file can hold a HOUSEMATE's session, since the game
+ * writes it there directly on its own successful login. Launching without
+ * clearing it would start the game already signed in as somebody else. This
+ * is narrow on purpose: it only fires when the file demonstrably holds a
+ * different player's `playeruid`, so it can never touch a file that already
+ * shows nobody, or shows us.
+ */
+export async function clearForeignClientSettingsSession(ports: WriteClientSettingsSessionPorts, input: ClearForeignClientSettingsSessionInput): Promise<ClearClientSettingsSessionResult> {
+  const existing = await ports.jsonFile.read(input.settingsPath)
+  if (!existing.ok) return { outcome: "unreadable-settings" }
+
+  const stringSettings = existingStringSettings(existing.document)
+  const foreignUid = typeof stringSettings.playeruid === "string" ? stringSettings.playeruid : null
+  if (foreignUid === null || foreignUid === input.playerUid) return { outcome: "not-foreign" }
+
+  const written = await ports.jsonFile.write(input.settingsPath, removeSessionFromClientSettings(existing.document))
+  return written.ok ? { outcome: "cleared" } : { outcome: "write-failed" }
+}

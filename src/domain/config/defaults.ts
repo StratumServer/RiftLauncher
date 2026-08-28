@@ -19,7 +19,8 @@ export const DEFAULT_CONFIG_BASE: Omit<ConfigType, "schemaVersion" | "defaultIns
     y: 0,
     maximized: false
   },
-  account: null,
+  accounts: [],
+  activeAccountId: null,
   installations: [],
   gameVersions: [],
   favMods: [],
