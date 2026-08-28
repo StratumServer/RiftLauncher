@@ -57,6 +57,17 @@ type LookForAGameVersionHandler = (event: IpcMainInvokeEvent, path: unknown) => 
 /** The key the game writes after prompting the player, which the launcher has never seen. */
 const GAME_REFRESHED_KEY = "game-session-key"
 
+/**
+ * The game binary's file name on the host these tests run on.
+ *
+ * buildGameLaunchPlan, and detectInstalledGameVersion with it, looks for
+ * `Vintagestory.exe` on Windows and the native `Vintagestory` on Linux, so a
+ * fixture that hard-codes either name is only a game folder on one of the two.
+ * On the other, the handler finds nothing and every test below gets
+ * `no-executable` back instead of the outcome it was written for.
+ */
+const GAME_EXECUTABLE = process.platform === "win32" ? "Vintagestory.exe" : "Vintagestory"
+
 let temporaryRoot: string
 let managedFolder: string
 let versionsFolder: string
@@ -166,7 +177,10 @@ describe("EXECUTE_GAME", () => {
     assert.deepEqual(result, { ok: false, reason: "invalid-request" })
   })
 
-  it("resolves no-executable when the version folder cannot be listed", async () => {
+  // chmod 0o000 cannot make a folder unlistable on Windows: NTFS has no POSIX
+  // mode bits, so readdir succeeds there and the readdir-failure arm this
+  // covers is unreachable.
+  it.skipIf(process.platform === "win32")("resolves no-executable when the version folder cannot be listed", async () => {
     const gameVersionFolder = join(versionsFolder, "1.20.0")
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
@@ -190,7 +204,7 @@ describe("EXECUTE_GAME", () => {
     mkdirSync(installationFolder, { recursive: true })
     const realTarget = join(temporaryRoot, "real-binary")
     writeFileSync(realTarget, "", "utf-8")
-    symlinkSync(realTarget, join(gameVersionFolder, "Vintagestory"))
+    symlinkSync(realTarget, join(gameVersionFolder, GAME_EXECUTABLE))
     writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
 
     const event = await createTrustedEvent()
@@ -227,7 +241,7 @@ describe("EXECUTE_GAME", () => {
     // That's what exercises the account-less branch of
     // "if (account && accountSecrets)" and gameProcessOutcomeToResult's
     // `started: false` arm.
-    const executablePath = join(gameVersionFolder, "Vintagestory")
+    const executablePath = join(gameVersionFolder, GAME_EXECUTABLE)
     writeFileSync(executablePath, "not a real binary", { mode: 0o644 })
     writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
 
@@ -241,7 +255,7 @@ describe("EXECUTE_GAME", () => {
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    const executablePath = join(gameVersionFolder, "Vintagestory")
+    const executablePath = join(gameVersionFolder, GAME_EXECUTABLE)
     writeFileSync(executablePath, "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
@@ -263,7 +277,10 @@ describe("EXECUTE_GAME", () => {
     assert.deepEqual(vi.mocked(writeJsonAtomic).mock.calls.filter((call) => call[0] === join(installationFolder, "clientsettings.json")).length, 1)
   })
 
-  it("resolves session-write-failed when the account session cannot be written into clientsettings.json", async () => {
+  // chmod 0o500 on the installation folder does not stop the write on Windows,
+  // which gates writes on the file's own read-only attribute rather than on
+  // POSIX write bits of the folder containing it.
+  it.skipIf(process.platform === "win32")("resolves session-write-failed when the account session cannot be written into clientsettings.json", async () => {
     const gameVersionFolder = join(versionsFolder, "1.20.0")
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
@@ -271,7 +288,7 @@ describe("EXECUTE_GAME", () => {
     // A real, non-symlink "Vintagestory" file is what buildGameLaunchPlan and
     // assertExecutable both need to see, on Linux, to hand back a plan instead
     // of a launchPlanFailureResult/invalidExecutableResult.
-    writeFileSync(join(gameVersionFolder, "Vintagestory"), "", "utf-8")
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "", "utf-8")
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
       accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
@@ -304,7 +321,7 @@ describe("EXECUTE_GAME", () => {
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
       accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
@@ -338,7 +355,7 @@ describe("EXECUTE_GAME", () => {
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
       accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
@@ -363,12 +380,15 @@ describe("EXECUTE_GAME", () => {
     assert.equal(settings.stringSettings.sessionkey, "our-own-stale-key", "our own session, even a stale one, is left exactly as it was")
   })
 
-  it("resolves session-write-failed when a foreign session cannot be cleared", async () => {
+  // Same reason as the write test above: the read-only folder that blocks
+  // writeJsonAtomic's rename on a POSIX filesystem does not block it on NTFS,
+  // which has no such mode bits.
+  it.skipIf(process.platform === "win32")("resolves session-write-failed when a foreign session cannot be cleared", async () => {
     const gameVersionFolder = join(versionsFolder, "1.20.0")
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    writeFileSync(join(gameVersionFolder, "Vintagestory"), "", "utf-8")
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "", "utf-8")
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
       accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
@@ -408,7 +428,7 @@ describe("EXECUTE_GAME", () => {
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
       accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
@@ -448,7 +468,7 @@ describe("EXECUTE_GAME", () => {
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
       accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
@@ -493,7 +513,7 @@ describe("EXECUTE_GAME", () => {
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
       accounts: [
@@ -529,7 +549,7 @@ describe("EXECUTE_GAME", () => {
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
       accounts: [
@@ -576,7 +596,7 @@ describe("EXECUTE_GAME", () => {
     const installationFolder = join(managedFolder, "Main")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    writeFileSync(join(gameVersionFolder, "Vintagestory"), "not a real binary", { mode: 0o644 })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
       accounts: [
@@ -640,7 +660,7 @@ describe("LOOK_FOR_A_GAME_VERSION", () => {
     // A directory named like the Linux candidate: pickExecutable matches it by
     // name alone, so the probe is attempted, and assertExecutable's own
     // isFile() check is what refuses it -- no process ever spawns.
-    mkdirSync(join(folder, "Vintagestory"), { recursive: true })
+    mkdirSync(join(folder, GAME_EXECUTABLE), { recursive: true })
     writeConfig({ gameVersions: [{ version: "1.20.0", path: folder }] as unknown as ConfigType["gameVersions"] })
 
     const event = await createTrustedEvent()

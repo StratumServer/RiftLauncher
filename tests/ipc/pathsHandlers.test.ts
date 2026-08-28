@@ -259,7 +259,11 @@ describe("DOWNLOAD_ON_PATH / EXTRACT_ON_PATH / RUN_INSTALLER / COMPRESS_ON_PATH:
   })
 })
 
-describe("CHANGE_PERMS: assertion throws", () => {
+// CHANGE_PERMS returns false on anything that is not Linux before it looks at
+// its arguments at all (pathsHandlers.ts: `if (os.platform() !== "linux") return
+// false`), since POSIX mode bits are the only thing it has to apply. On Windows
+// nothing here can throw, so these two cover the Linux arm only.
+describe.skipIf(process.platform === "win32")("CHANGE_PERMS: assertion throws", () => {
   it("throws on an empty paths array", async () => {
     const event = await createTrustedEvent()
     await assert.rejects(() => handler(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [], 0o644), /Invalid permissions paths/)
@@ -832,7 +836,9 @@ describe("COMPRESS_ON_PATH: runTrackedWorker via a fake worker", () => {
   })
 })
 
-describe("CHANGE_PERMS: runTrackedWorker via a fake worker", () => {
+// Same Linux-only early return: on Windows the handler resolves false without
+// ever starting a worker, so the fake worker this waits for never arrives.
+describe.skipIf(process.platform === "win32")("CHANGE_PERMS: runTrackedWorker via a fake worker", () => {
   it("resolves true once the worker finishes", async () => {
     const event = await createTrustedEvent()
     const workerPromise = nextTrackedWorker()
