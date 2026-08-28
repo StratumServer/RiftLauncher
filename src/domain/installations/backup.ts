@@ -156,10 +156,12 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
     const date = ports.clock.now()
     // Falls back to a slice of the installation id when the name sanitises
     // away to nothing (e.g. "***"), so the archive never ends up as a bare
-    // "_<stamp>.zip".
+    // "_<stamp>.tar.gz".
     const cleanInstallationName = cleanFolderName(installation.name) || installation.id.slice(0, 8)
     const dateStamp = formatTimestampForFilename(date)
-    const fileName = `${cleanInstallationName}_${dateStamp}.zip`
+    // Backups were zips up to 1.7.0-beta.4 and the restore still reads those, by
+    // the extension recorded with each one. New ones are gzipped tar.
+    const fileName = `${cleanInstallationName}_${dateStamp}.tar.gz`
 
     const outputFolder = await ports.paths.join([backupsFolder, INSTALLATIONS_BACKUP_SUBFOLDER, cleanInstallationName])
     const archivePath = await ports.paths.join([outputFolder, fileName])
