@@ -33,7 +33,7 @@ function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: Rea
                   e.stopPropagation()
                   openExternalLink(ISSUES_URL)
                 }}
-                className="text-vsl"
+                className="text-vsl underline"
               >
                 {t("generic.issues")}
               </NormalButton>
@@ -45,7 +45,7 @@ function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: Rea
                   e.stopPropagation()
                   openExternalLink(DISCORD_URL)
                 }}
-                className="text-vsl"
+                className="text-vsl underline"
               >
                 Discord
               </NormalButton>

@@ -29,7 +29,7 @@ function InstallationsDropdownMenu(): JSX.Element {
               i18nKey="features.installations.noInstallationsFoundDesc"
               components={{
                 link: (
-                  <LinkButton title={t("components.mainMenu.installationsTitle")} to="/installations" className="text-vsl">
+                  <LinkButton title={t("components.mainMenu.installationsTitle")} to="/installations" className="text-vsl underline">
                     {t("components.mainMenu.installationsTitle")}
                   </LinkButton>
                 )

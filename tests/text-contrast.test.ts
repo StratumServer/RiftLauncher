@@ -17,6 +17,13 @@ import { describe, it } from "vitest"
  *
  * WCAG AA is the bar: 4.5:1 for body text, 3:1 for large headings and for the icons that carry an
  * interactive control on their own.
+ *
+ * A ratio against the backdrop is necessary but not sufficient for a link: #248's fix lightened
+ * --color-vsl enough to clear the backdrop, but that same lightening brought it within 1.02:1 of
+ * the zinc-400 prose six of the eight links sit inside, so colour alone stopped marking them as
+ * links (WCAG 1.4.1). The eight text-vsl link call sites also carry `underline` for that reason;
+ * this file only checks the backdrop ratio, not the separation from surrounding text, since the
+ * underline is what carries that job now.
  */
 
 const RENDERER = resolve(__dirname, "..", "src", "renderer", "src")
@@ -69,6 +76,13 @@ function foreground(file: string, anchor: RegExp): Layer {
   const name = found[1]
   assert.ok(name, `${anchor} in ${file} no longer captures a zinc shade`)
   return [zinc(name, `${file} ${anchor}`), found[2] === undefined ? 1 : Number(found[2]) / 100]
+}
+
+/** One `--color-*` token from the `@theme` block, read as the hex that actually ships. */
+function themeColor(name: string): Rgb {
+  const found = match("styles.css", new RegExp(`--color-${name}:\\s*#([0-9a-fA-F]{6})`))
+  const hex = found[1] as string
+  return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)]
 }
 
 /** A layer this pass did not touch, kept here so the stacks below are the real ones. */
@@ -141,6 +155,19 @@ const MOD_FILTER = [shell, stickyMenu, filterControl] as const
 const POPUP_TABLE_ROW = [popupShell, popupPanel, tableFill, rowTint] as const
 /** The thinnest stack any of the actionable icons sits on, so the worst of the five. */
 const ICON = [shell, section, dropdownFill, rowTint] as const
+
+// Scrims the vsl accent links and icons sit under, not touched by #236.
+const toast = scrim("components/layout/NotificationsOverlay.tsx", /text-center bg-zinc-950\/(\d+) backdrop-blur-sm/)
+const tasksPanel = scrim("components/ui/TasksMenu.tsx", /max-h-60 flex flex-col bg-zinc-950\/(\d+) backdrop-blur-md/)
+const menuCard = scrim("features/installations/components/InstallationsDropdownMenu.tsx", /backdrop-blur-xs bg-zinc-950\/(\d+) border border-zinc-400\/5 group/)
+
+const LIST_PANEL = [shell, listPanel] as const
+const SECTION_TABLE = [shell, section, tableFill] as const
+const MENU_CARD = [shell, menu, menuCard] as const
+const TOAST = [shell, toast] as const
+// TasksMenu renders inside MainMenu's own header scrim (`<TasksMenu />` in MainMenu.tsx), so the
+// real stack under a task row carries that scrim too, not just the popover panel's own.
+const TASKS_ROW = [shell, menu, tasksPanel, rowTint] as const
 
 describe("text over the player's background image", () => {
   it("keeps page text readable where the shell scrim is all there is", () => {
@@ -216,5 +243,68 @@ describe("prompts the player is meant to read and act on", () => {
       ["choose a custom icon file", foreground("components/ui/AddCustomIconPupup.tsx", /PiPlusCircleDuotone className="text-3xl text-(zinc-\d+)(?:\/(\d+))?/)]
     ]
     for (const [label, icon] of icons) assertReadable(label, icon, ICON, NON_TEXT_FLOOR)
+  })
+})
+
+/**
+ * #248 follow-up to #236: --color-vsl (the brand accent used as text-vsl for links, plus two
+ * status icons) was left out of the original pass and read 3.15:1 on its binding stack. The fix
+ * lightens the token rather than darkening it, because every text-vsl call site renders through
+ * the same translucent zinc-950 scrim stack over the player's background image that the rest of
+ * this file measures, never on a real white surface: the worst case is that stack over a white
+ * image, not white itself. --color-vs and --color-vsd are separate tokens that style the active
+ * menu marker and the enabled toggle; they carry light text on top rather than being text
+ * themselves, so they are untouched here.
+ */
+describe("the brand accent where it carries text", () => {
+  it("keeps every accent link readable on the panel it ships on", () => {
+    const accent: Layer = [themeColor("vsl"), 1]
+    // Every anchor requires "underline" right on the class string, not just "text-vsl": colour
+    // alone no longer separates this accent from the zinc-400/zinc-200 prose it sits inside (see
+    // the file header), so the underline is the part of each of these that actually marks a link.
+    // No anchor bridges more than whitespace between its call site and its class string, so none
+    // can slide past a link that lost its underline onto a later one in the same file that kept it.
+    const links: ReadonlyArray<readonly [string, RegExp, string, readonly Layer[]]> = [
+      ["add installation start-params link", /Client_startup_parameters"\)\}\s+className="text-vsl underline"/, "features/installations/pages/AddInstallation.tsx", FORM_SECTION],
+      ["edit installation start-params link", /Client_startup_parameters"\)\} className="text-vsl underline"/, "features/installations/pages/EditInstallation.tsx", FORM_SECTION],
+      ["logs folder link", /onClick=\{openLogsFolder\} className="text-vsl underline"/, "features/info/pages/InfoAndHelpPage.tsx", FORM_SECTION],
+      ["no installed mods link", /to="\/mods" className="text-vsl underline"/, "features/mods/components/NoInstalledModsNotice.tsx", LIST_PANEL],
+      ["mods section issues link", /openExternalLink\(ISSUES_URL\)\s+\}\}\s+className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["mods section discord link", /openExternalLink\(DISCORD_URL\)\s+\}\}\s+className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["no game versions link", /to="\/versions" className="text-vsl underline"/, "features/installations/components/GameVersionPicker.tsx", SECTION_TABLE],
+      ["no installations link", /to="\/installations" className="text-vsl underline"/, "features/installations/components/InstallationsDropdownMenu.tsx", MENU_CARD]
+    ]
+    for (const [label, anchor, file, stack] of links) {
+      match(file, anchor) // fails loudly, naming the file, if the link class or its underline has moved
+      assertReadable(label, accent, stack, TEXT_FLOOR)
+    }
+  })
+
+  it("keeps the accent status icons above the non-text bar", () => {
+    const accent: Layer = [themeColor("vsl"), 1]
+    match("components/layout/NotificationsOverlay.tsx", /info: "text-vsl"/)
+    assertReadable("info toast icon", accent, TOAST, NON_TEXT_FLOOR)
+    match("components/ui/TasksMenu.tsx", /pending: "text-vsl"/)
+    assertReadable("pending task icon", accent, TASKS_ROW, NON_TEXT_FLOOR)
+  })
+
+  it("keeps the accent ramp and its selected borders coherent", () => {
+    const dark = luminance(themeColor("vsd"))
+    const base = luminance(themeColor("vs"))
+    const light = luminance(themeColor("vsl"))
+    assert.ok(dark < base && base < light, "the vs/vsl/vsd ramp should stay dark-to-light in that order")
+
+    // The Grid border is decorative, not the sole indicator of the selected state (it sits at 25%
+    // alpha alongside a bg-vsd/50 fill), so it gets no contrast assertion here, only a pin that it
+    // still tracks --color-vsl; its own non-text-contrast gap predates this change and is tracked
+    // separately (issue filed alongside this PR).
+    match("components/ui/Grid.tsx", /selected \? "bg-vsd\/50 border-vsl\/(\d+)"/)
+    // The ConfigPage tile border has a different backdrop on each of its two edges, so there is no
+    // single ratio to assert here. Inside is the player's own thumbnail. Outside is the section panel
+    // over the shell, which is FORM_SECTION above, so the accent's ratio on that edge is already
+    // pinned by the link assertions against a stricter floor than a border needs. What is left is the
+    // width, which is what keeps hue from being the only mark of the selected state, so this checks
+    // the border is still 2px and still --color-vsl.
+    match("features/config/pages/ConfigPage.tsx", /selected \? "border-2 border-vsl" : "border border-zinc-400\/5"/)
   })
 })

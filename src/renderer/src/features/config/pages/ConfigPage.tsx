@@ -306,8 +306,14 @@ function BackgroundTile({
       onClick={onClick}
       aria-pressed={selected}
       className={clsx(
-        "relative aspect-video w-full rounded-sm overflow-hidden border bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
-        selected ? "border-vsl" : "border-zinc-400/5"
+        "relative aspect-video w-full rounded-sm overflow-hidden bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
+        // Two colours meet at this border and only one of them is unknown. Inside is the player's
+        // thumbnail, where --color-vsl can fall to 2.51:1 against a light image; outside is the
+        // section panel over the shell, the same fixed stack the accent links sit on, where it
+        // reads 4.85:1 whatever image was picked. A boundary that is unmistakable along one of its
+        // edges is perceivable (WCAG 1.4.11). The extra width raises no ratio: what it buys is
+        // 1.4.1, since the selected state stops being marked by hue alone. See text-contrast.test.ts.
+        selected ? "border-2 border-vsl" : "border border-zinc-400/5"
       )}
     >
       {source && !imageFailed && <img src={source} alt="" loading={loading} decoding="async" onError={() => setImageFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
