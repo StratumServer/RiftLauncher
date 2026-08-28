@@ -997,7 +997,10 @@ describe("before-quit: the limiters stop admitting work", () => {
 })
 
 describe("RUN_INSTALLER", () => {
-  it("resolves not-windows on a non-Windows host, before any worker or spawn", async () => {
+  // This exercises the real, unstubbed process.platform !== "win32" branch
+  // (see the file header): on an actual Windows host that branch can't fire,
+  // so RUN_INSTALLER proceeds into the win32 arm this file doesn't cover.
+  it.skipIf(process.platform === "win32")("resolves not-windows on a non-Windows host, before any worker or spawn", async () => {
     // assertManagedPath for the installer path requires it to exist (it is
     // not called with { allowMissing: true }), so the not-windows check --
     // which comes after it -- still needs a real file to reach.

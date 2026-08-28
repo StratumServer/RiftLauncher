@@ -134,7 +134,9 @@ describe("saveAccountSecrets", () => {
     assert.equal(JSON.parse(raw).version, 2)
   })
 
-  it("keeps the file readable only by its owner", async () => {
+  // chmod on Windows only toggles the read-only attribute; it cannot produce
+  // the POSIX 0o600 this reads back off disk.
+  it.skipIf(process.platform === "win32")("keeps the file readable only by its owner", async () => {
     const store = await loadStore()
 
     await store.saveAccountSecrets("uid-a", ACCOUNT_A)
