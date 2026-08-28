@@ -1,22 +1,25 @@
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
 import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, relative, resolve } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import * as tar from "tar"
-import { path7za } from "7zip-bin"
 
-import { contentRoot, runExtraction, validateTree } from "../../src/ipc/workers/extraction"
+import { contentRoot, extractTarGz, extractZip, resolveEntryDestination, runExtraction, validateTree } from "../../src/ipc/workers/extraction"
+import { runCompression } from "../../src/ipc/workers/compression"
 
 /**
- * These build their own archives, so they run anywhere without a network.
+ * These build their own archives, so they run anywhere without a network. The
+ * two zip fixtures are the exception, and they are committed rather than built:
+ * the whole point of keeping a zip reader is that backups written by a version
+ * of the launcher nobody runs any more still restore. See
+ * tests/fixtures/build-fixtures.ts for what is in them.
  *
  * The one test that needs a real Vintage Story archive is opt in: point
  * RIFT_E2E_ARCHIVE at a downloaded game tar.gz to run it. CI never does.
  */
 
-const sevenZipBin = path7za
+const FIXTURES = join(__dirname, "..", "fixtures")
 
 let workspace: string
 
@@ -122,7 +125,7 @@ describe("runExtraction on a gzipped tar", () => {
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "version-1.22.6.txt": "", "seed.json": "{}" } } })
     const archivePath = await makeTarGz("vs_client_linux-x64_1.22.6.tar.gz", workspacePath("source"))
 
-    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin })
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
 
     assert.deepEqual(readdirSync(workspacePath("target")).sort(), ["Vintagestory", "assets"])
     assert.equal(readFileSync(workspacePath("target", "Vintagestory"), "utf8"), "elf")
@@ -133,7 +136,7 @@ describe("runExtraction on a gzipped tar", () => {
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "version-1.22.6.txt": "" } } })
     const archivePath = await makeTarGz("wrapped.tar.gz", workspacePath("source"))
 
-    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin })
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
 
     const marker = workspacePath("target", "assets", "version-1.22.6.txt")
     assert.equal(existsSync(marker), true)
@@ -144,7 +147,7 @@ describe("runExtraction on a gzipped tar", () => {
     writeTree(workspacePath("source"), { VintagestoryServer: "elf", assets: { "version-1.22.6.txt": "" } })
     const archivePath = await makeTarGz("vs_server_linux-x64_1.22.6.tar.gz", workspacePath("source"))
 
-    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin })
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
 
     assert.deepEqual(readdirSync(workspacePath("target")).sort(), ["VintagestoryServer", "assets"])
     assert.equal(existsSync(workspacePath("target", "assets", "version-1.22.6.txt")), true)
@@ -155,7 +158,7 @@ describe("runExtraction on a gzipped tar", () => {
     const archivePath = await makeTarGz("progress.tar.gz", workspacePath("source"))
     const reported: number[] = []
 
-    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin, onProgress: (progress) => reported.push(progress) })
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true, onProgress: (progress) => reported.push(progress) })
 
     assert.equal(reported.at(-1), 100)
     assert.equal(reported.filter((progress) => progress === 100).length, 1)
@@ -171,8 +174,8 @@ describe("runExtraction on a gzipped tar", () => {
     const keptPath = await makeTarGz("kept.tar.gz", workspacePath("source"))
     const consumedPath = await makeTarGz("consumed.tar.gz", workspacePath("source"))
 
-    await runExtraction({ filePath: keptPath, outputPath: workspacePath("kept"), deleteArchive: false, sevenZipBin })
-    await runExtraction({ filePath: consumedPath, outputPath: workspacePath("consumed"), deleteArchive: true, sevenZipBin })
+    await runExtraction({ filePath: keptPath, outputPath: workspacePath("kept"), deleteArchive: false, unwrapSingleRootFolder: true })
+    await runExtraction({ filePath: consumedPath, outputPath: workspacePath("consumed"), deleteArchive: true, unwrapSingleRootFolder: true })
 
     assert.equal(existsSync(keptPath), true)
     assert.equal(existsSync(consumedPath), false)
@@ -183,7 +186,7 @@ describe("runExtraction on a gzipped tar", () => {
     symlinkSync("/etc/passwd", workspacePath("source", "vintagestory", "escape.txt"))
     const archivePath = await makeTarGz("hostile.tar.gz", workspacePath("source"))
 
-    await assert.rejects(runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin }), /unsafe entry/)
+    await assert.rejects(runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true }), /unsafe entry/)
     assert.equal(existsSync(workspacePath("target", "escape.txt")), false)
     assert.equal(existsSync(workspacePath("target", "Vintagestory")), false)
   })
@@ -194,7 +197,10 @@ describe("runExtraction on a gzipped tar", () => {
     // Caught by runExtraction's own pre-extraction validateArchive call, before it even
     // creates the target directory, let alone extracts (and its generic "Extraction failed")
     // is ever reached.
-    await assert.rejects(runExtraction({ filePath: workspacePath("broken.tar.gz"), outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin }), /Archive could not be read/)
+    await assert.rejects(
+      runExtraction({ filePath: workspacePath("broken.tar.gz"), outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true }),
+      /Archive could not be read/
+    )
     assert.equal(existsSync(workspacePath("target")), false)
   })
 
@@ -203,42 +209,185 @@ describe("runExtraction on a gzipped tar", () => {
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf" } })
     const archivePath = await makeTarGz("clean.tar.gz", workspacePath("source"))
 
-    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin })
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
 
     assert.equal(readdirSync(tmpdir()).filter((entry) => entry.startsWith("vs-launcher-extract-")).length, before)
   })
 })
 
-describe("runExtraction on a zip", () => {
-  it("keeps a zip's own shape, because those are the backups a restore puts back", async () => {
-    writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "version-1.22.6.txt": "" } } })
-    const archivePath = workspacePath("backup.zip")
-    execFileSync(sevenZipBin, ["a", "-tzip", archivePath, join(workspacePath("source"), "vintagestory")], { stdio: "ignore" })
+/** Every file in a tree, as a relative path to its bytes, so two trees can be compared outright. */
+function readTree(root: string): Record<string, string> {
+  const files: Record<string, string> = {}
+  const visit = (current: string): void => {
+    for (const name of readdirSync(current)) {
+      const entry = join(current, name)
+      if (lstatSync(entry).isDirectory()) visit(entry)
+      else files[relative(root, entry).replaceAll("\\", "/")] = readFileSync(entry, "base64")
+    }
+  }
+  visit(root)
+  return files
+}
 
-    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin })
+describe("backup round trip", () => {
+  it("puts a freshly written backup back exactly as it was", async () => {
+    writeTree(workspacePath("installation"), {
+      Mods: { "carrycapacity.zip": "not really a mod", "notes.txt": "" },
+      "clientsettings.json": "{}",
+      Saves: { "world.vcdbs": "  binary-ish" }
+    })
+    const before = readTree(workspacePath("installation"))
 
-    assert.deepEqual(readdirSync(workspacePath("target")), ["vintagestory"])
-    assert.equal(statSync(workspacePath("target", "vintagestory", "assets", "version-1.22.6.txt")).size, 0)
+    await runCompression({ inputPath: workspacePath("installation"), outputPath: workspacePath("backups"), outputFileName: "backup.tar.gz" })
+    await runExtraction({ filePath: workspacePath("backups", "backup.tar.gz"), outputPath: workspacePath("restored"), deleteArchive: false })
+
+    assert.deepEqual(readTree(workspacePath("restored")), before)
+    assert.deepEqual(readdirSync(workspacePath("restored")).sort(), readdirSync(workspacePath("installation")).sort())
   })
 
-  it("coalesces 7-Zip progress and emits one terminal 100", async () => {
-    const source = workspacePath("many-files")
-    mkdirSync(source, { recursive: true })
-    for (let index = 0; index < 2_000; index++) writeFileSync(join(source, `file-${index}.bin`), Buffer.alloc(2_048, index % 251))
+  it("puts a backup of an empty installation back as an empty folder", async () => {
+    mkdirSync(workspacePath("installation"), { recursive: true })
 
-    const archivePath = workspacePath("progress.zip")
-    execFileSync(sevenZipBin, ["a", "-tzip", archivePath, source], { stdio: "ignore" })
+    await runCompression({ inputPath: workspacePath("installation"), outputPath: workspacePath("backups"), outputFileName: "backup.tar.gz" })
+    await runExtraction({ filePath: workspacePath("backups", "backup.tar.gz"), outputPath: workspacePath("restored"), deleteArchive: false })
+
+    assert.deepEqual(readdirSync(workspacePath("restored")), [])
+  })
+
+  it("never steps into a single folder a backup happens to hold, the way a game archive is stepped into", async () => {
+    // An installation whose only entry is a folder is not a wrapped archive: it
+    // is an installation with one folder in it, and a restore has to put that
+    // folder back rather than spill its contents over the installation root.
+    writeTree(workspacePath("installation"), { Mods: { "notes.txt": "one folder, nothing else" } })
+
+    await runCompression({ inputPath: workspacePath("installation"), outputPath: workspacePath("backups"), outputFileName: "backup.tar.gz" })
+    await runExtraction({ filePath: workspacePath("backups", "backup.tar.gz"), outputPath: workspacePath("restored"), deleteArchive: false })
+
+    assert.deepEqual(readdirSync(workspacePath("restored")), ["Mods"])
+    assert.equal(readFileSync(workspacePath("restored", "Mods", "notes.txt"), "utf8"), "one folder, nothing else")
+  })
+})
+
+describe("runExtraction on a legacy zip backup", () => {
+  it("restores a backup written before the launcher moved off zip", async () => {
+    await runExtraction({ filePath: join(FIXTURES, "legacy-backup.zip"), outputPath: workspacePath("restored"), deleteArchive: false })
+
+    assert.deepEqual(readTree(workspacePath("restored")), {
+      Vintagestory: Buffer.from("elf").toString("base64"),
+      "assets/version-1.22.6.txt": "",
+      "Mods/notes.txt": Buffer.from("a mod list worth keeping\n").toString("base64")
+    })
+    // A folder entry lands as a folder, and the zero byte marker inside it stays zero bytes.
+    assert.equal(lstatSync(workspacePath("restored", "assets")).isDirectory(), true)
+    assert.equal(statSync(workspacePath("restored", "assets", "version-1.22.6.txt")).size, 0)
+  })
+
+  it("keeps a zip's own shape, because those are the backups a restore puts back", async () => {
+    await runExtraction({ filePath: join(FIXTURES, "legacy-backup.zip"), outputPath: workspacePath("restored"), deleteArchive: false })
+
+    assert.deepEqual(readdirSync(workspacePath("restored")).sort(), ["Mods", "Vintagestory", "assets"])
+  })
+
+  it("coalesces progress and emits one terminal 100", async () => {
     const reported: number[] = []
 
-    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin, onProgress: (progress) => reported.push(progress) })
+    await runExtraction({ filePath: join(FIXTURES, "legacy-backup.zip"), outputPath: workspacePath("restored"), deleteArchive: false, onProgress: (progress) => reported.push(progress) })
 
     assert.equal(reported.at(-1), 100)
     assert.equal(reported.filter((progress) => progress === 100).length, 1)
     assert.equal(new Set(reported).size, reported.length)
+    assert.deepEqual(
+      [...reported].sort((left, right) => left - right),
+      reported
+    )
     assert.equal(
       reported.some((progress) => progress > 0 && progress < 100),
       true
     )
+  })
+
+  it("deletes the archive when asked", async () => {
+    const consumedPath = workspacePath("consumed.zip")
+    writeFileSync(consumedPath, readFileSync(join(FIXTURES, "legacy-backup.zip")))
+
+    await runExtraction({ filePath: consumedPath, outputPath: workspacePath("restored"), deleteArchive: true })
+
+    assert.equal(existsSync(consumedPath), false)
+  })
+
+  it("refuses a zip naming entries outside the folder it unpacks into", async () => {
+    // The refusal comes from yauzl's own name validation, which stops the read
+    // at the first entry that names a drive, a "/" root or a ".." segment, so
+    // the launcher's table-of-contents pass reports an unreadable archive
+    // rather than an unsafe entry. Either way nothing is written, which is the
+    // property worth holding: the archive is refused before the output folder
+    // is even created.
+    await assert.rejects(runExtraction({ filePath: join(FIXTURES, "hostile-backup.zip"), outputPath: workspacePath("restored"), deleteArchive: false }), /could not be read/)
+
+    assert.equal(existsSync(workspacePath("escaped.txt")), false)
+    assert.equal(existsSync(workspacePath("escaped-drive.txt")), false)
+    assert.equal(existsSync("/etc/escaped-absolute.txt"), false)
+    assert.equal(existsSync(workspacePath("restored")), false)
+  })
+
+  it("refuses an archive whose name says neither zip nor tar.gz", async () => {
+    await assert.rejects(runExtraction({ filePath: join(FIXTURES, "not-a-zip.bin"), outputPath: workspacePath("restored"), deleteArchive: false }), /not supported/)
+  })
+})
+
+/**
+ * The unpackers' own look at an entry name, past the table-of-contents check
+ * that normally refuses these archives before either unpacker is reached. What
+ * is inside an archive is not something the launcher wrote, so both gates get
+ * pinned rather than only the first.
+ */
+describe("hostile entry names, straight at the unpackers", () => {
+  it("refuses to place a zip entry that climbs out, is absolute, or names a drive", () => {
+    const destination = workspacePath("destination", "inside")
+
+    assert.throws(() => resolveEntryDestination(destination, "../escaped.txt"), /escaped its root/)
+    assert.throws(() => resolveEntryDestination(destination, "assets/../../escaped.txt"), /escaped its root/)
+    assert.throws(() => resolveEntryDestination(destination, "/etc/escaped-absolute.txt"), /escaped its root/)
+    // A backslash separator is a Windows path inside a zip, and is normalised
+    // before the comparison rather than taken as part of a file name.
+    assert.throws(() => resolveEntryDestination(destination, "..\\escaped.txt"), /escaped its root/)
+    assert.throws(() => resolveEntryDestination(destination, "."), /escaped its root/)
+  })
+
+  it("places an ordinary zip entry under the destination", () => {
+    const destination = workspacePath("destination", "inside")
+
+    assert.equal(resolveEntryDestination(destination, "assets/version-1.22.6.txt"), join(destination, "assets", "version-1.22.6.txt"))
+    assert.equal(resolveEntryDestination(destination, "Mods\\notes.txt"), join(destination, "Mods", "notes.txt"))
+  })
+
+  it("writes nothing outside the destination for a zip full of escaping names", async () => {
+    const destination = workspacePath("destination", "inside")
+    mkdirSync(destination, { recursive: true })
+
+    await assert.rejects(extractZip(join(FIXTURES, "hostile-backup.zip"), destination))
+
+    assert.equal(existsSync(workspacePath("destination", "escaped.txt")), false)
+    assert.equal(existsSync(workspacePath("escaped.txt")), false)
+    assert.equal(existsSync("/etc/escaped-absolute.txt"), false)
+    assert.deepEqual(readdirSync(destination), [])
+  })
+
+  it("writes nothing outside the destination for a tar.gz climbing out with .. or an absolute path", async () => {
+    writeTree(workspacePath("source"), { "escaped.txt": "climbed out" })
+    const archivePath = workspacePath("hostile-names.tar.gz")
+    await tar.create({ file: archivePath, gzip: true, cwd: workspacePath("source"), portable: true, preservePaths: true }, ["../source/escaped.txt", resolve(workspacePath("source", "escaped.txt"))])
+    const destination = workspacePath("destination", "inside")
+    mkdirSync(destination, { recursive: true })
+
+    await extractTarGz(archivePath, destination)
+
+    assert.equal(existsSync(workspacePath("destination", "escaped.txt")), false)
+    assert.equal(existsSync(workspacePath("escaped.txt")), false)
+    // Whatever did land is under the destination, nowhere else.
+    for (const landed of readdirSync(destination, { recursive: true }) as string[]) {
+      assert.equal(resolve(destination, landed).startsWith(`${resolve(destination)}/`), true)
+    }
   })
 })
 
@@ -253,7 +402,7 @@ describe.skipIf(!realArchive)("runExtraction on a real Vintage Story archive", (
   it("puts the game executable and the version marker straight in the target folder", { timeout: 600_000 }, async () => {
     const version = process.env.RIFT_E2E_VERSION ?? ""
 
-    await runExtraction({ filePath: realArchive as string, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin })
+    await runExtraction({ filePath: realArchive as string, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
 
     const landed = readdirSync(workspacePath("target"))
     assert.equal(landed.includes("vintagestory"), false)

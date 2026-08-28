@@ -120,7 +120,8 @@ export interface TaskContextType {
     filePath: string,
     outputPath: string,
     deleteZip: boolean,
-    onFinish: (status: boolean, error: Error | null) => void
+    onFinish: (status: boolean, error: Error | null) => void,
+    unwrapSingleRootFolder?: boolean
   ): Promise<void>
   startInstall(
     name: string,
@@ -270,7 +271,8 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     filePath: string,
     outputPath: string,
     deleteZip: boolean,
-    onFinish: (status: boolean, error: Error | null) => void
+    onFinish: (status: boolean, error: Error | null) => void,
+    unwrapSingleRootFolder = false
   ): Promise<void> {
     const id = crypto.randomUUID()
 
@@ -281,7 +283,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Extracting...`)
       if (showsStart(notifications)) addNotification(t("notifications.body.extracting", { extractName: name }), "info")
-      const result = await window.api.pathsManager.extractOnPath(id, filePath, outputPath, deleteZip)
+      const result = await window.api.pathsManager.extractOnPath(id, filePath, outputPath, deleteZip, unwrapSingleRootFolder)
 
       if (!result) throw new Error("Extraction failed")
 

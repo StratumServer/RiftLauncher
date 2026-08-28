@@ -10,24 +10,21 @@
  * only one.
  *
  * Called from inside the worker rather than from the IPC handler before it
- * starts one: validateSevenZipArchive's own parse of a `7z l` listing can run
- * to 100,000 entries over up to 4MB of text, real CPU work that has no
- * business running on the main process's event loop when a worker thread is
- * about to exist for this archive regardless.
+ * starts one: walking a table of contents can run to 100,000 entries, real CPU
+ * work that has no business running on the main process's event loop when a
+ * worker thread is about to exist for this archive regardless.
  *
  * Which reader runs is decided by the file name, which is exactly why the name
  * has to be the real one: a `.tar.gz` saved as `.zip` used to be handed to a
  * zip reader that could not read it, and the install died there.
  */
 
-import { spawn } from "node:child_process"
 import yauzl from "yauzl"
 import * as tar from "tar"
 
 import { isArchiveSymlink, isSafeArchiveEntry, isSafeTarEntryType, isTarGzName, MAX_ARCHIVE_ENTRY_BYTES, MAX_ARCHIVE_TOTAL_BYTES } from "./validation"
 
 const MAX_ARCHIVE_ENTRIES = 100_000
-const MAX_LISTING_BYTES = 4 * 1024 * 1024
 
 function comparableArchiveEntry(entryName: string): string {
   const normalizedName = entryName.replaceAll("\\", "/")
@@ -89,90 +86,11 @@ export function validateZipArchive(filePath: string): Promise<void> {
   })
 }
 
-export function validateSevenZipArchive(filePath: string, sevenZipBin: string): Promise<void> {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const archiveLister = spawn(sevenZipBin, ["l", "-slt", "-bb0", filePath], { windowsHide: true })
-    let output = ""
-    let settled = false
-
-    const finish = (error?: Error): void => {
-      if (settled) return
-      settled = true
-      if (error) rejectPromise(error)
-      else resolvePromise()
-    }
-
-    archiveLister.stdout.on("data", (chunk) => {
-      output += chunk.toString()
-      if (Buffer.byteLength(output, "utf8") > MAX_LISTING_BYTES) {
-        archiveLister.kill()
-        finish(new Error("Archive listing is too large"))
-      }
-    })
-    archiveLister.stderr.on("data", () => {})
-    archiveLister.on("error", (error) => finish(error))
-    archiveLister.on("close", (code) => {
-      if (settled) return
-      if (code !== 0) {
-        finish(new Error("Archive could not be listed"))
-        return
-      }
-
-      const records = output.split(/\r?\n\s*\r?\n/)
-      let entryCount = 0
-      let totalUncompressedBytes = 0
-      let firstRecord = true
-      const entryNames = new Set<string>()
-      for (const record of records) {
-        const lines = record.split(/\r?\n/)
-        const pathLine = lines.find((line) => line.startsWith("Path = "))
-        if (!pathLine) continue
-        if (firstRecord) {
-          firstRecord = false
-          continue
-        }
-
-        const entryName = pathLine.slice("Path = ".length)
-        const sizeLine = lines.find((line) => line.startsWith("Size = "))
-        const folderLine = lines.find((line) => line.startsWith("Folder = "))
-        const isFolder = folderLine?.slice("Folder = ".length).trim() === "+"
-        const attributesLine = lines.find((line) => line.startsWith("Attributes = "))
-        // Tar style listings report links in their own columns instead of the attributes one.
-        const linkLines = lines.filter((line) => line.startsWith("Symbolic Link = ") || line.startsWith("Hard Link = "))
-        const entrySize = sizeLine ? Number(sizeLine.slice("Size = ".length)) : 0
-        entryCount++
-        totalUncompressedBytes += Number.isFinite(entrySize) && entrySize >= 0 ? entrySize : 0
-
-        if (
-          entryCount > MAX_ARCHIVE_ENTRIES ||
-          !isSafeArchiveEntry(entryName) ||
-          entryNames.has(comparableArchiveEntry(entryName)) ||
-          (attributesLine !== undefined && /(^|\s)L(\s|$)/.test(attributesLine)) ||
-          linkLines.some((line) => line.slice(line.indexOf("= ") + 2).trim().length > 0) ||
-          (!isFolder && (!sizeLine || !Number.isFinite(entrySize) || entrySize < 0)) ||
-          entrySize > MAX_ARCHIVE_ENTRY_BYTES ||
-          totalUncompressedBytes > MAX_ARCHIVE_TOTAL_BYTES
-        ) {
-          finish(new Error("Archive contains an unsafe entry"))
-          return
-        }
-        entryNames.add(comparableArchiveEntry(entryName))
-      }
-
-      finish()
-    })
-  })
-}
-
 /**
- * Lists a gzipped tar and holds it to the same bounds as the other formats.
+ * Lists a gzipped tar and holds it to the same bounds as the zip reader.
  *
- * 7-Zip is not used for this one. It would only see the gzip container and
- * report the single `.tar` inside, and the bundled p7zip 16.02 cannot read the
- * tars Vintage Story ships at all: their headers leave the numeric fields as
- * NUL bytes, which GNU tar and node-tar accept and 7-Zip calls "Is not
- * archive". The tar reader also states an entry's kind outright, so links are
- * refused by type rather than by parsing an attributes column.
+ * The tar reader states an entry's kind outright, so links are refused by type
+ * rather than by reading an attributes column.
  */
 export async function validateTarGzArchive(filePath: string): Promise<void> {
   let entryCount = 0
@@ -221,12 +139,16 @@ export async function validateTarGzArchive(filePath: string): Promise<void> {
 /**
  * Checks an archive with the reader its format actually needs.
  *
+ * Two formats reach the launcher and no others: gzipped tar, which the game
+ * builds ship as and which every backup is written as, and zip, which is what
+ * the backups made before that change still are. Anything else is refused here
+ * rather than handed to a reader that would have to guess at it.
+ *
  * @param filePath Archive on disk. Its name decides the reader.
- * @param sevenZipBin 7-Zip binary, for the formats neither yauzl nor tar handles.
  * @throws When the archive cannot be read or holds an entry the launcher refuses to unpack.
  */
-export async function validateArchive(filePath: string, sevenZipBin: string): Promise<void> {
-  if (filePath.toLowerCase().endsWith(".zip")) return validateZipArchive(filePath)
+export async function validateArchive(filePath: string): Promise<void> {
   if (isTarGzName(filePath)) return validateTarGzArchive(filePath)
-  return validateSevenZipArchive(filePath, sevenZipBin)
+  if (filePath.toLowerCase().endsWith(".zip")) return validateZipArchive(filePath)
+  throw new Error("Archive format is not supported")
 }

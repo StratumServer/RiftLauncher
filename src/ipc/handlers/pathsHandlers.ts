@@ -1,5 +1,4 @@
 import { ipcMain, app, shell } from "electron"
-import { path7za } from "7zip-bin"
 import fse from "fs-extra"
 import { open } from "node:fs/promises"
 import type { Stats } from "node:fs"
@@ -27,7 +26,6 @@ import innoExtractWorker from "@src/ipc/workers/innoExtractWorker?modulePath"
 import changePermsWorker from "@src/ipc/workers/changePermsWorker?modulePath"
 import downloadWorkerPath from "@src/ipc/workers/downloadWorker?modulePath"
 
-const sevenZipBin = app.isPackaged ? path7za.replace("app.asar", "app.asar.unpacked") : path7za
 const WORKER_TIMEOUTS_MS: Record<string, number> = {
   DOWNLOAD_ON_PATH: 45 * 60 * 1_000,
   EXTRACT_ON_PATH: 30 * 60 * 1_000,
@@ -385,17 +383,18 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   return downloadedPath
 })
 
-ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: string, filePath: string, outputPath: string, deleteZip: boolean): Promise<boolean> => {
+ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: string, filePath: string, outputPath: string, deleteZip: boolean, unwrapSingleRootFolder = false): Promise<boolean> => {
   assertTrustedIpcSender(event)
   const safeId = assertSafeTaskId(id)
   const safeFilePath = await assertManagedPath(filePath, "archive path")
   const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
   const shouldDeleteZip = assertBoolean(deleteZip, "delete archive flag")
+  const shouldUnwrapSingleRootFolder = assertBoolean(unwrapSingleRootFolder, "unwrap single root folder flag")
 
   if (resolve(safeFilePath) === resolve(safeOutputPath)) throw new TypeError("Archive and output paths must differ")
   // validateArchive runs inside the extraction worker now (workers/extraction.ts's
-  // runExtraction), not here: its 7z-listing parse is real CPU work that has no business
-  // blocking the main process's event loop.
+  // runExtraction), not here: walking a table of contents is real CPU work that has no
+  // business blocking the main process's event loop.
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
   await archiveConcurrency.run(() => {
@@ -405,7 +404,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
       safeId,
       IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
       extractWorker,
-      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, sevenZipBin },
+      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, unwrapSingleRootFolder: shouldUnwrapSingleRootFolder },
       "EXTRACT_ON_PATH",
       () => true
     )
@@ -581,7 +580,7 @@ ipcMain.handle(
         safeId,
         IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
         compressWorker,
-        { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel, sevenZipBin },
+        { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel },
         "COMPRESS_ON_PATH",
         () => true
       )
