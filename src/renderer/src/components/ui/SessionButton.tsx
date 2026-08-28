@@ -61,8 +61,10 @@ function SessionButton(): JSX.Element {
       if (result.status === "invalid-credentials") return addNotification(t("features.config.invalidEmailPass"), "error")
       if (result.status === "requires-two-factor") return addNotification(t("features.config.wrongtwofa"), "error")
       if (result.status === "unexpected-response") return addNotification(t("features.config.unexpectedResponse"), "error")
+      if (result.status === "session-store-unreadable") return addNotification(t("features.config.sessionStoreUnreadable"), "error")
       if (result.status !== "success") return
 
+      if (result.storeRebuilt) addNotification(t("features.config.sessionStoreRebuilt"), "warning")
       await saveLogin(result.account)
     } catch {
       // A throw here means the request never produced a verdict (network down,

@@ -29,7 +29,7 @@ import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
  * import, not after.
  */
 vi.mock("@src/ipc/accountStore", () => ({
-  saveAccountSecrets: vi.fn(async () => undefined),
+  saveAccountSecrets: vi.fn(async () => "saved" as const),
   adoptLegacySingleAccountSecrets: vi.fn(async () => false)
 }))
 
@@ -60,7 +60,7 @@ beforeEach(() => {
   setElectronPath("appRoot", join(temporaryRoot, "app"))
 
   vi.mocked(saveAccountSecrets).mockReset()
-  vi.mocked(saveAccountSecrets).mockResolvedValue(undefined)
+  vi.mocked(saveAccountSecrets).mockResolvedValue("saved")
   vi.mocked(adoptLegacySingleAccountSecrets).mockReset()
   vi.mocked(adoptLegacySingleAccountSecrets).mockResolvedValue(false)
 })

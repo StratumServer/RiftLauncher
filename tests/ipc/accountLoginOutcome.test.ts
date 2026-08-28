@@ -1,13 +1,14 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { badCredentialsResult, needsTwoFactorResult, twoFactorRejectedResult, unexpectedResponseOutcome } from "../../src/ipc/handlers/accountLoginOutcome"
+import { badCredentialsResult, needsTwoFactorResult, sessionStoreUnreadableResult, twoFactorRejectedResult, unexpectedResponseOutcome } from "../../src/ipc/handlers/accountLoginOutcome"
 
-describe("badCredentialsResult / needsTwoFactorResult / twoFactorRejectedResult", () => {
+describe("badCredentialsResult / needsTwoFactorResult / twoFactorRejectedResult / sessionStoreUnreadableResult", () => {
   it("carry the domain verdict onto the wire unchanged", () => {
     assert.deepEqual(badCredentialsResult(), { status: "invalid-credentials" })
     assert.deepEqual(needsTwoFactorResult(), { status: "requires-two-factor" })
     assert.deepEqual(twoFactorRejectedResult(), { status: "wrong-two-factor" })
+    assert.deepEqual(sessionStoreUnreadableResult(), { status: "session-store-unreadable" })
   })
 })
 

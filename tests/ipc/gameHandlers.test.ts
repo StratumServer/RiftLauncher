@@ -39,7 +39,7 @@ import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
  */
 vi.mock("@src/ipc/accountStore", () => ({
   getAccountSecrets: vi.fn(async () => ({ mptoken: null, sessionKey: "session-key", sessionSignature: "session-signature" })),
-  saveAccountSecrets: vi.fn(async () => undefined),
+  saveAccountSecrets: vi.fn(async () => "saved" as const),
   adoptLegacySingleAccountSecrets: vi.fn(async () => false)
 }))
 

@@ -89,7 +89,12 @@ function realJsonFile(): JsonFile {
  */
 async function adoptRefreshedSession(accountId: string, secrets: AccountSecrets): Promise<void> {
   try {
-    await saveAccountSecrets(accountId, secrets)
+    const outcome = await saveAccountSecrets(accountId, secrets)
+    if (outcome === "saved-after-rebuild")
+      logMessage(
+        "warn",
+        `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] The account store could not be read; it was copied aside and rebuilt around this adoption. Other saved accounts must log in again.`
+      )
     logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] The game had already refreshed this account's session. Adopted it instead of overwriting it.`)
   } catch (err) {
     logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not store the session the game refreshed. Launching anyway.`)

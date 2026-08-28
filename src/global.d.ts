@@ -79,10 +79,19 @@ declare global {
    * back, so the player's password was never actually rejected. Collapsing
    * that case into `invalid-credentials` is exactly the bug this type exists
    * to make impossible again.
+   *
+   * `session-store-unreadable` is the same kind of honesty for a different
+   * failure: the credentials were accepted, but the local secret store could
+   * not be read or safely rebuilt, so nothing was saved. `storeRebuilt` on
+   * `success` is not a status of its own on purpose: the login still
+   * succeeded, and a separate status would make every `status === "success"`
+   * check silently drop the account. It flags that the store had to be
+   * rebuilt around this one login, so a previously unreadable file's other
+   * saved accounts are gone and will need to log in again.
    */
   type AccountLoginResult =
-    | { status: "success"; account: AccountPublicType }
-    | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response"; account?: undefined }
+    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean }
+    | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response" | "session-store-unreadable"; account?: undefined }
 
   type GameVersionType = {
     version: string

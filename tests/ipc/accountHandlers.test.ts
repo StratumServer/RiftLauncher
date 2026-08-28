@@ -10,7 +10,7 @@ import "./helpers/electronMock"
 import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronUserDataPath } from "./helpers/electronMock"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
-import { removeAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
+import { AccountStoreUnreadableError, removeAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { requestBoundedTextViaNode } from "@src/ipc/network"
 
 /**
@@ -40,10 +40,16 @@ vi.mock("@src/ipc/network", () => ({
   requestBoundedTextViaNode: vi.fn()
 }))
 
-vi.mock("@src/ipc/accountStore", () => ({
-  saveAccountSecrets: vi.fn(async () => undefined),
-  removeAccountSecrets: vi.fn(async () => true)
-}))
+vi.mock("@src/ipc/accountStore", async (importOriginal) => {
+  // The real AccountStoreUnreadableError, not a stand-in: accountHandlers.ts's `instanceof`
+  // check on it has to see the same class the tests below throw.
+  const actual = await importOriginal<typeof import("@src/ipc/accountStore")>()
+  return {
+    AccountStoreUnreadableError: actual.AccountStoreUnreadableError,
+    saveAccountSecrets: vi.fn(async () => "saved" as const),
+    removeAccountSecrets: vi.fn(async () => true)
+  }
+})
 
 import "@src/ipc/handlers/accountHandlers"
 
@@ -94,7 +100,7 @@ beforeEach(async () => {
   userDataFolder = mkdtempSync(join(tmpdir(), "rift-account-handlers-test-"))
   setElectronUserDataPath(userDataFolder)
   vi.mocked(requestBoundedTextViaNode).mockReset()
-  vi.mocked(saveAccountSecrets).mockReset().mockResolvedValue(undefined)
+  vi.mocked(saveAccountSecrets).mockReset().mockResolvedValue("saved")
   vi.mocked(removeAccountSecrets).mockReset().mockResolvedValue(true)
   trustedEvent = await createTrustedEvent()
 })
@@ -272,6 +278,30 @@ describe("LOGIN", () => {
     // A success the launcher cannot persist is not a success: reporting one
     // would leave a session that vanishes on the next start.
     await assert.rejects(loginHandler()(trustedEvent, EMAIL, PASSWORD), /Login failed/)
+  })
+
+  it("flags a login that rebuilt the account store, rather than reporting an ordinary success", async () => {
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockResolvedValueOnce("saved-after-rebuild")
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.deepEqual(result, {
+      status: "success",
+      account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false },
+      storeRebuilt: true
+    })
+  })
+
+  it("reports an unreadable, unpreservable store as its own status instead of a generic failure", async () => {
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockRejectedValueOnce(new AccountStoreUnreadableError(new Error("EACCES")))
+
+    // A login this cannot even preserve the old bytes for is neither an ordinary success (the
+    // session was not saved) nor "Login failed" (the credentials were fine): the player is told
+    // exactly what happened instead of either lie.
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+    assert.deepEqual(result, { status: "session-store-unreadable" })
   })
 })
 
