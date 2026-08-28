@@ -43,6 +43,31 @@ vi.mock("@src/ipc/accountStore", () => ({
   adoptLegacySingleAccountSecrets: vi.fn(async () => false)
 }))
 
+/**
+ * Makes the next spawn throw the way Windows throws, on demand.
+ *
+ * `child_process.spawn` reports ENOENT, EACCES, EAGAIN, EMFILE and ENFILE
+ * through an "error" event and throws every other failure synchronously. Linux
+ * answers this file's fixtures with EACCES and so only ever takes the event
+ * path, while Windows answers a file that is not a real executable with
+ * UNKNOWN and takes the throw path, which used to reject the whole handler.
+ * Every other test here keeps the real spawn: the flag is off unless a test
+ * turns it on.
+ */
+const spawnThrow = vi.hoisted(() => ({ next: false }))
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>()
+  return {
+    ...actual,
+    spawn: (...args: Parameters<typeof actual.spawn>): ReturnType<typeof actual.spawn> => {
+      if (!spawnThrow.next) return actual.spawn(...args)
+      spawnThrow.next = false
+      throw Object.assign(new Error("spawn UNKNOWN"), { code: "UNKNOWN", errno: -4094, syscall: "spawn" })
+    }
+  }
+})
+
 // Real implementation, wrapped, so the crash-safety guarantee stays covered by
 // atomicJsonFile.test.ts and this file only asserts that the settings write
 // goes through the shared adapter rather than a bare fse.writeJSON.
@@ -248,6 +273,31 @@ describe("EXECUTE_GAME", () => {
     const event = await createTrustedEvent()
     const result = await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
     assert.deepEqual(result, { ok: false, reason: "launch-failed" })
+  })
+
+  /**
+   * A spawn that throws instead of emitting is still a launch that did not
+   * happen, and this handler's whole contract is that a launch a player can
+   * fail to complete comes back as a reason rather than as an exception. It
+   * only shows up on Windows, where a Vintagestory.exe that is not a valid
+   * executable (a truncated download, a file antivirus emptied) is answered
+   * with UNKNOWN rather than with one of the five codes spawn reports through
+   * an event. Both spawns in this file were written for the event alone.
+   */
+  it("resolves launch-failed when the spawn throws instead of emitting an error", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
+    writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    spawnThrow.next = true
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+
+    assert.deepEqual(result, { ok: false, reason: "launch-failed" })
+    assert.equal(spawnThrow.next, false, "the throwing spawn is the one this test ran")
   })
 
   it("resolves launch-failed after successfully writing the account session first", async () => {
@@ -666,6 +716,23 @@ describe("LOOK_FOR_A_GAME_VERSION", () => {
     const event = await createTrustedEvent()
     const result = await lookForAGameVersionHandler()(event, folder)
     assert.deepEqual(result, { exists: false })
+  })
+
+  // The probe's own spawn has the same throw-instead-of-emit gap EXECUTE_GAME's
+  // does, and reaching it needs a candidate that gets past assertExecutable, so
+  // this one is a real file rather than a directory.
+  it("reports not found when the probe's spawn throws instead of emitting an error", async () => {
+    const folder = join(versionsFolder, "throwing-probe")
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
+    writeConfig({ gameVersions: [{ version: "1.20.0", path: folder }] as unknown as ConfigType["gameVersions"] })
+
+    spawnThrow.next = true
+    const event = await createTrustedEvent()
+    const result = await lookForAGameVersionHandler()(event, folder)
+
+    assert.deepEqual(result, { exists: false })
+    assert.equal(spawnThrow.next, false, "the throwing spawn is the one this test ran")
   })
 
   it("reports not found when only the mono fallback candidate (Vintagestory.exe) is present and fails its probe", async () => {
