@@ -13,6 +13,19 @@ type ApprovedPath = PathGrant & {
 type PathPolicyOptions = {
   allowMissing?: boolean
   allowApprovedSelection?: boolean
+  /**
+   * Skips the symlink walk, for read-only channels only (#237).
+   *
+   * The grant check is lexical, and the symlink walk is what keeps it
+   * honest: without it a link inside a granted subtree points wherever it likes
+   * and the lexical answer stops matching the real one. Every channel that
+   * writes, deletes or replaces therefore keeps the walk, so a caller cannot
+   * reach past the grant with a link. Reading is the case where the mismatch is
+   * the user's own doing and their prerogative: people link a Mods folder at a
+   * game install they keep in the default Vintage Story location, or on another
+   * disk, and the launcher refusing to list it is the bug.
+   */
+  allowSymlinks?: boolean
 }
 
 const approvedPaths: ApprovedPath[] = []
@@ -168,7 +181,7 @@ export async function assertManagedPath(value: unknown, name = "path", options: 
   if (!isConfiguredPath && !isApprovedPath && !isRestoreWorkspace) throw new TypeError(`Unmanaged ${name}`)
 
   if (!options.allowMissing && !fse.existsSync(pathValue)) throw new TypeError(`Missing ${name}`)
-  assertNoSymlinkComponents(pathValue)
+  if (!options.allowSymlinks) assertNoSymlinkComponents(pathValue)
   return pathValue
 }
 

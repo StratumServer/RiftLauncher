@@ -39,7 +39,12 @@ function toWireMod(mod: ScannedMod): InstalledModType {
 
 ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path: string): Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> => {
   assertTrustedIpcSender(event)
-  path = await assertManagedPath(path, "mods path", { allowMissing: true })
+  // allowSymlinks: listing a Mods folder the user linked in is a read (#237).
+  // The scan only ever opens the .zip files it finds, and the directory reader
+  // still drops any entry that is itself a link, so nothing planted inside can
+  // widen what gets opened. Deleting or replacing a mod goes through the strict
+  // policy as before.
+  path = await assertManagedPath(path, "mods path", { allowMissing: true, allowSymlinks: true })
   try {
     logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Looking for mods at ${path}.`)
 

@@ -334,7 +334,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EMPTY, async (event, pathVa
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS, async (event, pathValue: string): Promise<boolean> => {
   assertTrustedIpcSender(event)
-  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true })
+  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
   return fse.pathExists(safePath)
 })
 
@@ -342,8 +342,14 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
   assertTrustedIpcSender(event)
 
   try {
-    const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true })
-    await fse.ensureDir(safePath)
+    // Reporting a folder the user linked in as present is a read (#237), so
+    // that arm takes allowSymlinks. Creating one is not: mkdir through a link
+    // would put a folder outside the granted subtree, so the missing case goes
+    // back through the strict policy.
+    const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
+    if (await fse.pathExists(safePath)) return true
+
+    await fse.ensureDir(await assertManagedPath(pathValue, "path", { allowMissing: true }))
     return true
   } catch (err) {
     logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [ENSURE_PATH_EXISTS] Error ensuring path.")
@@ -354,7 +360,8 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER, async (event, pathValue: string): Promise<void> => {
   assertTrustedIpcSender(event)
-  shell.showItemInFolder(await assertManagedPath(pathValue, "path"))
+  // allowSymlinks: handing a linked folder to the file explorer is a read (#237).
+  shell.showItemInFolder(await assertManagedPath(pathValue, "path", { allowSymlinks: true }))
 })
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: string, url: string, outputPath: string, fileName: string): Promise<string> => {

@@ -413,6 +413,95 @@ describe("OPEN_PATH_ON_FILE_EXPLORER", () => {
   }
 })
 
+/**
+ * The reported shape in #237, driven through the handlers the mod screen calls.
+ *
+ * A profile whose Mods folder is itself a link at a Mods folder kept elsewhere.
+ * The read-only channels answer for it now; everything that writes still meets
+ * the path policy's symlink walk, which is what stops a link from being a way
+ * around the grant. Windows is skipped because making a symlink there needs
+ * Developer Mode or elevation the CI runners do not have (#267 tracks it), and
+ * the handler code is the same on every platform.
+ */
+describe.skipIf(process.platform === "win32")("a Mods folder the user symlinked in", () => {
+  let installation: string
+  let realMods: string
+  let linkedMods: string
+
+  beforeEach(() => {
+    installation = join(managedFolder, "Main")
+    mkdirSync(installation, { recursive: true })
+    writeConfig({ installations: [{ id: "a", name: "A", path: installation, backups: [] }] as unknown as ConfigType["installations"] })
+
+    realMods = join(temporaryRoot, "VintagestoryData", "Mods")
+    mkdirSync(realMods, { recursive: true })
+    writeFileSync(join(realMods, "amod.zip"), "x", "utf-8")
+
+    linkedMods = join(installation, "Mods")
+    symlinkSync(realMods, linkedMods, "dir")
+  })
+
+  it("CHECK_PATH_EXISTS reports the linked folder as present", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS)(event, linkedMods), true)
+  })
+
+  // The exact symptom from the report: the folder button called this one, got
+  // false back from the swallowed policy throw, and told the user their folder
+  // did not exist. The link has to survive too, not be replaced by a real
+  // directory on the way through ensureDir.
+  it("ENSURE_PATH_EXISTS reports the linked folder as present and leaves the link alone", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, linkedMods), true)
+
+    const { lstatSync } = await import("node:fs")
+    assert.equal(lstatSync(linkedMods).isSymbolicLink(), true)
+  })
+
+  it("OPEN_PATH_ON_FILE_EXPLORER shows the linked folder", async () => {
+    const event = await createTrustedEvent()
+    await handler(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER)(event, linkedMods)
+    assert.equal(vi.mocked(shell.showItemInFolder).mock.calls.at(-1)?.[0], linkedMods)
+  })
+
+  // Reporting is a read, creating is not. Dropping the second, strict
+  // assertManagedPath in ENSURE_PATH_EXISTS turns this row green the wrong way:
+  // the folder would appear inside the link target, outside the grant.
+  it("ENSURE_PATH_EXISTS refuses to create a folder through the link", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, join(linkedMods, "New")), false)
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(join(realMods, "New")), false)
+  })
+
+  it("DELETE_PATH still refuses a mod reached through the link, and leaves it on disk", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH)(event, join(linkedMods, "amod.zip")), false)
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(join(realMods, "amod.zip")), true)
+  })
+
+  it("DELETE_PATH refuses a link inside the installation that escapes into a system folder", async () => {
+    symlinkSync("/etc", join(installation, "escape"), "dir")
+
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH)(event, join(installation, "escape", "hosts")), false)
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync("/etc/hosts"), true)
+  })
+
+  it("DOWNLOAD_ON_PATH refuses the linked folder as an output path, so installing a mod into it is not widened here", async () => {
+    const event = await createTrustedEvent()
+    await assert.rejects(
+      () => handler(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-1", "https://moddbcdn.vintagestory.at/some-mod-1.0.0.zip", linkedMods, "a.zip"),
+      /Symbolic links are not allowed/
+    )
+  })
+})
+
 describe("COPY_TO_ICONS", () => {
   /** Real PNG bytes: the eight-byte signature, then a payload no decoder is asked to read. */
   const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("fixture-icon-not-a-real-png")])
