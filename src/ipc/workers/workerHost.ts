@@ -77,9 +77,9 @@ export function serveTasks(handler: TaskHandler, describeFailure: FailureDescrib
     }
 
     const onProgress: ProgressReporter = (progress) => {
-      // node-7z and the stream readers this app uses can emit one last progress event
-      // after their own end event. Posting it was harmless while the worker died with
-      // its task right after; now the worker can already be sitting idle in the pool.
+      // The stream readers this app uses can emit one last progress event after their
+      // own end event. Posting it was harmless while the worker died with its task
+      // right after; now the worker can already be sitting idle in the pool.
       if (settled) return
       port.postMessage({ type: "progress", token, progress })
     }
