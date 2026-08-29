@@ -29,6 +29,8 @@
  * from a redirected stdout, judged acceptable since the file transport is the app's real log.
  */
 
+import { redactSensitiveText } from "./logManager"
+
 /** Anything that accepts an "error" listener: process.stdout/process.stderr here, a plain EventEmitter in tests. */
 export interface ErrorEmittingStream {
   on(event: "error", listener: (error: NodeJS.ErrnoException) => void): unknown
@@ -37,11 +39,57 @@ export interface ErrorEmittingStream {
 /**
  * Diagnostics seam. Called with every error that was swallowed. Never wire this to logMessage
  * in production: logging to the same broken stream would emit another "error" event, which
- * would call this handler again, an unbounded async loop. It exists so tests can observe
- * suppression, and so a future caller can route to the file transport only if that ever
- * becomes necessary.
+ * would call this handler again, an unbounded async loop. createSuppressedErrorRecorder below
+ * is the handler production uses; anything else here exists so tests can observe suppression.
  */
 export type SuppressedErrorHandler = (error: unknown) => void
+
+/** The subset of electron-log's file transport the recorder calls: Logger.transports.file satisfies it. */
+export type LogFileTransport = (message: { data: unknown[]; date: Date; level: "error" }) => void
+
+/** Error name, errno code and message on one line. The code is the part that separates a dead pipe from a real bug. */
+function describeSuppressedError(error: unknown): string {
+  if (!(error instanceof Error)) return redactSensitiveText(`non-Error value: ${String(error)}`)
+
+  const code = (error as NodeJS.ErrnoException).code
+  return redactSensitiveText(`${error.name}${code ? ` (${code})` : ""}: ${error.message}`)
+}
+
+/**
+ * Records the first suppressed console failure and stays silent afterwards (#256).
+ *
+ * The catches above keep a dead pipe from taking the app down, but on their own they hide an
+ * ordinary transport bug just as completely: a TypeError out of a format hook would vanish with
+ * no trace anywhere. This writes one line so that bug is findable. Three properties make the
+ * recording safe to do from inside a failing write:
+ *
+ * - It calls the file transport directly instead of Logger.error, which would fan the message
+ *   back out to the very console transport that just failed.
+ * - It fires once. A dead pipe fails on every subsequent write, and a per-failure record would
+ *   fill the log file with copies of the same error; the flag is set before the write, so a
+ *   throw on the way out cannot leave it armed for a second attempt.
+ * - It swallows its own failure. The handler that would otherwise catch a throw from here is
+ *   this same handler, so letting one escape is how the recursion the guard exists to prevent
+ *   would come back.
+ */
+export function createSuppressedErrorRecorder(writeToFile: LogFileTransport): SuppressedErrorHandler {
+  let recorded = false
+
+  return (error: unknown): void => {
+    if (recorded) return
+    recorded = true
+
+    try {
+      writeToFile({
+        data: [`[back] [index] [utils/consoleTransportSafety.ts] [onSuppressed] console output failed and was suppressed, later suppressions are silent: ${describeSuppressedError(error)}`],
+        date: new Date(),
+        level: "error"
+      })
+    } catch {
+      // Nothing to do with it: reporting a failure to report a failure is where the loop starts.
+    }
+  }
+}
 
 /** Keeps a failed write on `stream` from becoming an unhandled "error" event, i.e. an uncaught exception. */
 export function suppressStreamWriteErrors(stream: ErrorEmittingStream | undefined, onSuppressed?: SuppressedErrorHandler): void {

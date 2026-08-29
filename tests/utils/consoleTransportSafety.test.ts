@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events"
 import Logger from "electron-log"
 import { afterEach, describe, it } from "vitest"
 
-import { createSafeConsoleWrite, makeConsoleOutputFaultTolerant, suppressStreamWriteErrors } from "../../src/utils/consoleTransportSafety"
+import { createSafeConsoleWrite, createSuppressedErrorRecorder, makeConsoleOutputFaultTolerant, suppressStreamWriteErrors } from "../../src/utils/consoleTransportSafety"
 
 /** What Node hands the app when the reader on the other end of stdout is gone. */
 function brokenPipeError(): NodeJS.ErrnoException {
@@ -146,27 +146,121 @@ describe("makeConsoleOutputFaultTolerant", () => {
   })
 })
 
-describe("electron-log's own console failure, guarded and unguarded", () => {
-  const originalWriteFn = Logger.transports.console.writeFn
-  afterEach(() => {
-    Logger.transports.console.writeFn = originalWriteFn
+describe("createSuppressedErrorRecorder", () => {
+  /** Runs one suppression past a collecting file transport and returns the line it was handed. */
+  function recordSuppression(error: unknown): { line: string; level: string } {
+    const written: { data: unknown[]; level: string }[] = []
+    createSuppressedErrorRecorder((message) => void written.push(message))(error)
+
+    const [record] = written
+    assert.ok(record, "the recorder wrote nothing to the file transport")
+    return { line: String(record.data[0]), level: record.level }
+  }
+
+  it("records the first suppressed failure through the file transport", () => {
+    const { line, level } = recordSuppression(brokenPipeError())
+
+    assert.equal(level, "error")
+    assert.match(line, /console output failed and was suppressed.*Error \(EPIPE\): write EPIPE/)
   })
 
-  it("a failing console transport escapes Logger.info while nothing guards it", () => {
+  it("stays silent after the first one, so a permanently dead pipe writes one line and not thousands", () => {
+    const written: unknown[] = []
+    const record = createSuppressedErrorRecorder((message) => void written.push(message))
+
+    for (let i = 0; i < 5; i++) record(brokenPipeError())
+
+    assert.equal(written.length, 1)
+  })
+
+  it("names the error when it is not a dead pipe, which is the failure this exists to surface", () => {
+    const { line } = recordSuppression(new TypeError("hook is not a function"))
+
+    // No errno code on this one, so nothing is invented to fill the slot.
+    assert.match(line, /TypeError: hook is not a function/)
+    assert.doesNotMatch(line, /TypeError \(/)
+  })
+
+  it("redacts credentials out of the error before it reaches disk", () => {
+    const { line } = recordSuppression(new Error("write failed for token=hunter2"))
+
+    assert.match(line, /token=\[REDACTED\]/)
+    assert.doesNotMatch(line, /hunter2/)
+  })
+
+  it("describes a thrown value that is not an Error at all", () => {
+    assert.match(recordSuppression("just a string").line, /non-Error value: just a string/)
+  })
+
+  it("swallows a failure of its own, because the handler that would catch it is itself", () => {
+    const record = createSuppressedErrorRecorder((): void => {
+      throw new Error("the file transport is broken too")
+    })
+
+    assert.doesNotThrow(() => record(brokenPipeError()))
+    // And it does not arm itself for a retry: the flag is set before the write, not after it.
+    assert.doesNotThrow(() => record(brokenPipeError()))
+  })
+})
+
+describe("electron-log's own console failure, guarded and unguarded", () => {
+  const originalWriteFn = Logger.transports.console.writeFn
+  const originalFileTransport = Logger.transports.file
+  afterEach(() => {
+    Logger.transports.console.writeFn = originalWriteFn
+    Logger.transports.file = originalFileTransport
+  })
+
+  /**
+   * Swaps the singleton's file transport for a collector, so these tests read what the file
+   * transport was handed without going near the developer's real Logs directory. The level is
+   * set because tests/setup-node.ts pins the real one to false, which would make processMessage
+   * skip it and hide the very delivery these tests are about.
+   */
+  function collectFileTransport(): { data: unknown[] }[] {
+    const received: { data: unknown[] }[] = []
+    const collector = (message: { data: unknown[] }): void => void received.push(message)
+    collector.level = "silly"
+    Logger.transports.file = collector as unknown as typeof Logger.transports.file
+    return received
+  }
+
+  function breakTheConsoleTransport(): void {
     Logger.transports.console.writeFn = (): void => {
       throw brokenPipeError()
     }
+  }
+
+  it("a failing console transport escapes Logger.info while nothing guards it", () => {
+    breakTheConsoleTransport()
 
     assert.throws(() => Logger.info("a line nobody can read"), { code: "EPIPE" })
   })
 
   it("Logger.info survives the same failing transport once it is made fault tolerant", () => {
-    Logger.transports.console.writeFn = (): void => {
-      throw brokenPipeError()
-    }
+    breakTheConsoleTransport()
 
     makeConsoleOutputFaultTolerant(Logger.transports.console, [])
 
     assert.doesNotThrow(() => Logger.info("a line nobody can read"))
+  })
+
+  it("leaves one suppression record in the file transport, wired the way the app wires it", () => {
+    const received = collectFileTransport()
+    breakTheConsoleTransport()
+
+    // The same call src/main/index.ts makes, default streams included.
+    makeConsoleOutputFaultTolerant(Logger.transports.console, undefined, createSuppressedErrorRecorder(Logger.transports.file))
+    Logger.info("first line after the pipe died")
+    Logger.info("second line after the pipe died")
+
+    // The record lands first, from inside the console write that failed, then the two log lines.
+    const [record] = received
+    assert.ok(record, "no suppression record reached the file transport")
+    assert.match(String(record.data[0]), /console output failed and was suppressed.*\(EPIPE\)/)
+    assert.deepEqual(
+      received.slice(1).map((message) => message.data[0]),
+      ["first line after the pipe died", "second line after the pipe died"]
+    )
   })
 })
