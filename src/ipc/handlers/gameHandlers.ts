@@ -345,6 +345,10 @@ function realProcessProbe(): ProcessProbe {
 
         let stdout = ""
         let settled = false
+        // Declared before settle so that every exit from this executor, the spawn
+        // throw included, goes through settle. clearTimeout ignores undefined, so
+        // settling before the timer exists is safe.
+        let timer: ReturnType<typeof setTimeout> | undefined = undefined
 
         const settle = (outcome: ProcessProbeOutcome): void => {
           if (settled) return
@@ -357,15 +361,15 @@ function realProcessProbe(): ProcessProbe {
         try {
           externalApp = spawn(request.command, request.args, { shell: false, windowsHide: true })
         } catch (err) {
-          // Same throw-instead-of-emit split as EXECUTE_GAME's spawn above. Resolved
-          // rather than settled: no timer exists yet at this point.
+          // Same throw-instead-of-emit split as EXECUTE_GAME's spawn above, settled
+          // the way the "error" event below settles it.
           logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for the Vintage Story version.`)
           logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
-          resolve({ ok: false, stdout: "", error: getErrorMessage(err) })
+          settle({ ok: false, stdout, error: getErrorMessage(err) })
           return
         }
 
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
           logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Timed out waiting for Vintage Story to report its version.`)
           externalApp.kill()
           settle({ ok: false, stdout, error: "Timed out waiting for a response." })

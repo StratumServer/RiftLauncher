@@ -141,6 +141,11 @@ function writeConfig(config: Partial<ConfigType>): void {
 }
 
 beforeEach(async () => {
+  // vi.restoreAllMocks() in afterEach does not reach a vi.hoisted object, so a
+  // test that turns this on and fails before the spawn consumes it would leave
+  // it on for the next test, whose real spawn would then throw.
+  spawnThrow.next = false
+
   temporaryRoot = mkdtempSync(join(tmpdir(), "game-handlers-"))
   managedFolder = join(temporaryRoot, "Installations")
   versionsFolder = join(temporaryRoot, "Versions")
