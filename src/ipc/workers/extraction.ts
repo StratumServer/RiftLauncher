@@ -14,6 +14,7 @@ import yauzl from "yauzl"
 import { createReadStream, createWriteStream, mkdtempSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { tmpdir } from "node:os"
+import type { Readable } from "node:stream"
 import * as tar from "tar"
 
 // Relative so the module stays importable from a plain test run, like validation.ts.
@@ -173,10 +174,23 @@ export function extractZip(filePath: string, destination: string, onProgress?: (
       let extractedEntries = 0
       let lastReportedProgress = 0
       const totalEntries = zipFile.entryCount
+      // The pair the entry being written is streaming through, so a failure can
+      // stop them. Reassigned per entry, and left pointing at the last one.
+      let entryReader: Readable | undefined
+      let entryWriter: ReturnType<typeof createWriteStream> | undefined
 
       const finish = (failure?: Error): void => {
         if (settled) return
         settled = true
+        if (failure) {
+          // Stop both ends before the caller wipes the temporary folder, the same
+          // reason extractTarGz does it: an open write handle in there turns the
+          // removal into an EBUSY on Windows, which then replaces the real error
+          // and leaves the folder behind.
+          entryReader?.unpipe()
+          entryReader?.destroy()
+          entryWriter?.destroy()
+        }
         try {
           zipFile.close()
         } catch {
@@ -225,15 +239,16 @@ export function extractZip(filePath: string, destination: string, onProgress?: (
             return
           }
 
+          entryReader = readStream
           let writeStream: ReturnType<typeof createWriteStream>
           try {
             fse.ensureDirSync(dirname(target))
             writeStream = createWriteStream(target)
           } catch {
-            readStream.destroy()
             finish(new Error("Extraction failed"))
             return
           }
+          entryWriter = writeStream
 
           readStream.on("error", () => finish(new Error("Extraction failed")))
           writeStream.on("error", () => finish(new Error("Extraction failed")))
@@ -260,6 +275,18 @@ export function extractZip(filePath: string, destination: string, onProgress?: (
  * up front. Anything that is not a plain file or folder fails the extraction
  * rather than being skipped quietly, and `preservePaths: false` is what keeps
  * an absolute or climbing entry name from being written where it points.
+ *
+ * `strict` is what makes a failed entry a failed extraction. Left off, node-tar
+ * treats every per-entry write error as a warning: the entry is skipped, the
+ * stream still closes cleanly, and a run that hit a full disk halfway through
+ * comes back indistinguishable from one that unpacked everything. A restore
+ * believes that and deletes the installation the truncated tree replaced, so
+ * the archive has to fail closed here rather than downstream. It also upgrades
+ * the parser's own invalid-entry warning, a corrupt header whose entry is
+ * dropped just as quietly. Nothing else it turns fatal is reachable: an
+ * unsupported entry type is refused by the filter below, and an absolute name
+ * never gets this far, validateArchive having refused the archive by name
+ * before a byte was written.
  */
 export function extractTarGz(filePath: string, destination: string, onProgress?: (progress: number) => void): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -288,6 +315,7 @@ export function extractTarGz(filePath: string, destination: string, onProgress?:
     const unpacker = tar.extract({
       cwd: destination,
       preservePaths: false,
+      strict: true,
       filter: (_entryPath, entry): boolean => {
         if (isSafeTarEntryType("type" in entry ? entry.type : undefined)) return true
         unsafeEntry = new Error("Archive contains an unsafe entry")

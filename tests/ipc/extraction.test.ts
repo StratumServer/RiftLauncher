@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
@@ -7,6 +7,8 @@ import * as tar from "tar"
 
 import { contentRoot, extractTarGz, extractZip, resolveEntryDestination, runExtraction, validateTree } from "../../src/ipc/workers/extraction"
 import { runCompression } from "../../src/ipc/workers/compression"
+import { restoreInstallationBackup } from "../../src/domain/installations/restore"
+import type { Extractor, FileSystem } from "../../src/domain/ports"
 
 /**
  * These build their own archives, so they run anywhere without a network. The
@@ -268,6 +270,95 @@ describe("backup round trip", () => {
   })
 })
 
+/**
+ * An archive whose second entry cannot be written, without needing a full disk
+ * or a permission the test runner may not be able to drop: "a" is a plain file,
+ * and "a/b" then asks for "a" to be a folder. The unpacker fails that one entry
+ * and carries on to the next, which is how a disk that fills partway through a
+ * multi-GB restore fails too, one entry at a time.
+ */
+async function makeConflictingTarGz(archiveName: string): Promise<string> {
+  writeTree(workspacePath("conflict"), { a: "the file standing in the way", elsewhere: { b: "never lands" } })
+  const archivePath = workspacePath(archiveName)
+  await tar.create(
+    {
+      file: archivePath,
+      cwd: workspacePath("conflict"),
+      gzip: true,
+      portable: true,
+      onWriteEntry: (entry) => {
+        if (entry.path === "elsewhere/b") entry.path = "a/b"
+      }
+    },
+    ["a", "elsewhere/b"]
+  )
+  return archivePath
+}
+
+describe("a gzipped tar whose entries fail to land", () => {
+  it("fails the extraction rather than reporting a truncated tree as a whole one", async () => {
+    const archivePath = await makeConflictingTarGz("half-lands.tar.gz")
+
+    await assert.rejects(runExtraction({ filePath: archivePath, outputPath: workspacePath("restored"), deleteArchive: false }), /Extraction failed/)
+
+    // Nothing was copied out of the temporary folder, so the destination is as
+    // empty as it was: a partial tree is not a restore.
+    assert.deepEqual(readdirSync(workspacePath("restored")), [])
+  })
+
+  it("leaves the installation where it is, because the swap only happens once the extraction succeeded", async () => {
+    const archivePath = await makeConflictingTarGz("half-lands.tar.gz")
+    writeTree(workspacePath("my-install"), { "clientsettings.json": "the only copy of this" })
+
+    const fileSystem: FileSystem = {
+      exists: async (path: string): Promise<boolean> => existsSync(path),
+      remove: async (path: string): Promise<boolean> => {
+        rmSync(path, { recursive: true, force: true })
+        return true
+      },
+      move: async (from: string, to: string): Promise<boolean> => {
+        renameSync(from, to)
+        return true
+      }
+    }
+    // The same shape extractWorker.ts gives the port: a rejection becomes a
+    // reported failure, anything else is a success.
+    const extractor: Extractor = {
+      extract: async (request, onComplete): Promise<void> => {
+        try {
+          await runExtraction({ filePath: request.archivePath, outputPath: request.outputFolder, deleteArchive: false })
+          onComplete({ ok: true })
+        } catch (error) {
+          onComplete({ ok: false, error: (error as Error).message })
+        }
+      }
+    }
+
+    const result = await restoreInstallationBackup(
+      { fileSystem, extractor, ids: { newId: (): string => "token" }, closeGuard: { acquire: () => (): void => {} } },
+      {
+        installation: {
+          id: "install-1",
+          name: "My install",
+          path: workspacePath("my-install"),
+          backupsLimit: 3,
+          compressionLevel: 6,
+          backups: [],
+          isBackingUp: false,
+          isPlaying: false,
+          isRestoringBackup: false
+        },
+        backup: { id: "backup-1", date: 0, path: archivePath }
+      }
+    )
+
+    assert.equal(result.ok, false)
+    assert.equal(result.ok === false && result.reason, "extract-failed")
+    assert.equal(readFileSync(workspacePath("my-install", "clientsettings.json"), "utf8"), "the only copy of this")
+    assert.deepEqual(readdirSync(workspacePath("my-install")), ["clientsettings.json"])
+  })
+})
+
 describe("runExtraction on a legacy zip backup", () => {
   it("restores a backup written before the launcher moved off zip", async () => {
     await runExtraction({ filePath: join(FIXTURES, "legacy-backup.zip"), outputPath: workspacePath("restored"), deleteArchive: false })
@@ -380,7 +471,9 @@ describe("hostile entry names, straight at the unpackers", () => {
     const destination = workspacePath("destination", "inside")
     mkdirSync(destination, { recursive: true })
 
-    await extractTarGz(archivePath, destination)
+    // The names are refused rather than quietly dropped: an entry the unpacker
+    // will not place is a failed extraction, not a smaller one.
+    await assert.rejects(extractTarGz(archivePath, destination), /Extraction failed/)
 
     assert.equal(existsSync(workspacePath("destination", "escaped.txt")), false)
     assert.equal(existsSync(workspacePath("escaped.txt")), false)
