@@ -4,7 +4,7 @@
  * Most of them are what tests/ipc/modScan.test.ts reads readModArchive
  * against, so the yauzl edge cases in src/ipc/adapters/modScan.ts are
  * exercised against real archive bytes instead of only through the domain's
- * fakes. The last two are backups: the launcher wrote its backups as zip up to
+ * fakes. The last three are backups: the launcher wrote its backups as zip up to
  * 1.7.0-beta.4, and tests/ipc/extraction.test.ts restores them here so a
  * player's old backup keeps working long after the writer went away.
  *
@@ -386,16 +386,31 @@ write(
 // unix absolute path. None is a name any writer produces by accident, and
 // nothing may be written for any of them.
 //
-// The drive-letter one is first on purpose. It is the one yauzl itself lets
-// through (its own name validation refuses a leading "/" and any ".." segment,
-// and stops the read there), so putting it first is what makes the launcher's
-// own isSafeArchiveEntry check the gate that speaks, which is the check worth
-// having a test hold in place.
+// All three are refused by yauzl's own validateFileName, which rejects
+// /^[a-zA-Z]:/ exactly as it rejects a leading "/" and any ".." segment, so the
+// read stops at the first entry and the launcher reports an archive it could
+// not read. Nothing here reaches isSafeArchiveEntry; unsafe-name-backup.zip
+// below is the one that does.
 write(
   "hostile-backup.zip",
   assembleZip([
     { name: "C:/escaped-drive.txt", method: METHOD_STORE, realBytes: Buffer.from("drive letter", "utf8") },
     { name: "../escaped.txt", method: METHOD_STORE, realBytes: Buffer.from("climbed out", "utf8") },
     { name: "/etc/escaped-absolute.txt", method: METHOD_STORE, realBytes: Buffer.from("absolute", "utf8") }
+  ])
+)
+
+// --- unsafe-name-backup.zip ---------------------------------------------
+// A NUL byte in the middle of an entry name. yauzl's validateFileName has
+// nothing to say about one, so this is the archive that reaches the launcher's
+// own isSafeArchiveEntry gate in validateZipArchive, which every name in
+// hostile-backup.zip is stopped short of. An ordinary entry comes first, so the
+// refusal is that gate deciding rather than the archive being unreadable from
+// its first byte.
+write(
+  "unsafe-name-backup.zip",
+  assembleZip([
+    { name: "Vintagestory", method: METHOD_STORE, realBytes: Buffer.from("elf", "utf8") },
+    { name: "Mods/notes\u0000.txt", method: METHOD_STORE, realBytes: Buffer.from("a name no writer produces by accident", "utf8") }
   ])
 )

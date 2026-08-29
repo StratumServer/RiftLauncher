@@ -421,6 +421,16 @@ describe("runExtraction on a legacy zip backup", () => {
     assert.equal(existsSync(workspacePath("restored")), false)
   })
 
+  it("refuses an entry name yauzl accepts but the launcher does not", async () => {
+    // The other hostile fixture is stopped by yauzl's own name validation, so
+    // the launcher's isSafeArchiveEntry never gets a say on it. A NUL byte in
+    // the middle of a name is one yauzl has nothing to say about, which makes
+    // this the archive that pins that gate against real bytes.
+    await assert.rejects(runExtraction({ filePath: join(FIXTURES, "unsafe-name-backup.zip"), outputPath: workspacePath("restored"), deleteArchive: false }), /unsafe entry/)
+
+    assert.equal(existsSync(workspacePath("restored")), false)
+  })
+
   it("refuses an archive whose name says neither zip nor tar.gz", async () => {
     await assert.rejects(runExtraction({ filePath: join(FIXTURES, "not-a-zip.bin"), outputPath: workspacePath("restored"), deleteArchive: false }), /not supported/)
   })
