@@ -1,6 +1,7 @@
 import type { ReactElement, ReactNode } from "react"
-import { render, type RenderOptions, type RenderResult } from "@testing-library/react"
+import { render, renderHook, type RenderOptions, type RenderResult } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
+import { expect, onTestFinished, vi } from "vitest"
 
 import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
 import { ConfigProvider } from "@renderer/features/config/contexts/ConfigContext"
@@ -40,4 +41,36 @@ export function renderWithProviders(ui: ReactElement, { route = "/", ...renderOp
   }
 
   return render(ui, { wrapper: Wrapper, ...renderOptions })
+}
+
+/**
+ * Checks that `useHook` throws a message matching `expected` when it is called
+ * with no provider above it. Every hook guarded that way is tested through here.
+ *
+ * The throw is caught inside the component on purpose, and every one of these
+ * must be written that way. A render throw that escapes reaches React's
+ * development-only replay, which rethrows it through a synthetic DOM event so
+ * devtools can see it; jsdom turns that into an uncancelled window "error"
+ * event, and the jsdom environment re-emits such an event as an uncaught
+ * exception, which fails the whole run and pins the failure on whichever file
+ * happened to be running at the time. React also prints "The above error
+ * occurred in ..." for every render throw it handles itself, so the console
+ * check at the end is what fails first if an edit ever lets one escape again.
+ */
+export function expectHookThrowsOutsideProvider(useHook: () => unknown, expected: RegExp): void {
+  const consoleError = vi.spyOn(console, "error")
+  onTestFinished(() => consoleError.mockRestore())
+
+  let thrown: unknown
+  renderHook(() => {
+    try {
+      useHook()
+    } catch (error) {
+      thrown = error
+    }
+  })
+
+  expect(thrown).toBeInstanceOf(Error)
+  expect((thrown as Error).message).toMatch(expected)
+  expect(consoleError).not.toHaveBeenCalled()
 }
