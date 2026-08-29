@@ -237,12 +237,37 @@ describe("electron-log's own console failure, guarded and unguarded", () => {
     assert.throws(() => Logger.info("a line nobody can read"), { code: "EPIPE" })
   })
 
+  it("takes the file transport down with it while nothing guards it", () => {
+    // Not a partial record, none at all: electron-log walks its transports in order, console
+    // first, and the re-throw out of processInternalErrorFn leaves processMessage before the
+    // loop ever reaches the file transport. Losing the console copy loses the on-disk log too.
+    const received = collectFileTransport()
+    breakTheConsoleTransport()
+
+    assert.throws(() => Logger.info("a line nobody can read"), { code: "EPIPE" })
+    assert.equal(received.length, 0)
+  })
+
   it("Logger.info survives the same failing transport once it is made fault tolerant", () => {
     breakTheConsoleTransport()
 
     makeConsoleOutputFaultTolerant(Logger.transports.console, [])
 
     assert.doesNotThrow(() => Logger.info("a line nobody can read"))
+  })
+
+  it("keeps delivering to the file transport while the console transport is dead", () => {
+    const received = collectFileTransport()
+    breakTheConsoleTransport()
+
+    makeConsoleOutputFaultTolerant(Logger.transports.console, [])
+    Logger.info("first line after the pipe died")
+    Logger.info("second line after the pipe died")
+
+    assert.deepEqual(
+      received.map((message) => message.data[0]),
+      ["first line after the pipe died", "second line after the pipe died"]
+    )
   })
 
   it("leaves one suppression record in the file transport, wired the way the app wires it", () => {
