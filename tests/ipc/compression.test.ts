@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { gunzipSync } from "node:zlib"
@@ -235,6 +235,19 @@ describe("runCompression", () => {
 
     await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /archive target is unsafe/)
     assert.equal(readFileSync(workspacePath("someone-elses-file"), "utf8"), "")
+  })
+
+  it.skipIf(process.platform === "win32")("refuses a source past the total the restore reader will accept", async () => {
+    // A sparse file: 3 GiB by every stat the walk makes, no blocks on disk. The
+    // point is the size the reader would read back, and that is what stat says.
+    const huge = join(source, "world.vcdbs")
+    writeFileSync(huge, "")
+    truncateSync(huge, 3 * 1024 * 1024 * 1024)
+
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /too large/)
+
+    // Refused before anything was written, rather than after gigabytes of work.
+    assert.deepEqual(readdirSync(output), [])
   })
 
   it.skipIf(process.platform !== "linux" || process.getuid?.() === 0)("takes the half written archive away when the write fails", async () => {

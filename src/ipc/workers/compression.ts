@@ -19,6 +19,9 @@ import * as tar from "tar"
 
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 
+// Relative so the module stays importable from a plain test run, like extraction.ts.
+import { MAX_ARCHIVE_TOTAL_BYTES } from "../validation"
+
 const MAX_ITEMS = 100_000
 
 /**
@@ -76,6 +79,13 @@ export async function runCompression(options: CompressionOptions): Promise<void>
   const { inputPath, outputPath, outputFileName, compressionLevel = DEFAULT_COMPRESSION_LEVEL, onProgress } = options
 
   const totalBytes = assertSafeCompressionTree(inputPath)
+  // The restore reader holds an archive to this same total and refuses anything
+  // past it, so an installation over the cap would compress happily into a
+  // backup that can never be put back. Refusing here costs the player a failed
+  // backup; not refusing costs them a backup they only find out is useless on
+  // the day they need it, and one prune slot that an older, restorable backup
+  // used to hold.
+  if (totalBytes > MAX_ARCHIVE_TOTAL_BYTES) throw new Error("Compression source is too large")
   if (!fse.existsSync(inputPath) || !fse.lstatSync(inputPath).isDirectory()) throw new Error("Compression source must be a directory")
   if (!fse.existsSync(outputPath)) fse.mkdirSync(outputPath, { recursive: true })
   if (fse.lstatSync(outputPath).isSymbolicLink() || !fse.lstatSync(outputPath).isDirectory()) throw new Error("Compression destination is unsafe")
