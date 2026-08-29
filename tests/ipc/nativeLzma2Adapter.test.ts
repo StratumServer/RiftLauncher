@@ -48,6 +48,33 @@ describe("native LZMA2 adapter", () => {
     expect(received).toEqual(Uint8Array.from([0xa0, 0, 0, 0, 1, 0x11, 0x22]))
   })
 
+  it("assembles output correctly when the decoder reuses its update buffer", async () => {
+    // The library returns update() output as a zero-copy view, so a later call
+    // may write over bytes the adapter is still holding. finish() hands back the
+    // tail of a spent decoder, which is why that one is queued without a copy.
+    const reused = new Uint8Array(4)
+    let call = 0
+    class ReusingDecompressor {
+      update(): Uint8Array {
+        reused.fill(++call)
+        return reused
+      }
+
+      async finish(): Promise<Uint8Array> {
+        reused.fill(0xff)
+        return Uint8Array.of(0xaa, 0xbb)
+      }
+    }
+
+    const pieces: Uint8Array[] = []
+    const factory = createNativeLzma2DecoderFactory(ReusingDecompressor)
+    const decoder = factory(0, (bytes) => pieces.push(bytes.slice()))
+    const input = inputOver(Uint8Array.from([0xa0, 0, 0, 0, 1, 0x11, 0x22, 0xa0, 0, 0, 0, 1, 0x33, 0x44, 0]))
+    while (!decoder.finished) await decoder.decodeChunk(input)
+
+    expect(Buffer.concat(pieces.map((piece) => Buffer.from(piece)))).toEqual(Buffer.from([1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 0xaa, 0xbb]))
+  })
+
   it("drains buffered native output in bounded pieces", async () => {
     const expected = new Uint8Array(5 * 1024 * 1024 + 123)
     expected.fill(7)
