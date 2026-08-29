@@ -393,6 +393,22 @@ describe("CHECK_PATH_EMPTY / CHECK_PATH_EXISTS / ENSURE_PATH_EXISTS", () => {
     assert.equal(existsSync(target), true)
   })
 
+  // AddInstallation's folder field is free text, and its guard turns a false
+  // here into "we could not make that folder" and stops the add. Answering true
+  // for a regular file would put an installation entry on it, which is the
+  // dangling entry the guard exists to prevent, and that path then feeds the
+  // launch --dataPath, the backup compression and the mod scan.
+  it("ENSURE_PATH_EXISTS returns false for an authorized path that exists as a regular file", async () => {
+    const event = await createTrustedEvent()
+    const file = join(managedFolder, "notes.txt")
+    writeFileSync(file, "x", "utf-8")
+
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, file), false)
+
+    const { readFileSync } = await import("node:fs")
+    assert.equal(readFileSync(file, "utf-8"), "x")
+  })
+
   it("ENSURE_PATH_EXISTS returns false for a path nothing authorizes", async () => {
     const event = await createTrustedEvent()
     const outside = join(temporaryRoot, "unmanaged", "NewFolder")
@@ -456,6 +472,33 @@ describe.skipIf(process.platform === "win32")("a Mods folder the user symlinked 
 
     const { lstatSync } = await import("node:fs")
     assert.equal(lstatSync(linkedMods).isSymbolicLink(), true)
+  })
+
+  // The settings and install-folder pickers call this one and none of them
+  // catches. A throw took the whole pick down with it, so the chosen folder was
+  // never applied and the user got neither the warning nor an error.
+  it("CHECK_PATH_EMPTY answers for the linked folder instead of rejecting", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EMPTY)(event, linkedMods), false)
+
+    const emptyReal = join(temporaryRoot, "VintagestoryData", "Empty")
+    mkdirSync(emptyReal, { recursive: true })
+    const emptyLink = join(installation, "EmptyLink")
+    symlinkSync(emptyReal, emptyLink, "dir")
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EMPTY)(event, emptyLink), true)
+  })
+
+  // The read grade reaches wider than the Mods folder: an installation whose
+  // own folder is a link answers the pre-flight the backup and launch flows run.
+  it("CHECK_PATH_EXISTS reports an installation folder that is itself a link", async () => {
+    const realInstallation = join(temporaryRoot, "Elsewhere", "Main")
+    mkdirSync(realInstallation, { recursive: true })
+    const linkedInstallation = join(managedFolder, "Linked")
+    symlinkSync(realInstallation, linkedInstallation, "dir")
+    writeConfig({ installations: [{ id: "b", name: "B", path: linkedInstallation, backups: [] }] as unknown as ConfigType["installations"] })
+
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS)(event, linkedInstallation), true)
   })
 
   it("OPEN_PATH_ON_FILE_EXPLORER shows the linked folder", async () => {
