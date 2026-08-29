@@ -83,8 +83,9 @@ function getLauncherFolders(): string[] {
  * writes mods, saves, client settings and game files under them, and an
  * installation the user put outside every configured folder still has to work.
  * A backup grants its own path only. Every archive the launcher makes is a
- * single `.zip` file (see makeInstallationBackup), so a path *under* one is
- * never a path the launcher meant to reach.
+ * single file, a `.tar.gz` now and a `.zip` for the ones written before
+ * 1.7.0-beta.4 (see makeInstallationBackup), so a path *under* one is never a
+ * path the launcher meant to reach.
  */
 function getEntryGrants(config: ConfigType): PathGrant[] {
   return [

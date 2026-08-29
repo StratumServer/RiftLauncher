@@ -75,16 +75,18 @@ const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
  * first progress event, so this needs no renderer-side change to look right.
  *
  * Extraction and compression share one limiter instead of each getting their own: both
- * spawn a 7-Zip subprocess and compete for the same CPU cores, so the resource that
- * actually needs bounding is "concurrent 7-Zip processes", not "concurrent extractions"
- * and "concurrent compressions" separately.
+ * inflate or deflate inside a worker thread and compete for the same CPU cores, so the
+ * resource that actually needs bounding is "concurrent archive workers", not "concurrent
+ * extractions" and "concurrent compressions" separately. This used to be written around
+ * the 7-Zip subprocesses both of them spawned; the work moved in process with #222, and
+ * the bound holds for the same reason it always did.
  *
- * RUN_INSTALLER's payload read shares that lane too, even though it spawns no 7-Zip. What
+ * RUN_INSTALLER's payload read shares that lane too, even though it unpacks no archive. What
  * it does instead is decode the installer's LZMA2 payload with the plain-TypeScript decoder
  * in src/domain/inno and CRC32 every chunk on the way through, so it saturates a core inside
  * its worker thread for the whole read (41 seconds for a 598 MB installer, per
- * WORKER_TIMEOUTS_MS above). Read the limit as "concurrent CPU-bound archive readers" rather
- * than "concurrent 7-Zip processes" and it clearly belongs: an install starting while two mod
+ * WORKER_TIMEOUTS_MS above). Read the limit as "concurrent CPU-bound archive workers" and it
+ * clearly belongs: an install starting while two mod
  * extractions were already running used to put three of those on the machine at once, against
  * a bound written to allow two.
  */
@@ -161,7 +163,7 @@ function runTrackedWorker<T>(
     const timeout = setTimeout(
       () => {
         // Never reused: the abandoned task is still running inside this thread (still
-        // holding a socket or a 7-Zip child), so its eventual message could still arrive
+        // holding a socket or an open archive), so its eventual message could still arrive
         // after some later task has been dispatched to the same worker.
         rejectOnce(new Error(`${operationName} timed out`), "discard")
       },

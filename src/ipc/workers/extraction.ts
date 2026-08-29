@@ -161,6 +161,16 @@ export function resolveEntryDestination(destination: string, entryName: string):
  * Progress is counted in entries rather than bytes: the entry count is the one
  * total a zip states up front, per entry sizes are what the archive claims
  * rather than what comes out, and a backup's entries are of a similar size.
+ *
+ * Unix mode bits recorded in a legacy backup are deliberately not carried over,
+ * unlike the tar reader, which restores what the archive holds. An installation
+ * folder is game data with nothing executable in it; on Linux every extraction
+ * is followed by a blanket chmod to 0755 (startExtract in
+ * TaskManagerContext.tsx), which overwrites what either reader restored; and a
+ * mode read out of an archive written by a tool the launcher no longer ships is
+ * as easily 0 as it is useful, which would leave a save file unreadable. The
+ * attributes are still read, for the symlink check, which is the one thing in
+ * them worth acting on.
  */
 export function extractZip(filePath: string, destination: string, onProgress?: (progress: number) => void): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
