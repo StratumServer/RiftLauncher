@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { gunzipSync } from "node:zlib"
@@ -235,6 +235,19 @@ describe("runCompression", () => {
 
     await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /archive target is unsafe/)
     assert.equal(readFileSync(workspacePath("someone-elses-file"), "utf8"), "")
+  })
+
+  it.skipIf(process.platform !== "linux" || process.getuid?.() === 0)("takes the half written archive away when the write fails", async () => {
+    // A file the safety walk can stat but tar cannot read, so the failure lands
+    // after tar has already created the archive and written the first bytes.
+    chmodSync(join(source, "Vintagestory"), 0o000)
+
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /Compression failed/)
+
+    // A failed backup leaves no record behind, and pruning only ever walks the
+    // records, so anything left here would stay for good and a retry would add
+    // one more beside it.
+    assert.deepEqual(readdirSync(output), [])
   })
 
   it("overwrites a plain archive file already sitting there", async () => {

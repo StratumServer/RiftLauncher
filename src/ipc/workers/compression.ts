@@ -119,6 +119,15 @@ export async function runCompression(options: CompressionOptions): Promise<void>
       entries.length > 0 ? entries : ["."]
     )
   } catch {
+    // tar opens the archive as soon as it starts, so a write that failed partway
+    // leaves a truncated file sitting in the backups folder. No backup record
+    // ever names it, which is exactly what pruning walks, so it would never be
+    // cleaned up and every retry would leave another one.
+    try {
+      fse.removeSync(archivePath)
+    } catch {
+      // Best effort. The compression failure below is the outcome that matters.
+    }
     throw new Error("Compression failed")
   }
 
