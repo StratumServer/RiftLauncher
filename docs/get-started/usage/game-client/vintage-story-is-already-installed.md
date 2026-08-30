@@ -17,7 +17,7 @@ If you already have the game installed you just need to tell RiftLauncher where 
 **VS Versions** are the base game files like assets, code, executables... By default this ones can be found on the next folder:
 
 - **Windows:** `C:/Users/YourUsername/AppData/Roaming/Vintagestory`
-- **Linux:** The folder where you extracted the `.tat.gz` or `/home/YourUsername/.local/share/Vintagestory/`
+- **Linux:** The folder where you extracted the `.tar.gz` or `/home/YourUsername/.local/share/Vintagestory/`
 
 {% hint style="warning" %}
 Don't confuse it with `VintagestoryData`, that's the Installation(data) folder.
@@ -50,7 +50,7 @@ Add an already created Installation | VS Launcher Guides
 
 ### Update `modPaths` and `ModPaths`
 
-The `clientsettings.json` and `serverconfig.json` files in the copied installation are still configured for the game to search for mods in the old locations. You must update the `modPaths` in `clientsettings.json` and `ModPaths` in `serverconfig.json` so the game looks in the moved mods folder.
+The `clientsettings.json` and `serverconfig.json` files in a copied installation may still point the game at the mods folder's old location. If the game can't find your mods after the move, update `modPaths` in `clientsettings.json` and `ModPaths` in `serverconfig.json` to the folder's new location.
 
 RiftLauncher does not rewrite these two fields for you, so this is a manual edit.
 
