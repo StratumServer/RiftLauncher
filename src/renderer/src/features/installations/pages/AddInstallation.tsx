@@ -2,10 +2,10 @@ import { useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
-import semver from "semver"
 
 import { createInstallation, INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH } from "@domain/installations/create"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
+import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -54,7 +54,7 @@ function AddInslallation(): JSX.Element {
   const fields = useInstallationFormFields({
     icon: INSTALLATION_ICONS[0],
     name: t("features.installations.defaultName"),
-    version: [...gameVersions].sort((a, b) => semver.compare(b.version, a.version))[0],
+    version: [...gameVersions].sort((a, b) => compareGameVersionsDesc(a.version, b.version))[0],
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,

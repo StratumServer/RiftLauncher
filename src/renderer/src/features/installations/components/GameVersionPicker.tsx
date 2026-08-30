@@ -1,7 +1,7 @@
 import { useTranslation, Trans } from "react-i18next"
-import semver from "semver"
 import { PiWarningDuotone } from "react-icons/pi"
 
+import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { FormBody, FormHead, FormLabel, FromGroup } from "@renderer/components/ui/FormComponents"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import { LinkButton } from "@renderer/components/ui/Buttons"
@@ -63,7 +63,7 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
             )}
             {gameVersions
               .slice()
-              .sort((a, b) => semver.rcompare(a.version, b.version))
+              .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
               .map((gv) => (
                 <TableBodyRow key={gv.version} onClick={() => onSelect(gv)} selected={version?.version === gv.version}>
                   <TableCell className="w-full">{gv.version}</TableCell>
