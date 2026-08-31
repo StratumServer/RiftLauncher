@@ -14,7 +14,7 @@ import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { logMessage } from "@src/utils/logManager"
 import { createUpdaterLogger } from "@src/utils/updaterLogger"
-import { makeConsoleOutputFaultTolerant } from "@src/utils/consoleTransportSafety"
+import { createSuppressedErrorRecorder, makeConsoleOutputFaultTolerant } from "@src/utils/consoleTransportSafety"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
@@ -37,7 +37,13 @@ import { clearTimeout, setTimeout } from "node:timers"
 // Placed before resolvePathFn rather than after it, unlike autoUpdater.logger below: this
 // guard touches no path and writes no file, so it has nothing to wait for, and running it
 // first means it is already in place for the very first line logged below.
-makeConsoleOutputFaultTolerant(Logger.transports.console)
+// #256: the guard swallows every console failure, so the first one leaves a line in the log
+// file, otherwise an ordinary transport bug would be indistinguishable from silence. Handing it
+// the file transport rather than Logger.error keeps the record off the console that just failed.
+// The whole logger goes in rather than just its console transport: a format or transform failure
+// is reported through Logger.processInternalErrorFn instead of the write, and that seam needs the
+// same recorder for the failure to leave a trace.
+makeConsoleOutputFaultTolerant(Logger, undefined, createSuppressedErrorRecorder(Logger.transports.file))
 
 Logger.transports.file.resolvePathFn = (variables, message): string => {
   const logsPath = join(variables.userData, "Logs")
