@@ -103,7 +103,7 @@ Extract the `.tar.gz` on the folder you want. You should not delete or move this
 If you downloaded it from the Client Area make sure to change the `Vintagestory` executable permissions to allow execution:
 
 ```sh
-sudo chmod -x ./Vintagestory
+sudo chmod +x ./Vintagestory
 ```
 
 {% endstep %}
@@ -147,7 +147,7 @@ Extract the `.tar.gz` on the folder you want. You should not delete or move this
 If you downloaded it from the Client Area make sure to change the `Vintagestory` executable permissions to allow execution:
 
 ```sh
-sudo chmod -x ./Vintagestory
+sudo chmod +x ./Vintagestory
 ```
 
 {% endstep %}
