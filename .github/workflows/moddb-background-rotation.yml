@@ -1,0 +1,40 @@
+name: ModDB background rotation
+
+# Shuffles the six background slots the ModDB listing page uses as its CSS
+# carousel. The page references backgrounds branch files under moddb/slot-N.jpg
+# by stable name, so re-shuffling here changes what visitors see without ever
+# editing the listing. Only that folder is written: the scenes themselves and
+# manifest.json are untouched, and nothing under moddb/ appears in the
+# manifest, so the launcher never sees these files.
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  shuffle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: backgrounds
+      - name: Shuffle the six ModDB slots
+        run: |
+          set -eu
+          mkdir -p moddb
+          scenes=$(ls *.jpg | shuf -n 6)
+          i=1
+          for f in $scenes; do
+            cp "$f" "moddb/slot-$i.jpg"
+            i=$((i+1))
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add moddb
+          git diff --cached --quiet && echo "same draw as yesterday, nothing to push" || {
+            git commit -m "Shuffle the ModDB page background slots"
+            git push
+          }
