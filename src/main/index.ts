@@ -40,7 +40,10 @@ import { clearTimeout, setTimeout } from "node:timers"
 // #256: the guard swallows every console failure, so the first one leaves a line in the log
 // file, otherwise an ordinary transport bug would be indistinguishable from silence. Handing it
 // the file transport rather than Logger.error keeps the record off the console that just failed.
-makeConsoleOutputFaultTolerant(Logger.transports.console, undefined, createSuppressedErrorRecorder(Logger.transports.file))
+// The whole logger goes in rather than just its console transport: a format or transform failure
+// is reported through Logger.processInternalErrorFn instead of the write, and that seam needs the
+// same recorder for the failure to leave a trace.
+makeConsoleOutputFaultTolerant(Logger, undefined, createSuppressedErrorRecorder(Logger.transports.file))
 
 Logger.transports.file.resolvePathFn = (variables, message): string => {
   const logsPath = join(variables.userData, "Logs")

@@ -123,26 +123,56 @@ describe("createSafeConsoleWrite", () => {
 
 describe("makeConsoleOutputFaultTolerant", () => {
   it("replaces the transport's writeFn with one that cannot throw", () => {
-    const transport = {
-      writeFn: (): void => {
-        throw brokenPipeError()
+    const logger = {
+      transports: {
+        console: {
+          writeFn: (): void => {
+            throw brokenPipeError()
+          }
+        }
       }
     }
 
-    makeConsoleOutputFaultTolerant(transport, [])
+    makeConsoleOutputFaultTolerant(logger, [])
 
-    assert.doesNotThrow(() => transport.writeFn())
+    assert.doesNotThrow(() => logger.transports.console.writeFn())
   })
 
   it("guards the streams it is given as well as the transport", () => {
     const stdoutLike = new EventEmitter()
     const stderrLike = new EventEmitter()
-    const transport = { writeFn: (): void => {} }
+    const logger = { transports: { console: { writeFn: (): void => {} } } }
 
-    makeConsoleOutputFaultTolerant(transport, [stdoutLike, stderrLike])
+    makeConsoleOutputFaultTolerant(logger, [stdoutLike, stderrLike])
 
     assert.doesNotThrow(() => stdoutLike.emit("error", brokenPipeError()))
     assert.doesNotThrow(() => stderrLike.emit("error", brokenPipeError()))
+  })
+
+  it("points the logger's internal error reporter at the recorder, since the write guard cannot see that path", () => {
+    const { errors, onSuppressed } = suppressedErrors()
+    const logger = {
+      transports: { console: { writeFn: (): void => {} } },
+      processInternalErrorFn: undefined as ((error: unknown) => void) | undefined
+    }
+
+    makeConsoleOutputFaultTolerant(logger, [], onSuppressed)
+    logger.processInternalErrorFn?.(new TypeError("format hook failed"))
+
+    assert.deepEqual(
+      errors.map((error) => String(error)),
+      ["TypeError: format hook failed"]
+    )
+  })
+
+  it("leaves the reporter alone when there is nothing to record with", () => {
+    // Without a recorder, electron-log's own handler is still better than a silent no-op.
+    const untouched = (): void => {}
+    const logger = { transports: { console: { writeFn: (): void => {} } }, processInternalErrorFn: untouched }
+
+    makeConsoleOutputFaultTolerant(logger, [])
+
+    assert.equal(logger.processInternalErrorFn, untouched)
   })
 })
 
@@ -204,11 +234,20 @@ describe("createSuppressedErrorRecorder", () => {
 })
 
 describe("electron-log's own console failure, guarded and unguarded", () => {
+  /** processInternalErrorFn exists on electron-log's Logger class but not in its type definitions. */
+  const loggerInternals = Logger as unknown as { processInternalErrorFn: (error: unknown) => void }
+
   const originalWriteFn = Logger.transports.console.writeFn
   const originalFileTransport = Logger.transports.file
+  const originalFormat = Logger.transports.console.format
+  const originalTransforms = Logger.transports.console.transforms
+  const originalProcessInternalErrorFn = loggerInternals.processInternalErrorFn
   afterEach(() => {
     Logger.transports.console.writeFn = originalWriteFn
     Logger.transports.file = originalFileTransport
+    Logger.transports.console.format = originalFormat
+    Logger.transports.console.transforms = originalTransforms
+    loggerInternals.processInternalErrorFn = originalProcessInternalErrorFn
   })
 
   /**
@@ -231,6 +270,20 @@ describe("electron-log's own console failure, guarded and unguarded", () => {
     }
   }
 
+  /** Splits what the file transport received into the suppression records and the ordinary log lines. */
+  function partitionRecords(received: { data: unknown[] }[]): { records: string[]; lines: unknown[] } {
+    const isRecord = (message: { data: unknown[] }): boolean => /console output failed and was suppressed/.test(String(message.data[0]))
+    return {
+      records: received.filter(isRecord).map((message) => String(message.data[0])),
+      lines: received.filter((message) => !isRecord(message)).map((message) => message.data[0])
+    }
+  }
+
+  /** The same call src/main/index.ts makes, minus the real process streams. */
+  function wireTheAppsGuards(): void {
+    makeConsoleOutputFaultTolerant(Logger, [], createSuppressedErrorRecorder(Logger.transports.file))
+  }
+
   it("a failing console transport escapes Logger.info while nothing guards it", () => {
     breakTheConsoleTransport()
 
@@ -251,7 +304,7 @@ describe("electron-log's own console failure, guarded and unguarded", () => {
   it("Logger.info survives the same failing transport once it is made fault tolerant", () => {
     breakTheConsoleTransport()
 
-    makeConsoleOutputFaultTolerant(Logger.transports.console, [])
+    makeConsoleOutputFaultTolerant(Logger, [])
 
     assert.doesNotThrow(() => Logger.info("a line nobody can read"))
   })
@@ -260,7 +313,7 @@ describe("electron-log's own console failure, guarded and unguarded", () => {
     const received = collectFileTransport()
     breakTheConsoleTransport()
 
-    makeConsoleOutputFaultTolerant(Logger.transports.console, [])
+    makeConsoleOutputFaultTolerant(Logger, [])
     Logger.info("first line after the pipe died")
     Logger.info("second line after the pipe died")
 
@@ -275,7 +328,7 @@ describe("electron-log's own console failure, guarded and unguarded", () => {
     breakTheConsoleTransport()
 
     // The same call src/main/index.ts makes, default streams included.
-    makeConsoleOutputFaultTolerant(Logger.transports.console, undefined, createSuppressedErrorRecorder(Logger.transports.file))
+    makeConsoleOutputFaultTolerant(Logger, undefined, createSuppressedErrorRecorder(Logger.transports.file))
     Logger.info("first line after the pipe died")
     Logger.info("second line after the pipe died")
 
@@ -287,5 +340,75 @@ describe("electron-log's own console failure, guarded and unguarded", () => {
       received.slice(1).map((message) => message.data[0]),
       ["first line after the pipe died", "second line after the pipe died"]
     )
+  })
+
+  it("records a throwing console format, which never reaches the write guard at all", () => {
+    // The console transport runs its transforms, one of which reads transports.console.format,
+    // before it writes anything, so this failure comes out of processMessage's own catch and is
+    // reported through processInternalErrorFn. Unhooked, the file transport still gets the line
+    // and the app still runs, and the TypeError behind it is never written down anywhere.
+    const received = collectFileTransport()
+    Logger.transports.console.format = (): never => {
+      throw new TypeError("format hook failed")
+    }
+
+    wireTheAppsGuards()
+    assert.doesNotThrow(() => Logger.info("first line after the format broke"))
+    Logger.info("second line after the format broke")
+
+    const { records, lines } = partitionRecords(received)
+    assert.equal(records.length, 1, `expected one suppression record, got ${records.length}`)
+    assert.match(String(records[0]), /TypeError: format hook failed/)
+    assert.deepEqual(lines, ["first line after the format broke", "second line after the format broke"])
+  })
+
+  it("redacts the format failure and writes it without going back through the console transport", () => {
+    const received = collectFileTransport()
+    let consoleWrites = 0
+    Logger.transports.console.writeFn = (): void => void consoleWrites++
+    Logger.transports.console.format = (): never => {
+      throw new TypeError("format hook failed for token=hunter2")
+    }
+
+    wireTheAppsGuards()
+    Logger.info("a line the console never gets")
+
+    const { records } = partitionRecords(received)
+    assert.match(String(records[0]), /token=\[REDACTED\]/)
+    assert.doesNotMatch(String(records[0]), /hunter2/)
+    // Nothing is echoed to the transport that just failed, which is where the loop would start.
+    assert.equal(consoleWrites, 0)
+  })
+
+  it("records a throwing transform the same way, since it fails at the same point in the transport", () => {
+    const received = collectFileTransport()
+    Logger.transports.console.transforms = [
+      ...Logger.transports.console.transforms,
+      (): never => {
+        throw new TypeError("transform hook failed")
+      }
+    ]
+
+    wireTheAppsGuards()
+    assert.doesNotThrow(() => Logger.info("first line after the transform broke"))
+    Logger.info("second line after the transform broke")
+
+    const { records, lines } = partitionRecords(received)
+    assert.equal(records.length, 1, `expected one suppression record, got ${records.length}`)
+    assert.match(String(records[0]), /TypeError: transform hook failed/)
+    assert.deepEqual(lines, ["first line after the transform broke", "second line after the transform broke"])
+  })
+
+  it("costs one record whichever stage fails first, because every stage shares the one recorder", () => {
+    const received = collectFileTransport()
+    breakTheConsoleTransport()
+    Logger.transports.console.format = (): never => {
+      throw new TypeError("format hook failed")
+    }
+
+    wireTheAppsGuards()
+    for (let i = 0; i < 5; i++) Logger.info("a line nobody can read")
+
+    assert.equal(partitionRecords(received).records.length, 1)
   })
 })

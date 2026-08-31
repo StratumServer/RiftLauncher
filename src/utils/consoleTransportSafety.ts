@@ -1,8 +1,8 @@
 /**
  * Console output must never be able to take the launcher down (#247).
  *
- * Two different failures are possible when the terminal that started the app goes away, and
- * they need two different guards:
+ * Three different failures reach the console transport, at three different points, and they need
+ * three different guards. The first two are what a terminal that has gone away produces:
  *
  * 1. Asynchronous. On Linux and macOS a write to process.stdout completes on a later tick,
  *    so the EPIPE arrives as an "error" event on the stream, long after console.info() has
@@ -19,12 +19,18 @@
  *    Logger.info(). Wrapping writeFn covers both writes, since the internal error reporter
  *    reads transports.console.writeFn at call time.
  *
+ * 3. Earlier than the write. The console transport formats and transforms the message before it
+ *    writes anything, and a throw from that stage never reaches writeFn at all. electron-log
+ *    catches it per transport, so it crashes nothing, and reports it through
+ *    processInternalErrorFn, which is where the recorder has to be hooked for the failure to be
+ *    diagnosable rather than merely survivable. See makeConsoleOutputFaultTolerant below.
+ *
  * Every write error on the guarded streams is swallowed, not only EPIPE: the same "nobody is
  * reading any more" condition surfaces as EIO on a closed pty, ERR_STREAM_DESTROYED or
  * ERR_STREAM_WRITE_AFTER_END on a follow-up write after the stream tore itself down, or
  * ECONNRESET for socket-backed stdio. An allowlist of codes leaves the app one unlisted code
  * away from the same modal dialog, which is the class of bug this guards against. The file
- * transport is untouched by either guard, so the Logs directory still records every line the
+ * transport is untouched by all three, so the Logs directory still records every line the
  * app logs; only the console copy is dropped. The one thing this hides is a genuine ENOSPC
  * from a redirected stdout, judged acceptable since the file transport is the app's real log.
  */
@@ -111,9 +117,19 @@ export function createSafeConsoleWrite<Args extends unknown[]>(write: (...args: 
   }
 }
 
-/** Wires both guards. `consoleTransport` is electron-log's Logger.transports.console; the generic keeps its exact writeFn signature. */
+/**
+ * The parts of electron-log's Logger this file touches. `processInternalErrorFn` is a real member
+ * of its Logger class (node_modules/electron-log/src/core/Logger.js) that its type definitions do
+ * not declare, so it is optional here and the whole logger still satisfies the shape.
+ */
+export interface FaultTolerantLogger<Args extends unknown[]> {
+  transports: { console: { writeFn: (...args: Args) => void } }
+  processInternalErrorFn?: (error: unknown) => void
+}
+
+/** Wires all three guards. `logger` is electron-log's default export; the generic keeps writeFn's exact signature. */
 export function makeConsoleOutputFaultTolerant<Args extends unknown[]>(
-  consoleTransport: { writeFn: (...args: Args) => void },
+  logger: FaultTolerantLogger<Args>,
   streams: readonly (ErrorEmittingStream | undefined)[] = [process.stdout, process.stderr],
   onSuppressed?: SuppressedErrorHandler
 ): void {
@@ -121,5 +137,20 @@ export function makeConsoleOutputFaultTolerant<Args extends unknown[]>(
     suppressStreamWriteErrors(stream, onSuppressed)
   }
 
+  const consoleTransport = logger.transports.console
   consoleTransport.writeFn = createSafeConsoleWrite(consoleTransport.writeFn, onSuppressed)
+
+  // The write guard above is the last stage of the console transport, and only that stage. A
+  // console transport call is transform() over transports.console.transforms, one of which reads
+  // transports.console.format, and only then writeFn (node_modules/electron-log/src/node/
+  // transports/console.js). A throw from a format hook or any other transform never reaches the
+  // write, so the wrapper cannot see it; processMessage catches it per transport and hands it to
+  // processInternalErrorFn, then carries on to the file transport with the message intact. So the
+  // app survives that failure either way, and without this line it survives it silently, which is
+  // the gap #256 is about. Pointing processInternalErrorFn at the same recorder covers every stage
+  // through one bounded seam, and the shared once-only flag means a format that throws on every
+  // message still costs one line. It replaces electron-log's default handler, which echoes the
+  // error to the console transport that just failed: that write is the one #252 traced the crash
+  // to, and re-doing it per message would spam a console the app already knows is unreliable.
+  if (onSuppressed) logger.processInternalErrorFn = onSuppressed
 }
