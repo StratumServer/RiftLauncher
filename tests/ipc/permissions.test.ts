@@ -79,7 +79,11 @@ afterEach(() => {
 })
 
 describe("changePermissions", () => {
-  it("applies the mode to the root, its files and everything nested under it", () => {
+  // chmod on Windows only toggles the read-only attribute; it cannot produce
+  // POSIX mode bits like 0o755 or 0o600, so the mode a real tree ends up with
+  // has nothing to do with what changePermissions asked for. These read the
+  // mode back off disk, so they only mean anything on a POSIX filesystem.
+  it.skipIf(process.platform === "win32")("applies the mode to the root, its files and everything nested under it", () => {
     changePermissions({ paths: [installation], perms: 0o755 })
 
     assert.equal(modeOf(installation), 0o755)
@@ -88,14 +92,14 @@ describe("changePermissions", () => {
     assert.equal(modeOf(installation, "assets", "version.txt"), 0o755)
   })
 
-  it("applies the mode to a single file given directly", () => {
+  it.skipIf(process.platform === "win32")("applies the mode to a single file given directly", () => {
     changePermissions({ paths: [join(installation, "Vintagestory")], perms: 0o750 })
 
     assert.equal(modeOf(installation, "Vintagestory"), 0o750)
     assert.equal(modeOf(installation, "assets", "version.txt"), 0o600)
   })
 
-  it("walks every root it is given", () => {
+  it.skipIf(process.platform === "win32")("walks every root it is given", () => {
     const second = workspacePath("data")
     mkdirSync(second)
     writeFileSync(join(second, "clientsettings.json"), "{}", { mode: 0o600 })
@@ -106,19 +110,19 @@ describe("changePermissions", () => {
     assert.equal(modeOf(second, "clientsettings.json"), 0o755)
   })
 
-  it("skips a path that is not there", () => {
+  it.skipIf(process.platform === "win32")("skips a path that is not there", () => {
     assert.doesNotThrow(() => changePermissions({ paths: [workspacePath("never-installed"), installation], perms: 0o755 }))
 
     assert.equal(modeOf(installation, "Vintagestory"), 0o755)
   })
 
-  it("does nothing at all when given no paths", () => {
+  it.skipIf(process.platform === "win32")("does nothing at all when given no paths", () => {
     changePermissions({ paths: [], perms: 0o755 })
 
     assert.equal(modeOf(installation, "Vintagestory"), 0o600)
   })
 
-  it("refuses a symbolic link rather than applying the mode to what it points at", () => {
+  it.skipIf(process.platform === "win32")("refuses a symbolic link rather than applying the mode to what it points at", () => {
     const outsider = workspacePath("outsider.txt")
     writeFileSync(outsider, "not the launcher's file", { mode: 0o600 })
     symlinkSync(outsider, join(installation, "shortcut"))

@@ -157,7 +157,9 @@ describe("SAVE_CONFIG", () => {
     assert.equal(reread.defaultInstallationsFolder, join(appDataFolder, "RiftLauncherInstallations"))
   })
 
-  it("reports write-failed when the config file cannot be written", async () => {
+  // chmod 0o500 does not stop a write on Windows: NTFS enforces read-only
+  // through the file attribute, not POSIX write bits on the containing folder.
+  it.skipIf(process.platform === "win32")("reports write-failed when the config file cannot be written", async () => {
     const event = await createTrustedEvent()
 
     // Make the userData folder itself read-only so the temp-file write inside

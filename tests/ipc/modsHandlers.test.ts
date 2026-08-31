@@ -162,7 +162,10 @@ describe("EXPORT_MODPACK", () => {
     assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
   })
 
-  it("returns success: false when the picked destination cannot be written to (permission denied)", async () => {
+  // chmod 0o500 on the directory does not stop the rename on Windows, which
+  // only checks the file's own read-only attribute, not POSIX write bits on
+  // the containing folder.
+  it.skipIf(process.platform === "win32")("returns success: false when the picked destination cannot be written to (permission denied)", async () => {
     // Pre-seed an existing file, then take away write permission on its
     // DIRECTORY. writeJsonAtomic writes the temp file and renames it over the
     // destination rather than truncating it in place, so a read-only target

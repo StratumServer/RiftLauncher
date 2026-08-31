@@ -259,7 +259,11 @@ describe("DOWNLOAD_ON_PATH / EXTRACT_ON_PATH / RUN_INSTALLER / COMPRESS_ON_PATH:
   })
 })
 
-describe("CHANGE_PERMS: assertion throws", () => {
+// CHANGE_PERMS returns false on anything that is not Linux before it looks at
+// its arguments at all (pathsHandlers.ts: `if (os.platform() !== "linux") return
+// false`), since POSIX mode bits are the only thing it has to apply. On Windows
+// nothing here can throw, so these two cover the Linux arm only.
+describe.skipIf(process.platform === "win32")("CHANGE_PERMS: assertion throws", () => {
   it("throws on an empty paths array", async () => {
     const event = await createTrustedEvent()
     await assert.rejects(() => handler(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [], 0o644), /Invalid permissions paths/)
@@ -832,7 +836,9 @@ describe("COMPRESS_ON_PATH: runTrackedWorker via a fake worker", () => {
   })
 })
 
-describe("CHANGE_PERMS: runTrackedWorker via a fake worker", () => {
+// Same Linux-only early return: on Windows the handler resolves false without
+// ever starting a worker, so the fake worker this waits for never arrives.
+describe.skipIf(process.platform === "win32")("CHANGE_PERMS: runTrackedWorker via a fake worker", () => {
   it("resolves true once the worker finishes", async () => {
     const event = await createTrustedEvent()
     const workerPromise = nextTrackedWorker()
@@ -997,7 +1003,10 @@ describe("before-quit: the limiters stop admitting work", () => {
 })
 
 describe("RUN_INSTALLER", () => {
-  it("resolves not-windows on a non-Windows host, before any worker or spawn", async () => {
+  // This exercises the real, unstubbed process.platform !== "win32" branch
+  // (see the file header): on an actual Windows host that branch can't fire,
+  // so RUN_INSTALLER proceeds into the win32 arm this file doesn't cover.
+  it.skipIf(process.platform === "win32")("resolves not-windows on a non-Windows host, before any worker or spawn", async () => {
     // assertManagedPath for the installer path requires it to exist (it is
     // not called with { allowMissing: true }), so the not-windows check --
     // which comes after it -- still needs a real file to reach.
