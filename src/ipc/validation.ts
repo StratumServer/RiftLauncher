@@ -374,8 +374,8 @@ export function isRestoreWorkspaceName(installationName: string, candidateName: 
 }
 
 /**
- * True when `name` is a gzipped tar, which 7-Zip cannot unpack in one pass and,
- * for the archives Vintage Story ships, cannot read at all.
+ * True when `name` is a gzipped tar: the game builds, and every backup written
+ * from 1.7.0-beta.4 on. It picks the reader, `tar` rather than `yauzl`.
  */
 export function isTarGzName(name: unknown): boolean {
   return typeof name === "string" && /\.(?:tar\.gz|tgz)$/i.test(name)

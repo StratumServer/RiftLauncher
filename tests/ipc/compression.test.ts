@@ -1,23 +1,22 @@
 import assert from "node:assert/strict"
-import { EventEmitter } from "node:events"
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { gunzipSync } from "node:zlib"
 import { afterEach, beforeEach, describe, it } from "vitest"
+import * as tar from "tar"
 
-import { assertSafeCompressionTree, runCompression, type ArchiveAdd } from "@src/ipc/workers/compression"
+import { assertSafeCompressionTree, runCompression } from "@src/ipc/workers/compression"
 
 /**
- * The backup compression, driven without spawning 7-Zip.
+ * The backup compression, against real archives.
  *
- * `runCompression` takes the `Seven.add` call as a parameter, so these pin two
- * separate things: the safety walk over the real source tree, which runs before
- * 7-Zip is handed anything, and the invocation and message protocol, which is
- * asserted on the recorded arguments instead of on an archive.
+ * Two separate things are pinned here: the safety walk over the source tree,
+ * which runs before tar is handed anything, and what the archive turns out to
+ * hold once it is written.
  *
- * The walk is the half worth being fussy about. 7-Zip follows a symbolic link
- * into whatever it points at, so a link inside a backup source would quietly
- * pull files from outside the folder into the archive.
+ * The walk is the half worth being fussy about. A symbolic link inside a backup
+ * source would otherwise pull files from outside the folder into the archive.
  */
 
 let workspace: string
@@ -28,29 +27,16 @@ function workspacePath(...parts: string[]): string {
   return join(workspace, ...parts)
 }
 
-interface Invocation {
-  archivePath: string
-  source: string
-  options: Record<string, unknown>
-}
-
-/** A stand-in for `Seven.add` that records its call and replays a scripted event sequence. */
-function fakeAdd(script: (stream: EventEmitter) => void): { add: ArchiveAdd; invocations: Invocation[] } {
-  const invocations: Invocation[] = []
-
-  const add: ArchiveAdd = (archivePath, sourceGlob, options) => {
-    invocations.push({ archivePath, source: sourceGlob, options: options as unknown as Record<string, unknown> })
-    const stream = new EventEmitter()
-    setImmediate(() => script(stream))
-    return stream
-  }
-
-  return { add, invocations }
+/** Every entry name a written archive holds, sorted. */
+async function archiveEntryNames(archivePath: string): Promise<string[]> {
+  const names: string[] = []
+  await tar.list({ file: archivePath, onReadEntry: (entry) => void names.push(entry.path) })
+  return names.sort()
 }
 
 const FAKE_ROOT = "/fake/root"
 
-type FakeStats = { isSymbolicLink(): boolean; isDirectory(): boolean; isFile(): boolean }
+type FakeStats = { isSymbolicLink(): boolean; isDirectory(): boolean; isFile(): boolean; size: number }
 type TreeFileSystem = Parameters<typeof assertSafeCompressionTree>[1]
 
 /** A filesystem that answers from the two functions given, for trees too large or too odd to build. */
@@ -63,15 +49,8 @@ function fakeStats(kind: "directory" | "file" | "other"): FakeStats {
   return {
     isSymbolicLink: (): boolean => false,
     isDirectory: (): boolean => kind === "directory",
-    isFile: (): boolean => kind === "file"
-  }
-}
-
-/** Scripts a run that reports the given percentages and then ends. */
-function succeedsAt(...percentages: unknown[]): (stream: EventEmitter) => void {
-  return (stream) => {
-    for (const percent of percentages) stream.emit("progress", { percent })
-    stream.emit("end")
+    isFile: (): boolean => kind === "file",
+    size: 0
   }
 }
 
@@ -91,8 +70,8 @@ afterEach(() => {
 })
 
 describe("assertSafeCompressionTree", () => {
-  it("accepts a tree of plain files and folders", () => {
-    assert.doesNotThrow(() => assertSafeCompressionTree(source))
+  it("accepts a tree of plain files and folders and totals their bytes", () => {
+    assert.equal(assertSafeCompressionTree(source), "elf".length + "1.22.6".length)
   })
 
   it("refuses a symbolic link anywhere in the tree", () => {
@@ -140,143 +119,155 @@ describe("assertSafeCompressionTree", () => {
 
 describe("runCompression", () => {
   it("archives the source contents, not the source folder itself", async () => {
-    const seven = fakeAdd(succeedsAt(30, 80))
+    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" })
 
-    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add })
-
-    assert.equal(seven.invocations.length, 1)
-    assert.equal(seven.invocations[0]?.archivePath, join(output, "backup.zip"))
-    // The trailing glob is what keeps the wrapping folder out of the archive,
-    // so a restore puts the files back where they came from.
-    assert.equal(seven.invocations[0]?.source, join(source, "*"))
+    // No "installation/" prefix anywhere: the wrapping folder is what a restore
+    // would otherwise put back one level too deep.
+    assert.deepEqual(await archiveEntryNames(join(output, "backup.tar.gz")), ["Vintagestory", "assets/", "assets/version.txt"])
   })
 
-  it("passes the compression level and the binary 7-Zip is asked for", async () => {
-    const seven = fakeAdd(succeedsAt())
+  it("writes a gzip stream, which is what the restore reader expects", async () => {
+    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" })
 
-    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", compressionLevel: 4, sevenZipBin: "/opt/7za", addArchive: seven.add })
-
-    assert.deepEqual(seven.invocations[0]?.options, { $bin: "/opt/7za", $progress: true, recursive: true, method: ["x=4", "mt=on"] })
+    const bytes = readFileSync(join(output, "backup.tar.gz"))
+    assert.deepEqual([bytes[0], bytes[1]], [0x1f, 0x8b])
+    assert.equal(gunzipSync(bytes).length % 512, 0)
   })
 
-  it("defaults to level 6 when the caller names none", async () => {
-    const seven = fakeAdd(succeedsAt())
+  it("honours the compression level it is given", async () => {
+    const compressible = workspacePath("compressible")
+    mkdirSync(compressible)
+    writeFileSync(join(compressible, "log.txt"), "the same sentence over and over. ".repeat(4_000))
 
-    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add })
+    await runCompression({ inputPath: compressible, outputPath: output, outputFileName: "fastest.tar.gz", compressionLevel: 1 })
+    await runCompression({ inputPath: compressible, outputPath: output, outputFileName: "smallest.tar.gz", compressionLevel: 9 })
 
-    assert.deepEqual(seven.invocations[0]?.options.method, ["x=6", "mt=on"])
+    // Level 0 stores rather than deflates, so it is the one that says outright
+    // that the number reaches zlib at all instead of being quietly dropped.
+    await runCompression({ inputPath: compressible, outputPath: output, outputFileName: "stored.tar.gz", compressionLevel: 0 })
+
+    const stored = statSync(join(output, "stored.tar.gz")).size
+    const fastest = statSync(join(output, "fastest.tar.gz")).size
+    const smallest = statSync(join(output, "smallest.tar.gz")).size
+    assert.equal(smallest <= fastest, true)
+    assert.equal(fastest < stored, true)
   })
 
-  it("reports progress and always ends at 100", async () => {
+  it("reports progress and always ends at 100, once", async () => {
+    const many = workspacePath("many-files")
+    mkdirSync(many)
+    for (let index = 0; index < 200; index++) writeFileSync(join(many, `file-${index}.bin`), Buffer.alloc(4_096, index % 251))
     const progress: number[] = []
-    const seven = fakeAdd(succeedsAt(10, 55, 90))
 
-    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add, onProgress: (value) => progress.push(value) })
+    await runCompression({ inputPath: many, outputPath: output, outputFileName: "progress.tar.gz", onProgress: (value) => progress.push(value) })
 
-    assert.deepEqual(progress, [10, 55, 90, 100])
+    assert.equal(progress.at(-1), 100)
+    assert.equal(progress.filter((value) => value === 100).length, 1)
+    assert.equal(new Set(progress).size, progress.length)
+    assert.deepEqual(
+      [...progress].sort((left, right) => left - right),
+      progress
+    )
+    assert.equal(
+      progress.some((value) => value > 0 && value < 100),
+      true
+    )
   })
 
-  it("coalesces repeated percentages and reports completion once", async () => {
+  it("reports the terminal 100 even for a source with nothing in it", async () => {
+    const empty = workspacePath("empty")
+    mkdirSync(empty)
     const progress: number[] = []
-    const seven = fakeAdd(succeedsAt(0, 0, 10, 10, 50, 50, 100, 100))
 
-    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add, onProgress: (value) => progress.push(value) })
+    await runCompression({ inputPath: empty, outputPath: output, outputFileName: "empty.tar.gz", onProgress: (value) => progress.push(value) })
 
-    assert.deepEqual(progress, [10, 50, 100])
-  })
-
-  it("ignores a progress report that goes backwards, past 100, or is not a number", async () => {
-    const progress: number[] = []
-    const seven = fakeAdd(succeedsAt(40, 20, 140, "not a number", undefined, 60))
-
-    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add, onProgress: (value) => progress.push(value) })
-
-    assert.deepEqual(progress, [40, 60, 100])
-  })
-
-  it("fails when 7-Zip errors", async () => {
-    const seven = fakeAdd((stream) => stream.emit("error", new Error("7-Zip exited with code 2")))
-
-    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add }), /Compression failed/)
+    assert.deepEqual(progress, [100])
   })
 
   it("creates the destination folder when it is missing", async () => {
-    const seven = fakeAdd(succeedsAt())
     const missing = workspacePath("backups", "nested", "deeper")
 
-    await runCompression({ inputPath: source, outputPath: missing, outputFileName: "backup.zip", addArchive: seven.add })
+    await runCompression({ inputPath: source, outputPath: missing, outputFileName: "backup.tar.gz" })
 
-    assert.equal(seven.invocations[0]?.archivePath, join(missing, "backup.zip"))
+    assert.equal(statSync(join(missing, "backup.tar.gz")).isFile(), true)
   })
 
-  it("refuses a source holding a symbolic link, without invoking 7-Zip", async () => {
+  it("refuses a source holding a symbolic link, without writing an archive", async () => {
     symlinkSync(workspacePath("backups"), join(source, "elsewhere"))
-    const seven = fakeAdd(succeedsAt())
 
-    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add }), /unsafe filesystem entry/)
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /unsafe filesystem entry/)
 
-    assert.deepEqual(seven.invocations, [])
+    assert.equal(statSync(output).isDirectory(), true)
+    assert.throws(() => statSync(join(output, "backup.tar.gz")))
   })
 
   it("refuses a source that is a file rather than a folder", async () => {
-    const seven = fakeAdd(succeedsAt())
-
-    await assert.rejects(runCompression({ inputPath: join(source, "Vintagestory"), outputPath: output, outputFileName: "backup.zip", addArchive: seven.add }), /must be a directory/)
-
-    assert.deepEqual(seven.invocations, [])
+    await assert.rejects(runCompression({ inputPath: join(source, "Vintagestory"), outputPath: output, outputFileName: "backup.tar.gz" }), /must be a directory/)
   })
 
   it("refuses a source that does not exist", async () => {
-    const seven = fakeAdd(succeedsAt())
-
-    await assert.rejects(runCompression({ inputPath: workspacePath("gone"), outputPath: output, outputFileName: "backup.zip", addArchive: seven.add }))
-
-    assert.deepEqual(seven.invocations, [])
+    await assert.rejects(runCompression({ inputPath: workspacePath("gone"), outputPath: output, outputFileName: "backup.tar.gz" }))
   })
 
   it("refuses a destination that is a symbolic link", async () => {
     const linked = workspacePath("linked-backups")
     symlinkSync(output, linked)
-    const seven = fakeAdd(succeedsAt())
 
-    await assert.rejects(runCompression({ inputPath: source, outputPath: linked, outputFileName: "backup.zip", addArchive: seven.add }), /destination is unsafe/)
-
-    assert.deepEqual(seven.invocations, [])
+    await assert.rejects(runCompression({ inputPath: source, outputPath: linked, outputFileName: "backup.tar.gz" }), /destination is unsafe/)
   })
 
   it("refuses a destination that is a file", async () => {
     const asFile = workspacePath("not-a-folder")
     writeFileSync(asFile, "")
-    const seven = fakeAdd(succeedsAt())
 
-    await assert.rejects(runCompression({ inputPath: source, outputPath: asFile, outputFileName: "backup.zip", addArchive: seven.add }), /destination is unsafe/)
+    await assert.rejects(runCompression({ inputPath: source, outputPath: asFile, outputFileName: "backup.tar.gz" }), /destination is unsafe/)
   })
 
   it("refuses to write over a folder standing where the archive would go", async () => {
-    mkdirSync(join(output, "backup.zip"))
-    const seven = fakeAdd(succeedsAt())
+    mkdirSync(join(output, "backup.tar.gz"))
 
-    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add }), /archive target is unsafe/)
-
-    assert.deepEqual(seven.invocations, [])
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /archive target is unsafe/)
   })
 
   it("refuses to write through a symbolic link standing where the archive would go", async () => {
     writeFileSync(workspacePath("someone-elses-file"), "")
-    symlinkSync(workspacePath("someone-elses-file"), join(output, "backup.zip"))
-    const seven = fakeAdd(succeedsAt())
+    symlinkSync(workspacePath("someone-elses-file"), join(output, "backup.tar.gz"))
 
-    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add }), /archive target is unsafe/)
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /archive target is unsafe/)
+    assert.equal(readFileSync(workspacePath("someone-elses-file"), "utf8"), "")
+  })
 
-    assert.deepEqual(seven.invocations, [])
+  it.skipIf(process.platform === "win32")("refuses a source past the total the restore reader will accept", async () => {
+    // A sparse file: 3 GiB by every stat the walk makes, no blocks on disk. The
+    // point is the size the reader would read back, and that is what stat says.
+    const huge = join(source, "world.vcdbs")
+    writeFileSync(huge, "")
+    truncateSync(huge, 3 * 1024 * 1024 * 1024)
+
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /too large/)
+
+    // Refused before anything was written, rather than after gigabytes of work.
+    assert.deepEqual(readdirSync(output), [])
+  })
+
+  it.skipIf(process.platform !== "linux" || process.getuid?.() === 0)("takes the half written archive away when the write fails", async () => {
+    // A file the safety walk can stat but tar cannot read, so the failure lands
+    // after tar has already created the archive and written the first bytes.
+    chmodSync(join(source, "Vintagestory"), 0o000)
+
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /Compression failed/)
+
+    // A failed backup leaves no record behind, and pruning only ever walks the
+    // records, so anything left here would stay for good and a retry would add
+    // one more beside it.
+    assert.deepEqual(readdirSync(output), [])
   })
 
   it("overwrites a plain archive file already sitting there", async () => {
-    writeFileSync(join(output, "backup.zip"), "the previous backup")
-    const seven = fakeAdd(succeedsAt())
+    writeFileSync(join(output, "backup.tar.gz"), "the previous backup")
 
-    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.zip", addArchive: seven.add })
+    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" })
 
-    assert.equal(seven.invocations.length, 1)
+    assert.deepEqual(await archiveEntryNames(join(output, "backup.tar.gz")), ["Vintagestory", "assets/", "assets/version.txt"])
   })
 })

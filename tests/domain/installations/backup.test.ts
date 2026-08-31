@@ -66,7 +66,7 @@ function fakePorts(overrides: Partial<MakeInstallationBackupPorts> = {}): MakeIn
 }
 
 function backup(id: string, overrides: { isDeleting?: boolean; isRestoring?: boolean } = {}): BackupRecord & { isDeleting?: boolean; isRestoring?: boolean } {
-  return { id, date: 1, path: `/backups/${id}.zip`, ...overrides }
+  return { id, date: 1, path: `/backups/${id}.tar.gz`, ...overrides }
 }
 
 function snapshot(overrides: Partial<InstallationSnapshot> = {}): InstallationSnapshot {
@@ -163,7 +163,7 @@ describe("makeInstallationBackup pruning", () => {
     assert.deepEqual(result.deletedBackupIds, ["b3", "b2"])
     assert.deepEqual(
       trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
-      ["remove:/backups/b3.zip", "deleted:b3", "remove:/backups/b2.zip", "deleted:b2"]
+      ["remove:/backups/b3.tar.gz", "deleted:b3", "remove:/backups/b2.tar.gz", "deleted:b2"]
     )
   })
 
@@ -181,7 +181,7 @@ describe("makeInstallationBackup pruning", () => {
 
   it("stops at the first failed deletion and reports the ones already done", async () => {
     const installation = snapshot({ backupsLimit: 1, backups: [backup("b1"), backup("b2"), backup("b3")] })
-    const ports = fakePorts({ fileSystem: fakeFileSystem({ removals: { "/backups/b2.zip": false } }) })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ removals: { "/backups/b2.tar.gz": false } }) })
 
     const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
 
@@ -203,7 +203,7 @@ describe("makeInstallationBackup pruning", () => {
     assert.deepEqual(result.deletedBackupIds, ["b2"])
     assert.deepEqual(
       trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
-      ["remove:/backups/b2.zip", "deleted:b2"]
+      ["remove:/backups/b2.tar.gz", "deleted:b2"]
     )
   })
 
@@ -229,7 +229,7 @@ describe("makeInstallationBackup pruning", () => {
     assert.deepEqual(result.deletedBackupIds, ["b4", "b2"])
     assert.deepEqual(
       trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
-      ["remove:/backups/b4.zip", "deleted:b4", "remove:/backups/b2.zip", "deleted:b2"]
+      ["remove:/backups/b4.tar.gz", "deleted:b4", "remove:/backups/b2.tar.gz", "deleted:b2"]
     )
   })
 
@@ -242,7 +242,7 @@ describe("makeInstallationBackup pruning", () => {
     assert.deepEqual(result.deletedBackupIds, ["b2"])
     assert.deepEqual(
       trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
-      ["remove:/backups/b2.zip", "deleted:b2"]
+      ["remove:/backups/b2.tar.gz", "deleted:b2"]
     )
   })
 })
@@ -253,11 +253,11 @@ describe("makeInstallationBackup archiving", () => {
 
     const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot(), backupsFolder: "/backups" })
 
-    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-15_23-20-00.zip")
+    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-15_23-20-00.tar.gz")
     assert.equal(requests[0]?.outputFolder, "/backups/Installations/My-Install-Test")
     assert.equal(requests[0]?.sourcePath, "/games/my-install")
     assert.equal(requests[0]?.compressionLevel, 5)
-    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.zip")
+    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.tar.gz")
   })
 
   it("falls back to a slice of the installation id when the cleaned name is empty", async () => {
@@ -265,9 +265,9 @@ describe("makeInstallationBackup archiving", () => {
 
     const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot({ id: "installation-1", name: "***" }), backupsFolder: "/backups" })
 
-    assert.equal(requests[0]?.fileName, "installa_2025-08-15_23-20-00.zip")
+    assert.equal(requests[0]?.fileName, "installa_2025-08-15_23-20-00.tar.gz")
     assert.equal(requests[0]?.outputFolder, "/backups/Installations/installa")
-    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/installa/installa_2025-08-15_23-20-00.zip")
+    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/installa/installa_2025-08-15_23-20-00.tar.gz")
   })
 
   it("stamps the record with the clock time and a generated id", async () => {
@@ -276,7 +276,7 @@ describe("makeInstallationBackup archiving", () => {
     assert.deepEqual(result.ok === true && result.backup, {
       id: "generated-id-1",
       date: FIXED_NOW,
-      path: "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.zip"
+      path: "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.tar.gz"
     })
   })
 
@@ -287,9 +287,9 @@ describe("makeInstallationBackup archiving", () => {
       "exists:/games/my-install",
       "guard-acquire:Making and installation backup.",
       "started",
-      "remove:/backups/b1.zip",
+      "remove:/backups/b1.tar.gz",
       "deleted:b1",
-      "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.zip",
+      "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.tar.gz",
       "guard-release",
       "finished"
     ])

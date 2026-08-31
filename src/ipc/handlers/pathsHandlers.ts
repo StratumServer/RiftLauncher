@@ -1,5 +1,4 @@
 import { ipcMain, app, shell } from "electron"
-import { path7za } from "7zip-bin"
 import fse from "fs-extra"
 import { open } from "node:fs/promises"
 import type { Stats } from "node:fs"
@@ -27,7 +26,6 @@ import innoExtractWorker from "@src/ipc/workers/innoExtractWorker?modulePath"
 import changePermsWorker from "@src/ipc/workers/changePermsWorker?modulePath"
 import downloadWorkerPath from "@src/ipc/workers/downloadWorker?modulePath"
 
-const sevenZipBin = app.isPackaged ? path7za.replace("app.asar", "app.asar.unpacked") : path7za
 const WORKER_TIMEOUTS_MS: Record<string, number> = {
   DOWNLOAD_ON_PATH: 45 * 60 * 1_000,
   EXTRACT_ON_PATH: 30 * 60 * 1_000,
@@ -77,16 +75,18 @@ const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
  * first progress event, so this needs no renderer-side change to look right.
  *
  * Extraction and compression share one limiter instead of each getting their own: both
- * spawn a 7-Zip subprocess and compete for the same CPU cores, so the resource that
- * actually needs bounding is "concurrent 7-Zip processes", not "concurrent extractions"
- * and "concurrent compressions" separately.
+ * inflate or deflate inside a worker thread and compete for the same CPU cores, so the
+ * resource that actually needs bounding is "concurrent archive workers", not "concurrent
+ * extractions" and "concurrent compressions" separately. This used to be written around
+ * the 7-Zip subprocesses both of them spawned; the work moved in process with #222, and
+ * the bound holds for the same reason it always did.
  *
- * RUN_INSTALLER's payload read shares that lane too, even though it spawns no 7-Zip. What
+ * RUN_INSTALLER's payload read shares that lane too, even though it unpacks no archive. What
  * it does instead is decode the installer's LZMA2 payload with the plain-TypeScript decoder
  * in src/domain/inno and CRC32 every chunk on the way through, so it saturates a core inside
  * its worker thread for the whole read (41 seconds for a 598 MB installer, per
- * WORKER_TIMEOUTS_MS above). Read the limit as "concurrent CPU-bound archive readers" rather
- * than "concurrent 7-Zip processes" and it clearly belongs: an install starting while two mod
+ * WORKER_TIMEOUTS_MS above). Read the limit as "concurrent CPU-bound archive workers" and it
+ * clearly belongs: an install starting while two mod
  * extractions were already running used to put three of those on the machine at once, against
  * a bound written to allow two.
  */
@@ -163,7 +163,7 @@ function runTrackedWorker<T>(
     const timeout = setTimeout(
       () => {
         // Never reused: the abandoned task is still running inside this thread (still
-        // holding a socket or a 7-Zip child), so its eventual message could still arrive
+        // holding a socket or an open archive), so its eventual message could still arrive
         // after some later task has been dispatched to the same worker.
         rejectOnce(new Error(`${operationName} timed out`), "discard")
       },
@@ -402,17 +402,18 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   return downloadedPath
 })
 
-ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: string, filePath: string, outputPath: string, deleteZip: boolean): Promise<boolean> => {
+ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: string, filePath: string, outputPath: string, deleteZip: boolean, unwrapSingleRootFolder = false): Promise<boolean> => {
   assertTrustedIpcSender(event)
   const safeId = assertSafeTaskId(id)
   const safeFilePath = await assertManagedPath(filePath, "archive path")
   const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
   const shouldDeleteZip = assertBoolean(deleteZip, "delete archive flag")
+  const shouldUnwrapSingleRootFolder = assertBoolean(unwrapSingleRootFolder, "unwrap single root folder flag")
 
   if (resolve(safeFilePath) === resolve(safeOutputPath)) throw new TypeError("Archive and output paths must differ")
   // validateArchive runs inside the extraction worker now (workers/extraction.ts's
-  // runExtraction), not here: its 7z-listing parse is real CPU work that has no business
-  // blocking the main process's event loop.
+  // runExtraction), not here: walking a table of contents is real CPU work that has no
+  // business blocking the main process's event loop.
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
   await archiveConcurrency.run(() => {
@@ -422,7 +423,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
       safeId,
       IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
       extractWorker,
-      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, sevenZipBin },
+      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, unwrapSingleRootFolder: shouldUnwrapSingleRootFolder },
       "EXTRACT_ON_PATH",
       () => true
     )
@@ -598,7 +599,7 @@ ipcMain.handle(
         safeId,
         IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
         compressWorker,
-        { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel, sevenZipBin },
+        { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel },
         "COMPRESS_ON_PATH",
         () => true
       )

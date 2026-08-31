@@ -9,11 +9,12 @@
  * write a single byte where the launcher keeps its files.
  */
 
-import Seven from "node-7z"
 import fse from "fs-extra"
-import { createReadStream, mkdtempSync } from "node:fs"
-import { isAbsolute, join, relative, resolve, sep } from "node:path"
+import yauzl from "yauzl"
+import { createReadStream, createWriteStream, mkdtempSync } from "node:fs"
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { tmpdir } from "node:os"
+import type { Readable } from "node:stream"
 import * as tar from "tar"
 
 // Relative so the module stays importable from a plain test run, like validation.ts.
@@ -130,39 +131,174 @@ export function contentRoot(root: string): string {
   return fse.lstatSync(candidate).isDirectory() ? candidate : root
 }
 
-function extractWithSevenZip(filePath: string, destination: string, sevenZipBin: string, onProgress?: (progress: number) => void): Promise<void> {
+/**
+ * Where one archive entry is allowed to land, or nothing.
+ *
+ * The archive's table of contents was already checked for escaping names before
+ * a byte was written (validateArchive, in archiveValidation.ts), and yauzl
+ * refuses a leading "/" or a ".." segment on its own before either. This is the
+ * check the writer itself makes anyway, on the resolved path rather than on the
+ * name, because a writer is the wrong place to trust a name that came out of a
+ * file someone else wrote.
+ */
+export function resolveEntryDestination(destination: string, entryName: string): string {
+  const resolvedDestination = resolve(destination)
+  const target = resolve(resolvedDestination, entryName.replaceAll("\\", "/"))
+  const relativePath = relative(resolvedDestination, target)
+  if (!relativePath || relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) throw new Error("Archive entry escaped its root")
+  return target
+}
+
+/**
+ * Unpacks a zip.
+ *
+ * Only the backups the launcher wrote before it moved to gzipped tar arrive
+ * here, and they have to keep restoring for as long as players still hold them.
+ * Reading is yauzl's, the same reader the mod archives and the pre-extraction
+ * table-of-contents check already run on, so no zip writer or external process
+ * is needed to keep the old format readable.
+ *
+ * Progress is counted in entries rather than bytes: the entry count is the one
+ * total a zip states up front, per entry sizes are what the archive claims
+ * rather than what comes out, and a backup's entries are of a similar size.
+ *
+ * Unix mode bits recorded in a legacy backup are deliberately not carried over,
+ * unlike the tar reader, which restores what the archive holds. An installation
+ * folder is game data with nothing executable in it; on Linux every extraction
+ * is followed by a blanket chmod to 0755 (startExtract in
+ * TaskManagerContext.tsx), which overwrites what either reader restored; and a
+ * mode read out of an archive written by a tool the launcher no longer ships is
+ * as easily 0 as it is useful, which would leave a save file unreadable. The
+ * attributes are still read, for the symlink check, which is the one thing in
+ * them worth acting on.
+ */
+export function extractZip(filePath: string, destination: string, onProgress?: (progress: number) => void): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
-    const stream = Seven.extractFull(filePath, destination, { $bin: sevenZipBin, $progress: true, recursive: true })
-    let lastReportedProgress = 0
-
-    stream.on("progress", ({ percent }) => {
-      const boundedPercent = Number(percent)
-      // runExtraction emits the terminal 100 after validation and copying. Do not
-      // let 7-Zip publish a second terminal event before that point.
-      if (Number.isFinite(boundedPercent) && boundedPercent > lastReportedProgress && boundedPercent < 100) {
-        lastReportedProgress = boundedPercent
-        onProgress?.(boundedPercent)
+    yauzl.open(filePath, { lazyEntries: true }, (openError, zipFile) => {
+      if (openError || !zipFile) {
+        rejectPromise(new Error("Extraction failed"))
+        return
       }
-    })
 
-    stream.on("end", () => resolvePromise())
-    stream.on("error", () => rejectPromise(new Error("Extraction failed")))
+      let settled = false
+      let extractedEntries = 0
+      let lastReportedProgress = 0
+      const totalEntries = zipFile.entryCount
+      // The pair the entry being written is streaming through, so a failure can
+      // stop them. Reassigned per entry, and left pointing at the last one.
+      let entryReader: Readable | undefined
+      let entryWriter: ReturnType<typeof createWriteStream> | undefined
+
+      const finish = (failure?: Error): void => {
+        if (settled) return
+        settled = true
+        if (failure) {
+          // Stop both ends before the caller wipes the temporary folder, the same
+          // reason extractTarGz does it: an open write handle in there turns the
+          // removal into an EBUSY on Windows, which then replaces the real error
+          // and leaves the folder behind.
+          entryReader?.unpipe()
+          entryReader?.destroy()
+          entryWriter?.destroy()
+        }
+        try {
+          zipFile.close()
+        } catch {
+          // Already closed after a parse error. The outcome below is what matters.
+        }
+        if (failure) rejectPromise(failure)
+        else resolvePromise()
+      }
+
+      const advance = (): void => {
+        extractedEntries++
+        if (totalEntries <= 0) return
+        // runExtraction emits the terminal 100 after validation and copying, so
+        // the running figure stops a point short of it.
+        const progress = Math.min(99, Math.floor((extractedEntries / totalEntries) * 100))
+        if (progress > lastReportedProgress) {
+          lastReportedProgress = progress
+          onProgress?.(progress)
+        }
+      }
+
+      zipFile.on("entry", (entry: yauzl.Entry) => {
+        let target: string
+        try {
+          target = resolveEntryDestination(destination, entry.fileName)
+        } catch (error) {
+          finish(error as Error)
+          return
+        }
+
+        if (entry.fileName.endsWith("/")) {
+          try {
+            fse.ensureDirSync(target)
+          } catch {
+            finish(new Error("Extraction failed"))
+            return
+          }
+          advance()
+          zipFile.readEntry()
+          return
+        }
+
+        zipFile.openReadStream(entry, (streamError, readStream) => {
+          if (streamError || !readStream) {
+            finish(new Error("Extraction failed"))
+            return
+          }
+
+          entryReader = readStream
+          let writeStream: ReturnType<typeof createWriteStream>
+          try {
+            fse.ensureDirSync(dirname(target))
+            writeStream = createWriteStream(target)
+          } catch {
+            finish(new Error("Extraction failed"))
+            return
+          }
+          entryWriter = writeStream
+
+          readStream.on("error", () => finish(new Error("Extraction failed")))
+          writeStream.on("error", () => finish(new Error("Extraction failed")))
+          writeStream.on("close", () => {
+            if (settled) return
+            advance()
+            zipFile.readEntry()
+          })
+          readStream.pipe(writeStream)
+        })
+      })
+
+      zipFile.on("end", () => finish())
+      zipFile.on("error", () => finish(new Error("Extraction failed")))
+      zipFile.readEntry()
+    })
   })
 }
 
 /**
- * Unpacks a gzipped tar.
- *
- * 7-Zip is not used here. It needs two passes for a `.tar.gz`, and the bundled
- * p7zip 16.02 cannot read the tar Vintage Story ships at all: its headers leave
- * the numeric fields as NUL bytes, which GNU tar and node-tar accept and 7-Zip
- * rejects with "Is not archive".
+ * Unpacks a gzipped tar: the game builds, and every backup the launcher writes.
  *
  * Progress comes from the compressed bytes read, which is the only total known
  * up front. Anything that is not a plain file or folder fails the extraction
- * rather than being skipped quietly.
+ * rather than being skipped quietly, and `preservePaths: false` is what keeps
+ * an absolute or climbing entry name from being written where it points.
+ *
+ * `strict` is what makes a failed entry a failed extraction. Left off, node-tar
+ * treats every per-entry write error as a warning: the entry is skipped, the
+ * stream still closes cleanly, and a run that hit a full disk halfway through
+ * comes back indistinguishable from one that unpacked everything. A restore
+ * believes that and deletes the installation the truncated tree replaced, so
+ * the archive has to fail closed here rather than downstream. It also upgrades
+ * the parser's own invalid-entry warning, a corrupt header whose entry is
+ * dropped just as quietly. Nothing else it turns fatal is reachable: an
+ * unsupported entry type is refused by the filter below, and an absolute name
+ * never gets this far, validateArchive having refused the archive by name
+ * before a byte was written.
  */
-function extractTarGz(filePath: string, destination: string, onProgress?: (progress: number) => void): Promise<void> {
+export function extractTarGz(filePath: string, destination: string, onProgress?: (progress: number) => void): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     const totalBytes = fse.statSync(filePath).size
     let readBytes = 0
@@ -189,6 +325,7 @@ function extractTarGz(filePath: string, destination: string, onProgress?: (progr
     const unpacker = tar.extract({
       cwd: destination,
       preservePaths: false,
+      strict: true,
       filter: (_entryPath, entry): boolean => {
         if (isSafeTarEntryType("type" in entry ? entry.type : undefined)) return true
         unsafeEntry = new Error("Archive contains an unsafe entry")
@@ -220,8 +357,13 @@ export interface ExtractionOptions {
   outputPath: string
   /** Whether the archive is deleted once its contents landed. */
   deleteArchive: boolean
-  /** 7-Zip binary, used for every format outside the tar.gz family. */
-  sevenZipBin: string
+  /**
+   * Whether a single wrapping folder is stepped into before the contents are
+   * copied out. Asked for by the game version install, whose Linux archives
+   * carry everything under `vintagestory/`, and never by a backup restore,
+   * whose archive holds an installation's contents at the root already.
+   */
+  unwrapSingleRootFolder?: boolean
   /** Called with 0 to 100 as the work advances. */
   onProgress?: (progress: number) => void
 }
@@ -234,14 +376,14 @@ export interface ExtractionOptions {
  * files and folders, or busts the entry and size bounds.
  */
 export async function runExtraction(options: ExtractionOptions): Promise<void> {
-  const { filePath, outputPath, deleteArchive, sevenZipBin, onProgress } = options
+  const { filePath, outputPath, deleteArchive, unwrapSingleRootFolder = false, onProgress } = options
   let temporaryRoot: string | undefined
 
   // The first of two validation gates (see archiveValidation.ts's own comment): reads the
   // archive's table of contents and refuses it, before a single byte is written anywhere,
   // if it names an entry outside its root, repeats a name, carries a link, or busts the
   // entry/size bounds.
-  await validateArchive(filePath, sevenZipBin)
+  await validateArchive(filePath)
 
   try {
     assertNoSymlinkComponents(outputPath)
@@ -252,15 +394,14 @@ export async function runExtraction(options: ExtractionOptions): Promise<void> {
     const extractionRoot = join(temporaryRoot, "payload")
     fse.ensureDirSync(extractionRoot)
 
-    const isGameArchive = isTarGzName(filePath)
-    if (isGameArchive) await extractTarGz(filePath, extractionRoot, onProgress)
-    else await extractWithSevenZip(filePath, extractionRoot, sevenZipBin, onProgress)
+    if (isTarGzName(filePath)) await extractTarGz(filePath, extractionRoot, onProgress)
+    else await extractZip(filePath, extractionRoot, onProgress)
 
     validateTree(extractionRoot)
-    // Only the game archives wrap their contents in a folder. The zips reaching
-    // here are backups the launcher wrote itself, holding an installation's
+    // Only the game archives wrap their contents in a folder, and only their caller
+    // asks for that folder to be stepped into. A backup holds an installation's
     // contents at the root, and a restore has to put them back exactly as they were.
-    copyTree(isGameArchive ? contentRoot(extractionRoot) : extractionRoot, outputPath)
+    copyTree(unwrapSingleRootFolder ? contentRoot(extractionRoot) : extractionRoot, outputPath)
 
     if (deleteArchive) {
       assertNoSymlinkComponents(filePath)

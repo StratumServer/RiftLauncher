@@ -14,6 +14,8 @@ So the question is no longer only "which shell". It is:
 
 Every number below was measured on 2026-08-16, on this machine, with the command named beside it. Where a number could not be measured, that is said instead of guessed.
 
+> Note, 2026-08-29: the measurements below stand as they were taken, and the 7-Zip ones no longer describe the tree. PR #274 removed `node-7z` and `7zip-bin`, so the six `7za` binaries and the 9.4 MB `app.asar.unpacked` line are gone, a Linux `--dir` build is 9.5 MiB smaller, and the `7za l -slt` reader that Option A's cost paragraph leans on no longer exists: backups are gzipped tar read by `tar`, and the zips written before 1.7.0-beta.4 are read by `yauzl`. The test and coverage figures have moved a long way too. Nothing here is restated, because the argument was put to the deciders with the numbers of the day and rewriting it after the fact would misrepresent what was actually weighed.
+
 ## What was measured
 
 ### The fork

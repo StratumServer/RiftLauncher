@@ -10,7 +10,7 @@ const TOKEN = "token-1"
 const INSTALLATION_PATH = "/games/my-install"
 const STAGING_PATH = `${INSTALLATION_PATH}-restoring-${TOKEN}`
 const REPLACED_PATH = `${INSTALLATION_PATH}-replaced-${TOKEN}`
-const ARCHIVE_PATH = "/backups/my-install.zip"
+const ARCHIVE_PATH = "/backups/my-install.tar.gz"
 
 /** Everything the fakes wrote down, in the order it happened. */
 let trace: string[] = []

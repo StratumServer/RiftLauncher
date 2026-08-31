@@ -54,8 +54,8 @@ const api: BridgeAPI = {
     ensurePathExists: (path: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, path),
     openPathOnFileExplorer: (path: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER, path),
     downloadOnPath: (id: string, url: string, outputPath: string, fileName: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, id, url, outputPath, fileName),
-    extractOnPath: (id: string, filePath: string, outputPath: string, deleteZip: boolean): Promise<boolean> =>
-      ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, id, filePath, outputPath, deleteZip),
+    extractOnPath: (id: string, filePath: string, outputPath: string, deleteZip: boolean, unwrapSingleRootFolder?: boolean): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, id, filePath, outputPath, deleteZip, unwrapSingleRootFolder ?? false),
     runInstaller: (id: string, filePath: string, outputPath: string, deleteInstaller: boolean): Promise<InstallerRunResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER, id, filePath, outputPath, deleteInstaller),
     compressOnPath: (id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel?: number): Promise<boolean> =>
