@@ -118,13 +118,11 @@ export function createSafeConsoleWrite<Args extends unknown[]>(write: (...args: 
 }
 
 /**
- * The parts of electron-log's Logger this file touches. `processInternalErrorFn` is a real member
- * of its Logger class (node_modules/electron-log/src/core/Logger.js) that its type definitions do
- * not declare, so it is optional here and the whole logger still satisfies the shape.
+ * The parts of electron-log's Logger this file touches. The whole logger is accepted because the
+ * console transport must be guarded before electron-log's per-transport error handler runs.
  */
 export interface FaultTolerantLogger<Args extends unknown[]> {
   transports: { console: { writeFn: (...args: Args) => void } }
-  processInternalErrorFn?: (error: unknown) => void
 }
 
 /** Wires all three guards. `logger` is electron-log's default export; the generic keeps writeFn's exact signature. */
@@ -145,12 +143,19 @@ export function makeConsoleOutputFaultTolerant<Args extends unknown[]>(
   // transports.console.format, and only then writeFn (node_modules/electron-log/src/node/
   // transports/console.js). A throw from a format hook or any other transform never reaches the
   // write, so the wrapper cannot see it; processMessage catches it per transport and hands it to
-  // processInternalErrorFn, then carries on to the file transport with the message intact. So the
-  // app survives that failure either way, and without this line it survives it silently, which is
-  // the gap #256 is about. Pointing processInternalErrorFn at the same recorder covers every stage
-  // through one bounded seam, and the shared once-only flag means a format that throws on every
-  // message still costs one line. It replaces electron-log's default handler, which echoes the
-  // error to the console transport that just failed: that write is the one #252 traced the crash
-  // to, and re-doing it per message would spam a console the app already knows is unreliable.
-  if (onSuppressed) logger.processInternalErrorFn = onSuppressed
+  // processInternalErrorFn. Wrap the callable transport itself so the failure reaches the same
+  // bounded recorder without replacing the logger's global error reporter. That keeps unrelated
+  // file, IPC, and remote transport errors on electron-log's normal diagnostic path.
+  if (onSuppressed) {
+    const callableTransport = consoleTransport as typeof consoleTransport & ((...args: unknown[]) => void)
+    logger.transports.console = new Proxy(callableTransport, {
+      apply(target, thisArg, args): void {
+        try {
+          Reflect.apply(target, thisArg, args)
+        } catch (error) {
+          onSuppressed(error)
+        }
+      }
+    }) as typeof consoleTransport
+  }
 }
