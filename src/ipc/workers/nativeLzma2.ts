@@ -89,9 +89,16 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
     }
   }
 
-  private queue(bytes: Uint8Array): void {
+  /**
+   * `owned` says the bytes are ours to keep. The library documents `update()`
+   * as handing back a zero-copy view, so that one is copied before a later call
+   * can write over it. `finish()` resolves to the decoded tail and leaves a
+   * spent decoder behind, so nothing can rewrite it, and on a solid block the
+   * copy would be a second copy of the entire block.
+   */
+  private queue(bytes: Uint8Array, owned = false): void {
     if (bytes.length === 0) return
-    this.pending.push(Uint8Array.from(bytes))
+    this.pending.push(owned ? bytes : Uint8Array.from(bytes))
     this.pendingBytes += bytes.length
   }
 
@@ -128,7 +135,7 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
     if (control === 0) {
       try {
         this.queue(this.decoder.update(Uint8Array.of(0)))
-        this.queue(await this.decoder.finish())
+        this.queue(await this.decoder.finish(), true)
       } catch {
         throw new NativeLzma2Error("the native LZMA2 decoder rejected the stream")
       }
