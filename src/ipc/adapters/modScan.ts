@@ -298,6 +298,12 @@ async function doPruneModIconCache(maxBytes: number): Promise<void> {
  * domain: a name that cannot be safely joined onto a path and a symlink
  * pointing who knows where are both host concerns, and the folder is user
  * managed so both turn up.
+ *
+ * The folder itself being a link is a different matter and is fine (#237):
+ * readdir follows it, and the entries inside are read on their own merits. Only
+ * an entry that is itself a link is dropped, dangling ones included, which is
+ * what keeps the set of archives that get opened inside the folder the user
+ * pointed at.
  */
 export function createModsDirectoryReaderPort(): DirectoryReader {
   return {
@@ -313,7 +319,11 @@ export function createModsDirectoryReaderPort(): DirectoryReader {
       for (const entry of entries) {
         try {
           assertSafeFileName(entry)
-          if (!(await fse.lstat(join(path, entry))).isSymbolicLink()) names.push(entry)
+          if ((await fse.lstat(join(path, entry))).isSymbolicLink()) {
+            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [listFileNames] Skipping ${entry}, a symbolic link inside the Mods folder.`)
+            continue
+          }
+          names.push(entry)
         } catch {
           // Ignore invalid or disappearing entries while scanning a user-managed directory.
         }

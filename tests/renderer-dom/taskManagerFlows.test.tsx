@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from "react"
-import { describe, expect, it, onTestFinished, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import type { RenderHookResult } from "@testing-library/react"
 
@@ -7,6 +7,7 @@ import { NotificationsProvider, useNotificationsContext } from "@renderer/contex
 import { ACTIONS, TaskProvider, taskReducer, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import type { TaskNotificationsMode, TaskType } from "@renderer/contexts/TaskManagerContext"
 
+import { expectHookThrowsOutsideProvider } from "./helpers/render"
 import { installMockWindowApi } from "./helpers/windowApi"
 
 // Registers the i18n instance useTranslation() reads inside TaskProvider and
@@ -79,30 +80,7 @@ describe("taskReducer", () => {
 
 describe("useTaskContext", () => {
   it("throws when used outside a TaskProvider", () => {
-    // The throw is caught inside the component on purpose. A render throw
-    // that escapes reaches React's dev-only replay, which rethrows it
-    // through a synthetic DOM event so devtools can see it; jsdom turns that
-    // into an uncancelled window "error" event, and Vitest's jsdom
-    // environment re-emits such an event as an uncaught exception that fails
-    // the whole run and gets pinned on whichever file happened to be running.
-    const consoleError = vi.spyOn(console, "error")
-    onTestFinished(() => consoleError.mockRestore())
-
-    let thrown: unknown
-    renderHook(() => {
-      try {
-        useTaskContext()
-      } catch (error) {
-        thrown = error
-      }
-    })
-
-    expect(thrown).toBeInstanceOf(Error)
-    expect((thrown as Error).message).toMatch(/must be used within an TaskProvider/)
-    // React logs "The above error occurred in ..." for every render throw it
-    // has to handle itself, so this fails right here if the throw is ever let
-    // out of the component again.
-    expect(consoleError).not.toHaveBeenCalled()
+    expectHookThrowsOutsideProvider(useTaskContext, /must be used within an TaskProvider/)
   })
 })
 

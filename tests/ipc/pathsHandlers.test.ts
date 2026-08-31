@@ -259,7 +259,11 @@ describe("DOWNLOAD_ON_PATH / EXTRACT_ON_PATH / RUN_INSTALLER / COMPRESS_ON_PATH:
   })
 })
 
-describe("CHANGE_PERMS: assertion throws", () => {
+// CHANGE_PERMS returns false on anything that is not Linux before it looks at
+// its arguments at all (pathsHandlers.ts: `if (os.platform() !== "linux") return
+// false`), since POSIX mode bits are the only thing it has to apply. On Windows
+// nothing here can throw, so these two cover the Linux arm only.
+describe.skipIf(process.platform === "win32")("CHANGE_PERMS: assertion throws", () => {
   it("throws on an empty paths array", async () => {
     const event = await createTrustedEvent()
     await assert.rejects(() => handler(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [], 0o644), /Invalid permissions paths/)
@@ -393,6 +397,22 @@ describe("CHECK_PATH_EMPTY / CHECK_PATH_EXISTS / ENSURE_PATH_EXISTS", () => {
     assert.equal(existsSync(target), true)
   })
 
+  // AddInstallation's folder field is free text, and its guard turns a false
+  // here into "we could not make that folder" and stops the add. Answering true
+  // for a regular file would put an installation entry on it, which is the
+  // dangling entry the guard exists to prevent, and that path then feeds the
+  // launch --dataPath, the backup compression and the mod scan.
+  it("ENSURE_PATH_EXISTS returns false for an authorized path that exists as a regular file", async () => {
+    const event = await createTrustedEvent()
+    const file = join(managedFolder, "notes.txt")
+    writeFileSync(file, "x", "utf-8")
+
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, file), false)
+
+    const { readFileSync } = await import("node:fs")
+    assert.equal(readFileSync(file, "utf-8"), "x")
+  })
+
   it("ENSURE_PATH_EXISTS returns false for a path nothing authorizes", async () => {
     const event = await createTrustedEvent()
     const outside = join(temporaryRoot, "unmanaged", "NewFolder")
@@ -411,6 +431,122 @@ describe("OPEN_PATH_ON_FILE_EXPLORER", () => {
   function expect_calledWith(pathValue: string): void {
     assert.equal(vi.mocked(shell.showItemInFolder).mock.calls.at(-1)?.[0], pathValue)
   }
+})
+
+/**
+ * The reported shape in #237, driven through the handlers the mod screen calls.
+ *
+ * A profile whose Mods folder is itself a link at a Mods folder kept elsewhere.
+ * The read-only channels answer for it now; everything that writes still meets
+ * the path policy's symlink walk, which is what stops a link from being a way
+ * around the grant. Windows is skipped because making a symlink there needs
+ * Developer Mode or elevation the CI runners do not have (#267 tracks it), and
+ * the handler code is the same on every platform.
+ */
+describe.skipIf(process.platform === "win32")("a Mods folder the user symlinked in", () => {
+  let installation: string
+  let realMods: string
+  let linkedMods: string
+
+  beforeEach(() => {
+    installation = join(managedFolder, "Main")
+    mkdirSync(installation, { recursive: true })
+    writeConfig({ installations: [{ id: "a", name: "A", path: installation, backups: [] }] as unknown as ConfigType["installations"] })
+
+    realMods = join(temporaryRoot, "VintagestoryData", "Mods")
+    mkdirSync(realMods, { recursive: true })
+    writeFileSync(join(realMods, "amod.zip"), "x", "utf-8")
+
+    linkedMods = join(installation, "Mods")
+    symlinkSync(realMods, linkedMods, "dir")
+  })
+
+  it("CHECK_PATH_EXISTS reports the linked folder as present", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS)(event, linkedMods), true)
+  })
+
+  // The exact symptom from the report: the folder button called this one, got
+  // false back from the swallowed policy throw, and told the user their folder
+  // did not exist. The link has to survive too, not be replaced by a real
+  // directory on the way through ensureDir.
+  it("ENSURE_PATH_EXISTS reports the linked folder as present and leaves the link alone", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, linkedMods), true)
+
+    const { lstatSync } = await import("node:fs")
+    assert.equal(lstatSync(linkedMods).isSymbolicLink(), true)
+  })
+
+  // The settings and install-folder pickers call this one and none of them
+  // catches. A throw took the whole pick down with it, so the chosen folder was
+  // never applied and the user got neither the warning nor an error.
+  it("CHECK_PATH_EMPTY answers for the linked folder instead of rejecting", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EMPTY)(event, linkedMods), false)
+
+    const emptyReal = join(temporaryRoot, "VintagestoryData", "Empty")
+    mkdirSync(emptyReal, { recursive: true })
+    const emptyLink = join(installation, "EmptyLink")
+    symlinkSync(emptyReal, emptyLink, "dir")
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EMPTY)(event, emptyLink), true)
+  })
+
+  // The read grade reaches wider than the Mods folder: an installation whose
+  // own folder is a link answers the pre-flight the backup and launch flows run.
+  it("CHECK_PATH_EXISTS reports an installation folder that is itself a link", async () => {
+    const realInstallation = join(temporaryRoot, "Elsewhere", "Main")
+    mkdirSync(realInstallation, { recursive: true })
+    const linkedInstallation = join(managedFolder, "Linked")
+    symlinkSync(realInstallation, linkedInstallation, "dir")
+    writeConfig({ installations: [{ id: "b", name: "B", path: linkedInstallation, backups: [] }] as unknown as ConfigType["installations"] })
+
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS)(event, linkedInstallation), true)
+  })
+
+  it("OPEN_PATH_ON_FILE_EXPLORER shows the linked folder", async () => {
+    const event = await createTrustedEvent()
+    await handler(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER)(event, linkedMods)
+    assert.equal(vi.mocked(shell.showItemInFolder).mock.calls.at(-1)?.[0], linkedMods)
+  })
+
+  // Reporting is a read, creating is not. Dropping the second, strict
+  // assertManagedPath in ENSURE_PATH_EXISTS turns this row green the wrong way:
+  // the folder would appear inside the link target, outside the grant.
+  it("ENSURE_PATH_EXISTS refuses to create a folder through the link", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS)(event, join(linkedMods, "New")), false)
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(join(realMods, "New")), false)
+  })
+
+  it("DELETE_PATH still refuses a mod reached through the link, and leaves it on disk", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH)(event, join(linkedMods, "amod.zip")), false)
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(join(realMods, "amod.zip")), true)
+  })
+
+  it("DELETE_PATH refuses a link inside the installation that escapes into a system folder", async () => {
+    symlinkSync("/etc", join(installation, "escape"), "dir")
+
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH)(event, join(installation, "escape", "hosts")), false)
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync("/etc/hosts"), true)
+  })
+
+  it("DOWNLOAD_ON_PATH refuses the linked folder as an output path, so installing a mod into it is not widened here", async () => {
+    const event = await createTrustedEvent()
+    await assert.rejects(
+      () => handler(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH)(event, "task-1", "https://moddbcdn.vintagestory.at/some-mod-1.0.0.zip", linkedMods, "a.zip"),
+      /Symbolic links are not allowed/
+    )
+  })
 })
 
 describe("COPY_TO_ICONS", () => {
@@ -832,7 +968,9 @@ describe("COMPRESS_ON_PATH: runTrackedWorker via a fake worker", () => {
   })
 })
 
-describe("CHANGE_PERMS: runTrackedWorker via a fake worker", () => {
+// Same Linux-only early return: on Windows the handler resolves false without
+// ever starting a worker, so the fake worker this waits for never arrives.
+describe.skipIf(process.platform === "win32")("CHANGE_PERMS: runTrackedWorker via a fake worker", () => {
   it("resolves true once the worker finishes", async () => {
     const event = await createTrustedEvent()
     const workerPromise = nextTrackedWorker()
@@ -997,7 +1135,10 @@ describe("before-quit: the limiters stop admitting work", () => {
 })
 
 describe("RUN_INSTALLER", () => {
-  it("resolves not-windows on a non-Windows host, before any worker or spawn", async () => {
+  // This exercises the real, unstubbed process.platform !== "win32" branch
+  // (see the file header): on an actual Windows host that branch can't fire,
+  // so RUN_INSTALLER proceeds into the win32 arm this file doesn't cover.
+  it.skipIf(process.platform === "win32")("resolves not-windows on a non-Windows host, before any worker or spawn", async () => {
     // assertManagedPath for the installer path requires it to exist (it is
     // not called with { allowMissing: true }), so the not-windows check --
     // which comes after it -- still needs a real file to reach.

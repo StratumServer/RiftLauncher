@@ -5,4 +5,6 @@ icon: apple
 
 # MacOS
 
-COMING SOON
+MacOS support is planned but not available yet. No MacOS build is published, so RiftLauncher cannot install or launch Vintage Story on a Mac today.
+
+Follow the [GitHub Releases Page](https://github.com/StratumServer/RiftLauncher/releases) or the [GitHub Issue Tracker](https://github.com/StratumServer/RiftLauncher/issues) to know when that changes.

@@ -327,14 +327,18 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH, (event, pathVal
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EMPTY, async (event, pathValue: string): Promise<boolean> => {
   assertTrustedIpcSender(event)
-  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true })
+  // allowSymlinks: reading whether a folder holds anything is a read like the
+  // rest (#237). The three call sites have no try/catch around it, so a throw
+  // here aborts the folder pick itself and the setting silently keeps its old
+  // value; a linked folder has to answer rather than reject.
+  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
   if (!(await fse.pathExists(safePath))) return true
   return (await fse.stat(safePath)).isDirectory() && (await fse.readdir(safePath)).length === 0
 })
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS, async (event, pathValue: string): Promise<boolean> => {
   assertTrustedIpcSender(event)
-  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true })
+  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
   return fse.pathExists(safePath)
 })
 
@@ -342,8 +346,20 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
   assertTrustedIpcSender(event)
 
   try {
-    const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true })
-    await fse.ensureDir(safePath)
+    // Reporting a folder the user linked in as present is a read (#237), so
+    // that arm takes allowSymlinks. Creating one is not, so the missing case
+    // goes back through the strict policy, whose walk refuses a link it finds
+    // among the existing ancestors.
+    //
+    // Only a directory counts as present. stat rather than lstat so a link at a
+    // directory still answers true, and a plain file falls through to ensureDir,
+    // which throws EEXIST and lands on false: the AddInstallation guard relies
+    // on that to keep an installation entry off a regular file.
+    const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
+    const existing = await fse.stat(safePath).catch(() => null)
+    if (existing?.isDirectory()) return true
+
+    await fse.ensureDir(await assertManagedPath(pathValue, "path", { allowMissing: true }))
     return true
   } catch (err) {
     logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [ENSURE_PATH_EXISTS] Error ensuring path.")
@@ -354,7 +370,8 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER, async (event, pathValue: string): Promise<void> => {
   assertTrustedIpcSender(event)
-  shell.showItemInFolder(await assertManagedPath(pathValue, "path"))
+  // allowSymlinks: handing a linked folder to the file explorer is a read (#237).
+  shell.showItemInFolder(await assertManagedPath(pathValue, "path", { allowSymlinks: true }))
 })
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: string, url: string, outputPath: string, fileName: string): Promise<string> => {

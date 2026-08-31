@@ -134,9 +134,9 @@ i18n Ally doesn't know by default which language to use as default, you've to sp
 
 ### **Open the editor and translate**
 
-On the left menu you'll see a localization icon, if this one does not appear just click to open a few files from the left menu and wait a few seconds/a minute and it'll appear, it'll search for the lang files and do everything itself. Here you've a little video showing how to translate:
+On the left menu you'll see a localization icon, if this one does not appear just click to open a few files from the left menu and wait a few seconds/a minute and it'll appear, it'll search for the lang files and do everything itself.
 
-VÍDEO
+Open that Localization panel and you'll get the list of every key, with the missing ones flagged, and you can edit translations inline without ever opening the raw `.json`.
 {% endstep %}
 
 {% step %}

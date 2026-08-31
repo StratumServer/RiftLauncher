@@ -1,5 +1,6 @@
 import { ipcMain } from "electron"
 import { spawn } from "node:child_process"
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import fse from "fs-extra"
 import { join } from "node:path"
 import os from "node:os"
@@ -123,7 +124,21 @@ function realGameProcess(): GameProcess {
           resolve(outcome)
         }
 
-        const externalApp = spawn(request.command, request.args, { env: { ...request.env }, cwd: request.cwd, shell: false, windowsHide: true })
+        let externalApp: ChildProcessWithoutNullStreams
+        try {
+          externalApp = spawn(request.command, request.args, { env: { ...request.env }, cwd: request.cwd, shell: false, windowsHide: true })
+        } catch (err) {
+          // spawn reports ENOENT, EACCES, EAGAIN, EMFILE and ENFILE through an "error"
+          // event and THROWS everything else, which is not a distinction the caller can
+          // do anything with. Windows answers a file that is not a real executable with
+          // UNKNOWN, so a truncated or quarantined Vintagestory.exe lands here rather
+          // than on the event below; without this the whole handler rejects and the
+          // launch stops being a reason the player is told.
+          logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error running Vintage Story.`)
+          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
+          settle({ started: false, error: getErrorMessage(err) })
+          return
+        }
 
         externalApp.stdout.resume()
 
@@ -330,6 +345,10 @@ function realProcessProbe(): ProcessProbe {
 
         let stdout = ""
         let settled = false
+        // Declared before settle so that every exit from this executor, the spawn
+        // throw included, goes through settle. clearTimeout ignores undefined, so
+        // settling before the timer exists is safe.
+        let timer: ReturnType<typeof setTimeout> | undefined = undefined
 
         const settle = (outcome: ProcessProbeOutcome): void => {
           if (settled) return
@@ -338,9 +357,19 @@ function realProcessProbe(): ProcessProbe {
           resolve(outcome)
         }
 
-        const externalApp = spawn(request.command, request.args, { shell: false, windowsHide: true })
+        let externalApp: ChildProcessWithoutNullStreams
+        try {
+          externalApp = spawn(request.command, request.args, { shell: false, windowsHide: true })
+        } catch (err) {
+          // Same throw-instead-of-emit split as EXECUTE_GAME's spawn above, settled
+          // the way the "error" event below settles it.
+          logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for the Vintage Story version.`)
+          logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
+          settle({ ok: false, stdout, error: getErrorMessage(err) })
+          return
+        }
 
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
           logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Timed out waiting for Vintage Story to report its version.`)
           externalApp.kill()
           settle({ ok: false, stdout, error: "Timed out waiting for a response." })

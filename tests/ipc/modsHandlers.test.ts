@@ -16,6 +16,7 @@ import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronPat
 import { dialog } from "electron"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { assertManagedPath } from "@src/ipc/pathPolicy"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 
@@ -140,6 +141,19 @@ describe("GET_INSTALLED_MODS", () => {
     assert.deepEqual(result, { mods: [], errors: [] })
     assert.equal(vi.mocked(pruneModIconCache).mock.calls.length, 0)
   })
+
+  // Listing is a read, so it asks the policy for the grade that tolerates a
+  // Mods folder the user linked in (#237). What that grade then admits is
+  // pathPolicy.test.ts's subject, and what the scan does with a linked folder
+  // is modScan.test.ts's; assertManagedPath is a mock in this file, so all
+  // this row can pin -- and the only thing it needs to -- is that the handler
+  // asks for the read grade rather than the write one.
+  it("asks the path policy for the read grade, the one that tolerates a linked Mods folder", async () => {
+    const event = await createTrustedEvent()
+    await getInstalledModsHandler()(event, modsFolder)
+
+    assert.deepEqual(vi.mocked(assertManagedPath).mock.calls.at(-1)?.[2], { allowMissing: true, allowSymlinks: true })
+  })
 })
 
 describe("EXPORT_MODPACK", () => {
@@ -162,7 +176,10 @@ describe("EXPORT_MODPACK", () => {
     assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
   })
 
-  it("returns success: false when the picked destination cannot be written to (permission denied)", async () => {
+  // chmod 0o500 on the directory does not stop the rename on Windows, which
+  // only checks the file's own read-only attribute, not POSIX write bits on
+  // the containing folder.
+  it.skipIf(process.platform === "win32")("returns success: false when the picked destination cannot be written to (permission denied)", async () => {
     // Pre-seed an existing file, then take away write permission on its
     // DIRECTORY. writeJsonAtomic writes the temp file and renames it over the
     // destination rather than truncating it in place, so a read-only target

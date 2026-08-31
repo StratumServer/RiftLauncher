@@ -1,0 +1,25 @@
+# Every text file is stored and checked out with LF, on Windows too.
+#
+# Three tests read a source file as text and assert on its contents
+# (tests/ipc/accountLoginFlow.test.ts, tests/security-boundaries.test.ts,
+# tests/renderer-dom/moddbVisibilityPrompt.test.tsx). Under a CRLF checkout the
+# first of those fails, which is how the Windows CI job found this; the other
+# two pass only because neither happens to assert across a line ending.
+* text=auto eol=lf
+
+# Byte-exact fixtures. These are crafted archives and compressed streams, and
+# the tests assert on declared sizes, offsets and digests inside them, so a
+# single rewritten line ending changes the answer. tests/fixtures/not-a-zip.bin
+# is the one that actually needs saying: it holds no NUL byte, so the rule above
+# would classify it as text on its own.
+*.zip binary
+*.bin binary
+*.lzma1 binary
+*.lzma2 binary
+
+# Assets. Git detects these as binary by itself; the markers keep that true if
+# one is ever regenerated in a format that looks textual.
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
