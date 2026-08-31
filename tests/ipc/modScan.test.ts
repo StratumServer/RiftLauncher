@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import fse from "fs-extra"
@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import "./helpers/electronMock"
 import { setElectronUserDataPath } from "./helpers/electronMock"
 
+import type { ScanInstalledModsResult } from "../../src/domain/mods/scanInstalled"
 import type { ModArchiveResult } from "../../src/domain/ports"
 
 /**
@@ -404,5 +405,69 @@ describe("pruneModIconCache coalescing and mtime guard", () => {
     const readdirCalls = readdirSpy.mock.calls.filter((args) => String(args[0]).includes("Mods"))
     assert.ok(readdirCalls.length <= 2, `Expected at most 2 readdir calls on the icon folder, got ${readdirCalls.length}`)
     assert.ok(readdirCalls.length >= 1, "Expected at least 1 readdir call")
+  })
+})
+
+/**
+ * The read side of #237: a Mods folder that is itself a symlink.
+ *
+ * The scan runs on real bytes here, through a real link, because the whole
+ * question is what the file system reports back. Windows is skipped: making a
+ * symlink there needs Developer Mode or elevation the CI runners do not have,
+ * which #267 tracks, and nothing in this adapter branches on platform.
+ */
+describe.skipIf(process.platform === "win32")("scanning a Mods folder that is a symlink", () => {
+  let realMods: string
+  let linkedMods: string
+
+  beforeEach(() => {
+    realMods = join(workspace, "VintagestoryData", "Mods")
+    fse.ensureDirSync(realMods)
+    linkedMods = join(workspace, "Installation", "Mods")
+    fse.ensureDirSync(join(workspace, "Installation"))
+    symlinkSync(realMods, linkedMods, "dir")
+  })
+
+  async function scan(folder: string): Promise<ScanInstalledModsResult> {
+    const { createScanInstalledModsPorts } = await import("../../src/ipc/adapters/modScan")
+    const { scanInstalledMods } = await import("../../src/domain/mods/scanInstalled")
+    return scanInstalledMods(createScanInstalledModsPorts(), { folder })
+  }
+
+  it("reads a mod behind the link with the same metadata as one in a plain folder", async () => {
+    fse.copyFileSync(fixturePath("valid-mod.zip"), join(realMods, "valid-mod.zip"))
+
+    const throughLink = await scan(linkedMods)
+    const direct = await scan(realMods)
+
+    assert.deepEqual(throughLink.errors, [])
+    assert.equal(throughLink.mods.length, 1)
+    assert.equal(throughLink.mods[0]?.modid, "riftfixture")
+    assert.equal(throughLink.mods[0]?.name, "Rift Fixture Mod")
+    assert.equal(throughLink.mods[0]?.version, "1.0.0")
+    // Same mod, read the same way; only the folder it was reached through, and
+    // therefore the archive path, differs.
+    assert.deepEqual({ ...throughLink.mods[0], path: "" }, { ...direct.mods[0], path: "" })
+    assert.equal(throughLink.mods[0]?.path, join(linkedMods, "valid-mod.zip"))
+  })
+
+  it("skips a dangling link inside the folder and still reads the mods around it", async () => {
+    fse.copyFileSync(fixturePath("valid-mod.zip"), join(realMods, "valid-mod.zip"))
+    symlinkSync(join(workspace, "nowhere", "gone.zip"), join(realMods, "gone.zip"))
+
+    const result = await scan(linkedMods)
+
+    assert.deepEqual(result.errors, [])
+    assert.equal(result.mods.length, 1)
+    assert.equal(result.mods[0]?.modid, "riftfixture")
+  })
+
+  it("skips an archive inside the folder that is itself a link, so nothing outside it gets opened", async () => {
+    const outside = join(workspace, "elsewhere", "valid-mod.zip")
+    fse.ensureDirSync(join(workspace, "elsewhere"))
+    fse.copyFileSync(fixturePath("valid-mod.zip"), outside)
+    symlinkSync(outside, join(realMods, "linked-mod.zip"))
+
+    assert.deepEqual(await scan(linkedMods), { mods: [], errors: [] })
   })
 })
