@@ -139,12 +139,11 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   return <NotificationsContext.Provider value={{ notifications, addNotification, removeNotification }}>{children}</NotificationsContext.Provider>
 }
 
-const useNotificationsContext = (): NotificationsContextType => {
-  const context = useContext(NotificationsContext)
-  if (!context) {
-    throw new Error("useNotificationsContext must be used within an NotificationsProvider")
-  }
-  return context
-}
+/**
+ * The context ships the no-op `defaultValue` above, so a call from outside a
+ * provider gets that and never nothing. There is no absent case to guard, which
+ * is why this one has no throw where the task and config hooks have one.
+ */
+const useNotificationsContext = (): NotificationsContextType => useContext(NotificationsContext)
 
 export { NotificationsProvider, useNotificationsContext }

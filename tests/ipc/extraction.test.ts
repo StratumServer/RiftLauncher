@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import * as tar from "tar"
 import { path7za } from "7zip-bin"
 
@@ -50,6 +50,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(workspace, { recursive: true, force: true })
+  vi.unstubAllEnvs()
 })
 
 describe("contentRoot", () => {
@@ -203,13 +204,20 @@ describe("runExtraction on a gzipped tar", () => {
   })
 
   it("leaves no temporary workspace behind", async () => {
-    const before = readdirSync(tmpdir()).filter((entry) => entry.startsWith("vs-launcher-extract-")).length
+    // Same reasoning as the Inno extraction's own cleanup test: the machine-wide
+    // temp root holds other runs' staging folders, so this one gets a root of its
+    // own and what is left in it at the end belongs to this call.
+    const temporaryRoot = workspacePath("temp-root")
+    mkdirSync(temporaryRoot)
+    vi.stubEnv("TMPDIR", temporaryRoot)
+    vi.stubEnv("TMP", temporaryRoot)
+    vi.stubEnv("TEMP", temporaryRoot)
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf" } })
     const archivePath = await makeTarGz("clean.tar.gz", workspacePath("source"))
 
     await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, sevenZipBin })
 
-    assert.equal(readdirSync(tmpdir()).filter((entry) => entry.startsWith("vs-launcher-extract-")).length, before)
+    assert.deepEqual(readdirSync(temporaryRoot), [])
   })
 })
 
