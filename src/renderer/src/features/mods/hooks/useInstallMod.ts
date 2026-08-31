@@ -19,6 +19,8 @@ export interface InstallModOptions {
   release: ModReleaseToInstall
   /** The copy this install replaces, absent for a first install. */
   existing?: InstalledModCopy
+  /** True to write the archive turned off, for a player updating a Mod they had disabled. */
+  disabled?: boolean
   /** True while a backup or a restore holds the installation's folder. */
   installationBusy?: boolean
 }
@@ -38,7 +40,7 @@ export function useInstallMod(): (options: InstallModOptions) => Promise<Install
   const { startDownload } = useTaskContext()
 
   return async function runInstallMod(options: InstallModOptions): Promise<InstallModResult> {
-    const { installationPath, outName, modName, release, existing, installationBusy } = options
+    const { installationPath, outName, modName, release, existing, disabled, installationBusy } = options
 
     const labels = { name: modName, version: `v${release.modversion}`, out: outName }
 
@@ -48,7 +50,7 @@ export function useInstallMod(): (options: InstallModOptions) => Promise<Install
       taskDescription: t("features.mods.modDownloadDesc", labels)
     })
 
-    const result = await installMod(ports, { installationPath, release, existing, installationBusy })
+    const result = await installMod(ports, { installationPath, release, existing, disabled, installationBusy })
 
     if (result.ok) return result
 

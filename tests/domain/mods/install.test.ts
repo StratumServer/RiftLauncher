@@ -79,6 +79,11 @@ describe("modArchiveFileName", () => {
   it("keeps the version verbatim, pre-release suffix included", () => {
     assert.equal(modArchiveFileName({ ...RELEASE, modversion: "2.0.0-pre.8" }), "carryon-2.0.0-pre.8.zip")
   })
+
+  it("names a disabled install out of the game's way (#287)", () => {
+    assert.equal(modArchiveFileName(RELEASE, true), "carryon-2.0.1.zip.disabled")
+    assert.equal(modArchiveFileName(RELEASE, false), "carryon-2.0.1.zip")
+  })
 })
 
 describe("installMod", () => {
@@ -146,5 +151,17 @@ describe("installMod", () => {
     assert.deepEqual(result, { ok: false, reason: "installation-busy" })
     assert.deepEqual(trace, [])
     assert.deepEqual(requests, [])
+  })
+
+  it("updates a disabled mod into a disabled archive, so it stays out of the load order (#287)", async () => {
+    const { downloader, requests } = fakeDownloader()
+
+    const result = await installMod(fakePorts({ downloader }), input({ existing: { path: `${MODS_FOLDER}/carryon-1.9.0.zip.disabled`, version: "1.9.0" }, disabled: true }))
+
+    // The old disabled copy goes, the new one arrives under the same kind of name. Asking for an
+    // update is not asking for the mod to come back on.
+    assert.deepEqual(requests, [{ url: RELEASE.mainfile, outputFolder: MODS_FOLDER, fileName: "carryon-2.0.1.zip.disabled" }])
+    assert.deepEqual(result, { ok: true, fileName: "carryon-2.0.1.zip.disabled", path: `${MODS_FOLDER}/carryon-2.0.1.zip.disabled` })
+    assert.deepEqual(trace, [`remove:${MODS_FOLDER}/carryon-1.9.0.zip.disabled`, `download:${RELEASE.mainfile}->${MODS_FOLDER}/carryon-2.0.1.zip.disabled`])
   })
 })

@@ -160,6 +160,12 @@ declare global {
     modid: string
     version: string
     path: string
+    /**
+     * False when the archive is renamed out of the game's way, so Vintage Story
+     * never loads it. The folder is the only record of this: nothing about a
+     * disabled mod is written to the config.
+     */
+    enabled: boolean
     description?: string
     side?: string
     authors?: string[]
@@ -392,6 +398,26 @@ declare global {
 
   /** COPY_TO_ICONS' verdict. `status: false` means nothing was written to the Icons folder. */
   type CustomIconCopyResult = { status: true; file: string } | { status: false; reason: CustomIconCopyFailureReason }
+
+  /**
+   * Why SET_MOD_ENABLED left the Mods folder as it found it (#287).
+   *
+   * - `already-in-state`: the archive is already on, or already off, whichever
+   *   was asked for. Reachable from a row the player is looking at while
+   *   something else renames the file underneath it.
+   * - `name-taken`: the name on the other side of the toggle is a file that
+   *   already exists, so the rename would have destroyed it. Both archives are
+   *   left alone and the player is told, since only they know which of the two
+   *   they meant to keep.
+   * - `refused`: everything else, and all of it is a refusal rather than a
+   *   mishap: an unmanaged path, a symbolic link, a name the scan itself would
+   *   not open, a file that is not a mod archive, or a host that would not
+   *   rename it.
+   */
+  type SetModEnabledFailureReason = "already-in-state" | "name-taken" | "refused"
+
+  /** SET_MOD_ENABLED's verdict, carrying the archive's new path when it moved. */
+  type SetModEnabledResult = { ok: true; path: string } | { ok: false; reason: SetModEnabledFailureReason }
 
   declare module "*.png" {
     const value: string

@@ -83,6 +83,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     modsManager: {
       getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })),
+      setModEnabled: vi.fn(notMocked("modsManager.setModEnabled")),
       exportModpack: vi.fn(notMocked("modsManager.exportModpack")),
       importModpack: vi.fn(notMocked("modsManager.importModpack")),
       clearModIconMemoryCache: vi.fn()

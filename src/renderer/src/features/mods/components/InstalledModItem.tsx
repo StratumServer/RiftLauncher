@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next"
-import { PiArrowClockwiseDuotone, PiMoonDuotone, PiTrashDuotone } from "react-icons/pi"
+import { PiArrowClockwiseDuotone, PiMoonDuotone, PiPowerDuotone, PiTrashDuotone } from "react-icons/pi"
 import { FiExternalLink } from "react-icons/fi"
 import clsx from "clsx"
 
@@ -9,10 +9,11 @@ import { ListItem } from "@renderer/components/ui/List"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 
-/** One installed Mod's row: art, identity, and the suspend/update/ModDB/delete actions. */
+/** One installed Mod's row: art, identity, and the enable/suspend/update/ModDB/delete actions. */
 function InstalledModItem({
   iMod,
   suspended,
+  onToggleEnabledClick,
   onToggleSuspendClick,
   onDeleteClick,
   onUpdateClick
@@ -20,6 +21,7 @@ function InstalledModItem({
   iMod: InstalledModType
   /** Update All skips this Mod. The row still says an update exists, and still offers it. */
   suspended: boolean
+  onToggleEnabledClick: () => void
   onToggleSuspendClick: () => void
   onDeleteClick: () => void
   onUpdateClick: () => void
@@ -32,12 +34,14 @@ function InstalledModItem({
       <div
         className={clsx(
           "h-20 flex gap-4 p-2 justify-between items-center whitespace-nowrap skip-offscreen-render",
-          // Suspension wins the tint: it is a decision the player made, and it is the one thing
-          // about the row that the update state alone cannot explain.
-          suspended ? "bg-sky-500/25" : iMod._updatableTo ? "bg-lime-600/25" : iMod._lastVersion && "bg-yellow-400/25"
+          // Being off wins the tint outright: whatever else the row has to say about updates or
+          // suspension, the game is not loading this Mod at all, and that is the headline.
+          !iMod.enabled ? "bg-zinc-500/25" : suspended ? "bg-sky-500/25" : iMod._updatableTo ? "bg-lime-600/25" : iMod._lastVersion && "bg-yellow-400/25"
         )}
       >
-        <div className="shrink-0">
+        {/* Only what describes the Mod is greyed. The buttons keep their contrast, because the one
+            that turns it back on has to stay as readable as every other row's. */}
+        <div className={clsx("shrink-0", !iMod.enabled && "opacity-50 grayscale")}>
           {iMod._image ? (
             <img src={`cachemodimg:${iMod._image}`} alt={iMod.name} loading="lazy" className="w-16 h-16 object-cover rounded-sm" />
           ) : (
@@ -47,11 +51,17 @@ function InstalledModItem({
 
         <ThinSeparator />
 
-        <div className="w-full flex flex-col gap-1 justify-center overflow-hidden">
+        <div className={clsx("w-full flex flex-col gap-1 justify-center overflow-hidden", !iMod.enabled && "opacity-50")}>
           <div className="flex gap-2 items-center">
             <p className="font-bold">{iMod.name}</p>
             <span>·</span>
             <p>v{iMod.version}</p>
+            {!iMod.enabled && (
+              <>
+                <span>·</span>
+                <p className="text-sm uppercase tracking-wide text-zinc-300">{t("features.mods.disabledLabel")}</p>
+              </>
+            )}
           </div>
 
           {iMod.description && (
@@ -80,6 +90,10 @@ function InstalledModItem({
         <ThinSeparator />
 
         <div className="flex gap-1 justify-end text-lg">
+          <NormalButton className="p-1" title={iMod.enabled ? t("features.mods.disableMod") : t("features.mods.enableMod")} type={iMod.enabled ? "normal" : "warn"} onClick={onToggleEnabledClick}>
+            <PiPowerDuotone />
+          </NormalButton>
+
           <NormalButton className="p-1" title={suspended ? t("features.mods.resumeUpdates") : t("features.mods.suspendUpdates")} type={suspended ? "warn" : "normal"} onClick={onToggleSuspendClick}>
             <PiMoonDuotone />
           </NormalButton>

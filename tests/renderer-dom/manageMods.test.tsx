@@ -17,6 +17,9 @@ const DELTA_PATH = "/games/a/Mods/delta-4.0.0.zip"
 const SEARCH_PLACEHOLDER = "Search by name or id"
 const SUSPEND_TITLE = "Suspend updates for this Mod: Update all will skip it, you can still update it from here"
 const RESUME_TITLE = "Resume updates for this Mod: Update all will include it again"
+const EPSILON_PATH = "/games/a/Mods/epsilon-5.0.0.zip.disabled"
+const DISABLE_TITLE = "Disable this Mod: it stays installed, Vintage Story just won't load it"
+const ENABLE_TITLE = "Enable this Mod: Vintage Story will load it again"
 
 function anInstallation(): InstallationType {
   return {
@@ -42,22 +45,36 @@ function anInstallation(): InstallationType {
 function aModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
   return {
     mods: [
-      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, description: "The first one.", authors: ["Ann"], contributors: [], _image: "alpha.png" },
-      { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, description: "The second one.", side: "Server", authors: ["Bob"], contributors: [] },
+      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, description: "The first one.", authors: ["Ann"], contributors: [], _image: "alpha.png" },
+      { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, enabled: true, description: "The second one.", side: "Server", authors: ["Bob"], contributors: [] },
       // No declared side at all, which the server export reads as "the server loads it".
-      { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: "/games/a/Mods/gamma-3.0.0.zip", authors: ["Cal"], contributors: [] },
+      { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: "/games/a/Mods/gamma-3.0.0.zip", enabled: true, authors: ["Cal"], contributors: [] },
       // Its id shares nothing with its name, so a search hitting it can only have matched the id.
-      { name: "Delta Mod", modid: "quirkid", version: "4.0.0", path: DELTA_PATH, side: "Client", authors: ["Dee"], contributors: [] }
+      { name: "Delta Mod", modid: "quirkid", version: "4.0.0", path: DELTA_PATH, enabled: true, side: "Client", authors: ["Dee"], contributors: [] }
     ],
     errors: [{ zipname: "broken.zip", path: "/games/a/Mods/broken.zip" }]
+  }
+}
+
+/**
+ * A folder holding one Mod the player turned off (#287). Epsilon is updatable and a server would
+ * load it, so one fixture answers what Update all does, what an export ships and what a row shows.
+ */
+function scanWithADisabledMod(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
+  return {
+    mods: [
+      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, authors: ["Ann"], contributors: [] },
+      { name: "Epsilon Mod", modid: "epsilon", version: "5.0.0", path: EPSILON_PATH, enabled: false, authors: ["Eve"], contributors: [] }
+    ],
+    errors: []
   }
 }
 
 function duplicateModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
   return {
     mods: [
-      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, authors: [] },
-      { name: "Alpha Mod copy", modid: "alpha", version: "1.0.1", path: "/games/a/Mods/alpha-copy-1.0.1.zip", authors: [] }
+      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, authors: [] },
+      { name: "Alpha Mod copy", modid: "alpha", version: "1.0.1", path: "/games/a/Mods/alpha-copy-1.0.1.zip", enabled: true, authors: [] }
     ],
     errors: []
   }
@@ -97,6 +114,7 @@ function queryModDb(url: string): Promise<string> {
   if (url.endsWith("/mod/beta")) return Promise.resolve(aModDetail({ modid: 2, assetid: 102, name: "Beta Mod", modidstr: "beta", modversion: "2.1.0", tags: ["1.20.0"] }))
   // Gamma's only newer release is tagged for another series, so it lands in the incompatible list.
   if (url.endsWith("/mod/gamma")) return Promise.resolve(aModDetail({ modid: 3, assetid: 103, name: "Gamma Mod", modidstr: "gamma", modversion: "3.1.0", tags: ["1.19.0"] }))
+  if (url.endsWith("/mod/epsilon")) return Promise.resolve(aModDetail({ modid: 5, assetid: 105, name: "Epsilon Mod", modidstr: "epsilon", modversion: "5.1.0", tags: ["1.20.0"] }))
   return Promise.resolve(JSON.stringify({ statuscode: "404" }))
 }
 
@@ -455,6 +473,138 @@ describe("ManageMods: searching the installed Mods", () => {
     // Beta and nothing else: not Delta, which is on screen but client-only, and not Alpha or Gamma,
     // which a server would load but the search took away.
     expect(manifest.mods).toEqual([{ modid: "beta", version: "2.0.0" }])
+  })
+})
+
+/** Issue #287: turning a Mod off without uninstalling it, and what the rest of the page does about it. */
+describe("ManageMods: enabling and disabling a Mod", () => {
+  async function rowFor(name: string): Promise<HTMLElement> {
+    return (await screen.findByText(name, {}, { timeout: 3000 })).closest("li") as HTMLElement
+  }
+
+  /** The page with the disabled-Mod folder, plus whatever the case needs on top. */
+  function renderWithADisabledMod(overrides: WindowApiOverrides = {}): ReturnType<typeof renderManageMods> {
+    return renderManageMods({ ...overrides, modsManager: { getInstalledMods: vi.fn(async () => scanWithADisabledMod()), ...overrides.modsManager } })
+  }
+
+  it("greys a disabled Mod, says so on the row, and offers to turn it back on", async () => {
+    renderWithADisabledMod()
+
+    const epsilonRow = await rowFor("Epsilon Mod")
+
+    expect(within(epsilonRow).getByText("Disabled")).toBeTruthy()
+    expect(within(epsilonRow).getByTitle(ENABLE_TITLE)).toBeTruthy()
+    expect(epsilonRow.firstElementChild?.className).toContain("bg-zinc-500/25")
+
+    // An enabled row offers the other direction and is not greyed at all.
+    const alphaRow = await rowFor("Alpha Mod")
+    expect(within(alphaRow).getByTitle(DISABLE_TITLE)).toBeTruthy()
+    expect(within(alphaRow).queryByText("Disabled")).toBeNull()
+    expect(alphaRow.firstElementChild?.className).not.toContain("bg-zinc-500/25")
+  })
+
+  it("asks the host to rename the archive, then rescans the folder", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => ({ ok: true, path }))
+    const getInstalledMods = vi.fn(async () => scanWithADisabledMod())
+    renderWithADisabledMod({ modsManager: { setModEnabled, getInstalledMods } })
+
+    const alphaRow = await rowFor("Alpha Mod")
+    const scansBefore = getInstalledMods.mock.calls.length
+
+    await user.click(within(alphaRow).getByTitle(DISABLE_TITLE))
+
+    // The renderer names the file and the state it wants. It never composes the new name.
+    await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(ALPHA_PATH, false))
+    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded!")).toBeTruthy()
+    // The archive's name is its path, so every button on that row is pointing at a name that has
+    // just stopped existing. The rescan is what puts them back on the real file.
+    await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
+  })
+
+  it("turns a disabled Mod back on from its own row", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => ({ ok: true, path }))
+    renderWithADisabledMod({ modsManager: { setModEnabled } })
+
+    await user.click(within(await rowFor("Epsilon Mod")).getByTitle(ENABLE_TITLE))
+
+    await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(EPSILON_PATH, true))
+    expect(await screen.findByText("Epsilon Mod is enabled again!")).toBeTruthy()
+  })
+
+  it("names the clash instead of pretending nothing happened when the other file already exists", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async () => ({ ok: false, reason: "name-taken" }))
+    renderWithADisabledMod({ modsManager: { setModEnabled } })
+
+    await user.click(within(await rowFor("Alpha Mod")).getByTitle(DISABLE_TITLE))
+
+    expect(await screen.findByText(/There is already another file where Alpha Mod would have been renamed/)).toBeTruthy()
+  })
+
+  it("leaves a disabled Mod out of Update all and updates the rest", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn(async (_id: string, url: string) => (url.includes("alpha") ? "/games/a/Mods/alpha-1.1.0.zip" : "/games/a/Mods/epsilon-5.1.0.zip"))
+    renderWithADisabledMod({ pathsManager: { deletePath, downloadOnPath } })
+
+    await rowFor("Alpha Mod")
+    // Epsilon has an update waiting and is still listed under the heading that says so.
+    const updatesSection = screen.getByText("Mods with updates").closest("ul") as HTMLElement
+    expect(within(updatesSection).getByText("Epsilon Mod")).toBeTruthy()
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    // Alpha only. A Mod that is off does not silently change version.
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(downloadOnPath.mock.calls[0]?.[1]).toContain("alpha")
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ALPHA_PATH])
+  })
+
+  it("keeps a disabled Mod out of both modpack exports, because an export is the playable set", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderWithADisabledMod({ modsManager: { exportModpack } })
+
+    await rowFor("Epsilon Mod")
+
+    await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0" }])
+
+    // Epsilon declares no side, which the server export otherwise reads as "the server loads it".
+    await user.click(screen.getByText("Export Server Modpack").closest("button") as HTMLElement)
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(2))
+    expect(exportModpack.mock.calls[1]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0" }])
+  })
+
+  it("finds a disabled Mod by search like any other, name or id", async () => {
+    const user = userEvent.setup()
+    renderWithADisabledMod()
+
+    await rowFor("Epsilon Mod")
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "epsilon")
+
+    expect(await screen.findByText("Epsilon Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    expect(screen.getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("deletes a disabled Mod by the file name it actually has", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn(async () => true)
+    renderWithADisabledMod({ pathsManager: { deletePath } })
+
+    await user.click(within(await rowFor("Epsilon Mod")).getByTitle("Delete"))
+
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByTitle("Delete"))
+
+    // The `.disabled` name is the real one on disk, so it is the one the delete has to target.
+    await waitFor(() => expect(deletePath).toHaveBeenCalledWith(EPSILON_PATH))
+    expect(await screen.findByText("Mod deleted successfully!")).toBeTruthy()
   })
 })
 

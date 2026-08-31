@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { beforeEach, describe, it } from "vitest"
 
-import { MAX_MOD_ARCHIVES, MOD_SCAN_BATCH_SIZE, installedModsTotal, scanInstalledMods } from "../../../src/domain/mods/scanInstalled"
+import { MAX_MOD_ARCHIVES, MOD_SCAN_BATCH_SIZE, installedModsTotal, isDisabledModArchive, renameModArchiveTo, scanInstalledMods } from "../../../src/domain/mods/scanInstalled"
 import type { ScanInstalledModsEvents, ScanInstalledModsPorts } from "../../../src/domain/mods/scanInstalled"
 import type { DirectoryReader, IconStore, ModArchiveResult, PathBuilder } from "../../../src/domain/ports"
 
@@ -371,6 +371,7 @@ describe("scanInstalledMods results", () => {
       name: "A Mod",
       version: "1.0.0",
       path: `${FOLDER}/amod.zip`,
+      enabled: true,
       description: "Does things",
       side: "universal",
       authors: ["Alice"],
@@ -398,5 +399,92 @@ describe("scanInstalledMods results", () => {
 
     assert.deepEqual(trace.slice(-2), ["mod:amod", "problem:gone.zip:unreadable-archive"])
     assert.equal(trace[1], "found:2")
+  })
+})
+
+/** Issue #287: a Mod turned off is a Mod the player still has, named out of the game's way. */
+describe("scanInstalledMods and disabled archives", () => {
+  it("lists a disabled archive as the same mod, read the same way, flagged off", async () => {
+    const result = await scanInstalledMods(fakePorts({ "amod.zip.disabled": { modinfo: modinfoText({ description: "Does things", authors: ["Alice"] }), icon: ICON } }), { folder: FOLDER })
+
+    // Everything an enabled row shows is here, read out of the archive exactly as before. Only the
+    // flag and the path differ, which is the whole of what being disabled means.
+    assert.deepEqual(result.errors, [])
+    assert.equal(result.mods.length, 1)
+    assert.equal(result.mods[0]?.name, "A Mod")
+    assert.equal(result.mods[0]?.modid, "amod")
+    assert.equal(result.mods[0]?.version, "1.0.0")
+    assert.equal(result.mods[0]?.description, "Does things")
+    assert.deepEqual(result.mods[0]?.authors, ["Alice"])
+    assert.equal(result.mods[0]?.image, "icon-1.png")
+    assert.equal(result.mods[0]?.path, `${FOLDER}/amod.zip.disabled`)
+    assert.equal(result.mods[0]?.enabled, false)
+  })
+
+  it("lists both halves of a name collision, each as the file it really is", async () => {
+    // A folder the player made by hand. Two files means two rows: collapsing them would hide an
+    // archive that exists, and picking one for them would be picking which of the two to lie about.
+    const result = await scanInstalledMods(fakePorts({ "amod.zip": { modinfo: modinfoText({ version: "1.0.0" }) }, "amod.zip.disabled": { modinfo: modinfoText({ version: "0.9.0" }) } }), {
+      folder: FOLDER
+    })
+
+    assert.deepEqual(
+      result.mods.map((mod) => [mod.path, mod.version, mod.enabled]),
+      [
+        [`${FOLDER}/amod.zip`, "1.0.0", true],
+        [`${FOLDER}/amod.zip.disabled`, "0.9.0", false]
+      ]
+    )
+  })
+
+  it("still ignores a name that is neither", async () => {
+    const result = await scanInstalledMods(fakePorts({ "notes.txt": {}, "amod.disabled": {}, "amod.zip.disabled.bak": {} }), { folder: FOLDER })
+
+    assert.deepEqual(result.mods, [])
+    assert.deepEqual(result.errors, [])
+  })
+
+  it("reports an unreadable disabled archive under its own name, like any other", async () => {
+    const result = await scanInstalledMods(fakePorts({ "broken.zip.disabled": { problem: "unreadable-archive" } }), { folder: FOLDER })
+
+    assert.deepEqual(result.mods, [])
+    assert.deepEqual(result.errors, [{ zipname: "broken.zip.disabled", path: `${FOLDER}/broken.zip.disabled`, problem: "unreadable-archive" }])
+  })
+})
+
+describe("isDisabledModArchive", () => {
+  it("reads the tail of a name or of a whole path", () => {
+    assert.equal(isDisabledModArchive("amod.zip.disabled"), true)
+    assert.equal(isDisabledModArchive(`${FOLDER}/amod.zip.disabled`), true)
+    assert.equal(isDisabledModArchive("amod.zip"), false)
+    assert.equal(isDisabledModArchive("amod.disabled"), false)
+  })
+
+  it("ignores case, the way the scan does when it decides what to open", () => {
+    assert.equal(isDisabledModArchive("AMod.ZIP.Disabled"), true)
+    assert.equal(isDisabledModArchive("AMod.ZIP"), false)
+  })
+})
+
+describe("renameModArchiveTo", () => {
+  it("appends the suffix to turn a mod off and takes it back off to turn it on", () => {
+    assert.deepEqual(renameModArchiveTo("amod-1.0.0.zip", false), { ok: true, fileName: "amod-1.0.0.zip.disabled" })
+    assert.deepEqual(renameModArchiveTo("amod-1.0.0.zip.disabled", true), { ok: true, fileName: "amod-1.0.0.zip" })
+  })
+
+  it("carries the rest of the name through byte for byte, case included", () => {
+    assert.deepEqual(renameModArchiveTo("A Mod (v2) [beta].ZIP", false), { ok: true, fileName: "A Mod (v2) [beta].ZIP.disabled" })
+    assert.deepEqual(renameModArchiveTo("A Mod (v2) [beta].ZIP.DISABLED", true), { ok: true, fileName: "A Mod (v2) [beta].ZIP" })
+  })
+
+  it("refuses a name that is already the way it is being asked to be", () => {
+    assert.deepEqual(renameModArchiveTo("amod.zip", true), { ok: false, reason: "already-in-state" })
+    assert.deepEqual(renameModArchiveTo("amod.zip.disabled", false), { ok: false, reason: "already-in-state" })
+  })
+
+  it("refuses anything that is not a mod archive, so there is no name to derive", () => {
+    assert.deepEqual(renameModArchiveTo("notes.txt", false), { ok: false, reason: "not-a-mod-archive" })
+    assert.deepEqual(renameModArchiveTo("amod.disabled", true), { ok: false, reason: "not-a-mod-archive" })
+    assert.deepEqual(renameModArchiveTo("amod.zip.disabled.bak", true), { ok: false, reason: "not-a-mod-archive" })
   })
 })

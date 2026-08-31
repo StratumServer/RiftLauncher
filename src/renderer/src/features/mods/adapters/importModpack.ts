@@ -2,7 +2,7 @@ import type { InstalledModSnapshot, ModpackImportEntryReport, ModpackModDetail }
 
 /** Copies an installed mod into the plain shape the planner reads. */
 export function toInstalledModSnapshot(mod: InstalledModType): InstalledModSnapshot {
-  return { modid: mod.modid, name: mod.name, version: mod.version, path: mod.path, assetid: mod._mod?.assetid }
+  return { modid: mod.modid, name: mod.name, version: mod.version, path: mod.path, enabled: mod.enabled, assetid: mod._mod?.assetid }
 }
 
 /** Copies a queried ModDB mod into the plain shape the planner reads. */

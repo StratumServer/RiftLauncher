@@ -10,7 +10,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useManageInstalledMods } from "@renderer/features/mods/hooks/useManageInstalledMods"
 import { useBulkUpdateMods } from "@renderer/features/mods/hooks/useBulkUpdateMods"
 import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpackImportPicker"
-import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
+import { clearModIconMemoryCache, setModEnabled } from "@renderer/features/moddb/adapters/modsManager"
 
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 
@@ -87,11 +87,37 @@ function ListMods(): JSX.Element {
         key={iMod.modid + iMod.path}
         iMod={iMod}
         suspended={suspended}
+        onToggleEnabledClick={() => ToggleModEnabledHandler(iMod)}
         onToggleSuspendClick={() => configDispatch({ type: suspended ? CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE : CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE, payload: { modid: iMod.modid } })}
         onDeleteClick={() => setModToDelete(iMod)}
         onUpdateClick={() => setModToUpdate(iMod)}
       />
     )
+  }
+
+  /**
+   * Turns one Mod on or off, then rescans.
+   *
+   * The rescan is not optional and it is not a nicety: the archive's name is its path, so a Mod that
+   * just changed state is a different file from the one this row is holding, and every button on
+   * that row would still be pointing at a name that no longer exists.
+   */
+  async function ToggleModEnabledHandler(iMod: InstalledModType): Promise<void> {
+    if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
+
+    if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantToggleWhileinUse"), "error")
+
+    const result = await setModEnabled(iMod.path, !iMod.enabled)
+
+    if (result.ok) {
+      addNotification(t(iMod.enabled ? "features.mods.modDisabled" : "features.mods.modEnabled", { mod: iMod.name }), "success")
+    } else {
+      window.api.utils.logMessage("error", `${LOG_TAG} [ToggleModEnabledHandler] Could not turn the ${iMod.name} Mod ${iMod.enabled ? "off" : "on"}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [ToggleModEnabledHandler] Renaming ${iMod.path} was refused: ${result.reason}.`)
+      addNotification(t(result.reason === "name-taken" ? "features.mods.modNameTaken" : "features.mods.errorTogglingMod", { mod: iMod.name }), "error")
+    }
+
+    refresh()
   }
 
   async function DeleteModHandler(): Promise<void> {

@@ -49,7 +49,11 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
 
       // A suspended Mod is held back here and nowhere else: it keeps its update notice, and its own
       // row keeps updating it on demand, which is the whole point of suspending it (#194).
-      const modsToUpdate = installedMods.filter((iMod) => iMod._updatableTo && !suspendedModUpdates.includes(iMod.modid))
+      //
+      // A disabled Mod is held back for a different reason (#287): a Mod that is off is not part of
+      // what the player is running, and changing its version behind their back means the thing they
+      // turn back on later is not the thing they turned off. Its row still updates it on demand.
+      const modsToUpdate = installedMods.filter((iMod) => iMod.enabled && iMod._updatableTo && !suspendedModUpdates.includes(iMod.modid))
 
       await Promise.all(
         modsToUpdate.map(async (modToUpdate) => {

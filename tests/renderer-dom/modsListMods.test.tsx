@@ -151,7 +151,7 @@ describe("ListMods", () => {
     // "installed" only for the Mods folder under /games/b, so the mod card's
     // installed styling can only flip once ListMods re-scans with the edited path.
     const getInstalledMods = vi.fn(async (path: string) =>
-      path.startsWith("/games/b") ? { mods: [{ name: "Better Ruins", modid: "betterruins", version: "1.0.0", path }], errors: [] } : { mods: [], errors: [] }
+      path.startsWith("/games/b") ? { mods: [{ name: "Better Ruins", modid: "betterruins", version: "1.0.0", path, enabled: true }], errors: [] } : { mods: [], errors: [] }
     )
 
     installMockWindowApi({
