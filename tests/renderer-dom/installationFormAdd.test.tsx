@@ -68,6 +68,29 @@ describe("AddInstallation", () => {
     await waitFor(() => expect(ensurePathExists).toHaveBeenCalled())
   })
 
+  it("renders the form when a registered VS Version string is not valid semver", async () => {
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            defaultInstallationsFolder: "/installations",
+            gameVersions: [
+              { version: "1.20.0", path: "/versions/1.20.0" },
+              { version: "Vintage Story 1.21.0", path: "/games/vintagestory", linked: true }
+            ]
+          })
+        )
+      }
+    })
+
+    renderAddInstallation()
+
+    // The default version is picked by sorting the list, so this page went blank on the same
+    // string that took the edit form down.
+    expect(await screen.findByText("1.20.0")).toBeTruthy()
+    expect(screen.getByText("Vintage Story 1.21.0")).toBeTruthy()
+  })
+
   it("notifies the name length failure and stays on the form when the name is too short", async () => {
     const user = userEvent.setup()
     installMockWindowApi({
