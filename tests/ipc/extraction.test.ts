@@ -247,6 +247,49 @@ describe("backup round trip", () => {
     assert.deepEqual(readdirSync(workspacePath("restored")).sort(), readdirSync(workspacePath("installation")).sort())
   })
 
+  it("puts two names for one inode back as two ordinary files", async () => {
+    // A player does not have to have made a hard link to have one: a
+    // deduplicating filesystem hands them out on its own, and a mod copied twice
+    // can end up as two names over one inode. Left alone, tar writes the second
+    // name as a Link entry, the restore reader refuses Link, and the backup
+    // reports success while being impossible to put back.
+    writeTree(workspacePath("installation"), { Mods: { "carrycapacity.zip": "not really a mod" }, "clientsettings.json": "{}" })
+    const firstName = workspacePath("installation", "Mods", "carrycapacity.zip")
+    const secondName = workspacePath("installation", "Mods", "carrycapacity-1.0.0.zip")
+    linkSync(firstName, secondName)
+    // The fixture is only worth anything if the two names really are one file.
+    assert.equal(lstatSync(firstName).ino, lstatSync(secondName).ino)
+    assert.equal(lstatSync(firstName).nlink, 2)
+    const before = readTree(workspacePath("installation"))
+
+    await runCompression({ inputPath: workspacePath("installation"), outputPath: workspacePath("backups"), outputFileName: "backup.tar.gz" })
+
+    // Nothing in the archive asks the reader to link one name to another: the
+    // second name carries its own bytes, which is what makes the backup
+    // self-contained and the restore below possible at all.
+    const archived: { path: string; type: string; size: number }[] = []
+    await tar.list({ file: workspacePath("backups", "backup.tar.gz"), onReadEntry: (entry) => void archived.push({ path: entry.path, type: entry.type, size: entry.size }) })
+    assert.deepEqual(
+      archived.filter((entry) => entry.type !== "File" && entry.type !== "Directory"),
+      []
+    )
+    assert.deepEqual(
+      archived.filter((entry) => entry.path.startsWith("Mods/carrycapacity")).map((entry) => entry.size),
+      [16, 16]
+    )
+
+    await runExtraction({ filePath: workspacePath("backups", "backup.tar.gz"), outputPath: workspacePath("restored"), deleteArchive: false })
+
+    assert.deepEqual(readTree(workspacePath("restored")), before)
+    // Independent copies, not the sharing put back: the launcher only promises
+    // the bytes, and the extraction's own tree check refuses a hard link anyway.
+    const restoredFirst = lstatSync(workspacePath("restored", "Mods", "carrycapacity.zip"))
+    const restoredSecond = lstatSync(workspacePath("restored", "Mods", "carrycapacity-1.0.0.zip"))
+    assert.equal(restoredFirst.nlink, 1)
+    assert.equal(restoredSecond.nlink, 1)
+    assert.notEqual(restoredFirst.ino, restoredSecond.ino)
+  })
+
   it("puts a backup of an empty installation back as an empty folder", async () => {
     mkdirSync(workspacePath("installation"), { recursive: true })
 

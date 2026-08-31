@@ -25,6 +25,30 @@ import { MAX_ARCHIVE_TOTAL_BYTES } from "../validation"
 const MAX_ITEMS = 100_000
 
 /**
+ * The link cache tar keeps while it packs, rigged never to report a hit.
+ *
+ * tar looks a file up in here by `dev:ino` whenever its `nlink` is above one,
+ * and on a hit writes the second name as a `Link` entry pointing at the first
+ * instead of writing its bytes again. The restore reader refuses `Link`, so
+ * that backup reports success and can never be put back. A cache that answers
+ * nothing sends every name down the ordinary file path, so both names come out
+ * of the archive as independent copies carrying their own bytes.
+ *
+ * Deduplicating filesystems hand out hard links on their own, so a player can
+ * have them without ever having made one. Refusing the source instead would
+ * cost them backups entirely; this costs them the sharing, which was a disk
+ * layout detail rather than anything the installation depends on.
+ *
+ * The key type matches tar's own `LinkCacheKey`, which the package does not
+ * re-export from its entry point.
+ */
+class UnsharedLinkCache extends Map<`${number}:${number}`, string> {
+  get(): undefined {
+    return undefined
+  }
+}
+
+/**
  * Refuses a source tree holding anything but plain files and folders, or more
  * entries than the launcher ever legitimately backs up.
  *
@@ -107,6 +131,9 @@ export async function runCompression(options: CompressionOptions): Promise<void>
         cwd: inputPath,
         gzip: { level: compressionLevel },
         portable: true,
+        // Two names for one inode would otherwise become a Link entry the
+        // restore reader refuses. See UnsharedLinkCache above.
+        linkCache: new UnsharedLinkCache(),
         // `entry.size` is not filled in yet when this runs, and the stat behind
         // the entry is the same number the walk above totalled. Folders are
         // skipped for the same reason the walk skipped them: their stat size is
