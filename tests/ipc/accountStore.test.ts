@@ -98,6 +98,10 @@ function unreadableBackupPath(): string {
   return join(mockState.userDataDir, "account-secrets.unreadable.bak.json")
 }
 
+function versionedUnreadableBackupPath(version: number): string {
+  return join(mockState.userDataDir, `account-secrets.unreadable.v${version}.bak.json`)
+}
+
 /** Writes the store file directly, standing in for whatever left it in that state. */
 function writeStoreFile(contents: unknown): void {
   writeFileSync(storePath(), typeof contents === "string" ? contents : JSON.stringify(contents))
@@ -599,6 +603,26 @@ describe("removeAccountSecrets", () => {
 
     assert.equal(existsSync(storePath()), false)
     assert.equal(await store.getAccountSecrets("uid-a"), null)
+  })
+
+  it("keeps recovery copies while another account remains, then removes all of them with the last account", async () => {
+    const store = await loadStore()
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+    await store.saveAccountSecrets("uid-b", ACCOUNT_B)
+
+    const recoveryPaths = [backupPath(), unreadableBackupPath(), versionedUnreadableBackupPath(3), versionedUnreadableBackupPath(17)]
+    for (const path of recoveryPaths) writeFileSync(path, "recovery copy")
+    const unrelatedPath = join(mockState.userDataDir, "account-secrets.unreadable.vx.bak.json")
+    writeFileSync(unrelatedPath, "not a recognized versioned backup")
+
+    assert.equal(await store.removeAccountSecrets("uid-a"), true)
+    assert.equal(existsSync(storePath()), true)
+    for (const path of recoveryPaths) assert.equal(existsSync(path), true)
+
+    assert.equal(await store.removeAccountSecrets("uid-b"), true)
+    assert.equal(existsSync(storePath()), false)
+    for (const path of recoveryPaths) assert.equal(existsSync(path), false)
+    assert.equal(existsSync(unrelatedPath), true)
   })
 
   it("reports success when there was nothing to remove", async () => {
