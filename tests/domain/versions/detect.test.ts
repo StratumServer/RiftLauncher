@@ -172,6 +172,46 @@ describe("detectInstalledGameVersion probe interpretation", () => {
     assert.deepEqual(result, { ok: true, version: "1.21.1" }, "semver refuses leading zeros, so the scan carries on to the next token instead of stopping at the first regex match")
   })
 
+  it("refuses a four-part build number instead of reading the first three parts as a version", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "1.21.1.2\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: false, reason: "unreadable-version" }, "1.21.1 is the first three parts of a build number nobody published, not the version this binary answered with")
+  })
+
+  it("refuses an IP address instead of reading its first three octets as a version", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "127.0.0.1\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: false, reason: "unreadable-version" })
+  })
+
+  it("scans past a dotted token that is not a version and takes the real one later on the same line", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "server 127.0.0.1 running 1.21.1\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.21.1" })
+  })
+
+  it("finds the version on its own line when an earlier line held an address", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "listening on 127.0.0.1\n1.21.1\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.21.1" })
+  })
+
+  it("keeps a pre-release whole when a sentence ends right after it", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "built against 1.21.0-rc.1. Nothing else to report.\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.21.0-rc.1" }, "a trailing dot with no digit behind it is punctuation, not another segment")
+  })
+
   it("reports no version at all rather than storing a line that has none in it", async () => {
     const { processProbe } = fakeProbe({
       ok: true,

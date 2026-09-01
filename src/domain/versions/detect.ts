@@ -81,8 +81,19 @@ function probeRequestFor(candidate: GameExecutableCandidate, executablePath: str
  * and backtracks the whole way, for every starting offset. Probe stdout has no
  * size cap, so a binary printing a megabyte of digits would hold the main
  * process for minutes.
+ *
+ * The `(?!\.?\d)` guard closes the other end. A token has to stop where the
+ * number stops, or `127.0.0.1` reads as `127.0.0` and `1.21.1.2` as `1.21.1`,
+ * both of which semver accepts and neither of which is a version anyone
+ * printed. The rule it spells: the character after the token may not be a
+ * digit, and may not be a dot with a digit behind it. That is the line between
+ * punctuation and continuation, since `1.21.0-rc.1.` ending a sentence has a
+ * dot followed by space or end, while `1.21.1.2` has a dot followed by a
+ * segment. It sits after the pre-release group so it judges the end of the
+ * whole token, which leaves pre-releases like `1.21.0-rc.1` untouched: the
+ * group is greedy, so anything it could still swallow it already has.
  */
-const VERSION_TOKEN = /(?<![\d.])\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?/g
+const VERSION_TOKEN = /(?<![\d.])\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?!\.?\d)/g
 
 /**
  * Reads a version out of probe output.
