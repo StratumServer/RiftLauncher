@@ -82,7 +82,7 @@ function AddInslallation(): JSX.Element {
       compressionLevel: fields.compressionLevel,
       mesaGlThread: fields.mesaGlThread,
       envVars: fields.envVars,
-      launchWrapper: fields.launchWrapper,
+      launchWrapper: fields.launchWrapper.trim(),
       foldersInUse: toFoldersInUse({ backupsFolder: settings.backupsFolder, installations, gameVersions })
     })
 
