@@ -32,6 +32,9 @@ import "@src/ipc/handlers/backgroundHandlers"
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
 const UPDATED_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x12])
+// A third distinct JPEG, so a "the refresh download arrived but its hash was wrong" test can tell
+// "the stale file survived" apart from "the download was written and happened to match".
+const WRONG_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x14])
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])
 
 function sha256(bytes: Buffer): string {
@@ -150,6 +153,26 @@ describe("ENSURE_BACKGROUND", () => {
 
     assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", sha256(JPEG)), false)
     assert.equal(existsSync(cachedPath("village-lane.jpg")), false)
+  })
+
+  it("keeps the cached scene byte for byte when the refresh download is refused", async () => {
+    mkdirSync(cacheFolder(), { recursive: true })
+    writeFileSync(cachedPath("village-lane.jpg"), JPEG)
+    vi.mocked(requestBoundedBuffer).mockRejectedValueOnce(new Error("Network request failed"))
+    const event = await createTrustedEvent()
+
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", sha256(UPDATED_JPEG)), false)
+    assert.deepEqual(readFileSync(cachedPath("village-lane.jpg")), JPEG)
+  })
+
+  it("keeps the cached scene byte for byte when the refresh download fails the manifest hash", async () => {
+    mkdirSync(cacheFolder(), { recursive: true })
+    writeFileSync(cachedPath("village-lane.jpg"), JPEG)
+    vi.mocked(requestBoundedBuffer).mockResolvedValueOnce(WRONG_JPEG)
+    const event = await createTrustedEvent()
+
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", sha256(UPDATED_JPEG)), false)
+    assert.deepEqual(readFileSync(cachedPath("village-lane.jpg")), JPEG)
   })
 
   it("refuses an id or a file name that could reach outside the cache, without a request", async () => {
