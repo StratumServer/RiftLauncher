@@ -84,13 +84,30 @@ function duplicateModScan(): { mods: InstalledModType[]; errors: ErrorInstalledM
  * One `/api/mod/{id}` payload. `tags` carry no leading "v" because that is what
  * evaluateModCompatibility matches against the Installation's game version.
  */
-function aModDetail({ modid, assetid, name, modidstr, modversion, tags }: { modid: number; assetid: number; name: string; modidstr: string; modversion: string; tags: string[] }): string {
+function aModDetail({
+  modid,
+  assetid,
+  name,
+  modidstr,
+  modversion,
+  tags,
+  logofile
+}: {
+  modid: number
+  assetid: number
+  name: string
+  modidstr: string
+  modversion: string
+  tags: string[]
+  logofile?: string
+}): string {
   return JSON.stringify({
     statuscode: "200",
     mod: {
       modid,
       assetid,
       name,
+      ...(logofile ? { logofile } : {}),
       releases: [
         {
           releaseid: modid,
@@ -111,7 +128,8 @@ function aModDetail({ modid, assetid, name, modidstr, modversion, tags }: { modi
 
 function queryModDb(url: string): Promise<string> {
   if (url.endsWith("/mod/alpha")) return Promise.resolve(aModDetail({ modid: 1, assetid: 101, name: "Alpha Mod", modidstr: "alpha", modversion: "1.1.0", tags: ["1.20.0"] }))
-  if (url.endsWith("/mod/beta")) return Promise.resolve(aModDetail({ modid: 2, assetid: 102, name: "Beta Mod", modidstr: "beta", modversion: "2.1.0", tags: ["1.20.0"] }))
+  if (url.endsWith("/mod/beta"))
+    return Promise.resolve(aModDetail({ modid: 2, assetid: 102, name: "Beta Mod", modidstr: "beta", modversion: "2.1.0", tags: ["1.20.0"], logofile: "https://moddbcdn.vintagestory.at/beta.png" }))
   // Gamma's only newer release is tagged for another series, so it lands in the incompatible list.
   if (url.endsWith("/mod/gamma")) return Promise.resolve(aModDetail({ modid: 3, assetid: 103, name: "Gamma Mod", modidstr: "gamma", modversion: "3.1.0", tags: ["1.19.0"] }))
   if (url.endsWith("/mod/epsilon")) return Promise.resolve(aModDetail({ modid: 5, assetid: 105, name: "Epsilon Mod", modidstr: "epsilon", modversion: "5.1.0", tags: ["1.20.0"] }))
@@ -188,6 +206,17 @@ describe("ManageMods", () => {
     expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
     expect(await screen.findByText("Alpha Mod copy", {}, { timeout: 3000 })).toBeTruthy()
     await waitFor(() => expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/mod/alpha"))).toHaveLength(1))
+  })
+
+  it("caches a ModDB logo only when the archive has no local icon", async () => {
+    const cacheModImage = vi.fn(async () => "beta-logo.png")
+    renderManageMods({ modsManager: { cacheModImage } })
+
+    expect(await screen.findByText("Beta Mod", {}, { timeout: 3000 })).toBeTruthy()
+    await waitFor(() => expect(cacheModImage).toHaveBeenCalledWith("https://moddbcdn.vintagestory.at/beta.png"))
+
+    expect(screen.getByAltText("Beta Mod").getAttribute("src")).toBe("cachemodimg:beta-logo.png")
+    expect(cacheModImage).not.toHaveBeenCalledWith(expect.stringContaining("alpha.png"))
   })
 
   it("leaves the Mod on disk until the delete confirm dialog is accepted", async () => {

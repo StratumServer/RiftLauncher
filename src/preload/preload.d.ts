@@ -40,6 +40,7 @@ declare global {
     modsManager: {
       getInstalledMods: (path: string) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }>
       setModEnabled: (path: string, enabled: boolean) => Promise<SetModEnabledResult>
+      cacheModImage: (url: string) => Promise<string | undefined>
       exportModpack: (manifest: ModpackManifestType) => Promise<{ success: boolean; path?: string }>
       importModpack: () => Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }>
       clearModIconMemoryCache: () => void

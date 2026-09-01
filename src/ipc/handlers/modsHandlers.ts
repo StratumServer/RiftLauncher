@@ -2,16 +2,34 @@ import { dialog, ipcMain } from "electron"
 import fse from "fs-extra"
 import { basename, dirname, join } from "node:path"
 import { IPC_CHANNELS } from "../ipcChannels"
-import { createScanInstalledModsPorts, pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { createIconStorePort, createScanInstalledModsPorts, MAX_MOD_IMAGE_BYTES, pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
-import { assertBoolean, assertSafeFileName, assertString, isRecord } from "@src/ipc/validation"
+import { assertAllowedDownloadUrl, assertBoolean, assertSafeFileName, assertString, isRecord } from "@src/ipc/validation"
+import { requestBoundedBuffer } from "@src/ipc/network"
+import { isPngBytes } from "@domain/backgrounds"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
 
 const MAX_MODPACK_ENTRIES = 2_000
+const MOD_IMAGE_HOSTNAME = "moddbcdn.vintagestory.at"
+
+/** Downloads one ModDB logo into the same bounded, content-addressed cache as archive icons. */
+async function cacheModImage(urlValue: unknown): Promise<string | undefined> {
+  try {
+    const url = assertAllowedDownloadUrl(urlValue)
+    if (url.hostname.toLowerCase() !== MOD_IMAGE_HOSTNAME) throw new TypeError("Invalid ModDB image host")
+
+    const bytes = await requestBoundedBuffer(url, { maxBytes: MAX_MOD_IMAGE_BYTES, accept: "image/png" })
+    if (!isPngBytes(bytes)) throw new TypeError("Downloaded ModDB image is not a PNG")
+    return await createIconStorePort().store(bytes)
+  } catch (err) {
+    logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [CACHE_MOD_IMAGE] Could not cache ModDB image: ${getErrorMessage(err)}`)
+    return undefined
+  }
+}
 
 function parseModpackManifest(value: unknown): ModpackManifestType {
   if (!isRecord(value) || !Array.isArray(value.mods) || value.mods.length > MAX_MODPACK_ENTRIES) throw new TypeError("Invalid modpack file structure")
@@ -71,6 +89,11 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
     logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods: ${err}`)
     return { mods: [], errors: [] }
   }
+})
+
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.CACHE_MOD_IMAGE, async (event, url: unknown): Promise<string | undefined> => {
+  assertTrustedIpcSender(event)
+  return cacheModImage(url)
 })
 
 /**

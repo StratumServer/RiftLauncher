@@ -21,7 +21,7 @@ const MODICON_ENTRY = "modicon.png"
 const MAX_MODINFO_BYTES = 1 * 1024 * 1024
 
 /** Past this, a mod icon is not an icon any more. */
-const MAX_MOD_IMAGE_BYTES = 512 * 1024
+export const MAX_MOD_IMAGE_BYTES = 512 * 1024
 
 /** Folder mod icons are cached under, inside the launcher's own user data. */
 function modImagesFolder(): string {

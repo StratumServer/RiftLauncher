@@ -212,6 +212,7 @@ declare global {
     trendingpoints: number
     comments: number
     side: string
+    logofile?: string
     createdat: string
     tags: string[]
     releases: DownloadableModReleaseType[]

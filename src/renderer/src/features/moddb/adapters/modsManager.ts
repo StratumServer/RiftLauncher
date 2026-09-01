@@ -12,6 +12,10 @@ export function setModEnabled(path: string, enabled: boolean): Promise<SetModEna
   return window.api.modsManager.setModEnabled(path, enabled)
 }
 
+export function cacheModImage(url: string): Promise<string | undefined> {
+  return window.api.modsManager.cacheModImage(url)
+}
+
 export function exportModpackArchive(manifest: ModpackManifestType): Promise<{ success: boolean; path?: string }> {
   return window.api.modsManager.exportModpack(manifest)
 }
