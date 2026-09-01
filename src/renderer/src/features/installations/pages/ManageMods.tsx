@@ -69,6 +69,11 @@ function ListMods(): JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
+  // The ref is the guard and the state is only what paints it. A second click lands before React has
+  // rendered anything, so the thing it has to be tested against is written synchronously.
+  const togglingPathsRef = useRef(new Set<string>())
+  const [togglingPaths, setTogglingPaths] = useState<string[]>([])
+
   useEffect(() => {
     return (): void => clearModIconMemoryCache()
   }, [])
@@ -87,6 +92,7 @@ function ListMods(): JSX.Element {
         key={iMod.modid + iMod.path}
         iMod={iMod}
         suspended={suspended}
+        busy={togglingPaths.includes(iMod.path)}
         onToggleEnabledClick={() => ToggleModEnabledHandler(iMod)}
         onToggleSuspendClick={() => configDispatch({ type: suspended ? CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE : CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE, payload: { modid: iMod.modid } })}
         onDeleteClick={() => setModToDelete(iMod)}
@@ -101,23 +107,36 @@ function ListMods(): JSX.Element {
    * The rescan is not optional and it is not a nicety: the archive's name is its path, so a Mod that
    * just changed state is a different file from the one this row is holding, and every button on
    * that row would still be pointing at a name that no longer exists.
+   *
+   * Which is also why the second of two quick clicks has to be dropped rather than sent: it would
+   * carry the name the first one just renamed away, and the player would be told the same action
+   * both succeeded and failed. The row's own buttons stay disabled until the rescan is in.
    */
   async function ToggleModEnabledHandler(iMod: InstalledModType): Promise<void> {
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
 
     if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantToggleWhileinUse"), "error")
 
-    const result = await setModEnabled(iMod.path, !iMod.enabled)
+    if (togglingPathsRef.current.has(iMod.path)) return
+    togglingPathsRef.current.add(iMod.path)
+    setTogglingPaths([...togglingPathsRef.current])
 
-    if (result.ok) {
-      addNotification(t(iMod.enabled ? "features.mods.modDisabled" : "features.mods.modEnabled", { mod: iMod.name }), "success")
-    } else {
-      window.api.utils.logMessage("error", `${LOG_TAG} [ToggleModEnabledHandler] Could not turn the ${iMod.name} Mod ${iMod.enabled ? "off" : "on"}.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} [ToggleModEnabledHandler] Renaming ${iMod.path} was refused: ${result.reason}.`)
-      addNotification(t(result.reason === "name-taken" ? "features.mods.modNameTaken" : "features.mods.errorTogglingMod", { mod: iMod.name }), "error")
+    try {
+      const result = await setModEnabled(iMod.path, !iMod.enabled)
+
+      if (result.ok) {
+        addNotification(t(iMod.enabled ? "features.mods.modDisabled" : "features.mods.modEnabled", { mod: iMod.name }), "success")
+      } else {
+        window.api.utils.logMessage("error", `${LOG_TAG} [ToggleModEnabledHandler] Could not turn the ${iMod.name} Mod ${iMod.enabled ? "off" : "on"}.`)
+        window.api.utils.logMessage("debug", `${LOG_TAG} [ToggleModEnabledHandler] Renaming ${iMod.path} was refused: ${result.reason}.`)
+        addNotification(t(result.reason === "name-taken" ? "features.mods.modNameTaken" : "features.mods.errorTogglingMod", { mod: iMod.name }), "error")
+      }
+
+      await refresh()
+    } finally {
+      togglingPathsRef.current.delete(iMod.path)
+      setTogglingPaths([...togglingPathsRef.current])
     }
-
-    refresh()
   }
 
   async function DeleteModHandler(): Promise<void> {
