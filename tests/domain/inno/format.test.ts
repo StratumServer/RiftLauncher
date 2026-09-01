@@ -98,6 +98,14 @@ describe("InnoRecordReader", () => {
     expect(reader.remaining).toBe(0)
   })
 
+  it("keeps supplementary Unicode characters intact in UTF-16 strings", () => {
+    const text = Buffer.from("hello 😀", "utf16le")
+    const bytes = Buffer.concat([Buffer.from([text.length, 0, 0, 0]), text])
+    const reader = new InnoRecordReader(new Uint8Array(bytes))
+
+    expect(reader.readString()).toBe("hello 😀")
+  })
+
   it("throws rather than returning zeroes past the end of the block", () => {
     const reader = new InnoRecordReader(new Uint8Array(2))
     expect(() => reader.read(3)).toThrow(/left only 2 in the block/)

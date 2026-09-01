@@ -83,13 +83,13 @@ export class InnoRecordReader {
 
     let text = ""
     // Built in slices so a long string does not blow the argument limit of
-    // String.fromCharCode, and so a short one still costs a single call.
+    // String.fromCodePoint, and so a short one still costs a single call.
     const step = 4096
     for (let start = 0; start < bytes.length; start += step * 2) {
       const end = Math.min(bytes.length, start + step * 2)
       const units: number[] = []
       for (let i = start; i < end; i += 2) units.push(bytes[i]! | (bytes[i + 1]! << 8))
-      text += String.fromCharCode(...units)
+      text += String.fromCodePoint(...units)
     }
     return text
   }

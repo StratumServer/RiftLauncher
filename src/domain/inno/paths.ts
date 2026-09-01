@@ -56,7 +56,7 @@ export function safeRelativePath(storedPath: string): string | undefined {
 /** A NUL or another control byte in a name means the read went somewhere it should not have. */
 function hasControlCharacter(segment: string): boolean {
   for (let i = 0; i < segment.length; i++) {
-    const code = segment.charCodeAt(i)
+    const code = segment.codePointAt(i) ?? 0
     if (code < 0x20 || code === 0x7f) return true
   }
   return false
