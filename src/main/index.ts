@@ -26,6 +26,7 @@ import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
+import { getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
 import fse from "fs-extra"
 
 import "@src/ipc"
@@ -62,6 +63,7 @@ logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${descr
 autoUpdater.logger = createUpdaterLogger()
 
 let mainWindow: BrowserWindow
+let hasSweptOrphanedTempFiles = false
 const modIconMemoryCache = new IconMemoryCache()
 const packagedRendererPath = join(__dirname, "../renderer/index.html")
 const packagedRendererRoot = dirname(packagedRendererPath)
@@ -154,6 +156,16 @@ function createWindow(): void {
     if (oldWindowsState.maximized) mainWindow.maximize()
 
     mainWindow.show()
+
+    // The first config read is complete here, so this does not race migrations
+    // or a config write. Keep the sweep one-shot even when macOS recreates a
+    // window later in the same process.
+    if (!hasSweptOrphanedTempFiles) {
+      hasSweptOrphanedTempFiles = true
+      void sweepOrphanedTempFiles(getOrphanedTempFileSweepTargets(app.getPath("userData"), config)).catch((error: unknown) => {
+        logMessage("debug", `[back] [index] [main/index.ts] [ready-to-show] Could not sweep orphaned temporary files: ${error}`)
+      })
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
