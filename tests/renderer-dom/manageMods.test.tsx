@@ -14,7 +14,7 @@ const INSTALLATION_PATH = "/games/a"
 const ALPHA_PATH = "/games/a/Mods/alpha-1.0.0.zip"
 const BETA_PATH = "/games/a/Mods/beta-2.0.0.zip"
 const DELTA_PATH = "/games/a/Mods/delta-4.0.0.zip"
-const SEARCH_PLACEHOLDER = "Search by name or id"
+const SEARCH_PLACEHOLDER = "Search by name, id or author"
 const SUSPEND_TITLE = "Suspend updates for this Mod: Update all will skip it, you can still update it from here"
 const RESUME_TITLE = "Resume updates for this Mod: Update all will include it again"
 const EPSILON_PATH = "/games/a/Mods/epsilon-5.0.0.zip.disabled"
@@ -367,6 +367,26 @@ describe("ManageMods: searching the installed Mods", () => {
     expect(await screen.findByText("Delta Mod")).toBeTruthy()
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
     expect(screen.getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("finds a Mod by its author and restores the list when cleared", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const field = await searchFor(user, "ANN")
+
+    expect(await screen.findByText("Alpha Mod")).toBeTruthy()
+    expect(screen.queryByText("Beta Mod")).toBeNull()
+    expect(screen.queryByText("Gamma Mod")).toBeNull()
+    expect(screen.queryByText("Delta Mod")).toBeNull()
+    expect(screen.getAllByRole("listitem")).toHaveLength(1)
+
+    await user.clear(field)
+
+    expect(await screen.findByText("Beta Mod")).toBeTruthy()
+    expect(screen.getByText("Gamma Mod")).toBeTruthy()
+    expect(screen.getByText("Delta Mod")).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(5)
   })
 
   it("ignores case, on the name and on the id alike", async () => {

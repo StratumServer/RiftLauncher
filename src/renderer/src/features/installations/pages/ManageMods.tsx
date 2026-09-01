@@ -34,9 +34,9 @@ function byName(a: InstalledModType, b: InstalledModType): number {
   return a.name.localeCompare(b.name)
 }
 
-/** What the player types matched against what they can see of a Mod: its name, and the id the folder names it by. */
+/** What the player types matched against what they can see of a Mod: its name, id, or author. */
 function matchesSearch(iMod: InstalledModType, search: string): boolean {
-  return iMod.name.toLowerCase().includes(search) || iMod.modid.toLowerCase().includes(search)
+  return iMod.name.toLowerCase().includes(search) || iMod.modid.toLowerCase().includes(search) || (iMod.authors?.some((author) => author.toLowerCase().includes(search)) ?? false)
 }
 
 function ListMods(): JSX.Element {
