@@ -2,14 +2,7 @@ import { InnoFormatError } from "@domain/inno/errors"
 import { lzma2DictionarySize } from "@domain/inno/lzma"
 import type { Lzma2DecoderFactory, Lzma2DecoderPort, Lzma2Input } from "@domain/inno/lzma"
 
-interface NativeDecompressor {
-  update(input: Uint8Array): Uint8Array
-  finish(): Promise<Uint8Array>
-}
-
-interface NativeDecompressorConstructor {
-  new (options: { dictSize: number }): NativeDecompressor
-}
+type NativeDecompressStream = (input: ReadableStream<Uint8Array>, options: { dictSize: number }) => ReadableStream<Uint8Array>
 
 /** Keep each callback within the domain stream's fixed staging buffer. */
 const NATIVE_OUTPUT_BYTES = 2 * 1024 * 1024
@@ -55,20 +48,53 @@ async function readFrame(input: Lzma2Input, control: number): Promise<Uint8Array
 }
 
 class NativeLzma2Decoder implements Lzma2DecoderPort {
-  private readonly decoder: NativeDecompressor
+  private readonly decompressStream: NativeDecompressStream
+  private readonly dictionarySize: number
+  private reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   private readonly pending: Uint8Array[] = []
   private pendingOffset = 0
   private pendingBytes = 0
   private sourceEnded = false
   private ended = false
+  private sourceError: unknown
+  private sourceFailed = false
 
   constructor(
-    Decompressor: NativeDecompressorConstructor,
+    decompressStream: NativeDecompressStream,
     dictionarySizeProperties: number,
     private readonly onOutput: (bytes: Uint8Array) => void
   ) {
     try {
-      this.decoder = new Decompressor({ dictSize: lzma2DictionarySize(dictionarySizeProperties) })
+      this.dictionarySize = lzma2DictionarySize(dictionarySizeProperties)
+    } catch {
+      throw new NativeLzma2Error("the native LZMA2 decoder could not be created")
+    }
+
+    this.decompressStream = decompressStream
+  }
+
+  private createReader(input: Lzma2Input): ReadableStreamDefaultReader<Uint8Array> {
+    const source = new ReadableStream<Uint8Array>({
+      pull: async (controller): Promise<void> => {
+        try {
+          const control = (await input.readExactly(1))[0]!
+          if (control === 0) {
+            controller.enqueue(Uint8Array.of(0))
+            controller.close()
+            return
+          }
+
+          controller.enqueue(await readFrame(input, control))
+        } catch (error) {
+          this.sourceError = error
+          this.sourceFailed = true
+          controller.error(error)
+        }
+      }
+    })
+
+    try {
+      return this.decompressStream(source, { dictSize: this.dictionarySize }).getReader()
     } catch {
       throw new NativeLzma2Error("the native LZMA2 decoder could not be created")
     }
@@ -82,23 +108,27 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
     try {
       this.onOutput(bytes)
     } catch {
-      // The domain's fixed staging buffer can reject a native decoder that
-      // buffered more than one LZMA2 chunk. Let the caller retry that block
-      // with the TypeScript decoder, which emits one chunk at a time.
+      // The domain's fixed staging buffer can reject an oversized native
+      // output chunk. Stop the stream before the caller retries the block.
+      void this.close()
       throw new NativeLzma2Error("the native LZMA2 decoder produced an oversized chunk")
     }
   }
 
+  async close(): Promise<void> {
+    if (this.ended) return
+    this.ended = true
+    const reader = this.reader
+    if (reader) await reader.cancel().catch(() => undefined)
+  }
+
   /**
-   * `owned` says the bytes are ours to keep. The library documents `update()`
-   * as handing back a zero-copy view, so that one is copied before a later call
-   * can write over it. `finish()` resolves to the decoded tail and leaves a
-   * spent decoder behind, so nothing can rewrite it, and on a solid block the
-   * copy would be a second copy of the entire block.
+   * Stream output is owned by the Web Streams queue, so it can be retained
+   * while the staging buffer drains without copying the decoded block.
    */
-  private queue(bytes: Uint8Array, owned = false): void {
+  private queue(bytes: Uint8Array): void {
     if (bytes.length === 0) return
-    this.pending.push(owned ? bytes : Uint8Array.from(bytes))
+    this.pending.push(bytes)
     this.pendingBytes += bytes.length
   }
 
@@ -126,35 +156,25 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
   async decodeChunk(input: Lzma2Input): Promise<number> {
     if (this.ended) return 0
     if (this.pendingBytes > 0) return this.flushPending()
-    if (this.sourceEnded) {
-      this.ended = true
-      return 0
-    }
-
-    const control = (await input.readExactly(1))[0]!
-    if (control === 0) {
-      try {
-        this.queue(this.decoder.update(Uint8Array.of(0)))
-        this.queue(await this.decoder.finish(), true)
-      } catch {
-        throw new NativeLzma2Error("the native LZMA2 decoder rejected the stream")
-      }
-      this.sourceEnded = true
-      return this.flushPending()
-    }
-
-    const frame = await readFrame(input, control)
+    this.reader ??= this.createReader(input)
     try {
-      this.queue(this.decoder.update(frame))
-    } catch {
-      throw new NativeLzma2Error("the native LZMA2 decoder rejected a chunk")
+      const result = await this.reader.read()
+      if (result.done) {
+        this.sourceEnded = true
+        this.ended = true
+        return 0
+      }
+      this.queue(result.value)
+      return this.flushPending()
+    } catch (error) {
+      if (this.sourceFailed) throw this.sourceError
+      throw new NativeLzma2Error("the native LZMA2 decoder rejected the stream")
     }
-    return this.flushPending()
   }
 }
 
-export function createNativeLzma2DecoderFactory(Decompressor: NativeDecompressorConstructor): Lzma2DecoderFactory {
-  return (dictionarySizeProperties, onOutput) => new NativeLzma2Decoder(Decompressor, dictionarySizeProperties, onOutput)
+export function createNativeLzma2DecoderFactory(decompressStream: NativeDecompressStream): Lzma2DecoderFactory {
+  return (dictionarySizeProperties, onOutput) => new NativeLzma2Decoder(decompressStream, dictionarySizeProperties, onOutput)
 }
 
 let nativeFactory: Promise<Lzma2DecoderFactory | undefined> | undefined
@@ -163,8 +183,8 @@ let nativeFactory: Promise<Lzma2DecoderFactory | undefined> | undefined
 export function loadNativeLzma2DecoderFactory(): Promise<Lzma2DecoderFactory | undefined> {
   nativeFactory ??= (async (): Promise<Lzma2DecoderFactory | undefined> => {
     try {
-      const { Decompressor } = await import("@napi-rs/lzma/lzma2")
-      return createNativeLzma2DecoderFactory(Decompressor)
+      const { decompressStream } = await import("@napi-rs/lzma/lzma2")
+      return createNativeLzma2DecoderFactory(decompressStream)
     } catch {
       return undefined
     }
