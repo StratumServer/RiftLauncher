@@ -27,6 +27,8 @@ export interface ModpackEntry {
 export interface InstalledModSnapshot extends InstalledModCopy {
   modid: string
   name: string
+  /** False when the copy on disk is turned off, so the game does not load it. */
+  enabled: boolean
   /** ModDB page id, when the launcher has already resolved it. Carried for the summary's link. */
   assetid?: number
 }
@@ -107,9 +109,16 @@ function installedFor(installed: readonly InstalledModSnapshot[], modid: string)
   return installed.find((mod) => mod.modid === modid)
 }
 
-/** The installed copy that already answers this entry exactly, when there is one and nothing has to happen. */
+/**
+ * The installed copy that already answers this entry exactly, when there is one and nothing has to
+ * happen.
+ *
+ * A disabled copy never answers it. A pack is a playable set, so importing one over a mod the player
+ * had turned off reinstalls it enabled rather than reporting it as already there and leaving the
+ * game unable to load a mod the pack asks for.
+ */
 function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | undefined): InstalledModSnapshot | undefined {
-  return existing?.version === entry.version ? existing : undefined
+  return existing?.enabled === true && existing.version === entry.version ? existing : undefined
 }
 
 /**

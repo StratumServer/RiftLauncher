@@ -16,7 +16,7 @@ function detail(releases: ModpackRelease[], overrides: Partial<ModpackModDetail>
 }
 
 function installedCopy(overrides: Partial<InstalledModSnapshot> = {}): InstalledModSnapshot {
-  return { modid: "carryon", name: "Carry On", version: "1.9.0", path: "/installations/main/Mods/carryon-1.9.0.zip", assetid: 4711, ...overrides }
+  return { modid: "carryon", name: "Carry On", version: "1.9.0", path: "/installations/main/Mods/carryon-1.9.0.zip", enabled: true, assetid: 4711, ...overrides }
 }
 
 function plan(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>): ModpackPlanItem[] {
@@ -39,6 +39,12 @@ describe("modpackEntriesToResolve", () => {
     const entries = [{ modid: "carryon", version: "1.9.0" }]
 
     assert.deepEqual(modpackEntriesToResolve(entries, [installedCopy()]), [])
+  })
+
+  it("still asks about a mod whose only copy is disabled, at the requested version or not (#287)", () => {
+    const entries = [{ modid: "carryon", version: "1.9.0" }]
+
+    assert.deepEqual(modpackEntriesToResolve(entries, [installedCopy({ enabled: false })]), entries)
   })
 
   it("asks about a mod installed at another version", () => {
@@ -145,6 +151,16 @@ describe("planModpackImport decisions", () => {
       reason: "already-present",
       fromVersion: "1.9.0"
     })
+  })
+
+  it("reinstalls over a disabled copy of the requested version rather than calling it present (#287)", () => {
+    const disabled = installedCopy({ enabled: false, path: "/installations/main/Mods/carryon-1.9.0.zip.disabled" })
+    const item = installItem(plan([{ modid: "carryon", version: "1.9.0" }], [disabled], [["carryon", detail([release("1.9.0", ["1.20.4"])])]]))
+
+    // A pack is a playable set. Reporting the disabled copy as already there would leave the player
+    // with a pack whose game cannot load one of its mods, so the copy is replaced by an enabled one.
+    assert.equal(item.release.modversion, "1.9.0")
+    assert.deepEqual(item.existing, { path: "/installations/main/Mods/carryon-1.9.0.zip.disabled", version: "1.9.0" })
   })
 
   it("names an unknown mod by its modid, because nothing else is known about it", () => {

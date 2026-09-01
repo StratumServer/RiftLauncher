@@ -128,7 +128,10 @@ function InstallModPopup({
                               outName: installation.installation.name,
                               modName: downloadableModToInstall.name,
                               release: toModReleaseToInstall(release),
-                              existing: oldMod && toInstalledModCopy(oldMod)
+                              existing: oldMod && toInstalledModCopy(oldMod),
+                              // Updating a Mod is not a request to turn it back on, so a disabled
+                              // one is replaced by a disabled copy and stays out of the load order.
+                              disabled: oldMod !== undefined && !oldMod.enabled
                             }).then((result) => {
                               if (result.ok && onFinishInstallation) onFinishInstallation()
                             })

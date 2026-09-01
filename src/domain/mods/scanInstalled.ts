@@ -23,6 +23,18 @@ export const MOD_SCAN_BATCH_SIZE = 16
 /** Extension an archive has to carry to be considered a mod at all. */
 const MOD_ARCHIVE_EXTENSION = ".zip"
 
+/**
+ * What a disabled mod's archive carries after its extension.
+ *
+ * Vintage Story loads whatever ends in `.zip` inside its Mods folder, so turning
+ * a mod off is a rename out of that set and nothing more: no copy, no second
+ * folder, no record anywhere but the folder itself. That makes the folder the
+ * only truth about which mods are on, which is why the player sees the same
+ * state in their file manager and why any other tool reading the same folder
+ * agrees with the launcher without being told anything.
+ */
+export const MOD_DISABLED_SUFFIX = ".disabled"
+
 /** A mod the scan identified, ready for the caller to hand to the UI. */
 export interface ScannedMod {
   name: string
@@ -30,6 +42,8 @@ export interface ScannedMod {
   version: string
   /** Full path of the archive it was read from. */
   path: string
+  /** False when the archive is renamed out of the way, so the game never loads it. */
+  enabled: boolean
   description?: string
   side?: string
   authors?: string[]
@@ -96,9 +110,47 @@ export interface ScanInstalledModsEvents {
 /** What reading one archive settled on. Exactly one of the two, never both. */
 type ArchiveOutcome = { mod: ScannedMod } | { problem: ModScanProblem }
 
-/** True for a name the scan will bother opening. */
+/** True for a name the scan will bother opening, whether the mod is on or off. */
 function looksLikeModArchive(fileName: string): boolean {
-  return fileName.toLowerCase().endsWith(MOD_ARCHIVE_EXTENSION)
+  const lowered = fileName.toLowerCase()
+  return lowered.endsWith(MOD_ARCHIVE_EXTENSION) || lowered.endsWith(`${MOD_ARCHIVE_EXTENSION}${MOD_DISABLED_SUFFIX}`)
+}
+
+/**
+ * True for an archive named out of the game's way.
+ *
+ * Takes a file name or a full path: the test is on the tail either way, and a
+ * path ends in the name it points at.
+ */
+export function isDisabledModArchive(fileName: string): boolean {
+  return fileName.toLowerCase().endsWith(`${MOD_ARCHIVE_EXTENSION}${MOD_DISABLED_SUFFIX}`)
+}
+
+/** The name an archive has to take, or why it will not take one. */
+export type ModArchiveRename =
+  | { ok: true; fileName: string }
+  /** Not a mod archive at all, so there is no name to derive. */
+  | { ok: false; reason: "not-a-mod-archive" }
+  /** Already the way the caller is asking for. Renaming it would be a lie about what changed. */
+  | { ok: false; reason: "already-in-state" }
+
+/**
+ * The name one archive takes to be enabled or disabled.
+ *
+ * The target is the source plus or minus one fixed suffix and nothing else, so
+ * a caller can name which file to act on but never what it becomes. The rest of
+ * the name is carried through byte for byte, case included.
+ *
+ * @param fileName The archive's name on disk, without its folder.
+ * @param enabled The state being asked for, not the one it is in.
+ */
+export function renameModArchiveTo(fileName: string, enabled: boolean): ModArchiveRename {
+  if (!looksLikeModArchive(fileName)) return { ok: false, reason: "not-a-mod-archive" }
+
+  const currentlyEnabled = !isDisabledModArchive(fileName)
+  if (currentlyEnabled === enabled) return { ok: false, reason: "already-in-state" }
+
+  return { ok: true, fileName: enabled ? fileName.slice(0, -MOD_DISABLED_SUFFIX.length) : `${fileName}${MOD_DISABLED_SUFFIX}` }
 }
 
 /**
@@ -107,6 +159,10 @@ function looksLikeModArchive(fileName: string): boolean {
  * The order matters: the metadata is read before the icon is stored, so an
  * archive that turns out not to describe a mod never leaves an icon behind in
  * the store that nothing will ever point at.
+ *
+ * A disabled archive is read exactly like an enabled one. It is a mod the
+ * player still has, with a name, a version and an icon, and the only thing that
+ * differs about it is the one flag saying the game will not load it.
  */
 async function readArchive(ports: ScanInstalledModsPorts, archivePath: string): Promise<ArchiveOutcome> {
   const read = await ports.archives.read(archivePath)
@@ -118,7 +174,7 @@ async function readArchive(ports: ScanInstalledModsPorts, archivePath: string): 
   const info = parseModInfo(modinfo)
   if (!info.ok) return { problem: info.problem }
 
-  const mod: ScannedMod = { ...info.info, path: archivePath }
+  const mod: ScannedMod = { ...info.info, path: archivePath, enabled: !isDisabledModArchive(archivePath) }
 
   // A stored icon is a nicety. Failing to store one leaves the mod listed
   // without it, which is what the UI already falls back to.
