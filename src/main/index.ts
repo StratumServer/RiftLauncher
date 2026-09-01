@@ -3,7 +3,7 @@ import { dirname, join } from "node:path"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import { autoUpdater } from "electron-updater"
 import Logger from "electron-log"
-import { pathToFileURL } from "url"
+import { pathToFileURL } from "node:url"
 import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMigration"
 
 const userDataSetup = setUpUserDataFolder(app.getPath("appData"))
@@ -14,12 +14,14 @@ import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { logMessage } from "@src/utils/logManager"
 import { createUpdaterLogger } from "@src/utils/updaterLogger"
+import { createSuppressedErrorRecorder, makeConsoleOutputFaultTolerant } from "@src/utils/consoleTransportSafety"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
-import { registerAutoUpdaterEvents } from "@src/main/autoUpdaterEvents"
+import { registerAutoUpdaterEvents, scheduleUpdateCheck } from "@src/main/autoUpdaterEvents"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
+import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
@@ -27,7 +29,21 @@ import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@
 import fse from "fs-extra"
 
 import "@src/ipc"
-import { clearTimeout, setTimeout } from "timers"
+import { clearTimeout, setTimeout } from "node:timers"
+
+// #247: when the terminal that started the launcher exits, the next console write fails, and
+// Node reports that failure as an "error" event on process.stdout with no listener, i.e. an
+// uncaught exception Electron shows as "A JavaScript error occurred in the main process".
+// Placed before resolvePathFn rather than after it, unlike autoUpdater.logger below: this
+// guard touches no path and writes no file, so it has nothing to wait for, and running it
+// first means it is already in place for the very first line logged below.
+// #256: the guard swallows every console failure, so the first one leaves a line in the log
+// file, otherwise an ordinary transport bug would be indistinguishable from silence. Handing it
+// the file transport rather than Logger.error keeps the record off the console that just failed.
+// The whole logger goes in rather than just its console transport: a format or transform failure
+// is reported through Logger.processInternalErrorFn instead of the write, and that seam needs the
+// same recorder for the failure to leave a trace.
+makeConsoleOutputFaultTolerant(Logger, undefined, createSuppressedErrorRecorder(Logger.transports.file))
 
 Logger.transports.file.resolvePathFn = (variables, message): string => {
   const logsPath = join(variables.userData, "Logs")
@@ -313,27 +329,13 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
     })
 
-    // Defer the network check until the initial window has had time to become interactive.
-    //
-    // checkForUpdates, not checkForUpdatesAndNotify: the "AndNotify" half only
-    // ever fires an OS notification off the download promise the check returns,
-    // and with autoDownload off (registerAutoUpdaterEvents) there is no such
-    // promise, so the two calls now do exactly the same thing. Saying
-    // checkForUpdates keeps that honest, and leaves no second, OS-level
-    // announcement racing the in-app one the renderer draws.
-    //
-    // The catch is not optional. Launching a packaged build with no network at
-    // all rejects this promise, and an unhandled rejection in the main process
-    // is a crash report waiting to happen for what is an entirely ordinary
-    // situation. electron-updater's own "error" event still fires, so the
-    // renderer hears about it the usual way; this only keeps the rejection of
-    // that same failure from going nowhere.
-    const updateCheckTimer = setTimeout(() => {
-      void autoUpdater.checkForUpdates().catch((error) => {
-        logMessage("info", `[back] [index] [main/index.ts] [whenReady] Update check failed: ${error instanceof Error ? error.message : String(error)}.`)
-      })
-    }, 5_000)
-    updateCheckTimer.unref()
+    // Who gets offered a beta, said out loud rather than left to electron-updater, which reads it
+    // off the running version alone: that leaves someone on a stable build with no way to ask for
+    // betas, and someone who tried one beta signed up for every beta after it. The stored answer
+    // wins when there is one, and the running version still decides when there is not. Read inside
+    // the callback, so the answer the check uses is the one the settings page has stored by then
+    // rather than the one it had at launch.
+    scheduleUpdateCheck(async () => resolveAllowPrerelease((await getConfig()).receiveBetaUpdates, app.getVersion()))
   } else {
     logMessage("info", `[back] [index] [main/index.ts] [whenReady] Auto-update disabled: ${updateDecision.reason}.`)
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { cleanup, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
@@ -13,8 +13,13 @@ import { renderWithProviders } from "./helpers/render"
 const INSTALLATION_PATH = "/games/a"
 const ALPHA_PATH = "/games/a/Mods/alpha-1.0.0.zip"
 const BETA_PATH = "/games/a/Mods/beta-2.0.0.zip"
+const DELTA_PATH = "/games/a/Mods/delta-4.0.0.zip"
+const SEARCH_PLACEHOLDER = "Search by name or id"
 const SUSPEND_TITLE = "Suspend updates for this Mod: Update all will skip it, you can still update it from here"
 const RESUME_TITLE = "Resume updates for this Mod: Update all will include it again"
+const EPSILON_PATH = "/games/a/Mods/epsilon-5.0.0.zip.disabled"
+const DISABLE_TITLE = "Disable this Mod: it stays installed, Vintage Story just won't load it"
+const ENABLE_TITLE = "Enable this Mod: Vintage Story will load it again"
 
 function anInstallation(): InstallationType {
   return {
@@ -36,15 +41,42 @@ function anInstallation(): InstallationType {
   }
 }
 
-/** What the folder scan comes back with: two updatable Mods, one only-incompatible, one unreadable archive. */
+/** What the folder scan comes back with: two updatable Mods, one only-incompatible, one up to date, one unreadable archive. */
 function aModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
   return {
     mods: [
-      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, description: "The first one.", authors: ["Ann"], contributors: [], _image: "alpha.png" },
-      { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, description: "The second one.", authors: ["Bob"], contributors: [] },
-      { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: "/games/a/Mods/gamma-3.0.0.zip", authors: ["Cal"], contributors: [] }
+      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, description: "The first one.", authors: ["Ann"], contributors: [], _image: "alpha.png" },
+      { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, enabled: true, description: "The second one.", side: "Server", authors: ["Bob"], contributors: [] },
+      // No declared side at all, which the server export reads as "the server loads it".
+      { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: "/games/a/Mods/gamma-3.0.0.zip", enabled: true, authors: ["Cal"], contributors: [] },
+      // Its id shares nothing with its name, so a search hitting it can only have matched the id.
+      { name: "Delta Mod", modid: "quirkid", version: "4.0.0", path: DELTA_PATH, enabled: true, side: "Client", authors: ["Dee"], contributors: [] }
     ],
     errors: [{ zipname: "broken.zip", path: "/games/a/Mods/broken.zip" }]
+  }
+}
+
+/**
+ * A folder holding one Mod the player turned off (#287). Epsilon is updatable and a server would
+ * load it, so one fixture answers what Update all does, what an export ships and what a row shows.
+ */
+function scanWithADisabledMod(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
+  return {
+    mods: [
+      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, authors: ["Ann"], contributors: [] },
+      { name: "Epsilon Mod", modid: "epsilon", version: "5.0.0", path: EPSILON_PATH, enabled: false, authors: ["Eve"], contributors: [] }
+    ],
+    errors: []
+  }
+}
+
+function duplicateModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
+  return {
+    mods: [
+      { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, authors: [] },
+      { name: "Alpha Mod copy", modid: "alpha", version: "1.0.1", path: "/games/a/Mods/alpha-copy-1.0.1.zip", enabled: true, authors: [] }
+    ],
+    errors: []
   }
 }
 
@@ -82,6 +114,7 @@ function queryModDb(url: string): Promise<string> {
   if (url.endsWith("/mod/beta")) return Promise.resolve(aModDetail({ modid: 2, assetid: 102, name: "Beta Mod", modidstr: "beta", modversion: "2.1.0", tags: ["1.20.0"] }))
   // Gamma's only newer release is tagged for another series, so it lands in the incompatible list.
   if (url.endsWith("/mod/gamma")) return Promise.resolve(aModDetail({ modid: 3, assetid: 103, name: "Gamma Mod", modidstr: "gamma", modversion: "3.1.0", tags: ["1.19.0"] }))
+  if (url.endsWith("/mod/epsilon")) return Promise.resolve(aModDetail({ modid: 5, assetid: 105, name: "Epsilon Mod", modidstr: "epsilon", modversion: "5.1.0", tags: ["1.20.0"] }))
   return Promise.resolve(JSON.stringify({ statuscode: "404" }))
 }
 
@@ -94,9 +127,11 @@ function queryModDb(url: string): Promise<string> {
 function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof renderWithProviders> {
   installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
-    modsManager: { getInstalledMods: vi.fn(async () => aModScan()) },
     netManager: { queryURL: vi.fn(queryModDb) },
-    ...overrides
+    ...overrides,
+    // Last, and merged rather than replaced: a test overriding one modsManager call still wants the
+    // folder scan the rest of this file is written against.
+    modsManager: { getInstalledMods: vi.fn(async () => aModScan()), ...overrides.modsManager }
   })
 
   return renderWithProviders(
@@ -141,6 +176,18 @@ describe("ManageMods", () => {
     // ModListCard's own content already does.
     const alphaRow = screen.getByText("Alpha Mod").closest("li")?.firstElementChild
     expect(alphaRow?.className).toContain("skip-offscreen-render")
+  })
+
+  it("queries one ModDB detail for repeated installed mod ids", async () => {
+    const queryURL = vi.fn(queryModDb)
+    renderManageMods({
+      netManager: { queryURL },
+      modsManager: { getInstalledMods: vi.fn(async () => duplicateModScan()) }
+    })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("Alpha Mod copy", {}, { timeout: 3000 })).toBeTruthy()
+    await waitFor(() => expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/mod/alpha"))).toHaveLength(1))
   })
 
   it("leaves the Mod on disk until the delete confirm dialog is accepted", async () => {
@@ -273,6 +320,327 @@ describe("ManageMods: suspended Mod updates", () => {
 
     // The suspension is lifted by the player, never by an update they asked for themselves.
     expect(within(await rowFor("Alpha Mod")).getByTitle(RESUME_TITLE)).toBeTruthy()
+  })
+})
+
+/** Issue #228: finding one Mod in a long installed list, without knowing which section it landed in. */
+describe("ManageMods: searching the installed Mods", () => {
+  /** Waits for the scan to land, then types into the search field. */
+  async function searchFor(user: ReturnType<typeof userEvent.setup>, text: string): Promise<HTMLElement> {
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    const field = screen.getByPlaceholderText(SEARCH_PLACEHOLDER)
+    await user.type(field, text)
+    return field
+  }
+
+  it("narrows every section at once and leaves the emptied ones out", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    // "ta" is in Beta (updatable) and Delta (up to date), in neither Gamma nor the unreadable archive.
+    await searchFor(user, "ta")
+
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    expect(screen.getByText("Beta Mod")).toBeTruthy()
+    expect(screen.getByText("Delta Mod")).toBeTruthy()
+    expect(screen.queryByText("Gamma Mod")).toBeNull()
+    expect(screen.queryByText("broken.zip")).toBeNull()
+
+    // No heading is left standing over a section the search emptied.
+    expect(screen.queryByText("Mods with incompatible updates")).toBeNull()
+    expect(screen.queryByText("Mods with errors")).toBeNull()
+    expect(screen.getByText("Mods with updates")).toBeTruthy()
+
+    // What the sections add up to is what the player can see, one row each.
+    const updatesSection = screen.getByText("Mods with updates").closest("ul") as HTMLElement
+    expect(within(updatesSection).getAllByRole("listitem")).toHaveLength(1)
+    expect(screen.getAllByRole("listitem")).toHaveLength(2)
+  })
+
+  it("finds a Mod by its id, not only by its name", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await searchFor(user, "quirk")
+
+    // Delta's name has no "quirk" in it, so only its modid can have matched.
+    expect(await screen.findByText("Delta Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    expect(screen.getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("ignores case, on the name and on the id alike", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await searchFor(user, "BETA")
+
+    expect(await screen.findByText("Beta Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Gamma Mod")).toBeNull())
+
+    await user.clear(screen.getByPlaceholderText(SEARCH_PLACEHOLDER))
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "QUIRKID")
+
+    expect(await screen.findByText("Delta Mod")).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("says so when nothing matches, instead of showing empty sections", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await searchFor(user, "nothinglikethis")
+
+    expect(await screen.findByText("There are no Mods that match your filters!")).toBeTruthy()
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0)
+    expect(screen.queryByText("Mods with updates")).toBeNull()
+  })
+
+  it("puts the whole list back when the field is cleared", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const field = await searchFor(user, "ta")
+    await waitFor(() => expect(screen.queryByText("Gamma Mod")).toBeNull())
+
+    await user.clear(field)
+
+    expect(await screen.findByText("Gamma Mod")).toBeTruthy()
+    expect(screen.getByText("Alpha Mod")).toBeTruthy()
+    expect(screen.getByText("Mods with incompatible updates")).toBeTruthy()
+    expect(screen.getByText("broken.zip")).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(5)
+  })
+
+  it("updates only the Mods the search left on screen", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn(async (_id: string, url: string) => (url.includes("alpha") ? "/games/a/Mods/alpha-1.1.0.zip" : "/games/a/Mods/beta-2.1.0.zip"))
+    renderManageMods({ pathsManager: { deletePath, downloadOnPath } })
+
+    await searchFor(user, "alpha")
+    await waitFor(() => expect(screen.queryByText("Beta Mod")).toBeNull())
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+
+    // Beta is updatable too, but it is not what the player is looking at.
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(downloadOnPath.mock.calls[0]?.[1]).toContain("alpha")
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ALPHA_PATH])
+  })
+
+  it("greys the server export out when the search leaves only a client Mod", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    // Delta is the only client-only Mod, and its id is the only thing "quirk" can match.
+    await searchFor(user, "quirk")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    // Nothing on screen would go into a server modpack, so there is nothing to export.
+    expect((screen.getByText("Export Server Modpack").closest("button") as HTMLButtonElement).disabled).toBe(true)
+
+    // The plain export ships the visible list itself, so one visible Mod is still one Mod to write.
+    const plainExport = screen.getByText("Export Modpack").closest("button") as HTMLButtonElement
+    expect(plainExport.disabled).toBe(false)
+
+    await user.click(plainExport)
+
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "quirkid", version: "4.0.0" }])
+  })
+
+  it("writes the server modpack from the same visible list that decides the button", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    // "ta" leaves Beta, which a server loads, next to Delta, which it does not.
+    await searchFor(user, "ta")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    const serverExport = screen.getByText("Export Server Modpack").closest("button") as HTMLButtonElement
+    expect(serverExport.disabled).toBe(false)
+
+    await user.click(serverExport)
+
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    const manifest = exportModpack.mock.calls[0]?.[0] as ModpackManifestType
+    expect(manifest.name).toBe("Install A (Server)")
+    // Beta and nothing else: not Delta, which is on screen but client-only, and not Alpha or Gamma,
+    // which a server would load but the search took away.
+    expect(manifest.mods).toEqual([{ modid: "beta", version: "2.0.0" }])
+  })
+})
+
+/** Issue #287: turning a Mod off without uninstalling it, and what the rest of the page does about it. */
+describe("ManageMods: enabling and disabling a Mod", () => {
+  async function rowFor(name: string): Promise<HTMLElement> {
+    return (await screen.findByText(name, {}, { timeout: 3000 })).closest("li") as HTMLElement
+  }
+
+  /** The page with the disabled-Mod folder, plus whatever the case needs on top. */
+  function renderWithADisabledMod(overrides: WindowApiOverrides = {}): ReturnType<typeof renderManageMods> {
+    return renderManageMods({ ...overrides, modsManager: { getInstalledMods: vi.fn(async () => scanWithADisabledMod()), ...overrides.modsManager } })
+  }
+
+  it("greys a disabled Mod, says so on the row, and offers to turn it back on", async () => {
+    renderWithADisabledMod()
+
+    const epsilonRow = await rowFor("Epsilon Mod")
+
+    expect(within(epsilonRow).getByText("Disabled")).toBeTruthy()
+    expect(within(epsilonRow).getByTitle(ENABLE_TITLE)).toBeTruthy()
+    expect(epsilonRow.firstElementChild?.className).toContain("bg-zinc-500/25")
+
+    // An enabled row offers the other direction and is not greyed at all.
+    const alphaRow = await rowFor("Alpha Mod")
+    expect(within(alphaRow).getByTitle(DISABLE_TITLE)).toBeTruthy()
+    expect(within(alphaRow).queryByText("Disabled")).toBeNull()
+    expect(alphaRow.firstElementChild?.className).not.toContain("bg-zinc-500/25")
+  })
+
+  it("asks the host to rename the archive, then rescans the folder", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => ({ ok: true, path }))
+    const getInstalledMods = vi.fn(async () => scanWithADisabledMod())
+    renderWithADisabledMod({ modsManager: { setModEnabled, getInstalledMods } })
+
+    const alphaRow = await rowFor("Alpha Mod")
+    const scansBefore = getInstalledMods.mock.calls.length
+
+    await user.click(within(alphaRow).getByTitle(DISABLE_TITLE))
+
+    // The renderer names the file and the state it wants. It never composes the new name.
+    await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(ALPHA_PATH, false))
+    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded!")).toBeTruthy()
+    // The archive's name is its path, so every button on that row is pointing at a name that has
+    // just stopped existing. The rescan is what puts them back on the real file.
+    await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
+  })
+
+  it("sends one rename when the same row is clicked twice before the first one lands", async () => {
+    let landIpc: (result: SetModEnabledResult) => void = () => {}
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(() => new Promise<SetModEnabledResult>((resolve) => (landIpc = resolve)))
+    const getInstalledMods = vi.fn(async () => scanWithADisabledMod())
+    renderWithADisabledMod({ modsManager: { setModEnabled, getInstalledMods } })
+
+    const alphaRow = await rowFor("Alpha Mod")
+    const disableButton = within(alphaRow).getByTitle(DISABLE_TITLE) as HTMLButtonElement
+    const scansBefore = getInstalledMods.mock.calls.length
+
+    // Both clicks inside one commit, which is what an impatient double click actually looks like:
+    // the second one arrives before React has painted anything the first one changed.
+    await act(async () => {
+      disableButton.click()
+      disableButton.click()
+    })
+
+    // Only the first click reached the host, and it carried the only name that still exists. The
+    // second would have sent the same one, and the answer to it would have been an error the player
+    // reads next to a success for the one thing they asked for.
+    expect(setModEnabled).toHaveBeenCalledTimes(1)
+    expect(setModEnabled).toHaveBeenCalledWith(ALPHA_PATH, false)
+    expect(disableButton.disabled).toBe(true)
+
+    await act(async () => {
+      landIpc({ ok: true, path: `${ALPHA_PATH}.disabled` })
+    })
+
+    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded!")).toBeTruthy()
+    expect(screen.queryByText("An error has occurred enabling or disabling Alpha Mod!")).toBeNull()
+    await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
+    // Still one call once everything has settled, and the row is live again for the next real click.
+    expect(setModEnabled).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect((within(alphaRow).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false))
+  })
+
+  it("turns a disabled Mod back on from its own row", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => ({ ok: true, path }))
+    renderWithADisabledMod({ modsManager: { setModEnabled } })
+
+    await user.click(within(await rowFor("Epsilon Mod")).getByTitle(ENABLE_TITLE))
+
+    await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(EPSILON_PATH, true))
+    expect(await screen.findByText("Epsilon Mod is enabled again!")).toBeTruthy()
+  })
+
+  it("names the clash instead of pretending nothing happened when the other file already exists", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async () => ({ ok: false, reason: "name-taken" }))
+    renderWithADisabledMod({ modsManager: { setModEnabled } })
+
+    await user.click(within(await rowFor("Alpha Mod")).getByTitle(DISABLE_TITLE))
+
+    expect(await screen.findByText(/There is already another file where Alpha Mod would have been renamed/)).toBeTruthy()
+  })
+
+  it("leaves a disabled Mod out of Update all and updates the rest", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn(async (_id: string, url: string) => (url.includes("alpha") ? "/games/a/Mods/alpha-1.1.0.zip" : "/games/a/Mods/epsilon-5.1.0.zip"))
+    renderWithADisabledMod({ pathsManager: { deletePath, downloadOnPath } })
+
+    await rowFor("Alpha Mod")
+    // Epsilon has an update waiting and is still listed under the heading that says so.
+    const updatesSection = screen.getByText("Mods with updates").closest("ul") as HTMLElement
+    expect(within(updatesSection).getByText("Epsilon Mod")).toBeTruthy()
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    // Alpha only. A Mod that is off does not silently change version.
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(downloadOnPath.mock.calls[0]?.[1]).toContain("alpha")
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ALPHA_PATH])
+  })
+
+  it("keeps a disabled Mod out of both modpack exports, because an export is the playable set", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderWithADisabledMod({ modsManager: { exportModpack } })
+
+    await rowFor("Epsilon Mod")
+
+    await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0" }])
+
+    // Epsilon declares no side, which the server export otherwise reads as "the server loads it".
+    await user.click(screen.getByText("Export Server Modpack").closest("button") as HTMLElement)
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(2))
+    expect(exportModpack.mock.calls[1]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0" }])
+  })
+
+  it("finds a disabled Mod by search like any other, name or id", async () => {
+    const user = userEvent.setup()
+    renderWithADisabledMod()
+
+    await rowFor("Epsilon Mod")
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "epsilon")
+
+    expect(await screen.findByText("Epsilon Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    expect(screen.getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("deletes a disabled Mod by the file name it actually has", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn(async () => true)
+    renderWithADisabledMod({ pathsManager: { deletePath } })
+
+    await user.click(within(await rowFor("Epsilon Mod")).getByTitle("Delete"))
+
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByTitle("Delete"))
+
+    // The `.disabled` name is the real one on disk, so it is the one the delete has to target.
+    await waitFor(() => expect(deletePath).toHaveBeenCalledWith(EPSILON_PATH))
+    expect(await screen.findByText("Mod deleted successfully!")).toBeTruthy()
   })
 })
 

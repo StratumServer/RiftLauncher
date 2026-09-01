@@ -10,16 +10,18 @@
 [![CI](https://github.com/StratumServer/RiftLauncher/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/StratumServer/RiftLauncher/actions/workflows/ci.yml)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=StratumServer_RiftLauncher&metric=coverage)](https://sonarcloud.io/summary/overall?id=StratumServer_RiftLauncher)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=StratumServer_RiftLauncher&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=StratumServer_RiftLauncher)
+[![Downloads](https://img.shields.io/github/downloads/StratumServer/RiftLauncher/total?logo=github&label=downloads)](https://github.com/StratumServer/RiftLauncher/releases)
+[![Latest release](https://img.shields.io/github/v/release/StratumServer/RiftLauncher?include_prereleases&logo=github&label=latest)](https://github.com/StratumServer/RiftLauncher/releases/latest)
 [![Support on OpenCollective](https://img.shields.io/badge/Support-OpenCollective-7FADF2?logo=opencollective&logoColor=white)](https://opencollective.com/stratum)
 
 ## What's RiftLauncher?
 
-RiftLauncher is an independent launcher for Vintage Story, built by the [Stratum](https://github.com/StratumServer) team.
+RiftLauncher is an independent launcher for Vintage Story, built by the [Stratum](https://github.com/StratumServer) team. The website at [riftlauncher.stratumvs.dev](https://riftlauncher.stratumvs.dev/) has the short version and the downloads.
 With it you can install multiple versions of Vintage Story, create separate installations with their own configs, mods and worlds, and manage backups, all in a few clicks. It currently works on Windows and Linux; MacOS support is planned but not built yet.
 
 RiftLauncher is a fork of [VS Launcher](https://github.com/XurxoMF/vs-launcher) by [XurxoMF](https://github.com/XurxoMF), archived by its original author. Everything the launcher does today started there. Thank you to XurxoMF and everyone who translated, tested and contributed to the original project; their work carries forward into this one, and the [contributors page](docs/important-info/contributors.md) credits them by name.
 
-Since the fork, the project has gone through a large rebuild under the hood: a testable domain layer separate from the UI, continuous integration running on three platforms, 400+ automated tests, and typed error reporting on every user-facing flow.
+Since the fork, the project has gone through a large rebuild under the hood: a testable domain layer separate from the UI, continuous integration building on Windows and Linux, well over a thousand automated tests, and typed error reporting on every user-facing flow.
 
 RiftLauncher is unofficial and not affiliated with Anego Studios, the developers of [Vintage Story](https://www.vintagestory.at).
 
@@ -29,11 +31,15 @@ RiftLauncher is unofficial and not affiliated with Anego Studios, the developers
 - Create multiple Installations (data paths) with one click to have different mods, worlds and so on on each one.
 - Make manual and automatic backups of your installations to not loose any of your worlds or configs if something breaks.
 - There are a lot of languages you can choose to use on RiftLauncher.
-- Automatically update RiftLauncher when you open it if there is a new update available.
+- RiftLauncher checks for its own updates when you open it and asks before downloading one.
 
 ## How can I download RiftLauncher?
 
 You can find a guide explaining how to download it here: [How to install RiftLauncher](docs/get-started/installation/README.md).
+
+## How does RiftLauncher handle privacy?
+
+Read the [RiftLauncher Privacy Policy](PRIVACY.md) for the data the launcher stores locally and the external services it contacts.
 
 ## How do I use RiftLauncher?
 

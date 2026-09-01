@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
-import { CONFIG_ACTIONS, useAccount, useConfigDispatch, useCustomIcons, useFavMods, useGameVersions, useInstallations, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useAccountList, useConfigDispatch, useCustomIcons, useFavMods, useGameVersions, useInstallations, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
-import { renderWithProviders } from "./helpers/render"
+import { expectHookThrowsOutsideProvider, renderWithProviders } from "./helpers/render"
 
 function anInstallation(overrides: Partial<InstallationType> = {}): InstallationType {
   return {
@@ -68,7 +68,7 @@ function GameVersionsProbe({ log }: { log: RenderLog }): JSX.Element {
 function WholeConfigProbe({ log }: { log: RenderLog }): JSX.Element {
   useInstallations()
   useGameVersions()
-  useAccount()
+  useAccountList()
   useSettingsConfig()
   useFavMods()
   useCustomIcons()
@@ -153,21 +153,6 @@ describe("config slice contexts", () => {
   })
 
   it("throws by name when a slice hook is used outside the provider", () => {
-    function Orphan(): JSX.Element {
-      useInstallations()
-      return <p>never rendered</p>
-    }
-
-    // React re-reports the throw through console.error and a window error
-    // event; both are silenced so a passing run stays readable.
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
-    const swallow = (event: ErrorEvent): void => event.preventDefault()
-    window.addEventListener("error", swallow)
-    try {
-      expect(() => render(<Orphan />)).toThrow(/useInstallations must be used within a ConfigProvider/)
-    } finally {
-      window.removeEventListener("error", swallow)
-      consoleError.mockRestore()
-    }
+    expectHookThrowsOutsideProvider(useInstallations, /useInstallations must be used within a ConfigProvider/)
   })
 })

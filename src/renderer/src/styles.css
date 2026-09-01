@@ -3,8 +3,16 @@
 @theme {
   --breakpoint-3xl: 120rem;
 
+  /*
+   * vs/vsl/vsd is one brand ramp. vs and vsd are fills that carry light text on top, so they stay
+   * put. vsl is the only one of the three ever used as text (text-vsl links, plus two status
+   * icons), and it always renders through a translucent zinc-950 scrim stack over whatever
+   * background image the player picked, never on a real white surface. The worst case is that
+   * scrim over a white image, which composites to about #353537, so vsl is lightened (not
+   * darkened) to clear 4.5:1 there; see tests/text-contrast.test.ts.
+   */
   --color-vs: #7e501e;
-  --color-vsl: #ad7639;
+  --color-vsl: #d49754;
   --color-vsd: #4f3110;
   --color-zinc-750: #313136;
   --color-zinc-850: #212122;

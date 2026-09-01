@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "./tsconfig.node.json",
-  "include": ["tests/**/*", "src/global.d.ts", "src/preload/preload.d.ts"],
+  "include": ["tests/**/*", "src/global.d.ts", "src/preload/preload.d.ts", "src/write-file-atomic.d.ts"],
   "exclude": ["tests/e2e/**"],
   "compilerOptions": {
     "composite": false,

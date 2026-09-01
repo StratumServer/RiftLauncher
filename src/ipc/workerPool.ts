@@ -6,7 +6,7 @@
  * the actual `new Worker(...)` call injected so it stays testable with a fake factory.
  */
 
-import type { Worker } from "worker_threads"
+import type { Worker } from "node:worker_threads"
 
 /** Whether a finished task's worker goes back in the pool or gets terminated. */
 export type WorkerDisposition = "reuse" | "discard"
@@ -35,6 +35,25 @@ export interface WorkerPoolOptions {
   maxTasksPerWorker?: number
 }
 
+/**
+ * How long an unused worker waits for the next task of its kind before its thread is
+ * terminated.
+ *
+ * The reuse this exists for happens in milliseconds, not minutes: the ConcurrencyLimiter
+ * hands its queued task to a just-freed slot immediately, and extracting a mod follows
+ * downloading it right away. What 30 seconds buys on top of that is the gap a person takes
+ * between clicking install on one mod and the next. Past that, the odds of a follow-up task
+ * fall off while the resident cost of the idle isolate does not.
+ */
+const IDLE_WORKER_TIMEOUT_MS = 30_000
+
+/**
+ * A worker is retired after this many tasks even while it is still being reused. Not a
+ * tuning knob, a bound on any per-task leak inside one isolate, so a launcher left open for
+ * a week can't grow one worker's heap without limit.
+ */
+const MAX_TASKS_PER_WORKER = 50
+
 export class WorkerPool {
   private readonly idle = new Map<string, PooledWorker[]>()
   private readonly live = new Set<PooledWorker>()
@@ -47,8 +66,8 @@ export class WorkerPool {
     private readonly createWorker: (scriptPath: string) => Worker,
     options: WorkerPoolOptions = {}
   ) {
-    this.idleTimeoutMs = options.idleTimeoutMs ?? 30_000
-    this.maxTasksPerWorker = options.maxTasksPerWorker ?? 50
+    this.idleTimeoutMs = options.idleTimeoutMs ?? IDLE_WORKER_TIMEOUT_MS
+    this.maxTasksPerWorker = options.maxTasksPerWorker ?? MAX_TASKS_PER_WORKER
   }
 
   /**
@@ -89,7 +108,7 @@ export class WorkerPool {
   /** Kills every worker, idle or mid-task, and stops pooling. Call on app quit. */
   terminateAll(): void {
     this.shuttingDown = true
-    for (const pooled of [...this.live]) this.forget(pooled)
+    for (const pooled of this.live) this.forget(pooled)
     this.idle.clear()
   }
 

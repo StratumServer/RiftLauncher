@@ -111,10 +111,10 @@ export function useQueryMods(): ({
       if (authorFilter && authorFilter.name.length > 1) filters.push(`author=${authorFilter.userid}`)
       if (versionsFilter && versionsFilter.length > 0) versionsFilter.forEach((version) => filters.push(`gameversions[]=${version.tagid}`))
       if (tagsFilter && tagsFilter.length > 0) tagsFilter.forEach((tag) => filters.push(`tagids[]=${tag.tagid}`))
-      filters.push(`orderby=${orderBy}`)
-      filters.push(`orderdirection=${orderByOrder}`)
+      filters.push(`orderby=${orderBy}`, `orderdirection=${orderByOrder}`)
 
-      const requestPath = `/mods${filters.length > 0 && `?${filters.join("&")}`}`
+      const queryString = filters.length > 0 ? `?${filters.join("&")}` : ""
+      const requestPath = `/mods${queryString}`
 
       const cached = getCachedQuery(requestPath)
       if (cached) {

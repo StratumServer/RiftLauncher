@@ -50,13 +50,13 @@ function InstallModPopup({
   modName,
   installation,
   onFinishInstallation
-}: {
+}: Readonly<{
   modToInstall: number | string | null
   setModToInstall: Dispatch<SetStateAction<number | string | null>>
   modName?: string
   installation?: IInstallationToInstallModIn
   onFinishInstallation?: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
 
@@ -113,7 +113,7 @@ function InstallModPopup({
                     <TableCell className="w-2/12 flex gap-2 items-center justify-center text-lg">
                       {installation && compatibility && (
                         <FormButton
-                          disabled={installation.oldMod && installation.oldMod.version === release.modversion}
+                          disabled={installation.oldMod?.version === release.modversion}
                           onClick={async () => {
                             if (installation.installation._backuping || installation.installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
 
@@ -128,7 +128,10 @@ function InstallModPopup({
                               outName: installation.installation.name,
                               modName: downloadableModToInstall.name,
                               release: toModReleaseToInstall(release),
-                              existing: oldMod && toInstalledModCopy(oldMod)
+                              existing: oldMod && toInstalledModCopy(oldMod),
+                              // Updating a Mod is not a request to turn it back on, so a disabled
+                              // one is replaced by a disabled copy and stays out of the load order.
+                              disabled: oldMod !== undefined && !oldMod.enabled
                             }).then((result) => {
                               if (result.ok && onFinishInstallation) onFinishInstallation()
                             })

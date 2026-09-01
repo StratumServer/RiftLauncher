@@ -5,6 +5,7 @@ import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
 
+import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH } from "@domain/installations/create"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
@@ -26,7 +27,7 @@ export interface NameAndIconPickerProps {
 }
 
 /** The name field and icon picker shared by AddInstallation and EditInstallation. */
-export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, customIcons, iconButtonClassName }: NameAndIconPickerProps): JSX.Element {
+export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, customIcons, iconButtonClassName }: Readonly<NameAndIconPickerProps>): JSX.Element {
   const { t } = useTranslation()
   const [addIcon, setAddIcon] = useState<boolean>(false)
 
@@ -38,8 +39,14 @@ export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, cust
 
       <FormBody>
         <FormFieldGroupWithDescription>
-          <FormInputText value={name} onChange={(e) => onNameChange(e.target.value)} placeholder={t("features.installations.defaultName")} minLength={5} maxLength={50} />
-          <FormFieldDescription content={t("generic.minMaxLength", { min: 5, max: 50 })} />
+          <FormInputText
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder={t("features.installations.defaultName")}
+            minLength={INSTALLATION_NAME_MIN_LENGTH}
+            maxLength={INSTALLATION_NAME_MAX_LENGTH}
+          />
+          <FormFieldDescription content={t("generic.minMaxLength", { min: INSTALLATION_NAME_MIN_LENGTH, max: INSTALLATION_NAME_MAX_LENGTH })} />
         </FormFieldGroupWithDescription>
       </FormBody>
 
@@ -76,7 +83,7 @@ export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, cust
                     >
                       <div className="w-full h-full flex items-center gap-2">
                         <span className="h-full aspect-square flex items-center justify-center">
-                          <PiPlusCircleDuotone className="text-3xl text-zinc-400/25 group-hover:scale-95 duration-200" />
+                          <PiPlusCircleDuotone className="text-3xl text-zinc-400/70 group-hover:scale-95 duration-200" />
                         </span>
                         <p>{t("generic.addIcon")}</p>
                       </div>

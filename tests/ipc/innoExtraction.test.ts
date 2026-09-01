@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import { runInnoExtraction } from "../../src/ipc/workers/innoExtraction"
 
@@ -37,6 +37,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(workspace, { recursive: true, force: true })
+  vi.unstubAllEnvs()
 })
 
 describe("runInnoExtraction", () => {
@@ -76,6 +77,14 @@ describe("runInnoExtraction", () => {
     assert.equal(existsSync(installerPath), true)
   })
 
+  it("extracts an LZMA2 payload through the native decoder when available", async () => {
+    const outcome = await runInnoExtraction({ filePath: installerFrom("lzma2-payload.bin"), outputPath: workspacePath("target"), deleteInstaller: false })
+
+    assert.equal(outcome.verdict, "extracted")
+    assert.equal(readFileSync(workspacePath("target", "first-compressed.txt"), "utf8"), "lzma2 first file, compressed for real\n".repeat(20))
+    assert.equal(readFileSync(workspacePath("target", "second-compressed.txt"), "utf8"), "lzma2 second file, sharing the same solid block\n".repeat(20))
+  })
+
   it("reports a refused format instead of failing, so the caller can run the installer", async () => {
     const outcome = await runInnoExtraction({ filePath: installerFrom("unsupported-version.bin"), outputPath: workspacePath("target"), deleteInstaller: false })
 
@@ -109,12 +118,20 @@ describe("runInnoExtraction", () => {
   })
 
   it("leaves no temporary folder behind, whatever happened", async () => {
-    const before = readdirSync(tmpdir()).filter((name) => name.startsWith("riftlauncher-inno-")).length
+    // Staging goes wherever the temp root points, and the machine-wide one is
+    // shared with everything else running: counting folders by name there counts
+    // the ones other runs are still using. These two calls get a temp root to
+    // themselves, so whatever is left in it at the end is theirs.
+    const temporaryRoot = workspacePath("temp-root")
+    mkdirSync(temporaryRoot)
+    vi.stubEnv("TMPDIR", temporaryRoot)
+    vi.stubEnv("TMP", temporaryRoot)
+    vi.stubEnv("TEMP", temporaryRoot)
 
     await runInnoExtraction({ filePath: installerFrom("valid.bin"), outputPath: workspacePath("target"), deleteInstaller: false })
     await runInnoExtraction({ filePath: installerFrom("wrong-digest.bin"), outputPath: workspacePath("other"), deleteInstaller: false })
 
-    assert.equal(readdirSync(tmpdir()).filter((name) => name.startsWith("riftlauncher-inno-")).length, before)
+    assert.deepEqual(readdirSync(temporaryRoot), [])
   })
 })
 

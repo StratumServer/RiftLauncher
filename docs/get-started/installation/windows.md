@@ -19,31 +19,23 @@ On that page you'll see all the available versions to download.
 
 ### Download the Windows version
 
-On the releases page, the first version is always the last one. There you'll see a table with the different files to download. Just click on the Windows one like on the next image:
-
-![](../../.gitbook/assets/imagen.png)
+On the releases page, the first version is always the last one. There you'll see a table with the different files to download. The Windows one is `riftlauncher-X.X.X-setup.exe`, where `X.X.X` is the version number.
 {% endstep %}
 
 {% step %}
 
 ### Install the downloaded file
 
-Double click the downloaded file and RiftLauncher will be automátically installed and opened.
+Double click the downloaded file. The installer lets you pick where to install RiftLauncher, then puts a desktop and a Start menu shortcut called **RiftLauncher** in place and opens the launcher when it's done.
 {% endstep %}
 
 {% step %}
 
 ### Install .NET 7, 8 and 10
 
-If you already played Vintage Story before this will be already installed so, you can skip this process. If you didn't played it before go to e next link to download .NET 7, 8 and 10:
+If you already played Vintage Story on this machine before, these are likely installed already and you can skip this step. Otherwise grab all three from the [.NET downloads page](https://dotnet.microsoft.com/download/dotnet): Vintage Story versions need different .NET major versions depending on when they were built, so having 7, 8 and 10 covers you whichever version you end up playing.
 
-{% embed url="https://dotnet.microsoft.com/es-es/download/dotnet/thank-you/sdk-7.0.410-windows-x64-installer" %}
-
-{% embed url="https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-8.0.419-windows-x64-installer" %}
-
-{% embed url="https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-10.0.201-windows-x64-installer" %}
-
-Once the download is complete just install it.
+Once the downloads are complete just install them.
 {% endstep %}
 {% endstepper %}
 

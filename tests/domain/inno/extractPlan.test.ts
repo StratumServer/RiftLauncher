@@ -15,6 +15,8 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { extractInnoPayload } from "@domain/inno/extract"
+import { Lzma2Decoder } from "@domain/inno/lzma"
+import type { Lzma2DecoderFactory, Lzma2Input } from "@domain/inno/lzma"
 import type { InnoExtractionPorts } from "@domain/inno/ports"
 
 const FIXTURES = join(__dirname, "../../fixtures/inno")
@@ -206,6 +208,51 @@ describe("extractInnoPayload: a genuinely LZMA2-compressed payload", () => {
 
     expect(reported.length).toBeGreaterThan(0)
     expect(reported.at(-1)).toBe(1)
+  })
+})
+
+describe("extractInnoPayload: a decoder that reports nothing for several calls before flushing", () => {
+  it("keeps pumping the decoder rather than giving up the first time nothing comes back", async () => {
+    // Mimics what the native adapter does: `decodeChunk` gets called several
+    // times in a row producing nothing, then hands everything over at once.
+    // The pre-fix pump called `decodeChunk` exactly once per read and treated
+    // an empty first call as the stream ending; this decoder would trip that
+    // immediately, since it never emits anything before its fifth call.
+    const { ports, written } = harnessFor("lzma2-payload.bin")
+    let calls = 0
+
+    const lzma2DecoderFactory: Lzma2DecoderFactory = (dictionaryProperties, onOutput) => {
+      const buffered: Uint8Array[] = []
+      const inner = new Lzma2Decoder(dictionaryProperties, (bytes) => buffered.push(Uint8Array.from(bytes)))
+
+      return {
+        get finished(): boolean {
+          return inner.finished && buffered.length === 0
+        },
+        async decodeChunk(input: Lzma2Input): Promise<number> {
+          calls++
+          if (!inner.finished) {
+            await inner.decodeChunk(input)
+            return 0
+          }
+          if (calls < 5) return 0
+
+          let total = 0
+          for (const bytes of buffered.splice(0)) {
+            onOutput(bytes)
+            total += bytes.length
+          }
+          return total
+        }
+      }
+    }
+
+    const result = await extractInnoPayload(ports, { lzma2DecoderFactory })
+
+    expect(calls).toBeGreaterThanOrEqual(5)
+    expect(result.filesWritten).toBe(2)
+    expect(textOf(written, "first-compressed.txt")).toBe("lzma2 first file, compressed for real\n".repeat(20))
+    expect(textOf(written, "second-compressed.txt")).toBe("lzma2 second file, sharing the same solid block\n".repeat(20))
   })
 })
 

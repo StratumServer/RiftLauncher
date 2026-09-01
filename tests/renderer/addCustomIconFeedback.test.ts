@@ -16,6 +16,10 @@ describe("describeAddCustomIconFailure", () => {
     assert.deepEqual(describeAddCustomIconFailure("source-unavailable"), { messageKey: "notifications.body.iconSourceUnavailable", logged: false })
   })
 
+  it("keys an oversized file to its own sentence", () => {
+    assert.deepEqual(describeAddCustomIconFailure("too-large"), { messageKey: "notifications.body.iconTooLarge", logged: false })
+  })
+
   it("keys a failed copy to its own sentence and logs it", () => {
     assert.deepEqual(describeAddCustomIconFailure("copy-failed"), { messageKey: "notifications.body.coulndtCopyIcon", logged: true })
   })
@@ -25,7 +29,7 @@ describe("describeAddCustomIconFailure", () => {
   })
 
   it("gives every reason a message key of its own", () => {
-    const reasons = ["no-file-selected", "unsupported-format", "source-unavailable", "copy-failed", "bridge-failed"] as const
+    const reasons = ["no-file-selected", "unsupported-format", "source-unavailable", "too-large", "copy-failed", "bridge-failed"] as const
     const keys = reasons.map((reason) => describeAddCustomIconFailure(reason).messageKey)
     assert.equal(new Set(keys).size, reasons.length, `two reasons share a message key: ${keys.join(", ")}`)
   })

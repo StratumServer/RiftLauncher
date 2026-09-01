@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtempSync, realpathSync, rmSync } from "node:fs"
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -215,6 +215,61 @@ describe("managed path policy: the boundary around a config entry", () => {
 
   it("refuses traversal out of a managed folder", async () => {
     assert.equal(await admits(join(mainInstallation, "..", "..", "escape"), { allowMissing: true }), false)
+  })
+})
+
+/**
+ * The two grades the policy hands out for a path with a link in it (#237).
+ *
+ * Symlinks are made here rather than mocked because the walk stats real inodes,
+ * and Windows is skipped throughout: making one there needs Developer Mode or
+ * elevation the CI runners do not have, which #267 tracks. The production code
+ * is platform independent, so the Linux and macOS runs are what pin it.
+ */
+describe.skipIf(process.platform === "win32")("managed path policy: a Mods folder the user linked in", () => {
+  let realMods: string
+  let linkedMods: string
+
+  beforeEach(() => {
+    // The reported shape: the profile's own Mods folder replaced by a link at a
+    // Mods folder that lives somewhere else entirely.
+    realMods = join(outsideFolder, "VintagestoryData", "Mods")
+    fse.ensureDirSync(realMods)
+    fse.writeFileSync(join(realMods, "amod.zip"), "")
+
+    linkedMods = join(mainInstallation, "Mods")
+    fse.removeSync(linkedMods)
+    symlinkSync(realMods, linkedMods, "dir")
+  })
+
+  it("refuses the link on the default grade, the one every writing channel asks for", async () => {
+    assert.equal(await admits(linkedMods), false)
+    assert.equal(await admits(join(linkedMods, "amod.zip")), false)
+  })
+
+  it("admits the link on the read grade, so the mod list and the folder button can see it", async () => {
+    assert.equal(await admits(linkedMods, { allowSymlinks: true }), true)
+    assert.equal(await admits(join(linkedMods, "amod.zip"), { allowSymlinks: true }), true)
+  })
+
+  it("keeps the grant check on the read grade, so a link does not buy an unmanaged path", async () => {
+    assert.equal(await admits(join(outsideFolder, "Neighbour"), { allowSymlinks: true }), false)
+  })
+
+  // The trade the read grade makes, stated out loud: it is lexical, so a link
+  // planted inside a granted subtree does reach past the grant for a read. What
+  // must not follow is anything that writes. assertManagedDeletionPath only
+  // decides, it never removes, so this row cannot touch the system folder.
+  it("refuses to delete through a link that escapes into a system folder", async () => {
+    const escape = join(mainInstallation, "escape")
+    symlinkSync("/etc", escape, "dir")
+
+    assert.equal(await admits(join(escape, "hosts"), { allowSymlinks: true }), true)
+    await assert.rejects(() => policy.assertManagedDeletionPath(join(escape, "hosts")), /Symbolic links are not allowed/)
+  })
+
+  it("refuses to delete a mod reached through the linked folder", async () => {
+    await assert.rejects(() => policy.assertManagedDeletionPath(join(linkedMods, "amod.zip")), /Symbolic links are not allowed/)
   })
 })
 

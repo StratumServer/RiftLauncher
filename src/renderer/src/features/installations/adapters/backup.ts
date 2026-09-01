@@ -1,5 +1,3 @@
-import { v4 as uuidv4 } from "uuid"
-
 import type { BackupSnapshot, InstallationSnapshot, MakeInstallationBackupFailure, MakeInstallationBackupPorts } from "@domain/installations/backup"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 import type { TaskContextType } from "@renderer/contexts/TaskManagerContext"
@@ -38,11 +36,11 @@ export function createBackupPorts({ startCompress, taskName, taskDescription }: 
         )
     },
     clock: { now: () => Date.now() },
-    ids: { newId: () => uuidv4() },
+    ids: { newId: () => crypto.randomUUID() },
     paths: { join: (parts) => window.api.pathsManager.formatPath(parts) },
     closeGuard: {
       acquire: (reason) => {
-        const token = uuidv4()
+        const token = crypto.randomUUID()
         window.api.utils.setPreventAppClose("add", token, reason)
         return () => window.api.utils.setPreventAppClose("remove", token, "Finished installation backup.")
       }

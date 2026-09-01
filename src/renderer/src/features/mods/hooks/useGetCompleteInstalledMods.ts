@@ -32,9 +32,23 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
       onFinish: () => logMods("info", `[front] [mods] [features/mods/hooks/useGetCompleteInstalledMods.ts] [useGetCompleteInstalledMods > getCompleteInstalledMods] Mods got succesfully.`)
     })
 
+    // Two installed files can refer to the same ModDB entry. Keep one in-flight lookup per id
+    // for this scan, while still evaluating every installed file against its own version.
+    const modDetails = new Map<string, Promise<DownloadableModType | undefined>>()
+
+    function queryModOnce(modid: number | string): Promise<DownloadableModType | undefined> {
+      const key = String(modid)
+      const pending = modDetails.get(key)
+      if (pending) return pending
+
+      const request = queryMod({ modid })
+      modDetails.set(key, request)
+      return request
+    }
+
     await Promise.all(
       mods.mods.map(async (mod) => {
-        const dmod = await queryMod({ modid: mod.modid })
+        const dmod = await queryModOnce(mod.modid)
         mod._mod = dmod
 
         if (dmod) {

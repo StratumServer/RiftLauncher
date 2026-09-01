@@ -12,7 +12,8 @@
  * Every cached file is named after its id ({@link backgroundCacheFileName}), so the renderer
  * can paint a saved choice at startup knowing nothing but the id. That is the whole reason the
  * manifest's `file` never reaches the config: it is only the name on the branch, and the
- * download renames it on the way in.
+ * download renames it on the way in. The manifest may also name a small remote thumbnail for
+ * the picker; unlike the full-size scene, it is rendered directly and never cached by the app.
  */
 
 /** The scene shipped inside the app. Selected when nothing else is, and the offline answer. */
@@ -31,6 +32,11 @@ export function backgroundImageUrl(file: string): string {
   return `${BACKGROUNDS_BRANCH_URL}${file}`
 }
 
+/** Where one catalog thumbnail is served from. `thumbnail` comes from the validated manifest. */
+export function backgroundThumbnailUrl(thumbnail: string): string {
+  return `${BACKGROUNDS_BRANCH_URL}${thumbnail}`
+}
+
 /**
  * How many scenes the launcher will read out of one manifest. Well past the eleven the branch
  * carries today, and there so a manifest that grows unnoticed cannot turn the settings page into
@@ -40,6 +46,7 @@ const MAX_BACKGROUND_ENTRIES = 64
 
 const BACKGROUND_ID_PATTERN = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$/
 const BACKGROUND_FILE_PATTERN = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?\.jpg$/
+const BACKGROUND_THUMBNAIL_PATTERN = /^thumbnails\/[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?\.jpg$/
 
 /** True for the default id, the custom id, and any well-formed catalog slug. */
 export function isBackgroundId(value: unknown): value is string {
@@ -54,6 +61,11 @@ export function isCatalogBackgroundId(value: unknown): value is string {
 /** True for a file name the manifest is allowed to point at: a plain slug, on the branch, a JPEG. */
 export function isBackgroundFileName(value: unknown): value is string {
   return typeof value === "string" && BACKGROUND_FILE_PATTERN.test(value)
+}
+
+/** True for a thumbnail path confined to the branch's fixed `thumbnails` directory. */
+export function isBackgroundThumbnailFileName(value: unknown): value is string {
+  return typeof value === "string" && BACKGROUND_THUMBNAIL_PATTERN.test(value)
 }
 
 /**
@@ -101,13 +113,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseEntry(value: unknown): BackgroundType | null {
   if (!isRecord(value)) return null
-  const { id, name, file } = value
+  const { id, name, file, thumbnail } = value
 
   if (!isCatalogBackgroundId(id)) return null
   if (typeof name !== "string" || name.length === 0 || name.length > 64) return null
   if (!isBackgroundFileName(file)) return null
 
-  return { id, name, file }
+  const entry: BackgroundType = { id, name, file }
+  if (isBackgroundThumbnailFileName(thumbnail)) entry.thumbnail = thumbnail
+  return entry
 }
 
 /**

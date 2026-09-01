@@ -15,7 +15,7 @@ function toVersionColor(entry: ModChangeSummaryEntry): string {
   return "text-green-400"
 }
 
-function ModChangeSummaryPopup({ isOpen, close, title, entries }: { isOpen: boolean; close: () => void; title: string; entries: ModChangeSummaryEntry[] }): JSX.Element {
+function ModChangeSummaryPopup({ isOpen, close, title, entries }: Readonly<{ isOpen: boolean; close: () => void; title: string; entries: ModChangeSummaryEntry[] }>): JSX.Element {
   const { t } = useTranslation()
   const { openModOnModDb } = useExternalLinks()
 
@@ -38,13 +38,13 @@ function ModChangeSummaryPopup({ isOpen, close, title, entries }: { isOpen: bool
                   <TableCell className="w-5/12 overflow-hidden whitespace-nowrap text-ellipsis">{entry.name}</TableCell>
                   <TableCell className="w-5/12">
                     {entry.alreadyPresent ? (
-                      <span className="flex items-center gap-1 text-sm text-zinc-500">
+                      <span className="flex items-center gap-1 text-sm text-zinc-400">
                         <PiMinusCircleDuotone className="shrink-0" />v{entry.toVersion} · {t("features.mods.summaryAlreadyPresent")}
                       </span>
                     ) : (
                       <span className="flex items-center gap-1 text-sm">
                         <span className="text-zinc-400">{entry.fromVersion ? `v${entry.fromVersion}` : t("features.mods.summaryNew")}</span>
-                        <PiArrowRightDuotone className="text-zinc-500 shrink-0" />
+                        <PiArrowRightDuotone className="text-zinc-400 shrink-0" />
                         <span className={toVersionColor(entry)}>{entry.toVersion ? `v${entry.toVersion}` : t("features.mods.summaryFailed")}</span>
                       </span>
                     )}

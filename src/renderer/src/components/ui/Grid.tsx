@@ -11,12 +11,12 @@ import { useRef } from "react"
  * @param {string} [props.className] - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function GridWrapper({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function GridWrapper({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return (
     <div
       className={clsx(
         "relative mx-auto flex flex-col rounded-md p-2",
-        "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:rounded-md before:backdrop-blur-sm before:bg-zinc-950/15 before:shadow-sm before:shadow-zinc-950/50 before:border before:border-zinc-400/5",
+        "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:rounded-md before:backdrop-blur-sm before:bg-zinc-950/40 before:shadow-sm before:shadow-zinc-950/50 before:border before:border-zinc-400/5",
         className
       )}
     >
@@ -33,7 +33,7 @@ export function GridWrapper({ children, className }: { children: React.ReactNode
  * @param {string} [props.className] - Additional class names for styling.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function GridGroup({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element {
+export function GridGroup({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
   return (
     <motion.ul variants={GRIDGROUP_VARIANTS} initial="initial" animate="animate" exit="exit" className={clsx("relative w-full flex flex-row flex-wrap justify-center gap-4", className)}>
       <AnimatePresence>{children}</AnimatePresence>
@@ -58,13 +58,13 @@ export function GridItem({
   selected = false,
   size,
   onClick
-}: {
+}: Readonly<{
   children: React.ReactNode
   className?: string
   selected?: boolean
   size?: string
   onClick?: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const ref = useRef(null)
   // once: true, not the useInView default of false. With false, motion/react's inView()
   // never unobserves the card (see node_modules/motion's render/dom/viewport/index.mjs):
@@ -85,7 +85,11 @@ export function GridItem({
         exit="exit"
         className={clsx(
           "w-full h-full rounded-sm backdrop-blur-xs border cursor-pointer shadow-sm shadow-zinc-950/50 hover:shadow-none duration-200",
-          selected ? "bg-vsd/50 border-vsl/25" : "bg-zinc-950/50 border-zinc-400/5",
+          // Full opacity, not the /25 this used to carry: the fill and panel behind it are dark
+          // enough that a translucent border barely separated from them (issue #258, 1.53:1 worst
+          // case against the 3:1 WCAG 1.4.11 floor for a boundary that is the sole selected-state
+          // cue). Opaque clears it with room to spare; see text-contrast.test.ts.
+          selected ? "bg-vsd/50 border-vsl" : "bg-zinc-950/50 border-zinc-400/5",
           onClick && "cursor-pointer",
           className
         )}

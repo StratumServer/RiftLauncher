@@ -14,6 +14,8 @@ import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED } from "@domain/moddbVisibility"
+import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
 
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "../../src/renderer/src/features/config/contexts/configReducer"
 
@@ -25,12 +27,15 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     defaultVersionsFolder: "/versions",
     backupsFolder: "/backups",
     window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
-    account: null,
+    accounts: [],
+    activeAccountId: null,
     installations: [],
     gameVersions: [],
     favMods: [],
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
+    moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
+    receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     customIcons: [],
     ...overrides
   }
@@ -76,6 +81,10 @@ describe("configReducer: initialState", () => {
 
   it("starts on the bundled background, so the first paint needs no network", () => {
     assert.equal(initialState.background, DEFAULT_BACKGROUND_ID)
+  })
+
+  it("starts with the ModDB listing question unanswered", () => {
+    assert.equal(initialState.moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER)
   })
 })
 
@@ -138,14 +147,92 @@ describe("configReducer: scalar setters", () => {
     assert.equal(second.background, CUSTOM_BACKGROUND_ID)
   })
 
-  it("SET_ACCOUNT accepts an account and null alike", () => {
+  it("SET_MODDB_VISIBILITY_ANSWER records the answer and touches nothing else", () => {
     const config = baseConfig()
-    const account: AccountType = { email: "a@b.c", playerName: "A", playerUid: "1", playerEntitlements: null, hostGameServer: false }
-    const withAccount = configReducer(config, { type: CONFIG_ACTIONS.SET_ACCOUNT, payload: account })
-    assert.deepEqual(withAccount.account, account)
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER, payload: MODDB_VISIBILITY_ACCEPTED })
 
-    const loggedOut = configReducer(withAccount, { type: CONFIG_ACTIONS.SET_ACCOUNT, payload: null })
-    assert.equal(loggedOut.account, null)
+    assert.equal(result.moddbVisibilityAnswer, MODDB_VISIBILITY_ACCEPTED)
+    assert.equal(result.background, config.background)
+    assert.equal(result.installations, config.installations)
+  })
+
+  it("SET_RECEIVE_BETA_UPDATES stores the answer, opting out included, over a config that had none", () => {
+    const config = baseConfig()
+    assert.equal(config.receiveBetaUpdates, null)
+
+    assert.equal(configReducer(config, { type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: true }).receiveBetaUpdates, true)
+
+    const optedOut = configReducer(config, { type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: false })
+    assert.equal(optedOut.receiveBetaUpdates, false)
+    assert.equal(optedOut.installations, config.installations)
+  })
+})
+
+describe("configReducer: accounts", () => {
+  const accountA: AccountType = { email: "a@b.c", playerName: "A", playerUid: "uid-a", playerEntitlements: null, hostGameServer: false }
+  const accountB: AccountType = { email: "b@b.c", playerName: "B", playerUid: "uid-b", playerEntitlements: null, hostGameServer: false }
+
+  it("ADD_ACCOUNT appends a new account and makes it active", () => {
+    const config = baseConfig({ accounts: [accountA], activeAccountId: "uid-a" })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.ADD_ACCOUNT, payload: accountB })
+
+    assert.deepEqual(result.accounts, [accountA, accountB])
+    assert.equal(result.activeAccountId, "uid-b")
+  })
+
+  it("ADD_ACCOUNT on the same playerUid twice replaces the entry in place rather than duplicating it", () => {
+    const config = baseConfig({ accounts: [accountA], activeAccountId: "uid-a" })
+    const refreshed = { ...accountA, playerName: "A refreshed" }
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.ADD_ACCOUNT, payload: refreshed })
+
+    assert.deepEqual(result.accounts, [refreshed])
+    assert.equal(result.activeAccountId, "uid-a")
+  })
+
+  it("REMOVE_ACCOUNT drops the matching account and leaves the rest untouched", () => {
+    const config = baseConfig({ accounts: [accountA, accountB], activeAccountId: "uid-b" })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.REMOVE_ACCOUNT, payload: { playerUid: "uid-a" } })
+
+    assert.deepEqual(result.accounts, [accountB])
+    assert.equal(result.activeAccountId, "uid-b", "removing a non-active account leaves the active choice alone")
+  })
+
+  it("REMOVE_ACCOUNT promotes the first remaining account when the active one is removed", () => {
+    const config = baseConfig({ accounts: [accountA, accountB], activeAccountId: "uid-a" })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.REMOVE_ACCOUNT, payload: { playerUid: "uid-a" } })
+
+    assert.deepEqual(result.accounts, [accountB])
+    assert.equal(result.activeAccountId, "uid-b")
+  })
+
+  it("REMOVE_ACCOUNT on the last account leaves activeAccountId null", () => {
+    const config = baseConfig({ accounts: [accountA], activeAccountId: "uid-a" })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.REMOVE_ACCOUNT, payload: { playerUid: "uid-a" } })
+
+    assert.deepEqual(result.accounts, [])
+    assert.equal(result.activeAccountId, null)
+  })
+
+  it("SET_ACTIVE_ACCOUNT switches to a saved account", () => {
+    const config = baseConfig({ accounts: [accountA, accountB], activeAccountId: "uid-a" })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_ACTIVE_ACCOUNT, payload: "uid-b" })
+
+    assert.equal(result.activeAccountId, "uid-b")
+  })
+
+  it("SET_ACTIVE_ACCOUNT accepts null, clearing the active choice", () => {
+    const config = baseConfig({ accounts: [accountA], activeAccountId: "uid-a" })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_ACTIVE_ACCOUNT, payload: null })
+
+    assert.equal(result.activeAccountId, null)
+  })
+
+  it("SET_ACTIVE_ACCOUNT on an id naming nobody is a no-op, same state object back", () => {
+    const config = baseConfig({ accounts: [accountA], activeAccountId: "uid-a" })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_ACTIVE_ACCOUNT, payload: "uid-nobody" })
+
+    assert.equal(result, config, "nothing switched, so nothing downstream should see new state")
   })
 })
 

@@ -13,7 +13,7 @@
  * started MessagePort refs the worker's event loop.
  */
 
-import { parentPort } from "worker_threads"
+import { parentPort } from "node:worker_threads"
 
 /** Reports 0 to 100 for the task currently running. Ignored once that task has settled. */
 export type ProgressReporter = (progress: number) => void
@@ -66,7 +66,7 @@ export function serveTasks(handler: TaskHandler, describeFailure: FailureDescrib
       busy = false
       // The spread comes first on purpose: a handler's result cannot overwrite the real
       // type or token with a field of its own.
-      port.postMessage({ ...(result ?? {}), type: "finished", token })
+      port.postMessage(result ? { ...result, type: "finished", token } : { type: "finished", token })
     }
 
     const failTask = (error: unknown): void => {
@@ -77,9 +77,9 @@ export function serveTasks(handler: TaskHandler, describeFailure: FailureDescrib
     }
 
     const onProgress: ProgressReporter = (progress) => {
-      // node-7z and the stream readers this app uses can emit one last progress event
-      // after their own end event. Posting it was harmless while the worker died with
-      // its task right after; now the worker can already be sitting idle in the pool.
+      // The stream readers this app uses can emit one last progress event after their
+      // own end event. Posting it was harmless while the worker died with its task
+      // right after; now the worker can already be sitting idle in the pool.
       if (settled) return
       port.postMessage({ type: "progress", token, progress })
     }

@@ -22,6 +22,7 @@ export const IPC_CHANNELS = {
   },
   MODS_MANAGER: {
     GET_INSTALLED_MODS: "get-installed-mods",
+    SET_MOD_ENABLED: "set-mod-enabled",
     EXPORT_MODPACK: "export-modpack",
     IMPORT_MODPACK: "import-modpack",
     CLEAR_MOD_ICON_MEMORY_CACHE: "clear-mod-icon-memory-cache"
@@ -51,7 +52,8 @@ export const IPC_CHANNELS = {
     LOOK_FOR_A_GAME_VERSION: "look-for-a-game-version"
   },
   NET_MANAGER: {
-    QUERY_URL: "query-url"
+    QUERY_URL: "query-url",
+    ACCEPT_MODDB_VISIBILITY: "accept-moddb-visibility"
   },
   BACKGROUNDS_MANAGER: {
     ENSURE_BACKGROUND: "ensure-background",
@@ -59,6 +61,6 @@ export const IPC_CHANNELS = {
   },
   ACCOUNT_MANAGER: {
     LOGIN: "account-login",
-    LOGOUT: "account-logout"
+    REMOVE_ACCOUNT: "account-remove"
   }
 }

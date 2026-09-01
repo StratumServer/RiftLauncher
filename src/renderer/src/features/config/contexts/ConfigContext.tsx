@@ -22,6 +22,10 @@ export interface ConfigSettingsType {
   background: string
   /** Changes on every background selection, so a replaced custom picture still repaints. */
   backgroundRevision: number
+  /** The stored answer to the one-time ModDB listing question. See src/domain/moddbVisibility.ts. */
+  moddbVisibilityAnswer: string
+  /** Whether update checks may offer betas, or null while nobody has said. See src/domain/appUpdate/betaUpdates.ts. */
+  receiveBetaUpdates: boolean | null
 }
 
 // Stable identity for the "nobody has been notified yet" case, so a consumer
@@ -32,9 +36,9 @@ const EMPTY_NOTIFIED_MOD_UPDATES: string[] = []
 const ConfigDispatchContext = createContext<React.Dispatch<ConfigAction> | null>(null)
 const InstallationsContext = createContext<InstallationType[] | null>(null)
 const GameVersionsContext = createContext<GameVersionType[] | null>(null)
-// The account is wrapped: `null` is a legitimate value (logged out), so it
-// cannot double as the "no provider above me" sentinel the other contexts use.
-const AccountContext = createContext<{ account: AccountType | null } | null>(null)
+// Wrapped: activeAccountId is legitimately null with a non-empty list, so the wrapper (not the
+// field) is what tells a missing provider apart from a real logged-out state.
+const AccountListContext = createContext<{ accounts: AccountPublicType[]; activeAccountId: string | null } | null>(null)
 const SettingsContext = createContext<ConfigSettingsType | null>(null)
 const FavModsContext = createContext<number[] | null>(null)
 const SuspendedModUpdatesContext = createContext<string[] | null>(null)
@@ -118,7 +122,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
   // The list slices are handed out as-is: the reducer never rebuilds an array
   // it did not change, so their identity already tracks their content. Only the
   // composed slices need memoising to stay stable across unrelated actions.
-  const account = useMemo(() => ({ account: config.account }), [config.account])
+  const accountList = useMemo(() => ({ accounts: config.accounts, activeAccountId: config.activeAccountId }), [config.accounts, config.activeAccountId])
 
   const settings = useMemo<ConfigSettingsType>(
     () => ({
@@ -129,7 +133,9 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       backupsFolder: config.backupsFolder,
       window: config.window,
       background: config.background,
-      backgroundRevision: config._backgroundRevision ?? 0
+      backgroundRevision: config._backgroundRevision ?? 0,
+      moddbVisibilityAnswer: config.moddbVisibilityAnswer,
+      receiveBetaUpdates: config.receiveBetaUpdates
     }),
     [
       config.schemaVersion,
@@ -139,7 +145,9 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config.backupsFolder,
       config.window,
       config.background,
-      config._backgroundRevision
+      config._backgroundRevision,
+      config.moddbVisibilityAnswer,
+      config.receiveBetaUpdates
     ]
   )
 
@@ -147,7 +155,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
     <ConfigDispatchContext.Provider value={configDispatch}>
       <NotifiedModUpdatesContext.Provider value={config._notifiedModUpdatesInstallations ?? EMPTY_NOTIFIED_MOD_UPDATES}>
         <SettingsContext.Provider value={settings}>
-          <AccountContext.Provider value={account}>
+          <AccountListContext.Provider value={accountList}>
             <InstallationsContext.Provider value={config.installations}>
               <GameVersionsContext.Provider value={config.gameVersions}>
                 <FavModsContext.Provider value={config.favMods}>
@@ -157,7 +165,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
                 </FavModsContext.Provider>
               </GameVersionsContext.Provider>
             </InstallationsContext.Provider>
-          </AccountContext.Provider>
+          </AccountListContext.Provider>
         </SettingsContext.Provider>
       </NotifiedModUpdatesContext.Provider>
     </ConfigDispatchContext.Provider>
@@ -176,7 +184,8 @@ const useInstallations = (): InstallationType[] => requireProvider(useContext(In
 
 const useGameVersions = (): GameVersionType[] => requireProvider(useContext(GameVersionsContext), "useGameVersions")
 
-const useAccount = (): AccountType | null => requireProvider(useContext(AccountContext), "useAccount").account
+/** Every saved account, and which one is active. */
+const useAccountList = (): { accounts: AccountPublicType[]; activeAccountId: string | null } => requireProvider(useContext(AccountListContext), "useAccountList")
 
 /** Folders, window geometry, schema version and the last used installation. */
 const useSettingsConfig = (): ConfigSettingsType => requireProvider(useContext(SettingsContext), "useSettingsConfig")
@@ -191,4 +200,4 @@ const useCustomIcons = (): IconType[] => requireProvider(useContext(CustomIconsC
 /** Ids of installations the player has already been told about mod updates for, this session. */
 const useNotifiedModUpdates = (): string[] => requireProvider(useContext(NotifiedModUpdatesContext), "useNotifiedModUpdates")
 
-export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccount, useSettingsConfig, useFavMods, useSuspendedModUpdates, useCustomIcons, useNotifiedModUpdates }
+export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccountList, useSettingsConfig, useFavMods, useSuspendedModUpdates, useCustomIcons, useNotifiedModUpdates }

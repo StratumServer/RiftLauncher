@@ -1,6 +1,6 @@
-import { createHash } from "crypto"
+import { createHash } from "node:crypto"
 import fse from "fs-extra"
-import { createReadStream } from "fs"
+import { createReadStream } from "node:fs"
 
 import { requestBoundedText } from "@src/ipc/network"
 import { isRecord, MAX_RESPONSE_BYTES } from "@src/ipc/validation"
@@ -24,9 +24,7 @@ function isMd5(value: unknown): value is string {
 }
 
 async function getOfficialManifests(): Promise<unknown[]> {
-  if (!officialManifestCache) {
-    officialManifestCache = Promise.all(officialManifestUrls.map((url) => requestBoundedText(url, { maxBytes: MAX_RESPONSE_BYTES }).then((text) => JSON.parse(text))))
-  }
+  officialManifestCache ??= Promise.all(officialManifestUrls.map((url) => requestBoundedText(url, { maxBytes: MAX_RESPONSE_BYTES }).then((text) => JSON.parse(text))))
 
   try {
     return await officialManifestCache
@@ -42,7 +40,7 @@ function findManifestHash(value: unknown, downloadUrl: string): string | undefin
   const urls = value.urls
   if (isRecord(urls)) {
     const candidateUrls = [urls.cdn, urls.local]
-    if (candidateUrls.some((candidate) => candidate === downloadUrl) && isMd5(value.md5)) return value.md5.toLowerCase()
+    if (candidateUrls.includes(downloadUrl) && isMd5(value.md5)) return value.md5.toLowerCase()
   }
 
   for (const child of Object.values(value)) {

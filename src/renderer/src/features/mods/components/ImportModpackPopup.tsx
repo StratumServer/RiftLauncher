@@ -27,14 +27,14 @@ function ImportModpackPopup({
   installation,
   installedMods,
   onFinish
-}: {
+}: Readonly<{
   isOpen: boolean
   manifest: ModpackManifestType | null
   close: () => void
   installation: InstallationType
   installedMods: InstalledModType[]
   onFinish: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
 
@@ -173,6 +173,7 @@ function ImportModpackPopup({
                   {t("features.mods.importModpackDowngradeWarning", { count: downgradedMods.length })}
                 </span>
                 <button
+                  type="button"
                   className="shrink-0 underline hover:text-orange-200 duration-150"
                   onClick={() => {
                     handleClose()
@@ -246,7 +247,7 @@ function ImportModpackPopup({
   )
 }
 
-function StatusIcon({ status }: { status: ModStatus }): JSX.Element {
+function StatusIcon({ status }: Readonly<{ status: ModStatus }>): JSX.Element {
   switch (status) {
     case "installed":
       return <PiCheckCircleDuotone />
@@ -270,7 +271,7 @@ function statusColor(status: ModStatus): string {
     case "downloading":
       return "text-blue-400"
     case "pending":
-      return "text-zinc-500"
+      return "text-zinc-400"
     default:
       return "text-red-400"
   }

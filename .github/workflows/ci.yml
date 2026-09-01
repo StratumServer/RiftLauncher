@@ -32,8 +32,12 @@ jobs:
       - run: npm run lint:ci
       - run: npm run format:check
 
-  test:
-    runs-on: ubuntu-latest
+  test-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,6 +46,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
+
+  # `dev` branch protection requires a context literally named `test`, and a
+  # matrixed job can't produce one: it reports `test (ubuntu-latest)` and
+  # `test (windows-latest)` instead. This job keeps the required name alive.
+  # `always()` makes it run even when a leg fails (without it the gate would be
+  # skipped, and protection counts a skipped required job as satisfied), and
+  # the explicit comparison fails the gate unless every leg succeeded, so a
+  # failed, cancelled or skipped matrix turns it red.
+  test:
+    needs: [test-matrix]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "test-matrix result: ${{ needs.test-matrix.result }}"
+          [ "${{ needs.test-matrix.result }}" = "success" ]
 
   # Informational quality scan: never blocks a merge, so a SonarCloud outage
   # or configuration change can't turn the whole run red.

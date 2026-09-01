@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { screen, waitFor } from "@testing-library/react"
+import { fireEvent, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import ConfigPage from "@renderer/features/config/pages/ConfigPage"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
+import { backgroundThumbnailSource } from "@renderer/utils/backgroundThumbnail"
 
 import { createMockConfig, installMockWindowApi, type MockedBridgeAPI } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -12,8 +13,8 @@ const CATALOG_FAILED = "The background list couldn't be loaded. Check your conne
 const PICKED_PATH = "/home/player/pictures/sunset.jpg"
 
 const MANIFEST = JSON.stringify([
-  { id: "village-lane", name: "Village Lane", file: "village-lane.jpg" },
-  { id: "river-sailboat", name: "River Sailboat", file: "river-sailboat.jpg" }
+  { id: "village-lane", name: "Village Lane", file: "village-lane.jpg", thumbnail: "thumbnails/village-lane.jpg" },
+  { id: "river-sailboat", name: "River Sailboat", file: "river-sailboat.jpg", thumbnail: "thumbnails/river-sailboat.jpg" }
 ])
 
 type Options = {
@@ -64,18 +65,27 @@ beforeEach(() => {
 })
 
 describe("ConfigPage background picker", () => {
-  it("renders a tile per manifest entry, each showing the image itself", async () => {
+  it("renders catalog tiles with eager remote thumbnails", async () => {
     renderConfigPage()
 
     expect(await screen.findByRole("button", { name: "Village Lane" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "River Sailboat" })).toBeTruthy()
-    expect(tileImage("Village Lane")?.getAttribute("src")).toBe("background:village-lane.jpg?r=0")
-    expect(tileImage("River Sailboat")?.getAttribute("src")).toBe("background:river-sailboat.jpg?r=0")
+    expect(tileImage("Village Lane")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/village-lane.jpg"))
+    expect(tileImage("Village Lane")?.getAttribute("loading")).toBe("eager")
+    expect(tileImage("Village Lane")?.getAttribute("decoding")).toBe("async")
+    expect(tileImage("River Sailboat")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/river-sailboat.jpg"))
 
     // The bundled scene and the player's own slot sit in the same grid, and neither comes from the
     // manifest, so they are there whatever the branch lists.
     expect(screen.getByRole("button", { name: "Default" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Your own image" })).toBeTruthy()
+  })
+
+  it("keeps a catalog tile usable when the manifest has no preview", async () => {
+    renderConfigPage({ manifest: async () => JSON.stringify([{ id: "village-lane", name: "Village Lane", file: "village-lane.jpg" }]) })
+
+    expect(await screen.findByRole("button", { name: "Village Lane" })).toBeTruthy()
+    expect(tileImage("Village Lane")).toBeNull()
   })
 
   it("does not fetch the manifest until the settings page is mounted", async () => {
@@ -95,6 +105,7 @@ describe("ConfigPage background picker", () => {
 
     await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg"))
     await waitFor(() => expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("true"))
+    expect(tileImage("Village Lane")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/village-lane.jpg"))
     expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toContain('url("background:village-lane.jpg?r=1")')
   })
 
@@ -106,6 +117,18 @@ describe("ConfigPage background picker", () => {
 
     expect(await screen.findByText("That background couldn't be downloaded. Check your connection and try again.")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("false")
+    expect(tileImage("Village Lane")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/village-lane.jpg"))
+  })
+
+  it("hides a failed thumbnail without disabling the scene tile", async () => {
+    renderConfigPage()
+
+    const image = await screen.findByRole("button", { name: "Village Lane" }).then(() => tileImage("Village Lane"))
+    expect(image).toBeTruthy()
+    fireEvent.error(image!)
+
+    expect(tileImage("Village Lane")).toBeNull()
+    expect(screen.getByRole("button", { name: "Village Lane" })).toBeTruthy()
   })
 
   it("shows the failure and a retry rather than an endless spinner when the manifest cannot be read", async () => {
@@ -176,7 +199,41 @@ describe("ConfigPage background picker", () => {
     const api = renderConfigPage({ background: "river-sailboat" })
 
     await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg"))
+    expect(tileImage("River Sailboat")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/river-sailboat.jpg"))
     expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps the selected thumbnail visible when repairing its full-size cache fails", async () => {
+    let finishRepair: (cached: boolean) => void = () => undefined
+    const repair = new Promise<boolean>((resolve) => {
+      finishRepair = resolve
+    })
+    const api = renderConfigPage({ background: "river-sailboat", ensureBackground: () => repair })
+
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg"))
+    finishRepair(false)
+
+    await waitFor(() => expect(tileImage("River Sailboat")).toBeTruthy())
+    expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true")
+  })
+
+  it("shows a replacement after a failed image when its source changes", async () => {
+    const user = userEvent.setup()
+    const api = renderConfigPage()
+
+    const ownImage = await screen.findByRole("button", { name: "Your own image" })
+    await user.click(ownImage)
+    const failedImage = await waitFor(() => {
+      const image = tileImage("Your own image")
+      expect(image).toBeTruthy()
+      return image!
+    })
+    fireEvent.error(failedImage)
+    expect(tileImage("Your own image")).toBeNull()
+
+    await user.click(ownImage)
+    await waitFor(() => expect(api.backgroundsManager.copyCustomBackground).toHaveBeenCalledTimes(2))
+    expect(tileImage("Your own image")).toBeTruthy()
   })
 
   it("goes back to the bundled scene, which clears the override entirely", async () => {

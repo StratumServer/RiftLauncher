@@ -16,11 +16,22 @@ import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronPat
 import { dialog } from "electron"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { assertManagedPath } from "@src/ipc/pathPolicy"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 
 vi.mock("@src/ipc/adapters/modScan", async (importOriginal) => {
   const original = await importOriginal<typeof import("@src/ipc/adapters/modScan")>()
   return { ...original, pruneModIconCache: vi.fn().mockResolvedValue(undefined) }
+})
+
+// Real implementation, wrapped, so the crash-safety guarantee stays covered by
+// atomicJsonFile.test.ts and this file only asserts that modpack export goes
+// through the shared adapter with the pretty-printed spacing the exported file
+// is meant to be read and edited with.
+vi.mock("@src/ipc/atomicJsonFile", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@src/ipc/atomicJsonFile")>()
+  return { writeJsonAtomic: vi.fn(actual.writeJsonAtomic) }
 })
 
 vi.mock("@src/ipc/pathPolicy", async (importOriginal) => {
@@ -85,7 +96,8 @@ beforeEach(async () => {
       defaultVersionsFolder: join(temporaryRoot, "Versions"),
       backupsFolder: join(temporaryRoot, "Backups"),
       window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
-      account: null,
+      accounts: [],
+      activeAccountId: null,
       installations: [{ name: "test", path: modsFolder, gameVersion: "", startParams: "", mesaGlThread: false, envVars: "", backups: [] }],
       gameVersions: [],
       favMods: [],
@@ -104,6 +116,7 @@ beforeEach(async () => {
 
   vi.resetModules()
   await import("@src/ipc/handlers/modsHandlers")
+  vi.mocked(writeJsonAtomic).mockClear()
 })
 
 afterEach(() => {
@@ -128,6 +141,19 @@ describe("GET_INSTALLED_MODS", () => {
     assert.deepEqual(result, { mods: [], errors: [] })
     assert.equal(vi.mocked(pruneModIconCache).mock.calls.length, 0)
   })
+
+  // Listing is a read, so it asks the policy for the grade that tolerates a
+  // Mods folder the user linked in (#237). What that grade then admits is
+  // pathPolicy.test.ts's subject, and what the scan does with a linked folder
+  // is modScan.test.ts's; assertManagedPath is a mock in this file, so all
+  // this row can pin -- and the only thing it needs to -- is that the handler
+  // asks for the read grade rather than the write one.
+  it("asks the path policy for the read grade, the one that tolerates a linked Mods folder", async () => {
+    const event = await createTrustedEvent()
+    await getInstalledModsHandler()(event, modsFolder)
+
+    assert.deepEqual(vi.mocked(assertManagedPath).mock.calls.at(-1)?.[2], { allowMissing: true, allowSymlinks: true })
+  })
 })
 
 describe("EXPORT_MODPACK", () => {
@@ -150,17 +176,21 @@ describe("EXPORT_MODPACK", () => {
     assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
   })
 
-  it("returns success: false when the picked destination cannot be written to (permission denied)", async () => {
-    // Pre-seed an existing, read-only file so the failure is isolated to the
-    // write itself rather than anything path-policy related.
+  // chmod 0o500 on the directory does not stop the rename on Windows, which
+  // only checks the file's own read-only attribute, not POSIX write bits on
+  // the containing folder.
+  it.skipIf(process.platform === "win32")("returns success: false when the picked destination cannot be written to (permission denied)", async () => {
+    // Pre-seed an existing file, then take away write permission on its
+    // DIRECTORY. writeJsonAtomic writes the temp file and renames it over the
+    // destination rather than truncating it in place, so a read-only target
+    // file alone no longer blocks the write (rename() only needs directory
+    // permission); the directory is what has to be locked down to force this
+    // failure now.
     const exportDirectory = join(temporaryRoot, "exports")
     mkdirSync(exportDirectory, { recursive: true })
     const targetFile = join(exportDirectory, "My Modpack.json")
     writeFileSync(targetFile, "{}", "utf-8")
-    // Read-only on the FILE itself: overwriting an existing file's contents
-    // only needs write permission on the file, not its directory, so a
-    // directory-level chmod alone would not have blocked this write.
-    chmodSync(targetFile, 0o400)
+    chmodSync(exportDirectory, 0o500)
 
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: targetFile })
 
@@ -169,7 +199,7 @@ describe("EXPORT_MODPACK", () => {
       const result = await exportModpackHandler()(event, validManifest())
       assert.deepEqual(result, { success: false })
     } finally {
-      chmodSync(targetFile, 0o600)
+      chmodSync(exportDirectory, 0o700)
     }
   })
 
@@ -191,7 +221,14 @@ describe("EXPORT_MODPACK", () => {
     assert.deepEqual(result, { success: true, path: targetFile })
 
     const { readFileSync } = await import("node:fs")
-    assert.deepEqual(JSON.parse(readFileSync(targetFile, "utf-8")), manifest)
+    const rawText = readFileSync(targetFile, "utf-8")
+    assert.deepEqual(JSON.parse(rawText), manifest)
+    // Exported modpacks are meant to be read and shared by a player, so the
+    // write goes through the atomic adapter with 2-space pretty-printing
+    // rather than the minified form writeJsonAtomic defaults to.
+    assert.equal(rawText, JSON.stringify(manifest, null, 2))
+    assert.equal(vi.mocked(writeJsonAtomic).mock.calls.length, 1)
+    assert.deepEqual(vi.mocked(writeJsonAtomic).mock.calls[0]?.[2], { spaces: 2 })
   })
 })
 

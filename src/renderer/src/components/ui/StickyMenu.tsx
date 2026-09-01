@@ -17,7 +17,7 @@ import { FiLoader } from "react-icons/fi"
  * @param {string} [props.className] - The class lists to apply.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function StickyMenuWrapper({ children, scrollRef, className }: { children: ReactNode; scrollRef: MutableRefObject<HTMLDivElement | null>; className?: string }): JSX.Element {
+export function StickyMenuWrapper({ children, scrollRef, className }: Readonly<{ children: ReactNode; scrollRef: MutableRefObject<HTMLDivElement | null>; className?: string }>): JSX.Element {
   const [scrTop, setScrTop] = useState(0)
 
   const handleScroll = (): void => {
@@ -61,7 +61,7 @@ export function StickyMenuWrapper({ children, scrollRef, className }: { children
  * @param {string} [props.className] - The class lists to apply.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function StickyMenuGroupWrapper({ children, type = "between", className }: { children: ReactNode; type?: "between" | "centered"; className?: string }): JSX.Element {
+export function StickyMenuGroupWrapper({ children, type = "between", className }: Readonly<{ children: ReactNode; type?: "between" | "centered"; className?: string }>): JSX.Element {
   return <div className={clsx("relative w-full flex flex-row flex-wrap items-center gap-2", type === "between" ? "justify-between" : "justify-center", className)}>{children}</div>
 }
 
@@ -73,7 +73,7 @@ export function StickyMenuGroupWrapper({ children, type = "between", className }
  * @param {string} [props.className] - The class lists to apply.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function StickyMenuGroup({ children, className }: { children: ReactNode; className?: string }): JSX.Element {
+export function StickyMenuGroup({ children, className }: Readonly<{ children: ReactNode; className?: string }>): JSX.Element {
   return <div className={clsx("flex flex-row flex-wrap items-center justify-center gap-2", className)}>{children}</div>
 }
 
@@ -89,7 +89,7 @@ type StickyMenuBreadcrumbType = {
  * @param {StickyMenuBreadcrumbType[]} props.breadcrumbs - The sections of the breadcrumbs.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function StickyMenuBreadcrumbs({ breadcrumbs }: { breadcrumbs: StickyMenuBreadcrumbType[] }): JSX.Element {
+export function StickyMenuBreadcrumbs({ breadcrumbs }: Readonly<{ breadcrumbs: StickyMenuBreadcrumbType[] }>): JSX.Element {
   const { t } = useTranslation()
 
   return (
@@ -130,7 +130,7 @@ export function StickyMenuBreadcrumbs({ breadcrumbs }: { breadcrumbs: StickyMenu
  * @param {string} props.to - Route to redirect to.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function GoBackButton({ to }: { to: string }): JSX.Element {
+export function GoBackButton({ to }: Readonly<{ to: string }>): JSX.Element {
   const { t } = useTranslation()
 
   return (
@@ -148,7 +148,7 @@ export function GoBackButton({ to }: { to: string }): JSX.Element {
  * @param {boolean} [props.reloading] - Whether the page is realoading or not.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function ReloadButton({ onClick, reloading = false }: { onClick: () => void | Promise<void>; reloading?: boolean }): JSX.Element {
+export function ReloadButton({ onClick, reloading = false }: Readonly<{ onClick: () => void | Promise<void>; reloading?: boolean }>): JSX.Element {
   const { t } = useTranslation()
 
   return (
@@ -165,7 +165,7 @@ export function ReloadButton({ onClick, reloading = false }: { onClick: () => vo
  * @param {MutableRefObject<HTMLDivElement | null>} [props.scrollRef] - A ref with the scrollable container.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function GoToTopButton({ scrollRef }: { scrollRef: MutableRefObject<HTMLDivElement | null> }): JSX.Element {
+export function GoToTopButton({ scrollRef }: Readonly<{ scrollRef: MutableRefObject<HTMLDivElement | null> }>): JSX.Element {
   const { t } = useTranslation()
 
   return (

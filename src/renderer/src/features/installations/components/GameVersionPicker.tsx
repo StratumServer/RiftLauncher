@@ -1,7 +1,7 @@
 import { useTranslation, Trans } from "react-i18next"
-import semver from "semver"
 import { PiWarningDuotone } from "react-icons/pi"
 
+import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { FormBody, FormHead, FormLabel, FromGroup } from "@renderer/components/ui/FormComponents"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import { LinkButton } from "@renderer/components/ui/Buttons"
@@ -19,7 +19,7 @@ export interface GameVersionPickerProps {
 }
 
 /** The game version table shared by AddInstallation and EditInstallation. */
-export function GameVersionPicker({ gameVersions, version, onSelect, missingVersion }: GameVersionPickerProps): JSX.Element {
+export function GameVersionPicker({ gameVersions, version, onSelect, missingVersion }: Readonly<GameVersionPickerProps>): JSX.Element {
   const { t } = useTranslation()
 
   return (
@@ -52,7 +52,7 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
                     i18nKey="features.versions.noVersionsFoundDesc"
                     components={{
                       link: (
-                        <LinkButton title={t("components.mainMenu.versionsTitle")} to="/versions" className="text-vsl">
+                        <LinkButton title={t("components.mainMenu.versionsTitle")} to="/versions" className="text-vsl underline">
                           {t("components.mainMenu.versionsTitle")}
                         </LinkButton>
                       )
@@ -63,7 +63,7 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
             )}
             {gameVersions
               .slice()
-              .sort((a, b) => semver.rcompare(a.version, b.version))
+              .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
               .map((gv) => (
                 <TableBodyRow key={gv.version} onClick={() => onSelect(gv)} selected={version?.version === gv.version}>
                   <TableCell className="w-full">{gv.version}</TableCell>

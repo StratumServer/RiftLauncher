@@ -11,10 +11,10 @@
  * trusts.
  */
 
-import { createWriteStream, lstatSync, renameSync, unlinkSync } from "fs"
-import { createHash } from "crypto"
-import type { ClientRequest, IncomingMessage, RequestOptions } from "http"
-import { request as httpsRequest } from "https"
+import { createWriteStream, lstatSync, renameSync, unlinkSync } from "node:fs"
+import { createHash } from "node:crypto"
+import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http"
+import { request as httpsRequest } from "node:https"
 import fse from "fs-extra"
 import { join } from "node:path"
 
@@ -133,8 +133,10 @@ export function runDownload(options: DownloadOptions): Promise<string> {
           }
 
           if (Number.isFinite(contentLength) && contentLength > 0) {
-            const progress = Math.min(100, Math.round((downloadedLength / contentLength) * 100))
-            if (progress >= lastReportedProgress) {
+            // Keep completion on the single explicit report below. A response can
+            // reach 100% before the writable stream emits its finish event.
+            const progress = Math.min(99, Math.round((downloadedLength / contentLength) * 100))
+            if (progress > lastReportedProgress) {
               lastReportedProgress = progress
               onProgress?.(progress)
             }

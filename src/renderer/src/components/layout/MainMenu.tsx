@@ -2,7 +2,6 @@ import { ReactNode, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation } from "react-router-dom"
 import { PiBoxArrowDownDuotone, PiFolderOpenDuotone, PiGearDuotone, PiWrenchDuotone, PiGitForkDuotone, PiHouseLineDuotone, PiPencilDuotone, PiPlusCircleDuotone, PiInfoDuotone } from "react-icons/pi"
-import { v4 as uuidv4 } from "uuid"
 import clsx from "clsx"
 
 import { useInstallations, useGameVersions, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
@@ -10,7 +9,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
-import { useLaunchGame } from "@renderer/features/launch/hooks/useLaunchGame"
+import { checkInstallationPathExists, logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
 
 import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
 import TasksMenu from "@renderer/components/ui/TasksMenu"
@@ -34,7 +33,6 @@ function MainMenu(): JSX.Element {
   const { addNotification } = useNotificationsContext()
 
   const makeInstallationBackup = useMakeInstallationBackup()
-  const { preventAppClose, runGame, checkInstallationPathExists, logLaunch } = useLaunchGame()
 
   const [selectedInstallation, setSelectedInstallation] = useState<InstallationType | undefined>(undefined)
 
@@ -53,7 +51,7 @@ function MainMenu(): JSX.Element {
   ]
 
   async function PlayHandler(): Promise<void> {
-    const id = uuidv4()
+    const id = crypto.randomUUID()
     preventAppClose("add", id, "Started playing Vintage Story.")
 
     // Only set once _playing has actually been flipped to true below, so the
@@ -120,7 +118,7 @@ function MainMenu(): JSX.Element {
   }
 
   return (
-    <header className="z-99 w-72 shrink-0 flex flex-col gap-4 p-2 bg-zinc-950/30 shadow-sm shadow-zinc-950/50 backdrop-blur-sm border-r border-zinc-400/5">
+    <header className="z-99 w-72 shrink-0 flex flex-col gap-4 p-2 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 backdrop-blur-sm border-r border-zinc-400/5">
       <div className="flex items-center shrink-0 gap-2">
         <SessionButton />
         <TasksMenu />
@@ -183,7 +181,7 @@ interface LinkContentProps {
   link: string
 }
 
-function LinkContent({ icon, text, desc, link }: LinkContentProps): JSX.Element {
+function LinkContent({ icon, text, desc, link }: Readonly<LinkContentProps>): JSX.Element {
   const location = useLocation()
 
   function currentLocation(): boolean {

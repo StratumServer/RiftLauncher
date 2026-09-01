@@ -35,6 +35,15 @@ if (!Element.prototype.scrollTo) {
   Element.prototype.scrollTo = (): void => {}
 }
 
+// jsdom does define window.scrollTo, but only as a stub that logs "Not
+// implemented: Window's scrollTo() method" to stderr on every call, so this
+// one has to be overwritten rather than guarded on. motion/react reaches it
+// while resolving a height: "auto" keyframe (DropdownSection's open/close
+// animation, on the info and help page among others): it parks the page
+// scroll, measures, then puts the scroll back. Nothing under test depends on
+// the page having scrolled, and the noise buries real warnings.
+window.scrollTo = (): void => {}
+
 // jsdom does not implement IntersectionObserver. motion/react's useInView
 // (every GridItem card) reads it on mount; missing it throws during the
 // commit phase and takes the whole subtree down with it, with no error

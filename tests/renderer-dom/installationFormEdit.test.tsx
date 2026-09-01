@@ -125,6 +125,31 @@ describe("EditInstallation", () => {
     expect(screen.queryByText(/is not installed anymore/)).toBeNull()
   })
 
+  it("renders the form when a registered VS Version string is not valid semver", async () => {
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            // What a player gets from "look for a version" when the game answered `-v` with more
+            // than a bare number: the string is stored as printed, and sorting it used to throw
+            // out of the picker and leave the page blank.
+            gameVersions: [
+              { version: "1.20.0", path: "/versions/1.20.0" },
+              { version: "Vintage Story 1.21.0", path: "/games/vintagestory", linked: true }
+            ],
+            installations: [anInstallation({ version: "1.20.0" })]
+          })
+        )
+      }
+    })
+
+    await openEditInstallation("install-a")
+
+    await screen.findByDisplayValue("Install A")
+    expect(screen.getByText("1.20.0")).toBeTruthy()
+    expect(screen.getByText("Vintage Story 1.21.0")).toBeTruthy()
+  })
+
   it("shows the not-found message instead of the form for an unknown id", async () => {
     installMockWindowApi({ configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) } })
 

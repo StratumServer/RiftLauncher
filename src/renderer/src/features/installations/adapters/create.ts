@@ -1,10 +1,8 @@
-import { v4 as uuidv4 } from "uuid"
-
 import type { CreateInstallationPorts, CreatedInstallation, InstallationFieldsFailure, CreateInstallationFailure } from "@domain/installations/create"
 
 /** Wires the create service onto the renderer. It only needs to mint an id. */
 export function createCreateInstallationPorts(): CreateInstallationPorts {
-  return { ids: { newId: () => uuidv4() } }
+  return { ids: { newId: () => crypto.randomUUID() } }
 }
 
 /** The three config slices a folder collision can come from. Narrower than the whole config on purpose. */

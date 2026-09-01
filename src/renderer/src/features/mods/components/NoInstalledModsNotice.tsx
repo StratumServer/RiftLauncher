@@ -5,7 +5,7 @@ import { ListGroup, ListWrapper } from "@renderer/components/ui/List"
 import { LinkButton } from "@renderer/components/ui/Buttons"
 
 /** What an empty Mods folder shows: the scan spinner while it runs, then where to get some Mods. */
-function NoInstalledModsNotice({ gettingMods }: { gettingMods: boolean }): JSX.Element {
+function NoInstalledModsNotice({ gettingMods }: Readonly<{ gettingMods: boolean }>): JSX.Element {
   const { t } = useTranslation()
 
   return (
@@ -23,7 +23,7 @@ function NoInstalledModsNotice({ gettingMods }: { gettingMods: boolean }): JSX.E
                 i18nKey="features.mods.noModsInstalled"
                 components={{
                   link: (
-                    <LinkButton title={t("components.mainMenu.modsTitle")} to="/mods" className="text-vsl">
+                    <LinkButton title={t("components.mainMenu.modsTitle")} to="/mods" className="text-vsl underline">
                       {t("components.mainMenu.modsTitle")}
                     </LinkButton>
                   )

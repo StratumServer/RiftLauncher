@@ -21,13 +21,13 @@ function DropdownSection({
   className,
   bgDark = true,
   startOpen = true
-}: {
+}: Readonly<{
   children: React.ReactNode
   title?: string
   className?: string
   bgDark?: boolean
   startOpen?: boolean
-}): JSX.Element {
+}>): JSX.Element {
   const [open, setOpen] = useState(startOpen)
 
   const hasMounted = useRef(!startOpen)
@@ -38,7 +38,7 @@ function DropdownSection({
         className={clsx(
           "relative w-full",
           bgDark &&
-            "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:rounded-md before:backdrop-blur-sm before:bg-zinc-950/15 before:shadow-sm before:shadow-zinc-950/50 before:border before:border-zinc-400/5"
+            "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:rounded-md before:backdrop-blur-sm before:bg-zinc-950/40 before:shadow-sm before:shadow-zinc-950/50 before:border before:border-zinc-400/5"
         )}
       >
         {title && (

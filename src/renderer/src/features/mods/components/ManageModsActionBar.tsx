@@ -20,16 +20,25 @@ function ManageModsActionBar({
   installedMods,
   onUpdateAll,
   onImportModpack
-}: {
+}: Readonly<{
   installation: InstallationType
   installedMods: InstalledModType[]
   onUpdateAll: () => void
   onImportModpack: () => void
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   const exportModpack = useExportModpack()
   const openPathInExplorer = useOpenPathInExplorer()
+
+  // A modpack is the set someone else is meant to be able to play, so a Mod the player turned off
+  // is not in it. Both exports read this list, and both are greyed out by it: a folder whose Mods
+  // are all disabled has nothing to export, and saying so beats writing an empty manifest.
+  const enabledMods = installedMods.filter((iMod) => iMod.enabled)
+
+  // The server export ships this list and is greyed out by this list. Deriving it twice is how a
+  // search that leaves only client Mods once produced a live button and a `{ mods: [] }` manifest.
+  const serverMods = enabledMods.filter((iMod) => isServerMod(iMod.side))
 
   return (
     <StickyMenuGroupWrapper type="centered">
@@ -39,7 +48,7 @@ function ManageModsActionBar({
           <p>{t("features.mods.updateAllButton")}</p>
         </FormButton>
 
-        <FormButton title={t("features.mods.exportModpack")} className="p-1 w-fit h-8" onClick={() => exportModpack({ installedMods, installation })} disabled={installedMods.length === 0}>
+        <FormButton title={t("features.mods.exportModpack")} className="p-1 w-fit h-8" onClick={() => exportModpack({ installedMods: enabledMods, installation })} disabled={enabledMods.length === 0}>
           <PiBoxArrowUpDuotone className="text-xl" />
           <p>{t("features.mods.exportModpackButton")}</p>
         </FormButton>
@@ -47,8 +56,8 @@ function ManageModsActionBar({
         <FormButton
           title={t("features.mods.exportServerModpack")}
           className="p-1 w-fit h-8"
-          onClick={() => exportModpack({ installedMods: installedMods.filter((m) => isServerMod(m.side)), installation: { ...installation, name: `${installation.name} (Server)` } })}
-          disabled={installedMods.length === 0}
+          onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` } })}
+          disabled={serverMods.length === 0}
         >
           <PiDesktopTowerDuotone className="text-xl" />
           <p>{t("features.mods.exportServerModpackButton")}</p>

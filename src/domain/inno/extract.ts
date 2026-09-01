@@ -25,6 +25,7 @@ import { InstallerCursor } from "./cursor"
 import { InnoFormatError } from "./errors"
 import { findLoaderOffsets } from "./loader"
 import { Lzma2Decoder } from "./lzma"
+import type { Lzma2DecoderFactory } from "./lzma"
 import { relativeAppPath, safeRelativePath } from "./paths"
 import type { InnoExtractionPorts } from "./ports"
 import type { InnoCompression, InnoDataEntry, InnoSetupScript } from "./script"
@@ -63,6 +64,8 @@ export interface InnoExtractionResult {
 export interface InnoExtractionOptions {
   /** Called as the work advances, with a fraction between 0 and 1. */
   onProgress?: (fraction: number) => void
+  /** Optional host decoder; the domain keeps its TypeScript implementation as the default. */
+  lzma2DecoderFactory?: Lzma2DecoderFactory
 }
 
 /**
@@ -88,7 +91,7 @@ export async function extractInnoPayload(ports: InnoExtractionPorts, options: In
   const planned = buildPlan(script)
   const totalBytes = planned.reduce((sum, file) => sum + file.entry.fileSize, 0)
 
-  const written = await writePlan(ports, script, offsets.dataOffset, planned, totalBytes, options.onProgress)
+  const written = await writePlan(ports, script, offsets.dataOffset, planned, totalBytes, options.onProgress, options.lzma2DecoderFactory)
 
   return { version: formatVersion(version), compression: script.compression, filesWritten: written, bytesWritten: totalBytes }
 }
@@ -104,12 +107,34 @@ export async function extractInnoPayload(ports: InnoExtractionPorts, options: In
  * of no interest, unrolls it once.
  */
 export function buildPlan(script: InnoSetupScript): PlannedFile[] {
-  // One data entry can serve SEVERAL destinations: the installer stores content
-  // it lays down twice only once, and the game's fonts are exactly that case,
-  // one copy under {app} and one in the system font folder. Indexing by location
-  // rather than by destination is what keeps the stream read to one pass, but
-  // every destination of each has to be kept, otherwise the day two paths under
-  // {app} share content one of them would go missing without a word.
+  const destinations = collectDestinationsByLocation(script)
+  if (destinations.size === 0) throw InnoFormatError.corrupt("no file destined for the install folder")
+
+  const planned: PlannedFile[] = []
+  for (const [location, paths] of destinations) {
+    const entry = script.dataEntries[location]!
+    if (entry.encrypted) throw InnoFormatError.unsupported("encrypted data")
+    if (entry.fileSize > MAX_FILE_BYTES) throw InnoFormatError.corrupt(`an entry of ${entry.fileSize} bytes`)
+    planned.push({ entry, paths })
+  }
+
+  planned.sort(byStreamOrder)
+
+  return planned
+}
+
+/**
+ * Gathers every destination under the version folder, keyed by the data entry
+ * that feeds it.
+ *
+ * One data entry can serve SEVERAL destinations: the installer stores content
+ * it lays down twice only once, and the game's fonts are exactly that case,
+ * one copy under {app} and one in the system font folder. Indexing by location
+ * rather than by destination is what keeps the stream read to one pass, but
+ * every destination of each has to be kept, otherwise the day two paths under
+ * {app} share content one of them would go missing without a word.
+ */
+function collectDestinationsByLocation(script: InnoSetupScript): Map<number, string[]> {
   const destinations = new Map<number, string[]>()
 
   for (const file of script.files) {
@@ -131,27 +156,22 @@ export function buildPlan(script: InnoSetupScript): PlannedFile[] {
     if (!paths.some((known) => known.toLowerCase() === relativePath.toLowerCase())) paths.push(relativePath)
   }
 
-  if (destinations.size === 0) throw InnoFormatError.corrupt("no file destined for the install folder")
+  return destinations
+}
 
-  const planned: PlannedFile[] = []
-  for (const [location, paths] of destinations) {
-    const entry = script.dataEntries[location]!
-    if (entry.encrypted) throw InnoFormatError.unsupported("encrypted data")
-    if (entry.fileSize > MAX_FILE_BYTES) throw InnoFormatError.corrupt(`an entry of ${entry.fileSize} bytes`)
-    planned.push({ entry, paths })
-  }
-
-  // The size breaks ties, and that is not a flourish: an EMPTY file shares its
-  // offset with the one that follows, since it takes up nothing. Sorting by
-  // growing size puts the empty file first, where reading zero bytes bothers
-  // nobody.
-  planned.sort((left, right) => {
-    if (left.entry.chunkOffset !== right.entry.chunkOffset) return left.entry.chunkOffset - right.entry.chunkOffset
-    if (left.entry.fileOffset !== right.entry.fileOffset) return left.entry.fileOffset - right.entry.fileOffset
-    return left.entry.fileSize - right.entry.fileSize
-  })
-
-  return planned
+/**
+ * Orders two planned files the way the stream hands them over: by block, then
+ * by position inside the block.
+ *
+ * The size breaks ties, and that is not a flourish: an EMPTY file shares its
+ * offset with the one that follows, since it takes up nothing. Sorting by
+ * growing size puts the empty file first, where reading zero bytes bothers
+ * nobody.
+ */
+function byStreamOrder(left: PlannedFile, right: PlannedFile): number {
+  if (left.entry.chunkOffset !== right.entry.chunkOffset) return left.entry.chunkOffset - right.entry.chunkOffset
+  if (left.entry.fileOffset !== right.entry.fileOffset) return left.entry.fileOffset - right.entry.fileOffset
+  return left.entry.fileSize - right.entry.fileSize
 }
 
 async function writePlan(
@@ -160,24 +180,19 @@ async function writePlan(
   dataOffset: number,
   planned: readonly PlannedFile[],
   totalBytes: number,
-  onProgress?: (fraction: number) => void
+  onProgress?: (fraction: number) => void,
+  lzma2DecoderFactory?: Lzma2DecoderFactory
 ): Promise<number> {
   const cursor = new InstallerCursor(ports.installer)
+  const report = percentProgress(totalBytes, onProgress)
   let done = 0
-  let lastPercent = -1
   let filesWritten = 0
-  let index = 0
 
-  while (index < planned.length) {
-    const chunkOffset = planned[index]!.entry.chunkOffset
-    let last = index
-    while (last + 1 < planned.length && planned[last + 1]!.entry.chunkOffset === chunkOffset) last++
-
-    const stream = await openChunk(cursor, script, dataOffset, planned[index]!.entry)
+  for (const run of chunkRuns(planned)) {
+    const stream = await openChunk(cursor, script, dataOffset, run[0]!.entry, lzma2DecoderFactory)
     let position = 0
 
-    for (let at = index; at <= last; at++) {
-      const { entry, paths } = planned[at]!
+    for (const { entry, paths } of run) {
       if (entry.fileOffset < position) throw InnoFormatError.corrupt("the entries of a block do not follow each other")
 
       await stream.discard(entry.fileOffset - position)
@@ -193,22 +208,52 @@ async function writePlan(
       }
 
       done += entry.fileSize
-      if (onProgress && totalBytes > 0) {
-        const percent = Math.floor((done / totalBytes) * 100)
-        // One install lays down twenty thousand files, and every report crosses
-        // a thread boundary. Reporting per file would flood the display to paint
-        // the same pixel a hundred times.
-        if (percent !== lastPercent) {
-          lastPercent = percent
-          onProgress(done / totalBytes)
-        }
-      }
+      report(done)
     }
-
-    index = last + 1
   }
 
   return filesWritten
+}
+
+/**
+ * Cuts the plan into the runs of neighbours that share one data block.
+ *
+ * The plan arrives in stream order, so everything a block holds already sits
+ * together; a run is exactly what one unrolling of that block covers.
+ */
+function chunkRuns(planned: readonly PlannedFile[]): PlannedFile[][] {
+  const runs: PlannedFile[][] = []
+  let index = 0
+
+  while (index < planned.length) {
+    const chunkOffset = planned[index]!.entry.chunkOffset
+    let last = index
+    while (last + 1 < planned.length && planned[last + 1]!.entry.chunkOffset === chunkOffset) last++
+
+    runs.push(planned.slice(index, last + 1))
+    index = last + 1
+  }
+
+  return runs
+}
+
+/**
+ * Progress that only speaks up when the whole percent changes.
+ *
+ * One install lays down twenty thousand files, and every report crosses a
+ * thread boundary. Reporting per file would flood the display to paint the same
+ * pixel a hundred times.
+ */
+function percentProgress(totalBytes: number, onProgress?: (fraction: number) => void): (done: number) => void {
+  if (!onProgress || totalBytes <= 0) return (): void => {}
+
+  let lastPercent = -1
+  return (done: number): void => {
+    const percent = Math.floor((done / totalBytes) * 100)
+    if (percent === lastPercent) return
+    lastPercent = percent
+    onProgress(done / totalBytes)
+  }
 }
 
 function verifyDigest(ports: InnoExtractionPorts, contents: Uint8Array, entry: InnoDataEntry, relativePath: string): void {
@@ -225,7 +270,7 @@ interface ChunkStream {
   discard(count: number): Promise<void>
 }
 
-async function openChunk(cursor: InstallerCursor, script: InnoSetupScript, dataOffset: number, entry: InnoDataEntry): Promise<ChunkStream> {
+async function openChunk(cursor: InstallerCursor, script: InnoSetupScript, dataOffset: number, entry: InnoDataEntry, lzma2DecoderFactory?: Lzma2DecoderFactory): Promise<ChunkStream> {
   cursor.seek(dataOffset + entry.chunkOffset)
   const magic = await cursor.readExactly(4)
   for (let i = 0; i < CHUNK_MAGIC.length; i++) {
@@ -236,7 +281,7 @@ async function openChunk(cursor: InstallerCursor, script: InnoSetupScript, dataO
   if (script.compression !== "lzma2") throw InnoFormatError.unsupported(`${script.compression} compressed data`)
 
   const properties = await cursor.readExactly(1)
-  return lzma2Stream(cursor, properties[0]!)
+  return lzma2Stream(cursor, properties[0]!, lzma2DecoderFactory)
 }
 
 function storedStream(cursor: InstallerCursor): ChunkStream {
@@ -260,22 +305,51 @@ function storedStream(cursor: InstallerCursor): ChunkStream {
  * been drained, which is what lets the decoder hand out views onto its own
  * dictionary without anything copying them twice.
  */
-function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number): ChunkStream {
+function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number, lzma2DecoderFactory?: Lzma2DecoderFactory): ChunkStream {
   const staging = new Uint8Array(STAGING_BYTES)
   let start = 0
   let end = 0
 
-  const decoder = new Lzma2Decoder(dictionaryProperties, (bytes) => {
+  const createDecoder: Lzma2DecoderFactory = lzma2DecoderFactory ?? ((properties, onOutput): Lzma2Decoder => new Lzma2Decoder(properties, onOutput))
+  const decoder = createDecoder(dictionaryProperties, (bytes) => {
     if (end + bytes.length > staging.length) throw InnoFormatError.corrupt("an LZMA2 chunk produced more than the format allows")
     staging.set(bytes, end)
     end += bytes.length
   })
 
+  /**
+   * Pulls from the decoder until at least one byte lands in staging or the
+   * stream ends.
+   *
+   * A decoder that hands bytes back as soon as it has them, the TypeScript one
+   * included, satisfies this after exactly one `decodeChunk` call: `end` moves
+   * off zero the same call that produced anything. The injected native decoder
+   * does not, because its underlying library decodes off a worker thread that
+   * usually has nothing to report yet; it can call back into `decodeChunk`
+   * many times over a whole solid block, buffering the entire decompressed
+   * result internally, before draining begins and this loop sees output at
+   * all. For that stretch it is the decoder holding the block, not this
+   * staging buffer, so `STAGING_BYTES` still bounds one `onOutput` call but no
+   * longer bounds what a decoder may be sitting on while it decides to make
+   * one. That trade is deliberate: it is what lets a solid block of any size
+   * use the fast decoder, and the memory it costs is larger than the block
+   * itself. Measured on a 400 MB decompressed block, the native path peaked
+   * at 997 MB of RSS against 147 MB for the TypeScript decoder, roughly two
+   * copies of the block plus its compressed input. About half of that is the
+   * defensive copy `queue()` makes in `src/ipc/workers/nativeLzma2.ts`, which
+   * a later change can skip on the `finish()` path where the library is done
+   * with the buffer. The other half is the block itself, and that half is
+   * inherent to this loop. A decoder whose blocks could grow past what a
+   * player's machine can spare would need a size check before the fast path
+   * is offered at all; nothing here enforces one.
+   */
   const pump = async (): Promise<void> => {
     start = 0
     end = 0
-    const produced = await decoder.decodeChunk(cursor)
-    if (produced === 0 && end === 0) throw InnoFormatError.corrupt("the data stream ended before the entries it declares")
+    do {
+      await decoder.decodeChunk(cursor)
+    } while (end === 0 && !decoder.finished)
+    if (end === 0) throw InnoFormatError.corrupt("the data stream ended before the entries it declares")
   }
 
   return {

@@ -1,33 +1,23 @@
 import { app } from "electron"
 import fse from "fs-extra"
 import { join } from "node:path"
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { logMessage } from "@src/utils/logManager"
-import { parseLegacyAccount, toPublicAccount } from "@src/ipc/accountTypes"
-import { saveAccountSecrets } from "@src/ipc/accountStore"
+import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
+import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from "@domain/config/migrations"
-import { DEFAULT_BACKGROUND_ID, normalizeBackgroundId } from "@domain/backgrounds"
+import { normalizeBackgroundId } from "@domain/backgrounds"
+import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
+import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
+import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 
 const defaultConfig: ConfigType = {
+  ...DEFAULT_CONFIG_BASE,
   schemaVersion: CURRENT_CONFIG_SCHEMA,
-  lastUsedInstallation: null,
   defaultInstallationsFolder: join(app.getPath("appData"), "RiftLauncherInstallations"),
   defaultVersionsFolder: join(app.getPath("appData"), "RiftLauncherGameVersions"),
-  backupsFolder: join(app.getPath("appData"), "RiftLauncherBackups"),
-  window: {
-    width: 1280,
-    height: 720,
-    x: 0,
-    y: 0,
-    maximized: false
-  },
-  account: null,
-  installations: [],
-  gameVersions: [],
-  favMods: [],
-  suspendedModUpdates: [],
-  background: DEFAULT_BACKGROUND_ID,
-  customIcons: []
+  backupsFolder: join(app.getPath("appData"), "RiftLauncherBackups")
 }
 
 const defaultInstallation: InstallationType = {
@@ -39,7 +29,7 @@ const defaultInstallation: InstallationType = {
   startParams: "",
   backupsLimit: 3,
   backupsAuto: false,
-  compressionLevel: 4,
+  compressionLevel: DEFAULT_COMPRESSION_LEVEL,
   backups: [],
   lastTimePlayed: -1,
   totalTimePlayed: 0,
@@ -60,14 +50,8 @@ async function writeConfig(normalizedConfig: ConfigType): Promise<void> {
       return key.startsWith("_") ? undefined : value
     })
   )
-  const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.tmp`
 
-  try {
-    await fse.writeJSON(temporaryPath, cleanedConfig)
-    await fse.move(temporaryPath, configPath, { overwrite: true })
-  } finally {
-    await fse.remove(temporaryPath).catch(() => undefined)
-  }
+  await writeJsonAtomic(configPath, cleanedConfig)
 }
 
 function scheduleConfigWrite(): Promise<void> {
@@ -122,8 +106,13 @@ export async function getConfig(): Promise<ConfigType> {
     const migration = migrateConfigDocument(config)
     logConfigMigration(migration)
     const ensuredConfig = normalizeConfig(migration.doc)
+    const reKeyedAccountStore = await migrateAccountStore(config, ensuredConfig)
+    // Every path that overwrites config.json gets the same backup, not just the schema pipeline:
+    // a re-key or a legacy-secrets migration writes just as real a document as a schema bump does.
+    const mustSave = hadLegacyAccountSecrets || reKeyedAccountStore || migration.applied.length > 0
+    await reconcileConfigBackup(mustSave)
     configCache = ensuredConfig
-    if (hadLegacyAccountSecrets || migration.applied.length > 0) await saveConfig(ensuredConfig)
+    if (mustSave) await saveConfig(ensuredConfig)
     return ensuredConfig
   } catch (err) {
     logMessage("error", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at ${configPath}. Using default config.`)
@@ -172,6 +161,9 @@ function logConfigMigration(migration: ReturnType<typeof migrateConfigDocument>)
   }
 }
 
+/** Pre-secure-storage session fields. Present only in a `config.json` last written before #253. */
+const LEGACY_ACCOUNT_SECRET_FIELDS = ["sessionKey", "sessionSignature", "mptoken"] as const
+
 /**
  * Moves the credentials of a pre-secure-storage account into the OS keychain.
  *
@@ -185,14 +177,14 @@ function logConfigMigration(migration: ReturnType<typeof migrateConfigDocument>)
 async function migrateLegacyAccount(config: unknown): Promise<boolean> {
   if (!isRecord(config) || !isRecord(config.account)) return false
   const account = config.account
-  const hasLegacySecrets = ["sessionKey", "sessionSignature", "mptoken"].some((key) => key in account)
+  const hasLegacySecrets = LEGACY_ACCOUNT_SECRET_FIELDS.some((key) => key in account)
   if (!hasLegacySecrets) return false
 
   const legacyAccount = parseLegacyAccount(config.account)
 
   if (legacyAccount) {
     try {
-      await saveAccountSecrets(legacyAccount.secrets)
+      await saveAccountSecrets(legacyAccount.publicAccount.playerUid, legacyAccount.secrets)
     } catch {
       logMessage("warn", "[back] [config] [configManager.ts] Legacy account credentials were not migrated to secure storage.")
     }
@@ -201,6 +193,112 @@ async function migrateLegacyAccount(config: unknown): Promise<boolean> {
   }
 
   return true
+}
+
+/**
+ * Re-keys a single-account secret store under the account it belongs to.
+ *
+ * The v1 store held one `AccountSecrets` with no account attached to it; the
+ * v2 store (see `src/ipc/accountStore.ts`) holds entries keyed by
+ * `playerUid`. The only place that missing key exists pre-migration is
+ * `config.account.playerUid`, which is why this reads the raw pre-pipeline
+ * document first, exactly as {@link migrateLegacyAccount} does, and not
+ * inside `accountStore.ts` itself: the store cannot name its own contents.
+ * Kept out of the schema pipeline for the same reason `migrateLegacyAccount`
+ * is: a side effect the pure domain layer is not allowed to have.
+ *
+ * Falls back to the already-migrated config's `activeAccountId` when the raw
+ * document has no legacy `account` field, which is what makes this retry
+ * automatically on every later launch rather than only the one that first
+ * saw the legacy field. `adoptLegacySingleAccountSecrets` is a no-op once the
+ * v1 file is gone or already re-keyed, so calling it again costs one failed
+ * read and nothing else; there is no separate "already migrated" flag to
+ * gate this on. Leaving the schema-4 commit itself ungated matters just as
+ * much as the retry: `normalizeConfig` drops any field it does not know,
+ * `account` included, so holding the document back at schema 3 would lose
+ * the account record outright on the very next save, which is worse than
+ * the stranded session this retry is fixing.
+ *
+ * A config with no readable account (raw or migrated), or a v1 store that
+ * has already been re-keyed (or never existed), makes this a safe no-op:
+ * `false` either way, same as `migrateLegacyAccount` when there is nothing
+ * to do.
+ */
+async function migrateAccountStore(legacyDocument: unknown, config: ConfigType): Promise<boolean> {
+  const legacyUid = isRecord(legacyDocument) && isRecord(legacyDocument.account) ? legacyDocument.account.playerUid : null
+  const uid = typeof legacyUid === "string" && legacyUid.length > 0 ? legacyUid : config.activeAccountId
+  if (uid === null || uid.length === 0) return false
+
+  try {
+    return await adoptLegacySingleAccountSecrets(uid)
+  } catch {
+    logMessage("warn", "[back] [config] [configManager.ts] The stored account session was not carried into the multi-account store. Retrying on the next launch.")
+    return false
+  }
+}
+
+function getConfigBackupPath(): string {
+  return join(app.getPath("userData"), "config.pre-migration.bak.json")
+}
+
+/**
+ * Removes the pre-secure-storage session secrets from a raw config document, in
+ * place, and reports whether any were there. `migrateLegacyAccount` has already
+ * moved these into the OS keychain by the time this runs; a plaintext copy of
+ * them is exactly what should not outlive the migration (#296).
+ */
+function stripLegacyAccountSecrets(document: unknown): boolean {
+  if (!isRecord(document) || !isRecord(document.account)) return false
+
+  let removed = false
+  for (const field of LEGACY_ACCOUNT_SECRET_FIELDS) {
+    if (field in document.account) {
+      delete document.account[field]
+      removed = true
+    }
+  }
+  return removed
+}
+
+/**
+ * Keeps `config.pre-migration.bak.json` correct: one scrubbed snapshot of the
+ * document as it was right before the most recent migration reshaped it.
+ *
+ * One rolling backup, not one per migration: this is a local single-writer
+ * desktop file, so "the config right before the last migration" is the useful
+ * recovery point, not a full history. The first snapshot is the one that
+ * survives; a later migration leaves it alone.
+ *
+ * What it never keeps is the session key, signature and multiplayer token a
+ * pre-#253 `config.json` carried in the clear. The migration moves those into
+ * secure storage, and the recovery point only needs the document's shape, so
+ * they are dropped before the snapshot is written and the file is written
+ * owner-only. This also runs when no migration fired, so a snapshot an earlier
+ * build wrote with those secrets still in it is scrubbed in place on the next
+ * launch.
+ *
+ * Best effort: a failure logs and does not stop startup, since the live config
+ * is correct either way.
+ */
+async function reconcileConfigBackup(migrationRan: boolean): Promise<void> {
+  const backupPath = getConfigBackupPath()
+  try {
+    if (await fse.pathExists(backupPath)) {
+      const existing: unknown = await fse.readJSON(backupPath)
+      if (stripLegacyAccountSecrets(existing)) await writeJsonAtomic(backupPath, existing, { mode: 0o600, spaces: 2 })
+      return
+    }
+
+    if (!migrationRan) return
+
+    // configPath still holds the pre-migration document here: saveConfig runs after this.
+    const document: unknown = await fse.readJSON(configPath)
+    stripLegacyAccountSecrets(document)
+    await writeJsonAtomic(backupPath, document, { mode: 0o600, spaces: 2 })
+  } catch (err) {
+    logMessage("warn", "[back] [config] [configManager.ts] Could not reconcile the pre-migration config backup.")
+    logMessage("debug", `[back] [config] [configManager.ts] ${err}`)
+  }
 }
 
 function asString(value: unknown, fallback: string, maxLength = 4_096): string {
@@ -278,6 +376,23 @@ function normalizeIcon(value: unknown): IconType | null {
   return icon.id && icon.name && icon.icon.toLowerCase().endsWith(".png") ? icon : null
 }
 
+/** Ceiling on saved accounts, the same shape as the 1,000-entry caps above: generous for the real use case, not a promise to scale past it. */
+const MAX_STORED_ACCOUNTS = 50
+
+/** Reads the accounts list, dropping anything unreadable and deduplicating by `playerUid`. */
+function normalizeAccounts(value: unknown): AccountPublicType[] {
+  const seen = new Set<string>()
+  return (Array.isArray(value) ? value : [])
+    .map(toPublicAccount)
+    .filter((account): account is AccountPublicType => account !== null)
+    .filter((account) => {
+      if (seen.has(account.playerUid)) return false
+      seen.add(account.playerUid)
+      return true
+    })
+    .slice(0, MAX_STORED_ACCOUNTS)
+}
+
 export function normalizeConfig(config: unknown): ConfigType {
   const rawConfig = (isRecord(config) ? config : {}) as Partial<ConfigType>
   const rawWindow = (isRecord(rawConfig.window) ? rawConfig.window : {}) as Partial<WindowType>
@@ -296,6 +411,8 @@ export function normalizeConfig(config: unknown): ConfigType {
     .filter((icon): icon is IconType => icon !== null)
     .slice(0, 1_000)
 
+  const accounts = normalizeAccounts(rawConfig.accounts)
+
   const fixedConfig: ConfigType = {
     schemaVersion: clampConfigSchema(rawConfig.schemaVersion),
     lastUsedInstallation: rawConfig.lastUsedInstallation === null ? null : asString(rawConfig.lastUsedInstallation, defaultConfig.lastUsedInstallation ?? "", 128) || null,
@@ -309,7 +426,14 @@ export function normalizeConfig(config: unknown): ConfigType {
       y: Math.trunc(asNumber(rawWindow.y, defaultConfig.window.y, -100_000, 100_000)),
       maximized: asBoolean(rawWindow.maximized, defaultConfig.window.maximized)
     },
-    account: toPublicAccount(rawConfig.account),
+    accounts,
+    // An id naming nobody falls back to the first saved account rather than to null: a
+    // household that lost its choice (a dangling id, or a config hand-edited down to one
+    // fewer account) should land on someone, not on "no account selected". Every reader
+    // downstream (EXECUTE_GAME, the renderer contexts) can then do a plain lookup with no
+    // fallback branch of its own, because this is the one place the invariant is enforced:
+    // activeAccountId either names an entry in accounts, or is null when accounts is empty.
+    activeAccountId: accounts.some((account) => account.playerUid === rawConfig.activeAccountId) ? (rawConfig.activeAccountId as string) : (accounts[0]?.playerUid ?? null),
     installations,
     gameVersions,
     favMods: Array.isArray(rawConfig.favMods) ? rawConfig.favMods.filter((modId): modId is number => typeof modId === "number" && Number.isSafeInteger(modId)).slice(0, 10_000) : defaultConfig.favMods,
@@ -321,6 +445,12 @@ export function normalizeConfig(config: unknown): ConfigType {
     // reset a player's choice. Anything that is not a usable id falls back to the bundled scene,
     // which is also what the renderer paints when the cached file for an id has gone missing.
     background: normalizeBackgroundId(rawConfig.background),
+    // Anything unreadable becomes "not asked yet", which costs one question and never invents a
+    // consent. The prompt is the only thing that ever writes a real answer here.
+    moddbVisibilityAnswer: normalizeModDbVisibilityAnswer(rawConfig.moddbVisibilityAnswer),
+    // Null for anything that is not an explicit yes or no, which is what every config written
+    // before the toggle existed says, and leaves the running version deciding as it always did.
+    receiveBetaUpdates: normalizeReceiveBetaUpdates(rawConfig.receiveBetaUpdates),
     customIcons
   }
 

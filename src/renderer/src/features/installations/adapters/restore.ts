@@ -1,5 +1,3 @@
-import { v4 as uuidv4 } from "uuid"
-
 import type { DeleteInstallationBackupFailure, DeleteInstallationBackupPorts } from "@domain/installations/backupDeletion"
 import type { RestoreInstallationBackupFailure, RestoreInstallationBackupPorts } from "@domain/installations/restore"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
@@ -27,10 +25,10 @@ export function createRestorePorts({ startExtract, taskName, taskDescription }: 
       extract: (request, onComplete) =>
         startExtract(taskName, taskDescription, "progress", request.archivePath, request.outputFolder, false, (status, error) => onComplete({ ok: status, error: error?.message }))
     },
-    ids: { newId: () => uuidv4() },
+    ids: { newId: () => crypto.randomUUID() },
     closeGuard: {
       acquire: (reason) => {
-        const token = uuidv4()
+        const token = crypto.randomUUID()
         window.api.utils.setPreventAppClose("add", token, reason)
         return () => window.api.utils.setPreventAppClose("remove", token, "Finished backup restoration.")
       }

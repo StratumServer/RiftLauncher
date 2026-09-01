@@ -1,13 +1,14 @@
 import { dialog, ipcMain } from "electron"
 import fse from "fs-extra"
+import { basename, dirname, join } from "node:path"
 import { IPC_CHANNELS } from "../ipcChannels"
 import { createScanInstalledModsPorts, pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { assertManagedPath } from "@src/ipc/pathPolicy"
-import { assertString, isRecord } from "@src/ipc/validation"
-import { registerUserSelectedPaths } from "@src/ipc/pathPolicy"
-import { logMessage } from "@src/utils/logManager"
-import { scanInstalledMods } from "@domain/mods/scanInstalled"
+import { assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
+import { assertBoolean, assertSafeFileName, assertString, isRecord } from "@src/ipc/validation"
+import { getErrorMessage, logMessage } from "@src/utils/logManager"
+import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
 
 const MAX_MODPACK_ENTRIES = 2_000
@@ -39,7 +40,12 @@ function toWireMod(mod: ScannedMod): InstalledModType {
 
 ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path: string): Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> => {
   assertTrustedIpcSender(event)
-  path = await assertManagedPath(path, "mods path", { allowMissing: true })
+  // allowSymlinks: listing a Mods folder the user linked in is a read (#237).
+  // The scan only ever opens the .zip files it finds, and the directory reader
+  // still drops any entry that is itself a link, so nothing planted inside can
+  // widen what gets opened. Deleting or replacing a mod goes through the strict
+  // policy as before.
+  path = await assertManagedPath(path, "mods path", { allowMissing: true, allowSymlinks: true })
   try {
     logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Looking for mods at ${path}.`)
 
@@ -67,6 +73,57 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
   }
 })
 
+/**
+ * Turns one installed mod on or off by renaming its archive in place.
+ *
+ * The renderer names the file to act on and the state it wants, and nothing else. Everything about
+ * the destination is derived here: the source is put through the same grade of check a deletion is,
+ * bar the one exception a linked Mods folder buys it, because the name it has stops existing either
+ * way, then its own file name is put through the guard
+ * the scan applies to every entry it will open, and only then does the domain derive the target name
+ * by adding or removing one fixed suffix. Nothing a caller sends is ever spliced into the name that
+ * gets written, so the toggle cannot reach a file that a delete could not already reach.
+ *
+ * A name already taken stops the rename rather than overwriting: an installation holding both
+ * `X.zip` and `X.zip.disabled` is a folder the player made by hand, and quietly destroying one of
+ * the two is not this launcher's call to make.
+ */
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, async (event, pathValue: string, enabled: boolean): Promise<SetModEnabledResult> => {
+  assertTrustedIpcSender(event)
+
+  try {
+    const wanted = assertBoolean(enabled, "mod enabled state")
+    const safePath = await assertManagedModArchivePath(pathValue)
+    const rename = renameModArchiveTo(assertSafeFileName(basename(safePath), "mod archive name"), wanted)
+
+    if (!rename.ok) {
+      logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] Nothing to rename: ${rename.reason}.`)
+      return rename.reason === "already-in-state" ? { ok: false, reason: "already-in-state" } : { ok: false, reason: "refused" }
+    }
+
+    const target = join(dirname(safePath), rename.fileName)
+    // The folder is the one the source was just cleared in, and the name is derived rather than sent,
+    // so what is left to check here is the grant. The walk is the source's job and it did it.
+    await assertManagedPath(target, "mod archive path", { allowMissing: true, allowSymlinks: true })
+
+    if (await fse.pathExists(target)) {
+      logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] The other name is already taken, leaving both archives alone.`)
+      return { ok: false, reason: "name-taken" }
+    }
+
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] Renaming a mod archive to turn it ${wanted ? "on" : "off"}.`)
+    // move rather than rename: it refuses an existing destination on every platform, so the check
+    // above losing a race cannot end with one archive written over the other.
+    await fse.move(safePath, target)
+
+    return { ok: true, path: target }
+  } catch (err) {
+    logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] Error renaming a mod archive.`)
+    logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] ${getErrorMessage(err)}`)
+    return { ok: false, reason: "refused" }
+  }
+})
+
 ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest: ModpackManifestType): Promise<{ success: boolean; path?: string }> => {
   assertTrustedIpcSender(event)
   try {
@@ -86,7 +143,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
 
     registerUserSelectedPaths([result.filePath])
     const safeOutputPath = await assertManagedPath(result.filePath, "modpack path", { allowMissing: true })
-    await fse.writeFile(safeOutputPath, JSON.stringify(safeManifest, null, 2), "utf-8")
+    await writeJsonAtomic(safeOutputPath, safeManifest, { spaces: 2 })
 
     logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Modpack exported to ${result.filePath}.`)
     return { success: true, path: result.filePath }

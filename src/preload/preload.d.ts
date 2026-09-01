@@ -39,6 +39,7 @@ declare global {
     }
     modsManager: {
       getInstalledMods: (path: string) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }>
+      setModEnabled: (path: string, enabled: boolean) => Promise<SetModEnabledResult>
       exportModpack: (manifest: ModpackManifestType) => Promise<{ success: boolean; path?: string }>
       importModpack: () => Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }>
       clearModIconMemoryCache: () => void
@@ -54,7 +55,7 @@ declare global {
       ensurePathExists: (path: string) => Promise<boolean>
       openPathOnFileExplorer: (path: string) => Promise<void>
       downloadOnPath: (id: string, url: string, outputPath: string, fileName: string) => Promise<string>
-      extractOnPath: (id: string, filePath: string, outputPath: string, deleteZip: boolean) => Promise<boolean>
+      extractOnPath: (id: string, filePath: string, outputPath: string, deleteZip: boolean, unwrapSingleRootFolder?: boolean) => Promise<boolean>
       runInstaller: (id: string, filePath: string, outputPath: string, deleteInstaller: boolean) => Promise<InstallerRunResult>
       compressOnPath: (id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel?: number) => Promise<boolean>
       onDownloadProgress: (callback: ProgressCallback) => Unsubscribe
@@ -69,6 +70,14 @@ declare global {
     }
     netManager: {
       queryURL: (url: string) => Promise<string>
+      /**
+       * Records the accepted answer to the one-time ModDB listing question and, once it is on
+       * disk, requests the listing archive once, which registers one download there. True when the
+       * answer was written; false means nothing was written and nothing was requested, so the
+       * question survives to the next launch. The request itself never fails out loud: it is the
+       * player's courtesy going unnoticed, not their problem.
+       */
+      acceptModDbVisibility: () => Promise<boolean>
     }
     backgroundsManager: {
       /** Downloads one catalog scene into the cache if it is not already there. False if it could not be. */
@@ -78,7 +87,8 @@ declare global {
     }
     accountManager: {
       login: (email: string, password: string, twoFactorCode?: string) => Promise<AccountLoginResult>
-      logout: () => Promise<boolean>
+      /** Drops one saved account's secrets, by its `playerUid`. */
+      removeAccount: (accountId: string) => Promise<boolean>
     }
   }
 

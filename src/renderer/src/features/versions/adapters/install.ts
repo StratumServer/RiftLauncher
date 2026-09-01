@@ -38,8 +38,11 @@ export function createInstallPorts({ startDownload, startExtract, startInstall, 
         )
     },
     unpacker: {
+      // The Linux game archives carry everything under a single `vintagestory/`
+      // folder, which is the one case the extraction steps into. A backup restore
+      // asks for the opposite and gets the default.
       extractArchive: (request, onComplete) =>
-        startExtract(taskName, unpackDescription, "progress", request.sourcePath, request.outputFolder, true, (status, error) => onComplete({ ok: status, error: error?.message })),
+        startExtract(taskName, unpackDescription, "progress", request.sourcePath, request.outputFolder, true, (status, error) => onComplete({ ok: status, error: error?.message }), true),
       runInstaller: (request, onComplete) =>
         startInstall(taskName, unpackDescription, "progress", request.sourcePath, request.outputFolder, true, (status, error) => onComplete({ ok: status, error: error?.message }))
     }

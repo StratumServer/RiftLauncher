@@ -8,7 +8,7 @@ description: If you want to make some backups of your Installations just follow 
 **Backups** will save a compressed copy of your data on a separated folder so if your worlds got corrupted you can just restore a backup and continue playing.
 
 {% hint style="warning" %}
-Backups are not a 100% secure, if the world was already damaged there is nothing you can do about it. I have tried them many times and they have never failed but they may fail at some point, I hope they don't.
+Backups aren't a guarantee. If the world was already damaged before the backup ran, there is nothing a backup can do about it. Restoring one has never failed in practice, but treat it as a safety net rather than a certainty.
 {% endhint %}
 
 ## Configuring Backups

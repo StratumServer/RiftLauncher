@@ -11,7 +11,7 @@ declare global {
      * Modids (the string id a Mod declares, not the ModDB numeric one) the player has held back:
      * Update All leaves them alone until the suspension is lifted, one row at a time.
      *
-     * ponytail: launcher-wide, not per installation. Same shape as favMods, and a modid held at an
+     * Known limit: launcher-wide, not per installation. Same shape as favMods, and a modid held at an
      * older version in one Installation is normally held in every other. Move it onto the
      * Installation if someone actually needs the two to disagree.
      */
@@ -22,6 +22,18 @@ declare global {
      * src/domain/backgrounds.ts.
      */
     background: string
+    /**
+     * What the player answered when asked, once, whether the launcher could fetch its own ModDB
+     * listing archive so that listing's download counter registers it: `unasked` until they answer,
+     * then `accepted`, `declined` or `already-done` forever. See src/domain/moddbVisibility.ts.
+     */
+    moddbVisibilityAnswer: string
+    /**
+     * Whether update checks offer prerelease builds: `true` for yes, `false` for no, and `null`
+     * while nobody has said, which leaves the running version deciding the way electron-updater
+     * does on its own. See src/domain/appUpdate/betaUpdates.ts.
+     */
+    receiveBetaUpdates: boolean | null
     _notifiedModUpdatesInstallations?: string[]
     /**
      * Bumped by every background selection so a re-pick of the same id still repaints. The custom
@@ -67,10 +79,19 @@ declare global {
    * back, so the player's password was never actually rejected. Collapsing
    * that case into `invalid-credentials` is exactly the bug this type exists
    * to make impossible again.
+   *
+   * `session-store-unreadable` is the same kind of honesty for a different
+   * failure: the credentials were accepted, but the local secret store could
+   * not be read or safely rebuilt, so nothing was saved. `storeRebuilt` on
+   * `success` is not a status of its own on purpose: the login still
+   * succeeded, and a separate status would make every `status === "success"`
+   * check silently drop the account. It flags that the store had to be
+   * rebuilt around this one login, so a previously unreadable file's other
+   * saved accounts are gone and will need to log in again.
    */
   type AccountLoginResult =
-    | { status: "success"; account: AccountPublicType }
-    | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response"; account?: undefined }
+    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean }
+    | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response" | "session-store-unreadable"; account?: undefined }
 
   type GameVersionType = {
     version: string
@@ -114,7 +135,21 @@ declare global {
 
   type ConfigType = BasicConfigType & {
     window: WindowType
-    account: AccountPublicType | null
+    /**
+     * Every saved account, public half only. Keyed by `playerUid` (no separate
+     * `id` field: two identifiers that must always agree is a bug waiting to
+     * happen, and `playerUid` is already what clientSettings.ts trusts as an
+     * account's identity). The encrypted store holds the matching secrets
+     * under the same key. Deduplicated and capped by normalizeConfig.
+     */
+    accounts: AccountPublicType[]
+    /**
+     * `playerUid` of the account the next game launch writes into
+     * `clientsettings.json`, or null when none is saved. normalizeConfig
+     * guarantees this either names an entry in `accounts` or is null, so
+     * every reader can look it up with a plain `find` and no fallback branch.
+     */
+    activeAccountId: string | null
     installations: InstallationType[]
     gameVersions: GameVersionType[]
     customIcons: IconType[]
@@ -125,6 +160,12 @@ declare global {
     modid: string
     version: string
     path: string
+    /**
+     * False when the archive is renamed out of the game's way, so Vintage Story
+     * never loads it. The folder is the only record of this: nothing about a
+     * disabled mod is written to the config.
+     */
+    enabled: boolean
     description?: string
     side?: string
     authors?: string[]
@@ -164,32 +205,16 @@ declare global {
     text: string
     author: string
     urlalias: string | null
-    logofilename: string | null
-    logofile: string | null
     homepageurl: string | null
     sourcecodeurl: string | null
-    trailervideourl: string | null
-    issuetrackerurl: string | null
-    wikiurl: string | null
     downloads: number
     follows: number
     trendingpoints: number
     comments: number
     side: string
-    tuype: string
     createdat: string
-    lasmodified: string
     tags: string[]
     releases: DownloadableModReleaseType[]
-    screenshots: DownloadableModScreenshotType[]
-  }
-
-  type DownloadableModScreenshotType = {
-    fileid: number
-    mainfile: string
-    filename: string
-    thumbnailfile: string
-    createdat: string
   }
 
   type DownloadableModReleaseType = {
@@ -243,11 +268,12 @@ declare global {
     custom?: boolean
   }
 
-  /** One scene as the `backgrounds` branch manifest lists it. `file` is its name on that branch. */
+  /** One scene as the `backgrounds` branch manifest lists it. `file` is full-size; `thumbnail` is optional. */
   type BackgroundType = {
     id: string
     name: string
     file: string
+    thumbnail?: string
   }
 
   type ModpackModEntryType = {
@@ -359,15 +385,39 @@ declare global {
    *   `.png` is refused the same way the background flow refuses a `.jpg` that
    *   is not a JPEG (#211).
    * - `source-unavailable`: the path policy refused the picked file, or it is
-   *   gone, or a folder on the way to it is a symbolic link. Nothing was read.
+   *   gone, or a folder on the way to it is a symbolic link, or the path is
+   *   not a plain file (a folder, a FIFO, a device). Nothing was read.
+   * - `too-large`: the file is past MAX_CUSTOM_ICON_BYTES. Its own reason
+   *   rather than `unsupported-format`, since a PNG the player has to shrink
+   *   is not the same problem as a file that was never a PNG (#215).
    * - `copy-failed`: the file was readable and the write still failed. A
    *   folder or a symlink already sitting on the destination name, no
    *   permission to read the source, a full disk.
    */
-  type CustomIconCopyFailureReason = "unsupported-format" | "source-unavailable" | "copy-failed"
+  type CustomIconCopyFailureReason = "unsupported-format" | "source-unavailable" | "too-large" | "copy-failed"
 
   /** COPY_TO_ICONS' verdict. `status: false` means nothing was written to the Icons folder. */
   type CustomIconCopyResult = { status: true; file: string } | { status: false; reason: CustomIconCopyFailureReason }
+
+  /**
+   * Why SET_MOD_ENABLED left the Mods folder as it found it (#287).
+   *
+   * - `already-in-state`: the archive is already on, or already off, whichever
+   *   was asked for. Reachable from a row the player is looking at while
+   *   something else renames the file underneath it.
+   * - `name-taken`: the name on the other side of the toggle is a file that
+   *   already exists, so the rename would have destroyed it. Both archives are
+   *   left alone and the player is told, since only they know which of the two
+   *   they meant to keep.
+   * - `refused`: everything else, and all of it is a refusal rather than a
+   *   mishap: an unmanaged path, a symbolic link, a name the scan itself would
+   *   not open, a file that is not a mod archive, or a host that would not
+   *   rename it.
+   */
+  type SetModEnabledFailureReason = "already-in-state" | "name-taken" | "refused"
+
+  /** SET_MOD_ENABLED's verdict, carrying the archive's new path when it moved. */
+  type SetModEnabledResult = { ok: true; path: string } | { ok: false; reason: SetModEnabledFailureReason }
 
   declare module "*.png" {
     const value: string

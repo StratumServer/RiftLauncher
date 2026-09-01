@@ -1,8 +1,8 @@
 import { useRef, useState } from "react"
 import { PiFolderOpenDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone, PiWarningDuotone, PiLinkDuotone } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
-import semver from "semver"
 
+import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUninstallGameVersion"
@@ -83,25 +83,18 @@ function ListVersions(): JSX.Element {
             <div className="flex gap-2">
               <ListItem className="group">
                 <LinkButton to="/versions/add" title={t("features.versions.installNewVersion")} className="w-full h-8">
-                  <PiPlusCircleDuotone className="text-xl text-zinc-400/25 group-hover:scale-95 duration-200" />
+                  <PiPlusCircleDuotone className="text-xl text-zinc-400/70 group-hover:scale-95 duration-200" />
                 </LinkButton>
               </ListItem>
               <ListItem className="group">
                 <LinkButton to="/versions/look-for-a-version" title={t("features.versions.searchForAGameVersion")} className="w-full h-8">
-                  <PiMagnifyingGlassDuotone className="text-xl text-zinc-400/25 group-hover:scale-95 duration-200" />
+                  <PiMagnifyingGlassDuotone className="text-xl text-zinc-400/70 group-hover:scale-95 duration-200" />
                 </LinkButton>
               </ListItem>
             </div>
             {gameVersions
               .slice()
-              .sort((a, b) => {
-                const aValid = semver.valid(a.version)
-                const bValid = semver.valid(b.version)
-                if (aValid && bValid) return semver.rcompare(a.version, b.version)
-                if (aValid) return -1
-                if (bValid) return 1
-                return a.version.localeCompare(b.version)
-              })
+              .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
               .map((gv) => (
                 <ListItem key={gv.version}>
                   <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">

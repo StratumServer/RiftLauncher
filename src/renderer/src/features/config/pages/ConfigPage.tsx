@@ -7,15 +7,30 @@ import { AnimatePresence, motion } from "motion/react"
 import clsx from "clsx"
 
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { backgroundImageSource } from "@renderer/utils/backgroundStyle"
+import { backgroundThumbnailSource } from "@renderer/utils/backgroundThumbnail"
 
-import { useSettingsConfig, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 
 import defaultBackground from "@renderer/assets/background.jpg"
 
-import { FormBody, FormFieldGroup, FormHead, FormLabel, FromGroup, FromWrapper, FormGroupWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
+import {
+  FormBody,
+  FormFieldDescription,
+  FormFieldGroup,
+  FormFieldGroupWithDescription,
+  FormHead,
+  FormLabel,
+  FromGroup,
+  FromWrapper,
+  FormGroupWrapper,
+  FormButton,
+  FormInputText,
+  FormToggle
+} from "@renderer/components/ui/FormComponents"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import LanguagesMenu from "@renderer/components/ui/LanguagesMenu"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
@@ -82,6 +97,16 @@ function ConfigPage(): JSX.Element {
                 <BackgroundPicker />
               </FormBody>
             </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.receiveBetaUpdates")} />
+              </FormHead>
+
+              <FormBody>
+                <BetaUpdatesToggle />
+              </FormBody>
+            </FromGroup>
           </FormGroupWrapper>
 
           <FormGroupWrapper title={t("generic.folders")}>
@@ -137,15 +162,70 @@ function ConfigPage(): JSX.Element {
 }
 
 /**
+ * Whether update checks offer beta builds.
+ *
+ * Shows the state that is actually in force rather than the stored one, which is why it needs the
+ * running version: with nothing stored, a beta build is already being offered betas and a stable
+ * build is not, and a toggle that read `off` on a beta would be lying about what happens next.
+ * Touching it stores a real answer, so switching it off while running a beta is what stops the next
+ * ones being offered. It does not roll anything back: this build stays until a release it is
+ * allowed to see comes along.
+ *
+ * The version arrives from the main process a moment after this mounts, and until it does there is
+ * nothing to draw for an install nobody has answered for: an empty version reads as stable, so a
+ * beta user would be shown `off` and could click an opt-out they never meant. So the state stays
+ * unknown until the version lands, and the toggle is disabled for as long as it is. A lookup that
+ * never answers leaves it disabled rather than guessing.
+ */
+function BetaUpdatesToggle(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { receiveBetaUpdates } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+  /** null until the lookup answers, and forever if it never does. */
+  const [runningVersion, setRunningVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void window.api.utils.getAppVersion().then(
+      (version) => {
+        if (!cancelled) setRunningVersion(version)
+      },
+      () => undefined
+    )
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [])
+
+  // A stored answer needs no version and is drawn as soon as it is read. Only "nobody has said"
+  // has to wait, because there it is the running build that decides.
+  const inForce = runningVersion === null ? receiveBetaUpdates : resolveAllowPrerelease(receiveBetaUpdates, runningVersion)
+
+  return (
+    <FormFieldGroupWithDescription>
+      <FormToggle
+        title={t("features.config.receiveBetaUpdatesDesc")}
+        disabled={inForce === null}
+        value={inForce ?? false}
+        onChange={(value) => configDispatch({ type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: value })}
+      />
+      <FormFieldDescription content={t("features.config.receiveBetaUpdatesDesc")} />
+    </FormFieldGroupWithDescription>
+  )
+}
+
+/**
  * The background section: the bundled scene, whatever the `backgrounds` branch lists today, and
  * the player's own picture.
  *
  * The manifest is fetched by the hook when this mounts, which is when the settings page opens.
  *
- * ponytail: a tile only shows its picture once that scene has been downloaded, which is when the
- * player picks it, so a first visit is a grid of names. That is the price of not pulling seven
- * megabytes down the moment somebody opens their settings. If choosing blind turns out to bother
- * people, the fix is a small thumbnail beside each scene on the branch, not a prefetch.
+ * Full-size scenes are downloaded only when the player picks them. The branch also carries a
+ * small preview for each catalog entry, and the picker requests those previews eagerly when this
+ * section opens so the grid is useful immediately without adding them to the launcher package.
  */
 function BackgroundPicker(): JSX.Element {
   const { t } = useTranslation()
@@ -172,7 +252,8 @@ function BackgroundPicker(): JSX.Element {
             name={entry.name}
             selected={background === entry.id}
             onClick={() => void selectFromCatalog(entry)}
-            source={backgroundImageSource(entry.id, backgroundRevision)}
+            source={backgroundThumbnailSource(entry.thumbnail)}
+            loading="eager"
           />
         ))}
 
@@ -203,21 +284,39 @@ function BackgroundPicker(): JSX.Element {
 /**
  * One choice.
  *
- * `alt=""` rather than the scene name: the name is already written under the picture, and an
- * empty alt is also what keeps a tile whose file is not cached from drawing a broken-image icon.
+ * `alt=""` rather than the scene name: the name is already written under the picture. A failed
+ * thumbnail is removed so the tile keeps its dark placeholder instead of drawing a broken-image icon.
  */
-function BackgroundTile({ name, selected, onClick, source }: { name: string; selected: boolean; onClick: () => void; source?: string }): JSX.Element {
+function BackgroundTile({
+  name,
+  selected,
+  onClick,
+  source,
+  loading = "eager"
+}: Readonly<{ name: string; selected: boolean; onClick: () => void; source?: string; loading?: "eager" | "lazy" }>): JSX.Element {
+  const [imageFailed, setImageFailed] = useState(false)
+
+  useEffect(() => {
+    setImageFailed(false)
+  }, [source])
+
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={selected}
       className={clsx(
-        "relative aspect-video w-full rounded-sm overflow-hidden border bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
-        selected ? "border-vsl" : "border-zinc-400/5"
+        "relative aspect-video w-full rounded-sm overflow-hidden bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
+        // Two colours meet at this border and only one of them is unknown. Inside is the player's
+        // thumbnail, where --color-vsl can fall to 2.51:1 against a light image; outside is the
+        // section panel over the shell, the same fixed stack the accent links sit on, where it
+        // reads 4.85:1 whatever image was picked. A boundary that is unmistakable along one of its
+        // edges is perceivable (WCAG 1.4.11). The extra width raises no ratio: what it buys is
+        // 1.4.1, since the selected state stops being marked by hue alone. See text-contrast.test.ts.
+        selected ? "border-2 border-vsl" : "border border-zinc-400/5"
       )}
     >
-      {source && <img src={source} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+      {source && !imageFailed && <img src={source} alt="" loading={loading} decoding="async" onError={() => setImageFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
       <span className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-xs text-center bg-zinc-950/70 overflow-hidden whitespace-nowrap text-ellipsis">{name}</span>
     </button>
   )
@@ -237,7 +336,7 @@ function UIScale(): JSX.Element {
   const [selectedScale, setSelectedScale] = useState<number>(Number(window.localStorage.getItem("uiScale")) || 100)
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-uiscale", selectedScale.toString())
+    document.documentElement.dataset.uiscale = selectedScale.toString()
     window.localStorage.setItem("uiScale", selectedScale.toString())
   }, [selectedScale])
 

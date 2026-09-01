@@ -1,5 +1,5 @@
 import { isAbsolute, relative, resolve, sep } from "node:path"
-import { fileURLToPath } from "url"
+import { fileURLToPath } from "node:url"
 
 import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
 
@@ -15,14 +15,25 @@ export const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 // 16 MB gives years of headroom while staying a bounded, allow-listed exception rather
 // than an unbounded response.
 export const MAX_MODS_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024
-// The background manifest is a list of {id, name, file} rows, about 1 KB for the eleven scenes
-// on the branch today. 32 KB is room for hundreds of them and still refuses anything that is
-// not a small list of names.
+// The background manifest is a list of {id, name, file, thumbnail} rows, about 1 KB for the eleven
+// scenes on the branch today. 32 KB is room for hundreds of them and still refuses anything that
+// is not a small list of names.
 export const MAX_BACKGROUND_MANIFEST_BYTES = 32 * 1024
 // One background scene. The branch's own files run 400 to 720 KB at 2560x1440, so 2 MB is
 // roughly triple the largest of them, and well under the generic 4 MB ceiling this would
 // otherwise inherit.
 export const MAX_BACKGROUND_IMAGE_BYTES = 2 * 1024 * 1024
+// One custom installation icon. A quarter of the background ceiling above, because an icon is
+// drawn a few dozen pixels wide next to an installation name rather than filling a window: the
+// seven icons the launcher ships run 12 to 52 KB at 512x512, so 512 KB is ten times the largest
+// of them and still leaves room for a 1024x1024 export nobody bothered to compress.
+export const MAX_CUSTOM_ICON_BYTES = 512 * 1024
+// The pointer archive on the launcher's own ModDB listing (#219), which is 315 bytes of text
+// pointing at the releases page. 256 KB is three orders of magnitude of headroom and still refuses
+// anything that could pass for a real download, which this endpoint must never be used to pull.
+// The rule it applies to (mods.vintagestory.at/download) is shared with the mod downloader, which
+// streams to disk under its own limits, so this ceiling is passed per call rather than per rule.
+export const MAX_MODDB_LISTING_RESPONSE_BYTES = 256 * 1024
 
 export type UrlRule = Readonly<{
   hostname: string
@@ -224,7 +235,7 @@ export function parseSafeEnvironment(value: string): Record<string, string> {
     const environmentValue = entry.slice(separator + 1)
     const normalizedKey = key.toUpperCase()
     if (
-      !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ||
+      !/^[A-Za-z_]\w*$/.test(key) ||
       DENIED_ENVIRONMENT_KEYS.has(normalizedKey) ||
       DENIED_ENVIRONMENT_PREFIXES.some((prefix) => normalizedKey.startsWith(prefix)) ||
       environmentValue.length > 2_048 ||
@@ -326,7 +337,7 @@ export function resolveContainedPath(root: string, relativePath: string): string
   if (decodedPath.includes("\0")) return null
 
   const safeRelativePath = decodedPath.replace(/^[/\\]+/, "")
-  if (!safeRelativePath || safeRelativePath.split(/[\\/]+/).some((part) => part === "..")) return null
+  if (!safeRelativePath || safeRelativePath.split(/[\\/]+/).includes("..")) return null
 
   const resolvedRoot = resolve(root)
   const resolvedPath = resolve(resolvedRoot, safeRelativePath)
@@ -340,10 +351,10 @@ export function resolveContainedPath(root: string, relativePath: string): string
 export function isSafeArchiveEntry(entryName: unknown): entryName is string {
   if (typeof entryName !== "string" || entryName.length === 0 || entryName.length > MAX_PATH_LENGTH || entryName.includes("\0")) return false
 
-  const normalizedName = entryName.replace(/\\/g, "/")
+  const normalizedName = entryName.replaceAll("\\", "/")
   if (normalizedName.startsWith("/") || /^[A-Za-z]:\//.test(normalizedName)) return false
 
-  return !normalizedName.split("/").some((part) => part === "..")
+  return !normalizedName.split("/").includes("..")
 }
 
 const RESTORE_WORKSPACE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -363,8 +374,8 @@ export function isRestoreWorkspaceName(installationName: string, candidateName: 
 }
 
 /**
- * True when `name` is a gzipped tar, which 7-Zip cannot unpack in one pass and,
- * for the archives Vintage Story ships, cannot read at all.
+ * True when `name` is a gzipped tar: the game builds, and every backup written
+ * from 1.7.0-beta.4 on. It picks the reader, `tar` rather than `yauzl`.
  */
 export function isTarGzName(name: unknown): boolean {
   return typeof name === "string" && /\.(?:tar\.gz|tgz)$/i.test(name)

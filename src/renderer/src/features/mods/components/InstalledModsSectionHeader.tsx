@@ -1,6 +1,6 @@
 import { Trans, useTranslation } from "react-i18next"
 
-import { useOpenExternalLink } from "@renderer/features/installations/hooks/useOpenExternalLink"
+import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 
 import { NormalButton } from "@renderer/components/ui/Buttons"
 
@@ -14,9 +14,9 @@ const DISCORD_URL = "https://discord.gg/vQm6z2urZs"
  * The three sections carried the same twenty-line `<Trans>` with the Issues and Discord links
  * spelled out again each time, differing only in which sentence wraps them.
  */
-function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: { titleKey: string; descriptionKey: string; reportKey: string }): JSX.Element {
+function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: Readonly<{ titleKey: string; descriptionKey: string; reportKey: string }>): JSX.Element {
   const { t } = useTranslation()
-  const openExternalLink = useOpenExternalLink()
+  const { openOnBrowser: openExternalLink } = useExternalLinks()
 
   return (
     <div className="flex flex-col gap-1">
@@ -33,7 +33,7 @@ function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: { t
                   e.stopPropagation()
                   openExternalLink(ISSUES_URL)
                 }}
-                className="text-vsl"
+                className="text-vsl underline"
               >
                 {t("generic.issues")}
               </NormalButton>
@@ -45,7 +45,7 @@ function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: { t
                   e.stopPropagation()
                   openExternalLink(DISCORD_URL)
                 }}
-                className="text-vsl"
+                className="text-vsl underline"
               >
                 Discord
               </NormalButton>

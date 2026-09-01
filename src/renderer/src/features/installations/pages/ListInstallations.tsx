@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next"
 import clsx from "clsx"
 
 import { deleteInstallation } from "@domain/installations/delete"
-import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
+import { installationIconSrc } from "@renderer/utils/installationIcons"
 
 import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -25,7 +25,6 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { createDeleteInstallationPorts, describeDeleteInstallationFailure, toInstallationDeleteSnapshot } from "@renderer/features/installations/adapters/delete"
 import { useCheckPathExists, useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
-import { useLogMessage } from "@renderer/features/installations/hooks/useLogMessage"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -48,10 +47,9 @@ function ListInslallations(): JSX.Element {
   const makeInstallationBackup = useMakeInstallationBackup()
   const checkPathExists = useCheckPathExists()
   const openPathInExplorer = useOpenPathInExplorer()
-  const logMessage = useLogMessage()
 
   const [installationToDelete, setInstallationToDelete] = useState<InstallationType | null>(null)
-  const [deleteData, setDeleData] = useState<boolean>(false)
+  const [deleteData, setDeleteData] = useState<boolean>(false)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -67,8 +65,8 @@ function ListInslallations(): JSX.Element {
         const { messageKey, logged } = describeDeleteInstallationFailure(result.reason)
 
         if (logged) {
-          logMessage("error", `${LOG_TAG} Error deleting an Installation.`)
-          logMessage("debug", `${LOG_TAG} Error deleting Installation ${installation.id}: ${result.reason}.`)
+          window.api.utils.logMessage("error", `${LOG_TAG} Error deleting an Installation.`)
+          window.api.utils.logMessage("debug", `${LOG_TAG} Error deleting Installation ${installation.id}: ${result.reason}.`)
         }
 
         return addNotification(t(messageKey), "error")
@@ -77,15 +75,15 @@ function ListInslallations(): JSX.Element {
       configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION, payload: { id: installation.id } })
 
       if (result.failedBackupPaths.length > 0) {
-        logMessage("error", `${LOG_TAG} Installation deleted but some backups survived.`)
-        logMessage("debug", `${LOG_TAG} Backups left over for Installation ${installation.id}: ${result.failedBackupPaths.join(", ")}.`)
+        window.api.utils.logMessage("error", `${LOG_TAG} Installation deleted but some backups survived.`)
+        window.api.utils.logMessage("debug", `${LOG_TAG} Backups left over for Installation ${installation.id}: ${result.failedBackupPaths.join(", ")}.`)
         return addNotification(t("features.installations.installationDeletedBackupsLeftOver", { count: result.failedBackupPaths.length }), "warning")
       }
 
       addNotification(t("features.installations.installationSuccessfullyDeleted"), "success")
     } finally {
       setInstallationToDelete(null)
-      setDeleData(false)
+      setDeleteData(false)
     }
   }
 
@@ -110,7 +108,7 @@ function ListInslallations(): JSX.Element {
           <ListGroup>
             <ListItem className="group">
               <LinkButton to="/installations/add" title={t("features.installations.addNewInstallation")} className="w-full h-12">
-                <PiPlusCircleDuotone className="text-3xl text-zinc-400/25 group-hover:scale-95 duration-200" />
+                <PiPlusCircleDuotone className="text-3xl text-zinc-400/70 group-hover:scale-95 duration-200" />
               </LinkButton>
             </ListItem>
 
@@ -120,17 +118,7 @@ function ListInslallations(): JSX.Element {
               return (
                 <ListItem key={installation.id}>
                   <div className="h-16 flex gap-2 p-1 justify-between items-center whitespace-nowrap">
-                    <img
-                      src={
-                        INSTALLATION_ICONS.some((ii) => ii.id === installation.icon)
-                          ? INSTALLATION_ICONS.find((ii) => ii.id === installation.icon)?.icon
-                          : customIcons.some((ii) => ii.id === installation.icon)
-                            ? `icons:${customIcons.find((ii) => ii.id === installation.icon)?.icon}`
-                            : INSTALLATION_ICONS[0].icon
-                      }
-                      alt={t("generic.icon")}
-                      className="h-full aspect-square object-cover rounded-sm"
-                    />
+                    <img src={installationIconSrc(installation.icon, customIcons)} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
 
                     <ThinSeparator />
 
@@ -232,7 +220,7 @@ function ListInslallations(): JSX.Element {
             <p>{t("features.installations.areYouSureDelete")}</p>
             <p className="text-zinc-400">{t("features.installations.deletingNotReversible")}</p>
             <div className="flex gap-2 items-center justify-center">
-              <Input id="delete-data" type="checkbox" checked={deleteData} onChange={(e) => setDeleData(e.target.checked)} />
+              <Input id="delete-data" type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} />
               <label htmlFor="delete-data">{t("features.installations.deleteData")}</label>
             </div>
             <div className="flex gap-4 items-center justify-center text-lg">

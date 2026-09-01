@@ -1,10 +1,10 @@
 import { ipcMain, app, shell } from "electron"
-import { path7za } from "7zip-bin"
 import fse from "fs-extra"
 import { open } from "node:fs/promises"
+import type { Stats } from "node:fs"
 import { basename, extname, join, resolve, sep } from "node:path"
-import os from "os"
-import { spawn } from "child_process"
+import os from "node:os"
+import { spawn } from "node:child_process"
 import type { IpcMainInvokeEvent } from "electron"
 
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
@@ -13,11 +13,12 @@ import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { acquireWorker } from "@src/ipc/workerManager"
 import type { WorkerDisposition } from "@src/ipc/workerManager"
 import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
-import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord } from "@src/ipc/validation"
+import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord, MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
 import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
 import { isPngBytes, PNG_SIGNATURE_BYTES } from "@domain/backgrounds"
+import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
@@ -25,7 +26,6 @@ import innoExtractWorker from "@src/ipc/workers/innoExtractWorker?modulePath"
 import changePermsWorker from "@src/ipc/workers/changePermsWorker?modulePath"
 import downloadWorkerPath from "@src/ipc/workers/downloadWorker?modulePath"
 
-const sevenZipBin = app.isPackaged ? path7za.replace("app.asar", "app.asar.unpacked") : path7za
 const WORKER_TIMEOUTS_MS: Record<string, number> = {
   DOWNLOAD_ON_PATH: 45 * 60 * 1_000,
   EXTRACT_ON_PATH: 30 * 60 * 1_000,
@@ -75,16 +75,18 @@ const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
  * first progress event, so this needs no renderer-side change to look right.
  *
  * Extraction and compression share one limiter instead of each getting their own: both
- * spawn a 7-Zip subprocess and compete for the same CPU cores, so the resource that
- * actually needs bounding is "concurrent 7-Zip processes", not "concurrent extractions"
- * and "concurrent compressions" separately.
+ * inflate or deflate inside a worker thread and compete for the same CPU cores, so the
+ * resource that actually needs bounding is "concurrent archive workers", not "concurrent
+ * extractions" and "concurrent compressions" separately. This used to be written around
+ * the 7-Zip subprocesses both of them spawned; the work moved in process with #222, and
+ * the bound holds for the same reason it always did.
  *
- * RUN_INSTALLER's payload read shares that lane too, even though it spawns no 7-Zip. What
+ * RUN_INSTALLER's payload read shares that lane too, even though it unpacks no archive. What
  * it does instead is decode the installer's LZMA2 payload with the plain-TypeScript decoder
  * in src/domain/inno and CRC32 every chunk on the way through, so it saturates a core inside
  * its worker thread for the whole read (41 seconds for a 598 MB installer, per
- * WORKER_TIMEOUTS_MS above). Read the limit as "concurrent CPU-bound archive readers" rather
- * than "concurrent 7-Zip processes" and it clearly belongs: an install starting while two mod
+ * WORKER_TIMEOUTS_MS above). Read the limit as "concurrent CPU-bound archive workers" and it
+ * clearly belongs: an install starting while two mod
  * extractions were already running used to put three of those on the machine at once, against
  * a bound written to allow two.
  */
@@ -161,7 +163,7 @@ function runTrackedWorker<T>(
     const timeout = setTimeout(
       () => {
         // Never reused: the abandoned task is still running inside this thread (still
-        // holding a socket or a 7-Zip child), so its eventual message could still arrive
+        // holding a socket or an open archive), so its eventual message could still arrive
         // after some later task has been dispatched to the same worker.
         rejectOnce(new Error(`${operationName} timed out`), "discard")
       },
@@ -215,7 +217,7 @@ function runTrackedWorker<T>(
           return
         }
 
-        if (workerMessage.progress < lastProgress) return
+        if (workerMessage.progress <= lastProgress) return
         lastProgress = workerMessage.progress
         sendProgress(event, progressChannel, id, workerMessage.progress)
         return
@@ -325,14 +327,18 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.REMOVE_FILE_FROM_PATH, (event, pathVal
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EMPTY, async (event, pathValue: string): Promise<boolean> => {
   assertTrustedIpcSender(event)
-  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true })
+  // allowSymlinks: reading whether a folder holds anything is a read like the
+  // rest (#237). The three call sites have no try/catch around it, so a throw
+  // here aborts the folder pick itself and the setting silently keeps its old
+  // value; a linked folder has to answer rather than reject.
+  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
   if (!(await fse.pathExists(safePath))) return true
   return (await fse.stat(safePath)).isDirectory() && (await fse.readdir(safePath)).length === 0
 })
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHECK_PATH_EXISTS, async (event, pathValue: string): Promise<boolean> => {
   assertTrustedIpcSender(event)
-  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true })
+  const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
   return fse.pathExists(safePath)
 })
 
@@ -340,8 +346,20 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
   assertTrustedIpcSender(event)
 
   try {
-    const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true })
-    await fse.ensureDir(safePath)
+    // Reporting a folder the user linked in as present is a read (#237), so
+    // that arm takes allowSymlinks. Creating one is not, so the missing case
+    // goes back through the strict policy, whose walk refuses a link it finds
+    // among the existing ancestors.
+    //
+    // Only a directory counts as present. stat rather than lstat so a link at a
+    // directory still answers true, and a plain file falls through to ensureDir,
+    // which throws EEXIST and lands on false: the AddInstallation guard relies
+    // on that to keep an installation entry off a regular file.
+    const safePath = await assertManagedPath(pathValue, "path", { allowMissing: true, allowSymlinks: true })
+    const existing = await fse.stat(safePath).catch(() => null)
+    if (existing?.isDirectory()) return true
+
+    await fse.ensureDir(await assertManagedPath(pathValue, "path", { allowMissing: true }))
     return true
   } catch (err) {
     logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [ENSURE_PATH_EXISTS] Error ensuring path.")
@@ -352,7 +370,8 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER, async (event, pathValue: string): Promise<void> => {
   assertTrustedIpcSender(event)
-  shell.showItemInFolder(await assertManagedPath(pathValue, "path"))
+  // allowSymlinks: handing a linked folder to the file explorer is a read (#237).
+  shell.showItemInFolder(await assertManagedPath(pathValue, "path", { allowSymlinks: true }))
 })
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: string, url: string, outputPath: string, fileName: string): Promise<string> => {
@@ -364,8 +383,9 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   const expectedMd5 = await getTrustedDownloadHash(safeUrl)
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DOWNLOAD_ON_PATH] [${safeId}] Starting a bounded download.`)
-  const downloadedPath = await downloadConcurrency.run(() =>
-    runTrackedWorker(
+  const downloadedPath = await downloadConcurrency.run(() => {
+    sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS, safeId, 0)
+    return runTrackedWorker(
       event,
       safeId,
       IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS,
@@ -377,35 +397,37 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
         return message.path
       }
     )
-  )
+  })
   if (expectedMd5) await recordVerifiedArtifact(downloadedPath, safeUrl, expectedMd5)
   return downloadedPath
 })
 
-ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: string, filePath: string, outputPath: string, deleteZip: boolean): Promise<boolean> => {
+ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: string, filePath: string, outputPath: string, deleteZip: boolean, unwrapSingleRootFolder = false): Promise<boolean> => {
   assertTrustedIpcSender(event)
   const safeId = assertSafeTaskId(id)
   const safeFilePath = await assertManagedPath(filePath, "archive path")
   const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
   const shouldDeleteZip = assertBoolean(deleteZip, "delete archive flag")
+  const shouldUnwrapSingleRootFolder = assertBoolean(unwrapSingleRootFolder, "unwrap single root folder flag")
 
   if (resolve(safeFilePath) === resolve(safeOutputPath)) throw new TypeError("Archive and output paths must differ")
   // validateArchive runs inside the extraction worker now (workers/extraction.ts's
-  // runExtraction), not here: its 7z-listing parse is real CPU work that has no business
-  // blocking the main process's event loop.
+  // runExtraction), not here: walking a table of contents is real CPU work that has no
+  // business blocking the main process's event loop.
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
-  await archiveConcurrency.run(() =>
-    runTrackedWorker(
+  await archiveConcurrency.run(() => {
+    sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
+    return runTrackedWorker(
       event,
       safeId,
       IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
       extractWorker,
-      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, sevenZipBin },
+      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, unwrapSingleRootFolder: shouldUnwrapSingleRootFolder },
       "EXTRACT_ON_PATH",
       () => true
     )
-  )
+  })
   return true
 })
 
@@ -559,28 +581,32 @@ function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath:
   })
 }
 
-ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH, async (event, id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel = 4): Promise<boolean> => {
-  assertTrustedIpcSender(event)
-  const safeId = assertSafeTaskId(id)
-  const safeInputPath = await assertManagedPath(inputPath, "input path")
-  const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
-  const safeOutputFileName = assertSafeFileName(outputFileName, "output file name")
-  const safeCompressionLevel = assertInteger(compressionLevel, "compression level", 0, 9)
+ipcMain.handle(
+  IPC_CHANNELS.PATHS_MANAGER.COMPRESS_ON_PATH,
+  async (event, id: string, inputPath: string, outputPath: string, outputFileName: string, compressionLevel = DEFAULT_COMPRESSION_LEVEL): Promise<boolean> => {
+    assertTrustedIpcSender(event)
+    const safeId = assertSafeTaskId(id)
+    const safeInputPath = await assertManagedPath(inputPath, "input path")
+    const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
+    const safeOutputFileName = assertSafeFileName(outputFileName, "output file name")
+    const safeCompressionLevel = assertInteger(compressionLevel, "compression level", 0, 9)
 
-  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
-  await archiveConcurrency.run(() =>
-    runTrackedWorker(
-      event,
-      safeId,
-      IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
-      compressWorker,
-      { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel, sevenZipBin },
-      "COMPRESS_ON_PATH",
-      () => true
-    )
-  )
-  return true
-})
+    logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
+    await archiveConcurrency.run(() => {
+      sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS, safeId, 0)
+      return runTrackedWorker(
+        event,
+        safeId,
+        IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS,
+        compressWorker,
+        { inputPath: safeInputPath, outputPath: safeOutputPath, outputFileName: safeOutputFileName, compressionLevel: safeCompressionLevel },
+        "COMPRESS_ON_PATH",
+        () => true
+      )
+    })
+    return true
+  }
+)
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS, async (event, paths: string[], perms: number): Promise<boolean> => {
   assertTrustedIpcSender(event)
@@ -623,9 +649,23 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, async (event, pathValue
   // they compare too.
   if (extname(safePath).toLowerCase() !== ".png") return refuseIconCopy("unsupported-format", new TypeError(`Icon file is "${extname(safePath) || "extensionless"}", not ".png"`))
 
+  let stats: Stats
   try {
-    // Only the signature is read, never the whole file: an icon has no size
-    // ceiling of its own, and the copy below streams rather than buffers.
+    stats = await fse.lstat(safePath)
+    // lstat, so this is the picked path itself and not whatever it points at:
+    // a folder, a FIFO or a symlink all fail isFile() here, before anything is
+    // read from a source that may not behave like a file at all.
+    if (!stats.isFile()) throw new TypeError("Icon path is not a plain file")
+  } catch (error) {
+    return refuseIconCopy("source-unavailable", error)
+  }
+
+  // Checked before the read, the way COPY_CUSTOM_BACKGROUND checks its own ceiling.
+  if (stats.size > MAX_CUSTOM_ICON_BYTES) return refuseIconCopy("too-large", new TypeError(`Icon file is ${stats.size} bytes, over the ${MAX_CUSTOM_ICON_BYTES} byte ceiling`))
+
+  try {
+    // Only the signature is read, never the whole file: the ceiling above is
+    // what bounds the icon, and the copy below streams rather than buffers.
     const header = Buffer.alloc(PNG_SIGNATURE_BYTES)
     const source = await open(safePath, "r")
     try {

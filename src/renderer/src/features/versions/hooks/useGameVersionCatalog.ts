@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react"
 
+import { parseGameVersionCatalog, type RawPlatform, type RawVersions } from "@domain/versions/gameVersionCatalog"
 import { compareVersions } from "@domain/versionNumbers"
 
 // Official public API: https://api.vintagestory.at/{stable,unstable}.json
 // Shape: { [version]: { [platform]: { filename, filesize, md5, urls: { cdn, local }, ... } } }
-type RawPlatform = { filename?: string; urls: { cdn: string; local: string } }
-type RawVersions = Record<string, Record<string, RawPlatform>>
 const VS_API = "https://api.vintagestory.at"
 
 const NO_BUILD: DownloadableGameVersionBuildType = { url: "", fileName: "" }
@@ -73,8 +72,11 @@ export function useGameVersionCatalog(): GameVersionCatalogState {
     ;(async (): Promise<void> => {
       try {
         const [stableText, unstableText] = await Promise.all([window.api.netManager.queryURL(`${VS_API}/stable.json`), window.api.netManager.queryURL(`${VS_API}/unstable.json`)])
-        const stable = JSON.parse(stableText) as RawVersions
-        const unstable = JSON.parse(unstableText) as RawVersions
+        const stable = parseGameVersionCatalog(stableText)
+        const unstable = parseGameVersionCatalog(unstableText)
+        if (Object.keys(stable).length === 0 && Object.keys(unstable).length === 0) {
+          throw new Error("Game version catalogs are empty.")
+        }
         if (cancelled) return
         setGameVersions(parseGameVersions(stable, unstable))
         setLoading(false)

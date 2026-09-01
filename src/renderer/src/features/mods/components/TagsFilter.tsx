@@ -12,11 +12,11 @@ function TagsFilter({
   tagsFilter,
   setTagsFilter,
   size = "w-full h-8"
-}: {
+}: Readonly<{
   tagsFilter: DownloadableModTagType[]
   setTagsFilter: Dispatch<SetStateAction<DownloadableModTagType[]>>
   size?: string
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   const tagsList = useTagsLookup()
@@ -32,7 +32,7 @@ function TagsFilter({
             )}
             title={tagsFilter.map((tag) => tag.name).join(" · ")}
           >
-            <p className={clsx("flex gap-1 items-center overflow-hidden whitespace-nowrap text-ellipsis overflow-x-scroll scrollbar-none", tagsFilter.length < 1 && "text-zinc-600")}>
+            <p className={clsx("flex gap-1 items-center overflow-hidden whitespace-nowrap text-ellipsis overflow-x-scroll scrollbar-none", tagsFilter.length < 1 && "text-zinc-400")}>
               {tagsFilter.length < 1
                 ? t("generic.tags")
                 : tagsFilter.map((tag) => (

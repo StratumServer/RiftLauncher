@@ -146,6 +146,21 @@ export function parseModDetailResponse(rawText: string): ModDbResponse<ModDbModD
   return readV1(rawText, "mod", readModDetail)
 }
 
+/**
+ * The file id of the newest release on a `/api/mod/{id}` detail, when it carries a usable one.
+ *
+ * `releases[0]` is the newest: the API serves them newest first, which is the same ordering
+ * `src/domain/mods/importModpack.ts` falls back on when no version matches. The id is checked
+ * rather than trusted because it ends up in a URL.
+ */
+export function newestReleaseFileId(detail: ModDbModDetail): number | undefined {
+  const newest = (detail["releases"] as unknown[])[0]
+  if (!isRecord(newest)) return undefined
+
+  const fileId = newest["fileid"]
+  return typeof fileId === "number" && Number.isSafeInteger(fileId) && fileId > 0 ? fileId : undefined
+}
+
 /** One entry of a `name`-and-id list: `/api/authors`, `/api/gameversions` or `/api/tags`. */
 export interface ModDbNamedEntry extends Record<string, unknown> {
   name: string

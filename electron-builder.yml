@@ -13,9 +13,16 @@ files:
   - "!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
   - "!{.env,.env.*,.npmrc,pnpm-lock.yaml}"
   - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
+  # npm installs both @napi-rs/lzma linux binaries on a glibc runner: the
+  # committed package-lock.json predates npm recording the `libc` field that
+  # would filter the musl builds out, so `npm ci` resolves them on os and cpu
+  # alone. Every linux target below (AppImage, deb, rpm, pacman) is glibc, so
+  # the musl binary is 1.4 MB that can never load. Revisit if a musl target
+  # is ever added.
+  - "!node_modules/@napi-rs/lzma-*-musl{,/**/*}"
 asarUnpack:
   - resources/**
-  - node_modules/7zip-bin/**
+  - node_modules/@napi-rs/lzma-*/**
 win:
   executableName: RiftLauncher
   icon: resources/icon.ico
@@ -45,19 +52,11 @@ linux:
     - deb
     - rpm
     - pacman
-    - flatpak
   maintainer: Zaldaryon
   category: Game
   icon: build/icons
 appImage:
   artifactName: ${name}-${version}.${ext}
-flatpak:
-  artifactName: ${name}-${version}.${ext}
-  runtime: org.freedesktop.Platform
-  runtimeVersion: "23.08"
-  sdk: org.freedesktop.Sdk
-  base: org.electronjs.Electron2.BaseApp
-  baseVersion: "23.08"
 deb:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false

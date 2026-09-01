@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { describe, it } from "vitest"
 
-import { parseLegacyAccount, parseLoginAccount } from "../src/ipc/accountTypes"
+import { parseLegacyAccount, parseLoginAccount } from "../src/domain/account/credentials"
 import { isAllowedRendererUrl, parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "../src/ipc/validation"
 
 describe("credential boundaries", () => {
@@ -112,10 +112,35 @@ describe("startup network boundaries", () => {
   })
 
   // An offline launch of a packaged build rejects the update check, and a
-  // rejection nobody catches takes the main process down with it. Matched on
-  // the call plus its catch rather than the two separately, so that a catch
-  // somewhere else in the file cannot satisfy it.
-  it("keeps the startup update check from rejecting into nothing", () => {
-    assert.equal(MAIN_SOURCE.includes("autoUpdater.checkForUpdates().catch("), true, "src/main/index.ts stopped catching the startup update check's rejection")
+  // rejection nobody catches takes the main process down with it. The check
+  // itself lives in autoUpdaterEvents.ts, which tests/main/autoUpdaterEvents.test.ts
+  // exercises for real; this keeps index.ts from growing a second, uncaught one.
+  it("leaves the startup update check to the module that catches its rejection", () => {
+    assert.equal(MAIN_SOURCE.includes("scheduleUpdateCheck("), true, "src/main/index.ts stopped arming the startup update check")
+    assert.equal(MAIN_SOURCE.includes("autoUpdater.checkForUpdates("), false, "src/main/index.ts calls checkForUpdates itself again, where nothing catches its rejection")
+  })
+})
+
+/**
+ * Two renderer trees are held off the preload bridge. Shared components reach the host only
+ * through a feature they were handed, and the mods feature keeps its bridge calls in
+ * features/moddb/adapters, which is what the comment at the top of moddb.ts describes. Both rules
+ * lived in comments alone, so anything could quietly walk back into either tree. Reading the
+ * sources is the same approach the main-process assertions above take.
+ */
+function filesReachingTheBridge(tree: string): string[] {
+  const root = resolve(__dirname, "..", tree)
+  return readdirSync(root, { recursive: true, encoding: "utf8" })
+    .filter((entry) => entry.endsWith(".ts") || entry.endsWith(".tsx"))
+    .filter((entry) => readFileSync(resolve(root, entry), "utf8").includes("window.api"))
+}
+
+describe("renderer preload bridge boundaries", () => {
+  it("keeps the mods feature behind its adapters", () => {
+    assert.deepEqual(filesReachingTheBridge("src/renderer/src/features/mods"), [], "a file under src/renderer/src/features/mods calls window.api instead of going through an adapter")
+  })
+
+  it("keeps the shared components behind the features they are handed", () => {
+    assert.deepEqual(filesReachingTheBridge("src/renderer/src/components"), [], "a file under src/renderer/src/components calls window.api instead of going through a feature")
   })
 })

@@ -9,7 +9,7 @@ import { useAddCustomIcon } from "@renderer/features/config/hooks/useAddCustomIc
 import PopupDialogPanel from "./PopupDialogPanel"
 import { ButtonsWrapper, FormBody, FormButton, FormFieldGroup, FormGroupWrapper, FormHead, FormInputText, FormLabel, FromGroup, FromWrapper } from "./FormComponents"
 
-export function AddCustomIconPupup({ open, setOpen }: { open: boolean; setOpen: Dispatch<SetStateAction<boolean>> }): JSX.Element {
+export function AddCustomIconPupup({ open, setOpen }: Readonly<{ open: boolean; setOpen: Dispatch<SetStateAction<boolean>> }>): JSX.Element {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const configDispatch = useConfigDispatch()
@@ -42,7 +42,7 @@ export function AddCustomIconPupup({ open, setOpen }: { open: boolean; setOpen: 
                   }}
                   className="w-14 h-14 p-1 shrink-0"
                 >
-                  {file ? <img src={`icons:${file}`} alt={t("generic.icon")} /> : <PiPlusCircleDuotone className="text-3xl text-zinc-400/25 group-hover:scale-95 duration-200" />}
+                  {file ? <img src={`icons:${file}`} alt={t("generic.icon")} /> : <PiPlusCircleDuotone className="text-3xl text-zinc-400/70 group-hover:scale-95 duration-200" />}
                 </FormButton>
                 <FormInputText value={name} onChange={(e) => setName(e.target.value)} placeholder={t("generic.iconName")} className="w-full" />
               </FormFieldGroup>

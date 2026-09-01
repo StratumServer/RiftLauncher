@@ -36,12 +36,15 @@ export function createMockConfig(overrides: Partial<ConfigType> = {}): ConfigTyp
     defaultVersionsFolder: "",
     backupsFolder: "",
     window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
-    account: null,
+    accounts: [],
+    activeAccountId: null,
     installations: [],
     gameVersions: [],
     favMods: [],
     suspendedModUpdates: [],
     background: "default",
+    moddbVisibilityAnswer: "unasked",
+    receiveBetaUpdates: null,
     customIcons: [],
     ...overrides
   }
@@ -80,6 +83,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     modsManager: {
       getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })),
+      setModEnabled: vi.fn(notMocked("modsManager.setModEnabled")),
       exportModpack: vi.fn(notMocked("modsManager.exportModpack")),
       importModpack: vi.fn(notMocked("modsManager.importModpack")),
       clearModIconMemoryCache: vi.fn()
@@ -109,7 +113,8 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
       lookForAGameVersion: vi.fn(async () => ({ exists: false as const }))
     },
     netManager: {
-      queryURL: vi.fn(notMocked("netManager.queryURL"))
+      queryURL: vi.fn(notMocked("netManager.queryURL")),
+      acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility"))
     },
     backgroundsManager: {
       ensureBackground: vi.fn(notMocked("backgroundsManager.ensureBackground")),
@@ -117,7 +122,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     accountManager: {
       login: vi.fn(notMocked("accountManager.login")),
-      logout: vi.fn(notMocked("accountManager.logout"))
+      removeAccount: vi.fn(notMocked("accountManager.removeAccount"))
     }
   }
 

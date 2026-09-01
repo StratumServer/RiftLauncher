@@ -1,9 +1,11 @@
 import { ipcMain } from "electron"
-import { spawn } from "child_process"
+import { spawn } from "node:child_process"
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import fse from "fs-extra"
 import { join } from "node:path"
-import os from "os"
+import os from "node:os"
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
+import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
@@ -12,7 +14,7 @@ import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
-import { CLIENT_SETTINGS_FILE_NAME, writeClientSettingsSession } from "@domain/account/clientSettings"
+import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
 import {
   gameProcessOutcomeToResult,
   invalidExecutableResult,
@@ -63,7 +65,7 @@ function realJsonFile(): JsonFile {
     },
     write: async (path: string, document: unknown): Promise<JsonFileWriteResult> => {
       try {
-        await fse.writeJSON(path, document)
+        await writeJsonAtomic(path, document)
         return { ok: true }
       } catch (err) {
         return { ok: false, error: getErrorMessage(err) }
@@ -86,9 +88,14 @@ function realJsonFile(): JsonFile {
  * Nothing here goes near the key itself. What gets logged is that an adoption
  * happened, never what was adopted.
  */
-async function adoptRefreshedSession(secrets: AccountSecrets): Promise<void> {
+async function adoptRefreshedSession(accountId: string, secrets: AccountSecrets): Promise<void> {
   try {
-    await saveAccountSecrets(secrets)
+    const outcome = await saveAccountSecrets(accountId, secrets)
+    if (outcome === "saved-after-rebuild")
+      logMessage(
+        "warn",
+        `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] The account store could not be read; it was copied aside and rebuilt around this adoption. Other saved accounts must log in again.`
+      )
     logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] The game had already refreshed this account's session. Adopted it instead of overwriting it.`)
   } catch (err) {
     logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not store the session the game refreshed. Launching anyway.`)
@@ -117,7 +124,21 @@ function realGameProcess(): GameProcess {
           resolve(outcome)
         }
 
-        const externalApp = spawn(request.command, request.args, { env: { ...request.env }, cwd: request.cwd, shell: false, windowsHide: true })
+        let externalApp: ChildProcessWithoutNullStreams
+        try {
+          externalApp = spawn(request.command, request.args, { env: { ...request.env }, cwd: request.cwd, shell: false, windowsHide: true })
+        } catch (err) {
+          // spawn reports ENOENT, EACCES, EAGAIN, EMFILE and ENFILE through an "error"
+          // event and THROWS everything else, which is not a distinction the caller can
+          // do anything with. Windows answers a file that is not a real executable with
+          // UNKNOWN, so a truncated or quarantined Vintagestory.exe lands here rather
+          // than on the event below; without this the whole handler rejects and the
+          // launch stops being a reason the player is told.
+          logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error running Vintage Story.`)
+          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
+          settle({ started: false, error: getErrorMessage(err) })
+          return
+        }
 
         externalApp.stdout.resume()
 
@@ -154,8 +175,9 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   const safeInstallation = validateGameInstallation(installation)
   safeVersion.path = await assertManagedPath(safeVersion.path, "game version path")
   safeInstallation.path = await assertManagedPath(safeInstallation.path, "installation path")
-  const account = (await getConfig()).account
-  const accountSecrets = account ? await getAccountSecrets() : null
+  const config = await getConfig()
+  const account = config.accounts.find((candidate) => candidate.playerUid === config.activeAccountId) ?? null
+  const accountSecrets = account ? await getAccountSecrets(account.playerUid) : null
   logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Trying to run Vintage Story ${safeVersion.version}.`)
 
   let processEnv: Record<string, string>
@@ -236,12 +258,44 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       case "written":
         break
       case "adopted":
-        await adoptRefreshedSession(written.secrets)
+        await adoptRefreshedSession(account.playerUid, written.secrets)
         break
       case "unreadable-settings":
       case "write-failed":
         logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
         logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${written.outcome}.`)
+        return sessionWriteFailedResult()
+    }
+  } else if (account && !accountSecrets) {
+    // The active account has no usable session (a locked keyring, or a store this build cannot
+    // read). With one saved account that was always harmless: whatever stale session the file
+    // already held was that same account's own. With more than one it can be a housemate's,
+    // since the game writes their session there directly on their own successful login, and
+    // launching without checking would start the game already signed in as somebody else.
+    // Narrow on purpose: this only clears the file when it demonstrably holds a DIFFERENT
+    // player's session, never our own and never an empty one, and it never writes a session of
+    // its own; that stays writeClientSettingsSession's job above.
+    let settingsPath: string
+    try {
+      settingsPath = await assertManagedPath(join(safeInstallation.path, CLIENT_SETTINGS_FILE_NAME), "client settings", { allowMissing: true })
+    } catch (err) {
+      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error checking for another player's session keys.`)
+      logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused the client settings path: ${getErrorMessage(err)}`)
+      return sessionWriteFailedResult()
+    }
+
+    const cleared = await clearForeignClientSettingsSession({ jsonFile: realJsonFile() }, { settingsPath, playerUid: account.playerUid })
+
+    switch (cleared.outcome) {
+      case "cleared":
+        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Cleared another player's session before launching without one of our own.`)
+        break
+      case "not-foreign":
+        break
+      case "unreadable-settings":
+      case "write-failed":
+        logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not confirm this installation is not still signed in as another player.`)
+        logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${cleared.outcome}.`)
         return sessionWriteFailedResult()
     }
   }
@@ -291,6 +345,10 @@ function realProcessProbe(): ProcessProbe {
 
         let stdout = ""
         let settled = false
+        // Declared before settle so that every exit from this executor, the spawn
+        // throw included, goes through settle. clearTimeout ignores undefined, so
+        // settling before the timer exists is safe.
+        let timer: ReturnType<typeof setTimeout> | undefined = undefined
 
         const settle = (outcome: ProcessProbeOutcome): void => {
           if (settled) return
@@ -299,9 +357,19 @@ function realProcessProbe(): ProcessProbe {
           resolve(outcome)
         }
 
-        const externalApp = spawn(request.command, request.args, { shell: false, windowsHide: true })
+        let externalApp: ChildProcessWithoutNullStreams
+        try {
+          externalApp = spawn(request.command, request.args, { shell: false, windowsHide: true })
+        } catch (err) {
+          // Same throw-instead-of-emit split as EXECUTE_GAME's spawn above, settled
+          // the way the "error" event below settles it.
+          logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for the Vintage Story version.`)
+          logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
+          settle({ ok: false, stdout, error: getErrorMessage(err) })
+          return
+        }
 
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
           logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Timed out waiting for Vintage Story to report its version.`)
           externalApp.kill()
           settle({ ok: false, stdout, error: "Timed out waiting for a response." })

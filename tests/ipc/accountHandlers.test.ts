@@ -10,7 +10,7 @@ import "./helpers/electronMock"
 import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronUserDataPath } from "./helpers/electronMock"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
-import { clearAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
+import { AccountStoreUnreadableError, removeAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { requestBoundedTextViaNode } from "@src/ipc/network"
 
 /**
@@ -40,10 +40,16 @@ vi.mock("@src/ipc/network", () => ({
   requestBoundedTextViaNode: vi.fn()
 }))
 
-vi.mock("@src/ipc/accountStore", () => ({
-  saveAccountSecrets: vi.fn(async () => undefined),
-  clearAccountSecrets: vi.fn(async () => true)
-}))
+vi.mock("@src/ipc/accountStore", async (importOriginal) => {
+  // The real AccountStoreUnreadableError, not a stand-in: accountHandlers.ts's `instanceof`
+  // check on it has to see the same class the tests below throw.
+  const actual = await importOriginal<typeof import("@src/ipc/accountStore")>()
+  return {
+    AccountStoreUnreadableError: actual.AccountStoreUnreadableError,
+    saveAccountSecrets: vi.fn(async () => "saved" as const),
+    removeAccountSecrets: vi.fn(async () => true)
+  }
+})
 
 import "@src/ipc/handlers/accountHandlers"
 
@@ -64,7 +70,7 @@ const SUCCESS_BODY = JSON.stringify({
 })
 
 type LoginHandler = (event: IpcMainInvokeEvent, email: unknown, password: unknown, twoFactorCode?: unknown) => Promise<AccountLoginResult>
-type LogoutHandler = (event: IpcMainInvokeEvent) => Promise<boolean>
+type RemoveAccountHandler = (event: IpcMainInvokeEvent, accountId: unknown) => Promise<boolean>
 
 let userDataFolder: string
 let trustedEvent: IpcMainInvokeEvent
@@ -73,8 +79,8 @@ function loginHandler(): LoginHandler {
   return getIpcHandler<LoginHandler>(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN)
 }
 
-function logoutHandler(): LogoutHandler {
-  return getIpcHandler<LogoutHandler>(IPC_CHANNELS.ACCOUNT_MANAGER.LOGOUT)
+function removeAccountHandler(): RemoveAccountHandler {
+  return getIpcHandler<RemoveAccountHandler>(IPC_CHANNELS.ACCOUNT_MANAGER.REMOVE_ACCOUNT)
 }
 
 /** Queues one response body per pass, in order. */
@@ -94,8 +100,8 @@ beforeEach(async () => {
   userDataFolder = mkdtempSync(join(tmpdir(), "rift-account-handlers-test-"))
   setElectronUserDataPath(userDataFolder)
   vi.mocked(requestBoundedTextViaNode).mockReset()
-  vi.mocked(saveAccountSecrets).mockReset().mockResolvedValue(undefined)
-  vi.mocked(clearAccountSecrets).mockReset().mockResolvedValue(true)
+  vi.mocked(saveAccountSecrets).mockReset().mockResolvedValue("saved")
+  vi.mocked(removeAccountSecrets).mockReset().mockResolvedValue(true)
   trustedEvent = await createTrustedEvent()
 })
 
@@ -138,7 +144,7 @@ describe("LOGIN", () => {
       status: "success",
       account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false }
     })
-    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [[{ sessionKey: "placeholder-session-key", sessionSignature: "placeholder-session-signature", mptoken: null }]])
+    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [["placeholder-uid", { sessionKey: "placeholder-session-key", sessionSignature: "placeholder-session-signature", mptoken: null }]])
   })
 
   it("sends nothing back to the renderer that the store is meant to hold", async () => {
@@ -273,25 +279,60 @@ describe("LOGIN", () => {
     // would leave a session that vanishes on the next start.
     await assert.rejects(loginHandler()(trustedEvent, EMAIL, PASSWORD), /Login failed/)
   })
+
+  it("flags a login that rebuilt the account store, rather than reporting an ordinary success", async () => {
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockResolvedValueOnce("saved-after-rebuild")
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.deepEqual(result, {
+      status: "success",
+      account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false },
+      storeRebuilt: true
+    })
+  })
+
+  it("reports an unreadable, unpreservable store as its own status instead of a generic failure", async () => {
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockRejectedValueOnce(new AccountStoreUnreadableError(new Error("EACCES")))
+
+    // A login this cannot even preserve the old bytes for is neither an ordinary success (the
+    // session was not saved) nor "Login failed" (the credentials were fine): the player is told
+    // exactly what happened instead of either lie.
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+    assert.deepEqual(result, { status: "session-store-unreadable" })
+  })
 })
 
-describe("LOGOUT", () => {
+describe("REMOVE_ACCOUNT", () => {
   it("refuses a sender nothing registered as trusted", async () => {
-    await assert.rejects(logoutHandler()(createUntrustedEvent()), /sender|trusted|refused/i)
+    await assert.rejects(removeAccountHandler()(createUntrustedEvent(), "uid-a"), /sender|trusted|refused/i)
 
-    assert.equal(vi.mocked(clearAccountSecrets).mock.calls.length, 0)
+    assert.equal(vi.mocked(removeAccountSecrets).mock.calls.length, 0)
   })
 
-  it("clears the stored secrets", async () => {
-    const result = await logoutHandler()(trustedEvent)
+  for (const [label, accountId] of [
+    ["an id that is not a string", 42],
+    ["an empty id", ""]
+  ] as const) {
+    it(`refuses ${label} before touching the store`, async () => {
+      await assert.rejects(removeAccountHandler()(trustedEvent, accountId), TypeError)
+
+      assert.equal(vi.mocked(removeAccountSecrets).mock.calls.length, 0)
+    })
+  }
+
+  it("removes the stored secrets for the given account", async () => {
+    const result = await removeAccountHandler()(trustedEvent, "uid-a")
 
     assert.equal(result, true)
-    assert.deepEqual(vi.mocked(clearAccountSecrets).mock.calls, [[]])
+    assert.deepEqual(vi.mocked(removeAccountSecrets).mock.calls, [["uid-a"]])
   })
 
-  it("reports the failure when the secrets could not be cleared", async () => {
-    vi.mocked(clearAccountSecrets).mockResolvedValueOnce(false)
+  it("reports the failure when the secrets could not be removed", async () => {
+    vi.mocked(removeAccountSecrets).mockResolvedValueOnce(false)
 
-    assert.equal(await logoutHandler()(trustedEvent), false)
+    assert.equal(await removeAccountHandler()(trustedEvent, "uid-a"), false)
   })
 })

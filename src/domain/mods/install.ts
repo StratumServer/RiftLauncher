@@ -1,5 +1,6 @@
 import type { DownloadOutcome, Downloader, FileSystem, PathBuilder } from "../ports"
 import { modsFolder } from "./folder"
+import { MOD_DISABLED_SUFFIX } from "./scanInstalled"
 
 /**
  * Extension every mod archive carries on disk.
@@ -59,6 +60,8 @@ export interface InstallModInput {
   release: ModReleaseToInstall
   /** The copy being replaced. Absent for a first install. */
   existing?: InstalledModCopy
+  /** True to leave the mod turned off, for a player updating a mod they had disabled. */
+  disabled?: boolean
   /** True while a backup or a restore holds the installation's folder. */
   installationBusy?: boolean
 }
@@ -81,9 +84,12 @@ export interface InstallModEvents {
  * the scan read it from, and the scan reads whatever the folder holds, so two installs of the same
  * mod have to agree on one name or they stack up side by side. It is also what makes an install
  * idempotent: reinstalling the same version overwrites its own file instead of adding a second one.
+ *
+ * @param disabled True to write the archive named out of the game's way, for updating a mod the
+ *   player has turned off. Updating a mod is not a request to turn it back on.
  */
-export function modArchiveFileName(release: ModReleaseToInstall): string {
-  return `${release.modidstr}-${release.modversion}${MOD_ARCHIVE_EXTENSION}`
+export function modArchiveFileName(release: ModReleaseToInstall, disabled = false): string {
+  return `${release.modidstr}-${release.modversion}${MOD_ARCHIVE_EXTENSION}${disabled ? MOD_DISABLED_SUFFIX : ""}`
 }
 
 function refuse(reason: InstallModFailure): InstallModResult {
@@ -107,7 +113,7 @@ export async function installMod(ports: InstallModPorts, input: InstallModInput,
   if (input.installationBusy) return refuse("installation-busy")
 
   const folder = await modsFolder(ports.paths, input.installationPath)
-  const fileName = modArchiveFileName(input.release)
+  const fileName = modArchiveFileName(input.release, input.disabled)
 
   if (input.existing) {
     if (!(await ports.fileSystem.remove(input.existing.path))) return refuse("old-version-delete-failed")

@@ -12,11 +12,11 @@ function VersionsFilter({
   versionsFilter,
   setVersionsFilter,
   size = "w-full h-8"
-}: {
+}: Readonly<{
   versionsFilter: DownloadableModGameVersionType[]
   setVersionsFilter: Dispatch<SetStateAction<DownloadableModGameVersionType[]>>
   size?: string
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   const gameVersionsList = useGameVersionsLookup()
@@ -32,7 +32,7 @@ function VersionsFilter({
             )}
             title={versionsFilter.map((v) => v.name).join(" · ")}
           >
-            <p className={clsx("flex gap-1 items-center overflow-hidden whitespace-nowrap text-ellipsis overflow-x-scroll scrollbar-none", versionsFilter.length < 1 && "text-zinc-600")}>
+            <p className={clsx("flex gap-1 items-center overflow-hidden whitespace-nowrap text-ellipsis overflow-x-scroll scrollbar-none", versionsFilter.length < 1 && "text-zinc-400")}>
               {versionsFilter.length < 1
                 ? t("generic.versions")
                 : versionsFilter.map((v) => (

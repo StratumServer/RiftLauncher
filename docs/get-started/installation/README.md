@@ -7,10 +7,10 @@ description: Don't have RiftLauncher installed yet?
 Installing RiftLauncher is easy.
 
 {% hint style="info" %}
-RiftLauncher's application identity (window title, installer file names, data folders) hasn't fully migrated from VS Launcher yet; that work is tracked separately from this documentation. Until it ships, downloads, shortcuts and the installed app itself will still show "VS Launcher" in places.
+Everything you download is named after RiftLauncher: `riftlauncher-X.X.X-setup.exe` on Windows and `riftlauncher-X.X.X.AppImage`, `.deb`, `.rpm` or `.pacman` on Linux. The installed app, its shortcut and its window all read **RiftLauncher**, and it keeps its own data folder next to VS Launcher's rather than inside it. If you already used VS Launcher, RiftLauncher copies its settings and installation icons over on first launch and leaves the VS Launcher folder untouched, so you can go back to it whenever you want.
 {% endhint %}
 
-Depending on the operating system you use, the process changes a bit, so we are going to separate the explanation into the three available systems: **Windows**, **Linux** and **MacOS**.
+Depending on the operating system you use, the process changes a bit, so we are going to separate the explanation into **Windows**, **Linux** and **MacOS**.
 
 {% content-ref url="windows.md" %}
 [windows.md](windows.md)

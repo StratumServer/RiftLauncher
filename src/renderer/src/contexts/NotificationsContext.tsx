@@ -1,6 +1,5 @@
 import { createContext, useState, useEffect, useContext, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { v4 as uuidv4 } from "uuid"
 
 import { launcherUpdateName } from "@renderer/utils/launcherUpdateTask"
 
@@ -121,7 +120,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   }, [])
 
   const addNotification = (body: string, type: NotificationTypes, options?: NotificationOptions): void => {
-    const id = uuidv4()
+    const id = crypto.randomUUID()
     const duration = options?.duration || 6000
     const onClick = options?.onClick
     const actions = options?.actions
@@ -140,12 +139,11 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   return <NotificationsContext.Provider value={{ notifications, addNotification, removeNotification }}>{children}</NotificationsContext.Provider>
 }
 
-const useNotificationsContext = (): NotificationsContextType => {
-  const context = useContext(NotificationsContext)
-  if (!context) {
-    throw new Error("useNotificationsContext must be used within an NotificationsProvider")
-  }
-  return context
-}
+/**
+ * The context ships the no-op `defaultValue` above, so a call from outside a
+ * provider gets that and never nothing. There is no absent case to guard, which
+ * is why this one has no throw where the task and config hooks have one.
+ */
+const useNotificationsContext = (): NotificationsContextType => useContext(NotificationsContext)
 
 export { NotificationsProvider, useNotificationsContext }

@@ -15,6 +15,7 @@ import NotificationsOverlay from "@renderer/components/layout/NotificationsOverl
 import MainMenu from "@renderer/components/layout/MainMenu"
 import GlobalActionsWrapper from "@renderer/components/layout/GlobalActionsWrapper"
 import DeferredGlobalModUpdateChecker from "@renderer/components/layout/DeferredGlobalModUpdateChecker"
+import ModDbVisibilityPrompt from "@renderer/components/layout/ModDbVisibilityPrompt"
 
 const HomePage = lazy(() => import("@renderer/features/home/pages/HomePage"))
 const ListInslallations = lazy(() => import("@renderer/features/installations/pages/ListInstallations"))
@@ -31,7 +32,7 @@ const InfoAndHelpPage = lazy(() => import("./features/info/pages/InfoAndHelpPage
 
 function App(): JSX.Element {
   useEffect(() => {
-    document.documentElement.setAttribute("data-uiscale", window.localStorage.getItem("uiScale") || "100")
+    document.documentElement.dataset.uiscale = window.localStorage.getItem("uiScale") || "100"
 
     const lang = window.localStorage.getItem("lang")
     if (lang) void changeLanguage(lang)
@@ -54,7 +55,7 @@ function App(): JSX.Element {
                   "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:backdrop-blur-[2px]"
                 )}
               >
-                <div className="w-full h-full flex bg-zinc-950/15">
+                <div className="w-full h-full flex bg-zinc-950/70">
                   <Loader />
 
                   <MainMenu />
@@ -66,6 +67,8 @@ function App(): JSX.Element {
                   </main>
 
                   <NotificationsOverlay />
+
+                  <ModDbVisibilityPrompt />
                 </div>
               </div>
             </GlobalActionsWrapper>
@@ -99,7 +102,7 @@ function AnimatedRoutes(): JSX.Element {
   )
 }
 
-function AnimatedRoute({ element }: { element: React.ReactElement }): JSX.Element {
+function AnimatedRoute({ element }: Readonly<{ element: React.ReactElement }>): JSX.Element {
   return (
     <motion.div transition={{ duration: 0.1 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full h-full">
       {element}
@@ -133,7 +136,7 @@ function Loader(): JSX.Element {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { delay: 0.5 } }}
             exit={{ opacity: 0 }}
-            className="w-full h-full flex flex-col gap-4 items-center justify-center bg-zinc-950/50 backdrop-blur-xs"
+            className="w-full h-full flex flex-col gap-4 items-center justify-center bg-zinc-950/70 backdrop-blur-xs"
           >
             <h1 className="text-4xl">{t("components.loader.title")}</h1>
             <p className="text-xl">{t("components.loader.desc")}</p>

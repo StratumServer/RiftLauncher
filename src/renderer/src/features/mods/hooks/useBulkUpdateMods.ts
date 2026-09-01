@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { CONFIG_ACTIONS, useConfigDispatch, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
-import { useLogMods } from "@renderer/features/mods/hooks/useLogMods"
+import { logMods } from "@renderer/features/moddb/adapters/log"
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
 
 const LOG_TAG = "[front] [mods] [features/mods/hooks/useBulkUpdateMods.ts]"
@@ -33,7 +33,6 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
   const suspendedModUpdates = useSuspendedModUpdates()
 
   const installMod = useInstallMod()
-  const logMods = useLogMods()
 
   const [summaryEntries, setSummaryEntries] = useState<ModChangeSummaryEntry[]>([])
   const [showSummary, setShowSummary] = useState(false)
@@ -50,7 +49,11 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
 
       // A suspended Mod is held back here and nowhere else: it keeps its update notice, and its own
       // row keeps updating it on demand, which is the whole point of suspending it (#194).
-      const modsToUpdate = installedMods.filter((iMod) => iMod._updatableTo && !suspendedModUpdates.includes(iMod.modid))
+      //
+      // A disabled Mod is held back for a different reason (#287): a Mod that is off is not part of
+      // what the player is running, and changing its version behind their back means the thing they
+      // turn back on later is not the thing they turned off. Its row still updates it on demand.
+      const modsToUpdate = installedMods.filter((iMod) => iMod.enabled && iMod._updatableTo && !suspendedModUpdates.includes(iMod.modid))
 
       await Promise.all(
         modsToUpdate.map(async (modToUpdate) => {

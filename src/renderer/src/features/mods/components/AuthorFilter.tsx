@@ -12,11 +12,11 @@ function AuthorFilter({
   authorFilter,
   setAuthorFilter,
   size = "w-full h-8"
-}: {
+}: Readonly<{
   authorFilter: DownloadableModAuthorType
   setAuthorFilter: Dispatch<SetStateAction<DownloadableModAuthorType>>
   size?: string
-}): JSX.Element {
+}>): JSX.Element {
   const { t } = useTranslation()
 
   const authorsList = useAuthorsLookup()
@@ -30,7 +30,7 @@ function AuthorFilter({
         })
 
   return (
-    <Combobox value={authorFilter} onChange={(value) => setAuthorFilter(value || { userid: "", name: "" })} onClose={() => setAuthorsQuery("")}>
+    <Combobox value={authorFilter} onChange={(value) => setAuthorFilter(value ?? { userid: "", name: "" })} onClose={() => setAuthorsQuery("")}>
       {({ open }) => (
         <>
           <div className={clsx("flex items-center justify-between rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none", size)}>
@@ -38,7 +38,7 @@ function AuthorFilter({
               placeholder={t("generic.author")}
               displayValue={() => authorFilter?.name || ""}
               onChange={(event) => setAuthorsQuery(event.target.value)}
-              className="w-full h-full placeholder:text-zinc-600 bg-transparent outline-hidden pl-2"
+              className="w-full h-full placeholder:text-zinc-400 bg-transparent outline-hidden pl-2"
             />
             <ComboboxButton className="h-full shrink-0 px-2 cursor-pointer">
               <PiCaretDownDuotone className={clsx("text-zinc-300 shrink-0 duration-200", open && "-rotate-180")} />

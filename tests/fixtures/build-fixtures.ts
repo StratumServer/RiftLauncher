@@ -1,8 +1,12 @@
 /**
- * Hand-builds the tiny zip fixtures under tests/fixtures/ that
- * tests/ipc/modScan.test.ts reads readModArchive against, so the yauzl edge
- * cases in src/ipc/adapters/modScan.ts are exercised against real archive
- * bytes instead of only through the domain's fakes.
+ * Hand-builds the tiny zip fixtures under tests/fixtures/.
+ *
+ * Most of them are what tests/ipc/modScan.test.ts reads readModArchive
+ * against, so the yauzl edge cases in src/ipc/adapters/modScan.ts are
+ * exercised against real archive bytes instead of only through the domain's
+ * fakes. The last three are backups: the launcher wrote its backups as zip up to
+ * 1.7.0-beta.4, and tests/ipc/extraction.test.ts restores them here so a
+ * player's old backup keeps working long after the writer went away.
  *
  * This script is not run by the test suite. It is the documentation of what
  * each fixture contains: run it by hand after changing it,
@@ -359,3 +363,54 @@ write("zip64.zip", assembleZip64([{ name: "modinfo.json", method: METHOD_STORE, 
 // receives the error (no End of Central Directory Record signature found),
 // before a single "entry" event, exercising readModArchive's openErr branch.
 write("not-a-zip.bin", Buffer.from("this is not a zip archive, just some bytes", "utf8"))
+
+// --- legacy-backup.zip --------------------------------------------------
+// A backup the launcher wrote before it moved to gzipped tar: an installation's
+// contents at the root of the archive, no wrapping folder, with a folder entry
+// and a zero byte file in it. tests/ipc/extraction.test.ts restores this one and
+// compares the tree byte for byte.
+write(
+  "legacy-backup.zip",
+  assembleZip([
+    { name: "Vintagestory", method: METHOD_STORE, realBytes: Buffer.from("elf", "utf8") },
+    { name: "assets/", method: METHOD_STORE, realBytes: Buffer.alloc(0) },
+    { name: "assets/version-1.22.6.txt", method: METHOD_STORE, realBytes: Buffer.alloc(0) },
+    { name: "Mods/", method: METHOD_STORE, realBytes: Buffer.alloc(0) },
+    { name: "Mods/notes.txt", method: METHOD_DEFLATE, realBytes: Buffer.from("a mod list worth keeping\n", "utf8") }
+  ])
+)
+
+// --- hostile-backup.zip -------------------------------------------------
+// The same shape, with three entry names that point outside the folder they
+// would be unpacked into: a Windows drive letter, a climb with "..", and a
+// unix absolute path. None is a name any writer produces by accident, and
+// nothing may be written for any of them.
+//
+// All three are refused by yauzl's own validateFileName, which rejects
+// /^[a-zA-Z]:/ exactly as it rejects a leading "/" and any ".." segment, so the
+// read stops at the first entry and the launcher reports an archive it could
+// not read. Nothing here reaches isSafeArchiveEntry; unsafe-name-backup.zip
+// below is the one that does.
+write(
+  "hostile-backup.zip",
+  assembleZip([
+    { name: "C:/escaped-drive.txt", method: METHOD_STORE, realBytes: Buffer.from("drive letter", "utf8") },
+    { name: "../escaped.txt", method: METHOD_STORE, realBytes: Buffer.from("climbed out", "utf8") },
+    { name: "/etc/escaped-absolute.txt", method: METHOD_STORE, realBytes: Buffer.from("absolute", "utf8") }
+  ])
+)
+
+// --- unsafe-name-backup.zip ---------------------------------------------
+// A NUL byte in the middle of an entry name. yauzl's validateFileName has
+// nothing to say about one, so this is the archive that reaches the launcher's
+// own isSafeArchiveEntry gate in validateZipArchive, which every name in
+// hostile-backup.zip is stopped short of. An ordinary entry comes first, so the
+// refusal is that gate deciding rather than the archive being unreadable from
+// its first byte.
+write(
+  "unsafe-name-backup.zip",
+  assembleZip([
+    { name: "Vintagestory", method: METHOD_STORE, realBytes: Buffer.from("elf", "utf8") },
+    { name: "Mods/notes\u0000.txt", method: METHOD_STORE, realBytes: Buffer.from("a name no writer produces by accident", "utf8") }
+  ])
+)

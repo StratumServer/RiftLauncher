@@ -11,6 +11,7 @@ import {
   floatMarkerToIntegerSchema,
   MAX_CONFIG_SCHEMA,
   migrateConfigDocument,
+  singleAccountToAccountList,
   stampLinkedOnExternalVersions
 } from "../../../src/domain/config/migrations"
 import type { ConfigMigration } from "../../../src/domain/config/migrations"
@@ -143,7 +144,8 @@ describe("migrateConfigDocument on real configs", () => {
     assert.deepEqual(result.detected, { era: "float", schema: FLOAT_ERA_CONFIG_SCHEMA })
     assert.deepEqual(result.applied, [
       { fromSchema: 1, toSchema: 2 },
-      { fromSchema: 2, toSchema: 3 }
+      { fromSchema: 2, toSchema: 3 },
+      { fromSchema: 3, toSchema: 4 }
     ])
 
     const doc = result.doc as Record<string, unknown>
@@ -151,6 +153,8 @@ describe("migrateConfigDocument on real configs", () => {
     assert.equal("version" in doc, false)
     assert.equal(doc.lastUsedInstallation, "abc")
     assert.deepEqual(doc.favMods, [12])
+    assert.deepEqual(doc.accounts, [], "a config with no account reaches the current schema with an empty account list")
+    assert.equal(doc.activeAccountId, null)
   })
 
   it("brings a versionless config to the current schema the same way", () => {
@@ -205,7 +209,8 @@ describe("migrateConfigDocument on real configs", () => {
       CONFIG_MIGRATIONS.map((migration) => [migration.fromSchema, migration.toSchema]),
       [
         [FLOAT_ERA_CONFIG_SCHEMA, FIRST_INTEGER_CONFIG_SCHEMA],
-        [2, 3]
+        [2, 3],
+        [3, 4]
       ]
     )
     assert.equal(CONFIG_MIGRATIONS[CONFIG_MIGRATIONS.length - 1]?.toSchema, CURRENT_CONFIG_SCHEMA)
@@ -382,5 +387,42 @@ describe("stampLinkedOnExternalVersions boundary checks", () => {
 
     assert.equal(versions[0]!.linked, true)
     assert.equal(versions[1]!.linked, true)
+  })
+})
+
+describe("singleAccountToAccountList", () => {
+  it("steps from schema 3 to 4", () => {
+    assert.equal(singleAccountToAccountList.fromSchema, 3)
+    assert.equal(singleAccountToAccountList.toSchema, 4)
+  })
+
+  it("moves a valid legacy account into a one-entry list and makes it active", () => {
+    const account = { email: "a@b.c", playerName: "A", playerUid: "uid-a", playerEntitlements: null, hostGameServer: false }
+    const result = singleAccountToAccountList.migrate({ account, favMods: [1] }) as Record<string, unknown>
+
+    assert.deepEqual(result.accounts, [account])
+    assert.equal(result.activeAccountId, "uid-a")
+    assert.equal("account" in result, false)
+    assert.deepEqual(result.favMods, [1], "fields the step does not own pass through untouched")
+  })
+
+  it("arrives at an empty list and no active account when there is nothing to migrate", () => {
+    for (const doc of [{}, { account: null }, { account: "not a record" }, { account: {} }, { account: { playerUid: "" } }]) {
+      const result = singleAccountToAccountList.migrate(doc) as Record<string, unknown>
+      assert.deepEqual(result.accounts, [], JSON.stringify(doc))
+      assert.equal(result.activeAccountId, null, JSON.stringify(doc))
+    }
+  })
+
+  it("does not mutate the input document", () => {
+    const account = { email: "a@b.c", playerName: "A", playerUid: "uid-a", playerEntitlements: null, hostGameServer: false }
+    const doc = { account }
+    singleAccountToAccountList.migrate(doc)
+    assert.deepEqual(doc, { account })
+  })
+
+  it("hands back non-objects untouched", () => {
+    assert.equal(singleAccountToAccountList.migrate(null), null)
+    assert.equal(singleAccountToAccountList.migrate("config"), "config")
   })
 })

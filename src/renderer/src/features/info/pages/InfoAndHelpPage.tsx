@@ -1,6 +1,6 @@
 import { useRef } from "react"
 import { Trans, useTranslation } from "react-i18next"
-import { PiDiscordLogoDuotone, PiInfoDuotone, PiCodeDuotone, PiUsersThreeDuotone, PiGithubLogoDuotone } from "react-icons/pi"
+import { PiDiscordLogoDuotone, PiInfoDuotone, PiCodeDuotone, PiUsersThreeDuotone, PiGithubLogoDuotone, PiShieldCheckDuotone } from "react-icons/pi"
 
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import { FormButton } from "@renderer/components/ui/FormComponents"
@@ -41,6 +41,7 @@ function InfoAndHelpPage(): JSX.Element {
             <SocialButtons icon={<PiInfoDuotone />} to="https://github.com/StratumServer/RiftLauncher/wiki" text={t("generic.guides")} />
             <SocialButtons icon={<PiDiscordLogoDuotone />} to="https://discord.gg/vQm6z2urZs" text={t("generic.discordContact")} />
             <SocialButtons icon={<PiUsersThreeDuotone />} to="https://github.com/StratumServer/RiftLauncher/blob/main/docs/important-info/contributors.md" text={t("generic.contributors")} />
+            <SocialButtons icon={<PiShieldCheckDuotone />} to="https://github.com/StratumServer/RiftLauncher/blob/main/PRIVACY.md" text={t("generic.privacyPolicy")} />
             <SocialButtons icon={<PiCodeDuotone />} to="https://github.com/StratumServer/RiftLauncher" text={t("generic.source")} />
           </div>
 
@@ -57,7 +58,7 @@ function InfoAndHelpPage(): JSX.Element {
                 i18nKey="features.infoAndHelp.includeLogs"
                 components={{
                   folderlink: (
-                    <NormalButton title={t("features.infoAndHelp.logsFolderTitle")} onClick={openLogsFolder} className="text-vsl">
+                    <NormalButton title={t("features.infoAndHelp.logsFolderTitle")} onClick={openLogsFolder} className="text-vsl underline">
                       {t("features.infoAndHelp.thisFolder")}
                     </NormalButton>
                   )
@@ -71,7 +72,7 @@ function InfoAndHelpPage(): JSX.Element {
   )
 }
 
-function SocialButtons({ icon, to, text }: { icon: JSX.Element; to: string; text: string }): JSX.Element {
+function SocialButtons({ icon, to, text }: Readonly<{ icon: JSX.Element; to: string; text: string }>): JSX.Element {
   const { openOnBrowser } = useExternalLinks()
 
   return (
