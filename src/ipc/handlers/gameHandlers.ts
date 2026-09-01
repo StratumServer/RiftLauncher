@@ -2,7 +2,8 @@ import { ipcMain } from "electron"
 import { spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import fse from "fs-extra"
-import { join } from "node:path"
+import { constants } from "node:fs"
+import { delimiter, isAbsolute, join } from "node:path"
 import os from "node:os"
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
@@ -44,6 +45,33 @@ async function assertExecutable(pathValue: string): Promise<string> {
 }
 
 const paths: PathBuilder = { join: async (parts: string[]): Promise<string> => join(...parts) }
+
+/** Resolves a user-selected Linux wrapper without invoking a shell. */
+async function resolveLaunchWrapper(value: string): Promise<string | undefined> {
+  const wrapper = value.trim()
+  if (!wrapper) return undefined
+
+  const candidates = isAbsolute(wrapper)
+    ? [wrapper]
+    : wrapper.includes("/") || wrapper.includes("\\")
+      ? []
+      : (process.env.PATH ?? "")
+          .split(delimiter)
+          .filter((directory) => directory.length > 0)
+          .map((directory) => join(directory, wrapper))
+
+  for (const candidate of candidates) {
+    try {
+      const stats = await fse.stat(candidate)
+      await fse.access(candidate, constants.X_OK)
+      if (stats.isFile()) return candidate
+    } catch {
+      // Try the next PATH entry. The final undefined is the user-facing launch refusal.
+    }
+  }
+
+  return undefined
+}
 
 /**
  * Whole-document JSON reads and writes, with a missing file reported as an
@@ -189,6 +217,16 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     return invalidRequestResult()
   }
 
+  let launchWrapper = ""
+  if (os.platform() === "linux" && safeInstallation.launchWrapper) {
+    const resolvedWrapper = await resolveLaunchWrapper(safeInstallation.launchWrapper)
+    if (!resolvedWrapper) {
+      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused an unavailable or non-executable launch wrapper.`)
+      return invalidExecutableResult()
+    }
+    launchWrapper = resolvedWrapper
+  }
+
   let fileNames: string[]
   try {
     fileNames = await fse.readdir(safeVersion.path)
@@ -206,7 +244,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       fileNames,
       installationPath: safeInstallation.path,
       startParams: safeInstallation.startParams,
-      mesaGlThread: safeInstallation.mesaGlThread
+      mesaGlThread: safeInstallation.mesaGlThread,
+      launchWrapper
     }
   )
 
@@ -300,11 +339,15 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     }
   }
 
-  logMessage("info", "[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable.")
+  logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable${launchWrapper ? ` through ${launchWrapper}` : ""}.`)
 
   const outcome = await realGameProcess().run({ command: plan.command, args: plan.args, env: { ...process.env, ...processEnv, ...plan.env }, cwd: plan.cwd })
 
-  if (!outcome.started) logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Failed to run Vintage Story: ${outcome.error ?? "unknown error"}.`)
+  if (!outcome.started)
+    logMessage(
+      "error",
+      `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Failed to run Vintage Story${launchWrapper ? ` through ${launchWrapper}` : ""}: ${outcome.error ?? "unknown error"}.`
+    )
   else logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
 
   return gameProcessOutcomeToResult(outcome)

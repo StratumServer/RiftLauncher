@@ -160,6 +160,9 @@
       "editInstallation": "Editar Instalação",
       "mesaGlThread": "mesa_glthread",
       "envVarsPlaceholder": "ENV_1=coisa, ENV_2=outracoisa",
+      "launchWrapper": "Wrapper de inicialização no Linux",
+      "launchWrapperDesc": "Executável opcional que inicia o jogo e recebe o comando do jogo como argumentos. Nenhum shell é usado.",
+      "launchWrapperPlaceholder": "gamemoderun ou /caminho/para/wrapper",
       "mesaGlThreadDesc": "Ative para executar o jogo com mesa_glthread. Isso pode melhorar o desempenho em alguns sistemas Linux.",
       "installationDeletedBackupsLeftOver": "Instalação excluída, mas {{count}} arquivo(s) de backup não puderam ser removidos. Exclua-os manualmente na pasta de backups."
     },

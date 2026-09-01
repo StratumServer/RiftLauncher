@@ -60,7 +60,8 @@ function AddInslallation(): JSX.Element {
     backupsAuto: false,
     compressionLevel: DEFAULT_COMPRESSION_LEVEL,
     mesaGlThread: false,
-    envVars: ""
+    envVars: "",
+    launchWrapper: ""
   })
 
   const { folder: path, setFolder: setPath, browseFolder } = useInstallationFolder(fields.name, settings.defaultInstallationsFolder)
@@ -81,6 +82,7 @@ function AddInslallation(): JSX.Element {
       compressionLevel: fields.compressionLevel,
       mesaGlThread: fields.mesaGlThread,
       envVars: fields.envVars,
+      launchWrapper: fields.launchWrapper,
       foldersInUse: toFoldersInUse({ backupsFolder: settings.backupsFolder, installations, gameVersions })
     })
 
@@ -185,6 +187,8 @@ function AddInslallation(): JSX.Element {
             onMesaGlThreadChange={fields.setMesaGlThread}
             envVars={fields.envVars}
             onEnvVarsChange={fields.setEnvVars}
+            launchWrapper={fields.launchWrapper}
+            onLaunchWrapperChange={fields.setLaunchWrapper}
           />
 
           <ButtonsWrapper className="text-lg">

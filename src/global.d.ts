@@ -126,6 +126,8 @@ declare global {
     totalTimePlayed: number
     mesaGlThread: boolean
     envVars: string
+    /** Optional Linux command that receives the game command as its arguments. */
+    launchWrapper?: string
     _modsCount?: number
     _playing?: boolean
     _backuping?: boolean

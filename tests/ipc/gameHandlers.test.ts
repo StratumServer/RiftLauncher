@@ -108,8 +108,8 @@ function lookForAGameVersionHandler(): LookForAGameVersionHandler {
 }
 
 function baseInstallation(
-  overrides: Partial<Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars">> = {}
-): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> {
+  overrides: Partial<Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars" | "launchWrapper">> = {}
+): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper?: string } {
   return { path: "", startParams: "", mesaGlThread: false, envVars: "", ...overrides }
 }
 
@@ -256,6 +256,24 @@ describe("EXECUTE_GAME", () => {
     const event = await createTrustedEvent()
     const result = await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
     assert.deepEqual(result, { ok: false, reason: "no-executable" })
+  })
+
+  it.skipIf(process.platform !== "linux")("refuses a configured wrapper that cannot be resolved", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
+    writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(
+      event,
+      { version: "1.20.0", path: gameVersionFolder },
+      baseInstallation({ path: installationFolder, launchWrapper: "riftlauncher-wrapper-that-is-not-installed" })
+    )
+
+    assert.deepEqual(result, { ok: false, reason: "launch-failed" })
   })
 
   it("resolves launch-failed when a real, executable-bit file fails to actually start, with no account", async () => {
