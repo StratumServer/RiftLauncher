@@ -20,6 +20,27 @@ files:
   # the musl binary is 1.4 MB that can never load. Revisit if a musl target
   # is ever added.
   - "!node_modules/@napi-rs/lzma-*-musl{,/**/*}"
+# Chromium ships 55 locale .pak files (~47 MB) and this app can use exactly one.
+# The 14 UI languages are React + i18next JSON inside the asar
+# (src/renderer/src/locales); these .pak files only feed Chromium's own native
+# surfaces, and the launcher exposes none of them: no context menu anywhere
+# (src/main/index.ts), spellcheck off plus setSpellCheckerLanguages([]), file
+# pickers are native OS dialogs, no <input type=file> in the renderer, and i18n
+# is pinned to lng/fallbackLng "en-US" behind a manual in-app selector, so
+# app.getLocale() is never consulted. The only residual is Chromium's built-in
+# network-error page, which renders in English. If a context menu, a
+# spellchecker, or an <input type=file> is ever added, its native strings are
+# English-only until this list grows.
+#
+# The value must be the exact tag "en-US". app-builder-lib matches a pak with
+# `wanted === lang || wanted.startsWith(lang + "-")` (ElectronFramework, in
+# removeUnusedLanguagesIfNeeded), so the wanted tag is the prefix side and "en"
+# does NOT match en-US.pak: it would delete every pak and leave Chromium with
+# no locale data, silently, since the "no locales found" warning only fires
+# when nothing was deleted. tests/config/electron-builder-locales.test.ts pins
+# the value. On macOS the same "en-US" keeps en.lproj via the prefix rule.
+electronLanguages:
+  - en-US
 asarUnpack:
   - resources/**
   - node_modules/@napi-rs/lzma-*/**
