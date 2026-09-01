@@ -740,4 +740,63 @@ describe("getConfig: config.json backup before a schema migration", () => {
     const backed = await fse.readJSON(backupPath())
     assert.equal(backed.sentinel, "already there")
   })
+
+  const LEGACY_ACCOUNT = {
+    email: "player@example.test",
+    playerName: "TestPlayer",
+    playerUid: "uid-0296",
+    playerEntitlements: null,
+    hostGameServer: false,
+    // Obviously-fake test secrets, never real credentials.
+    sessionKey: "fake-session-key-0296",
+    sessionSignature: "fake-session-signature-0296",
+    mptoken: "fake-mptoken-0296"
+  }
+
+  it("does not carry the migrated session secrets into the backup (#296)", async () => {
+    const legacyDoc = { ...minimalConfig({ schemaVersion: 2 }), account: LEGACY_ACCOUNT }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    const fse = (await import("fs-extra")).default
+    assert.equal(await fse.pathExists(backupPath()), true, "the migration still leaves a recovery snapshot")
+    const backed = await fse.readJSON(backupPath())
+    assert.equal(backed.schemaVersion, 2, "still the pre-migration document shape")
+    assert.equal(backed.account.playerUid, "uid-0296", "the non-secret account fields are kept")
+    for (const field of ["sessionKey", "sessionSignature", "mptoken"]) {
+      assert.equal(field in backed.account, false, `${field} must not sit in cleartext in the backup`)
+    }
+  })
+
+  it("scrubs session secrets a pre-#296 build already wrote into an existing backup", async () => {
+    const fse = (await import("fs-extra")).default
+    await fse.ensureDir(userDataFolder)
+    // The file a pre-fix build left behind: a verbatim copy of the pre-secure-storage config.json.
+    await fse.writeJSON(backupPath(), { schemaVersion: 2, account: LEGACY_ACCOUNT })
+    // The live config is already migrated, so no migration runs on this launch.
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA })), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    const backed = await fse.readJSON(backupPath())
+    assert.equal(backed.schemaVersion, 2, "the rest of the snapshot is left as it was")
+    assert.equal(backed.account.playerName, "TestPlayer")
+    for (const field of ["sessionKey", "sessionSignature", "mptoken"]) {
+      assert.equal(field in backed.account, false, `${field} must be gone from the pre-existing backup`)
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("writes the backup owner-only", async () => {
+    const { statSync } = await import("node:fs")
+    const legacyDoc = { ...minimalConfig({ schemaVersion: 2 }), account: LEGACY_ACCOUNT }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    assert.equal(statSync(backupPath()).mode & 0o777, 0o600)
+  })
 })

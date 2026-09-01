@@ -110,7 +110,7 @@ export async function getConfig(): Promise<ConfigType> {
     // Every path that overwrites config.json gets the same backup, not just the schema pipeline:
     // a re-key or a legacy-secrets migration writes just as real a document as a schema bump does.
     const mustSave = hadLegacyAccountSecrets || reKeyedAccountStore || migration.applied.length > 0
-    if (mustSave) await backupConfigBeforeMigration()
+    await reconcileConfigBackup(mustSave)
     configCache = ensuredConfig
     if (mustSave) await saveConfig(ensuredConfig)
     return ensuredConfig
@@ -161,6 +161,9 @@ function logConfigMigration(migration: ReturnType<typeof migrateConfigDocument>)
   }
 }
 
+/** Pre-secure-storage session fields. Present only in a `config.json` last written before #253. */
+const LEGACY_ACCOUNT_SECRET_FIELDS = ["sessionKey", "sessionSignature", "mptoken"] as const
+
 /**
  * Moves the credentials of a pre-secure-storage account into the OS keychain.
  *
@@ -174,7 +177,7 @@ function logConfigMigration(migration: ReturnType<typeof migrateConfigDocument>)
 async function migrateLegacyAccount(config: unknown): Promise<boolean> {
   if (!isRecord(config) || !isRecord(config.account)) return false
   const account = config.account
-  const hasLegacySecrets = ["sessionKey", "sessionSignature", "mptoken"].some((key) => key in account)
+  const hasLegacySecrets = LEGACY_ACCOUNT_SECRET_FIELDS.some((key) => key in account)
   if (!hasLegacySecrets) return false
 
   const legacyAccount = parseLegacyAccount(config.account)
@@ -239,25 +242,61 @@ function getConfigBackupPath(): string {
 }
 
 /**
- * Copies `config.json` exactly as it sits on disk, before a schema migration
- * overwrites it with the reshaped document.
+ * Removes the pre-secure-storage session secrets from a raw config document, in
+ * place, and reports whether any were there. `migrateLegacyAccount` has already
+ * moved these into the OS keychain by the time this runs; a plaintext copy of
+ * them is exactly what should not outlive the migration (#296).
+ */
+function stripLegacyAccountSecrets(document: unknown): boolean {
+  if (!isRecord(document) || !isRecord(document.account)) return false
+
+  let removed = false
+  for (const field of LEGACY_ACCOUNT_SECRET_FIELDS) {
+    if (field in document.account) {
+      delete document.account[field]
+      removed = true
+    }
+  }
+  return removed
+}
+
+/**
+ * Keeps `config.pre-migration.bak.json` correct: one scrubbed snapshot of the
+ * document as it was right before the most recent migration reshaped it.
  *
  * One rolling backup, not one per migration: this is a local single-writer
- * desktop file, not a fleet of servers, so "the config as it was right before
- * the most recent migration" is the useful recovery point, not a full
- * history. `overwrite: false` with `errorOnExist: false` makes the first
- * migration's backup the one that survives; a later migration on an already-
- * backed-up config leaves that earlier, more original snapshot alone. Best
- * effort: a failed backup logs and does not stop the migration, since the
- * live config is still correct either way and refusing to proceed over a
- * backup that could not be written would trade a small safety net for a
- * launcher that will not start.
+ * desktop file, so "the config right before the last migration" is the useful
+ * recovery point, not a full history. The first snapshot is the one that
+ * survives; a later migration leaves it alone.
+ *
+ * What it never keeps is the session key, signature and multiplayer token a
+ * pre-#253 `config.json` carried in the clear. The migration moves those into
+ * secure storage, and the recovery point only needs the document's shape, so
+ * they are dropped before the snapshot is written and the file is written
+ * owner-only. This also runs when no migration fired, so a snapshot an earlier
+ * build wrote with those secrets still in it is scrubbed in place on the next
+ * launch.
+ *
+ * Best effort: a failure logs and does not stop startup, since the live config
+ * is correct either way.
  */
-async function backupConfigBeforeMigration(): Promise<void> {
+async function reconcileConfigBackup(migrationRan: boolean): Promise<void> {
+  const backupPath = getConfigBackupPath()
   try {
-    await fse.copy(configPath, getConfigBackupPath(), { overwrite: false, errorOnExist: false })
+    if (await fse.pathExists(backupPath)) {
+      const existing: unknown = await fse.readJSON(backupPath)
+      if (stripLegacyAccountSecrets(existing)) await writeJsonAtomic(backupPath, existing, { mode: 0o600, spaces: 2 })
+      return
+    }
+
+    if (!migrationRan) return
+
+    // configPath still holds the pre-migration document here: saveConfig runs after this.
+    const document: unknown = await fse.readJSON(configPath)
+    stripLegacyAccountSecrets(document)
+    await writeJsonAtomic(backupPath, document, { mode: 0o600, spaces: 2 })
   } catch (err) {
-    logMessage("warn", "[back] [config] [configManager.ts] Could not back up config.json before migrating it.")
+    logMessage("warn", "[back] [config] [configManager.ts] Could not reconcile the pre-migration config backup.")
     logMessage("debug", `[back] [config] [configManager.ts] ${err}`)
   }
 }
