@@ -242,12 +242,13 @@ describe("saveAccountSecrets rebuilding an unreadable store", () => {
     assert.equal(existsSync(unreadableBackupPath()), true)
   })
 
-  it("does the same for a store written by a version this build does not know", async () => {
+  it("rebuilds around a store written by a version this build does not know", async () => {
     writeStoreFile({ version: 3, ciphertext: Buffer.from("sealed:{}", "utf8").toString("base64") })
     const store = await loadStore()
 
     assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-after-rebuild")
-    assert.equal(existsSync(unreadableBackupPath()), true)
+    // Its snapshot goes to a version-scoped path, not the unversioned corruption slot (#270).
+    assert.equal(existsSync(join(mockState.userDataDir, "account-secrets.unreadable.v3.bak.json")), true)
   })
 
   it("treats a store whose entries it merely dropped as readable, not unreadable", async () => {
@@ -283,6 +284,31 @@ describe("saveAccountSecrets rebuilding an unreadable store", () => {
     await store.saveAccountSecrets("uid-a", ACCOUNT_A)
 
     assert.equal(readFileSync(unreadableBackupPath(), "utf8"), JSON.stringify({ sentinel: "already there" }))
+  })
+
+  // #270: a store rejected only for a newer version is not corrupt (a newer build can still read
+  // it), so its snapshot must not take the single unversioned slot that a later, genuinely
+  // unrecoverable store will need.
+  it("keeps a newer-version store's snapshot on its own path, not the unversioned slot", async () => {
+    const foreign = JSON.stringify({ version: 3, ciphertext: Buffer.from("sealed:{}", "utf8").toString("base64") })
+    writeStoreFile(foreign)
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-after-rebuild")
+
+    assert.equal(existsSync(unreadableBackupPath()), false, "the unversioned slot is left free")
+    assert.equal(readFileSync(join(mockState.userDataDir, "account-secrets.unreadable.v3.bak.json"), "utf8"), foreign, "the newer-version bytes are kept on a version-scoped path")
+  })
+
+  it("still snapshots a genuine corruption after a newer-version rebuild has happened", async () => {
+    writeStoreFile({ version: 3, ciphertext: Buffer.from("sealed:{}", "utf8").toString("base64") })
+    assert.equal(await (await loadStore()).saveAccountSecrets("uid-a", ACCOUNT_A), "saved-after-rebuild")
+
+    const genuinelyCorrupt = JSON.stringify({ version: 2, ciphertext: Buffer.from("truncated garbage", "utf8").toString("base64") })
+    writeStoreFile(genuinelyCorrupt)
+    assert.equal(await (await loadStore()).saveAccountSecrets("uid-b", ACCOUNT_B), "saved-after-rebuild")
+
+    assert.equal(readFileSync(unreadableBackupPath(), "utf8"), genuinelyCorrupt, "the irrecoverable bytes get the unversioned slot the newer-version file no longer holds")
   })
 
   it("never collides with the pre-migration backup file", async () => {
