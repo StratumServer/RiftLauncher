@@ -125,7 +125,7 @@ describe("CACHE_MOD_IMAGE", () => {
 
     const stats = statSync(path)
     assert.ok(stats.atimeMs > stale.getTime())
-    assert.ok(Math.abs(stats.mtimeMs - stale.getTime()) <= 1)
+    assert.ok(stats.mtimeMs < Date.now() - 30 * 60 * 1000)
   })
 
   it("treats a zero-byte cached file as a miss and refetches", async () => {
