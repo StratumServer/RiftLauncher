@@ -345,7 +345,7 @@ describe("pruneModIconCache", () => {
   })
 })
 
-describe("pruneModIconCache coalescing and mtime guard", () => {
+describe("pruneModIconCache coalescing and access-time guard", () => {
   function iconsFolder(): string {
     return join(workspace, "Cache", "Images", "Mods")
   }
@@ -362,27 +362,27 @@ describe("pruneModIconCache coalescing and mtime guard", () => {
     return `${seed.repeat(64).slice(0, 64)}.png`
   }
 
-  it("skips removal when mtime moved since the snapshot (concurrent scan touched it)", async () => {
+  it("skips removal when access time moved since the snapshot (concurrent scan touched it)", async () => {
     const { pruneModIconCache } = await import("../../src/ipc/adapters/modScan")
     const icon = seedIcon(contentName("a"), 64, 1_000)
 
-    // Stat once to prime, then move the mtime forward simulating a concurrent touch
+    // Stat once to prime, then move the access time forward simulating a concurrent touch
     const originalStat = fse.stat.bind(fse)
     let statCount = 0
     vi.spyOn(fse, "stat").mockImplementation(async (path: unknown) => {
       statCount++
       const result = await originalStat(String(path))
       // On the second stat of the same file (the re-stat before removal),
-      // report a newer mtime to simulate a concurrent scan touching it.
+      // report a newer access time to simulate a concurrent scan touching it.
       if (statCount > 1 && String(path).includes(contentName("a"))) {
-        return { ...result, mtimeMs: 9_000 }
+        return { ...result, atimeMs: 9_000 }
       }
       return result
     })
 
     await pruneModIconCache(32)
 
-    // The icon should NOT have been deleted because mtime moved.
+    // The icon should NOT have been deleted because access time moved.
     assert.equal(existsSync(join(iconsFolder(), icon)), true)
   })
 

@@ -85,6 +85,24 @@ describe("CACHE_MOD_IMAGE", () => {
     assert.equal(requestBoundedBuffer.mock.calls.length, 1)
   })
 
+  it("refreshes a logo after its cache entry expires", async () => {
+    const original = Buffer.concat([PNG_SIGNATURE, Buffer.from("old logo")])
+    const replacement = Buffer.concat([PNG_SIGNATURE, Buffer.from("new logo")])
+    requestBoundedBuffer.mockResolvedValueOnce(original)
+
+    const first = await handler()(await createTrustedEvent(), LOGO_URL)
+    const path = join(modImagesFolder(), first ?? "")
+    const expired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    utimesSync(path, expired, expired)
+
+    requestBoundedBuffer.mockResolvedValueOnce(replacement)
+    const refreshed = await handler()(await createTrustedEvent(), LOGO_URL)
+
+    assert.equal(refreshed, first)
+    assert.equal(requestBoundedBuffer.mock.calls.length, 2)
+    assert.deepEqual(readFileSync(path), replacement)
+  })
+
   it("keeps showing a logo it already has when the network is gone", async () => {
     requestBoundedBuffer.mockResolvedValueOnce(Buffer.concat([PNG_SIGNATURE, Buffer.from("logo")]))
     const first = await handler()(await createTrustedEvent(), LOGO_URL)
@@ -105,7 +123,9 @@ describe("CACHE_MOD_IMAGE", () => {
 
     await handler()(await createTrustedEvent(), LOGO_URL)
 
-    assert.ok(statSync(path).mtimeMs > stale.getTime())
+    const stats = statSync(path)
+    assert.ok(stats.atimeMs > stale.getTime())
+    assert.equal(stats.mtimeMs, stale.getTime())
   })
 
   it("treats a zero-byte cached file as a miss and refetches", async () => {

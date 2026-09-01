@@ -204,14 +204,16 @@ export function createIconStorePort(): IconStore {
 /** Extensions a ModDB logo can be cached under, in the order lookup probes for one. */
 const MOD_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg"] as const
 
+/** A remote logo is revalidated after this much time, even when its URL stays the same. */
+const MOD_IMAGE_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
 /**
  * Names a ModDB logo by the sha256 of the URL it was fetched from, not of its bytes.
  *
  * The bytes are not knowable until after the download, and the point of this name is to answer
- * "is it already here" before a socket is opened. The extension follows the sniffed format so the
- * `cachemodimg:` handler can serve the right Content-Type. Same lower-case-hex shape the
- * byte-addressed store writes, which is what keeps planIconCacheEviction from reading a logo as a
- * leftover from an older build.
+ * "is it already here" before a socket is opened. The file's mtime records when those bytes were
+ * fetched, while its atime records the last scan that used them. That lets lookup keep the cache
+ * sweep's LRU signal fresh without making a stale response live forever.
  */
 function modImageCacheName(url: string, extension: string): string {
   return `${createHash("sha256").update(url).digest("hex")}${extension}`
@@ -235,8 +237,9 @@ export function createModImageStorePort(): ModImageCache {
           // A zero-byte file is a torn write from a crash: treat it as a miss so the next
           // request heals it rather than serving nothing forever.
           if (!stats.isFile() || stats.size === 0) continue
+          if (Date.now() - stats.mtimeMs >= MOD_IMAGE_CACHE_MAX_AGE_MS) continue
           const now = new Date()
-          await fse.utimes(join(folder, name), now, now).catch(() => undefined)
+          await fse.utimes(join(folder, name), now, new Date(stats.mtimeMs)).catch(() => undefined)
           return name
         } catch {
           // Not this extension. Try the next.
@@ -252,15 +255,9 @@ export function createModImageStorePort(): ModImageCache {
         const folder = modImagesFolder()
         await fse.ensureDir(folder)
         const target = join(folder, name)
-        // A non-empty file already there is these same bytes (the name is the URL): touch it so
-        // the sweep reads it as live. A missing or torn zero-byte file gets written.
-        const existing = await fse.stat(target).catch(() => undefined)
-        if (existing?.isFile() && existing.size > 0) {
-          const now = new Date()
-          await fse.utimes(target, now, now).catch(() => undefined)
-        } else {
-          await fse.writeFile(target, bytes)
-        }
+        // The URL is stable across refreshes, so an expired entry must be replaced with the new
+        // bytes rather than merely touched. A missing or torn zero-byte file follows the same path.
+        await fse.writeFile(target, bytes)
         return name
       } catch (err) {
         logMessage("error", `[back] [mods] [ipc/adapters/modScan.ts] [createModImageStorePort] Error saving a ModDB logo.`)
@@ -330,7 +327,7 @@ async function doPruneModIconCache(maxBytes: number): Promise<void> {
     try {
       assertSafeFileName(name)
       const stats = await fse.stat(join(folder, name))
-      if (stats.isFile()) entries.push({ name, bytes: stats.size, modifiedAt: stats.mtimeMs })
+      if (stats.isFile()) entries.push({ name, bytes: stats.size, modifiedAt: stats.atimeMs })
     } catch (err) {
       logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Skipping ${name}: ${err}`)
     }
@@ -339,17 +336,17 @@ async function doPruneModIconCache(maxBytes: number): Promise<void> {
   const doomed = planIconCacheEviction(entries, maxBytes)
   if (doomed.length === 0) return
 
-  const mtimeByName = new Map(entries.map((entry) => [entry.name, entry.modifiedAt]))
+  const accessTimeByName = new Map(entries.map((entry) => [entry.name, entry.modifiedAt]))
   const bytesByName = new Map(entries.map((entry) => [entry.name, entry.bytes]))
   let reclaimed = 0
 
   await Promise.all(
     doomed.map(async (name) => {
       try {
-        // Re-stat before removal: if mtime moved since the snapshot, a
+        // Re-stat before removal: if access time moved since the snapshot, a
         // concurrent scan just touched/recreated this icon. Skip it.
         const current = await fse.stat(join(folder, name))
-        if (current.mtimeMs !== mtimeByName.get(name)) return
+        if (current.atimeMs !== accessTimeByName.get(name)) return
 
         await fse.remove(join(folder, name))
         reclaimed += bytesByName.get(name) ?? 0
