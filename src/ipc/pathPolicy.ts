@@ -1,8 +1,9 @@
 import { app } from "electron"
 import fse from "fs-extra"
-import { basename, dirname, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 
 import { getConfig } from "@src/config/configManager"
+import { MODS_FOLDER_NAME } from "@domain/mods/folder"
 import type { PathGrant } from "@src/ipc/validation"
 import { assertNonRootPath, comparablePath, isPathGranted, isRestoreWorkspaceName } from "@src/ipc/validation"
 
@@ -186,11 +187,36 @@ export async function assertManagedPath(value: unknown, name = "path", options: 
   return pathValue
 }
 
-export async function assertManagedDeletionPath(value: unknown): Promise<string> {
+/**
+ * @param options Left empty by every ordinary caller. `assertManagedModArchivePath` is the one that
+ *   passes anything, and it pays for the relaxed walk with a check of its own.
+ */
+export async function assertManagedDeletionPath(value: unknown, options: PathPolicyOptions = {}): Promise<string> {
   const config = await getConfig()
-  const pathValue = await assertManagedPath(value, "deletion path", { allowMissing: false })
+  const pathValue = await assertManagedPath(value, "deletion path", { allowMissing: false, ...options })
   if (getProtectedPaths(config).some((protectedPath) => comparablePath(protectedPath) === comparablePath(pathValue))) throw new TypeError("Protected path")
   return pathValue
+}
+
+/**
+ * A mod archive the launcher may rename in place: the deletion grade, with one exception.
+ *
+ * The boundary: the Mods folder of a configured installation may itself be a symbolic link, or sit
+ * behind one, because that is the folder the scan already supports (#237) and offering a toggle that
+ * always refuses on a setup the launcher lists happily is the bug; the archive is then checked where
+ * that folder really lives and has to be a regular file, so an archive that is itself a link, or one
+ * a level deeper behind a link planted inside the folder, is refused exactly as a delete refuses it.
+ */
+export async function assertManagedModArchivePath(value: unknown): Promise<string> {
+  const config = await getConfig()
+  const namedPath = await assertManagedDeletionPath(value, { allowSymlinks: true })
+  const folder = dirname(namedPath)
+
+  if (!config.installations.some((installation) => comparablePath(join(installation.path, MODS_FOLDER_NAME)) === comparablePath(folder))) return assertManagedDeletionPath(value)
+
+  const archive = await fse.lstat(join(await fse.realpath(folder), basename(namedPath)))
+  if (archive.isSymbolicLink() || !archive.isFile()) throw new TypeError("Symbolic links are not allowed for managed paths")
+  return namedPath
 }
 
 export async function assertConfigPathsAuthorized(nextConfig: ConfigType, currentConfig: ConfigType): Promise<boolean> {
