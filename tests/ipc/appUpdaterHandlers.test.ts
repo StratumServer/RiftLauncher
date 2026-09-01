@@ -123,6 +123,24 @@ describe("DOWNLOAD_UPDATE", () => {
     assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
   })
 
+  it("reports zero progress before starting the accepted download", async () => {
+    const handlers = await loadHandlers()
+    const events: string[] = []
+    mockState.downloadUpdate.mockImplementationOnce(() => {
+      events.push("download")
+      return Promise.resolve([] as string[])
+    })
+    handlers.markUpdateAvailable("1.7.0-beta.3", (_channel, payload) => {
+      const progress = payload as { version: string; progress: number }
+      events.push(`progress:${progress.version}:${progress.progress}`)
+    })
+    const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+
+    assert.deepEqual(events, ["progress:1.7.0-beta.3:0", "download"])
+  })
+
   it("downloads once, however many times the accepted channel is sent", async () => {
     const handlers = await loadHandlers()
     handlers.markUpdateAvailable()

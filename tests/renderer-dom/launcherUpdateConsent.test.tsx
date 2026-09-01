@@ -238,6 +238,24 @@ describe("the update offer (#184)", () => {
 })
 
 describe("the download's progress bar (#185)", () => {
+  it("creates the task from the initial zero progress before the update is downloaded", () => {
+    const { api, listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    offerUpdate(listeners)
+    fireEvent.click(screen.getByRole("button", { name: "Update now" }))
+    act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 0 }))
+
+    openTasksMenu()
+    expect(screen.getByText("RiftLauncher 1.7.0-beta.3")).toBeTruthy()
+    expect(progressBar()?.getAttribute("aria-valuenow")).toBe("0")
+
+    fireDownloaded(listeners)
+
+    expect(progressBar()).toBeNull()
+    expect(api.appUpdater.downloadUpdate).toHaveBeenCalledTimes(1)
+  })
+
   it("draws a task whose bar follows the update's progress, and completes it when the update lands", () => {
     const { listeners } = installUpdaterApi()
     renderUpdateSurfaces()

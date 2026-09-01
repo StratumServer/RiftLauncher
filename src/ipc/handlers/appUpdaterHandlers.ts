@@ -25,9 +25,13 @@ let updateDownloaded = false
  * which is what lets the user accept the retry the renderer offers them.
  */
 let updateDownloadStarted = false
+let offeredVersion = ""
+let sendToRenderer: (channel: string, payload?: unknown) => void = () => {}
 
-export function markUpdateAvailable(): void {
+export function markUpdateAvailable(version: string = "", send: (channel: string, payload?: unknown) => void = () => {}): void {
   updateAvailable = true
+  offeredVersion = version
+  sendToRenderer = send
 }
 
 /**
@@ -51,6 +55,7 @@ export function markUpdateDownloaded(): void {
 ipcMain.on(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, (event) => {
   if (!isTrustedIpcSender(event) || !updateAvailable || updateDownloadStarted) return
   updateDownloadStarted = true
+  sendToRenderer(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOAD_PROGRESS, { version: offeredVersion, progress: 0 })
 
   logMessage("info", "[back] [appUpdater] [ipc/handlers/appUpdaterHandlers.ts] [DOWNLOAD_UPDATE] Update accepted by the user. Downloading.")
 

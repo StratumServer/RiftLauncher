@@ -196,6 +196,20 @@ describe("the handshake, end to end", () => {
     assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
   })
 
+  it("sends the initial zero-progress message through the real renderer handshake", async () => {
+    emit("error", new Error("reset before isolated handshake"))
+    sent.length = 0
+    emit("update-available", { version: "1.7.0-beta.3" })
+
+    await sendFromRenderer(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE)
+
+    assert.deepEqual(sent[1], {
+      channel: IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOAD_PROGRESS,
+      payload: { version: "1.7.0-beta.3", progress: 0 }
+    })
+    assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
+  })
+
   it("lets a failed download be accepted a second time in the same session", async () => {
     emit("update-available", { version: "1.7.0-beta.3" })
 
