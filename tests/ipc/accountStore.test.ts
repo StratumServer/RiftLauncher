@@ -38,7 +38,9 @@ const ACCOUNT_B: AccountSecrets = {
 const mockState = vi.hoisted(() => ({
   userDataDir: "",
   encryptionAvailable: true,
-  storageBackend: "gnome_libsecret"
+  storageBackend: "gnome_libsecret",
+  /** Set by the overlapping-mutation cases to hold a write open; every other case leaves the real writer alone. */
+  beforeWrite: undefined as (() => Promise<void>) | undefined
 }))
 
 /**
@@ -59,6 +61,22 @@ vi.mock("electron", () => ({
     }
   }
 }))
+
+/**
+ * The real atomic writer, with one suspension point in front of it. Overlapping
+ * saves are otherwise impossible to stage: a mutation only becomes observable
+ * to another one at its `rename()`, so a test needs to stop a write mid-flight
+ * and let the next caller run against the store as it stands.
+ */
+vi.mock("@src/ipc/atomicJsonFile", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@src/ipc/atomicJsonFile")>()
+  return {
+    writeJsonAtomic: async (...args: Parameters<typeof actual.writeJsonAtomic>): Promise<void> => {
+      await mockState.beforeWrite?.()
+      await actual.writeJsonAtomic(...args)
+    }
+  }
+})
 
 type AccountStore = typeof import("@src/ipc/accountStore")
 
@@ -94,6 +112,7 @@ beforeEach(() => {
   mockState.userDataDir = mkdtempSync(join(tmpdir(), "rift-account-store-test-"))
   mockState.encryptionAvailable = true
   mockState.storageBackend = "gnome_libsecret"
+  mockState.beforeWrite = undefined
 })
 
 afterEach(() => {
@@ -313,6 +332,87 @@ describe("saveAccountSecrets rebuilding an unreadable store", () => {
     assert.equal(existsSync(unreadableBackupPath()), false, "a locked keyring is not a corruption event")
     assert.equal(readFileSync(storePath(), "utf8"), onDisk, "the real store is left byte-for-byte")
     assert.equal(statSync(storePath()).mode & 0o777, mode, "and at the mode it had")
+  })
+})
+
+/**
+ * #291: every mutation here is a read-modify-write over the whole file. Two of
+ * them overlapping used to snapshot the same map, and whichever `rename()`
+ * landed last then wrote a map that had never seen the other one's change,
+ * dropping an account's session with nothing to show for it. Overlapping
+ * logins and the game-session adoption path both reach this.
+ */
+describe("overlapping mutations", () => {
+  /**
+   * Parks the next atomic write and hands back the release. `reached` resolves
+   * once that write is actually parked, so a case can start a second mutation
+   * knowing the first is stopped in the middle of its read-modify-write.
+   */
+  function holdNextWrite(): { reached: Promise<void>; release: () => void } {
+    let release = (): void => undefined
+    const parked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let signalReached = (): void => undefined
+    const reached = new Promise<void>((resolve) => {
+      signalReached = resolve
+    })
+
+    mockState.beforeWrite = async () => {
+      mockState.beforeWrite = undefined // Only the first write is held; whatever queues behind it runs normally.
+      signalReached()
+      await parked
+    }
+
+    return { reached, release: () => release() }
+  }
+
+  /**
+   * Long enough for an unserialized mutation to read the store, build its own
+   * map and land its rename while the held one is still parked, which is the
+   * loss reproduced in review. Serialized, the second one simply waits, and
+   * the pause costs the suite these few milliseconds instead.
+   */
+  async function letTheSecondMutationRun(): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  }
+
+  it("keeps both accounts when two saves for different ids overlap", async () => {
+    const store = await loadStore()
+    const held = holdNextWrite()
+
+    const first = store.saveAccountSecrets("uid-a", ACCOUNT_A)
+    await held.reached
+    const second = store.saveAccountSecrets("uid-b", ACCOUNT_B)
+    await letTheSecondMutationRun()
+    held.release()
+    await Promise.all([first, second])
+
+    const reader = await loadStore()
+    assert.deepEqual(await reader.getAccountSecrets("uid-a"), ACCOUNT_A, "the save that was still in flight survived the one that started after it")
+    assert.deepEqual(await reader.getAccountSecrets("uid-b"), ACCOUNT_B, "and the second account landed too")
+  })
+
+  it("keeps a save that overlaps the removal of another account", async () => {
+    const accountC: AccountSecrets = { ...ACCOUNT_A, sessionKey: "placeholder-session-key-c" }
+    const store = await loadStore()
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+    await store.saveAccountSecrets("uid-b", ACCOUNT_B)
+
+    const held = holdNextWrite()
+    const removal = store.removeAccountSecrets("uid-b")
+    await held.reached
+    const save = store.saveAccountSecrets("uid-c", accountC)
+    await letTheSecondMutationRun()
+    held.release()
+
+    assert.equal(await removal, true)
+    await save
+
+    const reader = await loadStore()
+    assert.deepEqual(await reader.getAccountSecrets("uid-a"), ACCOUNT_A)
+    assert.equal(await reader.getAccountSecrets("uid-b"), null, "the removal still took effect")
+    assert.deepEqual(await reader.getAccountSecrets("uid-c"), accountC, "and the save that overlapped it was not undone by the removal's rewrite")
   })
 })
 
