@@ -200,6 +200,25 @@ export interface IconStore {
   store(bytes: Uint8Array): Promise<string | undefined>
 }
 
+/**
+ * Finds or stores one remote mod image (a ModDB logo) in the shared icon cache, keyed by the URL
+ * it came from rather than by its bytes, so the "is it already here" question can be answered
+ * before a socket is opened.
+ */
+export interface ModImageCache {
+  /**
+   * The name an already cached image for `url` can be found under, touched so the sweep reads it
+   * as live, or undefined when nothing is cached. Never rejects.
+   */
+  lookup(url: string): Promise<string | undefined>
+  /**
+   * Writes `bytes` under `url`'s name with the extension matching the sniffed format and resolves
+   * that name, or undefined when it could not be stored. A missing image never costs a mod its
+   * place in the list, so this never rejects.
+   */
+  store(url: string, bytes: Uint8Array): Promise<string | undefined>
+}
+
 /** Wall clock, so services never read the ambient time. */
 export interface Clock {
   now(): number

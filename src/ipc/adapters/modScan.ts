@@ -4,10 +4,11 @@ import fse from "fs-extra"
 import { join } from "node:path"
 import yauzl from "yauzl"
 
-import type { DirectoryReader, IconStore, ModArchiveContent, ModArchiveReader, ModArchiveResult, PathBuilder } from "@domain/ports"
+import type { DirectoryReader, IconStore, ModArchiveContent, ModArchiveReader, ModArchiveResult, ModImageCache, PathBuilder } from "@domain/ports"
 import type { CachedIcon } from "@domain/mods/iconCache"
 import type { ScanInstalledModsPorts } from "@domain/mods/scanInstalled"
 import { MOD_ICON_CACHE_MAX_BYTES, planIconCacheEviction } from "@domain/mods/iconCache"
+import { isJpegBytes, isPngBytes } from "@domain/backgrounds"
 import { assertSafeFileName } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
 
@@ -194,6 +195,76 @@ export function createIconStorePort(): IconStore {
       } catch (err) {
         logMessage("error", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon.`)
         logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon: ${err}`)
+        return undefined
+      }
+    }
+  }
+}
+
+/** Extensions a ModDB logo can be cached under, in the order lookup probes for one. */
+const MOD_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg"] as const
+
+/**
+ * Names a ModDB logo by the sha256 of the URL it was fetched from, not of its bytes.
+ *
+ * The bytes are not knowable until after the download, and the point of this name is to answer
+ * "is it already here" before a socket is opened. The extension follows the sniffed format so the
+ * `cachemodimg:` handler can serve the right Content-Type. Same lower-case-hex shape the
+ * byte-addressed store writes, which is what keeps planIconCacheEviction from reading a logo as a
+ * leftover from an older build.
+ */
+function modImageCacheName(url: string, extension: string): string {
+  return `${createHash("sha256").update(url).digest("hex")}${extension}`
+}
+
+/**
+ * The shared icon cache, keyed by where a ModDB logo came from.
+ *
+ * Separate from {@link createIconStorePort} on purpose: archive icons stay content-addressed, so
+ * two mods shipping the same icon collapse onto one file. A logo belongs to one mod, so URL
+ * addressing costs nothing there and buys the pre-network lookup.
+ */
+export function createModImageStorePort(): ModImageCache {
+  return {
+    lookup: async (url: string): Promise<string | undefined> => {
+      const folder = modImagesFolder()
+      for (const extension of MOD_IMAGE_EXTENSIONS) {
+        const name = modImageCacheName(url, extension)
+        try {
+          const stats = await fse.stat(join(folder, name))
+          // A zero-byte file is a torn write from a crash: treat it as a miss so the next
+          // request heals it rather than serving nothing forever.
+          if (!stats.isFile() || stats.size === 0) continue
+          const now = new Date()
+          await fse.utimes(join(folder, name), now, now).catch(() => undefined)
+          return name
+        } catch {
+          // Not this extension. Try the next.
+        }
+      }
+      return undefined
+    },
+    store: async (url: string, bytes: Uint8Array): Promise<string | undefined> => {
+      const extension = isPngBytes(bytes) ? ".png" : isJpegBytes(bytes) ? ".jpg" : undefined
+      if (extension === undefined) return undefined
+      const name = modImageCacheName(url, extension)
+      try {
+        const folder = modImagesFolder()
+        await fse.ensureDir(folder)
+        const target = join(folder, name)
+        // A non-empty file already there is these same bytes (the name is the URL): touch it so
+        // the sweep reads it as live. A missing or torn zero-byte file gets written.
+        const existing = await fse.stat(target).catch(() => undefined)
+        if (existing?.isFile() && existing.size > 0) {
+          const now = new Date()
+          await fse.utimes(target, now, now).catch(() => undefined)
+        } else {
+          await fse.writeFile(target, bytes)
+        }
+        return name
+      } catch (err) {
+        logMessage("error", `[back] [mods] [ipc/adapters/modScan.ts] [createModImageStorePort] Error saving a ModDB logo.`)
+        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createModImageStorePort] Error saving a ModDB logo: ${err}`)
         return undefined
       }
     }

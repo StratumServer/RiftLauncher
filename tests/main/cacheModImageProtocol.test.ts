@@ -145,12 +145,25 @@ describe("cachemodimg protocol handler", () => {
     assert.equal(fetchFile.mock.calls.length, 0)
   })
 
-  it("rejects a real non-PNG file without fetching it", async () => {
-    const filePath = iconPath("aa.jpg")
+  it("serves a JPEG logo under image/jpeg", async () => {
+    const filePath = iconPath("bb.jpg")
+    const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0])
+    writeFileSync(filePath, bytes)
+    const fetchFile = vi.fn<FetchFile>(async () => new Response(bytes))
+
+    const response = await createHandler(fetchFile)(request("/bb.jpg"))
+
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get("Content-Type"), "image/jpeg")
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes)
+  })
+
+  it("rejects a file whose extension is not an image type it serves", async () => {
+    const filePath = iconPath("aa.gif")
     writeFileSync(filePath, "not an icon")
     const fetchFile = vi.fn<FetchFile>(async () => new Response(Buffer.from("unexpected")))
 
-    const response = await createHandler(fetchFile)(request("/aa.jpg"))
+    const response = await createHandler(fetchFile)(request("/aa.gif"))
 
     assert.equal(response.status, 404)
     assert.equal(fetchFile.mock.calls.length, 0)

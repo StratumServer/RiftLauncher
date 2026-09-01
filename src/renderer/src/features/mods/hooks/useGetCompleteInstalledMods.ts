@@ -52,7 +52,10 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
       const pending = modImages.get(url)
       if (pending) return pending
 
-      const request = cacheModImage(url)
+      // Swallowed like queryModOnce's sibling: one logo that fails to cache costs that row its
+      // image, never the whole scan. cacheModImage already catches internally, but a rejected
+      // invoke would otherwise reject the Promise.all below and leave the list stuck.
+      const request = cacheModImage(url).catch(() => undefined)
       modImages.set(url, request)
       return request
     }

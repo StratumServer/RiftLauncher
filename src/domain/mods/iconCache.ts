@@ -1,9 +1,11 @@
 /**
- * Names the icon store writes today: the sha256 of the file's own bytes, lower case, with a `.png`
- * suffix. Anything else in the folder came from a build that named icons after a uuid, and no write
- * this launcher makes can produce one again.
+ * Names the icon store writes today: a lower-case sha256 hex string with an image suffix. Archive
+ * icons are the sha256 of their own bytes and always `.png`; ModDB logos are the sha256 of the URL
+ * they were fetched from and keep the source format, `.png` or `.jpg`. Either way the name is
+ * written once and never rewritten with different bytes. Anything else in the folder came from a
+ * build that named icons after a uuid, and no write this launcher makes can produce one again.
  */
-const CONTENT_ADDRESSED_NAME = /^[0-9a-f]{64}\.png$/
+const CONTENT_ADDRESSED_NAME = /^[0-9a-f]{64}\.(?:png|jpe?g)$/
 
 /**
  * How many bytes of mod icons the shared cache folder is allowed to keep.

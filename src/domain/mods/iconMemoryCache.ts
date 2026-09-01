@@ -9,12 +9,13 @@
 export const MOD_ICON_MEMORY_CACHE_MAX_BYTES = 16 * 1024 * 1024
 
 /**
- * Bounded, recency-ordered cache for content-addressed mod icon bytes.
+ * Bounded, recency-ordered cache for mod icon bytes.
  *
- * Filenames the icon store writes are the sha256 of their own bytes (iconCache.ts), so a
- * hit under a given key can never be stale: nothing can rewrite a name's content without
- * changing the name. That leaves eviction as the only thing this has to get right, not
- * invalidation, which is what keeps `get`/`set` this small.
+ * A name in this folder is written once and never rewritten with different bytes (iconCache.ts):
+ * an archive icon's name is the sha256 of its bytes, a ModDB logo's name is the sha256 of the URL
+ * it came from and that URL maps to one file forever. So a hit under a given key can never be
+ * stale, which leaves eviction as the only thing this has to get right, not invalidation, and is
+ * what keeps `get`/`set` this small.
  */
 export class IconMemoryCache {
   private readonly entries = new Map<string, Buffer>()

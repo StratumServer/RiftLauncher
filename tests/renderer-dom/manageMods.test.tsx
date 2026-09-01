@@ -18,6 +18,8 @@ const SEARCH_PLACEHOLDER = "Search by name or id"
 const SUSPEND_TITLE = "Suspend updates for this Mod: Update all will skip it, you can still update it from here"
 const RESUME_TITLE = "Resume updates for this Mod: Update all will include it again"
 const EPSILON_PATH = "/games/a/Mods/epsilon-5.0.0.zip.disabled"
+const ALPHA_LOGO = "https://moddbcdn.vintagestory.at/alpha.png"
+const BETA_LOGO = "https://moddbcdn.vintagestory.at/beta.png"
 const DISABLE_TITLE = "Disable this Mod: it stays installed, Vintage Story just won't load it"
 const ENABLE_TITLE = "Enable this Mod: Vintage Story will load it again"
 
@@ -127,9 +129,10 @@ function aModDetail({
 }
 
 function queryModDb(url: string): Promise<string> {
-  if (url.endsWith("/mod/alpha")) return Promise.resolve(aModDetail({ modid: 1, assetid: 101, name: "Alpha Mod", modidstr: "alpha", modversion: "1.1.0", tags: ["1.20.0"] }))
-  if (url.endsWith("/mod/beta"))
-    return Promise.resolve(aModDetail({ modid: 2, assetid: 102, name: "Beta Mod", modidstr: "beta", modversion: "2.1.0", tags: ["1.20.0"], logofile: "https://moddbcdn.vintagestory.at/beta.png" }))
+  // Alpha carries a logofile AND every scan fixture gives it a local _image, so the guard in
+  // useGetCompleteInstalledMods is the only thing keeping the network out of Alpha's row.
+  if (url.endsWith("/mod/alpha")) return Promise.resolve(aModDetail({ modid: 1, assetid: 101, name: "Alpha Mod", modidstr: "alpha", modversion: "1.1.0", tags: ["1.20.0"], logofile: ALPHA_LOGO }))
+  if (url.endsWith("/mod/beta")) return Promise.resolve(aModDetail({ modid: 2, assetid: 102, name: "Beta Mod", modidstr: "beta", modversion: "2.1.0", tags: ["1.20.0"], logofile: BETA_LOGO }))
   // Gamma's only newer release is tagged for another series, so it lands in the incompatible list.
   if (url.endsWith("/mod/gamma")) return Promise.resolve(aModDetail({ modid: 3, assetid: 103, name: "Gamma Mod", modidstr: "gamma", modversion: "3.1.0", tags: ["1.19.0"] }))
   if (url.endsWith("/mod/epsilon")) return Promise.resolve(aModDetail({ modid: 5, assetid: 105, name: "Epsilon Mod", modidstr: "epsilon", modversion: "5.1.0", tags: ["1.20.0"] }))
@@ -208,15 +211,28 @@ describe("ManageMods", () => {
     await waitFor(() => expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/mod/alpha"))).toHaveLength(1))
   })
 
-  it("caches a ModDB logo only when the archive has no local icon", async () => {
-    const cacheModImage = vi.fn(async () => "beta-logo.png")
+  it("prefers the archive's own icon and only reaches for the ModDB logo without one", async () => {
+    const cacheModImage = vi.fn(async (url: string) => (url === BETA_LOGO ? "beta-logo.png" : "unexpected.png"))
     renderManageMods({ modsManager: { cacheModImage } })
 
     expect(await screen.findByText("Beta Mod", {}, { timeout: 3000 })).toBeTruthy()
-    await waitFor(() => expect(cacheModImage).toHaveBeenCalledWith("https://moddbcdn.vintagestory.at/beta.png"))
+    await waitFor(() => expect(cacheModImage).toHaveBeenCalledWith(BETA_LOGO))
 
+    // Beta ships no modicon.png, so its row falls back to the ModDB logo.
     expect(screen.getByAltText("Beta Mod").getAttribute("src")).toBe("cachemodimg:beta-logo.png")
-    expect(cacheModImage).not.toHaveBeenCalledWith(expect.stringContaining("alpha.png"))
+    // Alpha ships its own modicon.png and its ModDB entry has a logo too, so the guard is the only
+    // thing keeping the network out of it and the row on its local file.
+    expect(cacheModImage).not.toHaveBeenCalledWith(ALPHA_LOGO)
+    expect(screen.getByAltText("Alpha Mod").getAttribute("src")).toBe("cachemodimg:alpha.png")
+  })
+
+  it("caches one ModDB logo for repeated installed mod ids", async () => {
+    const cacheModImage = vi.fn(async (url: string) => (url === ALPHA_LOGO ? "alpha-logo.png" : "unexpected.png"))
+    renderManageMods({ modsManager: { getInstalledMods: vi.fn(async () => duplicateModScan()), cacheModImage } })
+
+    expect(await screen.findByText("Alpha Mod copy", {}, { timeout: 3000 })).toBeTruthy()
+    await waitFor(() => expect(cacheModImage.mock.calls.filter(([url]) => url === ALPHA_LOGO)).toHaveLength(1))
+    expect(screen.getAllByAltText(/Alpha Mod/).map((img) => img.getAttribute("src"))).toEqual(["cachemodimg:alpha-logo.png", "cachemodimg:alpha-logo.png"])
   })
 
   it("leaves the Mod on disk until the delete confirm dialog is accepted", async () => {

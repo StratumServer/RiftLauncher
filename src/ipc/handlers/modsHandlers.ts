@@ -2,29 +2,47 @@ import { dialog, ipcMain } from "electron"
 import fse from "fs-extra"
 import { basename, dirname, join } from "node:path"
 import { IPC_CHANNELS } from "../ipcChannels"
-import { createIconStorePort, createScanInstalledModsPorts, MAX_MOD_IMAGE_BYTES, pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { createModImageStorePort, createScanInstalledModsPorts, MAX_MOD_IMAGE_BYTES, pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
 import { assertAllowedDownloadUrl, assertBoolean, assertSafeFileName, assertString, isRecord } from "@src/ipc/validation"
 import { requestBoundedBuffer } from "@src/ipc/network"
-import { isPngBytes } from "@domain/backgrounds"
+import { isJpegBytes, isPngBytes } from "@domain/backgrounds"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
 
 const MAX_MODPACK_ENTRIES = 2_000
+
+// Narrows DOWNLOAD_URL_RULES, which already lists this host for archive downloads, to the one host
+// that serves images. A logofile pointing anywhere else fails here and the row keeps its
+// placeholder without a message, which is what #306 asks for. `assertAllowedDownloadUrl` already
+// checks the protocol and shape and lower-cases the host, so this is an equality check.
 const MOD_IMAGE_HOSTNAME = "moddbcdn.vintagestory.at"
 
-/** Downloads one ModDB logo into the same bounded, content-addressed cache as archive icons. */
+/**
+ * Finds or downloads one ModDB logo in the shared icon cache.
+ *
+ * The file is named by the sha256 of the URL, so a lookup answers before a socket is opened: a
+ * player who has run the launcher before sees a logo it already owns even with no network. The
+ * archive-icon path stays content-addressed; a logo belongs to one mod, so URL addressing costs
+ * nothing there. Roughly two in five ModDB logos are JPEG, so both formats are accepted and the
+ * cached file keeps the source extension for the `cachemodimg:` handler's Content-Type.
+ */
 async function cacheModImage(urlValue: unknown): Promise<string | undefined> {
   try {
     const url = assertAllowedDownloadUrl(urlValue)
-    if (url.hostname.toLowerCase() !== MOD_IMAGE_HOSTNAME) throw new TypeError("Invalid ModDB image host")
+    if (url.hostname !== MOD_IMAGE_HOSTNAME) throw new TypeError("Invalid ModDB image host")
 
-    const bytes = await requestBoundedBuffer(url, { maxBytes: MAX_MOD_IMAGE_BYTES, accept: "image/png" })
-    if (!isPngBytes(bytes)) throw new TypeError("Downloaded ModDB image is not a PNG")
-    return await createIconStorePort().store(bytes)
+    const images = createModImageStorePort()
+    const key = url.toString()
+    const cached = await images.lookup(key)
+    if (cached) return cached
+
+    const bytes = await requestBoundedBuffer(url, { maxBytes: MAX_MOD_IMAGE_BYTES, accept: "image/png,image/jpeg" })
+    if (!isPngBytes(bytes) && !isJpegBytes(bytes)) throw new TypeError("Downloaded ModDB image is not a PNG or JPEG")
+    return await images.store(key, bytes)
   } catch (err) {
     logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [CACHE_MOD_IMAGE] Could not cache ModDB image: ${getErrorMessage(err)}`)
     return undefined

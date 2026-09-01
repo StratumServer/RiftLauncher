@@ -11,11 +11,18 @@ export type CacheModImageProtocolPorts = {
   fetchFile: (url: string) => Promise<Response>
 }
 
+/** The image types served out of the mod icon cache, and the Content-Type each is served under. */
+const MOD_IMAGE_CONTENT_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg" }
+
 export function createCacheModImageProtocolHandler({ cache, getUserDataPath, fetchFile }: CacheModImageProtocolPorts): (request: Request) => Promise<Response> {
   return async (request) => {
     const srcPath = join(getUserDataPath(), "Cache", "Images", "Mods")
     const filePath = resolveContainedPath(srcPath, new URL(request.url).pathname)
-    if (!filePath || !filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
+    if (!filePath) return new Response(null, { status: 404 })
+
+    const dot = filePath.lastIndexOf(".")
+    const contentType = dot === -1 ? undefined : MOD_IMAGE_CONTENT_TYPES[filePath.slice(dot).toLowerCase()]
+    if (!contentType) return new Response(null, { status: 404 })
     if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
 
     try {
@@ -25,7 +32,7 @@ export function createCacheModImageProtocolHandler({ cache, getUserDataPath, fet
         return Buffer.from(await response.arrayBuffer())
       })
       // Copy the cached bytes before handing them to Response so a transferred or detached body cannot affect the shared cache Buffer.
-      return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "image/png", "Content-Length": String(bytes.length) } })
+      return new Response(new Uint8Array(bytes), { headers: { "Content-Type": contentType, "Content-Length": String(bytes.length) } })
     } catch {
       return new Response(null, { status: 404 })
     }

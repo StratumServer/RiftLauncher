@@ -270,7 +270,8 @@ app.whenReady().then(async () => {
     })
   }
 
-  // Handler for mod icons. Names in this folder are content-addressed, so a hit in
+  // Handler for mod icons. A name in this folder is written once and never rewritten (a sha256 of
+  // the bytes for an archive icon, a sha256 of the URL for a ModDB logo), so a hit in
   // modIconMemoryCache can never serve stale bytes.
   protocol.handle(
     "cachemodimg",
