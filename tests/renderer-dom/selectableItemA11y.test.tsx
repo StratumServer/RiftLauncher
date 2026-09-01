@@ -270,6 +270,7 @@ describe("ModListCard accessibility", () => {
     const favorite = within(listItem).getByTitle("Favorite")
     const modDb = within(listItem).getByTitle("Open on the ModDB!")
 
+    expect(card.className).toContain("cursor-pointer")
     expect(card.contains(favorite)).toBe(false)
     expect(card.contains(modDb)).toBe(false)
     expect(within(listItem).getAllByRole("button")).toHaveLength(3)

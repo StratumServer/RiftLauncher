@@ -46,7 +46,7 @@ function ModListCard({
           onClick: () => onSelect(mod),
           label: `${mod.name}, ${t(installed ? "generic.installed" : "generic.notInstalled")}`
         })}
-        className="w-full h-full focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2"
+        className="w-full h-full cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2"
       >
         <div className="relative w-full aspect-[3/2] skip-offscreen-render">
           <img src={mod.logo ? `${mod.logo}` : "https://mods.vintagestory.at/web/img/mod-default.png"} alt={mod.name} loading="lazy" className="w-full h-full object-cover object-top" />
