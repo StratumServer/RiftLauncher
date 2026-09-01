@@ -1,13 +1,13 @@
 [
-  { "id": "sunlit-highlands", "name": "Sunlit Highlands", "file": "sunlit-highlands.jpg", "thumbnail": "thumbnails/sunlit-highlands.jpg" },
-  { "id": "frosted-sunrise", "name": "Frosted Sunrise", "file": "frosted-sunrise.jpg", "thumbnail": "thumbnails/frosted-sunrise.jpg" },
-  { "id": "valley-ruins", "name": "Valley Ruins", "file": "valley-ruins.jpg", "thumbnail": "thumbnails/valley-ruins.jpg" },
-  { "id": "village-lane", "name": "Village Lane", "file": "village-lane.jpg", "thumbnail": "thumbnails/village-lane.jpg" },
-  { "id": "river-sailboat", "name": "River Sailboat", "file": "river-sailboat.jpg", "thumbnail": "thumbnails/river-sailboat.jpg" },
-  { "id": "lava-springs", "name": "Lava Springs", "file": "lava-springs.jpg", "thumbnail": "thumbnails/lava-springs.jpg" },
-  { "id": "misty-woodland", "name": "Misty Woodland", "file": "misty-woodland.jpg", "thumbnail": "thumbnails/misty-woodland.jpg" },
-  { "id": "crystal-cavern", "name": "Crystal Cavern", "file": "crystal-cavern.jpg", "thumbnail": "thumbnails/crystal-cavern.jpg" },
-  { "id": "overgrown-ruin", "name": "Overgrown Ruin", "file": "overgrown-ruin.jpg", "thumbnail": "thumbnails/overgrown-ruin.jpg" },
-  { "id": "collapsed-storeroom", "name": "Collapsed Storeroom", "file": "collapsed-storeroom.jpg", "thumbnail": "thumbnails/collapsed-storeroom.jpg" },
-  { "id": "workshop-desk", "name": "Workshop Desk", "file": "workshop-desk.jpg", "thumbnail": "thumbnails/workshop-desk.jpg" }
+  { "id": "sunlit-highlands", "name": "Sunlit Highlands", "file": "sunlit-highlands.jpg", "thumbnail": "thumbnails/sunlit-highlands.jpg", "sha256": "c37d082c7da5c0d10e77b832e8de6ce5e5c3079ad28bd7bde37f5bf4f7993530" },
+  { "id": "frosted-sunrise", "name": "Frosted Sunrise", "file": "frosted-sunrise.jpg", "thumbnail": "thumbnails/frosted-sunrise.jpg", "sha256": "299aa8032ac8f35c9738c72115e32781817c030627dd46fcfb97cccb291f43d3" },
+  { "id": "valley-ruins", "name": "Valley Ruins", "file": "valley-ruins.jpg", "thumbnail": "thumbnails/valley-ruins.jpg", "sha256": "0437db0443bcb5918de3cfb562407d3dfae3c682e1d6cd30f4458b4983a3d19d" },
+  { "id": "village-lane", "name": "Village Lane", "file": "village-lane.jpg", "thumbnail": "thumbnails/village-lane.jpg", "sha256": "17fab95d1f3fd28a2903d1970ec7148a8498bb4c28f8ec4cc877140149d58f20" },
+  { "id": "river-sailboat", "name": "River Sailboat", "file": "river-sailboat.jpg", "thumbnail": "thumbnails/river-sailboat.jpg", "sha256": "9c23b35d765e24de1a6026f5ca5f42e3e12cae2042a212873659fdb93ddf26e6" },
+  { "id": "lava-springs", "name": "Lava Springs", "file": "lava-springs.jpg", "thumbnail": "thumbnails/lava-springs.jpg", "sha256": "57a791e4a6acc1f63397b2322c4ce8a08f1f65bab92e12aa997f12990f047eff" },
+  { "id": "misty-woodland", "name": "Misty Woodland", "file": "misty-woodland.jpg", "thumbnail": "thumbnails/misty-woodland.jpg", "sha256": "80cd74c57a8cc9a9fdd398748a0a6e90746a625775a8920682269de059c78c0c" },
+  { "id": "crystal-cavern", "name": "Crystal Cavern", "file": "crystal-cavern.jpg", "thumbnail": "thumbnails/crystal-cavern.jpg", "sha256": "9f1c5b7e89157674de629abbb8fa5d0d4660b3a9b5666b5fc9f048393c5d07ea" },
+  { "id": "overgrown-ruin", "name": "Overgrown Ruin", "file": "overgrown-ruin.jpg", "thumbnail": "thumbnails/overgrown-ruin.jpg", "sha256": "9c7ae306bcd9325c3f7714509d58445d040d3b0e02f94f4cd27b76d5472b55e3" },
+  { "id": "collapsed-storeroom", "name": "Collapsed Storeroom", "file": "collapsed-storeroom.jpg", "thumbnail": "thumbnails/collapsed-storeroom.jpg", "sha256": "c8551172a80689558cf865808b5da1f302776b581927001930222822878a5e11" },
+  { "id": "workshop-desk", "name": "Workshop Desk", "file": "workshop-desk.jpg", "thumbnail": "thumbnails/workshop-desk.jpg", "sha256": "52f5f5ef13255be88528abd8b4b15aae05a3bec9540edb2ad5d3d84c51f01edc" }
 ]
