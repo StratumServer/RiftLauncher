@@ -131,15 +131,21 @@ describe("detectInstalledGameVersion probe interpretation", () => {
     assert.deepEqual(result, { ok: false, reason: "unreadable-version" })
   })
 
-  it("picks the version out of a fork that logs its own lines around it", async () => {
+  it("picks the game's version out of an Optimum boot, not the versions Optimum logs about itself", async () => {
     const { processProbe } = fakeProbe({
       ok: true,
-      stdout: "[Optimum] Shader compatibility scan: sources=48, shaders=12, conflicts=0, failed=0\n1.21.1\n[Optimum] Ready\n"
+      stdout: [
+        "[Optimum] Shader compatibility scan: sources=48, shaders=12, conflicts=0, failed=False, fingerprint=4f0ab21c73d9e5a180c2b6f47e31a9d8c05be7f21a4d63c8907e5fb2a1d64c3e",
+        "[Optimum] Optimum v0.3.14",
+        "[Optimum] Shader owner: chunkopaque.fsh <- betterruins_1.9.2-4f0ab21c73 (last writer)",
+        "1.21.1",
+        ""
+      ].join("\n")
     })
 
     const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
 
-    assert.deepEqual(result, { ok: true, version: "1.21.1" }, "the version is read from wherever in the output it appears, not off the first line")
+    assert.deepEqual(result, { ok: true, version: "1.21.1" }, "0.3.14 is Optimum's own version and 1.9.2-4f0ab21c73 is a mod archive stem; only the game prints a version on a line of its own")
   })
 
   it("keeps a pre-release version whole", async () => {
@@ -150,7 +156,7 @@ describe("detectInstalledGameVersion probe interpretation", () => {
     assert.deepEqual(result, { ok: true, version: "1.21.0-rc.1" })
   })
 
-  it("takes the first parseable token when the output holds several", async () => {
+  it("takes the version printed on its own line over one mentioned inside a sentence", async () => {
     const { processProbe } = fakeProbe({ ok: true, stdout: "1.21.1\nbuilt against 1.20.4\n" })
 
     const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
@@ -158,8 +164,19 @@ describe("detectInstalledGameVersion probe interpretation", () => {
     assert.deepEqual(result, { ok: true, version: "1.21.1" })
   })
 
+  it("skips a token semver rejects when scanning a line that holds more than a version", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "Build 01.02.03 of 1.21.1\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.21.1" }, "semver refuses leading zeros, so the scan carries on to the next token instead of stopping at the first regex match")
+  })
+
   it("reports no version at all rather than storing a line that has none in it", async () => {
-    const { processProbe } = fakeProbe({ ok: true, stdout: "[Optimum] Shader compatibility scan: sources=48, shaders=12, conflicts=0, failed=0\n" })
+    const { processProbe } = fakeProbe({
+      ok: true,
+      stdout: "[Optimum] Shader compatibility scan: sources=48, shaders=12, conflicts=0, failed=False, fingerprint=4f0ab21c73d9e5a180c2b6f47e31a9d8c05be7f21a4d63c8907e5fb2a1d64c3e\n"
+    })
 
     const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
 

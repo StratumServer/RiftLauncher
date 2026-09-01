@@ -75,22 +75,41 @@ function probeRequestFor(candidate: GameExecutableCandidate, executablePath: str
  * This only finds candidates. `semver.valid` makes the call on each one, so
  * what detection accepts is exactly what compareGameVersionsDesc can order on
  * the other side, rather than a second grammar that drifts from it.
+ *
+ * The `(?<![\d.])` guard keeps a long run of digits from being rescanned once
+ * per character: without it, `\d+` matches the run, fails on the missing dot
+ * and backtracks the whole way, for every starting offset. Probe stdout has no
+ * size cap, so a binary printing a megabyte of digits would hold the main
+ * process for minutes.
  */
-const VERSION_TOKEN = /\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?/g
+const VERSION_TOKEN = /(?<![\d.])\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?/g
 
 /**
  * Reads a version out of probe output.
  *
+ * The rule: the first line that is nothing but a version wins, and only when no
+ * line is one does the whole output get scanned for the first version inside a
+ * line.
+ *
  * A vanilla binary answers `-v` with a bare version and nothing else, so this
- * used to be a `.trim()`. Forks are not so quiet: Optimum prints a shader
- * compatibility line during startup, and storing that whole line is what put
- * "[Optimum] Shader compatibility scan: sources=48..." in a player's VS Version
- * field. So the whole output is scanned, not just its first line, and the first
- * token that parses wins. Several distinct versions in one output is not a
- * situation anything can resolve honestly, and first-wins at least matches what
- * a person reading the output top to bottom would pick.
+ * used to be a `.trim()`. Forks are not so quiet, and their chatter is what the
+ * two halves of the rule separate. Optimum prints "[Optimum] Optimum v0.3.14"
+ * on the patch path, which is exactly the path a freshly installed folder takes
+ * when someone points "Look for a Version" at it, and its shader owner lines
+ * carry mod archive stems like "betterruins_1.9.2-4f0ab21c73"; both parse, and
+ * both come before the 1.21.1 the client prints last, so taking the first token
+ * anywhere reads the wrapper instead of the game. A fork logs about a version,
+ * the game prints one, and the line that holds nothing else is the one that was
+ * printed as an answer. The scan stays as the fallback for a build that prints
+ * its version inside a sentence, where the first token is still the best guess
+ * available.
  */
 function extractVersion(stdout: string): string | undefined {
+  for (const line of stdout.split("\n")) {
+    const bare = semver.valid(line.trim())
+    if (bare) return bare
+  }
+
   for (const [token] of stdout.matchAll(VERSION_TOKEN)) if (semver.valid(token)) return token
   return undefined
 }

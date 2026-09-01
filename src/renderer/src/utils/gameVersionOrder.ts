@@ -7,8 +7,8 @@ import semver from "semver"
  * only a parseable token, but the field is hand-editable, and configs written
  * before that fix still hold whatever a probed executable happened to print, so
  * a string like "Vintage Story 1.21.0" can be sitting in one right now.
- * `semver.rcompare` throws on that, and a
- * throw inside a component's sort callback takes the whole page down with it.
+ * `semver.rcompare` throws on that, and a throw inside a component's sort
+ * callback takes the whole page down with it.
  *
  * Valid versions order among themselves exactly as they did. Anything
  * unparseable sorts after them, alphabetically, so the order stays the same on
