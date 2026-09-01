@@ -131,6 +131,41 @@ describe("detectInstalledGameVersion probe interpretation", () => {
     assert.deepEqual(result, { ok: false, reason: "unreadable-version" })
   })
 
+  it("picks the version out of a fork that logs its own lines around it", async () => {
+    const { processProbe } = fakeProbe({
+      ok: true,
+      stdout: "[Optimum] Shader compatibility scan: sources=48, shaders=12, conflicts=0, failed=0\n1.21.1\n[Optimum] Ready\n"
+    })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.21.1" }, "the version is read from wherever in the output it appears, not off the first line")
+  })
+
+  it("keeps a pre-release version whole", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "[Optimum] boot\n1.21.0-rc.1\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.21.0-rc.1" })
+  })
+
+  it("takes the first parseable token when the output holds several", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "1.21.1\nbuilt against 1.20.4\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.21.1" })
+  })
+
+  it("reports no version at all rather than storing a line that has none in it", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "[Optimum] Shader compatibility scan: sources=48, shaders=12, conflicts=0, failed=0\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: false, reason: "unreadable-version" }, "an unreadable build leaves the field empty for the player to fill in, instead of registering the noise")
+  })
+
   it("never probes twice for one call", async () => {
     const { processProbe, requests } = fakeProbe()
 
