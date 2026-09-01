@@ -26,15 +26,57 @@ const ACCOUNT_STORE_VERSION = 2
 const LEGACY_ACCOUNT_STORE_VERSION = 1
 
 /**
- * `undefined` means the file has not been read this process. `unreadable`
- * says whether the file existed but could not be trusted (wrong version,
- * bad JSON, decrypt failure, a payload with no accounts list): a genuinely
- * absent file is not unreadable, it is the ordinary no-accounts-yet case,
- * and `readStore` never sets the flag for it. `saveAccountSecrets` is the
- * only reader of the flag; every other caller only ever wants the map.
+ * How much the map that came back can be trusted. Three states, because the
+ * two ways a read can come back empty-but-not-really need different answers:
+ *
+ * - `readable`: the map is the whole truth. Either the file was read, or there
+ *   is genuinely no file, which is the ordinary no-accounts-yet case and not a
+ *   problem to report.
+ * - `locked`: the file is there, but secure storage is not, so nothing could be
+ *   opened. Temporary, and not the file's fault: the keyring unlocking later
+ *   must still reach the real bytes, so this must never trigger the
+ *   preserve-and-rebuild path a corrupt store gets (#261).
+ * - `corrupt`: the file is there and cannot be trusted (wrong version, bad
+ *   JSON, decrypt failure, a payload with no accounts list). The sessions it
+ *   held are already gone, so a login may rebuild the store around itself once
+ *   its bytes are safely copied aside.
+ *
+ * Both non-`readable` states hand back an empty map that says nothing about
+ * what is on disk, so no mutation may treat "not in the map" as "not stored".
  */
-type StoreRead = { accounts: Map<string, AccountSecrets>; unreadable: boolean }
+type StoreStatus = "readable" | "locked" | "corrupt"
+
+/** `undefined` for `cachedRead` means the file has not been read this process. */
+type StoreRead = { accounts: Map<string, AccountSecrets>; status: StoreStatus }
 let cachedRead: StoreRead | undefined
+
+/**
+ * Every mutation of the store is a read-modify-write: read the whole map,
+ * change one entry, rewrite the whole file. Two of those overlapping both
+ * build their new map from the same starting point, and the second `rename()`
+ * then wins with a map that never saw the first one's change, silently
+ * dropping an account's session. Overlapping logins and the game-session
+ * adoption path both reach this.
+ *
+ * So mutations run one at a time, chained onto this promise the way the config
+ * writer chains its own. Reads stay outside the chain: they only ever hand
+ * back the cached map, and a read racing a write already resolves to whichever
+ * of the two maps it observes, which is what a caller asking "what is stored
+ * right now" gets in any case.
+ *
+ * ponytail: one chain for the whole store, not one per account. This is a
+ * desktop store rewritten in full on every change, so per-account locks would
+ * not let anything more overlap: the file is the contended resource, not the
+ * entry.
+ */
+let storeMutations: Promise<unknown> = Promise.resolve()
+
+/** Runs `mutate` once every mutation queued before it has settled, failure included. */
+function serializeMutation<T>(mutate: () => Promise<T>): Promise<T> {
+  const run = storeMutations.then(mutate)
+  storeMutations = run.catch(() => undefined)
+  return run
+}
 
 function getAccountStorePath(): string {
   return join(app.getPath("userData"), "account-secrets.json")
@@ -88,9 +130,10 @@ async function readStore(): Promise<StoreRead> {
     assertSecureStorage()
   } catch {
     // Not the file's fault, and not cached: the keyring becoming available later must still
-    // reach the real file, and writeAccounts asserts the same thing before it could ever
-    // overwrite anything, so no save can destroy the store while this is true.
-    return { accounts: new Map(), unreadable: false }
+    // reach the real bytes. Whether there is a file at all is the whole difference between
+    // "nothing is stored" and "something is stored and cannot be opened right now", and only
+    // the first of those lets a caller act as if the empty map were the truth.
+    return { accounts: new Map(), status: (await fse.pathExists(getAccountStorePath())) ? "locked" : "readable" }
   }
 
   try {
@@ -103,9 +146,9 @@ async function readStore(): Promise<StoreRead> {
     // broken entry beside three good ones is still a store worth writing to. A payload with
     // no accounts list at all is the file failing to be this store's shape in the first place.
     if (!isRecord(payload) || !Array.isArray(payload.accounts)) throw new Error("Invalid account store payload")
-    cachedRead = { accounts: parseStoredSecretsById(payload), unreadable: false }
+    cachedRead = { accounts: parseStoredSecretsById(payload), status: "readable" }
   } catch (error) {
-    cachedRead = { accounts: new Map(), unreadable: !isMissingFileError(error) }
+    cachedRead = { accounts: new Map(), status: isMissingFileError(error) ? "readable" : "corrupt" }
   }
 
   return cachedRead
@@ -161,7 +204,7 @@ async function writeAccounts(accounts: Map<string, AccountSecrets>): Promise<voi
   // matching what this store did before.
   await writeJsonAtomic(storePath, contents, { mode: 0o600 })
   await fse.chmod(storePath, 0o600).catch(() => undefined)
-  cachedRead = { accounts, unreadable: false }
+  cachedRead = { accounts, status: "readable" }
 }
 
 /** What {@link saveAccountSecrets} actually did: a plain save, or a save that first had to rebuild an unreadable store around it. */
@@ -181,19 +224,23 @@ export type AccountSaveOutcome = "saved" | "saved-after-rebuild"
  * follows. The caller is told which happened, so a login that quietly wiped
  * a housemate's session is never reported as an ordinary one.
  */
-export async function saveAccountSecrets(accountId: string, secrets: AccountSecrets): Promise<AccountSaveOutcome> {
-  const store = await readStore()
-  const accounts = new Map(store.accounts)
-  accounts.set(accountId, secrets)
+export function saveAccountSecrets(accountId: string, secrets: AccountSecrets): Promise<AccountSaveOutcome> {
+  return serializeMutation(async () => {
+    const store = await readStore()
+    const accounts = new Map(store.accounts)
+    accounts.set(accountId, secrets)
 
-  if (!store.unreadable) {
+    // Only a corrupt store is rebuilt. A locked keyring falls through to writeAccounts, which
+    // asserts secure storage and throws before it could overwrite anything (#261).
+    if (store.status !== "corrupt") {
+      await writeAccounts(accounts)
+      return "saved"
+    }
+
+    await preserveUnreadableStore()
     await writeAccounts(accounts)
-    return "saved"
-  }
-
-  await preserveUnreadableStore()
-  await writeAccounts(accounts)
-  return "saved-after-rebuild"
+    return "saved-after-rebuild"
+  })
 }
 
 /** Reads one account's secrets, or null when nothing is stored for it. */
@@ -218,22 +265,24 @@ export async function getAccountSecrets(accountId: string): Promise<AccountSecre
  * problem instead. This never rebuilds the file: only `saveAccountSecrets`,
  * running for a login the player actually asked for, does that.
  */
-export async function removeAccountSecrets(accountId: string): Promise<boolean> {
-  const store = await readStore()
-  const accounts = new Map(store.accounts)
-  if (!accounts.delete(accountId)) return !store.unreadable
+export function removeAccountSecrets(accountId: string): Promise<boolean> {
+  return serializeMutation(async () => {
+    const store = await readStore()
+    const accounts = new Map(store.accounts)
+    if (!accounts.delete(accountId)) return store.status === "readable"
 
-  try {
-    if (accounts.size === 0) {
-      await fse.remove(getAccountStorePath())
-      cachedRead = { accounts: new Map(), unreadable: false }
-    } else {
-      await writeAccounts(accounts)
+    try {
+      if (accounts.size === 0) {
+        await fse.remove(getAccountStorePath())
+        cachedRead = { accounts: new Map(), status: "readable" }
+      } else {
+        await writeAccounts(accounts)
+      }
+      return true
+    } catch {
+      return false
     }
-    return true
-  } catch {
-    return false
-  }
+  })
 }
 
 /**
@@ -248,29 +297,31 @@ export async function removeAccountSecrets(accountId: string): Promise<boolean> 
  * Takes a backup of the original v1 file before overwriting it, once, so the
  * pre-migration bytes are never destroyed. See {@link getAccountStoreBackupPath}.
  */
-export async function adoptLegacySingleAccountSecrets(accountId: string): Promise<boolean> {
-  const storePath = getAccountStorePath()
+export function adoptLegacySingleAccountSecrets(accountId: string): Promise<boolean> {
+  return serializeMutation(async () => {
+    const storePath = getAccountStorePath()
 
-  let stored: Partial<LegacyEncryptedAccountFile>
-  try {
-    stored = (await fse.readJSON(storePath, "utf8")) as Partial<LegacyEncryptedAccountFile>
-  } catch {
-    return false
-  }
-  if (stored.version !== LEGACY_ACCOUNT_STORE_VERSION || typeof stored.ciphertext !== "string") return false
+    let stored: Partial<LegacyEncryptedAccountFile>
+    try {
+      stored = (await fse.readJSON(storePath, "utf8")) as Partial<LegacyEncryptedAccountFile>
+    } catch {
+      return false
+    }
+    if (stored.version !== LEGACY_ACCOUNT_STORE_VERSION || typeof stored.ciphertext !== "string") return false
 
-  assertSecureStorage()
-  let secrets: AccountSecrets | null
-  try {
-    const decrypted = safeStorage.decryptString(Buffer.from(stored.ciphertext, "base64"))
-    secrets = parseStoredSecrets(JSON.parse(decrypted))
-  } catch {
-    return false
-  }
-  if (!secrets) return false
+    assertSecureStorage()
+    let secrets: AccountSecrets | null
+    try {
+      const decrypted = safeStorage.decryptString(Buffer.from(stored.ciphertext, "base64"))
+      secrets = parseStoredSecrets(JSON.parse(decrypted))
+    } catch {
+      return false
+    }
+    if (!secrets) return false
 
-  await fse.copy(storePath, getAccountStoreBackupPath(), { overwrite: false, errorOnExist: false })
+    await fse.copy(storePath, getAccountStoreBackupPath(), { overwrite: false, errorOnExist: false })
 
-  await writeAccounts(new Map([[accountId, secrets]]))
-  return true
+    await writeAccounts(new Map([[accountId, secrets]]))
+    return true
+  })
 }
