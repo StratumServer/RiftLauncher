@@ -39,7 +39,13 @@ function ModListCard({
   const { t } = useTranslation()
 
   return (
-    <GridItem onClick={() => onSelect(mod)} selected={installed} ariaLabel={mod.name} size="w-[18rem] max-w-[26rem]" className="group overflow-hidden">
+    <GridItem
+      onClick={() => onSelect(mod)}
+      selected={installed}
+      ariaLabel={`${mod.name}, ${t(installed ? "generic.installed" : "generic.notInstalled")}`}
+      size="w-[18rem] max-w-[26rem]"
+      className="group overflow-hidden"
+    >
       <div className="relative w-full aspect-[3/2] skip-offscreen-render">
         <img src={mod.logo ? `${mod.logo}` : "https://mods.vintagestory.at/web/img/mod-default.png"} alt={mod.name} loading="lazy" className="w-full h-full object-cover object-top" />
 

@@ -91,15 +91,19 @@ export function TableBodyRow({
     <motion.li
       variants={TABLEROW_VARIANTS}
       className={clsx(
-        "flex group border-l-4 border-transparent duration-200 focus-visible:outline-2 focus-visible:outline-vsl focus-visible:-outline-offset-2",
+        "flex group border-l-4 border-transparent duration-200",
         selected ? "bg-vs/15 border-vs" : "odd:bg-zinc-800/30 even:bg-zinc-950/30",
         disabled ? "text-zinc-200/15" : onClick && "cursor-pointer",
         className
       )}
       title={title}
-      {...selectableItemProps({ onClick, selected, disabled, label: ariaLabel })}
     >
-      {children}
+      <motion.div
+        className="flex w-full focus-visible:outline-2 focus-visible:outline-vsl focus-visible:-outline-offset-2"
+        {...selectableItemProps({ onClick, pressed: selected, disabled, label: ariaLabel })}
+      >
+        {children}
+      </motion.div>
     </motion.li>
   )
 }

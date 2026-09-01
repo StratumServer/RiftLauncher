@@ -1,15 +1,17 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import { GridGroup, GridItem, GridWrapper } from "@renderer/components/ui/Grid"
 import { TableBody, TableBodyRow, TableCell, TableWrapper } from "@renderer/components/ui/Table"
+import ModListCard from "@renderer/features/mods/components/ModListCard"
+
+import "@renderer/i18n"
 
 /**
- * #263: GridItem and TableBodyRow render a clickable, selectable li with no
- * role, no keyboard path, and no announced selected state. These pin the fix
- * (selectableItemProps, shared by both) the same way configPageBackground.test.tsx
- * already pins the aria-pressed pattern on BackgroundTile.
+ * #263: GridItem and TableBodyRow render clickable, selectable list items. The
+ * interactive descendant owns the role, name, focus and keyboard path, while
+ * the outer li keeps the list structure intact.
  */
 describe("GridItem accessibility", () => {
   it("is a plain, non-interactive li when it has no onClick", () => {
@@ -25,32 +27,48 @@ describe("GridItem accessibility", () => {
     expect(screen.getByText("static card").closest("li")?.getAttribute("role")).toBeNull()
   })
 
-  it("exposes role=button, a name, and aria-pressed reflecting selected", () => {
+  it("keeps listitem structure and exposes role=button on its interactive descendant", () => {
     const { rerender } = render(
       <GridWrapper>
         <GridGroup>
-          <GridItem onClick={() => {}} selected={false} ariaLabel="Better Ruins">
+          <GridItem onClick={() => {}} selected={false} pressed={false} ariaLabel="Better Ruins">
             card body
           </GridItem>
         </GridGroup>
       </GridWrapper>
     )
 
-    const card = screen.getByRole("button", { name: "Better Ruins" })
+    const listItem = screen.getByRole("listitem")
+    const card = within(listItem).getByRole("button", { name: "Better Ruins" })
+    expect(listItem.contains(card)).toBe(true)
     expect(card.getAttribute("aria-pressed")).toBe("false")
     expect(card.getAttribute("tabindex")).toBe("0")
 
     rerender(
       <GridWrapper>
         <GridGroup>
-          <GridItem onClick={() => {}} selected={true} ariaLabel="Better Ruins">
+          <GridItem onClick={() => {}} selected={true} pressed={true} ariaLabel="Better Ruins">
             card body
           </GridItem>
         </GridGroup>
       </GridWrapper>
     )
 
-    expect(screen.getByRole("button", { name: "Better Ruins" }).getAttribute("aria-pressed")).toBe("true")
+    expect(within(screen.getByRole("listitem")).getByRole("button", { name: "Better Ruins" }).getAttribute("aria-pressed")).toBe("true")
+  })
+
+  it("does not announce selected styling as pressed without an activation state", () => {
+    render(
+      <GridWrapper>
+        <GridGroup>
+          <GridItem onClick={() => {}} selected ariaLabel="Installed mod">
+            card body
+          </GridItem>
+        </GridGroup>
+      </GridWrapper>
+    )
+
+    expect(within(screen.getByRole("listitem")).getByRole("button", { name: "Installed mod" }).getAttribute("aria-pressed")).toBeNull()
   })
 
   it("falls back to its visible content as the accessible name when no ariaLabel is given", () => {
@@ -161,7 +179,7 @@ describe("TableBodyRow accessibility", () => {
   it("exposes role=button and aria-pressed once it is clickable", () => {
     renderRow({ onClick: () => {}, selected: true })
 
-    const row = screen.getByRole("button", { name: "1.20.4" })
+    const row = within(screen.getByRole("listitem")).getByRole("button", { name: "1.20.4" })
     expect(row.getAttribute("aria-pressed")).toBe("true")
   })
 
@@ -170,7 +188,7 @@ describe("TableBodyRow accessibility", () => {
     const onClick = vi.fn()
     renderRow({ onClick, selected: false })
 
-    screen.getByRole("button", { name: "1.20.4" }).focus()
+    within(screen.getByRole("listitem")).getByRole("button", { name: "1.20.4" }).focus()
     await user.keyboard("{Enter}")
 
     expect(onClick).toHaveBeenCalledTimes(1)
@@ -181,7 +199,7 @@ describe("TableBodyRow accessibility", () => {
     const onClick = vi.fn()
     renderRow({ onClick, selected: false, disabled: true })
 
-    const row = screen.getByRole("button", { name: "1.20.4" })
+    const row = within(screen.getByRole("listitem")).getByRole("button", { name: "1.20.4" })
     expect(row.getAttribute("tabindex")).toBe("-1")
     expect(row.getAttribute("aria-disabled")).toBe("true")
 
@@ -190,5 +208,47 @@ describe("TableBodyRow accessibility", () => {
     await user.click(row)
 
     expect(onClick).not.toHaveBeenCalled()
+  })
+})
+
+describe("ModListCard accessibility", () => {
+  function makeMod(): DownloadableModOnListType {
+    return {
+      modid: 123,
+      assetid: 123,
+      downloads: 42,
+      follows: 7,
+      trendingpoints: 0,
+      comments: 1,
+      name: "Better Ruins",
+      summary: "More interesting ruins.",
+      modidstrs: ["betterruins"],
+      author: "Someone",
+      urlalias: null,
+      side: "both",
+      type: "mod",
+      logo: "",
+      tags: [],
+      lastreleased: ""
+    }
+  }
+
+  it("announces the translated installed state without claiming the card is a toggle", () => {
+    const mod = makeMod()
+    const props = {
+      mod,
+      isFav: false,
+      onSelect: vi.fn(),
+      onToggleFav: vi.fn(),
+      onOpenModDb: vi.fn()
+    }
+
+    const { rerender } = render(<ModListCard {...props} installed={false} />)
+    const notInstalledCard = screen.getByRole("button", { name: "Better Ruins, Not installed" })
+    expect(notInstalledCard.getAttribute("aria-pressed")).toBeNull()
+
+    rerender(<ModListCard {...props} installed />)
+    const installedCard = screen.getByRole("button", { name: "Better Ruins, Installed" })
+    expect(installedCard.getAttribute("aria-pressed")).toBeNull()
   })
 })

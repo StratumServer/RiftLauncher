@@ -51,6 +51,7 @@ export function GridGroup({ children, className }: Readonly<{ children: React.Re
  * @param {string} [props.className] - Additional class names for styling.
  * @param {string} [props.size] - Like the className prop but for the size properties.
  * @param {() => void} [props.onClick] - The function to be called when the item is clicked.
+ * @param {boolean} [props.pressed] - Whether activation changes the announced pressed state.
  * @param {string} [props.ariaLabel] - Accessible name for the item when it is clickable. Give it
  *   when the visible content does not already read as a short label (a mod card names the mod).
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
@@ -61,6 +62,7 @@ export function GridItem({
   selected = false,
   size,
   onClick,
+  pressed,
   ariaLabel
 }: Readonly<{
   children: React.ReactNode
@@ -68,6 +70,7 @@ export function GridItem({
   selected?: boolean
   size?: string
   onClick?: () => void
+  pressed?: boolean
   ariaLabel?: string
 }>): JSX.Element {
   const ref = useRef(null)
@@ -83,12 +86,7 @@ export function GridItem({
   })
 
   return (
-    <motion.li
-      ref={ref}
-      variants={GRIDITEM_VARIANTS}
-      className={clsx("grow shrink-0 rounded-sm focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2", size)}
-      {...selectableItemProps({ onClick, selected, label: ariaLabel })}
-    >
+    <motion.li ref={ref} variants={GRIDITEM_VARIANTS} className={clsx("grow shrink-0 rounded-sm", size)}>
       <motion.div
         initial="initial"
         animate={isInView ? "animate" : "initial"}
@@ -101,8 +99,10 @@ export function GridItem({
           // cue). Opaque clears it with room to spare; see text-contrast.test.ts.
           selected ? "bg-vsd/50 border-vsl" : "bg-zinc-950/50 border-zinc-400/5",
           onClick && "cursor-pointer",
+          onClick && "focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2",
           className
         )}
+        {...selectableItemProps({ onClick, pressed, label: ariaLabel })}
       >
         {children}
       </motion.div>
