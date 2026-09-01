@@ -92,6 +92,8 @@ export interface BuildGameLaunchPlanInput {
   startParams: string
   /** True when the installation asks for {@link MESA_GL_THREAD_VARIABLE}. */
   mesaGlThread: boolean
+  /** Resolved Linux wrapper command, or empty when the game runs directly. */
+  launchWrapper?: string
 }
 
 /**
@@ -126,12 +128,15 @@ export async function buildGameLaunchPlan(ports: BuildGameLaunchPlanPorts, input
   const executablePath = await ports.paths.join([input.versionFolder, candidate.fileName])
   const gameArgs = [`--dataPath=${input.installationPath}`, input.startParams]
   const runsUnderMono = candidate.launchMode === "mono"
+  const gameCommand = runsUnderMono ? "mono" : executablePath
+  const gameCommandArgs = runsUnderMono ? [executablePath, ...gameArgs] : gameArgs
+  const wrapper = input.launchWrapper?.trim()
 
   return {
     ok: true,
     plan: {
-      command: runsUnderMono ? "mono" : executablePath,
-      args: runsUnderMono ? [executablePath, ...gameArgs] : gameArgs,
+      command: wrapper && os === "linux" ? wrapper : gameCommand,
+      args: wrapper && os === "linux" ? [gameCommand, ...gameCommandArgs] : gameCommandArgs,
       executablePath,
       env: !runsUnderMono && os === "linux" && input.mesaGlThread ? { [MESA_GL_THREAD_VARIABLE]: "true" } : {},
       cwd: input.versionFolder

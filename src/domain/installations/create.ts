@@ -59,6 +59,7 @@ export interface CreateInstallationInput {
   compressionLevel: number
   mesaGlThread: boolean
   envVars: string
+  launchWrapper?: string
   /** Folders the launcher already uses for backups, versions or other installations. */
   foldersInUse: readonly string[]
   /** Host platform for path normalization. Defaults to posix when absent. */
@@ -78,6 +79,7 @@ export interface CreatedInstallation {
   compressionLevel: number
   mesaGlThread: boolean
   envVars: string
+  launchWrapper?: string
   backups: []
   lastTimePlayed: number
   totalTimePlayed: number
@@ -117,6 +119,7 @@ export function createInstallation(ports: CreateInstallationPorts, input: Create
       compressionLevel: input.compressionLevel,
       mesaGlThread: input.mesaGlThread,
       envVars: input.envVars,
+      ...(input.launchWrapper?.trim() ? { launchWrapper: input.launchWrapper.trim() } : {}),
       backups: [],
       lastTimePlayed: -1,
       totalTimePlayed: 0

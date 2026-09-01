@@ -22,7 +22,10 @@ export function noExecutableResult(): GameExecutionResult {
   return { ok: false, reason: "no-executable" }
 }
 
-/** The executable failed its last check before spawning (not a real file, or a symlink). */
+/**
+ * The executable failed its last check before spawning (not a real file, or a symlink), or a
+ * configured launch wrapper could not be resolved to an executable.
+ */
 export function invalidExecutableResult(): GameExecutionResult {
   return { ok: false, reason: "launch-failed" }
 }

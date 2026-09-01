@@ -52,7 +52,8 @@ function EditInslallation(): JSX.Element {
     backupsAuto: false,
     compressionLevel: DEFAULT_COMPRESSION_LEVEL,
     mesaGlThread: false,
-    envVars: ""
+    envVars: "",
+    launchWrapper: ""
   })
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -77,6 +78,7 @@ function EditInslallation(): JSX.Element {
     fields.setCompressionLevel(installation?.compressionLevel ?? DEFAULT_COMPRESSION_LEVEL)
     fields.setMesaGlThread(installation?.mesaGlThread ?? false)
     fields.setEnvVars(installation?.envVars ?? "")
+    fields.setLaunchWrapper(installation?.launchWrapper ?? "")
   }, [installation])
 
   // The Installation's own version when the launcher no longer has it installed. Read
@@ -114,7 +116,8 @@ function EditInslallation(): JSX.Element {
         backupsLimit: fields.backupsLimit,
         compressionLevel: fields.compressionLevel,
         mesaGlThread: fields.mesaGlThread,
-        envVars: fields.envVars
+        envVars: fields.envVars,
+        launchWrapper: fields.launchWrapper.trim()
       }
       if (fields.version) updates.version = fields.version.version
 
@@ -195,6 +198,8 @@ function EditInslallation(): JSX.Element {
                 onMesaGlThreadChange={fields.setMesaGlThread}
                 envVars={fields.envVars}
                 onEnvVarsChange={fields.setEnvVars}
+                launchWrapper={fields.launchWrapper}
+                onLaunchWrapperChange={fields.setLaunchWrapper}
               />
 
               <ButtonsWrapper className="text-lg">

@@ -17,6 +17,8 @@ export interface AdvancedSettingsSectionProps {
   onMesaGlThreadChange: (mesaGlThread: boolean) => void
   envVars: string
   onEnvVarsChange: (envVars: string) => void
+  launchWrapper: string
+  onLaunchWrapperChange: (launchWrapper: string) => void
 }
 
 /** The Advanced FormGroupWrapper shared by AddInstallation and EditInstallation. */
@@ -27,7 +29,9 @@ export function AdvancedSettingsSection({
   mesaGlThread,
   onMesaGlThreadChange,
   envVars,
-  onEnvVarsChange
+  onEnvVarsChange,
+  launchWrapper,
+  onLaunchWrapperChange
 }: Readonly<AdvancedSettingsSectionProps>): JSX.Element {
   const { t } = useTranslation()
 
@@ -68,6 +72,19 @@ export function AdvancedSettingsSection({
           <FormFieldGroupWithDescription>
             <FormInputText value={envVars} onChange={(e) => onEnvVarsChange(e.target.value)} placeholder={t("features.installations.envVarsPlaceholder")} />
             <FormFieldDescription content={t("features.installations.envVarsDesc")} />
+          </FormFieldGroupWithDescription>
+        </FormBody>
+      </FromGroup>
+
+      <FromGroup>
+        <FormHead>
+          <FormLabel content={t("features.installations.launchWrapper")} />
+        </FormHead>
+
+        <FormBody>
+          <FormFieldGroupWithDescription>
+            <FormInputText value={launchWrapper} onChange={(e) => onLaunchWrapperChange(e.target.value)} placeholder={t("features.installations.launchWrapperPlaceholder")} />
+            <FormFieldDescription content={t("features.installations.launchWrapperDesc")} />
           </FormFieldGroupWithDescription>
         </FormBody>
       </FromGroup>
