@@ -46,9 +46,9 @@ export function useManageInstalledMods(installation: InstallationType | undefine
   }, [installation?.id, installation?._updatingMods, isConfigLoaded])
 
   async function refresh(): Promise<void> {
-    setGettingMods(true)
-
     if (!installation) return addNotification(t("features.installations.noInstallationSelected"), "error")
+
+    setGettingMods(true)
 
     const mods = await getCompleteInstalledMods({
       path: installation.path,
