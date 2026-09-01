@@ -4,9 +4,9 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@napi-rs/lzma/lzma2", () => ({
-  decompressStream: () => {
+  decompressStream: (): ReadableStream<Uint8Array> => {
     return new ReadableStream<Uint8Array>({
-      start(controller) {
+      start(controller): void {
         controller.enqueue(Uint8Array.of(1))
         queueMicrotask(() => controller.error(new Error("simulated native decoder failure")))
       }
