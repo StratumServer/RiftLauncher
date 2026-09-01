@@ -1,3 +1,4 @@
+import { selectableItemProps } from "@renderer/components/ui/selectableItemProps"
 import { TABLEBODY_VARIANTS, TABLEROW_VARIANTS } from "@renderer/utils/animateVariants"
 import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
@@ -66,6 +67,7 @@ export function TableBody({ children, className }: Readonly<{ children: React.Re
  * @param {boolean} props.disabled - If the row can be selected or not.
  * @param {string} props.title - If the row can be selected or not.
  * @param {() => void} props.onClick - Function to be called when the row is clicked.
+ * @param {string} [props.ariaLabel] - Accessible name for the row when it is clickable.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
 export function TableBodyRow({
@@ -74,7 +76,8 @@ export function TableBodyRow({
   selected,
   disabled,
   title,
-  onClick
+  onClick,
+  ariaLabel
 }: Readonly<{
   children: React.ReactNode
   className?: string
@@ -82,18 +85,19 @@ export function TableBodyRow({
   disabled?: boolean
   title?: string
   onClick?: () => void
+  ariaLabel?: string
 }>): JSX.Element {
   return (
     <motion.li
       variants={TABLEROW_VARIANTS}
       className={clsx(
-        "flex group border-l-4 border-transparent duration-200",
+        "flex group border-l-4 border-transparent duration-200 focus-visible:outline-2 focus-visible:outline-vsl focus-visible:-outline-offset-2",
         selected ? "bg-vs/15 border-vs" : "odd:bg-zinc-800/30 even:bg-zinc-950/30",
         disabled ? "text-zinc-200/15" : onClick && "cursor-pointer",
         className
       )}
       title={title}
-      onClick={onClick}
+      {...selectableItemProps({ onClick, selected, disabled, label: ariaLabel })}
     >
       {children}
     </motion.li>

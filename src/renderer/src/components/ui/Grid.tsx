@@ -1,3 +1,4 @@
+import { selectableItemProps } from "@renderer/components/ui/selectableItemProps"
 import { GRIDGROUP_VARIANTS, GRIDITEM_VARIANTS } from "@renderer/utils/animateVariants"
 import clsx from "clsx"
 import { AnimatePresence, motion, useInView } from "motion/react"
@@ -50,6 +51,8 @@ export function GridGroup({ children, className }: Readonly<{ children: React.Re
  * @param {string} [props.className] - Additional class names for styling.
  * @param {string} [props.size] - Like the className prop but for the size properties.
  * @param {() => void} [props.onClick] - The function to be called when the item is clicked.
+ * @param {string} [props.ariaLabel] - Accessible name for the item when it is clickable. Give it
+ *   when the visible content does not already read as a short label (a mod card names the mod).
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
 export function GridItem({
@@ -57,13 +60,15 @@ export function GridItem({
   className,
   selected = false,
   size,
-  onClick
+  onClick,
+  ariaLabel
 }: Readonly<{
   children: React.ReactNode
   className?: string
   selected?: boolean
   size?: string
   onClick?: () => void
+  ariaLabel?: string
 }>): JSX.Element {
   const ref = useRef(null)
   // once: true, not the useInView default of false. With false, motion/react's inView()
@@ -78,7 +83,12 @@ export function GridItem({
   })
 
   return (
-    <motion.li ref={ref} variants={GRIDITEM_VARIANTS} onClick={onClick} className={clsx("grow shrink-0", size)}>
+    <motion.li
+      ref={ref}
+      variants={GRIDITEM_VARIANTS}
+      className={clsx("grow shrink-0 rounded-sm focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2", size)}
+      {...selectableItemProps({ onClick, selected, label: ariaLabel })}
+    >
       <motion.div
         initial="initial"
         animate={isInView ? "animate" : "initial"}
