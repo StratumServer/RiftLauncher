@@ -251,4 +251,27 @@ describe("ModListCard accessibility", () => {
     const installedCard = screen.getByRole("button", { name: "Better Ruins, Installed" })
     expect(installedCard.getAttribute("aria-pressed")).toBeNull()
   })
+
+  it("keeps the card actions outside the card's role=button", () => {
+    const mod = makeMod()
+    const props = {
+      mod,
+      installed: false,
+      isFav: false,
+      onSelect: vi.fn(),
+      onToggleFav: vi.fn(),
+      onOpenModDb: vi.fn()
+    }
+
+    render(<ModListCard {...props} />)
+
+    const card = screen.getByRole("button", { name: "Better Ruins, Not installed" })
+    const listItem = screen.getByRole("listitem")
+    const favorite = within(listItem).getByTitle("Favorite")
+    const modDb = within(listItem).getByTitle("Open on the ModDB!")
+
+    expect(card.contains(favorite)).toBe(false)
+    expect(card.contains(modDb)).toBe(false)
+    expect(within(listItem).getAllByRole("button")).toHaveLength(3)
+  })
 })
