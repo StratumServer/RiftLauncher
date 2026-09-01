@@ -20,6 +20,18 @@ files:
   # the musl binary is 1.4 MB that can never load. Revisit if a musl target
   # is ever added.
   - "!node_modules/@napi-rs/lzma-*-musl{,/**/*}"
+  # Nothing under these trees is reachable from out/: docs/ is linked from the
+  # app as GitHub URLs rather than read locally (InfoAndHelpPage.tsx), branding/
+  # holds design sources including a multi-MB PSD, and tests/ and coverage/ are
+  # development artifacts. coverage/ only exists when a developer ran
+  # test:coverage before building, so leaving it in made the asar differ
+  # between a local build and CI. Source maps inside bundled dependencies ship
+  # ~3 MB that no runtime consumes.
+  - "!docs{,/**/*}"
+  - "!branding{,/**/*}"
+  - "!tests{,/**/*}"
+  - "!coverage{,/**/*}"
+  - "!node_modules/**/*.map"
 # Chromium ships 55 locale .pak files (~47 MB) and this app can use exactly one.
 # The 14 UI languages are React + i18next JSON inside the asar
 # (src/renderer/src/locales); these .pak files only feed Chromium's own native
