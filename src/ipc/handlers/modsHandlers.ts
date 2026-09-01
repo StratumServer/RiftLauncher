@@ -5,7 +5,7 @@ import { IPC_CHANNELS } from "../ipcChannels"
 import { createScanInstalledModsPorts, pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { assertManagedDeletionPath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
+import { assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
 import { assertBoolean, assertSafeFileName, assertString, isRecord } from "@src/ipc/validation"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
@@ -78,7 +78,8 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
  *
  * The renderer names the file to act on and the state it wants, and nothing else. Everything about
  * the destination is derived here: the source is put through the same grade of check a deletion is,
- * because the name it has stops existing either way, then its own file name is put through the guard
+ * bar the one exception a linked Mods folder buys it, because the name it has stops existing either
+ * way, then its own file name is put through the guard
  * the scan applies to every entry it will open, and only then does the domain derive the target name
  * by adding or removing one fixed suffix. Nothing a caller sends is ever spliced into the name that
  * gets written, so the toggle cannot reach a file that a delete could not already reach.
@@ -92,7 +93,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, async (event, pathValu
 
   try {
     const wanted = assertBoolean(enabled, "mod enabled state")
-    const safePath = await assertManagedDeletionPath(pathValue)
+    const safePath = await assertManagedModArchivePath(pathValue)
     const rename = renameModArchiveTo(assertSafeFileName(basename(safePath), "mod archive name"), wanted)
 
     if (!rename.ok) {
@@ -101,7 +102,9 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, async (event, pathValu
     }
 
     const target = join(dirname(safePath), rename.fileName)
-    await assertManagedPath(target, "mod archive path", { allowMissing: true })
+    // The folder is the one the source was just cleared in, and the name is derived rather than sent,
+    // so what is left to check here is the grant. The walk is the source's job and it did it.
+    await assertManagedPath(target, "mod archive path", { allowMissing: true, allowSymlinks: true })
 
     if (await fse.pathExists(target)) {
       logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] The other name is already taken, leaving both archives alone.`)

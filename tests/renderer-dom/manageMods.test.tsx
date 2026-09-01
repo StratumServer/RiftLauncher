@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { cleanup, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
@@ -520,6 +520,42 @@ describe("ManageMods: enabling and disabling a Mod", () => {
     // The archive's name is its path, so every button on that row is pointing at a name that has
     // just stopped existing. The rescan is what puts them back on the real file.
     await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
+  })
+
+  it("sends one rename when the same row is clicked twice before the first one lands", async () => {
+    let landIpc: (result: SetModEnabledResult) => void = () => {}
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(() => new Promise<SetModEnabledResult>((resolve) => (landIpc = resolve)))
+    const getInstalledMods = vi.fn(async () => scanWithADisabledMod())
+    renderWithADisabledMod({ modsManager: { setModEnabled, getInstalledMods } })
+
+    const alphaRow = await rowFor("Alpha Mod")
+    const disableButton = within(alphaRow).getByTitle(DISABLE_TITLE) as HTMLButtonElement
+    const scansBefore = getInstalledMods.mock.calls.length
+
+    // Both clicks inside one commit, which is what an impatient double click actually looks like:
+    // the second one arrives before React has painted anything the first one changed.
+    await act(async () => {
+      disableButton.click()
+      disableButton.click()
+    })
+
+    // Only the first click reached the host, and it carried the only name that still exists. The
+    // second would have sent the same one, and the answer to it would have been an error the player
+    // reads next to a success for the one thing they asked for.
+    expect(setModEnabled).toHaveBeenCalledTimes(1)
+    expect(setModEnabled).toHaveBeenCalledWith(ALPHA_PATH, false)
+    expect(disableButton.disabled).toBe(true)
+
+    await act(async () => {
+      landIpc({ ok: true, path: `${ALPHA_PATH}.disabled` })
+    })
+
+    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded!")).toBeTruthy()
+    expect(screen.queryByText("An error has occurred enabling or disabling Alpha Mod!")).toBeNull()
+    await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
+    // Still one call once everything has settled, and the row is live again for the next real click.
+    expect(setModEnabled).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect((within(alphaRow).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false))
   })
 
   it("turns a disabled Mod back on from its own row", async () => {

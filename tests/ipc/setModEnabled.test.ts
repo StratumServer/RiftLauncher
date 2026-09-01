@@ -36,6 +36,33 @@ function setModEnabled(): SetModEnabledHandler {
   return getIpcHandler<SetModEnabledHandler>(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED)
 }
 
+/**
+ * The config the policy reads, optionally naming one installation.
+ *
+ * Written before the handler is ever called, which is all the timing this needs: the config is read
+ * on the first call and cached from there, and `vi.resetModules()` hands each test a fresh cache.
+ */
+function writeConfig(installationPath?: string): void {
+  writeFileSync(
+    join(userDataFolder, "config.json"),
+    JSON.stringify({
+      schemaVersion: 4,
+      lastUsedInstallation: null,
+      defaultInstallationsFolder: join(temporaryRoot, "Installations"),
+      defaultVersionsFolder: join(temporaryRoot, "Versions"),
+      backupsFolder: join(temporaryRoot, "Backups"),
+      window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
+      accounts: [],
+      activeAccountId: null,
+      installations: installationPath ? [{ id: "linked", name: "Linked", path: installationPath, version: "1.20.0" }] : [],
+      gameVersions: [],
+      favMods: [],
+      customIcons: []
+    }),
+    "utf-8"
+  )
+}
+
 function seedArchive(name: string, contents = "not really a zip"): string {
   const archivePath = join(managedMods, name)
   writeFileSync(archivePath, contents, "utf-8")
@@ -56,24 +83,7 @@ beforeEach(async () => {
   setElectronPath("home", temporaryRoot)
   setElectronPath("appRoot", join(temporaryRoot, "app"))
 
-  writeFileSync(
-    join(userDataFolder, "config.json"),
-    JSON.stringify({
-      schemaVersion: 4,
-      lastUsedInstallation: null,
-      defaultInstallationsFolder: join(temporaryRoot, "Installations"),
-      defaultVersionsFolder: join(temporaryRoot, "Versions"),
-      backupsFolder: join(temporaryRoot, "Backups"),
-      window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
-      accounts: [],
-      activeAccountId: null,
-      installations: [],
-      gameVersions: [],
-      favMods: [],
-      customIcons: []
-    }),
-    "utf-8"
-  )
+  writeConfig()
 
   vi.resetModules()
   await import("@src/ipc/handlers/modsHandlers")
@@ -179,6 +189,58 @@ describe("SET_MOD_ENABLED", () => {
 
     assert.deepEqual(await setModEnabled()(event, join(managedMods, ARCHIVE), false), { ok: false, reason: "refused" })
     assert.deepEqual(readdirSync(managedMods), [ARCHIVE])
+  })
+
+  it.skipIf(process.platform === "win32")("renames an archive inside a Mods folder that is itself a symbolic link", async () => {
+    const event = await createTrustedEvent()
+    // The setup the scan supports and the toggle used to refuse: the game data lives somewhere else,
+    // usually the default Vintage Story folder or another disk, and the installation's Mods folder is
+    // a link at it. Nothing about the archive is a link, so the rename stays inside one real folder.
+    const realMods = join(outside, "Mods")
+    mkdirSync(realMods, { recursive: true })
+    writeFileSync(join(realMods, ARCHIVE), "not really a zip", "utf-8")
+    const installation = join(temporaryRoot, "Installations", "linked-install")
+    mkdirSync(installation, { recursive: true })
+    symlinkSync(realMods, join(installation, "Mods"))
+    writeConfig(installation)
+
+    const off = await setModEnabled()(event, join(installation, "Mods", ARCHIVE), false)
+
+    assert.deepEqual(off, { ok: true, path: join(installation, "Mods", DISABLED_ARCHIVE) })
+    assert.deepEqual(readdirSync(realMods), [DISABLED_ARCHIVE])
+    assert.equal(readFileSync(join(realMods, DISABLED_ARCHIVE), "utf-8"), "not really a zip")
+  })
+
+  it.skipIf(process.platform === "win32")("still refuses an archive that is a link inside a Mods folder that is a link", async () => {
+    const event = await createTrustedEvent()
+    // Both halves at once: the folder earns the exception, the archive does not, and the check that
+    // stands between the toggle and renaming a file anywhere on the disk is the one on the archive.
+    const realMods = join(outside, "Mods")
+    mkdirSync(realMods, { recursive: true })
+    writeFileSync(join(outside, "real.zip"), "not yours", "utf-8")
+    symlinkSync(join(outside, "real.zip"), join(realMods, ARCHIVE))
+    const installation = join(temporaryRoot, "Installations", "linked-install")
+    mkdirSync(installation, { recursive: true })
+    symlinkSync(realMods, join(installation, "Mods"))
+    writeConfig(installation)
+
+    assert.deepEqual(await setModEnabled()(event, join(installation, "Mods", ARCHIVE), false), { ok: false, reason: "refused" })
+    assert.deepEqual(readdirSync(realMods), [ARCHIVE])
+    assert.equal(readFileSync(join(outside, "real.zip"), "utf-8"), "not yours")
+  })
+
+  it.skipIf(process.platform === "win32")("still refuses an archive a level deeper, behind a link planted in a Mods folder", async () => {
+    const event = await createTrustedEvent()
+    // The exception is the Mods folder itself and nothing under it: a link the folder happens to hold
+    // is not a Mods folder the config names, so the strict walk decides, and it says no.
+    const installation = join(temporaryRoot, "Installations", "plain-install")
+    mkdirSync(join(installation, "Mods"), { recursive: true })
+    writeFileSync(join(outside, ARCHIVE), "not yours", "utf-8")
+    symlinkSync(outside, join(installation, "Mods", "linked"))
+    writeConfig(installation)
+
+    assert.deepEqual(await setModEnabled()(event, join(installation, "Mods", "linked", ARCHIVE), false), { ok: false, reason: "refused" })
+    assert.deepEqual(readdirSync(outside), [ARCHIVE])
   })
 
   it("refuses a path carrying a NUL, before any name is derived from it", async () => {

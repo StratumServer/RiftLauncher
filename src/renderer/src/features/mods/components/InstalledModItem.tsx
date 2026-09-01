@@ -13,6 +13,7 @@ import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 function InstalledModItem({
   iMod,
   suspended,
+  busy,
   onToggleEnabledClick,
   onToggleSuspendClick,
   onDeleteClick,
@@ -21,6 +22,12 @@ function InstalledModItem({
   iMod: InstalledModType
   /** Update All skips this Mod. The row still says an update exists, and still offers it. */
   suspended: boolean
+  /**
+   * A call that renames or replaces this archive is in flight, up to and including the rescan that
+   * follows it. Everything that would act on the name the row is holding is off until it lands; the
+   * two that only read it, ModDB and suspension, stay live.
+   */
+  busy?: boolean
   onToggleEnabledClick: () => void
   onToggleSuspendClick: () => void
   onDeleteClick: () => void
@@ -90,7 +97,13 @@ function InstalledModItem({
         <ThinSeparator />
 
         <div className="flex gap-1 justify-end text-lg">
-          <NormalButton className="p-1" title={iMod.enabled ? t("features.mods.disableMod") : t("features.mods.enableMod")} type={iMod.enabled ? "normal" : "warn"} onClick={onToggleEnabledClick}>
+          <NormalButton
+            className="p-1"
+            title={iMod.enabled ? t("features.mods.disableMod") : t("features.mods.enableMod")}
+            type={iMod.enabled ? "normal" : "warn"}
+            disabled={busy}
+            onClick={onToggleEnabledClick}
+          >
             <PiPowerDuotone />
           </NormalButton>
 
@@ -101,6 +114,7 @@ function InstalledModItem({
           <NormalButton
             className="p-1"
             title={t("generic.update")}
+            disabled={busy}
             onClick={async () => {
               onUpdateClick()
             }}
@@ -122,6 +136,7 @@ function InstalledModItem({
           <NormalButton
             className="p-1"
             title={t("generic.delete")}
+            disabled={busy}
             onClick={async () => {
               onDeleteClick()
             }}
