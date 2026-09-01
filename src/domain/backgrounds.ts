@@ -5,8 +5,8 @@
  * Three tiers, and the id in the config picks between them:
  *  - {@link DEFAULT_BACKGROUND_ID}: the scene bundled with the app. Always available, no
  *    network, and what a first launch offline shows.
- *  - a catalog id: a scene living on the repository's `backgrounds` branch, downloaded once
- *    into the userData cache the first time the player picks it.
+ *  - a catalog id: a scene living on the repository's `backgrounds` branch, downloaded into the
+ *    userData cache the first time the player picks it and refreshed when its manifest hash changes.
  *  - {@link CUSTOM_BACKGROUND_ID}: the player's own picture, copied into that same cache.
  *
  * Every cached file is named after its id ({@link backgroundCacheFileName}), so the renderer
@@ -47,6 +47,7 @@ const MAX_BACKGROUND_ENTRIES = 64
 const BACKGROUND_ID_PATTERN = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$/
 const BACKGROUND_FILE_PATTERN = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?\.jpg$/
 const BACKGROUND_THUMBNAIL_PATTERN = /^thumbnails\/[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?\.jpg$/
+const BACKGROUND_SHA256_PATTERN = /^[a-f0-9]{64}$/i
 
 /** True for the default id, the custom id, and any well-formed catalog slug. */
 export function isBackgroundId(value: unknown): value is string {
@@ -66,6 +67,11 @@ export function isBackgroundFileName(value: unknown): value is string {
 /** True for a thumbnail path confined to the branch's fixed `thumbnails` directory. */
 export function isBackgroundThumbnailFileName(value: unknown): value is string {
   return typeof value === "string" && BACKGROUND_THUMBNAIL_PATTERN.test(value)
+}
+
+/** True for the lowercase or uppercase hexadecimal SHA-256 digest in a manifest row. */
+export function isBackgroundSha256(value: unknown): value is string {
+  return typeof value === "string" && BACKGROUND_SHA256_PATTERN.test(value)
 }
 
 /**
@@ -113,14 +119,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseEntry(value: unknown): BackgroundType | null {
   if (!isRecord(value)) return null
-  const { id, name, file, thumbnail } = value
+  const { id, name, file, thumbnail, sha256 } = value
 
   if (!isCatalogBackgroundId(id)) return null
   if (typeof name !== "string" || name.length === 0 || name.length > 64) return null
   if (!isBackgroundFileName(file)) return null
+  if (sha256 !== undefined && !isBackgroundSha256(sha256)) return null
 
   const entry: BackgroundType = { id, name, file }
   if (isBackgroundThumbnailFileName(thumbnail)) entry.thumbnail = thumbnail
+  if (sha256 !== undefined) entry.sha256 = sha256.toLowerCase()
   return entry
 }
 
