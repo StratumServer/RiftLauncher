@@ -123,7 +123,7 @@ function parseNumbers(bytes: Uint8Array): number[] | undefined {
  */
 export function parseInnoSetupVersion(id: Uint8Array): InnoSetupVersion | undefined {
   if (id.length < ID_PREFIX.length + 2) return undefined
-  for (let i = 0; i < ID_PREFIX.length; i++) if (id[i] !== ID_PREFIX.charCodeAt(i)) return undefined
+  for (let i = 0; i < ID_PREFIX.length; i++) if (id[i] !== ID_PREFIX.codePointAt(i)) return undefined
 
   const rest = id.subarray(ID_PREFIX.length)
   const end = rest.indexOf(0x29)
