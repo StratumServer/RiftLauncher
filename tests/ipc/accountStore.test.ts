@@ -358,7 +358,7 @@ describe("overlapping mutations", () => {
       signalReached = resolve
     })
 
-    mockState.beforeWrite = async () => {
+    mockState.beforeWrite = async (): Promise<void> => {
       mockState.beforeWrite = undefined // Only the first write is held; whatever queues behind it runs normally.
       signalReached()
       await parked
@@ -576,6 +576,31 @@ describe("removeAccountSecrets", () => {
   })
 
   it("reports success when there was nothing to remove", async () => {
+    const store = await loadStore()
+
+    assert.equal(await store.removeAccountSecrets("uid-a"), true)
+  })
+
+  it("reports failure, and leaves the file alone, when secure storage is unavailable", async () => {
+    // #291: an existing store used to count as readable whenever the keyring was unavailable,
+    // so this reached the success path with an empty map and returned true. SessionButton then
+    // dropped the profile from config and told the player the account was gone, while its
+    // encrypted credentials sat on disk under a uid nothing named any more.
+    const writer = await loadStore()
+    await writer.saveAccountSecrets("uid-a", ACCOUNT_A)
+    const onDisk = readFileSync(storePath(), "utf8")
+
+    mockState.encryptionAvailable = false
+    const store = await loadStore()
+
+    assert.equal(await store.removeAccountSecrets("uid-a"), false)
+    assert.equal(readFileSync(storePath(), "utf8"), onDisk, "the credentials it could not open are still exactly where they were")
+  })
+
+  it("still reports success when secure storage is unavailable and there is no store file", async () => {
+    // The other way a read comes back empty. Nothing is stored, so nothing was left behind,
+    // and refusing here would strand an account in config over a store that never existed.
+    mockState.encryptionAvailable = false
     const store = await loadStore()
 
     assert.equal(await store.removeAccountSecrets("uid-a"), true)
