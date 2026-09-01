@@ -80,7 +80,7 @@ export function registerAutoUpdaterEvents(send: SendToRenderer): void {
 
   autoUpdater.on("update-available", (info) => {
     offeredVersion = info?.version ?? ""
-    markUpdateAvailable()
+    markUpdateAvailable(offeredVersion, send)
     send(IPC_CHANNELS.APP_UPDATER.UPDATE_AVAILABLE, { version: offeredVersion, releaseName: typeof info?.releaseName === "string" ? info.releaseName : undefined })
   })
 
