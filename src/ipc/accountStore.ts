@@ -36,18 +36,24 @@ const LEGACY_ACCOUNT_STORE_VERSION = 1
  *   opened. Temporary, and not the file's fault: the keyring unlocking later
  *   must still reach the real bytes, so this must never trigger the
  *   preserve-and-rebuild path a corrupt store gets (#261).
- * - `corrupt`: the file is there and cannot be trusted (wrong version, bad
- *   JSON, decrypt failure, a payload with no accounts list). The sessions it
- *   held are already gone, so a login may rebuild the store around itself once
- *   its bytes are safely copied aside.
+ * - `corrupt`: the file is there and cannot be trusted (bad JSON, decrypt
+ *   failure, a payload with no accounts list). The sessions it held are already
+ *   gone, and nothing can bring them back, so a login may rebuild the store
+ *   around itself once its bytes are safely copied aside.
+ * - `foreign-version`: the file has this store's shape but a version this build
+ *   does not know and that is newer than its own. It cannot be opened here, but
+ *   it is not corrupt: the build that wrote it can still read it. A login
+ *   rebuilds around it the same way `corrupt` does, but its snapshot is kept on
+ *   a version-scoped path so it never takes the single slot a genuinely
+ *   unrecoverable store needs (#270). `foreignVersion` carries that version.
  *
  * Both non-`readable` states hand back an empty map that says nothing about
  * what is on disk, so no mutation may treat "not in the map" as "not stored".
  */
-type StoreStatus = "readable" | "locked" | "corrupt"
+type StoreStatus = "readable" | "locked" | "corrupt" | "foreign-version"
 
 /** `undefined` for `cachedRead` means the file has not been read this process. */
-type StoreRead = { accounts: Map<string, AccountSecrets>; status: StoreStatus }
+type StoreRead = { accounts: Map<string, AccountSecrets>; status: StoreStatus; foreignVersion?: number }
 let cachedRead: StoreRead | undefined
 
 /**
@@ -101,9 +107,16 @@ function getAccountStoreBackupPath(): string {
  * old-format file being upgraded, versus a current-format file that stopped
  * decrypting), and sharing one path would let whichever happens second
  * silently erase the first one's snapshot.
+ *
+ * A store rejected only for a newer, unknown version gets its own version-scoped
+ * path (`foreignVersion` set). That file is not corrupt - a newer build can
+ * still read it - so it must not sit in the single unversioned slot that a
+ * genuinely unrecoverable store would later need (#270). One extra file per
+ * distinct newer version ever seen locally, which is bounded in practice.
  */
-function getUnreadableStoreBackupPath(): string {
-  return join(app.getPath("userData"), "account-secrets.unreadable.bak.json")
+function getUnreadableStoreBackupPath(foreignVersion?: number): string {
+  const name = foreignVersion === undefined ? "account-secrets.unreadable.bak.json" : `account-secrets.unreadable.v${foreignVersion}.bak.json`
+  return join(app.getPath("userData"), name)
 }
 
 /** The unreadable store's bytes could not be copied aside, so nothing was written over it. */
@@ -138,6 +151,13 @@ async function readStore(): Promise<StoreRead> {
 
   try {
     const stored = (await fse.readJSON(getAccountStorePath(), "utf8")) as Partial<EncryptedAccountFile>
+    if (typeof stored.ciphertext === "string" && typeof stored.version === "number" && Number.isInteger(stored.version) && stored.version > ACCOUNT_STORE_VERSION) {
+      // Right shape, newer version: a downgrade after a future build wrote this. It cannot be
+      // opened here but it is intact and the build that wrote it can still read it, so it is
+      // not corruption. Its snapshot goes to a version-scoped path (see the backup-path doc).
+      cachedRead = { accounts: new Map(), status: "foreign-version", foreignVersion: stored.version }
+      return cachedRead
+    }
     if (stored.version !== ACCOUNT_STORE_VERSION || typeof stored.ciphertext !== "string") throw new Error("Invalid account store")
 
     const decrypted = safeStorage.decryptString(Buffer.from(stored.ciphertext, "base64"))
@@ -164,20 +184,23 @@ async function readAccounts(): Promise<Map<string, AccountSecrets>> {
  * sessions. `overwrite: false` keeps the first snapshot and skips every later
  * one. That is a deliberate one-shot: a second corruption event can land after
  * the store has rebuilt and grown, so the skipped snapshot sometimes holds
- * more than the kept one, which for a version-mismatch file (recoverable by
- * the newer build that wrote it) is a real loss. The trade is accepted here
- * because a single predictable recovery file beats an unbounded pile of them,
- * and nothing in the app surfaces or clears these yet regardless (tracked as a
- * follow-up on #259).
+ * more than the kept one. The trade is accepted here because a single
+ * predictable recovery file beats an unbounded pile of them, and nothing in
+ * the app surfaces or clears these yet regardless (tracked as a follow-up on
+ * #259).
+ *
+ * A store rejected only for a newer version passes `foreignVersion` and lands
+ * on its own path, so it never occupies the unversioned slot a genuinely
+ * unrecoverable store would need afterwards (#270).
  *
  * Throws {@link AccountStoreUnreadableError} when the copy itself fails (a
  * permissions problem, most likely): that is the one case where proceeding
  * to rebuild would destroy bytes rather than merely fail to read them, so
  * the caller must not write anything.
  */
-async function preserveUnreadableStore(): Promise<void> {
+async function preserveUnreadableStore(foreignVersion?: number): Promise<void> {
   try {
-    await fse.copy(getAccountStorePath(), getUnreadableStoreBackupPath(), { overwrite: false, errorOnExist: false })
+    await fse.copy(getAccountStorePath(), getUnreadableStoreBackupPath(foreignVersion), { overwrite: false, errorOnExist: false })
   } catch (error) {
     if (isMissingFileError(error)) return // Vanished since the read; nothing left to preserve.
     throw new AccountStoreUnreadableError(error)
@@ -230,14 +253,15 @@ export function saveAccountSecrets(accountId: string, secrets: AccountSecrets): 
     const accounts = new Map(store.accounts)
     accounts.set(accountId, secrets)
 
-    // Only a corrupt store is rebuilt. A locked keyring falls through to writeAccounts, which
-    // asserts secure storage and throws before it could overwrite anything (#261).
-    if (store.status !== "corrupt") {
+    // Only an unopenable store is rebuilt. A locked keyring falls through to writeAccounts, which
+    // asserts secure storage and throws before it could overwrite anything (#261). A readable
+    // store is written normally.
+    if (store.status !== "corrupt" && store.status !== "foreign-version") {
       await writeAccounts(accounts)
       return "saved"
     }
 
-    await preserveUnreadableStore()
+    await preserveUnreadableStore(store.foreignVersion)
     await writeAccounts(accounts)
     return "saved-after-rebuild"
   })
