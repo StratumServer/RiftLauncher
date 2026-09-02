@@ -16,6 +16,8 @@
  * the main process side, same as every other side effect in this codebase.
  */
 
+import semver from "semver"
+
 import type { PathBuilder, ProcessProbe, ProcessProbeOutcome, ProcessProbeRequest } from "../ports"
 import { gameExecutableCandidates, toGameOs } from "./gameExecutable"
 import type { GameExecutableCandidate, GameOs } from "./gameExecutable"
@@ -27,8 +29,9 @@ import type { GameExecutableCandidate, GameOs } from "./gameExecutable"
  * which on macOS is every folder, since the launcher has no expectation to
  * check there yet. `probe-failed` covers a probe the host could not run to
  * completion, including one it had to time out. `unreadable-version` means
- * the probe ran but printed nothing usable, which is what an executable that
- * does not understand `-v` looks like.
+ * the probe ran but printed no version anywhere in its output, which is what
+ * an executable that does not understand `-v` looks like, and what a fork that
+ * answers it with something else entirely looks like too.
  */
 export type DetectInstalledGameVersionFailure = "no-executable" | "probe-failed" | "unreadable-version"
 
@@ -65,17 +68,76 @@ function probeRequestFor(candidate: GameExecutableCandidate, executablePath: str
 }
 
 /**
+ * Shape of a version token anywhere in a line of output: three dotted numbers
+ * with an optional dot-separated pre-release tail, which is how both the game
+ * catalog and ModDB publish versions (`1.21.1`, `1.21.0-rc.1`).
+ *
+ * This only finds candidates. `semver.valid` makes the call on each one, so
+ * what detection accepts is exactly what compareGameVersionsDesc can order on
+ * the other side, rather than a second grammar that drifts from it.
+ *
+ * The `(?<![\d.])` guard keeps a long run of digits from being rescanned once
+ * per character: without it, `\d+` matches the run, fails on the missing dot
+ * and backtracks the whole way, for every starting offset. Probe stdout has no
+ * size cap, so a binary printing a megabyte of digits would hold the main
+ * process for minutes.
+ *
+ * The `(?!\.?\d)` guard closes the other end. A token has to stop where the
+ * number stops, or `127.0.0.1` reads as `127.0.0` and `1.21.1.2` as `1.21.1`,
+ * both of which semver accepts and neither of which is a version anyone
+ * printed. The rule it spells: the character after the token may not be a
+ * digit, and may not be a dot with a digit behind it. That is the line between
+ * punctuation and continuation, since `1.21.0-rc.1.` ending a sentence has a
+ * dot followed by space or end, while `1.21.1.2` has a dot followed by a
+ * segment. It sits after the pre-release group so it judges the end of the
+ * whole token, which leaves pre-releases like `1.21.0-rc.1` untouched: the
+ * group is greedy, so anything it could still swallow it already has.
+ */
+const VERSION_TOKEN = /(?<![\d.])\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?!\.?\d)/g
+
+/**
+ * Reads a version out of probe output.
+ *
+ * The rule: the first line that is nothing but a version wins, and only when no
+ * line is one does the whole output get scanned for the first version inside a
+ * line.
+ *
+ * A vanilla binary answers `-v` with a bare version and nothing else, so this
+ * used to be a `.trim()`. Forks are not so quiet, and their chatter is what the
+ * two halves of the rule separate. Optimum prints "[Optimum] Optimum v0.3.14"
+ * on the patch path, which is exactly the path a freshly installed folder takes
+ * when someone points "Look for a Version" at it, and its shader owner lines
+ * carry mod archive stems like "betterruins_1.9.2-4f0ab21c73"; both parse, and
+ * both come before the 1.21.1 the client prints last, so taking the first token
+ * anywhere reads the wrapper instead of the game. A fork logs about a version,
+ * the game prints one, and the line that holds nothing else is the one that was
+ * printed as an answer. The scan stays as the fallback for a build that prints
+ * its version inside a sentence, where the first token is still the best guess
+ * available.
+ */
+function extractVersion(stdout: string): string | undefined {
+  for (const line of stdout.split("\n")) {
+    const bare = semver.valid(line.trim())
+    if (bare) return bare
+  }
+
+  for (const [token] of stdout.matchAll(VERSION_TOKEN)) if (semver.valid(token)) return token
+  return undefined
+}
+
+/**
  * Turns a probe outcome into a verdict.
  *
- * The version is whatever the process printed to stdout, trimmed. That is
- * exactly what LOOK_FOR_A_GAME_VERSION has always taken it to be: Vintage
- * Story's `-v` flag prints the version and nothing else, so there is no
- * further format to parse out of it.
+ * Output with no version in it at all reads as `unreadable-version`, the same
+ * verdict an empty stdout gets, which LOOK_FOR_A_GAME_VERSION reports as "not
+ * found" and the form answers by leaving the field empty for the player to type
+ * into. An exotic build the grammar cannot read is a version nobody detected,
+ * not a version equal to whatever it happened to print.
  */
 function interpretProbe(outcome: ProcessProbeOutcome): DetectInstalledGameVersionResult {
   if (!outcome.ok) return { ok: false, reason: "probe-failed" }
 
-  const version = outcome.stdout.trim()
+  const version = extractVersion(outcome.stdout)
   if (!version) return { ok: false, reason: "unreadable-version" }
 
   return { ok: true, version }
