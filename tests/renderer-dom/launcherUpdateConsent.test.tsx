@@ -133,8 +133,8 @@ function offerIsLive(): boolean {
   return liveNotifications.some((notification) => notification.body.includes("is available"))
 }
 
-/** Opens the task menu popover, which is where every task's progress bar lives. */
-function openTasksMenu(): void {
+/** Opens the Activity Center, which is where every task's progress bar lives. */
+function openActivityCenter(): void {
   fireEvent.click(screen.getByRole("button", { name: /active task/ }))
 }
 
@@ -247,7 +247,7 @@ describe("the download's progress bar (#185)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update now" }))
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 0 }))
 
-    openTasksMenu()
+    openActivityCenter()
     expect(screen.getByText("RiftLauncher 1.7.0-beta.3")).toBeTruthy()
     expect(progressBar()?.getAttribute("aria-valuenow")).toBe("0")
 
@@ -264,7 +264,7 @@ describe("the download's progress bar (#185)", () => {
     offerUpdate(listeners)
     fireEvent.click(screen.getByRole("button", { name: "Update now" }))
 
-    openTasksMenu()
+    openActivityCenter()
     expect(screen.queryByRole("progressbar")).toBeNull()
 
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 12 }))
@@ -290,7 +290,7 @@ describe("the download's progress bar (#185)", () => {
 
     offerUpdate(listeners)
     fireEvent.click(screen.getByRole("button", { name: "Update now" }))
-    openTasksMenu()
+    openActivityCenter()
 
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 30 }))
 
@@ -330,7 +330,7 @@ describe("the download's progress bar (#185)", () => {
     offerUpdate(listeners)
     fireEvent.click(screen.getByRole("button", { name: "Update now" }))
 
-    openTasksMenu()
+    openActivityCenter()
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 47 }))
     expect(progressBar()?.getAttribute("aria-valuenow")).toBe("47")
 
@@ -379,7 +379,7 @@ describe("the download's progress bar (#185)", () => {
 
     offerUpdate(listeners)
     fireEvent.click(screen.getByRole("button", { name: "Update now" }))
-    openTasksMenu()
+    openActivityCenter()
 
     for (const progress of [3, 17, 41, 82]) {
       act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress }))
@@ -393,7 +393,7 @@ describe("the download's progress bar (#185)", () => {
     const { listeners } = installUpdaterApi()
     renderUpdateSurfaces()
 
-    openTasksMenu()
+    openActivityCenter()
     act(() => listeners.progress?.({ version: "", progress: 25 }))
 
     expect(screen.getByText("RiftLauncher")).toBeTruthy()
