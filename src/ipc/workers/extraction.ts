@@ -4,16 +4,19 @@
  * The worker thread is a shim over this module so the same code can be driven
  * from a test or a script. Nothing here touches Electron or `worker_threads`.
  *
- * Every archive lands in a temporary folder first. The tree is validated there,
- * and only then copied into the destination, so a hostile archive never gets to
- * write a single byte where the launcher keeps its files.
+ * Every archive lands in a staging folder first, beside the destination rather
+ * than under the OS temporary directory: `/tmp` is tmpfs on most Linux and WSL
+ * systems, which would otherwise hold the whole extracted tree in RAM, and a
+ * separate drive for temp files means every byte is written twice. The tree is
+ * validated in the staging folder, and only then published into the
+ * destination, so a hostile archive never gets to write a single byte where
+ * the launcher keeps its files.
  */
 
 import fse from "fs-extra"
 import yauzl from "yauzl"
 import { createReadStream, createWriteStream, mkdtempSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { tmpdir } from "node:os"
 import type { Readable } from "node:stream"
 import * as tar from "tar"
 
@@ -108,6 +111,82 @@ export function copyTree(sourceRoot: string, destinationRoot: string): void {
   }
 
   copyEntry(sourceRoot)
+}
+
+function isCrossDeviceError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === "EXDEV"
+}
+
+/** Renames a whole subtree in one move, or copies it when that is not possible. */
+function renameOrCopyTree(source: string, destination: string): void {
+  if (!fse.existsSync(destination)) {
+    try {
+      fse.renameSync(source, destination)
+      return
+    } catch (error) {
+      if (!isCrossDeviceError(error)) throw error
+    }
+  }
+  // Either the rename could not cross filesystems, or something already sits
+  // under this name at the destination and a rename cannot land on top of it
+  // without possibly losing what that something already held. copyTree merges
+  // the two trees entry by entry the way it always has.
+  copyTree(source, destination)
+}
+
+/** Renames a single file, or copies it when that is not possible. */
+function renameOrCopyFile(source: string, destination: string): void {
+  try {
+    fse.renameSync(source, destination)
+  } catch (error) {
+    if (!isCrossDeviceError(error)) throw error
+    fse.copyFileSync(source, destination)
+  }
+}
+
+/**
+ * Publishes a staged tree by renaming each top-level entry into the
+ * destination, rather than copying it in byte by byte.
+ *
+ * `runExtraction` always stages beside the destination, on the same
+ * filesystem, so a rename here is ordinarily one metadata update instead of a
+ * full read and write of everything the archive held. Two things can still
+ * stop a given entry from being renamed straight across: something already
+ * exists under that name at the destination (an install that reuses a folder
+ * in place, say), which a rename cannot land on without risking what is
+ * already there, or the destination turns out to be on a different filesystem
+ * after all, `EXDEV`, which can still happen if it is itself a separate mount
+ * point inside its own parent folder. Both fall back to copyTree, the same
+ * merge-and-overwrite behaviour a plain copy has always had.
+ */
+export function publishTree(sourceRoot: string, destinationRoot: string): void {
+  assertNoSymlinkComponents(destinationRoot)
+  fse.ensureDirSync(destinationRoot)
+  if (fse.lstatSync(destinationRoot).isSymbolicLink()) throw new Error("Destination is a symbolic link")
+  const resolvedDestinationRoot = resolve(destinationRoot)
+
+  for (const child of fse.readdirSync(sourceRoot)) {
+    const source = join(sourceRoot, child)
+    const destination = resolve(resolvedDestinationRoot, child)
+    const destinationRelativePath = relative(resolvedDestinationRoot, destination)
+    if (!destinationRelativePath || destinationRelativePath === ".." || destinationRelativePath.startsWith(`..${sep}`) || isAbsolute(destinationRelativePath))
+      throw new Error("Archive output escaped its root")
+    assertNoSymlinkComponents(destination)
+
+    const entry = fse.lstatSync(source)
+    if (entry.isDirectory()) {
+      if (fse.existsSync(destination) && !fse.lstatSync(destination).isDirectory()) throw new Error("Archive output type conflict")
+      renameOrCopyTree(source, destination)
+      continue
+    }
+
+    if (fse.existsSync(destination)) {
+      const existing = fse.lstatSync(destination)
+      if (existing.isSymbolicLink() || existing.isDirectory()) throw new Error("Archive output contains an unsafe destination")
+      fse.unlinkSync(destination)
+    }
+    renameOrCopyFile(source, destination)
+  }
 }
 
 /**
@@ -390,7 +469,13 @@ export async function runExtraction(options: ExtractionOptions): Promise<void> {
     fse.ensureDirSync(outputPath)
     if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
 
-    temporaryRoot = mkdtempSync(join(tmpdir(), "riftlauncher-extract-"))
+    // Staged beside the destination rather than under the OS temp directory, so
+    // the eventual publish below is a rename rather than a copy (see this
+    // module's own comment). ensureDirSync above already guarantees the
+    // destination's parent exists, which is what mkdtempSync needs here. The
+    // dot prefix keeps the staging folder from reading as real content if
+    // anything lists the parent directory while the extraction is still running.
+    temporaryRoot = mkdtempSync(join(dirname(outputPath), ".riftlauncher-extract-"))
     const extractionRoot = join(temporaryRoot, "payload")
     fse.ensureDirSync(extractionRoot)
 
@@ -401,7 +486,7 @@ export async function runExtraction(options: ExtractionOptions): Promise<void> {
     // Only the game archives wrap their contents in a folder, and only their caller
     // asks for that folder to be stepped into. A backup holds an installation's
     // contents at the root, and a restore has to put them back exactly as they were.
-    copyTree(unwrapSingleRootFolder ? contentRoot(extractionRoot) : extractionRoot, outputPath)
+    publishTree(unwrapSingleRootFolder ? contentRoot(extractionRoot) : extractionRoot, outputPath)
 
     if (deleteArchive) {
       assertNoSymlinkComponents(filePath)
