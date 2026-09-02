@@ -63,6 +63,27 @@ describe("native LZMA2 adapter", () => {
     expect(Buffer.concat(pieces.map((piece) => Buffer.from(piece)))).toEqual(Buffer.from([0xa0, 0, 0, 0, 1, 0x11, 0x22, 0xa0, 0, 0, 0, 1, 0x33, 0x44]))
   })
 
+  it("cancels the native reader when closed before the source ends", async () => {
+    let cancelled = false
+    const factory = createNativeLzma2DecoderFactory(
+      () =>
+        new ReadableStream<Uint8Array>({
+          start(controller): void {
+            controller.enqueue(Uint8Array.of(1))
+          },
+          cancel(): void {
+            cancelled = true
+          }
+        })
+    )
+    const decoder = factory(0, () => {})
+
+    await decoder.decodeChunk(inputOver(new Uint8Array(0)))
+    await decoder.close?.()
+
+    expect(cancelled).toBe(true)
+  })
+
   it("drains buffered native output in bounded pieces", async () => {
     const expected = new Uint8Array(5 * 1024 * 1024 + 123)
     expected.fill(7)

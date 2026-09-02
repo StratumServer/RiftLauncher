@@ -54,7 +54,6 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
   private readonly pending: Uint8Array[] = []
   private pendingOffset = 0
   private pendingBytes = 0
-  private sourceEnded = false
   private ended = false
   private sourceError: unknown
   private sourceFailed = false
@@ -133,10 +132,7 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
   }
 
   private flushPending(): number {
-    if (this.pendingBytes === 0) {
-      if (this.sourceEnded) this.ended = true
-      return 0
-    }
+    if (this.pendingBytes === 0) return 0
 
     const first = this.pending[0]!
     const available = first.length - this.pendingOffset
@@ -149,7 +145,6 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
       this.pending.shift()
       this.pendingOffset = 0
     }
-    if (this.pendingBytes === 0 && this.sourceEnded) this.ended = true
     return take
   }
 
@@ -160,13 +155,12 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
     try {
       const result = await this.reader.read()
       if (result.done) {
-        this.sourceEnded = true
         this.ended = true
         return 0
       }
       this.queue(result.value)
       return this.flushPending()
-    } catch (error) {
+    } catch {
       if (this.sourceFailed) throw this.sourceError
       throw new NativeLzma2Error("the native LZMA2 decoder rejected the stream")
     }

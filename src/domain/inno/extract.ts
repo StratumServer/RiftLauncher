@@ -308,7 +308,12 @@ function storedStream(cursor: InstallerCursor): ChunkStream {
  *
  * Decoded bytes land in one staging buffer that is only refilled once it has
  * been drained, which is what lets the decoder hand out views onto its own
- * dictionary without anything copying them twice.
+ * dictionary without anything copying them twice. This bounds the decoded
+ * output owned by this driver, not buffering inside a WASM Web Streams
+ * polyfill: that polyfill may retain more than one chunk before a reader sees
+ * it. `read()` also allocates one Uint8Array per selected entry, so the precise
+ * claim is one staging buffer plus the current selected entry, not one buffer
+ * for the entire extraction.
  */
 function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number, lzma2DecoderFactory?: Lzma2DecoderFactory): ChunkStream {
   const staging = new Uint8Array(STAGING_BYTES)
