@@ -20,6 +20,17 @@ files:
   # the musl binary is 1.4 MB that can never load. Revisit if a musl target
   # is ever added.
   - "!node_modules/@napi-rs/lzma-*-musl{,/**/*}"
+  # asarUnpack below unpacks every file under resources/ on every platform, but
+  # only resources/icon.png is loaded at runtime (src/main/index.ts, `?asset`).
+  # icon.ico is still needed at build time: win.icon and nsis.installerIcon
+  # point at it below, and electron-builder resolves that path from the
+  # project directory before this files list is even consulted, so excluding
+  # it here only drops the copy that would otherwise sit unused in the
+  # installed app. icon.icns is not referenced anywhere in this config (no
+  # mac.icon key is set, so a mac build falls back to Electron's own default
+  # icon), so it ships purely as unused asarUnpack weight today.
+  - "!resources/icon.icns"
+  - "!resources/icon.ico"
   # Nothing under these trees is reachable from out/: docs/ is linked from the
   # app as GitHub URLs rather than read locally (InfoAndHelpPage.tsx), branding/
   # holds design sources including a multi-MB PSD, and tests/ and coverage/ are
