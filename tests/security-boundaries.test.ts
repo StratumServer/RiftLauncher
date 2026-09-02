@@ -123,6 +123,47 @@ describe("startup network boundaries", () => {
   })
 })
 
+function mainHandlerSource(startMarker: string, endMarker: string): string {
+  const start = MAIN_SOURCE.indexOf(startMarker)
+  if (start === -1) throw new Error(`Could not find main-process handler: ${startMarker}`)
+
+  const end = MAIN_SOURCE.indexOf(endMarker, start + startMarker.length)
+  if (end === -1) throw new Error(`Could not find end of main-process handler: ${startMarker}`)
+
+  return MAIN_SOURCE.slice(start, end)
+}
+
+describe("main process protocol boundary wiring", () => {
+  // index.ts bootstraps Electron on import, so keep this contract scoped to each inline handler.
+  it("routes app and custom icon requests through containment before file checks", () => {
+    const appSource = mainHandlerSource('protocol.handle("app", async (request) => {', "\n  // Handler for mod icons")
+    const iconsSource = mainHandlerSource('protocol.handle("icons", async (req) => {', "\n  await ensureConfig()")
+    const handlers: ReadonlyArray<readonly [string, string]> = [
+      ["app", appSource],
+      ["icons", iconsSource]
+    ]
+
+    for (const [name, source] of handlers) {
+      const containmentCall = source.indexOf("const filePath = resolveContainedPath")
+      assert.notEqual(containmentCall, -1, `${name}: handler stopped resolving a contained path`)
+
+      const containmentReturn = source.indexOf("if (!filePath) return new Response(null, { status: 404 })", containmentCall)
+      assert.notEqual(containmentReturn, -1, `${name}: handler stopped rejecting paths outside its root explicitly`)
+      assert.equal(source.includes("if (!filePath ||"), false, `${name}: containment was folded into another gate`)
+
+      const filesystemCheck = source.indexOf("if (!(await isSafeProtocolFile(filePath)))", containmentReturn)
+      assert.notEqual(filesystemCheck, -1, `${name}: handler stopped checking the resolved filesystem object`)
+      assert.ok(containmentReturn < filesystemCheck, `${name}: filesystem safety ran before containment`)
+    }
+
+    const containmentReturn = iconsSource.indexOf("if (!filePath) return new Response(null, { status: 404 })")
+    const extensionCheck = iconsSource.indexOf('if (!filePath.toLowerCase().endsWith(".png"))', containmentReturn)
+    const filesystemCheck = iconsSource.indexOf("if (!(await isSafeProtocolFile(filePath)))", extensionCheck)
+    assert.ok(containmentReturn < extensionCheck, "icons: extension checking ran before containment")
+    assert.ok(extensionCheck < filesystemCheck, "icons: filesystem safety ran before the extension check")
+  })
+})
+
 /**
  * Two renderer trees are held off the preload bridge. Shared components reach the host only
  * through a feature they were handed, and the mods feature keeps its bridge calls in

@@ -274,7 +274,9 @@ app.whenReady().then(async () => {
         }
 
         const filePath = resolveContainedPath(packagedRendererRoot, requestUrl.pathname)
-        if (!filePath || !(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
+        // Containment protects the path boundary; file safety protects the resolved filesystem object.
+        if (!filePath) return new Response(null, { status: 404 })
+        if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
         return net.fetch(pathToFileURL(filePath).toString())
       } catch {
         return new Response(null, { status: 400 })
@@ -306,7 +308,8 @@ app.whenReady().then(async () => {
   protocol.handle("icons", async (req) => {
     const srcPath = join(app.getPath("userData"), "Icons")
     const filePath = resolveContainedPath(srcPath, new URL(req.url).pathname)
-    if (!filePath || !filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
+    if (!filePath) return new Response(null, { status: 404 })
+    if (!filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
     if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
     return net.fetch(pathToFileURL(filePath).toString())
   })
