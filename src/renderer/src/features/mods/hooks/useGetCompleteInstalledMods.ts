@@ -4,6 +4,7 @@ import semver from "semver"
 
 import { evaluateModCompatibility } from "@domain/mods/compatibility"
 import { logMods } from "@renderer/features/moddb/adapters/log"
+import { cacheModImage } from "@renderer/features/moddb/adapters/modsManager"
 
 export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number) => void }) => Promise<{
   mods: InstalledModType[]
@@ -35,6 +36,7 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
     // Two installed files can refer to the same ModDB entry. Keep one in-flight lookup per id
     // for this scan, while still evaluating every installed file against its own version.
     const modDetails = new Map<string, Promise<DownloadableModType | undefined>>()
+    const modImages = new Map<string, Promise<string | undefined>>()
 
     function queryModOnce(modid: number | string): Promise<DownloadableModType | undefined> {
       const key = String(modid)
@@ -46,10 +48,24 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
       return request
     }
 
+    function cacheModImageOnce(url: string): Promise<string | undefined> {
+      const pending = modImages.get(url)
+      if (pending) return pending
+
+      // Swallowed like queryModOnce's sibling: one logo that fails to cache costs that row its
+      // image, never the whole scan. cacheModImage already catches internally, but a rejected
+      // invoke would otherwise reject the Promise.all below and leave the list stuck.
+      const request = cacheModImage(url).catch(() => undefined)
+      modImages.set(url, request)
+      return request
+    }
+
     await Promise.all(
       mods.mods.map(async (mod) => {
         const dmod = await queryModOnce(mod.modid)
         mod._mod = dmod
+
+        if (!mod._image && dmod?.logofile) mod._image = await cacheModImageOnce(dmod.logofile)
 
         if (dmod) {
           for (const release of dmod.releases) {

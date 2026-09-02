@@ -9,8 +9,8 @@ function contentName(seed: string): string {
   return `${seed.repeat(64).slice(0, 64)}.png`
 }
 
-function icon(name: string, bytes: number, modifiedAt: number): CachedIcon {
-  return { name, bytes, modifiedAt }
+function icon(name: string, bytes: number, accessedAt: number): CachedIcon {
+  return { name, bytes, accessedAt }
 }
 
 describe("planIconCacheEviction", () => {
@@ -32,13 +32,20 @@ describe("planIconCacheEviction", () => {
     assert.deepEqual(planIconCacheEviction(entries, MOD_ICON_CACHE_MAX_BYTES), ["2f8a6d3c-7b1e-4a55-9d20-0c5f4e6b8a91.png"])
   })
 
-  it("reads a name as content-addressed only in the exact shape the store writes", () => {
-    const entries = [icon(`${"A".repeat(64)}.png`, 10, 1), icon(`${"a".repeat(63)}.png`, 10, 2), icon(`${"a".repeat(64)}.jpg`, 10, 3), icon(`${"a".repeat(64)}.png.tmp`, 10, 4)]
+  it("reads a name as one the store could have written only in the exact shape", () => {
+    const evicted = [icon(`${"A".repeat(64)}.png`, 10, 1), icon(`${"a".repeat(63)}.png`, 10, 2), icon(`${"a".repeat(64)}.png.tmp`, 10, 4), icon(`${"a".repeat(64)}.gif`, 10, 5)]
+    const kept = [icon(`${"a".repeat(64)}.jpg`, 10, 6), icon(`${"b".repeat(64)}.jpeg`, 10, 7)]
 
     assert.deepEqual(
-      planIconCacheEviction(entries),
-      entries.map((entry) => entry.name)
+      planIconCacheEviction([...evicted, ...kept]),
+      evicted.map((entry) => entry.name)
     )
+  })
+
+  it("keeps a ModDB logo named after its URL, whatever the format", () => {
+    const entries = [icon(contentName("a"), 10, 1), icon(`${"c".repeat(64)}.jpg`, 20, 2)]
+
+    assert.deepEqual(planIconCacheEviction(entries, MOD_ICON_CACHE_MAX_BYTES), [])
   })
 
   it("drops the oldest content-named icons first once the folder is over budget", () => {

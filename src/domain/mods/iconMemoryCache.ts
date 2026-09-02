@@ -9,46 +9,54 @@
 export const MOD_ICON_MEMORY_CACHE_MAX_BYTES = 16 * 1024 * 1024
 
 /**
- * Bounded, recency-ordered cache for content-addressed mod icon bytes.
+ * Bounded, recency-ordered cache for mod icon bytes.
  *
- * Filenames the icon store writes are the sha256 of their own bytes (iconCache.ts), so a
- * hit under a given key can never be stale: nothing can rewrite a name's content without
- * changing the name. That leaves eviction as the only thing this has to get right, not
- * invalidation, which is what keeps `get`/`set` this small.
+ * Archive icons are immutable because their names contain their content hash. ModDB logos use a
+ * URL-keyed name so the same path can be refreshed, which means file-backed callers must provide a
+ * revision when they need to distinguish a changed file from a memory hit.
  */
+interface MemoryCacheEntry {
+  bytes: Buffer
+  revision?: string
+}
+
 export class IconMemoryCache {
-  private readonly entries = new Map<string, Buffer>()
+  private readonly entries = new Map<string, MemoryCacheEntry>()
   private totalBytes = 0
   private clearGeneration = 0
 
   constructor(private readonly maxBytes: number = MOD_ICON_MEMORY_CACHE_MAX_BYTES) {}
 
-  get(key: string): Buffer | undefined {
+  get(key: string, revision?: string): Buffer | undefined {
     const entry = this.entries.get(key)
     if (!entry) return undefined
+    if (revision !== undefined && entry.revision !== revision) {
+      this.remove(key)
+      return undefined
+    }
 
     // Re-inserting moves the key to the end of Map's insertion-ordered iteration,
     // which is what makes the first entries visited below the least recently used.
     this.entries.delete(key)
     this.entries.set(key, entry)
-    return entry
+    return entry.bytes
   }
 
-  set(key: string, bytes: Buffer): void {
+  set(key: string, bytes: Buffer, revision?: string): void {
     this.remove(key)
 
     // A single icon larger than the whole budget must not remain in the cache by
     // itself, and replacing an existing key with one must not retain the old entry.
     if (bytes.length > this.maxBytes) return
 
-    this.entries.set(key, bytes)
+    this.entries.set(key, { bytes, revision })
     this.totalBytes += bytes.length
 
-    for (const [oldestKey, oldestBytes] of this.entries) {
+    for (const [oldestKey, oldestEntry] of this.entries) {
       if (this.totalBytes <= this.maxBytes) break
       if (oldestKey === key) continue
       this.entries.delete(oldestKey)
-      this.totalBytes -= oldestBytes.length
+      this.totalBytes -= oldestEntry.bytes.length
     }
   }
 
@@ -75,7 +83,7 @@ export class IconMemoryCache {
     if (!existing) return
 
     this.entries.delete(key)
-    this.totalBytes -= existing.length
+    this.totalBytes -= existing.bytes.length
   }
 }
 
@@ -85,12 +93,12 @@ export class IconMemoryCache {
  * "reading" means (net.fetch in production, a counted stub in a test) without this
  * function knowing anything about Electron or the file system.
  */
-export async function readIconWithMemoryCache(cache: IconMemoryCache, key: string, readBytes: () => Promise<Buffer>): Promise<Buffer> {
-  const cached = cache.get(key)
+export async function readIconWithMemoryCache(cache: IconMemoryCache, key: string, readBytes: () => Promise<Buffer>, revision?: string): Promise<Buffer> {
+  const cached = cache.get(key, revision)
   if (cached) return cached
 
   const generation = cache.generation
   const bytes = await readBytes()
-  if (cache.generation === generation) cache.set(key, bytes)
+  if (cache.generation === generation) cache.set(key, bytes, revision)
   return bytes
 }

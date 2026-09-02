@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -75,6 +75,26 @@ describe("cachemodimg protocol handler", () => {
     assert.equal(fetchFile.mock.calls.length, 1)
   })
 
+  it("reloads a same-name file after its bytes are refreshed", async () => {
+    const filePath = iconPath("aa.png")
+    const original = Buffer.from("old icon")
+    const replacement = Buffer.from("new icon")
+    writeFileSync(filePath, original)
+    const fetchFile = vi.fn<FetchFile>(async () => new Response(readFileSync(filePath)))
+    const handler = createHandler(fetchFile)
+
+    const first = await handler(request("/aa.png"))
+    assert.equal(first.status, 200)
+    const firstBytes = Buffer.from(await first.arrayBuffer())
+    writeFileSync(filePath, replacement)
+    const second = await handler(request("/aa.png"))
+
+    assert.deepEqual(firstBytes, original)
+    assert.equal(second.status, 200)
+    assert.deepEqual(Buffer.from(await second.arrayBuffer()), replacement)
+    assert.equal(fetchFile.mock.calls.length, 2)
+  })
+
   it("fetches an evicted icon again", async () => {
     const firstPath = iconPath("aa.png")
     const secondPath = iconPath("bb.png")
@@ -145,12 +165,25 @@ describe("cachemodimg protocol handler", () => {
     assert.equal(fetchFile.mock.calls.length, 0)
   })
 
-  it("rejects a real non-PNG file without fetching it", async () => {
-    const filePath = iconPath("aa.jpg")
+  it("serves a JPEG logo under image/jpeg", async () => {
+    const filePath = iconPath("bb.jpg")
+    const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0])
+    writeFileSync(filePath, bytes)
+    const fetchFile = vi.fn<FetchFile>(async () => new Response(bytes))
+
+    const response = await createHandler(fetchFile)(request("/bb.jpg"))
+
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get("Content-Type"), "image/jpeg")
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes)
+  })
+
+  it("rejects a file whose extension is not an image type it serves", async () => {
+    const filePath = iconPath("aa.gif")
     writeFileSync(filePath, "not an icon")
     const fetchFile = vi.fn<FetchFile>(async () => new Response(Buffer.from("unexpected")))
 
-    const response = await createHandler(fetchFile)(request("/aa.jpg"))
+    const response = await createHandler(fetchFile)(request("/aa.gif"))
 
     assert.equal(response.status, 404)
     assert.equal(fetchFile.mock.calls.length, 0)

@@ -6,6 +6,6 @@
 // module, which is what lets `declare module` introduce a brand new ambient module
 // instead of being read as an augmentation of one that would need to already be typed.
 declare module "write-file-atomic" {
-  function writeFileAtomic(filename: string, data: string, options?: { mode?: number; fsync?: boolean }): Promise<void>
+  function writeFileAtomic(filename: string, data: string | Uint8Array, options?: { mode?: number; fsync?: boolean }): Promise<void>
   export = writeFileAtomic
 }

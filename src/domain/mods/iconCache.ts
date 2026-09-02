@@ -1,9 +1,12 @@
 /**
- * Names the icon store writes today: the sha256 of the file's own bytes, lower case, with a `.png`
- * suffix. Anything else in the folder came from a build that named icons after a uuid, and no write
- * this launcher makes can produce one again.
+ * Names the icon store writes today: a lower-case sha256 hex string with an image suffix. Archive
+ * icons are the sha256 of their own bytes and always `.png`; ModDB logos are the sha256 of the URL
+ * they were fetched from and keep the source format, `.png` or `.jpg`. Archive icons are written
+ * once, while a URL-keyed logo can be refreshed when its cache entry expires. Anything else in the
+ * folder came from a build that named icons after a uuid, and no write this launcher makes can
+ * produce one again.
  */
-const CONTENT_ADDRESSED_NAME = /^[0-9a-f]{64}\.png$/
+const CONTENT_ADDRESSED_NAME = /^[0-9a-f]{64}\.(?:png|jpe?g)$/
 
 /**
  * How many bytes of mod icons the shared cache folder is allowed to keep.
@@ -20,8 +23,8 @@ export interface CachedIcon {
   name: string
   /** Size on disk. */
   bytes: number
-  /** Last write or touch, in epoch milliseconds. */
-  modifiedAt: number
+  /** Last access used for eviction recency, in epoch milliseconds. */
+  accessedAt: number
 }
 
 /**
@@ -31,10 +34,10 @@ export interface CachedIcon {
  * uuid-named files an older build left behind, and nothing points at them. If the survivors still
  * do not fit `maxBytes`, the oldest go until they do.
  *
- * Age is the only signal available here on purpose. A scan sees one installation's mods, so no
+ * Access time is the only signal available here on purpose. A scan sees one installation's mods, so no
  * caller ever holds the whole live set of a folder that every installation shares, and a sweep that
  * treats the icons it cannot see as dead deletes another installation's icons on every scan. The
- * store touches an icon's timestamp each time a scan points at it again, which makes "oldest" mean
+ * store touches an icon's access time each time a scan points at it again, which makes "oldest" mean
  * "least recently used by any installation".
  *
  * @param entries Every file in the cache folder.
@@ -53,7 +56,7 @@ export function planIconCacheEviction(entries: readonly CachedIcon[], maxBytes: 
   let total = survivors.reduce((bytes, entry) => bytes + entry.bytes, 0)
   if (total <= maxBytes) return evicted
 
-  for (const entry of [...survivors].sort((one, other) => one.modifiedAt - other.modifiedAt)) {
+  for (const entry of [...survivors].sort((one, other) => one.accessedAt - other.accessedAt)) {
     if (total <= maxBytes) break
     evicted.push(entry.name)
     total -= entry.bytes
