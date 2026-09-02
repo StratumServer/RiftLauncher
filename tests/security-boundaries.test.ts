@@ -98,6 +98,8 @@ describe("process and navigation boundaries", () => {
  * satisfy them.
  */
 const MAIN_SOURCE = readFileSync(resolve(__dirname, "../src/main/index.ts"), "utf8")
+const PRELOAD_SOURCE = readFileSync(resolve(__dirname, "../src/preload/index.ts"), "utf8")
+const RENDERER_HTML = readFileSync(resolve(__dirname, "../src/renderer/index.html"), "utf8")
 
 describe("startup network boundaries", () => {
   it("keeps both session calls that stop the spellcheck dictionary download", () => {
@@ -120,6 +122,27 @@ describe("startup network boundaries", () => {
   it("leaves the startup update check to the module that catches its rejection", () => {
     assert.equal(MAIN_SOURCE.includes("scheduleUpdateCheck("), true, "src/main/index.ts stopped arming the startup update check")
     assert.equal(MAIN_SOURCE.includes("autoUpdater.checkForUpdates("), false, "src/main/index.ts calls checkForUpdates itself again, where nothing catches its rejection")
+  })
+
+  it("keeps the local app protocol CORS-aware and records non-renderer child exits", () => {
+    assert.equal(MAIN_SOURCE.includes("corsEnabled: true"), true, "the app protocol stopped enforcing CORS")
+    assert.equal(MAIN_SOURCE.includes('app.on("child-process-gone"'), true, "non-renderer child process failures are no longer logged")
+  })
+})
+
+describe("renderer document boundaries", () => {
+  it("does not allow framed content in the renderer CSP", () => {
+    assert.match(RENDERER_HTML, /frame-src 'none'/)
+    assert.doesNotMatch(RENDERER_HTML, /frame-src (?!'none')/)
+  })
+
+  it("exposes the preload bridge only in the main frame", () => {
+    const guardStart = PRELOAD_SOURCE.lastIndexOf("if (process.isMainFrame)")
+    const exposeStart = PRELOAD_SOURCE.indexOf('contextBridge.exposeInMainWorld("api", api)')
+
+    assert.notEqual(guardStart, -1, "preload stopped checking process.isMainFrame")
+    assert.notEqual(exposeStart, -1, "preload stopped exposing the launcher API")
+    assert.ok(guardStart < exposeStart, "preload exposes the API before its main-frame guard")
   })
 })
 
