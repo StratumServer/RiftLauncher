@@ -67,6 +67,16 @@ electronLanguages:
 asarUnpack:
   - resources/**
   - node_modules/@napi-rs/lzma-*/**
+# Electron 28+ ships dxcompiler.dll (25.6 MB) and dxil.dll (1.5 MB) on Windows
+# solely for Chromium's experimental WebGPU DirectX shader compiler, which
+# this renderer never touches. Electron itself dropped both from its own
+# Windows release zips for the same reason
+# (https://github.com/electron/electron/pull/41120). There is no `files`-style
+# way to exclude Electron's own runtime binaries, only the app payload, so
+# scripts/afterPack.js deletes the two files from appOutDir once packaging has
+# copied them there. Guarded to win32 there, not here, because afterPack runs
+# once per target and the same hook also runs for the mac and linux builds.
+afterPack: scripts/afterPack.js
 win:
   executableName: RiftLauncher
   icon: resources/icon.ico
