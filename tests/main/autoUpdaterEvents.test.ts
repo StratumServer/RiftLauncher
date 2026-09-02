@@ -73,6 +73,10 @@ vi.mock("electron-updater", () => ({
   })
 }))
 
+// The double the vi.mock above installs. Both functions take the updater as an argument now,
+// so this is the same handing-in main/index.ts does once loadAutoUpdater has resolved.
+import { autoUpdater } from "electron-updater"
+
 import { registerAutoUpdaterEvents, scheduleUpdateCheck, toTaskProgress } from "@src/main/autoUpdaterEvents"
 // Registers the renderer-facing half of the same flow (DOWNLOAD_UPDATE,
 // UPDATE_AND_RESTART), so the handshake can be followed end to end: an offer
@@ -94,6 +98,10 @@ async function sendFromRenderer(channel: string): Promise<void> {
   const listener = mockState.onListeners.get(channel)
   if (!listener) throw new Error(`No ipcMain.on registered for "${channel}". Did the handler module get imported?`)
   listener(await createTrustedEvent())
+  // The handler reaches electron-updater through loadAutoUpdater's dynamic import now, so the
+  // call it makes lands a turn after this send. Draining the queue keeps the assertions below
+  // the plain synchronous reads they have always been.
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 let temporaryRoot: string
@@ -109,7 +117,7 @@ beforeEach(() => {
   mockState.userDataDir = join(temporaryRoot, "userData")
 
   sent = []
-  registerAutoUpdaterEvents((channel, payload) => sent.push({ channel, payload }))
+  registerAutoUpdaterEvents(autoUpdater, (channel, payload) => sent.push({ channel, payload }))
 })
 
 afterEach(() => {
@@ -248,7 +256,7 @@ describe("the handshake, end to end", () => {
 describe("scheduling the update check", () => {
   it("reads the preference when the check fires, not when it was armed", async () => {
     let allowPrerelease = false
-    scheduleUpdateCheck(async () => allowPrerelease, 1)
+    scheduleUpdateCheck(autoUpdater, async () => allowPrerelease, 1)
 
     // Arming touches nothing: this is still whatever electron-updater was left with.
     assert.equal(mockState.autoUpdater.allowPrerelease, false)
@@ -262,7 +270,7 @@ describe("scheduling the update check", () => {
 
   it("carries an opt-out made in the same window through to the check", async () => {
     let allowPrerelease = true
-    scheduleUpdateCheck(async () => allowPrerelease, 1)
+    scheduleUpdateCheck(autoUpdater, async () => allowPrerelease, 1)
     allowPrerelease = false
 
     await vi.waitFor(() => assert.equal(mockState.checkForUpdates.mock.calls.length, 1))
@@ -272,7 +280,7 @@ describe("scheduling the update check", () => {
   it("swallows a check that fails, the ordinary case of launching with no network", async () => {
     mockState.checkForUpdates.mockRejectedValueOnce(new Error("getaddrinfo ENOTFOUND"))
 
-    scheduleUpdateCheck(async () => true, 1)
+    scheduleUpdateCheck(autoUpdater, async () => true, 1)
 
     await vi.waitFor(() => assert.equal(mockState.checkForUpdates.mock.calls.length, 1))
     assert.equal(mockState.autoUpdater.allowPrerelease, true)

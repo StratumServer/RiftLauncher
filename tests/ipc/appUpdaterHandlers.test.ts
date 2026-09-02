@@ -30,6 +30,8 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 const mockState = vi.hoisted(() => ({
   userDataDir: "",
   onListeners: new Map<string, (...args: unknown[]) => void>(),
+  /** How many times electron-updater has really been imported. See the "loading it at all" block. */
+  updaterImports: 0,
   downloadUpdate: vi.fn(() => Promise.resolve([] as string[])),
   quitAndInstall: vi.fn()
 }))
@@ -58,14 +60,17 @@ vi.mock("electron", () => {
   return { app, ipcMain }
 })
 
-vi.mock("electron-updater", () => ({
-  autoUpdater: {
-    autoDownload: true,
-    downloadUpdate: mockState.downloadUpdate,
-    quitAndInstall: mockState.quitAndInstall,
-    on: (): void => {}
+vi.mock("electron-updater", () => {
+  mockState.updaterImports += 1
+  return {
+    autoUpdater: {
+      autoDownload: true,
+      downloadUpdate: mockState.downloadUpdate,
+      quitAndInstall: mockState.quitAndInstall,
+      on: (): void => {}
+    }
   }
-}))
+})
 
 type UpdaterHandlers = typeof import("@src/ipc/handlers/appUpdaterHandlers")
 
@@ -73,13 +78,23 @@ type UpdaterHandlers = typeof import("@src/ipc/handlers/appUpdaterHandlers")
 async function loadHandlers(): Promise<UpdaterHandlers> {
   vi.resetModules()
   mockState.onListeners.clear()
+  mockState.updaterImports = 0
   return import("@src/ipc/handlers/appUpdaterHandlers")
 }
 
-function send(channel: string, event: IpcMainEvent): void {
+/**
+ * Sends one channel and lets the work it starts finish.
+ *
+ * Both handlers reach electron-updater through loadAutoUpdater's dynamic import
+ * now rather than a module-scope binding, so the call each one makes lands a
+ * turn after the send that triggered it. Draining the queue here keeps every
+ * assertion below the plain synchronous read it has always been.
+ */
+async function send(channel: string, event: IpcMainEvent): Promise<void> {
   const listener = mockState.onListeners.get(channel)
   if (!listener) throw new Error(`No ipcMain.on registered for "${channel}". Did the handler module get imported?`)
   listener(event)
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 let temporaryRoot: string
@@ -94,12 +109,56 @@ afterEach(() => {
   rmSync(temporaryRoot, { recursive: true, force: true })
 })
 
+/**
+ * electron-updater is loaded on demand now (src/utils/autoUpdaterLoader.ts), and both channels
+ * check their consent flag before they ask for it. That order is what these assert: on a build
+ * where updates can never be installed, main/index.ts never registers the events that set either
+ * flag, so no amount of sending these channels can pull the module in through the back door and
+ * put the 88.9 ms of require work back on the process.
+ */
+describe("loading electron-updater at all", () => {
+  it("imports nothing when the handler module is loaded", async () => {
+    await loadHandlers()
+
+    assert.equal(mockState.updaterImports, 0)
+  })
+
+  it("imports nothing for a download nobody was offered", async () => {
+    await loadHandlers()
+    const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+
+    assert.equal(mockState.updaterImports, 0)
+  })
+
+  it("imports nothing for a restart with nothing downloaded", async () => {
+    await loadHandlers()
+    const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+
+    assert.equal(mockState.updaterImports, 0)
+  })
+
+  it("imports it once an accepted download actually needs it", async () => {
+    const handlers = await loadHandlers()
+    handlers.markUpdateAvailable()
+    const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+
+    assert.equal(mockState.updaterImports, 1)
+    assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
+  })
+})
+
 describe("DOWNLOAD_UPDATE", () => {
   it("does not download for an untrusted sender, even once an update has been offered", async () => {
     const handlers = await loadHandlers()
     handlers.markUpdateAvailable()
 
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, createUntrustedEvent() as unknown as IpcMainEvent)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, createUntrustedEvent() as unknown as IpcMainEvent)
 
     assert.equal(mockState.downloadUpdate.mock.calls.length, 0)
   })
@@ -108,7 +167,7 @@ describe("DOWNLOAD_UPDATE", () => {
     await loadHandlers()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
 
     assert.equal(mockState.downloadUpdate.mock.calls.length, 0)
   })
@@ -118,7 +177,7 @@ describe("DOWNLOAD_UPDATE", () => {
     handlers.markUpdateAvailable()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
 
     assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
   })
@@ -136,7 +195,7 @@ describe("DOWNLOAD_UPDATE", () => {
     })
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
 
     assert.deepEqual(events, ["progress:1.7.0-beta.3:0", "download"])
   })
@@ -146,9 +205,9 @@ describe("DOWNLOAD_UPDATE", () => {
     handlers.markUpdateAvailable()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
 
     assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
   })
@@ -158,14 +217,14 @@ describe("DOWNLOAD_UPDATE", () => {
     handlers.markUpdateAvailable()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
     assert.equal(mockState.downloadUpdate.mock.calls.length, 1)
 
     // What the updater's error event calls, so the retry the renderer puts on
     // screen after a failed download is one the main process will honour.
     handlers.resetUpdateDownload()
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
 
     assert.equal(mockState.downloadUpdate.mock.calls.length, 2)
   })
@@ -175,7 +234,7 @@ describe("DOWNLOAD_UPDATE", () => {
     handlers.resetUpdateDownload()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
 
     assert.equal(mockState.downloadUpdate.mock.calls.length, 0)
   })
@@ -187,13 +246,13 @@ describe("DOWNLOAD_UPDATE", () => {
     handlers.markUpdateAvailable()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
     // The rejection is caught inside the handler; let that microtask land
     // before asking whether the guard was cleared again.
     await Promise.resolve()
     await Promise.resolve()
 
-    send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
+    await send(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, event)
 
     assert.equal(mockState.downloadUpdate.mock.calls.length, 2)
   })
@@ -204,7 +263,7 @@ describe("UPDATE_AND_RESTART", () => {
     const handlers = await loadHandlers()
     handlers.markUpdateDownloaded()
 
-    send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, createUntrustedEvent() as unknown as IpcMainEvent)
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, createUntrustedEvent() as unknown as IpcMainEvent)
 
     assert.equal(mockState.quitAndInstall.mock.calls.length, 0)
   })
@@ -213,7 +272,7 @@ describe("UPDATE_AND_RESTART", () => {
     await loadHandlers()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
 
     assert.equal(mockState.quitAndInstall.mock.calls.length, 0)
   })
@@ -223,7 +282,7 @@ describe("UPDATE_AND_RESTART", () => {
     handlers.markUpdateDownloaded()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
 
     assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [false, true])
   })
@@ -237,8 +296,8 @@ describe("UPDATE_AND_RESTART", () => {
     handlers.markUpdateDownloaded()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
-    send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
-    send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
 
     assert.equal(mockState.quitAndInstall.mock.calls.length, 1)
   })

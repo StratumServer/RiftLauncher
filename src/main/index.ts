@@ -1,7 +1,6 @@
 import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain } from "electron"
 import { dirname, join } from "node:path"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
-import { autoUpdater } from "electron-updater"
 import Logger from "electron-log"
 import { pathToFileURL } from "node:url"
 import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMigration"
@@ -12,8 +11,8 @@ app.setPath("userData", userDataSetup.path)
 import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
-import { logMessage } from "@src/utils/logManager"
-import { createUpdaterLogger } from "@src/utils/updaterLogger"
+import { getErrorMessage, logMessage } from "@src/utils/logManager"
+import { loadAutoUpdater } from "@src/utils/autoUpdaterLoader"
 import { createSuppressedErrorRecorder, makeConsoleOutputFaultTolerant } from "@src/utils/consoleTransportSafety"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
@@ -53,14 +52,6 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
 }
 
 logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
-
-// electron-updater's own constructor already attaches an "error" listener that logs
-// error.stack || error.message through whatever logger it is given, so a hand-written
-// listener here would be redundant. What it was given until now was the raw electron-log
-// instance, the one component writing to disk without passing through logMessage, so the
-// updater's cache paths and feed URLs escaped the redaction every other line gets.
-// Placed after resolvePathFn so nothing is logged before the app's Logs directory exists.
-autoUpdater.logger = createUpdaterLogger()
 
 let mainWindow: BrowserWindow
 let hasSweptOrphanedTempFiles = false
@@ -337,17 +328,30 @@ app.whenReady().then(async () => {
     linuxPackageType: process.platform === "linux" ? readLinuxPackageType() : undefined
   })
   if (updateDecision.ok) {
-    registerAutoUpdaterEvents((channel, payload) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
-    })
+    // Not awaited, so the 88.9 ms of require work behind loadAutoUpdater stays off this handler
+    // and off the path to the first paint. Nothing downstream of it is time critical: the check
+    // it arms does not go out for another five seconds, and every renderer-facing update channel
+    // refuses to act until an offer has been made through the events registered here.
+    void loadAutoUpdater()
+      .then((autoUpdater) => {
+        registerAutoUpdaterEvents(autoUpdater, (channel, payload) => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+        })
 
-    // Who gets offered a beta, said out loud rather than left to electron-updater, which reads it
-    // off the running version alone: that leaves someone on a stable build with no way to ask for
-    // betas, and someone who tried one beta signed up for every beta after it. The stored answer
-    // wins when there is one, and the running version still decides when there is not. Read inside
-    // the callback, so the answer the check uses is the one the settings page has stored by then
-    // rather than the one it had at launch.
-    scheduleUpdateCheck(async () => resolveAllowPrerelease((await getConfig()).receiveBetaUpdates, app.getVersion()))
+        // Who gets offered a beta, said out loud rather than left to electron-updater, which reads
+        // it off the running version alone: that leaves someone on a stable build with no way to
+        // ask for betas, and someone who tried one beta signed up for every beta after it. The
+        // stored answer wins when there is one, and the running version still decides when there
+        // is not. Read inside the callback, so the answer the check uses is the one the settings
+        // page has stored by then rather than the one it had at launch.
+        scheduleUpdateCheck(autoUpdater, async () => resolveAllowPrerelease((await getConfig()).receiveBetaUpdates, app.getVersion()))
+      })
+      .catch((error: unknown) => {
+        // A packaged build missing its own updater is a broken package, not a reason to refuse to
+        // launch: everything else in the app works without it, and this is the only line that
+        // would otherwise have gone unreported now that the import is no longer at module scope.
+        logMessage("error", `[back] [index] [main/index.ts] [whenReady] Could not load the auto-updater: ${getErrorMessage(error)}.`)
+      })
   } else {
     logMessage("info", `[back] [index] [main/index.ts] [whenReady] Auto-update disabled: ${updateDecision.reason}.`)
   }
