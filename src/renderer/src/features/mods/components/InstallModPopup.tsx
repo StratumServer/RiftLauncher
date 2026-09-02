@@ -18,10 +18,10 @@ import { FormButton } from "@renderer/components/ui/FormComponents"
 import { ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 /** Button styling for what the author declared about a release. Undeclared keeps its long-standing red. */
-const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { type: "success" | "warn" | "error"; titleKey: string }> = {
-  declared: { type: "success", titleKey: "features.mods.worksOnTheVersion" },
-  "same-minor": { type: "warn", titleKey: "features.mods.shouldWorkOnTheVersion" },
-  undeclared: { type: "error", titleKey: "features.mods.probablyDontWorkOnTheVersion" }
+const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { className: string; titleKey: string }> = {
+  declared: { className: "text-lime-600", titleKey: "features.mods.worksOnTheVersion" },
+  "same-minor": { className: "text-yellow-400", titleKey: "features.mods.shouldWorkOnTheVersion" },
+  undeclared: { className: "text-red-700", titleKey: "features.mods.probablyDontWorkOnTheVersion" }
 }
 
 interface IInstallationToInstallModIn {
@@ -136,8 +136,8 @@ function InstallModPopup({
                               if (result.ok && onFinishInstallation) onFinishInstallation()
                             })
                           }}
-                          className="w-7 h-7"
-                          type={compatibility.type}
+                          variant="ghost"
+                          className={clsx("w-7 h-7", compatibility.className)}
                           title={t(compatibility.titleKey)}
                         >
                           <div className={clsx("w-full h-full rounded-sm flex items-center justify-center", installation.oldMod?._updatableTo === release.modversion && "bg-lime-600/15")}>

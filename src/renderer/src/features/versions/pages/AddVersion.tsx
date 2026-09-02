@@ -148,7 +148,7 @@ function AddVersion(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton onClick={browseFolder} title={t("generic.browse")} className="px-2 py-1">
+                  <FormButton onClick={browseFolder} title={t("generic.browse")} variant="secondary" className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText placeholder={t("features.versions.versionFolder")} value={folder} onChange={(e) => setFolder(e.target.value)} className="w-full" />
@@ -157,11 +157,11 @@ function AddVersion(): JSX.Element {
             </FromGroup>
           </FormGroupWrapper>
 
-          <ButtonsWrapper className="text-lg">
-            <FormLinkButton to="/versions" title={t("generic.goBack")} type="error" className="p-2">
+          <ButtonsWrapper className="text-lg" equalWidth>
+            <FormLinkButton to="/versions" title={t("generic.goBack")} variant="secondary" size="md" className="p-2">
               <PiXCircleDuotone />
             </FormLinkButton>
-            <FormButton onClick={handleInstallVersion} title={t("generic.install")} type="success" className="p-2">
+            <FormButton onClick={handleInstallVersion} title={t("generic.install")} variant="primary" size="md" className="p-2">
               <PiDownloadDuotone />
             </FormButton>
           </ButtonsWrapper>

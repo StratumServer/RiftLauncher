@@ -29,7 +29,7 @@ import InstalledModsSectionHeader from "@renderer/features/mods/components/Insta
 import ManageModsActionBar from "@renderer/features/mods/components/ManageModsActionBar"
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
-import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
+import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 const LOG_TAG = "[front] [mods] [features/installations/pages/ManageMods.tsx]"
@@ -347,14 +347,14 @@ function ListMods(): JSX.Element {
                     <>
                       <p>{t("features.mods.areYouSureDelete")}</p>
                       <p className="text-zinc-400">{t("features.mods.deletingNotReversible")}</p>
-                      <div className="flex gap-4 items-center justify-center text-lg">
-                        <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setModToDelete(null)} type="success">
+                      <ButtonsWrapper className="text-lg" bgDark={false} equalWidth>
+                        <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setModToDelete(null)} variant="secondary" size="md">
                           <PiXCircleDuotone />
                         </FormButton>
-                        <FormButton title={t("generic.delete")} className="p-2" onClick={DeleteModHandler} type="error">
+                        <FormButton title={t("generic.delete")} className="p-2" onClick={DeleteModHandler} variant="destructive" size="md">
                           <PiTrashDuotone />
                         </FormButton>
-                      </div>
+                      </ButtonsWrapper>
                     </>
                   </PopupDialogPanel>
                 </>

@@ -57,7 +57,7 @@ function LookForAVersion(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton onClick={detectFolder} title={t("generic.browse")} className="px-2 py-1">
+                  <FormButton onClick={detectFolder} title={t("generic.browse")} variant="secondary" className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText value={folder} placeholder={t("generic.folder")} readOnly className="w-full" />
@@ -76,11 +76,11 @@ function LookForAVersion(): JSX.Element {
             </FromGroup>
           </FormGroupWrapper>
 
-          <ButtonsWrapper className="text-lg">
-            <FormLinkButton to="/versions" title={t("generic.cancel")} type="error" className="p-2">
+          <ButtonsWrapper className="text-lg" equalWidth>
+            <FormLinkButton to="/versions" title={t("generic.cancel")} variant="secondary" size="md" className="p-2">
               <PiXCircleDuotone />
             </FormLinkButton>
-            <FormButton onClick={addVersion} title={t("generic.add")} type="success" className="p-2">
+            <FormButton onClick={addVersion} title={t("generic.add")} variant="primary" size="md" className="p-2">
               <PiFloppyDiskBackDuotone />
             </FormButton>
           </ButtonsWrapper>

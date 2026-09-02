@@ -45,7 +45,8 @@ function NotificationsOverlay(): JSX.Element {
                       return (
                         <NormalButton
                           key={actionId}
-                          className="px-2 py-1 text-xs bg-zinc-800/60 border border-zinc-400/10 hover:bg-zinc-700/60"
+                          variant="secondary"
+                          className="text-xs"
                           title={action.label}
                           ariaLabel={action.label}
                           onClick={() => invokeAction(activeToast.id, actionId)}
@@ -58,7 +59,7 @@ function NotificationsOverlay(): JSX.Element {
                 )}
               </div>
             </div>
-            <NormalButton className="p-1 text-zinc-400 shrink-0" title={t("notifications.discard")} ariaLabel={t("notifications.discard")} onClick={() => dismissToast(activeToast.id, "manual")}>
+            <NormalButton className="p-1 text-zinc-400 shrink-0" title={t("notifications.discard")} ariaLabel={t("notifications.discard")} variant="ghost" onClick={() => dismissToast(activeToast.id, "manual")}>
               <PiXCircleDuotone />
             </NormalButton>
             {toastDuration != null && (

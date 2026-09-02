@@ -54,14 +54,14 @@ function ModDbVisibilityPrompt(): JSX.Element {
       <>
         <p className="text-left text-zinc-300">{t("components.moddbVisibility.body")}</p>
 
-        <ButtonsWrapper className="text-lg self-center" bgDark={false}>
-          <FormButton onClick={accept} title={t("components.moddbVisibility.accept")} className="p-2 px-4">
+        <ButtonsWrapper className="text-lg self-center" bgDark={false} equalWidth>
+          <FormButton onClick={accept} title={t("components.moddbVisibility.accept")} variant="secondary" size="md" className="p-2 px-4">
             {t("components.moddbVisibility.accept")}
           </FormButton>
-          <FormButton onClick={() => answer(MODDB_VISIBILITY_DECLINED)} title={t("components.moddbVisibility.decline")} className="p-2 px-4">
+          <FormButton onClick={() => answer(MODDB_VISIBILITY_DECLINED)} title={t("components.moddbVisibility.decline")} variant="secondary" size="md" className="p-2 px-4">
             {t("components.moddbVisibility.decline")}
           </FormButton>
-          <FormButton onClick={() => answer(MODDB_VISIBILITY_ALREADY_DONE)} title={t("components.moddbVisibility.alreadyDone")} className="p-2 px-4">
+          <FormButton onClick={() => answer(MODDB_VISIBILITY_ALREADY_DONE)} title={t("components.moddbVisibility.alreadyDone")} variant="secondary" size="md" className="p-2 px-4">
             {t("components.moddbVisibility.alreadyDone")}
           </FormButton>
         </ButtonsWrapper>

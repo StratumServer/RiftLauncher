@@ -7,6 +7,7 @@ import { Combobox, ComboboxButton, ComboboxInput, ComboboxOption, ComboboxOption
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { useAuthorsLookup } from "@renderer/features/mods/hooks/useModDbLookups"
+import { BUTTON_BASE_STYLES, BUTTON_VARIANT_STYLES, MENU_OPTION_STYLES } from "@renderer/components/ui/buttonStyles"
 
 function AuthorFilter({
   authorFilter,
@@ -40,7 +41,7 @@ function AuthorFilter({
               onChange={(event) => setAuthorsQuery(event.target.value)}
               className="w-full h-full placeholder:text-zinc-400 bg-transparent outline-hidden pl-2"
             />
-            <ComboboxButton className="h-full shrink-0 px-2 cursor-pointer">
+            <ComboboxButton className={clsx(BUTTON_BASE_STYLES, BUTTON_VARIANT_STYLES.ghost, "h-full min-h-0 min-w-0 shrink-0 rounded-none px-2")}>
               <PiCaretDownDuotone className={clsx("text-zinc-300 shrink-0 duration-200", open && "-rotate-180")} />
             </ComboboxButton>
           </div>
@@ -60,7 +61,7 @@ function AuthorFilter({
                       as={motion.li}
                       variants={DROPDOWN_MENU_ITEM_VARIANTS}
                       value={undefined}
-                      className="w-full h-8 px-2 py-1 shrink-0 flex items-center overflow-hidden odd:bg-zinc-800/30 cursor-pointer whitespace-nowrap text-ellipsis text-sm"
+                      className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 whitespace-nowrap text-ellipsis text-sm")}
                     >
                       - {t("generic.everyone")} -
                     </ComboboxOption>
@@ -70,7 +71,7 @@ function AuthorFilter({
                         variants={DROPDOWN_MENU_ITEM_VARIANTS}
                         key={author["userid"]}
                         value={author}
-                        className="w-full h-8 px-2 py-1 shrink-0 flex items-center overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer whitespace-nowrap text-ellipsis text-sm"
+                        className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30 whitespace-nowrap text-ellipsis text-sm")}
                       >
                         {author["name"]}
                       </ComboboxOption>

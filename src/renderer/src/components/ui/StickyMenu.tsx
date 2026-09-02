@@ -134,7 +134,7 @@ export function GoBackButton({ to }: Readonly<{ to: string }>): JSX.Element {
   const { t } = useTranslation()
 
   return (
-    <FormLinkButton title={t("generic.goBack")} to={to} className="w-8 h-8 text-lg">
+    <FormLinkButton title={t("generic.goBack")} to={to} variant="ghost" className="w-8 h-8 text-lg">
       <PiArrowFatLineLeftDuotone />
     </FormLinkButton>
   )
@@ -152,7 +152,7 @@ export function ReloadButton({ onClick, reloading = false }: Readonly<{ onClick:
   const { t } = useTranslation()
 
   return (
-    <FormButton title={reloading ? t("generic.reloading") : t("generic.reload")} onClick={onClick} className="w-8 h-8 text-lg">
+    <FormButton title={reloading ? t("generic.reloading") : t("generic.reload")} onClick={onClick} variant="ghost" className="w-8 h-8 text-lg">
       {reloading ? <FiLoader className="animate-spin" /> : <PiArrowClockwiseDuotone />}
     </FormButton>
   )
@@ -172,6 +172,7 @@ export function GoToTopButton({ scrollRef }: Readonly<{ scrollRef: MutableRefObj
     <StickyMenuGroup>
       <FormButton
         title={t("generic.goToTop")}
+        variant="ghost"
         onClick={(e) => {
           e.stopPropagation()
           scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })

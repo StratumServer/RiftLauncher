@@ -92,8 +92,9 @@ function ModListCard({
             e.stopPropagation()
             onToggleFav(mod)
           }}
-          className={clsx("p-1 text-lg", !isFav && "opacity-0 group-hover:opacity-100 duration-200")}
-          type={isFav ? "warn" : "normal"}
+          variant="ghost"
+          ariaPressed={isFav}
+          className={clsx("p-1 text-lg", isFav && "text-yellow-400", !isFav && "opacity-0 group-hover:opacity-100 duration-200")}
         >
           <PiStarDuotone />
         </FormButton>
@@ -104,6 +105,7 @@ function ModListCard({
             e.stopPropagation()
             onOpenModDb(mod)
           }}
+          variant="ghost"
           className="p-1 text-lg opacity-0 group-hover:opacity-100 duration-200"
         >
           <FiExternalLink />

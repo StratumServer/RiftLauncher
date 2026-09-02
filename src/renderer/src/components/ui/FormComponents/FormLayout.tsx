@@ -36,6 +36,7 @@ export function FromGroup({ children, className, alignment = "x" }: Readonly<{ c
  * @param {string} [props.className] - Additional class names for styling.
  * @param {boolean} [props.bgDark] - Add or not the darker background.
  * @param {boolean} [props.startOpen] - True to show it open by default and false to show it closed by default.
+ * @param {boolean} [props.flush] - Remove the wrapper's horizontal inset so its fields align with adjacent content.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
 export function FormGroupWrapper({
@@ -43,16 +44,18 @@ export function FormGroupWrapper({
   title,
   className,
   bgDark = true,
-  startOpen = true
+  startOpen = true,
+  flush = false
 }: Readonly<{
   children: React.ReactNode
   title?: string
   className?: string
   bgDark?: boolean
   startOpen?: boolean
+  flush?: boolean
 }>): JSX.Element {
   return (
-    <DropdownSection title={title} className={className} bgDark={bgDark} startOpen={startOpen}>
+    <DropdownSection title={title} className={clsx(className, flush && "!px-0")} bgDark={bgDark} startOpen={startOpen}>
       {children}
     </DropdownSection>
   )
@@ -90,13 +93,20 @@ export function FormBody({ children, className }: Readonly<{ children: React.Rea
  * @param {string} props.content - The content of the label.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FormLabel({ className, content }: Readonly<{ className?: string; content: string }>): JSX.Element {
-  return (
-    <div className={clsx("w-full h-8 flex gap-1 items-center flex-wrap justify-end text-right", className)}>
-      <p className="whitespace-nowrap overflow-hidden text-ellipsis" title={content}>
-        {content}
-      </p>
-    </div>
+export function FormLabel({ className, content, htmlFor }: Readonly<{ className?: string; content: string; htmlFor?: string }>): JSX.Element {
+  const labelContent = (
+    <span className="whitespace-nowrap overflow-hidden text-ellipsis" title={content}>
+      {content}
+    </span>
+  )
+  const labelClassName = clsx("w-full h-8 flex gap-1 items-center flex-wrap justify-end text-right", className)
+
+  return htmlFor ? (
+    <label {...{ htmlFor }} className={labelClassName}>
+      {labelContent}
+    </label>
+  ) : (
+    <div className={labelClassName}>{labelContent}</div>
   )
 }
 
@@ -138,6 +148,10 @@ export function FormFieldGroupWithDescription({ children, className, alignment =
  * @param {JSX.Element | string} props.content - The content of the button. Use ONLY with text, t() or <Trans />
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function FormFieldDescription({ className, content }: Readonly<{ className?: string; content: JSX.Element | string }>): JSX.Element {
-  return <p className={clsx("flex gap-1 items-center flex-wrap justify-start text-xs text-zinc-400 pl-1", className)}>{content}</p>
+export function FormFieldDescription({ className, content, id }: Readonly<{ className?: string; content: JSX.Element | string; id?: string }>): JSX.Element {
+  return (
+    <p id={id} className={clsx("flex gap-1 items-center flex-wrap justify-start text-xs text-zinc-400 pl-1", className)}>
+      {content}
+    </p>
+  )
 }

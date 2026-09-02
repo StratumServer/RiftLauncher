@@ -7,6 +7,7 @@ import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headless
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { useGameVersionsLookup } from "@renderer/features/mods/hooks/useModDbLookups"
+import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 function VersionsFilter({
   versionsFilter,
@@ -25,13 +26,7 @@ function VersionsFilter({
     <Listbox value={versionsFilter} onChange={setVersionsFilter} multiple>
       {({ open }) => (
         <>
-          <ListboxButton
-            className={clsx(
-              "px-2 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
-              size
-            )}
-            title={versionsFilter.map((v) => v.name).join(" · ")}
-          >
+          <ListboxButton className={clsx(MENU_TRIGGER_STYLES, size)} title={versionsFilter.map((v) => v.name).join(" · ")}>
             <p className={clsx("flex gap-1 items-center overflow-hidden whitespace-nowrap text-ellipsis overflow-x-scroll scrollbar-none", versionsFilter.length < 1 && "text-zinc-400")}>
               {versionsFilter.length < 1
                 ? t("generic.versions")
@@ -60,7 +55,7 @@ function VersionsFilter({
                       value={v}
                       as={motion.li}
                       variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className="w-full h-8 px-2 py-1 shrink-0 flex items-center overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer whitespace-nowrap text-ellipsis text-sm"
+                      className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30 whitespace-nowrap text-ellipsis text-sm")}
                     >
                       <p className="flex items-center gap-1">
                         <span className="whitespace-nowrap overflow-hidden text-ellipsis">{v.name}</span>

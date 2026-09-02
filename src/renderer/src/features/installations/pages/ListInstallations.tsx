@@ -29,7 +29,7 @@ import { useCheckPathExists, useOpenPathInExplorer } from "@renderer/features/in
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
-import { FormButton } from "@renderer/components/ui/FormComponents"
+import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
 import { LinkButton, NormalButton } from "@renderer/components/ui/Buttons"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
@@ -107,7 +107,7 @@ function ListInslallations(): JSX.Element {
         <ListWrapper className="max-w-[50rem] w-full my-auto">
           <ListGroup>
             <ListItem className="group">
-              <LinkButton to="/installations/add" title={t("features.installations.addNewInstallation")} className="w-full h-12">
+              <LinkButton to="/installations/add" title={t("features.installations.addNewInstallation")} variant="primary" size="lg" className="w-full h-12">
                 <PiPlusCircleDuotone className="text-3xl text-zinc-400/70 group-hover:scale-95 duration-200" />
               </LinkButton>
             </ListItem>
@@ -156,6 +156,7 @@ function ListInslallations(): JSX.Element {
                         <NormalButton
                           className="p-1"
                           title={t("features.installations.moveInstallationUp")}
+                          variant="ghost"
                           disabled={index === 0}
                           onClick={() => configDispatch({ type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: installation.id, direction: "up" } })}
                         >
@@ -164,6 +165,7 @@ function ListInslallations(): JSX.Element {
                         <NormalButton
                           className="p-1"
                           title={t("features.installations.moveInstallationDown")}
+                          variant="ghost"
                           disabled={index === installations.length - 1}
                           onClick={() => configDispatch({ type: CONFIG_ACTIONS.MOVE_INSTALLATION, payload: { id: installation.id, direction: "down" } })}
                         >
@@ -174,6 +176,7 @@ function ListInslallations(): JSX.Element {
                         <NormalButton
                           className="p-1"
                           title={t("features.installations.backupInstallation")}
+                          variant="ghost"
                           onClick={async () => {
                             if (!(await checkPathExists(installation.path))) return addNotification(t("features.backups.folderDoesntExists"), "error")
                             makeInstallationBackup(installation.id)
@@ -181,25 +184,26 @@ function ListInslallations(): JSX.Element {
                         >
                           <PiBoxArrowDownDuotone />
                         </NormalButton>
-                        <LinkButton to={`/installations/backups/${installation.id}`} className="p-1" title={t("features.backups.manageBackups")}>
+                        <LinkButton to={`/installations/backups/${installation.id}`} className="p-1" title={t("features.backups.manageBackups")} variant="ghost">
                           <PiArrowCounterClockwiseDuotone />
                         </LinkButton>
                       </div>
                       <div className="flex flex-col gap-1">
-                        <LinkButton to={`/installations/mods/${installation.id}`} title={t("features.mods.manageMods")} className="p-1">
+                        <LinkButton to={`/installations/mods/${installation.id}`} title={t("features.mods.manageMods")} className="p-1" variant="ghost">
                           <PiWrenchDuotone />
                         </LinkButton>
-                        <NormalButton onClick={() => openPathInExplorer(installation.path)} title={`${t("generic.openOnFileExplorer")} · ${installation.path}`} className="p-1">
+                        <NormalButton onClick={() => openPathInExplorer(installation.path)} title={`${t("generic.openOnFileExplorer")} · ${installation.path}`} className="p-1" variant="ghost">
                           <PiFolderOpenDuotone />
                         </NormalButton>
                       </div>
                       <div className="flex flex-col gap-1">
-                        <LinkButton to={`/installations/edit/${installation.id}`} title={t("features.installations.editInstallation")} className="p-1">
+                        <LinkButton to={`/installations/edit/${installation.id}`} title={t("features.installations.editInstallation")} className="p-1" variant="ghost">
                           <PiPencilDuotone />
                         </LinkButton>
                         <NormalButton
                           className="p-1"
                           title={t("features.installations.deleteInstallation")}
+                          variant="ghost"
                           onClick={async () => {
                             setInstallationToDelete(installation)
                           }}
@@ -223,14 +227,14 @@ function ListInslallations(): JSX.Element {
               <Input id="delete-data" type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} />
               <label htmlFor="delete-data">{t("features.installations.deleteData")}</label>
             </div>
-            <div className="flex gap-4 items-center justify-center text-lg">
-              <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setInstallationToDelete(null)} type="success">
+            <ButtonsWrapper className="text-lg" bgDark={false} equalWidth>
+              <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setInstallationToDelete(null)} variant="secondary" size="md">
                 <PiXCircleDuotone />
               </FormButton>
-              <FormButton title={t("generic.delete")} className="p-2" onClick={DeleteInstallationHandler} type="error">
+              <FormButton title={t("generic.delete")} className="p-2" onClick={DeleteInstallationHandler} variant="destructive" size="md">
                 <PiTrashDuotone />
               </FormButton>
-            </div>
+            </ButtonsWrapper>
           </>
         </PopupDialogPanel>
       </div>

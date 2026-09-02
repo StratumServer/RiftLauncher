@@ -11,6 +11,7 @@ import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@re
 
 import { FormBody, FormHead, FormLabel, FromGroup, FormFieldDescription, FormInputText, FormFieldGroupWithDescription } from "@renderer/components/ui/FormComponents"
 import { AddCustomIconPupup } from "@renderer/components/ui/AddCustomIconPupup"
+import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 export interface NameAndIconPickerProps {
   name: string
@@ -53,7 +54,7 @@ export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, cust
       <Listbox value={icon} onChange={(selectedIcon: IconType) => onIconChange(selectedIcon)}>
         {({ open }) => (
           <>
-            <ListboxButton className={iconButtonClassName}>
+            <ListboxButton className={clsx(MENU_TRIGGER_STYLES, "h-13 p-1 pr-2 text-sm text-start", iconButtonClassName)}>
               <div className="w-full h-full flex items-center gap-1">
                 <img src={icon.custom ? `icons:${icon.icon}` : icon.icon} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
                 <p>{icon.name}</p>
@@ -79,7 +80,7 @@ export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, cust
                       value={icon}
                       as={motion.li}
                       variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className="w-full h-13 p-1 shrink-0 flex items-center gap-1 overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer text-start"
+                      className={clsx(MENU_OPTION_STYLES, "h-13 odd:bg-zinc-800/30 even:bg-zinc-950/30")}
                     >
                       <div className="w-full h-full flex items-center gap-2">
                         <span className="h-full aspect-square flex items-center justify-center">
@@ -94,7 +95,7 @@ export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, cust
                         value={current}
                         as={motion.li}
                         variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                        className="w-full h-13 p-1 shrink-0 flex items-center gap-1 overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer text-start"
+                        className={clsx(MENU_OPTION_STYLES, "h-13 odd:bg-zinc-800/30 even:bg-zinc-950/30")}
                       >
                         <div className="w-full h-full flex items-center gap-2">
                           <img src={`icons:${current.icon}`} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
@@ -108,7 +109,7 @@ export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, cust
                         value={current}
                         as={motion.li}
                         variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                        className="w-full h-13 p-1 shrink-0 flex items-center gap-1 overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer text-start"
+                        className={clsx(MENU_OPTION_STYLES, "h-13 odd:bg-zinc-800/30 even:bg-zinc-950/30")}
                       >
                         <div className="w-full h-full flex items-center gap-2">
                           <img src={current.icon} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />

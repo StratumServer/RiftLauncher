@@ -82,6 +82,29 @@
       "modsCount_few": "{{count}} 个模组",
       "modsCount_many": "{{count}} 个模组",
       "modsCount_other": "{{count}} 个模组"
+    },
+    "config": {
+      "loginTitle": "登录",
+      "loggingin": "正在登录！",
+      "wrongtwofa": "2FA 验证码错误或已过期。请检查身份验证器后重试。",
+      "invalidEmailPass": "电子邮箱或密码无效！",
+      "loggedin": "已登录为 {{user}}！",
+      "onlyIfEnabledTwoFA": "仅当您的 Vintage Story 账户使用 2FA 时输入此代码。此代码仅用于本次登录。",
+      "loginDialogTitle": "登录 Vintage Story",
+      "loginAction": "登录",
+      "requiresTwoFA": "此账户需要 2FA 验证码。请输入身份验证器中的代码，然后重试。",
+      "loginUnreachable": "无法连接到登录服务。请检查网络连接或防火墙后重试。",
+      "unexpectedResponse": "账户服务返回了启动器无法读取的响应。您的密码未被拒绝。请在更新后重试。",
+      "sessionStoreUnreadable": "登录成功，但无法读取或备份已保存账户文件。启动器未覆盖该文件，以免造成数据丢失。这次没有保存任何内容。",
+      "sessionStoreRebuilt": "无法读取已保存账户文件。启动器保留了一份副本并创建了新文件，因此此设备上的其他账户需要重新登录。",
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码",
+      "loginPrivacyTitle": "登录方式说明",
+      "loginPrivacySent": "RiftLauncher 会通过 HTTPS 将您的电子邮箱、密码和可选的 2FA 验证码发送给 Vintage Story 官方账户服务。",
+      "loginPrivacyStored": "RiftLauncher 不会保存您的密码和 2FA 验证码。账户资料和会话数据会保留在此设备上，因此您无需再次登录。您可以从账户菜单中移除账户。",
+      "loginPrivacyGame": "启动游戏时，Vintage Story 所需的会话数据会写入所选安装。",
+      "loginPrivacyPolicy": "阅读隐私政策",
+      "removeAccountAction": "移除账户"
     }
   },
   "components": {

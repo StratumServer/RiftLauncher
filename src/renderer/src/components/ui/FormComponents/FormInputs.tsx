@@ -1,8 +1,15 @@
 import { Input, Switch } from "@headlessui/react"
 import clsx from "clsx"
+import { PiEyeDuotone, PiEyeSlashDuotone } from "react-icons/pi"
+import { useState } from "react"
 
-const INPUT_BASE_STYLES = `h-8 px-2 py-1 rounded-md placeholder:text-zinc-400 overflow-hidden outline-hidden backdrop-blur-xs bg-zinc-950/50 border border-zinc-400/5`
-const INPUT_INVALID_STYLES = "invalid:border invalid:border-red-800 invalid:bg-red-800/20"
+import { BUTTON_BASE_STYLES, BUTTON_VARIANT_STYLES } from "@renderer/components/ui/buttonStyles"
+
+const INPUT_BASE_STYLES = `h-8 px-2 py-1 rounded-md placeholder:text-zinc-400 overflow-hidden outline-hidden backdrop-blur-xs bg-zinc-950/50 border border-zinc-400/5 focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2`
+// `:invalid` matches required empty fields as soon as they mount. The
+// user-invalid variant waits for interaction or form submission, so a newly
+// opened form does not look broken before the player has done anything.
+const INPUT_INVALID_STYLES = "user-invalid:border user-invalid:border-red-800 user-invalid:bg-red-800/20"
 const INPUT_VALID_STYLES = ""
 const INPUT_ENABLED_STYLES = "enabled:shadow-sm enabled:shadow-zinc-950/50 enabled:hover:shadow-none"
 const INPUT_DISABLED_STYLES = "disabled:opacity-50"
@@ -28,7 +35,15 @@ export function FormInputText({
   maxLength,
   placeholder,
   disabled,
-  readOnly = false
+  readOnly = false,
+  id,
+  name,
+  type = "text",
+  inputMode,
+  autoComplete,
+  autoFocus,
+  required,
+  ariaDescribedBy
 }: Readonly<{
   className?: string
   value: string
@@ -38,10 +53,18 @@ export function FormInputText({
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
+  id?: string
+  name?: string
+  type?: "text" | "email"
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]
+  autoComplete?: string
+  autoFocus?: boolean
+  required?: boolean
+  ariaDescribedBy?: string
 }>): JSX.Element {
   return (
     <Input
-      type="text"
+      type={type}
       className={clsx(INPUT_BASE_STYLES, INPUT_INVALID_STYLES, INPUT_VALID_STYLES, INPUT_DISABLED_STYLES, INPUT_ENABLED_STYLES, className)}
       value={value}
       onChange={onChange}
@@ -50,6 +73,13 @@ export function FormInputText({
       maxLength={maxLength}
       disabled={disabled}
       readOnly={readOnly}
+      id={id}
+      name={name}
+      inputMode={inputMode}
+      autoComplete={autoComplete}
+      autoFocus={autoFocus}
+      required={required}
+      aria-describedby={ariaDescribedBy}
     />
   )
 }
@@ -122,7 +152,16 @@ export function FormInputPassword({
   maxLength,
   placeholder,
   disabled,
-  readOnly = false
+  readOnly = false,
+  id,
+  name,
+  autoComplete,
+  autoFocus,
+  required,
+  showPassword = false,
+  onToggleVisibility,
+  visibilityLabel,
+  ariaDescribedBy
 }: Readonly<{
   className?: string
   value: string
@@ -132,19 +171,145 @@ export function FormInputPassword({
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
+  id?: string
+  name?: string
+  autoComplete?: string
+  autoFocus?: boolean
+  required?: boolean
+  showPassword?: boolean
+  onToggleVisibility?: () => void
+  visibilityLabel?: string
+  ariaDescribedBy?: string
 }>): JSX.Element {
   return (
-    <Input
-      type="password"
-      className={clsx(INPUT_BASE_STYLES, INPUT_INVALID_STYLES, INPUT_VALID_STYLES, INPUT_DISABLED_STYLES, INPUT_ENABLED_STYLES, className)}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      minLength={minLength}
-      maxLength={maxLength}
-      disabled={disabled}
-      readOnly={readOnly}
-    />
+    <div className="relative">
+      <Input
+        type={showPassword ? "text" : "password"}
+        className={clsx(INPUT_BASE_STYLES, INPUT_INVALID_STYLES, INPUT_VALID_STYLES, INPUT_DISABLED_STYLES, INPUT_ENABLED_STYLES, onToggleVisibility && "pr-10", className)}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        minLength={minLength}
+        maxLength={maxLength}
+        disabled={disabled}
+        readOnly={readOnly}
+        id={id}
+        name={name}
+        autoComplete={autoComplete}
+        autoFocus={autoFocus}
+        required={required}
+        aria-describedby={ariaDescribedBy}
+      />
+      {onToggleVisibility && (
+        <button
+          type="button"
+          className={clsx(BUTTON_BASE_STYLES, BUTTON_VARIANT_STYLES.ghost, "absolute right-1 top-1/2 size-8 min-h-0 min-w-0 -translate-y-1/2 p-0 text-zinc-300")}
+          onClick={onToggleVisibility}
+          aria-label={visibilityLabel}
+          title={visibilityLabel}
+          aria-pressed={showPassword}
+          aria-controls={id}
+          disabled={disabled || readOnly}
+        >
+          {showPassword ? <PiEyeSlashDuotone aria-hidden="true" /> : <PiEyeDuotone aria-hidden="true" />}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * OTP input with six visual cells backed by one logical input. The single
+ * input keeps paste, autofill and screen-reader interaction predictable while
+ * the cells make the expected code length obvious at a glance.
+ */
+export function FormInputTwoFactor({
+  className,
+  value,
+  onChange,
+  disabled,
+  readOnly = false,
+  id,
+  name,
+  autoComplete = "one-time-code",
+  autoFocus,
+  required,
+  ariaDescribedBy
+}: Readonly<{
+  className?: string
+  value: string
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
+  disabled?: boolean
+  readOnly?: boolean
+  id?: string
+  name?: string
+  autoComplete?: string
+  autoFocus?: boolean
+  required?: boolean
+  ariaDescribedBy?: string
+}>): JSX.Element {
+  const [isFocused, setIsFocused] = useState(false)
+  const [selectionStart, setSelectionStart] = useState(value.length)
+  const activeCell = Math.min(selectionStart, 5)
+
+  function syncSelection(input: HTMLInputElement): void {
+    setSelectionStart(input.selectionStart ?? input.value.length)
+  }
+
+  return (
+    <div
+      className={clsx(
+        "relative flex min-h-14 w-full items-center justify-center rounded-md border border-transparent transition-[background-color,border-color,box-shadow] duration-150",
+        "focus-within:border-zinc-200/30",
+        disabled && "opacity-50",
+        className
+      )}
+    >
+      <Input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        maxLength={6}
+        value={value}
+        onChange={(event) => {
+          syncSelection(event.currentTarget)
+          onChange?.(event)
+        }}
+        onFocus={(event) => {
+          setIsFocused(true)
+          syncSelection(event.currentTarget)
+        }}
+        onBlur={() => setIsFocused(false)}
+        onSelect={(event) => syncSelection(event.currentTarget)}
+        disabled={disabled}
+        readOnly={readOnly}
+        id={id}
+        name={name}
+        autoComplete={autoComplete}
+        autoFocus={autoFocus}
+        required={required}
+        aria-describedby={ariaDescribedBy}
+        className="absolute inset-0 z-10 h-full w-full cursor-text opacity-0"
+      />
+
+      <div aria-hidden="true" className="pointer-events-none grid w-full grid-cols-6 gap-2">
+        {Array.from({ length: 6 }, (_, index) => {
+          const digit = value[index]
+          return (
+            <span
+              key={index}
+              className={clsx(
+                "flex h-12 min-w-0 w-full items-center justify-center rounded-md border text-xl font-semibold tabular-nums transition-colors duration-150",
+                digit ? "border-zinc-300/40 bg-zinc-950/70 text-zinc-100" : "border-zinc-400/20 bg-zinc-950/30 text-zinc-500",
+                isFocused && index === activeCell && "border-vsl bg-vsl/10 shadow-sm shadow-vsl/20"
+              )}
+            >
+              {digit || ""}
+            </span>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

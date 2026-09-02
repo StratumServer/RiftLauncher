@@ -32,6 +32,7 @@ export function AddCustomIconPupup({ open, setOpen }: Readonly<{ open: boolean; 
               <FormFieldGroup alignment="x" className="items-center">
                 <FormButton
                   title={t("generic.selectIcon")}
+                  variant="secondary"
                   onClick={async (e) => {
                     e.stopPropagation()
                     const picked = await pickAndCopyIcon()
@@ -50,8 +51,8 @@ export function AddCustomIconPupup({ open, setOpen }: Readonly<{ open: boolean; 
           </FromGroup>
         </FormGroupWrapper>
 
-        <ButtonsWrapper className="text-lg" bgDark={false}>
-          <FormButton onClick={() => setOpen(false)} title={t("generic.goBack")} type="error" className="p-2">
+        <ButtonsWrapper className="text-lg" bgDark={false} equalWidth>
+          <FormButton onClick={() => setOpen(false)} title={t("generic.goBack")} variant="secondary" size="md" className="p-2">
             <PiXCircleDuotone />
           </FormButton>
           <FormButton
@@ -66,7 +67,8 @@ export function AddCustomIconPupup({ open, setOpen }: Readonly<{ open: boolean; 
               setOpen(false)
             }}
             title={t("generic.add")}
-            type="success"
+            variant="primary"
+            size="md"
             className="p-2"
           >
             <PiFloppyDiskBackDuotone />

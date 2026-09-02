@@ -4,6 +4,8 @@ import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from "@headless
 import { AnimatePresence, motion } from "motion/react"
 import clsx from "clsx"
 
+import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
+
 import { installationIconSrc } from "@renderer/utils/installationIcons"
 import { DROPUP_MENU_ITEM_VARIANTS, DROPUP_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
@@ -29,7 +31,7 @@ function InstallationsDropdownMenu(): JSX.Element {
               i18nKey="features.installations.noInstallationsFoundDesc"
               components={{
                 link: (
-                  <LinkButton title={t("components.mainMenu.installationsTitle")} to="/installations" className="text-vsl underline">
+                  <LinkButton title={t("components.mainMenu.installationsTitle")} to="/installations" variant="link">
                     {t("components.mainMenu.installationsTitle")}
                   </LinkButton>
                 )
@@ -52,10 +54,7 @@ function InstallationsDropdownMenu(): JSX.Element {
               {installations
                 .filter((i) => i.id === lastUsedInstallation)
                 .map((current) => (
-                  <ListboxButton
-                    key={current.id}
-                    className="w-full h-14 p-1 pr-2 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none text-sm text-start cursor-pointer"
-                  >
+                  <ListboxButton key={current.id} className={clsx(MENU_TRIGGER_STYLES, "h-14 p-1 pr-2 text-sm text-start")}>
                     <img src={installationIconSrc(current.icon, customIcons)} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
 
                     <div key={current.id} className="w-full flex flex-col justify-around overflow-hidden">
@@ -86,7 +85,7 @@ function InstallationsDropdownMenu(): JSX.Element {
                           value={current.id}
                           as={motion.li}
                           variants={DROPUP_MENU_ITEM_VARIANTS}
-                          className="w-full min-h-14 h-14 p-1 flex items-center justify-between gap-2 overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer text-start border border-transparent"
+                          className={clsx(MENU_OPTION_STYLES, "min-h-14 h-14 p-1 justify-between odd:bg-zinc-800/30 even:bg-zinc-950/30 border-transparent")}
                         >
                           <img src={installationIconSrc(current.icon, customIcons)} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
 

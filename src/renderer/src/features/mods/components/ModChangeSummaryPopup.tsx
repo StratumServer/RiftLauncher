@@ -51,7 +51,7 @@ function ModChangeSummaryPopup({ isOpen, close, title, entries }: Readonly<{ isO
                   </TableCell>
                   <TableCell className="w-2/12 flex justify-center">
                     {Boolean(entry.assetid) && (
-                      <NormalButton className="p-1" title={t("features.mods.openOnTheModDB")} onClick={() => entry.assetid && openModOnModDb(entry.assetid)}>
+                      <NormalButton className="p-1" title={t("features.mods.openOnTheModDB")} variant="ghost" onClick={() => entry.assetid && openModOnModDb(entry.assetid)}>
                         <FiExternalLink />
                       </NormalButton>
                     )}
@@ -62,7 +62,7 @@ function ModChangeSummaryPopup({ isOpen, close, title, entries }: Readonly<{ isO
         </TableWrapper>
 
         <div className="flex justify-center">
-          <FormButton title={t("features.mods.summaryClose")} className="p-1 px-4 h-8" onClick={close} type="normal">
+          <FormButton title={t("features.mods.summaryClose")} className="p-1 px-4 h-8" onClick={close} variant="secondary" size="md">
             <PiCheckCircleDuotone className="text-xl" />
             <p>{t("features.mods.summaryClose")}</p>
           </FormButton>

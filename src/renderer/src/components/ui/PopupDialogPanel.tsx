@@ -40,7 +40,12 @@ function PopupDialogPanel({
                 "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:rounded-md before:backdrop-blur-sm before:bg-zinc-950/40 before:shadow-sm before:shadow-zinc-950/50 before:border before:border-zinc-400/5"
               )}
             >
-              <DialogPanel className={clsx("relative flex flex-col gap-4 text-center p-6 rounded-lg backdrop-blur-x", fixedWidth && "w-[40rem]")}>
+              <DialogPanel
+                className={clsx(
+                  "relative flex max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] flex-col gap-4 overflow-y-auto rounded-lg p-4 text-center backdrop-blur-x sm:p-6",
+                  fixedWidth && "max-w-[40rem]"
+                )}
+              >
                 <>
                   <DialogTitle className="text-2xl font-bold">{title}</DialogTitle>
                   {children}

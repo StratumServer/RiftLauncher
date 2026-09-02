@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen } from "@testing-library/react"
+import { screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import SessionButton from "@renderer/components/ui/SessionButton"
@@ -13,9 +13,9 @@ const ACCOUNT = { email: "player@example.test", playerName: "Player", playerUid:
 async function login(email: string, password: string): Promise<void> {
   const user = userEvent.setup()
   await user.click(await screen.findByRole("button", { name: "Log in" }))
-  await user.type(screen.getByPlaceholderText("Email"), email)
-  await user.type(screen.getByPlaceholderText("Password"), password)
-  await user.click(screen.getByRole("button", { name: "Add" }))
+  await user.type(screen.getByLabelText("Email"), email)
+  await user.type(screen.getByLabelText("Password"), password)
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Log in" }))
   await user.click(await screen.findByRole("button", { name: "Discard notification" }))
 }
 

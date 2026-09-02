@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next"
 import { PiPlayCircleDuotone } from "react-icons/pi"
 
 import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
+import { NormalButton } from "@renderer/components/ui/Buttons"
 
 const VIDEO_ID = "mgvzBB_--xM"
 
@@ -15,9 +16,10 @@ function HomePage(): JSX.Element {
 
       <p className="text-lg">{t("features.home.description")}</p>
 
-      <button
-        type="button"
-        className="relative max-w-full max-h-full h-1/2 aspect-video rounded-md shadow-md shadow-zinc-950/50 m-6 overflow-hidden group cursor-pointer"
+      <NormalButton
+        variant="ghost"
+        size="lg"
+        className="relative max-w-full max-h-full h-1/2 aspect-video rounded-md shadow-md shadow-zinc-950/50 m-6 overflow-hidden group"
         title={t("features.home.watchTrailer")}
         onClick={() => openOnBrowser(`https://www.youtube.com/watch?v=${VIDEO_ID}`)}
       >
@@ -25,7 +27,7 @@ function HomePage(): JSX.Element {
         <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/30 group-hover:bg-zinc-950/50 duration-200">
           <PiPlayCircleDuotone className="text-7xl text-white/80 group-hover:text-white group-hover:scale-110 duration-200" />
         </div>
-      </button>
+      </NormalButton>
     </div>
   )
 }

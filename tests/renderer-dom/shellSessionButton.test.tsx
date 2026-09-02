@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { fireEvent, screen } from "@testing-library/react"
+import { fireEvent, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import SessionButton from "@renderer/components/ui/SessionButton"
@@ -28,7 +28,7 @@ describe("SessionButton", () => {
     const removeOption = await screen.findByRole("option", { name: "Remove Steve" })
     await user.click(removeOption)
 
-    const removeConfirm = await screen.findByRole("button", { name: "Remove Steve" })
+    const removeConfirm = await screen.findByRole("button", { name: "Remove account" })
     await user.click(removeConfirm)
 
     expect(removeAccount).toHaveBeenCalledWith("steve-uid")
@@ -55,11 +55,10 @@ describe("SessionButton", () => {
     )
 
     await user.click(await screen.findByRole("button", { name: "Log in" }))
-    await user.type(screen.getByPlaceholderText("Email"), "steve@example.com")
-    await user.type(screen.getByPlaceholderText("Password"), "hunter2")
-    await user.click(screen.getByRole("button", { name: "Add" }))
-    fireEvent.click(screen.getByTitle("Discard notification"))
-    await user.click(screen.getByTitle("Go back"))
+    await user.type(screen.getByLabelText("Email"), "steve@example.com")
+    await user.type(screen.getByLabelText("Password"), "hunter2")
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Log in" }))
+    fireEvent.click(await screen.findByTitle("Discard notification"))
 
     expect(await screen.findByText("Couldn't reach the login service. Check your connection or firewall and try again.")).toBeTruthy()
     expect(screen.queryByText("Invalid email or password!")).toBeNull()

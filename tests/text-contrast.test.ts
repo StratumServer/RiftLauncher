@@ -21,9 +21,9 @@ import { describe, it } from "vitest"
  * A ratio against the backdrop is necessary but not sufficient for a link: #248's fix lightened
  * --color-vsl enough to clear the backdrop, but that same lightening brought it within 1.02:1 of
  * the zinc-400 prose six of the eight links sit inside, so colour alone stopped marking them as
- * links (WCAG 1.4.1). The eight text-vsl link call sites also carry `underline` for that reason;
- * this file only checks the backdrop ratio, not the separation from surrounding text, since the
- * underline is what carries that job now.
+ * links (WCAG 1.4.1). The shared link variant carries `underline` for that reason; this file only
+ * checks the backdrop ratio, not the separation from surrounding text, since the underline is what
+ * carries that job now.
  */
 
 const RENDERER = resolve(__dirname, "..", "src", "renderer", "src")
@@ -269,20 +269,18 @@ describe("prompts the player is meant to read and act on", () => {
 describe("the brand accent where it carries text", () => {
   it("keeps every accent link readable on the panel it ships on", () => {
     const accent: Layer = [themeColor("vsl"), 1]
-    // Every anchor requires "underline" right on the class string, not just "text-vsl": colour
-    // alone no longer separates this accent from the zinc-400/zinc-200 prose it sits inside (see
-    // the file header), so the underline is the part of each of these that actually marks a link.
-    // No anchor bridges more than whitespace between its call site and its class string, so none
-    // can slide past a link that lost its underline onto a later one in the same file that kept it.
+    // The shared variant owns both the accent colour and underline. Each call site must opt into
+    // that semantic variant so the visual treatment cannot drift between button implementations.
+    match("components/ui/buttonStyles.ts", /link: "[^"]*text-vsl[^"]*underline/)
     const links: ReadonlyArray<readonly [string, RegExp, string, readonly Layer[]]> = [
-      ["add installation start-params link", /Client_startup_parameters"\)\}\s+className="text-vsl underline"/, "features/installations/pages/AddInstallation.tsx", FORM_SECTION],
-      ["edit installation start-params link", /Client_startup_parameters"\)\} className="text-vsl underline"/, "features/installations/pages/EditInstallation.tsx", FORM_SECTION],
-      ["logs folder link", /onClick=\{openLogsFolder\} className="text-vsl underline"/, "features/info/pages/InfoAndHelpPage.tsx", FORM_SECTION],
-      ["no installed mods link", /to="\/mods" className="text-vsl underline"/, "features/mods/components/NoInstalledModsNotice.tsx", LIST_PANEL],
-      ["mods section issues link", /openExternalLink\(ISSUES_URL\)\s+\}\}\s+className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
-      ["mods section discord link", /openExternalLink\(DISCORD_URL\)\s+\}\}\s+className="text-vsl underline"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
-      ["no game versions link", /to="\/versions" className="text-vsl underline"/, "features/installations/components/GameVersionPicker.tsx", SECTION_TABLE],
-      ["no installations link", /to="\/installations" className="text-vsl underline"/, "features/installations/components/InstallationsDropdownMenu.tsx", MENU_CARD]
+      ["add installation start-params link", /startParamsLink=\{[\s\S]*?<NormalButton[\s\S]*?variant="link"/, "features/installations/pages/AddInstallation.tsx", FORM_SECTION],
+      ["edit installation start-params link", /startParamsLink=\{[\s\S]*?<NormalButton[\s\S]*?variant="link"/, "features/installations/pages/EditInstallation.tsx", FORM_SECTION],
+      ["logs folder link", /folderlink:\s*\([\s\S]*?<NormalButton[\s\S]*?variant="link"/, "features/info/pages/InfoAndHelpPage.tsx", FORM_SECTION],
+      ["no installed mods link", /link:\s*\([\s\S]*?<LinkButton[\s\S]*?variant="link"/, "features/mods/components/NoInstalledModsNotice.tsx", LIST_PANEL],
+      ["mods section issues link", /openExternalLink\(ISSUES_URL\)[\s\S]{0,120}variant="link"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["mods section discord link", /openExternalLink\(DISCORD_URL\)[\s\S]{0,120}variant="link"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
+      ["no game versions link", /link:\s*\([\s\S]*?<LinkButton[\s\S]*?variant="link"/, "features/installations/components/GameVersionPicker.tsx", SECTION_TABLE],
+      ["no installations link", /link:\s*\([\s\S]*?<LinkButton[\s\S]*?variant="link"/, "features/installations/components/InstallationsDropdownMenu.tsx", MENU_CARD]
     ]
     for (const [label, anchor, file, stack] of links) {
       match(file, anchor) // fails loudly, naming the file, if the link class or its underline has moved
