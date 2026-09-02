@@ -14,7 +14,6 @@ export interface NotificationAction {
 export interface NotificationOptions {
   /** Milliseconds before an unhandled toast closes; null keeps it open. */
   duration?: number | null
-  onClick?: () => void
   actions?: NotificationAction[]
   presentation?: NotificationPresentation
 }
@@ -140,6 +139,9 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     if (!activeToast || activeToast.options?.duration == null) return
     const timeout = window.setTimeout((): void => dismissToast(activeToast.id, "timeout"), activeToast.options.duration)
     return (): void => window.clearTimeout(timeout)
+    // The timer follows the toast id. Depending on the whole record would restart it when
+    // Activity Center marks the record seen or read, allowing a toast to remain forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeToast?.id])
 
   useEffect((): (() => void) => {

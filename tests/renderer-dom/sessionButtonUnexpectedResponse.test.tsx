@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen } from "@testing-library/react"
+import { fireEvent, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import SessionButton from "@renderer/components/ui/SessionButton"
@@ -35,6 +35,8 @@ describe("SessionButton on an unreadable success payload", () => {
     await user.type(screen.getByPlaceholderText("Email"), "player@example.test")
     await user.type(screen.getByPlaceholderText("Password"), "correct-horse-battery-staple")
     await user.click(screen.getByRole("button", { name: "Add" }))
+    fireEvent.click(screen.getByTitle("Discard notification"))
+    await user.click(screen.getByTitle("Go back"))
 
     expect(await screen.findByText(/couldn't read/i)).toBeTruthy()
     expect(screen.queryByText(/invalid email or password/i)).toBeNull()

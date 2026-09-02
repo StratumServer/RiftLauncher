@@ -119,13 +119,17 @@ function ActivityPanel(): JSX.Element {
 
   return (
     <motion.div
+      role="region"
+      aria-labelledby="activity-center-title"
       initial={reduceMotion ? false : { opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
       className="max-h-[32rem] flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 rounded-sm overflow-y-auto text-sm"
     >
       <div className="flex flex-col gap-0.5 p-2 border-b border-zinc-400/5">
-        <h2 className="font-bold leading-tight">{t("components.activityCenter.title")}</h2>
+        <h2 id="activity-center-title" className="font-bold leading-tight">
+          {t("components.activityCenter.title")}
+        </h2>
         <span className="text-xs text-zinc-400 leading-tight" aria-live="polite" aria-atomic="true">
           {t("components.activityCenter.panelSummary", { active: activeTaskCount, unread: unreadCount })}
         </span>
@@ -170,7 +174,7 @@ function ActivityPanel(): JSX.Element {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2 min-w-0">
                         {!notification.read && <span className="mt-1 w-1.5 h-1.5 rounded-full bg-vsl shrink-0" aria-hidden="true" />}
-                        <p className={clsx("text-xs break-words", notification.type === "error" ? "text-red-700" : "text-zinc-400")}>{notification.body}</p>
+                        <p className="text-xs break-words text-zinc-400">{notification.body}</p>
                       </div>
                       <div className="flex items-start gap-1 shrink-0">
                         <NormalButton className="p-1 text-zinc-400" title={toggleLabel} ariaLabel={toggleLabel} onClick={() => setNotificationRead(notification.id, !notification.read)}>
@@ -181,7 +185,7 @@ function ActivityPanel(): JSX.Element {
                         </NormalButton>
                       </div>
                     </div>
-                    {notification.resolvedWith && <p className="mt-1 text-xs text-zinc-500">{t("components.activityCenter.answeredWith", { action: notification.resolvedWith })}</p>}
+                    {notification.resolvedWith && <p className="mt-1 text-xs text-zinc-400">{t("components.activityCenter.answeredWith", { action: notification.resolvedWith })}</p>}
                     {!notification.resolved && notification.options?.actions && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {notification.options.actions.map((action, index) => {
@@ -221,7 +225,13 @@ function ActivityCenter(): JSX.Element {
         <>
           <PopoverButton
             title={t("components.activityCenter.title")}
-            aria-label={t("components.activityCenter.title") + ": " + t("components.activityCenter.triggerSummary", { active: activeTaskCount, unseen: unseenCount })}
+            aria-label={
+              t("components.activityCenter.title") +
+              ": " +
+              t("components.activityCenter.activeTasks", { count: activeTaskCount }) +
+              ", " +
+              t("components.activityCenter.newNotifications", { count: unseenCount })
+            }
             className={clsx(
               "relative w-8 h-8 aspect-square flex items-center justify-center gap-1 rounded-sm overflow-visible border bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-vsl",
               activeTaskCount > 0 || unseenCount > 0 ? "border-vsl" : "border-zinc-400/5"

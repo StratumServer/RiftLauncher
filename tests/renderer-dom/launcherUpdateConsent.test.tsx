@@ -135,7 +135,7 @@ function offerIsLive(): boolean {
 
 /** Opens the task menu popover, which is where every task's progress bar lives. */
 function openTasksMenu(): void {
-  fireEvent.click(screen.getByRole("button", { name: /active tasks/ }))
+  fireEvent.click(screen.getByRole("button", { name: /active task/ }))
 }
 
 /** The task list's progress bar, or null when no task is running. */

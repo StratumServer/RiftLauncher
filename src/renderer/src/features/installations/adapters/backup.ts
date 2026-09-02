@@ -1,6 +1,6 @@
 import type { BackupSnapshot, InstallationSnapshot, MakeInstallationBackupFailure, MakeInstallationBackupPorts } from "@domain/installations/backup"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
-import type { TaskContextType } from "@renderer/contexts/TaskManagerContext"
+import { TASK_NOTIFICATION_POLICIES, type TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
 export interface BackupPortsOptions {
   /** The compress task runner, straight from TaskManagerContext. */
@@ -23,10 +23,7 @@ export function createBackupPorts({ startCompress, taskName, taskDescription }: 
         startCompress(
           taskName,
           taskDescription,
-          // The hook already raises its own toast via describeBackupFailure
-          // for every reason that reaches this compress call, so the generic
-          // one would double up. The caller handles failures explicitly.
-          "caller-handled",
+          TASK_NOTIFICATION_POLICIES.callerHandled,
           request.sourcePath,
           request.outputFolder,
           request.fileName,

@@ -3,7 +3,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@te
 import { describe, expect, it, vi } from "vitest"
 
 import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import { TASK_NOTIFICATION_POLICIES, TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import ActivityCenter from "@renderer/components/ui/ActivityCenter"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 
@@ -30,7 +30,9 @@ function Controls(): JSX.Element {
       <button onClick={() => addNotification("Something went wrong", "error")}>Add error</button>
       <button onClick={() => addNotification("Only a toast", "info", { presentation: "toast" })}>Add toast only</button>
       <button onClick={() => addNotification("A decision is required", "warning", { actions: [{ id: "resolve", label: "Resolve" }] })}>Add actionable warning</button>
-      <button onClick={() => void startDownload("Example download", "An active download", "generic", "https://example.test/file", "/tmp", "file.zip", () => {})}>Start task</button>
+      <button onClick={() => void startDownload("Example download", "An active download", TASK_NOTIFICATION_POLICIES.individual, "https://example.test/file", "/tmp", "file.zip", () => {})}>
+        Start task
+      </button>
     </>
   )
 }
@@ -42,7 +44,7 @@ function openCenter(): void {
 
 /** The open panel body, so row lookups do not collide with a toast of the same text. */
 function panel(): HTMLElement {
-  return screen.getByText("Activity Center").closest("div")?.parentElement as HTMLElement
+  return screen.getByRole("region", { name: "Activity Center" })
 }
 
 /** Exposes the presented toast so timer behaviour is read off state, not the DOM. */
@@ -65,7 +67,7 @@ describe("ActivityCenter", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Start task" }))
 
-    const trigger = screen.getByRole("button", { name: "Activity Center: 1 active tasks, 0 new notifications" })
+    const trigger = screen.getByRole("button", { name: "Activity Center: 1 active task, 0 new notifications" })
     expect(trigger.className).toContain("border-vsl")
     expect(trigger.querySelector("svg")).toBeTruthy()
     expect(trigger.querySelector("span")?.className).toContain("-right-1")
@@ -73,12 +75,33 @@ describe("ActivityCenter", () => {
     fireEvent.keyDown(trigger, { key: "Enter" })
 
     expect(screen.getByText("Activity Center")).toBeTruthy()
+    const activityRegion = screen.getByRole("region", { name: "Activity Center" })
+    expect(within(activityRegion).getByRole("region", { name: "In progress" })).toBeTruthy()
     const taskDetails = screen.getByText("Example download").parentElement
     expect(taskDetails?.textContent).toContain("Downloading")
     expect(taskDetails?.textContent).toContain("Starting")
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("0")
     expect(screen.getByText("0%")).toBeTruthy()
     expect(screen.queryByText(/Pause|Cancel|Retry/)).toBeNull()
+  })
+
+  it("pluralizes active tasks and new notifications independently", () => {
+    installMockWindowApi({ pathsManager: { downloadOnPath: vi.fn(() => new Promise<string>(() => {})) } })
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Start task" }))
+    fireEvent.click(screen.getByRole("button", { name: "Start task" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+
+    expect(screen.getByRole("button", { name: "Activity Center: 2 active tasks, 2 new notifications" })).toBeTruthy()
   })
 
   it("does not render the old queued-task empty state", () => {
@@ -104,7 +127,7 @@ describe("ActivityCenter", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
-    const trigger = screen.getByRole("button", { name: "Activity Center: 0 active tasks, 1 new notifications" })
+    const trigger = screen.getByRole("button", { name: "Activity Center: 0 active tasks, 1 new notification" })
     expect(trigger.querySelector("span.bg-vsl")).toBeTruthy()
 
     openCenter()
@@ -112,6 +135,8 @@ describe("ActivityCenter", () => {
     expect(screen.getByRole("button", { name: "Activity Center: 0 active tasks, 0 new notifications" })).toBeTruthy()
     expect(screen.getByRole("button", { name: /^Activity Center:/ }).querySelector("span.bg-vsl")).toBeNull()
     const row = within(panel()).getByText("A notification worth keeping").closest("li") as HTMLElement
+    expect(within(panel()).getByRole("region", { name: "Notifications" })).toBeTruthy()
+    expect(within(panel()).getAllByRole("listitem")).toHaveLength(1)
     expect(row.className).toContain("bg-zinc-800/30")
     expect(within(row).getByRole("button", { name: "Mark as read" })).toBeTruthy()
     expect(screen.getByText("0 running, 1 unread")).toBeTruthy()
@@ -225,7 +250,7 @@ describe("ActivityCenter", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
       act(() => vi.advanceTimersByTime(5_000))
-      expect(screen.getByRole("button", { name: "Activity Center: 0 active tasks, 1 new notifications" })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Activity Center: 0 active tasks, 1 new notification" })).toBeTruthy()
     } finally {
       vi.useRealTimers()
     }

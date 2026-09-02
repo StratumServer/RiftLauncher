@@ -3,7 +3,7 @@ import { render, renderHook, type RenderOptions, type RenderResult } from "@test
 import { MemoryRouter } from "react-router-dom"
 import { expect, onTestFinished, vi } from "vitest"
 
-import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
 import { ConfigProvider } from "@renderer/features/config/contexts/ConfigContext"
 
 // Importing this runs i18n.ts's module-level `i18n.use(initReactI18next).init(...)`,
@@ -21,25 +21,6 @@ export interface RenderWithProvidersOptions extends Omit<RenderOptions, "wrapper
 }
 
 /**
- * Keeps legacy notification assertions pointed at the durable session history.
- * The production overlay intentionally renders only one toast at a time; a
- * hidden test probe lets older feature tests assert a later queued message
- * without weakening that user-facing rule.
- */
-function NotificationHistoryProbe(): JSX.Element {
-  const { history, activeToast } = useNotificationsContext()
-  return (
-    <div hidden aria-hidden="true" data-testid="notification-history-probe">
-      {history
-        .filter((notification) => notification.id !== activeToast?.id)
-        .map((notification) => (
-          <p key={notification.id}>{notification.body}</p>
-        ))}
-    </div>
-  )
-}
-
-/**
  * Mounts `ui` under the same provider nesting App.tsx uses after PR #43:
  * NotificationsProvider outermost, then ConfigProvider. ConfigContext's
  * SAVE_CONFIG effect looks up useNotificationsContext, which only resolves to
@@ -53,10 +34,7 @@ export function renderWithProviders(ui: ReactElement, { route = "/", ...renderOp
   function Wrapper({ children }: { children: ReactNode }): ReactElement {
     const withProviders = (
       <NotificationsProvider>
-        <ConfigProvider>
-          {children}
-          <NotificationHistoryProbe />
-        </ConfigProvider>
+        <ConfigProvider>{children}</ConfigProvider>
       </NotificationsProvider>
     )
     return route === false ? <>{withProviders}</> : <MemoryRouter initialEntries={[route]}>{withProviders}</MemoryRouter>

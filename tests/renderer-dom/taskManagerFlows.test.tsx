@@ -4,8 +4,8 @@ import { act, renderHook, waitFor } from "@testing-library/react"
 import type { RenderHookResult } from "@testing-library/react"
 
 import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { ACTIONS, TaskProvider, taskReducer, useTaskContext } from "@renderer/contexts/TaskManagerContext"
-import type { TaskNotificationsMode, TaskType } from "@renderer/contexts/TaskManagerContext"
+import { ACTIONS, TASK_NOTIFICATION_POLICIES, TaskProvider, taskReducer, useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import type { TaskType } from "@renderer/contexts/TaskManagerContext"
 
 import { expectHookThrowsOutsideProvider } from "./helpers/render"
 import { installMockWindowApi } from "./helpers/windowApi"
@@ -22,10 +22,8 @@ import "@renderer/i18n"
  * effect all three share and the pure taskReducer/useTaskContext guard.
  *
  * The probe is a composite hook mounting both TaskProvider and
- * NotificationsProvider so a test can read back which toasts a run actually
- * produced (`result.current.notifications.notifications`), the only way to
- * observe TaskNotificationsMode's gating (showsStart/showsError in
- * TaskManagerContext.tsx) from outside the module.
+ * NotificationsProvider so a test can read back which terminal notifications
+ * a run actually produced.
  */
 function wrapper({ children }: { children: ReactNode }): ReactElement {
   return (
@@ -84,15 +82,15 @@ describe("useTaskContext", () => {
   })
 })
 
-describe("TaskManagerContext notification gating (PR #41)", () => {
-  const cases: Array<{ mode: TaskNotificationsMode; outcome: "success" | "error"; expectedTypes: string[] }> = [
-    { mode: "end", outcome: "success", expectedTypes: ["success"] },
-    { mode: "end", outcome: "error", expectedTypes: ["error"] },
-    { mode: "progress", outcome: "success", expectedTypes: ["success"] },
-    { mode: "progress", outcome: "error", expectedTypes: [] }
+describe("TaskManagerContext notification policies", () => {
+  const cases: Array<{ policy: typeof TASK_NOTIFICATION_POLICIES.individual | typeof TASK_NOTIFICATION_POLICIES.callerHandled; outcome: "success" | "error"; expectedTypes: string[] }> = [
+    { policy: TASK_NOTIFICATION_POLICIES.individual, outcome: "success", expectedTypes: ["success"] },
+    { policy: TASK_NOTIFICATION_POLICIES.individual, outcome: "error", expectedTypes: ["error"] },
+    { policy: TASK_NOTIFICATION_POLICIES.callerHandled, outcome: "success", expectedTypes: ["success"] },
+    { policy: TASK_NOTIFICATION_POLICIES.callerHandled, outcome: "error", expectedTypes: [] }
   ]
 
-  it.each(cases)("mode=$mode outcome=$outcome shows $expectedTypes", async ({ mode, outcome, expectedTypes }) => {
+  it.each(cases)("policy=$policy outcome=$outcome shows $expectedTypes", async ({ policy, outcome, expectedTypes }) => {
     installMockWindowApi({
       pathsManager: {
         downloadOnPath: vi.fn(async () => {
@@ -106,7 +104,7 @@ describe("TaskManagerContext notification gating (PR #41)", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.task.startDownload("Name", "desc", mode, "https://x", "/tmp/out", "file.zip", onFinish)
+      await result.current.task.startDownload("Name", "desc", policy, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(expectedTypes)
@@ -135,7 +133,7 @@ describe("progress event handling", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", onFinish)
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -182,7 +180,7 @@ describe("progress event handling", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      void result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -223,7 +221,7 @@ describe("progress event handling", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      void result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -274,7 +272,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", onFinish)
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -311,7 +309,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      void result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -347,7 +345,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      void result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -371,7 +369,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.task.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.task.startInstall("Install", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     expect(onFinish).toHaveBeenCalledWith(true, null)
@@ -399,7 +397,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", onFinish)
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -440,7 +438,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", onFinish)
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -473,7 +471,7 @@ describe("startExtract error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      await result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     expect(changePerms).not.toHaveBeenCalled()
@@ -497,7 +495,7 @@ describe("startExtract error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      await result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     const [status, error] = onFinish.mock.calls[0] as [boolean, Error | null]
@@ -518,7 +516,7 @@ describe("startExtract error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      await result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     const [status, error] = onFinish.mock.calls[0] as [boolean, Error | null]
@@ -537,7 +535,7 @@ describe("startExtract error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startExtract("Name", "desc", "progress", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      await result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.callerHandled, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     expect(onFinish).toHaveBeenCalledWith(true, null)
@@ -552,7 +550,7 @@ describe("startCompress error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      await result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     const [status, error] = onFinish.mock.calls[0] as [boolean, Error | null]
@@ -574,7 +572,7 @@ describe("startCompress error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      await result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     const [status, error] = onFinish.mock.calls[0] as [boolean, Error | null]
@@ -588,7 +586,7 @@ describe("startCompress error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startCompress("Name", "desc", "progress", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      await result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.callerHandled, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     expect(onFinish).toHaveBeenCalledWith(true, null)
@@ -601,7 +599,7 @@ describe("startCompress error arms", () => {
 
     const { result } = renderTaskProbe()
     await act(async () => {
-      await result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", vi.fn(), 9)
+      await result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", vi.fn(), 9)
     })
 
     expect(compressOnPath).toHaveBeenCalledWith(expect.any(String), "/tmp/in", "/tmp/out", "out.zip", 9)
@@ -614,7 +612,7 @@ describe("removeTask", () => {
 
     const { result } = renderTaskProbe()
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", vi.fn())
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", vi.fn())
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))

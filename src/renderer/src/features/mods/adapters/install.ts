@@ -1,7 +1,7 @@
 import type { InstallModFailure, InstallModPorts, InstalledModCopy, ModReleaseToInstall } from "@domain/mods/install"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 import { createPathBuilderPort } from "@renderer/adapters/paths"
-import type { TaskContextType } from "@renderer/contexts/TaskManagerContext"
+import { TASK_NOTIFICATION_POLICIES, type TaskContextType, type TaskNotificationPolicy } from "@renderer/contexts/TaskManagerContext"
 
 export interface ModInstallPortsOptions {
   /** The download task runner, straight from TaskManagerContext. */
@@ -10,6 +10,8 @@ export interface ModInstallPortsOptions {
   taskName: string
   /** Already translated description of the download. */
   taskDescription: string
+  /** Controls whether this install is part of an aggregate flow. */
+  notificationPolicy?: TaskNotificationPolicy
 }
 
 /**
@@ -18,15 +20,13 @@ export interface ModInstallPortsOptions {
  *
  * Built once per mod because the task list names each download after the mod it is fetching.
  */
-export function createModInstallPorts({ startDownload, taskName, taskDescription }: ModInstallPortsOptions): InstallModPorts {
+export function createModInstallPorts({ startDownload, taskName, taskDescription, notificationPolicy = TASK_NOTIFICATION_POLICIES.individual }: ModInstallPortsOptions): InstallModPorts {
   return {
     fileSystem: createFileSystemPort(),
     paths: createPathBuilderPort(),
-    // "generic" left as is on purpose: describeModInstallFailure returns messageKey: null for
-    // download-failed, deliberately leaning on this generic toast, so it must stay visible.
     downloader: {
       download: (request, onComplete) =>
-        startDownload(taskName, taskDescription, "generic", request.url, request.outputFolder, request.fileName, (status, path, error) =>
+        startDownload(taskName, taskDescription, notificationPolicy, request.url, request.outputFolder, request.fileName, (status, path, error) =>
           onComplete({ ok: status, filePath: path, error: error?.message })
         )
     }

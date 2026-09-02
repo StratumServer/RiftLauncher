@@ -244,6 +244,14 @@ describe("prompts the player is meant to read and act on", () => {
     ]
     for (const [label, icon] of icons) assertReadable(label, icon, ICON, NON_TEXT_FLOOR)
   })
+
+  it("keeps Activity Center history text readable on both row tints", () => {
+    const historyBody = foreground("components/ui/ActivityCenter.tsx", /text-xs break-words text-(zinc-\d+)(?:\/(\d+))?/)
+    const answered = foreground("components/ui/ActivityCenter.tsx", /mt-1 text-xs text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("Activity Center notification body", historyBody, TASKS_ROW, TEXT_FLOOR)
+    assertReadable("Activity Center answered marker", answered, TASKS_ROW, TEXT_FLOOR)
+  })
 })
 
 /**

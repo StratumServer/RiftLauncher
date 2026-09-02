@@ -275,6 +275,7 @@ describe("ManageMods", () => {
 
     expect(await screen.findByText("1 Mods updated, 1 left as they were. The summary says which ones.", {}, { timeout: 3000 })).toBeTruthy()
     expect(screen.queryByText("All the Mods were updated successfully!")).toBeNull()
+    expect(screen.queryByText(/Finished download:/)).toBeNull()
 
     // Both attempts show up in the summary, the failed one without a target version.
     const summary = await screen.findByRole("dialog")

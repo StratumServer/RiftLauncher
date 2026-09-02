@@ -273,6 +273,7 @@ describe("EditInstallation", () => {
     await user.click(screen.getByTitle("Save"))
 
     await screen.findByText("Installation edited successfully!")
+    await user.click(screen.getByRole("button", { name: "Discard notification" }))
     await screen.findByText(VERSION_LEFT_UNCHANGED)
     await screen.findByText("installations-list")
 
@@ -302,6 +303,7 @@ describe("EditInstallation", () => {
     await user.click(screen.getByTitle("Save"))
 
     await screen.findByText("Installation edited successfully!")
+    await user.click(screen.getByRole("button", { name: "Discard notification" }))
     await screen.findByText(VERSION_LEFT_UNCHANGED)
     await screen.findByText("installations-list")
 
