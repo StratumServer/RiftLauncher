@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import fse from "fs-extra"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 // netHandlers.ts (via network.ts, ipcSecurity.ts) and catalogCache.ts all import from
@@ -176,5 +177,132 @@ describe("mod catalog disk cache and serve-stale (issue #24)", () => {
     respondWith({ kind: "success", body: "ok", declaredContentLength: 5 * 1024 * 1024 })
     const text = await queryUrl(CATALOG_URL)
     assert.equal(text, "ok")
+  })
+})
+
+describe("pruneModCatalogCache", () => {
+  beforeEach(() => {
+    mockState.userDataDir = mkdtempSync(join(tmpdir(), "riftlauncher-catalog-cache-"))
+  })
+
+  afterEach(() => {
+    rmSync(mockState.userDataDir, { recursive: true, force: true })
+    vi.resetModules()
+  })
+
+  function cacheDirectory(): string {
+    return join(mockState.userDataDir, "Cache", "ModCatalog")
+  }
+
+  /** Writes a file straight into the cache folder, with a timestamp of its own. */
+  function seedEntry(name: string, bytes: number, modifiedAt: number): string {
+    fse.ensureDirSync(cacheDirectory())
+    const target = join(cacheDirectory(), name)
+    writeFileSync(target, Buffer.alloc(bytes, 1))
+    fse.utimesSync(target, new Date(modifiedAt), new Date(modifiedAt))
+    return name
+  }
+
+  /** A content-addressed name of the shape catalogCache.ts writes, seeded from one character. */
+  function contentName(seed: string): string {
+    return `${seed.repeat(64).slice(0, 64)}.json`
+  }
+
+  it("keeps every entry while the folder fits the budget and is within the TTL", async () => {
+    const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
+    const first = seedEntry(contentName("a"), 32, Date.now())
+    const second = seedEntry(contentName("b"), 32, Date.now())
+
+    await pruneModCatalogCache()
+
+    assert.deepEqual(new Set(readdirSync(cacheDirectory())), new Set([first, second]))
+  })
+
+  it("drops the least recently written entries once the folder is over the byte budget", async () => {
+    const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
+    const oldest = seedEntry(contentName("a"), 32, Date.now() - 60_000)
+    const newest = seedEntry(contentName("b"), 32, Date.now())
+
+    await pruneModCatalogCache(48, 365 * 24 * 60 * 60 * 1_000)
+
+    assert.deepEqual(readdirSync(cacheDirectory()), [newest])
+    assert.equal(existsSync(join(cacheDirectory(), oldest)), false)
+  })
+
+  it("drops an entry past the TTL even while the folder is under the byte budget", async () => {
+    const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
+    const stale = seedEntry(contentName("a"), 16, Date.now() - 40 * 24 * 60 * 60 * 1_000)
+    const fresh = seedEntry(contentName("b"), 16, Date.now())
+
+    await pruneModCatalogCache(64 * 1024 * 1024, 30 * 24 * 60 * 60 * 1_000)
+
+    assert.deepEqual(readdirSync(cacheDirectory()), [fresh])
+    assert.equal(existsSync(join(cacheDirectory(), stale)), false)
+  })
+
+  it("never touches a write-file-atomic temp file, only complete <hash>.json entries", async () => {
+    // catalogCache.ts's own writes go through write-file-atomic, which leaves a
+    // `<hash>.json.<pid>` sibling while a write is in flight (and behind after a
+    // crash). Removing that here would race an in-flight write; it is
+    // orphanedTempFiles.ts's job, age-gated at a week, not this sweep's.
+    const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
+    const tempLeftover = seedEntry(`${contentName("a")}.482910`, 16, 1_000)
+
+    await pruneModCatalogCache(0)
+
+    assert.equal(existsSync(join(cacheDirectory(), tempLeftover)), true)
+  })
+
+  it("does nothing when the cache folder was never created", async () => {
+    const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
+
+    await assert.doesNotReject(async () => pruneModCatalogCache())
+    assert.equal(existsSync(cacheDirectory()), false)
+  })
+
+  it("never fails the sweep when one removal errors out", async () => {
+    const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
+    const doomed = seedEntry(contentName("a"), 16, 1_000)
+
+    vi.spyOn(fse, "remove").mockRejectedValueOnce(new Error("locked by another process"))
+
+    await assert.doesNotReject(async () => pruneModCatalogCache(0))
+    // The failed removal really did fail: the file is still there, proving this
+    // exercised the catch branch rather than the removal quietly working.
+    assert.equal(existsSync(join(cacheDirectory(), doomed)), true)
+  })
+
+  it("skips removal when mtime moved since the snapshot (a concurrent fetch just rewrote it)", async () => {
+    const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
+    const name = seedEntry(contentName("a"), 16, 1_000)
+
+    const originalStat = fse.stat.bind(fse)
+    let statCount = 0
+    vi.spyOn(fse, "stat").mockImplementation(async (path: unknown) => {
+      statCount++
+      const result = await originalStat(String(path))
+      // On the second stat of the same file (the re-stat right before removal),
+      // report a newer mtime to simulate a concurrent fetch rewriting it.
+      if (statCount > 1 && String(path).includes(contentName("a"))) {
+        return { ...result, mtimeMs: 9_000 }
+      }
+      return result
+    })
+
+    await pruneModCatalogCache(0)
+
+    assert.equal(existsSync(join(cacheDirectory(), name)), true)
+  })
+
+  it("never deletes anything outside its own cache folder", async () => {
+    const sentinel = join(mockState.userDataDir, "Cache", "sentinel.json")
+    fse.ensureDirSync(join(mockState.userDataDir, "Cache"))
+    writeFileSync(sentinel, "not a catalog cache entry")
+    const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
+    seedEntry(contentName("a"), 16, 1_000)
+
+    await pruneModCatalogCache(0)
+
+    assert.equal(existsSync(sentinel), true)
   })
 })

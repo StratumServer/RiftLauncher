@@ -3,15 +3,22 @@ import { app } from "electron"
 import fse from "fs-extra"
 import { join } from "node:path"
 
+import type { CachedCatalogResponse } from "@domain/mods/catalogCache"
+import { MOD_CATALOG_CACHE_MAX_AGE_MS, MOD_CATALOG_CACHE_MAX_BYTES, planModCatalogCacheEviction } from "@domain/mods/catalogCache"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { isRecord, MAX_MODS_CATALOG_RESPONSE_BYTES } from "@src/ipc/validation"
+import { logMessage } from "@src/utils/logManager"
 
 // Disk cache for the mods-catalog API response, used to serve the last good body when a
 // fresh fetch fails (network down, ceiling tripped, non-2xx status). One file per cached
-// URL, keyed by a hash of the URL so distinct filter/search queries do not collide.
-// No TTL: the cache self-heals on the next successful fetch of the same URL.
+// URL, keyed by a hash of the URL so distinct filter/search queries do not collide. The
+// cache self-heals on the next successful fetch of the same URL, and entries that go
+// unused (over the byte cap, or past the TTL) are swept by pruneModCatalogCache below.
 
 const CACHE_STORE_VERSION = 1
+
+/** Names this store writes: the sha256 of the cached URL, lower case, with a `.json` suffix. */
+const CONTENT_ADDRESSED_NAME = /^[0-9a-f]{64}\.json$/
 
 type CatalogCacheEntry = {
   version: 1
@@ -61,4 +68,75 @@ export async function writeCatalogCache(url: URL, body: string): Promise<void> {
 
   await fse.ensureDir(cacheDirectory)
   await writeJsonAtomic(filePath, entry)
+}
+
+/**
+ * Deletes what the mod-catalog cache no longer earns its keep on: entries past
+ * {@link MOD_CATALOG_CACHE_MAX_AGE_MS} unconditionally, then the least recently written survivors
+ * once the folder is over {@link MOD_CATALOG_CACHE_MAX_BYTES}. See `planModCatalogCacheEviction` in
+ * `@domain/mods/catalogCache` for the eviction order itself; this function only walks the folder and
+ * drives that decision.
+ *
+ * Only files matching `CONTENT_ADDRESSED_NAME` are ever considered. write-file-atomic leaves a
+ * `<hash>.json.<pid>` sibling behind while a write is in flight, which becomes a crash leftover if
+ * the process dies before the rename. Cleaning those up is `orphanedTempFiles.ts`'s job (it already
+ * sweeps this same directory for `atomic-json` temp files, age-gated at a week), not this function's:
+ * it has no way to tell an in-flight write apart from garbage, so it must never touch either. Re-
+ * stating a file immediately before removing it guards a related race: if a concurrent successful
+ * fetch just rewrote an entry this sweep already decided to evict, its mtime will have moved and the
+ * removal is skipped.
+ *
+ * Fire-and-forget and best effort throughout, same as `pruneModIconCache` next to it: this runs once
+ * at startup, after the window exists, off the first-paint path, and a cache sweep must never be able
+ * to break a launch, so every filesystem error is logged and swallowed.
+ *
+ * @param maxBytes Budget the survivors have to fit in. Only tests pass this.
+ * @param maxAgeMs How long an entry survives without being re-fetched. Only tests pass this.
+ */
+export async function pruneModCatalogCache(maxBytes: number = MOD_CATALOG_CACHE_MAX_BYTES, maxAgeMs: number = MOD_CATALOG_CACHE_MAX_AGE_MS): Promise<void> {
+  const cacheDirectory = getCacheDirectory()
+
+  let names: string[]
+  try {
+    names = await fse.readdir(cacheDirectory)
+  } catch {
+    // No cache folder yet, or it just vanished: nothing to sweep either way.
+    return
+  }
+
+  const entries: CachedCatalogResponse[] = []
+  for (const name of names) {
+    if (!CONTENT_ADDRESSED_NAME.test(name)) continue
+    try {
+      const stats = await fse.stat(join(cacheDirectory, name))
+      if (stats.isFile()) entries.push({ name, bytes: stats.size, modifiedAt: stats.mtimeMs })
+    } catch (err) {
+      logMessage("debug", `[back] [ipc] [ipc/catalogCache.ts] [pruneModCatalogCache] Skipping ${name}: ${err}`)
+    }
+  }
+
+  const doomed = planModCatalogCacheEviction(entries, { maxBytes, maxAgeMs })
+  if (doomed.length === 0) return
+
+  const mtimeByName = new Map(entries.map((entry) => [entry.name, entry.modifiedAt]))
+  const bytesByName = new Map(entries.map((entry) => [entry.name, entry.bytes]))
+  let reclaimed = 0
+
+  await Promise.all(
+    doomed.map(async (name) => {
+      try {
+        // Re-stat before removal: if mtime moved since the snapshot, a concurrent
+        // successful fetch just rewrote this entry. Skip it.
+        const current = await fse.stat(join(cacheDirectory, name))
+        if (current.mtimeMs !== mtimeByName.get(name)) return
+
+        await fse.remove(join(cacheDirectory, name))
+        reclaimed += bytesByName.get(name) ?? 0
+      } catch (err) {
+        logMessage("debug", `[back] [ipc] [ipc/catalogCache.ts] [pruneModCatalogCache] Could not remove ${name} from the mod catalog cache: ${err}`)
+      }
+    })
+  )
+
+  logMessage("info", `[back] [ipc] [ipc/catalogCache.ts] [pruneModCatalogCache] Removed ${doomed.length} entries from the mod catalog cache, ${reclaimed} bytes reclaimed.`)
 }
