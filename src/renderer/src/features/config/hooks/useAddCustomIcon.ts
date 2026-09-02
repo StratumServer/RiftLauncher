@@ -17,19 +17,19 @@ export function useAddCustomIcon(): () => Promise<{ id: string; file: string } |
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
 
-  return async function pickAndCopyIcon(): Promise<{ id: string; file: string } | undefined> {
-    function refuse(reason: AddCustomIconFailure, cause?: unknown): undefined {
-      const { messageKey, logged } = describeAddCustomIconFailure(reason)
+  function refuse(reason: AddCustomIconFailure, cause?: unknown): undefined {
+    const { messageKey, logged } = describeAddCustomIconFailure(reason)
 
-      if (logged) {
-        window.api.utils.logMessage("error", `${LOG_TAG} Couldn't add a custom icon.`)
-        window.api.utils.logMessage("debug", `${LOG_TAG} Custom icon refused: ${reason}${cause instanceof Error ? ` (${cause.message})` : ""}.`)
-      }
-
-      addNotification(t(messageKey), "error")
-      return undefined
+    if (logged) {
+      window.api.utils.logMessage("error", `${LOG_TAG} Couldn't add a custom icon.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Custom icon refused: ${reason}${cause instanceof Error ? ` (${cause.message})` : ""}.`)
     }
 
+    addNotification(t(messageKey), "error")
+    return undefined
+  }
+
+  return async function pickAndCopyIcon(): Promise<{ id: string; file: string } | undefined> {
     // Both bridge calls are awaited inside a try: a rejected invoke used to
     // travel back up through the popup's own async onClick, where nothing
     // caught it, so the flow ended with no notification and no log line at all.

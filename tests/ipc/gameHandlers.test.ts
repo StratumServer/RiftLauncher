@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -26,10 +26,10 @@ import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
  * format: that fails fast with an "error" event (no child process ever
  * actually starts running), which is what a real, unmocked `realGameProcess`
  * needs to reach `gameProcessOutcomeToResult`'s `started: false` arm and the
- * `if (account && accountSecrets)` branches around it. What stays uncovered
- * is the started: true / actually-runs-to-completion path, and
- * `realProcessProbe`'s own timeout and successful-probe arms; see the PR
- * description for that gap.
+ * `if (account && accountSecrets)` branches around it. The launch-wrapper
+ * tests do let a real `#!/bin/sh` script run to completion, so the
+ * started: true path is covered on Linux; `realProcessProbe`'s own timeout
+ * and successful-probe arms are still the gap, see the PR description.
  *
  * `@src/ipc/accountStore` is mocked directly (not electron's `safeStorage`,
  * which it wraps) for the one test that needs `getAccountSecrets()` to
@@ -108,8 +108,8 @@ function lookForAGameVersionHandler(): LookForAGameVersionHandler {
 }
 
 function baseInstallation(
-  overrides: Partial<Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars">> = {}
-): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> {
+  overrides: Partial<Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars" | "launchWrapper">> = {}
+): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper?: string } {
   return { path: "", startParams: "", mesaGlThread: false, envVars: "", ...overrides }
 }
 
@@ -256,6 +256,97 @@ describe("EXECUTE_GAME", () => {
     const event = await createTrustedEvent()
     const result = await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
     assert.deepEqual(result, { ok: false, reason: "no-executable" })
+  })
+
+  it.skipIf(process.platform !== "linux")("refuses a configured wrapper that cannot be resolved", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
+    writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(
+      event,
+      { version: "1.20.0", path: gameVersionFolder },
+      baseInstallation({ path: installationFolder, launchWrapper: "riftlauncher-wrapper-that-is-not-installed" })
+    )
+
+    assert.deepEqual(result, { ok: false, reason: "launch-failed" })
+  })
+
+  /**
+   * The one test that runs a wrapper and a game to completion. Everything either side of the
+   * wrapper is real: resolveLaunchWrapper resolves the absolute path, buildGameLaunchPlan puts it
+   * in front of the game command, and realGameProcess spawns it with shell: false. Both fixtures
+   * dump their own argv, so this pins that the wrapper receives the exact game command and that the
+   * game receives exactly what it would have without one, start parameters still one argv entry.
+   */
+  it.skipIf(process.platform !== "linux")("runs the game through a configured wrapper and hands it the exact game command", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+
+    const wrapperArgvFile = join(temporaryRoot, "wrapper-argv")
+    const gameArgvFile = join(temporaryRoot, "game-argv")
+    const wrapperPath = join(temporaryRoot, "fake-wrapper")
+    const executablePath = join(gameVersionFolder, GAME_EXECUTABLE)
+
+    writeFileSync(wrapperPath, `#!/bin/sh\nprintf '%s\\n' "$@" > '${wrapperArgvFile}'\nexec "$@"\n`)
+    writeFileSync(executablePath, `#!/bin/sh\nprintf '%s\\n' "$@" > '${gameArgvFile}'\n`)
+    chmodSync(wrapperPath, 0o755)
+    chmodSync(executablePath, 0o755)
+    writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(
+      event,
+      { version: "1.20.0", path: gameVersionFolder },
+      baseInstallation({ path: installationFolder, startParams: "--openWorld My World", launchWrapper: wrapperPath })
+    )
+
+    assert.deepEqual(result, { ok: true, exitCode: 0 })
+    assert.deepEqual(readFileSync(wrapperArgvFile, "utf-8").split("\n").slice(0, -1), [executablePath, `--dataPath=${installationFolder}`, "--openWorld My World"])
+    assert.deepEqual(readFileSync(gameArgvFile, "utf-8").split("\n").slice(0, -1), [`--dataPath=${installationFolder}`, "--openWorld My World"])
+  })
+
+  /**
+   * A PATH entry that is itself relative used to be checked against the launcher's own working
+   * directory and then executed against the spawned process's, which is the version folder. The
+   * decoy below is what the old lookup would have run.
+   */
+  it.skipIf(process.platform !== "linux")("skips a relative PATH entry instead of resolving a wrapper against the version folder", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(join(gameVersionFolder, "wrapper-bin"), { recursive: true })
+    mkdirSync(join(temporaryRoot, "wrapper-bin"), { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+
+    const decoyMarker = join(temporaryRoot, "decoy-ran")
+    writeFileSync(join(temporaryRoot, "wrapper-bin", "fakewrap"), "#!/bin/sh\nexit 0\n")
+    writeFileSync(join(gameVersionFolder, "wrapper-bin", "fakewrap"), `#!/bin/sh\n: > '${decoyMarker}'\nexec "$@"\n`)
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "#!/bin/sh\nexit 0\n")
+    chmodSync(join(temporaryRoot, "wrapper-bin", "fakewrap"), 0o755)
+    chmodSync(join(gameVersionFolder, "wrapper-bin", "fakewrap"), 0o755)
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+    writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    const originalPath = process.env.PATH
+    const originalCwd = process.cwd()
+    try {
+      process.chdir(temporaryRoot)
+      process.env.PATH = "wrapper-bin"
+      const event = await createTrustedEvent()
+      const result = await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder, launchWrapper: "fakewrap" }))
+
+      assert.deepEqual(result, { ok: false, reason: "launch-failed" })
+      assert.equal(existsSync(decoyMarker), false, "the version folder's own wrapper-bin/fakewrap must never run")
+    } finally {
+      process.chdir(originalCwd)
+      process.env.PATH = originalPath
+    }
   })
 
   it("resolves launch-failed when a real, executable-bit file fails to actually start, with no account", async () => {

@@ -1,3 +1,4 @@
+import { selectableItemProps } from "@renderer/components/ui/selectableItemProps"
 import { TABLEBODY_VARIANTS, TABLEROW_VARIANTS } from "@renderer/utils/animateVariants"
 import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
@@ -66,6 +67,7 @@ export function TableBody({ children, className }: Readonly<{ children: React.Re
  * @param {boolean} props.disabled - If the row can be selected or not.
  * @param {string} props.title - If the row can be selected or not.
  * @param {() => void} props.onClick - Function to be called when the row is clicked.
+ * @param {string} [props.ariaLabel] - Accessible name for the row when it is clickable.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
 export function TableBodyRow({
@@ -74,7 +76,8 @@ export function TableBodyRow({
   selected,
   disabled,
   title,
-  onClick
+  onClick,
+  ariaLabel
 }: Readonly<{
   children: React.ReactNode
   className?: string
@@ -82,6 +85,7 @@ export function TableBodyRow({
   disabled?: boolean
   title?: string
   onClick?: () => void
+  ariaLabel?: string
 }>): JSX.Element {
   return (
     <motion.li
@@ -93,9 +97,13 @@ export function TableBodyRow({
         className
       )}
       title={title}
-      onClick={onClick}
     >
-      {children}
+      <motion.div
+        className="flex w-full focus-visible:outline-2 focus-visible:outline-vsl focus-visible:-outline-offset-2"
+        {...selectableItemProps({ onClick, pressed: selected, disabled, label: ariaLabel })}
+      >
+        {children}
+      </motion.div>
     </motion.li>
   )
 }

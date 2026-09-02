@@ -76,7 +76,8 @@ export function createBackgroundProtocolHandler({ getUserDataPath, fetchFile }: 
   return async (request) => {
     const srcPath = join(getUserDataPath(), "Cache", "Backgrounds")
     const filePath = resolveContainedPath(srcPath, new URL(request.url).pathname)
-    if (!filePath || !filePath.toLowerCase().endsWith(".jpg")) return new Response(null, { status: 404 })
+    if (!filePath) return new Response(null, { status: 404 })
+    if (!filePath.toLowerCase().endsWith(".jpg")) return new Response(null, { status: 404 })
     if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
 
     try {

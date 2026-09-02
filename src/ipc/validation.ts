@@ -178,13 +178,14 @@ export function validateGameVersion(value: unknown): GameVersionType {
   }
 }
 
-export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> {
+export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper: string } {
   if (!isRecord(value)) throw new TypeError("Invalid installation")
   return {
     path: assertNonRootPath(value.path, "installation path"),
     startParams: assertBoundedString(value.startParams, "start parameters", 8_192),
     mesaGlThread: assertBoolean(value.mesaGlThread, "MESA GL thread flag"),
-    envVars: assertBoundedString(value.envVars, "environment variables", 8_192)
+    envVars: assertBoundedString(value.envVars, "environment variables", 8_192),
+    launchWrapper: assertBoundedString(value.launchWrapper ?? "", "launch wrapper", 4_096).trim()
   }
 }
 

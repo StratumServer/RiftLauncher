@@ -35,7 +35,7 @@ export function useSelectBackground(): SelectBackgroundActions {
 
   const selectFromCatalog = useCallback(
     async (entry: BackgroundType): Promise<void> => {
-      if (!(await window.api.backgroundsManager.ensureBackground(entry.id, entry.file))) {
+      if (!(await window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256))) {
         return addNotification(t("notifications.body.backgroundDownloadFailed"), "error")
       }
 
@@ -60,7 +60,7 @@ export function useSelectBackground(): SelectBackgroundActions {
   const ensureCached = useCallback(async (entry: BackgroundType): Promise<void> => {
     // Silent on failure on purpose: nothing was asked for. The launcher is showing the bundled
     // scene in the meantime and will try again the next time this section is opened.
-    await window.api.backgroundsManager.ensureBackground(entry.id, entry.file).catch(() => false)
+    await window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256).catch(() => false)
   }, [])
 
   return { selectDefault, selectFromCatalog, pickCustom, ensureCached }

@@ -126,6 +126,8 @@ declare global {
     totalTimePlayed: number
     mesaGlThread: boolean
     envVars: string
+    /** Optional Linux command that receives the game command as its arguments. */
+    launchWrapper?: string
     _modsCount?: number
     _playing?: boolean
     _backuping?: boolean
@@ -269,12 +271,13 @@ declare global {
     custom?: boolean
   }
 
-  /** One scene as the `backgrounds` branch manifest lists it. `file` is full-size; `thumbnail` is optional. */
+  /** One scene as the `backgrounds` branch manifest lists it. `file` and the optional hash are full-size; `thumbnail` is optional. */
   type BackgroundType = {
     id: string
     name: string
     file: string
     thumbnail?: string
+    sha256?: string
   }
 
   type ModpackModEntryType = {

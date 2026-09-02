@@ -13,8 +13,8 @@ const CATALOG_FAILED = "The background list couldn't be loaded. Check your conne
 const PICKED_PATH = "/home/player/pictures/sunset.jpg"
 
 const MANIFEST = JSON.stringify([
-  { id: "village-lane", name: "Village Lane", file: "village-lane.jpg", thumbnail: "thumbnails/village-lane.jpg" },
-  { id: "river-sailboat", name: "River Sailboat", file: "river-sailboat.jpg", thumbnail: "thumbnails/river-sailboat.jpg" }
+  { id: "village-lane", name: "Village Lane", file: "village-lane.jpg", thumbnail: "thumbnails/village-lane.jpg", sha256: "a".repeat(64) },
+  { id: "river-sailboat", name: "River Sailboat", file: "river-sailboat.jpg", thumbnail: "thumbnails/river-sailboat.jpg", sha256: "b".repeat(64) }
 ])
 
 type Options = {
@@ -103,7 +103,7 @@ describe("ConfigPage background picker", () => {
 
     await user.click(await screen.findByRole("button", { name: "Village Lane" }))
 
-    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg"))
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg", "a".repeat(64)))
     await waitFor(() => expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("true"))
     expect(tileImage("Village Lane")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/village-lane.jpg"))
     expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toContain('url("background:village-lane.jpg?r=1")')
@@ -198,7 +198,7 @@ describe("ConfigPage background picker", () => {
   it("re-downloads the selected scene when the section opens, in case its cached file went missing", async () => {
     const api = renderConfigPage({ background: "river-sailboat" })
 
-    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg"))
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg", "b".repeat(64)))
     expect(tileImage("River Sailboat")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/river-sailboat.jpg"))
     expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledTimes(1)
   })
@@ -210,7 +210,7 @@ describe("ConfigPage background picker", () => {
     })
     const api = renderConfigPage({ background: "river-sailboat", ensureBackground: () => repair })
 
-    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg"))
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg", "b".repeat(64)))
     finishRepair(false)
 
     await waitFor(() => expect(tileImage("River Sailboat")).toBeTruthy())

@@ -119,6 +119,8 @@ function getUnreadableStoreBackupPath(foreignVersion?: number): string {
   return join(app.getPath("userData"), name)
 }
 
+const ACCOUNT_STORE_RECOVERY_FILE = /^account-secrets\.(?:pre-migration|unreadable(?:\.v\d+)?)\.bak\.json$/
+
 /** The unreadable store's bytes could not be copied aside, so nothing was written over it. */
 export class AccountStoreUnreadableError extends Error {
   constructor(cause?: unknown) {
@@ -185,9 +187,8 @@ async function readAccounts(): Promise<Map<string, AccountSecrets>> {
  * one. That is a deliberate one-shot: a second corruption event can land after
  * the store has rebuilt and grown, so the skipped snapshot sometimes holds
  * more than the kept one. The trade is accepted here because a single
- * predictable recovery file beats an unbounded pile of them, and nothing in
- * the app surfaces or clears these yet regardless (tracked as a follow-up on
- * #259).
+ * predictable recovery file beats an unbounded pile of them. The files are
+ * removed when the last account is removed (see {@link removeAccountStoreBackups}).
  *
  * A store rejected only for a newer version passes `foreignVersion` and lands
  * on its own path, so it never occupies the unversioned slot a genuinely
@@ -205,6 +206,13 @@ async function preserveUnreadableStore(foreignVersion?: number): Promise<void> {
     if (isMissingFileError(error)) return // Vanished since the read; nothing left to preserve.
     throw new AccountStoreUnreadableError(error)
   }
+}
+
+/** Removes only this store's recovery files after the user removes the last account. */
+async function removeAccountStoreBackups(): Promise<void> {
+  const userDataPath = app.getPath("userData")
+  const entries = await fse.readdir(userDataPath, { withFileTypes: true })
+  await Promise.all(entries.filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && ACCOUNT_STORE_RECOVERY_FILE.test(entry.name)).map((entry) => fse.remove(join(userDataPath, entry.name))))
 }
 
 /**
@@ -297,6 +305,8 @@ export function removeAccountSecrets(accountId: string): Promise<boolean> {
 
     try {
       if (accounts.size === 0) {
+        // Clear recovery copies first. If this fails, keep the live store so a later removal can retry.
+        await removeAccountStoreBackups()
         await fse.remove(getAccountStorePath())
         cachedRead = { accounts: new Map(), status: "readable" }
       } else {

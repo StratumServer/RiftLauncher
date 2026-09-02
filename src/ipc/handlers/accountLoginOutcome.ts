@@ -39,9 +39,11 @@ export function twoFactorRejectedResult(): AccountLoginResult {
  * the response body.
  */
 export function unexpectedResponseOutcome(verdict: UnreadableResponse): { result: AccountLoginResult; logMessage: string } {
+  const diagnosis = verdict.diagnosis ? `: ${verdict.diagnosis}` : ""
+
   return {
     result: { status: "unexpected-response" },
-    logMessage: `Login response claimed success but could not be read${verdict.diagnosis ? `: ${verdict.diagnosis}` : ""}.`
+    logMessage: `Login response claimed success but could not be read${diagnosis}.`
   }
 }
 

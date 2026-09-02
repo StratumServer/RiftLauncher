@@ -26,6 +26,7 @@ import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
+import { getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
 import fse from "fs-extra"
 
 import "@src/ipc"
@@ -62,6 +63,7 @@ logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${descr
 autoUpdater.logger = createUpdaterLogger()
 
 let mainWindow: BrowserWindow
+let hasSweptOrphanedTempFiles = false
 const modIconMemoryCache = new IconMemoryCache()
 const packagedRendererPath = join(__dirname, "../renderer/index.html")
 const packagedRendererRoot = dirname(packagedRendererPath)
@@ -154,6 +156,16 @@ function createWindow(): void {
     if (oldWindowsState.maximized) mainWindow.maximize()
 
     mainWindow.show()
+
+    // The first config read is complete here, so this does not race migrations
+    // or a config write. Keep the sweep one-shot even when macOS recreates a
+    // window later in the same process.
+    if (!hasSweptOrphanedTempFiles) {
+      hasSweptOrphanedTempFiles = true
+      void sweepOrphanedTempFiles(getOrphanedTempFileSweepTargets(app.getPath("userData"), config)).catch((error: unknown) => {
+        logMessage("debug", `[back] [index] [main/index.ts] [ready-to-show] Could not sweep orphaned temporary files: ${error}`)
+      })
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -262,7 +274,9 @@ app.whenReady().then(async () => {
         }
 
         const filePath = resolveContainedPath(packagedRendererRoot, requestUrl.pathname)
-        if (!filePath || !(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
+        // Containment protects the path boundary; file safety protects the resolved filesystem object.
+        if (!filePath) return new Response(null, { status: 404 })
+        if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
         return net.fetch(pathToFileURL(filePath).toString())
       } catch {
         return new Response(null, { status: 400 })
@@ -294,7 +308,8 @@ app.whenReady().then(async () => {
   protocol.handle("icons", async (req) => {
     const srcPath = join(app.getPath("userData"), "Icons")
     const filePath = resolveContainedPath(srcPath, new URL(req.url).pathname)
-    if (!filePath || !filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
+    if (!filePath) return new Response(null, { status: 404 })
+    if (!filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
     if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
     return net.fetch(pathToFileURL(filePath).toString())
   })

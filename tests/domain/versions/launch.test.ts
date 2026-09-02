@@ -100,6 +100,27 @@ describe("buildGameLaunchPlan arguments", () => {
     assert.deepEqual(plan.args, [`--dataPath=${INSTALLATION_PATH}`, ""])
   })
 
+  it("puts a Linux wrapper in front of the native game command without a shell", async () => {
+    const plan = await planFor({ launchWrapper: "/usr/bin/gamemoderun" })
+
+    assert.equal(plan.command, "/usr/bin/gamemoderun")
+    assert.deepEqual(plan.args, [`${VERSION_FOLDER}/Vintagestory`, `--dataPath=${INSTALLATION_PATH}`, ""])
+  })
+
+  it("puts a Linux wrapper in front of mono and the Windows game", async () => {
+    const plan = await planFor({ fileNames: ["Vintagestory.exe"], launchWrapper: "/usr/bin/gamemoderun" })
+
+    assert.equal(plan.command, "/usr/bin/gamemoderun")
+    assert.deepEqual(plan.args, ["mono", `${VERSION_FOLDER}/Vintagestory.exe`, `--dataPath=${INSTALLATION_PATH}`, ""])
+  })
+
+  it("ignores a saved wrapper on Windows", async () => {
+    const plan = await planFor({ platform: "win32", fileNames: ["Vintagestory.exe"], launchWrapper: "/usr/bin/gamemoderun" })
+
+    assert.equal(plan.command, `${VERSION_FOLDER}/Vintagestory.exe`)
+    assert.deepEqual(plan.args, [`--dataPath=${INSTALLATION_PATH}`, ""])
+  })
+
   it("puts the executable ahead of everything else under mono", async () => {
     const plan = await planFor({ fileNames: ["Vintagestory.exe"], startParams: "--openWorld" })
 
