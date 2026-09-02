@@ -282,6 +282,31 @@
     "loader": {
       "title": "Сардэчна запрашаем у RiftLauncher!",
       "desc": "Мы рыхтуем усё для вас!"
+    },
+    "activityCenter": {
+      "title": "Цэнтр актыўнасці",
+      "triggerSummary": "{{active}} актыўных задач, {{unseen}} новых апавяшчэнняў",
+      "starting": "Запуск",
+      "inProgress": "Выконваецца",
+      "finalizing": "Завяршэнне",
+      "installing": "Усталяванне",
+      "failed": "Памылка",
+      "completed": "Завершана",
+      "inProgressHeading": "Выконваецца",
+      "attentionHeading": "Патрабуе ўвагі",
+      "completedHeading": "Завершаныя",
+      "notificationsHeading": "Апавяшчэнні",
+      "noNotifications": "Пакуль няма апавяшчэнняў.",
+      "noActivity": "Зараз няма актыўнасці.",
+      "discardTask": "Выдаліць задачу",
+      "markAllRead": "Пазначыць усе як прачытаныя",
+      "clearRead": "Ачысціць прачытаныя",
+      "markRead": "Пазначыць як прачытанае",
+      "markUnread": "Пазначыць як непрачытанае",
+      "panelSummary": "{{active}} выконваецца, {{unread}} непрачытаных",
+      "answeredWith": "Адказ: {{action}}",
+      "restartAndUpdate": "Перазапусціць і абнавіць",
+      "viewUpdates": "Праглядзець абнаўленні"
     }
   },
   "notifications": {
@@ -305,6 +330,10 @@
       "noFileSelected": "Файл не выбраны!",
       "coulndtCopyIcon": "Не ўдалося скапіяваць іконку ў папку іконак!",
       "appClosePrevented": "Вы не можаце закрыць лаўнчар, пакуль гуляеце ці выконваецца задача!"
+    },
+    "actions": {
+      "updateNow": "Абнавіць зараз",
+      "notNow": "Не цяпер"
     },
     "discard": "Адхіліць апавяшчэнне"
   },

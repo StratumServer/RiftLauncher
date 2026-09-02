@@ -217,6 +217,31 @@
     "loader": {
       "title": "Üdvözöl a RiftLauncher!",
       "desc": "Mindent előkészítünk neked!"
+    },
+    "activityCenter": {
+      "title": "Tevékenységközpont",
+      "triggerSummary": "{{active}} aktív feladat, {{unseen}} új értesítés",
+      "starting": "Indítás",
+      "inProgress": "Folyamatban",
+      "finalizing": "Befejezés",
+      "installing": "Telepítés",
+      "failed": "Sikertelen",
+      "completed": "Befejezett",
+      "inProgressHeading": "Folyamatban",
+      "attentionHeading": "Figyelmet igényel",
+      "completedHeading": "Befejezve",
+      "notificationsHeading": "Értesítések",
+      "noNotifications": "Még nincsenek értesítések.",
+      "noActivity": "Jelenleg nincs aktivitás.",
+      "discardTask": "Feladat elvetése",
+      "markAllRead": "Összes megjelölése olvasottként",
+      "clearRead": "Olvasottak törlése",
+      "markRead": "Megjelölés olvasottként",
+      "markUnread": "Megjelölés olvasatlanként",
+      "panelSummary": "{{active}} folyamatban, {{unread}} olvasatlan",
+      "answeredWith": "Válasz: {{action}}",
+      "restartAndUpdate": "Újraindítás és frissítés",
+      "viewUpdates": "Frissítések megtekintése"
     }
   },
   "notifications": {
@@ -237,6 +262,10 @@
       "compressed": "A tömörítés befejeződött: {{compressName}}!",
       "compressError": "Hiba tömörítés közben: {{compressName}}!",
       "folderNotEmpty": "A könyvtár amit kiválasztottál nem üres! Ellenőrizd, hogy nincsenek-e fontos fájljaid a könyvtárban."
+    },
+    "actions": {
+      "updateNow": "Frissítés most",
+      "notNow": "Most nem"
     },
     "discard": "Értesítés elvetése"
   }

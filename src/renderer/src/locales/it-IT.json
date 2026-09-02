@@ -24,6 +24,31 @@
       "error": "C'è stato un errore durante il processo!",
       "extracting": "Estraendo",
       "noTasksAvailable": "Non ci sono compiti in coda!"
+    },
+    "activityCenter": {
+      "title": "Centro attività",
+      "triggerSummary": "{{active}} attività attive, {{unseen}} nuove notifiche",
+      "starting": "Avvio",
+      "inProgress": "In corso",
+      "finalizing": "Finalizzazione",
+      "installing": "Installazione",
+      "failed": "Non riuscita",
+      "completed": "Completata",
+      "inProgressHeading": "In corso",
+      "attentionHeading": "Richiede attenzione",
+      "completedHeading": "Completate",
+      "notificationsHeading": "Notifiche",
+      "noNotifications": "Nessuna notifica al momento.",
+      "noActivity": "Nessuna attività al momento.",
+      "discardTask": "Elimina attività",
+      "markAllRead": "Segna tutto come letto",
+      "clearRead": "Cancella notifiche lette",
+      "markRead": "Segna come letta",
+      "markUnread": "Segna come da leggere",
+      "panelSummary": "{{active}} in corso, {{unread}} da leggere",
+      "answeredWith": "Risposta: {{action}}",
+      "restartAndUpdate": "Riavvia e aggiorna",
+      "viewUpdates": "Visualizza aggiornamenti"
     }
   },
   "features": {
@@ -305,6 +330,10 @@
       "coulndtCopyIcon": "Quell'icona non si può copiare nella cartella delle icone!",
       "folderNotEmpty": "La cartelle selezionata non è vuota! Assicurati che non ci sia nulla di importante.",
       "noFileSelected": "Nessun file selezionato!"
+    },
+    "actions": {
+      "updateNow": "Aggiorna ora",
+      "notNow": "Non ora"
     },
     "discard": "Scarta notifica"
   },

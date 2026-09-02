@@ -282,6 +282,31 @@
     "loader": {
       "title": "Bienvenue dans le lanceur VS !",
       "desc": "Nous préparons tout pour vous !"
+    },
+    "activityCenter": {
+      "title": "Centre d’activité",
+      "triggerSummary": "{{active}} tâches actives, {{unseen}} nouvelles notifications",
+      "starting": "Démarrage",
+      "inProgress": "En cours",
+      "finalizing": "Finalisation",
+      "installing": "Installation",
+      "failed": "Échec",
+      "completed": "Terminé",
+      "inProgressHeading": "En cours",
+      "attentionHeading": "Nécessite votre attention",
+      "completedHeading": "Terminées",
+      "notificationsHeading": "Notifications",
+      "noNotifications": "Aucune notification pour le moment.",
+      "noActivity": "Aucune activité pour le moment.",
+      "discardTask": "Supprimer la tâche",
+      "markAllRead": "Tout marquer comme lu",
+      "clearRead": "Effacer les notifications lues",
+      "markRead": "Marquer comme lue",
+      "markUnread": "Marquer comme non lue",
+      "panelSummary": "{{active}} en cours, {{unread}} non lues",
+      "answeredWith": "Réponse : {{action}}",
+      "restartAndUpdate": "Redémarrer et mettre à jour",
+      "viewUpdates": "Voir les mises à jour"
     }
   },
   "notifications": {
@@ -305,6 +330,10 @@
       "noFileSelected": "Pas de fichier sélectionné !",
       "coulndtCopyIcon": "L'icône n'a pas pu être copiée dans le dossier des icônes !",
       "appClosePrevented": "Vous ne pouvez pas fermer le lanceur VS car vous jouez à Vintage Story ou une tâche est en cours !"
+    },
+    "actions": {
+      "updateNow": "Mettre à jour maintenant",
+      "notNow": "Pas maintenant"
     },
     "discard": "Ignorer la notification"
   },

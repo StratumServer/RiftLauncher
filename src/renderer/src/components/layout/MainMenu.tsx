@@ -12,7 +12,7 @@ import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifica
 import { checkInstallationPathExists, logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
 
 import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
-import TasksMenu from "@renderer/components/ui/TasksMenu"
+import ActivityCenter from "@renderer/components/ui/ActivityCenter"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import { FormButton, FormLinkButton } from "@renderer/components/ui/FormComponents"
 import SessionButton from "../ui/SessionButton"
@@ -121,7 +121,7 @@ function MainMenu(): JSX.Element {
     <header className="z-99 w-72 shrink-0 flex flex-col gap-4 p-2 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 backdrop-blur-sm border-r border-zinc-400/5">
       <div className="flex items-center shrink-0 gap-2">
         <SessionButton />
-        <TasksMenu />
+        <ActivityCenter />
       </div>
 
       <div className="h-full flex flex-col gap-2">

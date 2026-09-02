@@ -282,6 +282,31 @@
     "loader": {
       "title": "Добро пожаловать в RiftLauncher!",
       "desc": "Мы всё для вас готовим!"
+    },
+    "activityCenter": {
+      "title": "Центр активности",
+      "triggerSummary": "{{active}} активных задач, {{unseen}} новых уведомлений",
+      "starting": "Запуск",
+      "inProgress": "Выполняется",
+      "finalizing": "Завершение",
+      "installing": "Установка",
+      "failed": "Ошибка",
+      "completed": "Завершено",
+      "inProgressHeading": "Выполняется",
+      "attentionHeading": "Требует внимания",
+      "completedHeading": "Завершено",
+      "notificationsHeading": "Уведомления",
+      "noNotifications": "Уведомлений пока нет.",
+      "noActivity": "Сейчас нет активности.",
+      "discardTask": "Удалить задачу",
+      "markAllRead": "Отметить всё прочитанным",
+      "clearRead": "Очистить прочитанные",
+      "markRead": "Отметить как прочитанное",
+      "markUnread": "Отметить как непрочитанное",
+      "panelSummary": "{{active}} выполняется, {{unread}} непрочитанных",
+      "answeredWith": "Ответ: {{action}}",
+      "restartAndUpdate": "Перезапустить и обновить",
+      "viewUpdates": "Просмотреть обновления"
     }
   },
   "notifications": {
@@ -305,6 +330,10 @@
       "noFileSelected": "Файл не выбран!",
       "coulndtCopyIcon": "Эту иконку не удалось скопировать в папку иконок!",
       "appClosePrevented": "Вы не можете закрыть RiftLauncher либо потому, что вы играете в Vintage Story, либо потому, что выполняется задача!"
+    },
+    "actions": {
+      "updateNow": "Обновить сейчас",
+      "notNow": "Не сейчас"
     },
     "discard": "Отказаться от уведомления"
   },

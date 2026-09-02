@@ -338,6 +338,31 @@
     "loader": {
       "desc": "Estamos preparando tudo para você!",
       "title": "Bem-vindo(a) ao RiftLauncher!"
+    },
+    "activityCenter": {
+      "title": "Central de atividades",
+      "triggerSummary": "{{active}} tarefas ativas, {{unseen}} notificações novas",
+      "starting": "Iniciando",
+      "inProgress": "Em andamento",
+      "finalizing": "Finalizando",
+      "installing": "Instalando",
+      "failed": "Falhou",
+      "completed": "Concluída",
+      "inProgressHeading": "Em andamento",
+      "attentionHeading": "Precisa de atenção",
+      "completedHeading": "Concluídas",
+      "notificationsHeading": "Notificações",
+      "noNotifications": "Nenhuma notificação ainda.",
+      "noActivity": "Nenhuma atividade no momento.",
+      "discardTask": "Descartar tarefa",
+      "markAllRead": "Marcar todas como lidas",
+      "clearRead": "Limpar lidas",
+      "markRead": "Marcar como lida",
+      "markUnread": "Marcar como não lida",
+      "panelSummary": "{{active}} em andamento, {{unread}} não lidas",
+      "answeredWith": "Resposta: {{action}}",
+      "restartAndUpdate": "Reiniciar e atualizar",
+      "viewUpdates": "Ver atualizações"
     }
   },
   "notifications": {
@@ -370,6 +395,10 @@
       "gameLaunchSessionWriteFailed": "Não foi possível salvar seu login nesta instalação. Tente iniciar sessão novamente!",
       "gameLaunchUnsupportedPlatform": "O Vintage Story ainda não pode rodar nesta plataforma. Tente a partir do Windows ou Linux!",
       "installationFolderCreateFailed": "Não foi possível criar a pasta para esta Instalação! Verifique se o RiftLauncher pode escrever nesse local e tente novamente."
+    },
+    "actions": {
+      "updateNow": "Atualizar agora",
+      "notNow": "Agora não"
     },
     "discard": "Descartar notificação"
   },

@@ -115,6 +115,31 @@
     "loader": {
       "title": "Welkom bij de RiftLauncher",
       "desc": "We maken alles klaar voor je!"
+    },
+    "activityCenter": {
+      "title": "Activiteitencentrum",
+      "triggerSummary": "{{active}} actieve taken, {{unseen}} nieuwe meldingen",
+      "starting": "Starten",
+      "inProgress": "Bezig",
+      "finalizing": "Afronden",
+      "installing": "Installeren",
+      "failed": "Mislukt",
+      "completed": "Voltooid",
+      "inProgressHeading": "Bezig",
+      "attentionHeading": "Heeft aandacht nodig",
+      "completedHeading": "Voltooid",
+      "notificationsHeading": "Meldingen",
+      "noNotifications": "Nog geen meldingen.",
+      "noActivity": "Op dit moment geen activiteit.",
+      "discardTask": "Taak verwijderen",
+      "markAllRead": "Alles als gelezen markeren",
+      "clearRead": "Gelezen wissen",
+      "markRead": "Markeren als gelezen",
+      "markUnread": "Markeren als ongelezen",
+      "panelSummary": "{{active}} bezig, {{unread}} ongelezen",
+      "answeredWith": "Beantwoord: {{action}}",
+      "restartAndUpdate": "Herstarten en bijwerken",
+      "viewUpdates": "Updates bekijken"
     }
   },
   "notifications": {
@@ -134,6 +159,10 @@
       "compressing": "Comprimeren starten: {{compressName}}!",
       "compressed": "Comprimeren voltooid: {{compressName}}!",
       "compressError": "Fout bij comprimeren: {{compressName}}!"
+    },
+    "actions": {
+      "updateNow": "Nu bijwerken",
+      "notNow": "Niet nu"
     },
     "discard": "Notificatie weggooien"
   }

@@ -88,8 +88,8 @@ describe("TaskManagerContext notification gating (PR #41)", () => {
   const cases: Array<{ mode: TaskNotificationsMode; outcome: "success" | "error"; expectedTypes: string[] }> = [
     { mode: "end", outcome: "success", expectedTypes: ["success"] },
     { mode: "end", outcome: "error", expectedTypes: ["error"] },
-    { mode: "progress", outcome: "success", expectedTypes: ["info", "success"] },
-    { mode: "progress", outcome: "error", expectedTypes: ["info"] }
+    { mode: "progress", outcome: "success", expectedTypes: ["success"] },
+    { mode: "progress", outcome: "error", expectedTypes: [] }
   ]
 
   it.each(cases)("mode=$mode outcome=$outcome shows $expectedTypes", async ({ mode, outcome, expectedTypes }) => {
@@ -526,7 +526,7 @@ describe("startExtract error arms", () => {
     expect(error?.message).toContain("chmod EPERM")
   })
 
-  it("resolves onFinish(true, null) and shows start+success toasts when extraction and chmod both succeed", async () => {
+  it("resolves onFinish(true, null) and shows only the completion toast when extraction and chmod both succeed", async () => {
     installMockWindowApi({
       pathsManager: {
         extractOnPath: vi.fn(async () => true),
@@ -541,7 +541,7 @@ describe("startExtract error arms", () => {
     })
 
     expect(onFinish).toHaveBeenCalledWith(true, null)
-    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "success"])
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["success"])
   })
 })
 
@@ -592,7 +592,7 @@ describe("startCompress error arms", () => {
     })
 
     expect(onFinish).toHaveBeenCalledWith(true, null)
-    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "success"])
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["success"])
   })
 
   it("passes a custom compressionLevel straight through to compressOnPath", async () => {

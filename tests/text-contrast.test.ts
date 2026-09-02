@@ -158,14 +158,14 @@ const ICON = [shell, section, dropdownFill, rowTint] as const
 
 // Scrims the vsl accent links and icons sit under, not touched by #236.
 const toast = scrim("components/layout/NotificationsOverlay.tsx", /text-center bg-zinc-950\/(\d+) backdrop-blur-sm/)
-const tasksPanel = scrim("components/ui/TasksMenu.tsx", /max-h-60 flex flex-col bg-zinc-950\/(\d+) backdrop-blur-md/)
+const tasksPanel = scrim("components/ui/ActivityCenter.tsx", /max-h-\[32rem\] flex flex-col bg-zinc-950\/(\d+) backdrop-blur-md/)
 const menuCard = scrim("features/installations/components/InstallationsDropdownMenu.tsx", /backdrop-blur-xs bg-zinc-950\/(\d+) border border-zinc-400\/5 group/)
 
 const LIST_PANEL = [shell, listPanel] as const
 const SECTION_TABLE = [shell, section, tableFill] as const
 const MENU_CARD = [shell, menu, menuCard] as const
 const TOAST = [shell, toast] as const
-// TasksMenu renders inside MainMenu's own header scrim (`<TasksMenu />` in MainMenu.tsx), so the
+// ActivityCenter renders inside MainMenu's own header scrim (`<ActivityCenter />` in MainMenu.tsx), so the
 // real stack under a task row carries that scrim too, not just the popover panel's own.
 const TASKS_ROW = [shell, menu, tasksPanel, rowTint] as const
 
@@ -284,7 +284,7 @@ describe("the brand accent where it carries text", () => {
     const accent: Layer = [themeColor("vsl"), 1]
     match("components/layout/NotificationsOverlay.tsx", /info: "text-vsl"/)
     assertReadable("info toast icon", accent, TOAST, NON_TEXT_FLOOR)
-    match("components/ui/TasksMenu.tsx", /pending: "text-vsl"/)
+    match("components/ui/ActivityCenter.tsx", /pending: "text-vsl"/)
     assertReadable("pending task icon", accent, TASKS_ROW, NON_TEXT_FLOOR)
   })
 

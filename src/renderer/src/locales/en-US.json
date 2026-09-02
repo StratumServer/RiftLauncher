@@ -381,6 +381,31 @@
       "accept": "Count me in",
       "decline": "No thanks",
       "alreadyDone": "Already did it"
+    },
+    "activityCenter": {
+      "title": "Activity Center",
+      "triggerSummary": "{{active}} active tasks, {{unseen}} new notifications",
+      "starting": "Starting",
+      "inProgress": "In progress",
+      "finalizing": "Finalizing",
+      "installing": "Installing",
+      "failed": "Failed",
+      "completed": "Completed",
+      "inProgressHeading": "In progress",
+      "attentionHeading": "Needs attention",
+      "completedHeading": "Completed",
+      "notificationsHeading": "Notifications",
+      "noNotifications": "No notifications yet.",
+      "noActivity": "No activity right now.",
+      "discardTask": "Discard task",
+      "markAllRead": "Mark all read",
+      "clearRead": "Clear read",
+      "markRead": "Mark as read",
+      "markUnread": "Mark as unread",
+      "panelSummary": "{{active}} running, {{unread}} unread",
+      "answeredWith": "Answered: {{action}}",
+      "restartAndUpdate": "Restart and update",
+      "viewUpdates": "View updates"
     }
   },
   "notifications": {

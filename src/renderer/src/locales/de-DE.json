@@ -239,6 +239,31 @@
     "loader": {
       "title": "Willkommen zum RiftLauncher!",
       "desc": "Wir bereiten alles für dich vor!"
+    },
+    "activityCenter": {
+      "title": "Aktivitätscenter",
+      "triggerSummary": "{{active}} aktive Aufgaben, {{unseen}} neue Benachrichtigungen",
+      "starting": "Wird gestartet",
+      "inProgress": "In Bearbeitung",
+      "finalizing": "Wird abgeschlossen",
+      "installing": "Wird installiert",
+      "failed": "Fehlgeschlagen",
+      "completed": "Abgeschlossen",
+      "inProgressHeading": "In Bearbeitung",
+      "attentionHeading": "Erfordert Aufmerksamkeit",
+      "completedHeading": "Abgeschlossen",
+      "notificationsHeading": "Benachrichtigungen",
+      "noNotifications": "Noch keine Benachrichtigungen.",
+      "noActivity": "Derzeit keine Aktivität.",
+      "discardTask": "Aufgabe verwerfen",
+      "markAllRead": "Alle als gelesen markieren",
+      "clearRead": "Gelesene löschen",
+      "markRead": "Als gelesen markieren",
+      "markUnread": "Als ungelesen markieren",
+      "panelSummary": "{{active}} laufend, {{unread}} ungelesen",
+      "answeredWith": "Beantwortet: {{action}}",
+      "restartAndUpdate": "Neu starten und aktualisieren",
+      "viewUpdates": "Updates anzeigen"
     }
   },
   "notifications": {
@@ -261,6 +286,10 @@
       "folderNotEmpty": "Der von dir gewählte Ordner ist nicht leer! Vergewissern dich, dass dort nichts Wichtiges abgespeichert wurde.",
       "noFileSelected": "Keine Datei ausgewählt!",
       "coulndtCopyIcon": "Dieses Symbol konnte nicht in den Ordner „Symbole“ kopiert werden!"
+    },
+    "actions": {
+      "updateNow": "Jetzt aktualisieren",
+      "notNow": "Nicht jetzt"
     },
     "discard": "Benachrichtigungen löschen"
   }

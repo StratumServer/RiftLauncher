@@ -96,7 +96,7 @@ describe("TaskManagerContext.startInstall", () => {
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, null))
-    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "success"])
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["success"])
   })
 
   it("shows the error toast when RUN_INSTALLER fails in mode=end", async () => {

@@ -282,6 +282,31 @@
     "loader": {
       "desc": "Estamos a preparar tudo para ti!",
       "title": "Bem-vindo(a) ao RiftLauncher!"
+    },
+    "activityCenter": {
+      "title": "Centro de atividade",
+      "triggerSummary": "{{active}} tarefas ativas, {{unseen}} notificações novas",
+      "starting": "A iniciar",
+      "inProgress": "Em curso",
+      "finalizing": "A finalizar",
+      "installing": "A instalar",
+      "failed": "Falhou",
+      "completed": "Concluída",
+      "inProgressHeading": "Em curso",
+      "attentionHeading": "Necessita de atenção",
+      "completedHeading": "Concluídas",
+      "notificationsHeading": "Notificações",
+      "noNotifications": "Ainda não existem notificações.",
+      "noActivity": "Sem atividade neste momento.",
+      "discardTask": "Eliminar tarefa",
+      "markAllRead": "Marcar todas como lidas",
+      "clearRead": "Limpar lidas",
+      "markRead": "Marcar como lida",
+      "markUnread": "Marcar como não lida",
+      "panelSummary": "{{active}} em curso, {{unread}} não lidas",
+      "answeredWith": "Resposta: {{action}}",
+      "restartAndUpdate": "Reiniciar e atualizar",
+      "viewUpdates": "Ver atualizações"
     }
   },
   "notifications": {
@@ -305,6 +330,10 @@
       "noFileSelected": "Sem ficheiros selecionados!",
       "coulndtCopyIcon": "Não foi possível copiar esse icon para a pasta de icons!",
       "appClosePrevented": "Não podes encerrar o RiftLauncher porque ainda estás a jogar Vintage Story ou porque há uma tarefa a ser executada!"
+    },
+    "actions": {
+      "updateNow": "Atualizar agora",
+      "notNow": "Agora não"
     },
     "discard": "Descartar notificação"
   },

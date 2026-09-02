@@ -20,10 +20,10 @@ export function createRestorePorts({ startExtract, taskName, taskDescription }: 
   return {
     fileSystem: createFileSystemPort(),
     extractor: {
-      // "progress": the caller already raises its own toast via describeRestoreFailure
+      // "caller-handled": the caller already raises its own toast via describeRestoreFailure
       // for every reason this can fail, so the generic error toast would double up.
       extract: (request, onComplete) =>
-        startExtract(taskName, taskDescription, "progress", request.archivePath, request.outputFolder, false, (status, error) => onComplete({ ok: status, error: error?.message }))
+        startExtract(taskName, taskDescription, "caller-handled", request.archivePath, request.outputFolder, false, (status, error) => onComplete({ ok: status, error: error?.message }))
     },
     ids: { newId: () => crypto.randomUUID() },
     closeGuard: {

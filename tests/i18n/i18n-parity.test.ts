@@ -135,3 +135,22 @@ describe("locale coverage snapshot (report only, does not fail on lag)", () => {
     assert.ok(rows.length > 0)
   })
 })
+
+describe("Activity Center translation contract", () => {
+  const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
+  const activityKeys = Object.keys(enUS).filter((key) => key.startsWith("components.activityCenter."))
+
+  it("keeps the new Activity Center namespace complete and non-empty in every locale", () => {
+    const failures = readdirSync(LOCALES_DIR)
+      .filter((file) => file.endsWith(".json"))
+      .map((file) => {
+        const locale = flattenTranslationObject(readLocaleJson(file))
+        const missing = activityKeys.filter((key) => !(key in locale))
+        const empty = activityKeys.filter((key) => typeof locale[key] !== "string" || locale[key].trim().length === 0)
+        return missing.length === 0 && empty.length === 0 ? null : `${file}: missing=${missing.join(",")}; empty=${empty.join(",")}`
+      })
+      .filter((failure): failure is string => failure !== null)
+
+    assert.deepEqual(failures, [], `incomplete Activity Center translations: ${failures.join(" | ")}`)
+  })
+})

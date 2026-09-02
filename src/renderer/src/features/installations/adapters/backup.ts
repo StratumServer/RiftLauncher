@@ -25,9 +25,8 @@ export function createBackupPorts({ startCompress, taskName, taskDescription }: 
           taskDescription,
           // The hook already raises its own toast via describeBackupFailure
           // for every reason that reaches this compress call, so the generic
-          // one would double up. "progress" keeps the ambient start/success
-          // toasts and drops only the error.
-          "progress",
+          // one would double up. The caller handles failures explicitly.
+          "caller-handled",
           request.sourcePath,
           request.outputFolder,
           request.fileName,

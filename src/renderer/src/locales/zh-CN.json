@@ -103,6 +103,31 @@
     },
     "loader": {
       "desc": "我们正在为您准备一切！"
+    },
+    "activityCenter": {
+      "title": "活动中心",
+      "triggerSummary": "{{active}} 个活动任务，{{unseen}} 条新通知",
+      "starting": "正在启动",
+      "inProgress": "进行中",
+      "finalizing": "正在完成",
+      "installing": "正在安装",
+      "failed": "失败",
+      "completed": "已完成",
+      "inProgressHeading": "进行中",
+      "attentionHeading": "需要关注",
+      "completedHeading": "已完成",
+      "notificationsHeading": "通知",
+      "noNotifications": "暂无通知。",
+      "noActivity": "当前没有活动。",
+      "discardTask": "移除任务",
+      "markAllRead": "全部标为已读",
+      "clearRead": "清除已读",
+      "markRead": "标为已读",
+      "markUnread": "标为未读",
+      "panelSummary": "{{active}} 项进行中，{{unread}} 条未读",
+      "answeredWith": "已选择：{{action}}",
+      "restartAndUpdate": "重启并更新",
+      "viewUpdates": "查看更新"
     }
   },
   "notifications": {
@@ -119,6 +144,10 @@
       "gameExitedWithErrors": "《复古物语》因出现错误退出！",
       "errorExecutingGame": "执行游戏时发生错误！",
       "missingFields": "请填写所有字段！"
+    },
+    "actions": {
+      "updateNow": "立即更新",
+      "notNow": "暂不"
     },
     "discard": "忽略通知"
   }

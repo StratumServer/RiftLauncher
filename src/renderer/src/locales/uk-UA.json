@@ -282,6 +282,31 @@
     "loader": {
       "title": "Ласкаво просимо до RiftLauncher!",
       "desc": "Ми готуємо все для вас!"
+    },
+    "activityCenter": {
+      "title": "Центр активності",
+      "triggerSummary": "{{active}} активних завдань, {{unseen}} нових сповіщень",
+      "starting": "Запуск",
+      "inProgress": "Виконується",
+      "finalizing": "Завершення",
+      "installing": "Встановлення",
+      "failed": "Не вдалося",
+      "completed": "Завершено",
+      "inProgressHeading": "Виконується",
+      "attentionHeading": "Потребує уваги",
+      "completedHeading": "Завершено",
+      "notificationsHeading": "Сповіщення",
+      "noNotifications": "Поки що немає сповіщень.",
+      "noActivity": "Зараз немає активності.",
+      "discardTask": "Відхилити завдання",
+      "markAllRead": "Позначити все як прочитане",
+      "clearRead": "Очистити прочитані",
+      "markRead": "Позначити як прочитане",
+      "markUnread": "Позначити як непрочитане",
+      "panelSummary": "{{active}} виконується, {{unread}} непрочитаних",
+      "answeredWith": "Відповідь: {{action}}",
+      "restartAndUpdate": "Перезапустити й оновити",
+      "viewUpdates": "Переглянути оновлення"
     }
   },
   "notifications": {
@@ -305,6 +330,10 @@
       "noFileSelected": "Не вибрано жодного файлу!",
       "coulndtCopyIcon": "Цю піктограму не вдалося скопіювати до папки піктограм!",
       "appClosePrevented": "Ви не можете закрити RiftLauncher, тому що граєте в Vintage Story або тому що виконується завдання!"
+    },
+    "actions": {
+      "updateNow": "Оновити зараз",
+      "notNow": "Не зараз"
     },
     "discard": "Відхилити повідомлення"
   },
