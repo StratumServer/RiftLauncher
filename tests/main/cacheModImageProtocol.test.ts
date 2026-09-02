@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -73,6 +73,26 @@ describe("cachemodimg protocol handler", () => {
     assert.equal(second.status, 200)
     assert.deepEqual(Buffer.from(await second.arrayBuffer()), bytes)
     assert.equal(fetchFile.mock.calls.length, 1)
+  })
+
+  it("reloads a same-name file after its bytes are refreshed", async () => {
+    const filePath = iconPath("aa.png")
+    const original = Buffer.from("old icon")
+    const replacement = Buffer.from("new icon")
+    writeFileSync(filePath, original)
+    const fetchFile = vi.fn<FetchFile>(async () => new Response(readFileSync(filePath)))
+    const handler = createHandler(fetchFile)
+
+    const first = await handler(request("/aa.png"))
+    assert.equal(first.status, 200)
+    const firstBytes = Buffer.from(await first.arrayBuffer())
+    writeFileSync(filePath, replacement)
+    const second = await handler(request("/aa.png"))
+
+    assert.deepEqual(firstBytes, original)
+    assert.equal(second.status, 200)
+    assert.deepEqual(Buffer.from(await second.arrayBuffer()), replacement)
+    assert.equal(fetchFile.mock.calls.length, 2)
   })
 
   it("fetches an evicted icon again", async () => {

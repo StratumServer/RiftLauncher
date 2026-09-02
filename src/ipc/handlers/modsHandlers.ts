@@ -31,6 +31,7 @@ const MOD_IMAGE_HOSTNAME = "moddbcdn.vintagestory.at"
  * cached file keeps the source extension for the `cachemodimg:` handler's Content-Type.
  */
 async function cacheModImage(urlValue: unknown): Promise<string | undefined> {
+  let staleName: string | undefined
   try {
     const url = assertAllowedDownloadUrl(urlValue)
     if (url.hostname !== MOD_IMAGE_HOSTNAME) throw new TypeError("Invalid ModDB image host")
@@ -38,14 +39,15 @@ async function cacheModImage(urlValue: unknown): Promise<string | undefined> {
     const images = createModImageStorePort()
     const key = url.toString()
     const cached = await images.lookup(key)
-    if (cached) return cached
+    if (cached?.fresh) return cached.name
+    staleName = cached?.name
 
     const bytes = await requestBoundedBuffer(url, { maxBytes: MAX_MOD_IMAGE_BYTES, accept: "image/png,image/jpeg" })
     if (!isPngBytes(bytes) && !isJpegBytes(bytes)) throw new TypeError("Downloaded ModDB image is not a PNG or JPEG")
-    return await images.store(key, bytes)
+    return (await images.store(key, bytes)) ?? staleName
   } catch (err) {
     logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [CACHE_MOD_IMAGE] Could not cache ModDB image: ${getErrorMessage(err)}`)
-    return undefined
+    return staleName
   }
 }
 

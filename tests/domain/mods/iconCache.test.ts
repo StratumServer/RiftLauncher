@@ -9,8 +9,8 @@ function contentName(seed: string): string {
   return `${seed.repeat(64).slice(0, 64)}.png`
 }
 
-function icon(name: string, bytes: number, modifiedAt: number): CachedIcon {
-  return { name, bytes, modifiedAt }
+function icon(name: string, bytes: number, accessedAt: number): CachedIcon {
+  return { name, bytes, accessedAt }
 }
 
 describe("planIconCacheEviction", () => {

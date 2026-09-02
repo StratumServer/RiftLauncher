@@ -103,6 +103,29 @@ describe("CACHE_MOD_IMAGE", () => {
     assert.deepEqual(readFileSync(path), replacement)
   })
 
+  it("falls back to the newest format after a migration also expires", async () => {
+    const original = Buffer.concat([PNG_SIGNATURE, Buffer.from("old logo")])
+    const replacement = Buffer.concat([JPEG_SIGNATURE, Buffer.from("new logo")])
+    requestBoundedBuffer.mockResolvedValueOnce(original)
+    const first = await handler()(await createTrustedEvent(), LOGO_URL)
+    const originalPath = join(modImagesFolder(), first ?? "")
+    const originalExpired = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+    utimesSync(originalPath, originalExpired, originalExpired)
+
+    requestBoundedBuffer.mockResolvedValueOnce(replacement)
+    const migrated = await handler()(await createTrustedEvent(), LOGO_URL)
+    const migratedPath = join(modImagesFolder(), migrated ?? "")
+    const migratedExpired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    utimesSync(migratedPath, migratedExpired, migratedExpired)
+
+    requestBoundedBuffer.mockRejectedValueOnce(new Error("offline"))
+    const fallback = await handler()(await createTrustedEvent(), LOGO_URL)
+
+    assert.equal(migrated, nameFor(LOGO_URL, ".jpg"))
+    assert.equal(fallback, migrated)
+    assert.deepEqual(readFileSync(migratedPath), replacement)
+  })
+
   it("keeps showing a logo it already has when the network is gone", async () => {
     requestBoundedBuffer.mockResolvedValueOnce(Buffer.concat([PNG_SIGNATURE, Buffer.from("logo")]))
     const first = await handler()(await createTrustedEvent(), LOGO_URL)
@@ -112,6 +135,52 @@ describe("CACHE_MOD_IMAGE", () => {
 
     assert.equal(offline, first)
     assert.equal(existsSync(join(modImagesFolder(), first ?? "")), true)
+  })
+
+  it("serves a stale logo when revalidation fails offline", async () => {
+    const original = Buffer.concat([PNG_SIGNATURE, Buffer.from("old logo")])
+    requestBoundedBuffer.mockResolvedValueOnce(original)
+    const first = await handler()(await createTrustedEvent(), LOGO_URL)
+    const path = join(modImagesFolder(), first ?? "")
+    const expired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    utimesSync(path, expired, expired)
+
+    requestBoundedBuffer.mockRejectedValueOnce(new Error("offline"))
+    const fallback = await handler()(await createTrustedEvent(), LOGO_URL)
+
+    assert.equal(fallback, first)
+    assert.deepEqual(readFileSync(path), original)
+  })
+
+  it("serves a stale logo when revalidation returns invalid image bytes", async () => {
+    const original = Buffer.concat([PNG_SIGNATURE, Buffer.from("old logo")])
+    requestBoundedBuffer.mockResolvedValueOnce(original)
+    const first = await handler()(await createTrustedEvent(), LOGO_URL)
+    const path = join(modImagesFolder(), first ?? "")
+    const expired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    utimesSync(path, expired, expired)
+
+    requestBoundedBuffer.mockResolvedValueOnce(Buffer.from("not an image"))
+    const fallback = await handler()(await createTrustedEvent(), LOGO_URL)
+
+    assert.equal(fallback, first)
+    assert.deepEqual(readFileSync(path), original)
+  })
+
+  it("serves a stale logo when the refreshed format cannot be stored", async () => {
+    const original = Buffer.concat([PNG_SIGNATURE, Buffer.from("old logo")])
+    requestBoundedBuffer.mockResolvedValueOnce(original)
+    const first = await handler()(await createTrustedEvent(), LOGO_URL)
+    const path = join(modImagesFolder(), first ?? "")
+    const expired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    utimesSync(path, expired, expired)
+    mkdirSync(join(modImagesFolder(), nameFor(LOGO_URL, ".jpg")))
+
+    requestBoundedBuffer.mockResolvedValueOnce(Buffer.concat([JPEG_SIGNATURE, Buffer.from("new logo")]))
+    const fallback = await handler()(await createTrustedEvent(), LOGO_URL)
+
+    assert.equal(fallback, first)
+    assert.deepEqual(readFileSync(path), original)
   })
 
   it("keeps a cached logo looking live to the cache sweep", async () => {

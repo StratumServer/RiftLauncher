@@ -270,9 +270,8 @@ app.whenReady().then(async () => {
     })
   }
 
-  // Handler for mod icons. A name in this folder is written once and never rewritten (a sha256 of
-  // the bytes for an archive icon, a sha256 of the URL for a ModDB logo), so a hit in
-  // modIconMemoryCache can never serve stale bytes.
+  // Handler for mod icons. Archive-icon names contain their bytes' sha256, while ModDB logo names
+  // contain their URL and may be refreshed; the protocol checks the file revision before a hit.
   protocol.handle(
     "cachemodimg",
     createCacheModImageProtocolHandler({

@@ -221,7 +221,7 @@ describe("createIconStorePort", () => {
   })
 
   it("touches an icon it already holds instead of rewriting it", async () => {
-    // The timestamp is what the startup sweep sorts on, so an icon a scan still
+    // The access time is what the startup sweep sorts on, so an icon a scan still
     // points at has to look freshly used even though nothing was written.
     const { createIconStorePort } = await import("../../src/ipc/adapters/modScan")
     const store = createIconStorePort()
@@ -233,7 +233,9 @@ describe("createIconStorePort", () => {
 
     await store.store(bytes)
 
-    assert.ok(statSync(target).mtimeMs > 1_000)
+    const stats = statSync(target)
+    assert.ok(stats.atimeMs > 1_000)
+    assert.ok(stats.mtimeMs > 1_000)
     assert.deepEqual(readFileSync(target), Buffer.from(bytes))
   })
 
@@ -258,12 +260,12 @@ describe("pruneModIconCache", () => {
     return join(workspace, "Cache", "Images", "Mods")
   }
 
-  /** Writes a file straight into the cache folder, with a timestamp of its own. */
-  function seedIcon(name: string, bytes: number, modifiedAt: number): string {
+  /** Writes a file straight into the cache folder, with independent access and modification times. */
+  function seedIcon(name: string, bytes: number, accessedAt: number, modifiedAt = accessedAt): string {
     fse.ensureDirSync(iconsFolder())
     const target = join(iconsFolder(), name)
     writeFileSync(target, Buffer.alloc(bytes, 1))
-    fse.utimesSync(target, new Date(modifiedAt), new Date(modifiedAt))
+    fse.utimesSync(target, new Date(accessedAt), new Date(modifiedAt))
     return name
   }
 
@@ -305,6 +307,17 @@ describe("pruneModIconCache", () => {
 
     assert.deepEqual(readdirSync(iconsFolder()), [newest])
     assert.equal(existsSync(join(iconsFolder(), oldest)), false)
+  })
+
+  it("evicts by access time even when modification time is older", async () => {
+    const { pruneModIconCache } = await import("../../src/ipc/adapters/modScan")
+    const recentlyAccessed = seedIcon(contentName("a"), 32, 9_000, 1_000)
+    const olderAccess = seedIcon(contentName("b"), 32, 2_000, 9_000)
+
+    await pruneModIconCache(48)
+
+    assert.equal(existsSync(join(iconsFolder(), recentlyAccessed)), true)
+    assert.equal(existsSync(join(iconsFolder(), olderAccess)), false)
   })
 
   it("does nothing when the cache folder was never created", async () => {
@@ -350,11 +363,11 @@ describe("pruneModIconCache coalescing and access-time guard", () => {
     return join(workspace, "Cache", "Images", "Mods")
   }
 
-  function seedIcon(name: string, bytes: number, modifiedAt: number): string {
+  function seedIcon(name: string, bytes: number, accessedAt: number, modifiedAt = accessedAt): string {
     fse.ensureDirSync(iconsFolder())
     const target = join(iconsFolder(), name)
     writeFileSync(target, Buffer.alloc(bytes, 1))
-    fse.utimesSync(target, new Date(modifiedAt), new Date(modifiedAt))
+    fse.utimesSync(target, new Date(accessedAt), new Date(modifiedAt))
     return name
   }
 

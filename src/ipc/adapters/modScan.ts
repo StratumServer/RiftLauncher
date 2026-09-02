@@ -3,8 +3,9 @@ import { app } from "electron"
 import fse from "fs-extra"
 import { join } from "node:path"
 import yauzl from "yauzl"
+import writeFileAtomic from "write-file-atomic"
 
-import type { DirectoryReader, IconStore, ModArchiveContent, ModArchiveReader, ModArchiveResult, ModImageCache, PathBuilder } from "@domain/ports"
+import type { DirectoryReader, IconStore, ModArchiveContent, ModArchiveReader, ModArchiveResult, ModImageCache, ModImageCacheEntry, PathBuilder } from "@domain/ports"
 import type { CachedIcon } from "@domain/mods/iconCache"
 import type { ScanInstalledModsPorts } from "@domain/mods/scanInstalled"
 import { MOD_ICON_CACHE_MAX_BYTES, planIconCacheEviction } from "@domain/mods/iconCache"
@@ -228,8 +229,9 @@ function modImageCacheName(url: string, extension: string): string {
  */
 export function createModImageStorePort(): ModImageCache {
   return {
-    lookup: async (url: string): Promise<string | undefined> => {
+    lookup: async (url: string): Promise<ModImageCacheEntry | undefined> => {
       const folder = modImagesFolder()
+      let stale: { entry: ModImageCacheEntry; mtimeMs: number } | undefined
       for (const extension of MOD_IMAGE_EXTENSIONS) {
         const name = modImageCacheName(url, extension)
         try {
@@ -237,15 +239,17 @@ export function createModImageStorePort(): ModImageCache {
           // A zero-byte file is a torn write from a crash: treat it as a miss so the next
           // request heals it rather than serving nothing forever.
           if (!stats.isFile() || stats.size === 0) continue
-          if (Date.now() - stats.mtimeMs >= MOD_IMAGE_CACHE_MAX_AGE_MS) continue
+          const fresh = Date.now() - stats.mtimeMs < MOD_IMAGE_CACHE_MAX_AGE_MS
           const now = new Date()
           await fse.utimes(join(folder, name), now, new Date(stats.mtimeMs)).catch(() => undefined)
-          return name
+          const entry = { name, fresh }
+          if (fresh) return entry
+          if (stale === undefined || stats.mtimeMs > stale.mtimeMs) stale = { entry, mtimeMs: stats.mtimeMs }
         } catch {
           // Not this extension. Try the next.
         }
       }
-      return undefined
+      return stale?.entry
     },
     store: async (url: string, bytes: Uint8Array): Promise<string | undefined> => {
       const extension = isPngBytes(bytes) ? ".png" : isJpegBytes(bytes) ? ".jpg" : undefined
@@ -256,8 +260,9 @@ export function createModImageStorePort(): ModImageCache {
         await fse.ensureDir(folder)
         const target = join(folder, name)
         // The URL is stable across refreshes, so an expired entry must be replaced with the new
-        // bytes rather than merely touched. A missing or torn zero-byte file follows the same path.
-        await fse.writeFile(target, bytes)
+        // bytes rather than merely touched. Atomic replacement keeps the stale file intact if the
+        // refresh cannot be committed. A missing or torn zero-byte file follows the same path.
+        await writeFileAtomic(target, bytes)
         return name
       } catch (err) {
         logMessage("error", `[back] [mods] [ipc/adapters/modScan.ts] [createModImageStorePort] Error saving a ModDB logo.`)
@@ -276,11 +281,11 @@ export function createModImageStorePort(): ModImageCache {
  * produced would delete the icons every other installation is pointing at, which is what #117
  * reports. What this deletes instead is anything the current store could not have written, then the
  * least recently scanned icons once the folder is over budget. `createIconStorePort().store` moves
- * an icon's timestamp forward every time a scan points at it again, so an icon that is still
+ * an icon's access time forward every time a scan points at it again, so an icon that is still
  * installed keeps looking young whichever installation holds it.
  *
  * Safe to call repeatedly: concurrent calls coalesce into at most one active sweep plus one
- * trailing re-run (in case a scan wrote icons while the sweep was in flight). Icons whose mtime
+ * trailing re-run (in case a scan wrote icons while the sweep was in flight). Icons whose atime
  * moved since the snapshot are skipped rather than removed, closing the race where a concurrent
  * scan touches an icon the sweep already planned to delete.
  *
@@ -327,7 +332,7 @@ async function doPruneModIconCache(maxBytes: number): Promise<void> {
     try {
       assertSafeFileName(name)
       const stats = await fse.stat(join(folder, name))
-      if (stats.isFile()) entries.push({ name, bytes: stats.size, modifiedAt: stats.atimeMs })
+      if (stats.isFile()) entries.push({ name, bytes: stats.size, accessedAt: stats.atimeMs })
     } catch (err) {
       logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Skipping ${name}: ${err}`)
     }
@@ -336,7 +341,7 @@ async function doPruneModIconCache(maxBytes: number): Promise<void> {
   const doomed = planIconCacheEviction(entries, maxBytes)
   if (doomed.length === 0) return
 
-  const accessTimeByName = new Map(entries.map((entry) => [entry.name, entry.modifiedAt]))
+  const accessTimeByName = new Map(entries.map((entry) => [entry.name, entry.accessedAt]))
   const bytesByName = new Map(entries.map((entry) => [entry.name, entry.bytes]))
   let reclaimed = 0
 
