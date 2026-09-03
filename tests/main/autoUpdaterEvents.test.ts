@@ -61,17 +61,37 @@ vi.mock("electron", () => {
   return { app, ipcMain }
 })
 
+// Shaped like the real package: no named `autoUpdater` export node's own ESM interop can see,
+// only a `default` carrying it behind a getter (see src/utils/autoUpdaterLoader.ts's comment on
+// why). A mock returning `{ autoUpdater: ... }` directly would let a reverted loader pass every
+// test in this file while still throwing in the packaged app.
 vi.mock("electron-updater", () => ({
-  autoUpdater: Object.assign(mockState.autoUpdater, {
-    on: (event: string, listener: (payload?: unknown) => void): unknown => {
-      mockState.updaterListeners.set(event, listener)
-      return mockState.autoUpdater
-    },
-    downloadUpdate: mockState.downloadUpdate,
-    quitAndInstall: mockState.quitAndInstall,
-    checkForUpdates: mockState.checkForUpdates
-  })
+  // Declared (as undefined) rather than left off entirely: vitest's mocked module namespace
+  // throws on a property access it was never told about, where node's real interop would just
+  // hand back `undefined`. Declaring it is what lets `namespace.autoUpdater` behave like the
+  // real absent export the loader's `??` fallback is written for.
+  autoUpdater: undefined,
+  default: {
+    get autoUpdater(): typeof mockState.autoUpdater {
+      return Object.assign(mockState.autoUpdater, {
+        on: (event: string, listener: (payload?: unknown) => void): unknown => {
+          mockState.updaterListeners.set(event, listener)
+          return mockState.autoUpdater
+        },
+        downloadUpdate: mockState.downloadUpdate,
+        quitAndInstall: mockState.quitAndInstall,
+        checkForUpdates: mockState.checkForUpdates
+      })
+    }
+  }
 }))
+
+// The double the vi.mock above installs, reached the same way the real interop leaves it to be
+// reached: no named export, only default.autoUpdater. Both functions take the updater as an
+// argument now, so this is the same handing-in main/index.ts does once loadAutoUpdater has resolved.
+import electronUpdaterModule from "electron-updater"
+
+const autoUpdater = electronUpdaterModule.autoUpdater
 
 import { registerAutoUpdaterEvents, scheduleUpdateCheck, toTaskProgress } from "@src/main/autoUpdaterEvents"
 // Registers the renderer-facing half of the same flow (DOWNLOAD_UPDATE,
@@ -94,6 +114,10 @@ async function sendFromRenderer(channel: string): Promise<void> {
   const listener = mockState.onListeners.get(channel)
   if (!listener) throw new Error(`No ipcMain.on registered for "${channel}". Did the handler module get imported?`)
   listener(await createTrustedEvent())
+  // The handler reaches electron-updater through loadAutoUpdater's dynamic import now, so the
+  // call it makes lands a turn after this send. Draining the queue keeps the assertions below
+  // the plain synchronous reads they have always been.
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 let temporaryRoot: string
@@ -109,7 +133,7 @@ beforeEach(() => {
   mockState.userDataDir = join(temporaryRoot, "userData")
 
   sent = []
-  registerAutoUpdaterEvents((channel, payload) => sent.push({ channel, payload }))
+  registerAutoUpdaterEvents(autoUpdater, (channel, payload) => sent.push({ channel, payload }))
 })
 
 afterEach(() => {
@@ -248,7 +272,7 @@ describe("the handshake, end to end", () => {
 describe("scheduling the update check", () => {
   it("reads the preference when the check fires, not when it was armed", async () => {
     let allowPrerelease = false
-    scheduleUpdateCheck(async () => allowPrerelease, 1)
+    scheduleUpdateCheck(autoUpdater, async () => allowPrerelease, 1)
 
     // Arming touches nothing: this is still whatever electron-updater was left with.
     assert.equal(mockState.autoUpdater.allowPrerelease, false)
@@ -262,7 +286,7 @@ describe("scheduling the update check", () => {
 
   it("carries an opt-out made in the same window through to the check", async () => {
     let allowPrerelease = true
-    scheduleUpdateCheck(async () => allowPrerelease, 1)
+    scheduleUpdateCheck(autoUpdater, async () => allowPrerelease, 1)
     allowPrerelease = false
 
     await vi.waitFor(() => assert.equal(mockState.checkForUpdates.mock.calls.length, 1))
@@ -272,7 +296,7 @@ describe("scheduling the update check", () => {
   it("swallows a check that fails, the ordinary case of launching with no network", async () => {
     mockState.checkForUpdates.mockRejectedValueOnce(new Error("getaddrinfo ENOTFOUND"))
 
-    scheduleUpdateCheck(async () => true, 1)
+    scheduleUpdateCheck(autoUpdater, async () => true, 1)
 
     await vi.waitFor(() => assert.equal(mockState.checkForUpdates.mock.calls.length, 1))
     assert.equal(mockState.autoUpdater.allowPrerelease, true)

@@ -6,6 +6,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { configSaveFailureMessageKey, initialConfigSaveHealthState, updateConfigSaveHealth } from "@renderer/features/config/utils/saveHealth"
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "@renderer/features/config/contexts/configReducer"
 import { applyBackground } from "@renderer/utils/backgroundStyle"
+import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
 
 // Re-exported so a consumer needs one import to read a slice and dispatch onto it.
 export { CONFIG_ACTIONS } from "@renderer/features/config/contexts/configReducer"
@@ -56,18 +57,42 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
   // this effect: only the save result should decide when to notify, never a
   // state update reacting to its own state update.
   const saveHealthRef = useRef(initialConfigSaveHealthState)
+  // Set when the config read failed, and never cleared. What the provider holds from then on is
+  // the reducer's defaults rather than anything a player chose, and the save effect below reads
+  // this to keep those defaults off disk.
+  const configReadFailedRef = useRef(false)
 
   useEffect(() => {
     ;(async (): Promise<void> => {
       window.api.utils.logMessage("info", `[front] [config] [features/config/contexts/ConfigCntext.tsx] [ConfigProvider] Setting context config from config file.`)
-      const config = await window.api.configManager.getConfig()
-      configDispatch({ type: CONFIG_ACTIONS.SET_CONFIG, payload: config })
+      try {
+        const config = await window.api.configManager.getConfig()
+        configDispatch({ type: CONFIG_ACTIONS.SET_CONFIG, payload: config })
+      } catch (error) {
+        // The splash (see App.tsx's Loader) only comes down once schemaVersion !== 0, so a
+        // rejection left uncaught here would keep it up for the rest of the session, where the
+        // fixed-timer splash this replaced always lifted regardless of whether the read behind
+        // it had succeeded. Dispatching the reducer's own initial config, stamped with a real
+        // schema version instead of the 0 sentinel it starts life with, lets the app come up in
+        // a usable state instead of a permanently stuck launch. What is on disk stays there:
+        // these defaults describe nobody's launcher, so the save effect below refuses to write
+        // anything for the rest of a session that started this way.
+        window.api.utils.logMessage("error", `[front] [config] [features/config/contexts/ConfigContext.tsx] [ConfigProvider] Error reading the config file.`)
+        window.api.utils.logMessage("debug", `[front] [config] [features/config/contexts/ConfigContext.tsx] [ConfigProvider] getConfig rejected: ${error}.`)
+        configReadFailedRef.current = true
+        configDispatch({ type: CONFIG_ACTIONS.SET_CONFIG, payload: { ...initialState, schemaVersion: CURRENT_CONFIG_SCHEMA } })
+      }
     })()
   }, [])
 
   useEffect(() => {
     if (!isConfigLoaded && config.schemaVersion !== 0) setIsConfigLoaded(true)
     if (!isConfigLoaded) return
+    // A session that could not read the config is running on invented defaults: no installations,
+    // no accounts, none of the player's preferences. Saving that would replace a config this
+    // process never managed to see, so this session stays read-only and a later launch that can
+    // read the file again finds it exactly as the player left it.
+    if (configReadFailedRef.current) return
 
     // Still fire-and-forget in spirit: nothing here blocks the UI on a save.
     // The result is only observed to decide whether the player needs telling.

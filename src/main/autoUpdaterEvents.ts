@@ -1,4 +1,4 @@
-import { autoUpdater } from "electron-updater"
+import type { AppUpdater } from "electron-updater"
 import { setTimeout } from "node:timers"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
@@ -44,8 +44,14 @@ const UPDATE_CHECK_DELAY_MS = 5_000
  * what is an entirely ordinary situation. electron-updater's own "error" event still fires, so the
  * renderer hears about it the usual way; this only keeps the rejection of that same failure from
  * going nowhere.
+ *
+ * `autoUpdater` is handed in rather than imported, here and in
+ * registerAutoUpdaterEvents, because the module is loaded on demand now
+ * (src/utils/autoUpdaterLoader.ts). Taking it as an argument is what keeps the
+ * one load on the one path that decided an update is possible at all, and
+ * leaves both functions drivable from a test without an import to intercept.
  */
-export function scheduleUpdateCheck(readAllowPrerelease: () => Promise<boolean>, delayMs: number = UPDATE_CHECK_DELAY_MS): void {
+export function scheduleUpdateCheck(autoUpdater: AppUpdater, readAllowPrerelease: () => Promise<boolean>, delayMs: number = UPDATE_CHECK_DELAY_MS): void {
   const timer = setTimeout(() => {
     void (async (): Promise<void> => {
       autoUpdater.allowPrerelease = await readAllowPrerelease()
@@ -75,7 +81,7 @@ export function toTaskProgress(percent: number): number {
  * until DOWNLOAD_UPDATE arrives from the renderer, and that channel refuses to
  * act until markUpdateAvailable has been called, which only happens below.
  */
-export function registerAutoUpdaterEvents(send: SendToRenderer): void {
+export function registerAutoUpdaterEvents(autoUpdater: AppUpdater, send: SendToRenderer): void {
   autoUpdater.autoDownload = false
 
   autoUpdater.on("update-available", (info) => {
