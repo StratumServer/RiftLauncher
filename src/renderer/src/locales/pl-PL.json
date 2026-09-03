@@ -5,6 +5,7 @@
       "compressing": "Kompresowanie",
       "downloading": "Pobieranie",
       "extracting": "Wypakowywanie",
+      "installing": "Instalowanie",
       "noTasksAvailable": "Brak zadań w kolejce!"
     },
     "loader": {

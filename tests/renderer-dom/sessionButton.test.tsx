@@ -93,6 +93,10 @@ describe("SessionButton", () => {
     await user.type(within(dialog).getByLabelText("Password"), "correct-horse-battery-staple")
     await user.click(within(dialog).getByRole("button", { name: "Log in" }))
 
+    // The "Logging in!" info toast holds the single visible toast slot; the
+    // 2FA error sits behind it in the queue until the info toast is dismissed.
+    await user.click(await screen.findByRole("button", { name: "Discard notification" }))
+
     expect(await screen.findByText(/This account requires a 2FA code/i)).toBeTruthy()
     expect(screen.queryByText(/That 2FA code is incorrect/i)).toBeNull()
   })

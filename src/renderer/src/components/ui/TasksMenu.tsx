@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react"
-import { PiDownloadDuotone, PiBoxArrowDownDuotone, PiXCircleDuotone, PiBoxArrowUpDuotone } from "react-icons/pi"
+import { PiDownloadDuotone, PiBoxArrowDownDuotone, PiXCircleDuotone, PiBoxArrowUpDuotone, PiPackageDuotone } from "react-icons/pi"
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react"
 import clsx from "clsx"
 
@@ -12,6 +12,7 @@ import { BUTTON_BASE_STYLES, BUTTON_VARIANT_STYLES, BUTTON_SIZE_STYLES } from "@
 const NAME_BY_TYPE = {
   download: "components.tasksMenu.downloading",
   extract: "components.tasksMenu.extracting",
+  install: "components.tasksMenu.installing",
   compress: "components.tasksMenu.compressing"
 }
 
@@ -25,6 +26,7 @@ const FONT_COLOR_TYPES = {
 const ICON_TYPES = {
   download: <PiDownloadDuotone />,
   extract: <PiBoxArrowUpDuotone />,
+  install: <PiPackageDuotone />,
   compress: <PiBoxArrowDownDuotone />
 }
 

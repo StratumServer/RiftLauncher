@@ -293,6 +293,7 @@
     "tasksMenu": {
       "downloading": "Загрузка",
       "extracting": "Извлечение",
+      "installing": "Установка",
       "compressing": "Сжатие",
       "error": "Произошла ошибка в процессе!",
       "noTasksAvailable": "Задачи в очереди отсутствуют!"

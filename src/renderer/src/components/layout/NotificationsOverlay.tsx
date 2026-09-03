@@ -43,14 +43,7 @@ function NotificationsOverlay(): JSX.Element {
                     {activeToast.options.actions.map((action, index) => {
                       const actionId = action.id ?? "action-" + index
                       return (
-                        <NormalButton
-                          key={actionId}
-                          variant="secondary"
-                          className="text-xs"
-                          title={action.label}
-                          ariaLabel={action.label}
-                          onClick={() => invokeAction(activeToast.id, actionId)}
-                        >
+                        <NormalButton key={actionId} variant="secondary" className="text-xs" title={action.label} ariaLabel={action.label} onClick={() => invokeAction(activeToast.id, actionId)}>
                           {action.label}
                         </NormalButton>
                       )
@@ -59,7 +52,13 @@ function NotificationsOverlay(): JSX.Element {
                 )}
               </div>
             </div>
-            <NormalButton className="p-1 text-zinc-400 shrink-0" title={t("notifications.discard")} ariaLabel={t("notifications.discard")} variant="ghost" onClick={() => dismissToast(activeToast.id, "manual")}>
+            <NormalButton
+              className="p-1 text-zinc-400 shrink-0"
+              title={t("notifications.discard")}
+              ariaLabel={t("notifications.discard")}
+              variant="ghost"
+              onClick={() => dismissToast(activeToast.id, "manual")}
+            >
               <PiXCircleDuotone />
             </NormalButton>
             {toastDuration != null && (

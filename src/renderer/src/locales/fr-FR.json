@@ -293,6 +293,7 @@
     "tasksMenu": {
       "downloading": "Téléchargement",
       "extracting": "Extraction",
+      "installing": "Installation",
       "compressing": "Compression",
       "error": "Une erreur est survenue pendant le processus !",
       "noTasksAvailable": "Aucune tâche en attente !"
