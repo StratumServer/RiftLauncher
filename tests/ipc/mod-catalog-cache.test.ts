@@ -223,21 +223,20 @@ describe("pruneModCatalogCache", () => {
     const oldest = seedEntry(contentName("a"), 32, Date.now() - 60_000)
     const newest = seedEntry(contentName("b"), 32, Date.now())
 
-    await pruneModCatalogCache(48, 365 * 24 * 60 * 60 * 1_000)
+    await pruneModCatalogCache(48)
 
     assert.deepEqual(readdirSync(cacheDirectory()), [newest])
     assert.equal(existsSync(join(cacheDirectory(), oldest)), false)
   })
 
-  it("drops an entry past the TTL even while the folder is under the byte budget", async () => {
+  it("keeps old entries when the folder is under the byte budget", async () => {
     const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
-    const stale = seedEntry(contentName("a"), 16, Date.now() - 40 * 24 * 60 * 60 * 1_000)
-    const fresh = seedEntry(contentName("b"), 16, Date.now())
+    const old = seedEntry(contentName("a"), 16, Date.now() - 40 * 24 * 60 * 60 * 1_000)
+    const recent = seedEntry(contentName("b"), 16, Date.now())
 
-    await pruneModCatalogCache(64 * 1024 * 1024, 30 * 24 * 60 * 60 * 1_000)
+    await pruneModCatalogCache(64 * 1024 * 1024)
 
-    assert.deepEqual(readdirSync(cacheDirectory()), [fresh])
-    assert.equal(existsSync(join(cacheDirectory(), stale)), false)
+    assert.deepEqual(readdirSync(cacheDirectory()).sort(), [old, recent])
   })
 
   it("never touches a write-file-atomic temp file, only complete <hash>.json entries", async () => {
@@ -292,6 +291,19 @@ describe("pruneModCatalogCache", () => {
     await pruneModCatalogCache(0)
 
     assert.equal(existsSync(join(cacheDirectory(), name)), true)
+  })
+
+  it("skips a directory named like an entry instead of removing it", async () => {
+    const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
+    const dirName = contentName("dir")
+    fse.ensureDirSync(join(cacheDirectory(), dirName))
+
+    await pruneModCatalogCache(0)
+
+    // The directory was counted toward the budget (its stat was collected) but
+    // the isFile() guard prevented it from being handed to fse.remove.
+    assert.equal(existsSync(join(cacheDirectory(), dirName)), true)
+    assert.equal(fse.lstatSync(join(cacheDirectory(), dirName)).isDirectory(), true)
   })
 
   it("never deletes anything outside its own cache folder", async () => {

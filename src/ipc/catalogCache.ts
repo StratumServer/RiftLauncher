@@ -4,7 +4,7 @@ import fse from "fs-extra"
 import { join } from "node:path"
 
 import type { CachedCatalogResponse } from "@domain/mods/catalogCache"
-import { MOD_CATALOG_CACHE_MAX_AGE_MS, MOD_CATALOG_CACHE_MAX_BYTES, planModCatalogCacheEviction } from "@domain/mods/catalogCache"
+import { MOD_CATALOG_CACHE_MAX_BYTES, planModCatalogCacheEviction } from "@domain/mods/catalogCache"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { isRecord, MAX_MODS_CATALOG_RESPONSE_BYTES } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
@@ -71,9 +71,8 @@ export async function writeCatalogCache(url: URL, body: string): Promise<void> {
 }
 
 /**
- * Deletes what the mod-catalog cache no longer earns its keep on: entries past
- * {@link MOD_CATALOG_CACHE_MAX_AGE_MS} unconditionally, then the least recently written survivors
- * once the folder is over {@link MOD_CATALOG_CACHE_MAX_BYTES}. See `planModCatalogCacheEviction` in
+ * Deletes the least recently written survivors once the folder is over
+ * {@link MOD_CATALOG_CACHE_MAX_BYTES}. See `planModCatalogCacheEviction` in
  * `@domain/mods/catalogCache` for the eviction order itself; this function only walks the folder and
  * drives that decision.
  *
@@ -91,9 +90,8 @@ export async function writeCatalogCache(url: URL, body: string): Promise<void> {
  * to break a launch, so every filesystem error is logged and swallowed.
  *
  * @param maxBytes Budget the survivors have to fit in. Only tests pass this.
- * @param maxAgeMs How long an entry survives without being re-fetched. Only tests pass this.
  */
-export async function pruneModCatalogCache(maxBytes: number = MOD_CATALOG_CACHE_MAX_BYTES, maxAgeMs: number = MOD_CATALOG_CACHE_MAX_AGE_MS): Promise<void> {
+export async function pruneModCatalogCache(maxBytes: number = MOD_CATALOG_CACHE_MAX_BYTES): Promise<void> {
   const cacheDirectory = getCacheDirectory()
 
   let names: string[]
@@ -115,7 +113,7 @@ export async function pruneModCatalogCache(maxBytes: number = MOD_CATALOG_CACHE_
     }
   }
 
-  const doomed = planModCatalogCacheEviction(entries, { maxBytes, maxAgeMs })
+  const doomed = planModCatalogCacheEviction(entries, { maxBytes })
   if (doomed.length === 0) return
 
   const mtimeByName = new Map(entries.map((entry) => [entry.name, entry.modifiedAt]))
