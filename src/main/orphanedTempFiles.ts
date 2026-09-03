@@ -17,7 +17,10 @@ export const ATOMIC_JSON_TEMP_FILE_PATTERN =
 /** The temporary sibling created by `runDownload`. */
 export const DOWNLOAD_PART_FILE_PATTERN = /^.+\.\d+\.\d+\.part$/
 
-export type TemporaryFileKind = "atomic-json" | "download-part"
+/** The staging directory created by `runExtraction` beside the destination. */
+export const EXTRACTION_STAGING_PATTERN = /^\.riftlauncher-extract-/
+
+export type TemporaryFileKind = "atomic-json" | "download-part" | "extraction-staging"
 
 export interface TemporaryFileSweepTarget {
   /** Directory to inspect. A missing directory is an ordinary first-run state. */
@@ -39,7 +42,8 @@ export interface TemporaryFileSweepOptions {
 
 function matchesKind(name: string, kind: TemporaryFileKind): boolean {
   if (kind === "atomic-json") return ATOMIC_JSON_TEMP_FILE_PATTERN.test(name)
-  return DOWNLOAD_PART_FILE_PATTERN.test(name)
+  if (kind === "download-part") return DOWNLOAD_PART_FILE_PATTERN.test(name)
+  return EXTRACTION_STAGING_PATTERN.test(name)
 }
 
 function isMissing(error: unknown): boolean {
@@ -62,6 +66,27 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
 
     if (target.recursive && entry.isDirectory()) {
       removed += await sweepDirectory(target, options, entryPath)
+      continue
+    }
+
+    // Extraction staging folders are directories, not files: remove them
+    // recursively when they match and are old enough.
+    if (entry.isDirectory() && target.kinds.includes("extraction-staging") && matchesKind(entry.name, "extraction-staging")) {
+      let stats: fse.Stats
+      try {
+        stats = await fse.lstat(entryPath)
+      } catch (error) {
+        if (!isMissing(error)) options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Could not inspect ${entryPath}: ${error}`)
+        continue
+      }
+      if (stats.isSymbolicLink() || options.nowMs - stats.mtimeMs <= options.maxAgeMs) continue
+      try {
+        await fse.remove(entryPath)
+        removed += 1
+        options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Removed orphaned staging folder ${entryPath}.`)
+      } catch (error) {
+        if (!isMissing(error)) options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Could not remove ${entryPath}: ${error}`)
+      }
       continue
     }
 
@@ -117,7 +142,7 @@ export function getOrphanedTempFileSweepTargets(userDataPath: string, config: Co
     { path: userDataPath, kinds: ["atomic-json"] },
     { path: join(userDataPath, "Cache", "ModCatalog"), kinds: ["atomic-json"] }
   ]
-  const seenDownloadRoots = new Set<string>()
+  const seenPaths = new Set<string>()
   const downloadRoots = [
     config.defaultInstallationsFolder,
     config.defaultVersionsFolder,
@@ -128,9 +153,27 @@ export function getOrphanedTempFileSweepTargets(userDataPath: string, config: Co
   for (const downloadRoot of downloadRoots) {
     if (!downloadRoot) continue
     const path = resolve(downloadRoot)
-    if (seenDownloadRoots.has(path)) continue
-    seenDownloadRoots.add(path)
+    if (seenPaths.has(path)) continue
+    seenPaths.add(path)
     targets.push({ path, kinds: ["atomic-json", "download-part"], recursive: true })
+  }
+
+  // Extraction staging folders sit beside the destination, which is the
+  // installation or version folder itself. The sweep walks the parent of each
+  // configured path to find and remove old staging folders.
+  const stagingParents = [
+    config.defaultInstallationsFolder,
+    config.defaultVersionsFolder,
+    ...config.installations.map((installation) => installation.path),
+    ...config.gameVersions.map((version) => version.path)
+  ]
+
+  for (const stagingParent of stagingParents) {
+    if (!stagingParent) continue
+    const path = resolve(stagingParent)
+    if (seenPaths.has(path)) continue
+    seenPaths.add(path)
+    targets.push({ path, kinds: ["extraction-staging"] })
   }
 
   return targets

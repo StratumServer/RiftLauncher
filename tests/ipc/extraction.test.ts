@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -154,6 +154,18 @@ describe("publishTree", () => {
     assert.equal(readFileSync(workspacePath("target", "assets", "seed.json"), "utf8"), "{}")
   })
 
+  it("falls back to a copy when the rename fails with EPERM (Windows handle without FILE_SHARE_DELETE)", () => {
+    writeTree(workspacePath("source"), { Vintagestory: "elf", assets: { "seed.json": "{}" } })
+    vi.spyOn(fse, "renameSync").mockImplementation(() => {
+      throw Object.assign(new Error("permission denied"), { code: "EPERM" })
+    })
+
+    publishTree(workspacePath("source"), workspacePath("target"))
+
+    assert.equal(readFileSync(workspacePath("target", "Vintagestory"), "utf8"), "elf")
+    assert.equal(readFileSync(workspacePath("target", "assets", "seed.json"), "utf8"), "{}")
+  })
+
   it("merges into a top-level folder that already exists, the way copyTree has always merged", () => {
     writeTree(workspacePath("target"), { assets: { "kept.txt": "already there" } })
     writeTree(workspacePath("source"), { assets: { "seed.json": "{}" } })
@@ -279,6 +291,25 @@ describe("runExtraction on a gzipped tar", () => {
     assert.deepEqual(readdirSync(workspacePath("games")), ["target"])
   })
 
+  it("falls back to os.tmpdir() when the destination parent is not writable", async () => {
+    writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "seed.json": "{}" } } })
+    const archivePath = await makeTarGz("fallback-staging.tar.gz", workspacePath("source"))
+    // Create the destination so that ensureDirSync succeeds, then make the
+    // parent read-only so that mkdtempSync beside it fails.
+    const readOnlyParent = workspacePath("read-only-parent")
+    mkdirSync(join(readOnlyParent, "target"), { recursive: true })
+    chmodSync(readOnlyParent, 0o555)
+
+    try {
+      await runExtraction({ filePath: archivePath, outputPath: join(readOnlyParent, "target"), deleteArchive: false, unwrapSingleRootFolder: true })
+      // The extraction should succeed by falling back to os.tmpdir().
+      assert.deepEqual(readdirSync(join(readOnlyParent, "target")).sort(), ["Vintagestory", "assets"])
+      assert.equal(readFileSync(join(readOnlyParent, "target", "Vintagestory"), "utf8"), "elf")
+    } finally {
+      chmodSync(readOnlyParent, 0o755)
+    }
+  })
+
   it("publishes by renaming entries rather than copying them, when the destination is on the same filesystem", async () => {
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "seed.json": "{}" } } })
     const archivePath = await makeTarGz("rename-publish.tar.gz", workspacePath("source"))
@@ -292,11 +323,11 @@ describe("runExtraction on a gzipped tar", () => {
     vi.restoreAllMocks()
   })
 
-  it("falls back to a copy when the rename crosses a filesystem boundary (EXDEV)", async () => {
+  it("falls back to a copy when the rename fails with EXDEV or EPERM", async () => {
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "seed.json": "{}" } } })
-    const archivePath = await makeTarGz("exdev-publish.tar.gz", workspacePath("source"))
+    const archivePath = await makeTarGz("rename-fallback.tar.gz", workspacePath("source"))
     vi.spyOn(fse, "renameSync").mockImplementation(() => {
-      throw Object.assign(new Error("cross-device link"), { code: "EXDEV" })
+      throw Object.assign(new Error("permission denied"), { code: "EPERM" })
     })
     const copySpy = vi.spyOn(fse, "copyFileSync")
 

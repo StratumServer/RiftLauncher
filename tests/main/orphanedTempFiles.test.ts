@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 
-import { ATOMIC_JSON_TEMP_FILE_PATTERN, DOWNLOAD_PART_FILE_PATTERN, getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
+import { ATOMIC_JSON_TEMP_FILE_PATTERN, DOWNLOAD_PART_FILE_PATTERN, EXTRACTION_STAGING_PATTERN, getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
 
 let workspace: string
 
@@ -39,6 +39,12 @@ describe("temporary file patterns", () => {
     assert.equal(DOWNLOAD_PART_FILE_PATTERN.test("game.tar.gz.123.456.part"), true)
     assert.equal(DOWNLOAD_PART_FILE_PATTERN.test("game.tar.gz.part"), false)
     assert.equal(DOWNLOAD_PART_FILE_PATTERN.test("game.tar.gz.123.part"), false)
+  })
+
+  it("matches extraction staging folder names", () => {
+    assert.equal(EXTRACTION_STAGING_PATTERN.test(".riftlauncher-extract-Ab12Cd"), true)
+    assert.equal(EXTRACTION_STAGING_PATTERN.test("riftlauncher-extract-Ab12Cd"), false)
+    assert.equal(EXTRACTION_STAGING_PATTERN.test(".riftlauncher-extract-"), true)
   })
 })
 
@@ -122,6 +128,38 @@ describe("sweepOrphanedTempFiles", () => {
     assert.equal(readFileSync(outsideTemp, "utf8"), "temporary")
   })
 
+  it("removes old extraction staging folders", async () => {
+    const parent = pathInWorkspace("versions")
+    mkdirSync(parent, { recursive: true })
+    const stagingFolder = join(parent, ".riftlauncher-extract-Ab12Cd")
+    const payload = join(stagingFolder, "payload", "Vintagestory")
+    mkdirSync(payload, { recursive: true })
+    writeFileSync(join(payload, "elf"), "binary")
+    // Age the folder past the sweep threshold.
+    const oldDate = new Date(Date.now() - 10_000)
+    utimesSync(stagingFolder, oldDate, oldDate)
+    utimesSync(join(stagingFolder, "payload"), oldDate, oldDate)
+    utimesSync(join(stagingFolder, "payload", "Vintagestory"), oldDate, oldDate)
+    utimesSync(join(payload, "elf"), oldDate, oldDate)
+
+    const removed = await sweepOrphanedTempFiles([{ path: parent, kinds: ["extraction-staging"] }], { nowMs: Date.now(), maxAgeMs: 1_000, log: () => undefined })
+
+    assert.equal(removed, 1)
+    assert.equal(lstatSync(stagingFolder, { throwIfNoEntry: false }), undefined)
+  })
+
+  it("keeps recent extraction staging folders", async () => {
+    const parent = pathInWorkspace("versions")
+    mkdirSync(parent, { recursive: true })
+    const stagingFolder = join(parent, ".riftlauncher-extract-Ab12Cd")
+    mkdirSync(stagingFolder, { recursive: true })
+
+    const removed = await sweepOrphanedTempFiles([{ path: parent, kinds: ["extraction-staging"] }], { nowMs: Date.now(), maxAgeMs: 1_000, log: () => undefined })
+
+    assert.equal(removed, 0)
+    assert.notEqual(lstatSync(stagingFolder, { throwIfNoEntry: false }), undefined)
+  })
+
   it("ignores missing directories", async () => {
     assert.equal(await sweepOrphanedTempFiles([{ path: pathInWorkspace("missing"), kinds: ["atomic-json"] }]), 0)
   })
@@ -152,5 +190,7 @@ describe("getOrphanedTempFileSweepTargets", () => {
     assert.deepEqual(targets[0]?.kinds, ["atomic-json"])
     assert.deepEqual(targets[2]?.kinds, ["atomic-json", "download-part"])
     assert.equal(targets[2]?.recursive, true)
+    // All configured paths are deduplicated: the staging parent loop sees the
+    // same paths as the download root loop and skips them.
   })
 })

@@ -17,6 +17,7 @@ import fse from "fs-extra"
 import yauzl from "yauzl"
 import { createReadStream, createWriteStream, mkdtempSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { tmpdir } from "node:os"
 import type { Readable } from "node:stream"
 import * as tar from "tar"
 
@@ -113,18 +114,18 @@ export function copyTree(sourceRoot: string, destinationRoot: string): void {
   copyEntry(sourceRoot)
 }
 
-function isCrossDeviceError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === "EXDEV"
-}
-
 /** Renames a whole subtree in one move, or copies it when that is not possible. */
 function renameOrCopyTree(source: string, destination: string): void {
   if (!fse.existsSync(destination)) {
     try {
       fse.renameSync(source, destination)
       return
-    } catch (error) {
-      if (!isCrossDeviceError(error)) throw error
+    } catch {
+      // Fall through to the copy path. EXDEV means the source and destination
+      // are on different filesystems; EPERM, EACCES and EBUSY are common on
+      // Windows when a handle without FILE_SHARE_DELETE is open on the file
+      // (for instance a real-time antivirus scanning a freshly written file).
+      // copyTree is the safe fallback for all of them.
     }
   }
   // Either the rename could not cross filesystems, or something already sits
@@ -138,8 +139,8 @@ function renameOrCopyTree(source: string, destination: string): void {
 function renameOrCopyFile(source: string, destination: string): void {
   try {
     fse.renameSync(source, destination)
-  } catch (error) {
-    if (!isCrossDeviceError(error)) throw error
+  } catch {
+    // Fall through to the copy path for the same reasons as renameOrCopyTree.
     fse.copyFileSync(source, destination)
   }
 }
@@ -150,14 +151,14 @@ function renameOrCopyFile(source: string, destination: string): void {
  *
  * `runExtraction` always stages beside the destination, on the same
  * filesystem, so a rename here is ordinarily one metadata update instead of a
- * full read and write of everything the archive held. Two things can still
- * stop a given entry from being renamed straight across: something already
- * exists under that name at the destination (an install that reuses a folder
- * in place, say), which a rename cannot land on without risking what is
- * already there, or the destination turns out to be on a different filesystem
- * after all, `EXDEV`, which can still happen if it is itself a separate mount
- * point inside its own parent folder. Both fall back to copyTree, the same
- * merge-and-overwrite behaviour a plain copy has always had.
+ * full read and write of everything the archive held. A rename can still fail
+ * for several reasons: the destination already holds something under that
+ * name (an install that reuses a folder in place), a cross-device move
+ * (`EXDEV`, which can still happen if the destination is a separate mount),
+ * or a handle held without `FILE_SHARE_DELETE` on Windows (common with a
+ * real-time antivirus scanning freshly written files). Any rename failure
+ * falls back to copyTree, the same merge-and-overwrite behaviour a plain
+ * copy has always had.
  */
 export function publishTree(sourceRoot: string, destinationRoot: string): void {
   assertNoSymlinkComponents(destinationRoot)
@@ -169,6 +170,8 @@ export function publishTree(sourceRoot: string, destinationRoot: string): void {
     const source = join(sourceRoot, child)
     const destination = resolve(resolvedDestinationRoot, child)
     const destinationRelativePath = relative(resolvedDestinationRoot, destination)
+    // child comes from readdirSync so it is always a single segment and this
+    // check cannot fire, but it mirrors copyTree's own guard as defense in depth.
     if (!destinationRelativePath || destinationRelativePath === ".." || destinationRelativePath.startsWith(`..${sep}`) || isAbsolute(destinationRelativePath))
       throw new Error("Archive output escaped its root")
     assertNoSymlinkComponents(destination)
@@ -466,16 +469,28 @@ export async function runExtraction(options: ExtractionOptions): Promise<void> {
 
   try {
     assertNoSymlinkComponents(outputPath)
-    fse.ensureDirSync(outputPath)
-    if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
 
     // Staged beside the destination rather than under the OS temp directory, so
     // the eventual publish below is a rename rather than a copy (see this
-    // module's own comment). ensureDirSync above already guarantees the
-    // destination's parent exists, which is what mkdtempSync needs here. The
-    // dot prefix keeps the staging folder from reading as real content if
-    // anything lists the parent directory while the extraction is still running.
-    temporaryRoot = mkdtempSync(join(dirname(outputPath), ".riftlauncher-extract-"))
+    // module's own comment). The dot prefix keeps the staging folder from
+    // reading as real content if anything lists the parent directory while the
+    // extraction is still running. Falling back to os.tmpdir() when the
+    // destination's parent is not writable (for instance a version folder that
+    // is itself a mount point under a read-only parent) keeps the extraction
+    // possible on layouts that work today.
+    try {
+      fse.ensureDirSync(outputPath)
+      if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
+      temporaryRoot = mkdtempSync(join(dirname(outputPath), ".riftlauncher-extract-"))
+    } catch (error) {
+      if (error instanceof Error && error.message === "Extraction destination is a symbolic link") throw error
+      // The destination's parent may exist but not be writable (read-only
+      // mount, permissions). Ensure the destination exists and stage under
+      // os.tmpdir() instead.
+      fse.ensureDirSync(outputPath)
+      if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
+      temporaryRoot = mkdtempSync(join(tmpdir(), "riftlauncher-extract-"))
+    }
     const extractionRoot = join(temporaryRoot, "payload")
     fse.ensureDirSync(extractionRoot)
 
