@@ -61,21 +61,37 @@ vi.mock("electron", () => {
   return { app, ipcMain }
 })
 
+// Shaped like the real package: no named `autoUpdater` export node's own ESM interop can see,
+// only a `default` carrying it behind a getter (see src/utils/autoUpdaterLoader.ts's comment on
+// why). A mock returning `{ autoUpdater: ... }` directly would let a reverted loader pass every
+// test in this file while still throwing in the packaged app.
 vi.mock("electron-updater", () => ({
-  autoUpdater: Object.assign(mockState.autoUpdater, {
-    on: (event: string, listener: (payload?: unknown) => void): unknown => {
-      mockState.updaterListeners.set(event, listener)
-      return mockState.autoUpdater
-    },
-    downloadUpdate: mockState.downloadUpdate,
-    quitAndInstall: mockState.quitAndInstall,
-    checkForUpdates: mockState.checkForUpdates
-  })
+  // Declared (as undefined) rather than left off entirely: vitest's mocked module namespace
+  // throws on a property access it was never told about, where node's real interop would just
+  // hand back `undefined`. Declaring it is what lets `namespace.autoUpdater` behave like the
+  // real absent export the loader's `??` fallback is written for.
+  autoUpdater: undefined,
+  default: {
+    get autoUpdater(): typeof mockState.autoUpdater {
+      return Object.assign(mockState.autoUpdater, {
+        on: (event: string, listener: (payload?: unknown) => void): unknown => {
+          mockState.updaterListeners.set(event, listener)
+          return mockState.autoUpdater
+        },
+        downloadUpdate: mockState.downloadUpdate,
+        quitAndInstall: mockState.quitAndInstall,
+        checkForUpdates: mockState.checkForUpdates
+      })
+    }
+  }
 }))
 
-// The double the vi.mock above installs. Both functions take the updater as an argument now,
-// so this is the same handing-in main/index.ts does once loadAutoUpdater has resolved.
-import { autoUpdater } from "electron-updater"
+// The double the vi.mock above installs, reached the same way the real interop leaves it to be
+// reached: no named export, only default.autoUpdater. Both functions take the updater as an
+// argument now, so this is the same handing-in main/index.ts does once loadAutoUpdater has resolved.
+import electronUpdaterModule from "electron-updater"
+
+const autoUpdater = electronUpdaterModule.autoUpdater
 
 import { registerAutoUpdaterEvents, scheduleUpdateCheck, toTaskProgress } from "@src/main/autoUpdaterEvents"
 // Registers the renderer-facing half of the same flow (DOWNLOAD_UPDATE,

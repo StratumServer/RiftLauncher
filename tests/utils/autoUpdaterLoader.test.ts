@@ -17,9 +17,25 @@ const mockState = vi.hoisted(() => ({
   autoUpdater: { logger: undefined as unknown }
 }))
 
+// Shaped like the real package, not like a convenient double: electron-updater has no named
+// `autoUpdater` export node's own ESM interop can see (see src/utils/autoUpdaterLoader.ts's own
+// comment on why), only a `default` carrying it behind a getter. A mock that skipped straight to
+// `{ autoUpdater: ... }` would let a reverted loader pass every test here while still throwing
+// "Cannot set properties of undefined" in the packaged app.
 vi.mock("electron-updater", () => {
   mockState.imports += 1
-  return { autoUpdater: mockState.autoUpdater }
+  return {
+    // Declared (as undefined) rather than left off entirely: vitest's mocked module namespace
+    // throws on a property access it was never told about, where node's real interop would just
+    // hand back `undefined`. Declaring it is what lets `namespace.autoUpdater` behave like the
+    // real absent export the loader's `??` fallback is written for.
+    autoUpdater: undefined,
+    default: {
+      get autoUpdater(): { logger: unknown } {
+        return mockState.autoUpdater
+      }
+    }
+  }
 })
 
 vi.mock("@src/utils/logManager", () => ({

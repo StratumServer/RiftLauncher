@@ -27,14 +27,19 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
  * but the assertions have to keep pointing at the same `vi.fn`s the re-imported
  * module ends up calling.
  */
-const mockState = vi.hoisted(() => ({
-  userDataDir: "",
-  onListeners: new Map<string, (...args: unknown[]) => void>(),
-  /** How many times electron-updater has really been imported. See the "loading it at all" block. */
-  updaterImports: 0,
-  downloadUpdate: vi.fn(() => Promise.resolve([] as string[])),
-  quitAndInstall: vi.fn()
-}))
+const mockState = vi.hoisted(() => {
+  const downloadUpdate = vi.fn(() => Promise.resolve([] as string[]))
+  const quitAndInstall = vi.fn()
+  return {
+    userDataDir: "",
+    onListeners: new Map<string, (...args: unknown[]) => void>(),
+    /** How many times electron-updater has really been imported. See the "loading it at all" block. */
+    updaterImports: 0,
+    downloadUpdate,
+    quitAndInstall,
+    autoUpdater: { autoDownload: true, downloadUpdate, quitAndInstall, on: (): void => {} }
+  }
+})
 
 vi.mock("electron", () => {
   const app = {
@@ -60,14 +65,22 @@ vi.mock("electron", () => {
   return { app, ipcMain }
 })
 
+// Shaped like the real package: no named `autoUpdater` export node's own ESM interop can see,
+// only a `default` carrying it behind a getter (see src/utils/autoUpdaterLoader.ts's comment on
+// why). A mock returning `{ autoUpdater: ... }` directly would let a reverted loader pass every
+// test in this file while still throwing in the packaged app.
 vi.mock("electron-updater", () => {
   mockState.updaterImports += 1
   return {
-    autoUpdater: {
-      autoDownload: true,
-      downloadUpdate: mockState.downloadUpdate,
-      quitAndInstall: mockState.quitAndInstall,
-      on: (): void => {}
+    // Declared (as undefined) rather than left off entirely: vitest's mocked module namespace
+    // throws on a property access it was never told about, where node's real interop would just
+    // hand back `undefined`. Declaring it is what lets `namespace.autoUpdater` behave like the
+    // real absent export the loader's `??` fallback is written for.
+    autoUpdater: undefined,
+    default: {
+      get autoUpdater(): typeof mockState.autoUpdater {
+        return mockState.autoUpdater
+      }
     }
   }
 })
