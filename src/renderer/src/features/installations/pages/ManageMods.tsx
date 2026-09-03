@@ -24,6 +24,7 @@ import InstalledModItem from "@renderer/features/mods/components/InstalledModIte
 import ErrorInstalledModItem from "@renderer/features/mods/components/ErrorInstalledModItem"
 import InstalledModsSectionHeader from "@renderer/features/mods/components/InstalledModsSectionHeader"
 import ManageModsActionBar from "@renderer/features/mods/components/ManageModsActionBar"
+import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
 import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
@@ -53,13 +54,31 @@ function ListMods(): JSX.Element {
   const { installedMods, modsWithErrors, gettingMods, refresh } = useManageInstalledMods(installation)
 
   const [search, setSearch] = useState("")
+  const [authorFilter, setAuthorFilter] = useState("")
+  const [tagsFilter, setTagsFilter] = useState<string[]>([])
+  const [versionFilter, setVersionFilter] = useState("")
+
+  // Collect unique values for the filter dropdowns from the full installed list.
+  const allAuthors = Array.from(new Set(installedMods.flatMap((m) => m.authors ?? []))).sort()
+  const allTags = Array.from(new Set(installedMods.flatMap((m) => m._mod?.tags ?? []))).sort()
+  const allVersions = Array.from(new Set(installedMods.map((m) => m.version).filter(Boolean))).sort()
 
   // One list feeds everything below: the three sections, and the buttons that act on the folder at
   // once. What a player sees is what those buttons touch, filtered or not (#228).
   const query = search.trim().toLowerCase()
-  const visibleMods = query ? installedMods.filter((iMod) => matchesSearch(iMod, query)) : installedMods
+  const textFiltered = query ? installedMods.filter((iMod) => matchesSearch(iMod, query)) : installedMods
+  const authorFiltered = authorFilter ? textFiltered.filter((m) => m.authors?.some((a) => a.toLowerCase() === authorFilter.toLowerCase())) : textFiltered
+  const tagsFiltered =
+    tagsFilter.length > 0
+      ? authorFiltered.filter((m) => {
+          const modTags: string[] = m._mod?.tags ?? []
+          return tagsFilter.every((f) => modTags.includes(f))
+        })
+      : authorFiltered
+  const visibleMods = versionFilter ? tagsFiltered.filter((m) => m.version === versionFilter) : tagsFiltered
   const visibleModsWithErrors = query ? modsWithErrors.filter((iModE) => iModE.zipname.toLowerCase().includes(query)) : modsWithErrors
-  const nothingMatches = query.length > 0 && visibleMods.length < 1 && visibleModsWithErrors.length < 1
+  const hasActiveFilters = authorFilter !== "" || tagsFilter.length > 0 || versionFilter !== ""
+  const nothingMatches = (query.length > 0 || hasActiveFilters) && visibleMods.length < 1 && visibleModsWithErrors.length < 1
 
   const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, visibleMods)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
@@ -193,6 +212,25 @@ function ListMods(): JSX.Element {
                   <StickyMenuGroup>
                     <FormInputText placeholder={t("features.mods.searchInstalledMods")} value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 h-8" />
                   </StickyMenuGroup>
+
+                  {installedMods.length > 1 && (
+                    <InstalledModsFilterBar
+                      authorFilter={authorFilter}
+                      setAuthorFilter={setAuthorFilter}
+                      authors={allAuthors}
+                      tagsFilter={tagsFilter}
+                      setTagsFilter={setTagsFilter}
+                      tags={allTags}
+                      versionFilter={versionFilter}
+                      setVersionFilter={setVersionFilter}
+                      versions={allVersions}
+                      onClearFilters={() => {
+                        setAuthorFilter("")
+                        setTagsFilter([])
+                        setVersionFilter("")
+                      }}
+                    />
+                  )}
                 </StickyMenuGroupWrapper>
               )}
             </>
