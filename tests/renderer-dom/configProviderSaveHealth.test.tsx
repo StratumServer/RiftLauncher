@@ -62,4 +62,27 @@ describe("ConfigProvider save health", () => {
     expect(notice).toBeTruthy()
     expect(saveConfig).toHaveBeenCalledTimes(2)
   })
+
+  it("never writes back a config it could not read", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({ configManager: { getConfig: vi.fn(async () => Promise.reject(new Error("read failed"))), saveConfig } })
+
+    renderWithProviders(
+      <>
+        <BumpInstallationsFolder />
+        <NotificationsOverlay />
+      </>
+    )
+
+    // The provider falls back to the reducer's defaults so the splash lifts (see ConfigContext's
+    // loading effect and the splash test), which also flips the save effect on. What must not
+    // happen is those defaults reaching disk: the file this process failed to read still holds
+    // the player's installations and accounts, and a save here would overwrite all of it with an
+    // empty launcher.
+    await user.click(await screen.findByRole("button", { name: "bump" }))
+    await act(async () => {})
+
+    expect(saveConfig).not.toHaveBeenCalled()
+  })
 })

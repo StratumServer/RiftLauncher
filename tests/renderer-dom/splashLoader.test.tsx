@@ -44,4 +44,24 @@ describe("the launch splash", () => {
     // the splash serves its floor and then goes, without anyone waiting two seconds for it.
     await waitFor(() => expect(screen.queryByText("Welcome to RiftLauncher!")).toBeNull())
   })
+
+  it("still comes down, into a usable default config, when getConfig rejects", async () => {
+    // Before ConfigContext's loading effect caught this, a rejected getConfig left
+    // config.schemaVersion at its 0 sentinel forever, isConfigLoaded never flipped, and the
+    // splash — which now waits on schemaVersion !== 0 rather than the old fixed timer — stayed
+    // up for the rest of the session. Nothing here retries the read; it degrades once, to the
+    // reducer's own default config, so a launch that cannot read its config file still reaches
+    // a usable window instead of a launcher that never gets past its splash.
+    const api = installMockWindowApi({
+      configManager: { getConfig: () => Promise.reject(new Error("disk full")) }
+    })
+
+    renderWithProviders(<Loader />)
+
+    expect(await screen.findByText("Welcome to RiftLauncher!")).toBeTruthy()
+
+    await waitFor(() => expect(screen.queryByText("Welcome to RiftLauncher!")).toBeNull())
+
+    expect(api.utils.logMessage).toHaveBeenCalledWith("error", expect.stringContaining("Error reading the config file"))
+  })
 })
