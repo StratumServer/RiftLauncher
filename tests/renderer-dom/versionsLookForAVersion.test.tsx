@@ -90,6 +90,8 @@ describe("LookForAVersion", () => {
 
     await user.click(screen.getByTitle("Browse"))
     await screen.findByDisplayValue("/games/unreleased-build")
+    await screen.findByText("Couldn't detect a VS Version on that folder automatically. If you're sure it has Vintage Story installed, type the version in below.")
+    await user.click(screen.getByRole("button", { name: "Discard notification" }))
 
     await user.type(screen.getByPlaceholderText("VS Version found"), "   ")
     await user.click(screen.getByTitle("Add"))

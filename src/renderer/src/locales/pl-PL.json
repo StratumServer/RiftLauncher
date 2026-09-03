@@ -24,6 +24,40 @@
       "configTitle": "Konfiguracja",
       "infoAndHelpDesc": "Pomoc i informacje o RiftLauncher",
       "infoAndHelpTitle": "Informacje i pomoc"
+    },
+    "activityCenter": {
+      "title": "Centrum aktywności",
+      "activeTasks": "{{count}} aktywnych zadań",
+      "activeTasks_one": "{{count}} aktywne zadanie",
+      "activeTasks_few": "{{count}} aktywne zadania",
+      "activeTasks_many": "{{count}} aktywnych zadań",
+      "activeTasks_other": "{{count}} aktywnych zadań",
+      "newNotifications": "{{count}} nowych powiadomień",
+      "newNotifications_one": "{{count}} nowe powiadomienie",
+      "newNotifications_few": "{{count}} nowe powiadomienia",
+      "newNotifications_many": "{{count}} nowych powiadomień",
+      "newNotifications_other": "{{count}} nowych powiadomień",
+      "starting": "Uruchamianie",
+      "inProgress": "W toku",
+      "finalizing": "Finalizowanie",
+      "installing": "Instalowanie",
+      "failed": "Niepowodzenie",
+      "completed": "Ukończone",
+      "inProgressHeading": "W toku",
+      "attentionHeading": "Wymaga uwagi",
+      "completedHeading": "Ukończone",
+      "notificationsHeading": "Powiadomienia",
+      "noNotifications": "Brak powiadomień.",
+      "noActivity": "Brak aktywności w tej chwili.",
+      "discardTask": "Odrzuć zadanie",
+      "markAllRead": "Oznacz wszystkie jako przeczytane",
+      "clearRead": "Wyczyść przeczytane",
+      "markRead": "Oznacz jako przeczytane",
+      "markUnread": "Oznacz jako nieprzeczytane",
+      "panelSummary": "{{active}} w toku, {{unread}} nieprzeczytanych",
+      "answeredWith": "Odpowiedź: {{action}}",
+      "restartAndUpdate": "Uruchom ponownie i zaktualizuj",
+      "viewUpdates": "Wyświetl aktualizacje"
     }
   },
   "features": {
@@ -288,14 +322,11 @@
     "body": {
       "compressError": "Błąd kompresowania: {{compressName}}!",
       "compressed": "Zakończono kompresowanie: {{compressName}}!",
-      "compressing": "Rozpoczęto kompresowanie: {{compressName}}!",
       "downloadError": "Błąd pobierania: {{downloadName}}!",
       "downloaded": "Zakończono pobieranie: {{downloadName}}!",
-      "downloading": "Rozpoczęto pobieranie: {{downloadName}}!",
       "errorExecutingGame": "Podczas uruchamiania gry wystąpił błąd!",
       "extractError": "Błąd wypakowywania: {{extractName}}!",
       "extracted": "Ukończono wypakowywanie: {{extractName}}!",
-      "extracting": "Rozpoczęto wypakowywanie: {{extractName}}!",
       "folderDoesntExists": "Folder, który próbujesz otworzyć nie istnieje!",
       "gameExitedWithErrors": "Vintage Story zostało zamknięte z błędami!",
       "missingFields": "Wypełnij wszystkie pola!",
@@ -305,6 +336,10 @@
       "noFileSelected": "Nie wybrano pliku!",
       "coulndtCopyIcon": "Ta ikona nie mogła zostać skopiowana do folderu ikon!",
       "appClosePrevented": "Nie można zamknąć RiftLaunchera, ponieważ gra Vintage Story jest uruchomiona lub trwa wykonywanie zadania."
+    },
+    "actions": {
+      "updateNow": "Aktualizuj teraz",
+      "notNow": "Nie teraz"
     },
     "discard": "Wyczyść powiadomienia"
   },

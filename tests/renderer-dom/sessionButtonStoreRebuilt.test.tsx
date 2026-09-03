@@ -16,6 +16,7 @@ async function login(email: string, password: string): Promise<void> {
   await user.type(screen.getByPlaceholderText("Email"), email)
   await user.type(screen.getByPlaceholderText("Password"), password)
   await user.click(screen.getByRole("button", { name: "Add" }))
+  await user.click(await screen.findByRole("button", { name: "Discard notification" }))
 }
 
 /**
@@ -38,8 +39,9 @@ describe("SessionButton on an account-store rebuild", () => {
 
     await login("player@example.test", "correct-horse-battery-staple")
 
-    expect(await screen.findByText(/logged in as player/i)).toBeTruthy()
     expect(await screen.findByText(/couldn't be read/i)).toBeTruthy()
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Discard notification" }))
+    expect(await screen.findByText(/logged in as player/i)).toBeTruthy()
   })
 
   it("does not warn about a rebuild on an ordinary success", async () => {

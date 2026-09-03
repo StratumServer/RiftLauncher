@@ -1,7 +1,7 @@
 import type { DeleteInstallationBackupFailure, DeleteInstallationBackupPorts } from "@domain/installations/backupDeletion"
 import type { RestoreInstallationBackupFailure, RestoreInstallationBackupPorts } from "@domain/installations/restore"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
-import type { TaskContextType } from "@renderer/contexts/TaskManagerContext"
+import { TASK_NOTIFICATION_POLICIES, type TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
 export interface RestorePortsOptions {
   /** The extract task runner, straight from TaskManagerContext. */
@@ -20,10 +20,12 @@ export function createRestorePorts({ startExtract, taskName, taskDescription }: 
   return {
     fileSystem: createFileSystemPort(),
     extractor: {
-      // "progress": the caller already raises its own toast via describeRestoreFailure
+      // "caller-handled": the caller already raises its own toast via describeRestoreFailure
       // for every reason this can fail, so the generic error toast would double up.
       extract: (request, onComplete) =>
-        startExtract(taskName, taskDescription, "progress", request.archivePath, request.outputFolder, false, (status, error) => onComplete({ ok: status, error: error?.message }))
+        startExtract(taskName, taskDescription, TASK_NOTIFICATION_POLICIES.callerHandled, request.archivePath, request.outputFolder, false, (status, error) =>
+          onComplete({ ok: status, error: error?.message })
+        )
     },
     ids: { newId: () => crypto.randomUUID() },
     closeGuard: {

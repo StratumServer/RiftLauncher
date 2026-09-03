@@ -1,7 +1,7 @@
 import type { DownloadableGameVersion, InstallGameVersionFailure, InstallGameVersionPorts } from "@domain/versions/install"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 import { createPathBuilderPort } from "@renderer/adapters/paths"
-import type { TaskContextType } from "@renderer/contexts/TaskManagerContext"
+import { TASK_NOTIFICATION_POLICIES, type TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
 export interface InstallPortsOptions {
   /** The download task runner, straight from TaskManagerContext. */
@@ -29,11 +29,11 @@ export function createInstallPorts({ startDownload, startExtract, startInstall, 
   return {
     fileSystem: createFileSystemPort(),
     paths: createPathBuilderPort(),
-    // "progress": describeInstallFailure already raises a specific toast for every
+    // "caller-handled": describeInstallFailure already raises a specific toast for every
     // reason download/unpack/install can fail here, so the generic error would double up.
     downloader: {
       download: (request, onComplete) =>
-        startDownload(taskName, downloadDescription, "progress", request.url, request.outputFolder, request.fileName, (status, path, error) =>
+        startDownload(taskName, downloadDescription, TASK_NOTIFICATION_POLICIES.callerHandled, request.url, request.outputFolder, request.fileName, (status, path, error) =>
           onComplete({ ok: status, filePath: path, error: error?.message })
         )
     },
@@ -42,9 +42,20 @@ export function createInstallPorts({ startDownload, startExtract, startInstall, 
       // folder, which is the one case the extraction steps into. A backup restore
       // asks for the opposite and gets the default.
       extractArchive: (request, onComplete) =>
-        startExtract(taskName, unpackDescription, "progress", request.sourcePath, request.outputFolder, true, (status, error) => onComplete({ ok: status, error: error?.message }), true),
+        startExtract(
+          taskName,
+          unpackDescription,
+          TASK_NOTIFICATION_POLICIES.callerHandled,
+          request.sourcePath,
+          request.outputFolder,
+          true,
+          (status, error) => onComplete({ ok: status, error: error?.message }),
+          true
+        ),
       runInstaller: (request, onComplete) =>
-        startInstall(taskName, unpackDescription, "progress", request.sourcePath, request.outputFolder, true, (status, error) => onComplete({ ok: status, error: error?.message }))
+        startInstall(taskName, unpackDescription, TASK_NOTIFICATION_POLICIES.callerHandled, request.sourcePath, request.outputFolder, true, (status, error) =>
+          onComplete({ ok: status, error: error?.message })
+        )
     }
   }
 }

@@ -115,6 +115,36 @@
     "loader": {
       "title": "Welkom bij de RiftLauncher",
       "desc": "We maken alles klaar voor je!"
+    },
+    "activityCenter": {
+      "title": "Activiteitencentrum",
+      "activeTasks": "{{count}} actieve taken",
+      "activeTasks_one": "{{count}} actieve taak",
+      "activeTasks_other": "{{count}} actieve taken",
+      "newNotifications": "{{count}} nieuwe meldingen",
+      "newNotifications_one": "{{count}} nieuwe melding",
+      "newNotifications_other": "{{count}} nieuwe meldingen",
+      "starting": "Starten",
+      "inProgress": "Bezig",
+      "finalizing": "Afronden",
+      "installing": "Installeren",
+      "failed": "Mislukt",
+      "completed": "Voltooid",
+      "inProgressHeading": "Bezig",
+      "attentionHeading": "Heeft aandacht nodig",
+      "completedHeading": "Voltooid",
+      "notificationsHeading": "Meldingen",
+      "noNotifications": "Nog geen meldingen.",
+      "noActivity": "Op dit moment geen activiteit.",
+      "discardTask": "Taak verwijderen",
+      "markAllRead": "Alles als gelezen markeren",
+      "clearRead": "Gelezen wissen",
+      "markRead": "Markeren als gelezen",
+      "markUnread": "Markeren als ongelezen",
+      "panelSummary": "{{active}} bezig, {{unread}} ongelezen",
+      "answeredWith": "Beantwoord: {{action}}",
+      "restartAndUpdate": "Herstarten en bijwerken",
+      "viewUpdates": "Updates bekijken"
     }
   },
   "notifications": {
@@ -122,18 +152,19 @@
       "folderDoesntExists": "De folder die je probeert te openen bestaat niet!",
       "updateAvailable": "Nieuwe update beschikbaar! Downloaden...",
       "updateDownloaded": "Update downloaded succesvol! Herstart RiftLauncher om te updaten.",
-      "downloading": "Download starten: {{downloadName}}!",
       "downloaded": "Downloaden voltooid: {{downloadName}}!",
       "downloadError": "Fout downloaden: {{downloadName}}!",
-      "extracting": "Uitpakken starten: {{extractName}}!",
       "extracted": "Uitpakken voltooid: {{extractName}}!",
       "extractError": "Fout uitpakken: {{extractName}}!",
       "gameExitedWithErrors": "Vintage Story gesloten met fouten!",
       "errorExecutingGame": "Er is een fout opgetreden terwijl het spel gestart werd",
       "missingFields": "Vul alle velden in alsjeblieft",
-      "compressing": "Comprimeren starten: {{compressName}}!",
       "compressed": "Comprimeren voltooid: {{compressName}}!",
       "compressError": "Fout bij comprimeren: {{compressName}}!"
+    },
+    "actions": {
+      "updateNow": "Nu bijwerken",
+      "notNow": "Niet nu"
     },
     "discard": "Notificatie weggooien"
   }

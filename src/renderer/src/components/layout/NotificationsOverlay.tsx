@@ -1,126 +1,78 @@
-import { useRef } from "react"
-import { motion, AnimatePresence } from "motion/react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { PiInfoDuotone, PiWarningDuotone, PiCheckCircleDuotone, PiProhibitInsetDuotone, PiXCircleDuotone } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
-
 import clsx from "clsx"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { NormalButton } from "../ui/Buttons"
 
-const BORDER_COLOR_TYPES = {
-  success: "border-lime-600",
-  info: "border-vs",
-  error: "border-red-800",
-  warning: "border-yellow-400"
-}
-
-const FONT_COLOR_TYPES = {
-  success: "text-lime-600",
-  info: "text-vsl",
-  error: "text-red-700",
-  warning: "text-yellow-400"
-}
-
-const ICON_TYPES = {
-  success: <PiCheckCircleDuotone />,
-  info: <PiInfoDuotone />,
-  error: <PiProhibitInsetDuotone />,
-  warning: <PiWarningDuotone />
-}
+const FONT_COLOR_TYPES = { success: "text-lime-600", info: "text-vsl", error: "text-red-700", warning: "text-yellow-400" }
+const TIMER_COLOR_TYPES = { success: "bg-lime-600", info: "bg-vs", error: "bg-red-800", warning: "bg-yellow-400" }
+const ICON_TYPES = { success: <PiCheckCircleDuotone />, info: <PiInfoDuotone />, error: <PiProhibitInsetDuotone />, warning: <PiWarningDuotone /> }
 
 function NotificationsOverlay(): JSX.Element {
   const { t } = useTranslation()
-  const { notifications, removeNotification } = useNotificationsContext()
-
-  /**
-   * The toasts that have already been answered, and so must not be answered a
-   * second time. Removing a notification takes it out of the list at once, but
-   * AnimatePresence keeps the toast's node on screen until its exit animation
-   * finishes, and that node stays clickable the whole way out. Three quick
-   * clicks on "Update now" used to send three DOWNLOAD_UPDATE messages and
-   * raise three "Starting download" toasts because of it.
-   *
-   * A ref rather than state, and not a `disabled` prop on the buttons either.
-   * Once the notification is gone from the list AnimatePresence re-renders the
-   * leaving toast from the element it cached, so no prop set after that point
-   * ever reaches it; the only thing that can stop the second click is the
-   * handler refusing to run, synchronously, on the click itself.
-   */
-  const answeredIds = useRef<Set<string>>(new Set())
-
-  /** Runs a toast's answer at most once, then closes it. Every later click on the same toast does nothing at all. */
-  function answerOnce(id: string, run?: () => void): void {
-    if (answeredIds.current.has(id)) return
-
-    // Toasts answered earlier have long since left the list, so their ids are
-    // dropped here rather than piling up for the whole session. The one being
-    // answered now is still in `notifications` (removeNotification has not run
-    // yet), which is what keeps it through this sweep.
-    const liveIds = new Set(notifications.map((notification) => notification.id))
-    answeredIds.current = new Set([...answeredIds.current, id].filter((answeredId) => liveIds.has(answeredId)))
-
-    run?.()
-    removeNotification(id)
-  }
+  const { activeToast, dismissToast, invokeAction } = useNotificationsContext()
+  const reduceMotion = useReducedMotion()
+  const toastDuration = activeToast?.options?.duration
 
   return (
-    <div className="w-[20rem] h-fit absolute flex flex-col items-end top-2 right-2 z-800 gap-2">
+    // Always-mounted polite live region: a queued toast inserted here minutes
+    // later is still announced. A freshly mounted role="status" node is not.
+    <div role="status" aria-live="polite" aria-atomic="false" className="w-[20rem] h-fit absolute flex flex-col items-end top-2 right-2 z-800 gap-2">
       <AnimatePresence>
-        {notifications.map(({ id, body, type, options }) => (
+        {activeToast && (
           <motion.div
-            key={id}
-            className={clsx(
-              "w-full flex items-center justify-between gap-2 p-2 rounded-sm text-center bg-zinc-950/60 backdrop-blur-sm border-l-4",
-              BORDER_COLOR_TYPES[type],
-              options?.onClick && "cursor-pointer"
-            )}
-            initial={{ x: 400 }}
+            key={activeToast.id}
+            // Errors keep their own assertive region, which does announce on
+            // insertion; everything else is announced by the polite parent.
+            role={activeToast.type === "error" ? "alert" : undefined}
+            className="relative w-full flex items-center justify-between gap-2 p-2 rounded-sm text-center bg-zinc-950/60 backdrop-blur-sm overflow-hidden"
+            initial={reduceMotion ? false : { x: 400 }}
             animate={{ x: 0 }}
-            exit={{ x: 400 }}
-            onClick={(e) => {
-              e.stopPropagation()
-              answerOnce(id, options?.onClick)
-            }}
+            exit={reduceMotion ? { opacity: 0 } : { x: 400 }}
           >
-            <div className="flex items-center gap-2 text-start">
-              <span className={clsx("text-4xl p-1 rounded-full", FONT_COLOR_TYPES[type])}>{ICON_TYPES[type]}</span>
-              <div className="flex flex-col items-start justify-center gap-2">
-                <p className="text-xs text-zinc-400">{body}</p>
-                {options?.actions && options.actions.length > 0 && (
+            <div className="flex items-center gap-2 text-start min-w-0">
+              <span className={clsx("text-4xl p-1 rounded-full shrink-0", FONT_COLOR_TYPES[activeToast.type])} aria-hidden="true">
+                {ICON_TYPES[activeToast.type]}
+              </span>
+              <div className="flex flex-col items-start justify-center gap-2 min-w-0">
+                <p className="text-xs text-zinc-400 break-words">{activeToast.body}</p>
+                {activeToast.options?.actions && activeToast.options.actions.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
-                    {options.actions.map((action) => (
-                      <NormalButton
-                        key={action.label}
-                        className="px-2 py-1 text-xs bg-zinc-800/60 border border-zinc-400/10 hover:bg-zinc-700/60"
-                        title={action.label}
-                        onClick={(e) => {
-                          // Without this the click also reaches the toast's own
-                          // onClick above, which would run the notification's
-                          // generic action on the way past.
-                          e.stopPropagation()
-                          answerOnce(id, action.onClick)
-                        }}
-                      >
-                        {action.label}
-                      </NormalButton>
-                    ))}
+                    {activeToast.options.actions.map((action, index) => {
+                      const actionId = action.id ?? "action-" + index
+                      return (
+                        <NormalButton
+                          key={actionId}
+                          className="px-2 py-1 text-xs bg-zinc-800/60 border border-zinc-400/10 hover:bg-zinc-700/60"
+                          title={action.label}
+                          ariaLabel={action.label}
+                          onClick={() => invokeAction(activeToast.id, actionId)}
+                        >
+                          {action.label}
+                        </NormalButton>
+                      )
+                    })}
                   </div>
                 )}
               </div>
             </div>
-            <NormalButton
-              className="p-1 text-zinc-400"
-              title={t("notifications.discard")}
-              onClick={(e) => {
-                e.stopPropagation()
-                answerOnce(id)
-              }}
-            >
+            <NormalButton className="p-1 text-zinc-400 shrink-0" title={t("notifications.discard")} ariaLabel={t("notifications.discard")} onClick={() => dismissToast(activeToast.id, "manual")}>
               <PiXCircleDuotone />
             </NormalButton>
+            {toastDuration != null && (
+              <motion.div
+                data-testid="toast-timer"
+                aria-hidden="true"
+                className={clsx("absolute inset-x-0 bottom-0 h-0.5 origin-left", TIMER_COLOR_TYPES[activeToast.type])}
+                initial={{ scaleX: 1 }}
+                animate={{ scaleX: 0 }}
+                transition={reduceMotion ? { duration: 0 } : { duration: toastDuration / 1000, ease: "linear" }}
+              />
+            )}
           </motion.div>
-        ))}
+        )}
       </AnimatePresence>
     </div>
   )

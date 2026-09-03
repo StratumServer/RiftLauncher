@@ -103,6 +103,36 @@
     },
     "loader": {
       "desc": "我们正在为您准备一切！"
+    },
+    "activityCenter": {
+      "title": "活动中心",
+      "activeTasks": "{{count}} 个活动任务",
+      "activeTasks_one": "{{count}} 个活动任务",
+      "activeTasks_other": "{{count}} 个活动任务",
+      "newNotifications": "{{count}} 条新通知",
+      "newNotifications_one": "{{count}} 条新通知",
+      "newNotifications_other": "{{count}} 条新通知",
+      "starting": "正在启动",
+      "inProgress": "进行中",
+      "finalizing": "正在完成",
+      "installing": "正在安装",
+      "failed": "失败",
+      "completed": "已完成",
+      "inProgressHeading": "进行中",
+      "attentionHeading": "需要关注",
+      "completedHeading": "已完成",
+      "notificationsHeading": "通知",
+      "noNotifications": "暂无通知。",
+      "noActivity": "当前没有活动。",
+      "discardTask": "移除任务",
+      "markAllRead": "全部标为已读",
+      "clearRead": "清除已读",
+      "markRead": "标为已读",
+      "markUnread": "标为未读",
+      "panelSummary": "{{active}} 项进行中，{{unread}} 条未读",
+      "answeredWith": "已选择：{{action}}",
+      "restartAndUpdate": "重启并更新",
+      "viewUpdates": "查看更新"
     }
   },
   "notifications": {
@@ -110,15 +140,17 @@
       "folderDoesntExists": "您尝试打开的文件夹不存在！",
       "updateAvailable": "有更新可用! 正在下载...",
       "updateDownloaded": "更新下载成功！重新启动启动器以完成更新。",
-      "downloading": "正在开始下载: {{downloadName}}!",
       "downloaded": "下载完成: {{downloadName}}!",
       "downloadError": "下载出现错误: {{downloadName}}!",
-      "extracting": "正在开始解压: {{extractName}}!",
       "extracted": "解压完成: {{extractName}}!",
       "extractError": "解压出现错误: {{extractName}}!",
       "gameExitedWithErrors": "《复古物语》因出现错误退出！",
       "errorExecutingGame": "执行游戏时发生错误！",
       "missingFields": "请填写所有字段！"
+    },
+    "actions": {
+      "updateNow": "立即更新",
+      "notNow": "暂不"
     },
     "discard": "忽略通知"
   }

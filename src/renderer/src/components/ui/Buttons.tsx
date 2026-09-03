@@ -26,6 +26,7 @@ export function NormalButton({
   className,
   onClick,
   title,
+  ariaLabel,
   disabled,
   type
 }: Readonly<{
@@ -33,6 +34,7 @@ export function NormalButton({
   className?: string
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   title: string
+  ariaLabel?: string
   disabled?: boolean
   type?: "normal" | "error" | "warn" | "success"
 }>): JSX.Element {
@@ -41,6 +43,7 @@ export function NormalButton({
       disabled={disabled}
       onClick={onClick}
       title={!disabled ? title : ""}
+      aria-label={ariaLabel}
       className={clsx("flex items-center justify-center rounded-sm disabled:opacity-50 cursor-pointer", type && COLOR_BY_TYPE[type], className)}
     >
       {children}

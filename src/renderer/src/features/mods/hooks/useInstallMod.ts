@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { installMod } from "@domain/mods/install"
 import type { InstallModResult, ModReleaseToInstall, InstalledModCopy } from "@domain/mods/install"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import { TASK_NOTIFICATION_POLICIES, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { createModInstallPorts, describeModInstallFailure } from "@renderer/features/mods/adapters/install"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 
@@ -23,6 +23,8 @@ export interface InstallModOptions {
   disabled?: boolean
   /** True while a backup or a restore holds the installation's folder. */
   installationBusy?: boolean
+  /** Aggregate flows keep per-mod feedback in their result table and toast once at the end. */
+  feedback?: "individual" | "aggregate"
 }
 
 /**
@@ -40,14 +42,15 @@ export function useInstallMod(): (options: InstallModOptions) => Promise<Install
   const { startDownload } = useTaskContext()
 
   return async function runInstallMod(options: InstallModOptions): Promise<InstallModResult> {
-    const { installationPath, outName, modName, release, existing, disabled, installationBusy } = options
+    const { installationPath, outName, modName, release, existing, disabled, installationBusy, feedback = "individual" } = options
 
     const labels = { name: modName, version: `v${release.modversion}`, out: outName }
 
     const ports = createModInstallPorts({
       startDownload,
       taskName: t("features.mods.modTaskName", labels),
-      taskDescription: t("features.mods.modDownloadDesc", labels)
+      taskDescription: t("features.mods.modDownloadDesc", labels),
+      notificationPolicy: feedback === "aggregate" ? TASK_NOTIFICATION_POLICIES.aggregate : TASK_NOTIFICATION_POLICIES.individual
     })
 
     const result = await installMod(ports, { installationPath, release, existing, disabled, installationBusy })
@@ -61,7 +64,7 @@ export function useInstallMod(): (options: InstallModOptions) => Promise<Install
       logMods("debug", `${LOG_TAG} [runInstallMod] Could not install ${release.modidstr} v${release.modversion} on ${installationPath}: ${result.reason}.`)
     }
 
-    if (messageKey) addNotification(t(messageKey, { mod: modName }), "error")
+    if (messageKey && feedback === "individual") addNotification(t(messageKey, { mod: modName }), "error")
 
     return result
   }

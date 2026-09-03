@@ -61,7 +61,6 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
 
           if (!modToUpdate._mod || !release) {
             logMods("error", `${LOG_TAG} [updateAllMods] No ModDB release matching ${modToUpdate._updatableTo} for the ${modToUpdate.name} Mod.`)
-            addNotification(t("features.mods.errorUpdatingMod", { mod: modToUpdate.name }), "error")
             collected.push({ name: modToUpdate.name, modid: modToUpdate.modid, fromVersion: modToUpdate.version, toVersion: null, assetid: modToUpdate._mod?.assetid })
             return
           }
@@ -71,7 +70,8 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
             outName: installation.name,
             modName: modToUpdate._mod.name,
             release: toModReleaseToInstall(release),
-            existing: toInstalledModCopy(modToUpdate)
+            existing: toInstalledModCopy(modToUpdate),
+            feedback: "aggregate"
           })
 
           collected.push({

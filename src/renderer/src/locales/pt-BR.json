@@ -338,6 +338,36 @@
     "loader": {
       "desc": "Estamos preparando tudo para você!",
       "title": "Bem-vindo(a) ao RiftLauncher!"
+    },
+    "activityCenter": {
+      "title": "Central de atividades",
+      "activeTasks": "{{count}} tarefas ativas",
+      "activeTasks_one": "{{count}} tarefa ativa",
+      "activeTasks_other": "{{count}} tarefas ativas",
+      "newNotifications": "{{count}} novas notificações",
+      "newNotifications_one": "{{count}} nova notificação",
+      "newNotifications_other": "{{count}} novas notificações",
+      "starting": "Iniciando",
+      "inProgress": "Em andamento",
+      "finalizing": "Finalizando",
+      "installing": "Instalando",
+      "failed": "Falhou",
+      "completed": "Concluída",
+      "inProgressHeading": "Em andamento",
+      "attentionHeading": "Precisa de atenção",
+      "completedHeading": "Concluídas",
+      "notificationsHeading": "Notificações",
+      "noNotifications": "Nenhuma notificação ainda.",
+      "noActivity": "Nenhuma atividade no momento.",
+      "discardTask": "Descartar tarefa",
+      "markAllRead": "Marcar todas como lidas",
+      "clearRead": "Limpar lidas",
+      "markRead": "Marcar como lida",
+      "markUnread": "Marcar como não lida",
+      "panelSummary": "{{active}} em andamento, {{unread}} não lidas",
+      "answeredWith": "Resposta: {{action}}",
+      "restartAndUpdate": "Reiniciar e atualizar",
+      "viewUpdates": "Ver atualizações"
     }
   },
   "notifications": {
@@ -345,16 +375,13 @@
       "folderDoesntExists": "A pasta que você está tentando abrir não existe!",
       "updateAvailable": "Nova atualização disponível! Baixando...",
       "updateDownloaded": "Atualização baixada com sucesso! Reinicie o RiftLauncher para atualizar.",
-      "downloading": "Iniciando o download: {{downloadName}}!",
       "downloaded": "Download concluído: {{downloadName}}!",
       "downloadError": "Erro ao baixar: {{downloadName}}!",
-      "extracting": "Iniciando a extração: {{extractName}}!",
       "extracted": "Extração concluída: {{extractName}}!",
       "extractError": "Erro na extração: {{extractName}}!",
       "gameExitedWithErrors": "Vintage Story parou com erros!",
       "errorExecutingGame": "Ocorreu um erro ao executar o jogo!",
       "missingFields": "Por favor, preencha todos os campos!",
-      "compressing": "Iniciando compressão: {{compressName}}!",
       "compressed": "Compressão concluída: {{compressName}}!",
       "compressError": "Erro ao comprimir: {{compressName}}!",
       "folderNotEmpty": "A pasta que você selecionou não está vazia! Certifique-se de que não há nada importante lá.",
@@ -370,6 +397,10 @@
       "gameLaunchSessionWriteFailed": "Não foi possível salvar seu login nesta instalação. Tente iniciar sessão novamente!",
       "gameLaunchUnsupportedPlatform": "O Vintage Story ainda não pode rodar nesta plataforma. Tente a partir do Windows ou Linux!",
       "installationFolderCreateFailed": "Não foi possível criar a pasta para esta Instalação! Verifique se o RiftLauncher pode escrever nesse local e tente novamente."
+    },
+    "actions": {
+      "updateNow": "Atualizar agora",
+      "notNow": "Agora não"
     },
     "discard": "Descartar notificação"
   },
