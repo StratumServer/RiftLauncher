@@ -10,7 +10,11 @@ RiftLauncher works on ANY Linux distro thanks to the AppImage compilation we're 
 Installing it on Linux is as easy as downloading the AppImage and double clicking it.... that's it. Let's get started:
 
 {% hint style="success" %}
-If you're using Arch Linux or a derivative there is a `.pacman` package on the releases page. There is no RiftLauncher package on the AUR: the `vs-launcher` AUR package belongs to the archived original project and does not track our releases. There's no distro repository either, so the first install is always a manual download from the releases page; if you'd like to maintain a repository or an AUR package, say hi on the [Stratum Discord server](https://discord.gg/vQm6z2urZs).
+If you're using Arch Linux or a derivative there is a `.pacman` package on the releases page. Community AUR packages are welcome: if you maintain one, say hi on the [Stratum Discord server](https://discord.gg/vQm6z2urZs) so we can coordinate. There is no distro repository either, so the first install is always a manual download from the releases page.
+{% endhint %}
+
+{% hint style="warning" %}
+**AUR and updates.** RiftLauncher ships a `.pacman` artifact that works with its built-in updater. When you install through the AUR, the package manager owns the files and the built-in updater may not work correctly. Update through your package manager instead (for example `yay -S riftlauncher`). If you maintain an AUR package, consider adding a note about update expectations to the package description.
 {% endhint %}
 
 {% stepper %}
