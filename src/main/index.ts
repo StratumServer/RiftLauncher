@@ -83,12 +83,22 @@ if (!is.dev) {
       standard: true,
       secure: true,
       supportFetchAPI: true,
+      // Keep fetch available for the local app shell while requiring explicit
+      // CORS headers if a future renderer path crosses origins.
+      corsEnabled: true,
       codeCache: true
     }
   })
 }
 
 protocol.registerSchemesAsPrivileged(privilegedSchemes)
+
+// Renderer exits have their own webContents event above. This catches failures
+// in Electron's other child processes (GPU, utility, and sandbox helpers) without
+// collecting crash reports or sending telemetry anywhere.
+app.on("child-process-gone", (_event, details) => {
+  logMessage("error", `[back] [index] [main/index.ts] [child-process-gone] ${details.type} process exited: ${details.reason} (exit code ${details.exitCode}).`)
+})
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({

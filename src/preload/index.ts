@@ -92,12 +92,17 @@ const api: BridgeAPI = {
 // just add to the DOM global.
 if (!process.contextIsolated) throw new Error("Context isolation is required")
 
-try {
-  contextBridge.exposeInMainWorld("api", api)
-  console.info("[preload] Exposed the launcher API.")
-} catch (err) {
-  console.error("[preload] Failed to expose the launcher API.")
-  throw err
+// Electron loads a preload for every frame in a page. The launcher does not use
+// frames, but keeping the bridge on the main frame makes that invariant explicit
+// and prevents a future embedded document from receiving launcher capabilities.
+if (process.isMainFrame) {
+  try {
+    contextBridge.exposeInMainWorld("api", api)
+    console.info("[preload] Exposed the launcher API.")
+  } catch (err) {
+    console.error("[preload] Failed to expose the launcher API.")
+    throw err
+  }
 }
 
 export type ApiType = typeof api
