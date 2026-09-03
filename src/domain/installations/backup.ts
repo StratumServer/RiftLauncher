@@ -55,7 +55,9 @@ export type MakeInstallationBackupFailure =
   | "prune-failed"
   | "compress-failed"
 
-export type MakeInstallationBackupResult = { ok: true; backup: BackupRecord; deletedBackupIds: string[] } | { ok: false; reason: MakeInstallationBackupFailure; deletedBackupIds: string[] }
+export type MakeInstallationBackupResult =
+  | { ok: true; backup: BackupRecord; deletedBackupIds: string[] }
+  | { ok: false; reason: MakeInstallationBackupFailure; deletedBackupIds: string[]; detail?: string }
 
 export interface MakeInstallationBackupPorts {
   fileSystem: FileSystem
@@ -84,8 +86,8 @@ export interface MakeInstallationBackupEvents {
   onFinished?(): void
 }
 
-function refuse(reason: MakeInstallationBackupFailure, deletedBackupIds: string[] = []): MakeInstallationBackupResult {
-  return { ok: false, reason, deletedBackupIds }
+function refuse(reason: MakeInstallationBackupFailure, deletedBackupIds: string[] = [], detail?: string): MakeInstallationBackupResult {
+  return { ok: false, reason, deletedBackupIds, detail }
 }
 
 /** What pruning removed, and whether it got all the way to the limit. */
@@ -171,7 +173,7 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
       outcome = reported
     })
 
-    if (!outcome.ok) return refuse("compress-failed", deletedBackupIds)
+    if (!outcome.ok) return refuse("compress-failed", deletedBackupIds, outcome.error)
 
     return { ok: true, backup: { id: ports.ids.newId(), date, path: archivePath }, deletedBackupIds }
   } finally {

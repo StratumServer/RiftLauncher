@@ -72,11 +72,11 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
       return true
     }
 
-    const { messageKey, logged } = describeBackupFailure(result.reason)
+    const { messageKey, logged, detail } = describeBackupFailure(result.reason, result.detail)
 
     if (logged) {
       window.api.utils.logMessage("error", `${LOG_TAG} Error creating backup.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Error creating backup: ${result.reason}`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Error creating backup: ${result.reason}${detail ? ": " + detail : ""}`)
     }
 
     if (messageKey) addNotification(t(messageKey), "error")

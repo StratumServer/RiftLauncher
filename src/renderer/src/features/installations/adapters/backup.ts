@@ -74,6 +74,8 @@ export interface BackupFailureFeedback {
   messageKey: string | null
   /** Whether the refusal also goes to the log. */
   logged: boolean
+  /** Underlying cause from the worker, when available. */
+  detail?: string
 }
 
 /**
@@ -88,7 +90,7 @@ export interface BackupFailureFeedback {
  * auto-backup-before-play reads this hook's return value to decide whether
  * to launch the game at all, and a missed backup must never refuse to play.
  */
-export function describeBackupFailure(reason: MakeInstallationBackupFailure): BackupFailureFeedback {
+export function describeBackupFailure(reason: MakeInstallationBackupFailure, detail?: string): BackupFailureFeedback {
   switch (reason) {
     case "installation-busy":
       return { messageKey: "features.backups.backupInProgress", logged: false }
@@ -96,9 +98,10 @@ export function describeBackupFailure(reason: MakeInstallationBackupFailure): Ba
       return { messageKey: "features.backups.backupWhilePlaying", logged: false }
     case "restore-in-progress":
       return { messageKey: "features.backups.restoreInProgress", logged: false }
-    case "prune-failed":
     case "compress-failed":
-      return { messageKey: "features.backups.errorMakingBackup", logged: true }
+      return { messageKey: "features.backups.errorMakingBackup", logged: true, detail }
+    case "prune-failed":
+      return { messageKey: "features.backups.errorMakingBackup", logged: true, detail }
     case "installation-path-missing":
       return { messageKey: "features.backups.installationPathMissing", logged: true }
     case "no-backups-folder":
