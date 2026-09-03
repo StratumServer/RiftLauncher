@@ -148,8 +148,9 @@ describe("renderer document boundaries", () => {
     assert.notEqual(exposeStart, -1, "preload stopped exposing the launcher API")
     assert.ok(guardStart < exposeStart, "preload exposes the API before its main-frame guard")
     // Ensure the expose call sits inside the guarded block, not outside it
-    // as a dead-statement hoist. Only whitespace may separate them.
-    assert.match(PRELOAD_SOURCE.slice(guardStart, exposeStart), /\s+$/)
+    // as a dead-statement hoist. The pattern is anchored so a dead guard
+    // followed by a hoisted expose (or an empty guard block) breaks it.
+    assert.match(PRELOAD_SOURCE.slice(guardStart, exposeStart), /^if \(process\.isMainFrame\) \{\s*(try \{\s*)?$/)
     // Exactly one exposeInMainWorld keeps a future duplicate from leaking
     // the bridge into every frame.
     const exposeCount = PRELOAD_SOURCE.split("contextBridge.exposeInMainWorld").length - 1
