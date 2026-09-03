@@ -331,7 +331,7 @@ app.whenReady().then(async () => {
     linuxPackageType: process.platform === "linux" ? readLinuxPackageType() : undefined
   })
   if (updateDecision.ok) {
-    // Not awaited, so the 88.9 ms of require work behind loadAutoUpdater stays off this handler
+    // Not awaited, so the 88.9 ms of require work inside the asar behind loadAutoUpdater stays off this handler
     // and off the path to the first paint. Nothing downstream of it is time critical: the check
     // it arms does not go out for another five seconds, and every renderer-facing update channel
     // refuses to act until an offer has been made through the events registered here.

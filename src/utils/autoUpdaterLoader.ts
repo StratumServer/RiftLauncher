@@ -47,8 +47,10 @@ let loading: Promise<AppUpdater> | undefined
  *
  * It used to be a top-level import in main/index.ts. Measured in the packaged
  * app by timing each top-level require, that import alone cost 88.9 ms of the
- * main module's 163.8 ms, more than every other dependency put together, and it
- * pulls 159 modules of its own. Every launch paid it, including the Linux
+ * main module's 163.8 ms inside the asar (reading out of the packaged archive),
+ * more than every other dependency put together, and it pulls 159 modules of
+ * its own. Against an unpacked build on a faster host the same import is
+ * 24.9 ms, within the noise of the other dependencies. Every launch paid it, including the Linux
  * deb/rpm/pacman builds where the very next line logged is
  * "Auto-update disabled: linux-unsupported-package", and including every launch
  * of every platform where the player never accepts an update.
