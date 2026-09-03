@@ -35,7 +35,8 @@ export function useSelectBackground(): SelectBackgroundActions {
 
   const selectFromCatalog = useCallback(
     async (entry: BackgroundType): Promise<void> => {
-      if (!(await window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256))) {
+      const result = await window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256)
+      if (!result.refreshed) {
         return addNotification(t("notifications.body.backgroundDownloadFailed"), "error")
       }
 
@@ -57,11 +58,19 @@ export function useSelectBackground(): SelectBackgroundActions {
     configDispatch({ type: CONFIG_ACTIONS.SET_BACKGROUND, payload: CUSTOM_BACKGROUND_ID })
   }, [addNotification, configDispatch, t])
 
-  const ensureCached = useCallback(async (entry: BackgroundType): Promise<void> => {
-    // Silent on failure on purpose: nothing was asked for. The launcher is showing the bundled
-    // scene in the meantime and will try again the next time this section is opened.
-    await window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256).catch(() => false)
-  }, [])
+  const ensureCached = useCallback(
+    async (entry: BackgroundType): Promise<void> => {
+      // Silent on failure on purpose: nothing was asked for. The launcher is showing the bundled
+      // scene in the meantime and will try again the next time this section is opened.
+      const result = await window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256).catch(() => ({ refreshed: false }))
+      // A real refresh wrote new bytes to disk. Bump the revision so the running session
+      // repaints with the updated file instead of waiting for the next launch.
+      if (result.refreshed) {
+        configDispatch({ type: CONFIG_ACTIONS.SET_BACKGROUND, payload: entry.id })
+      }
+    },
+    [configDispatch]
+  )
 
   return { selectDefault, selectFromCatalog, pickCustom, ensureCached }
 }

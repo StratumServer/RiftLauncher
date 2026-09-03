@@ -19,14 +19,14 @@ const MANIFEST = JSON.stringify([
 
 type Options = {
   manifest?: () => Promise<string>
-  ensureBackground?: () => Promise<boolean>
+  ensureBackground?: () => Promise<{ refreshed: boolean }>
   copyCustomBackground?: () => Promise<boolean>
   selectFolderDialog?: () => Promise<string[]>
   background?: string
 }
 
 const catalogManifest = async (): Promise<string> => MANIFEST
-const downloadWorks = async (): Promise<boolean> => true
+const downloadWorks = async (): Promise<{ refreshed: boolean }> => ({ refreshed: true })
 const copyWorks = async (): Promise<boolean> => true
 const dialogPicks = async (): Promise<string[]> => [PICKED_PATH]
 
@@ -106,12 +106,12 @@ describe("ConfigPage background picker", () => {
     await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg", "a".repeat(64)))
     await waitFor(() => expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("true"))
     expect(tileImage("Village Lane")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/village-lane.jpg"))
-    expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toContain('url("background:village-lane.jpg?r=1")')
+    expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toContain('url("background:village-lane.jpg?r=2")')
   })
 
   it("selects nothing when the download fails, and says so", async () => {
     const user = userEvent.setup()
-    renderConfigPage({ ensureBackground: async () => false })
+    renderConfigPage({ ensureBackground: async () => ({ refreshed: false }) })
 
     await user.click(await screen.findByRole("button", { name: "Village Lane" }))
 
@@ -204,14 +204,14 @@ describe("ConfigPage background picker", () => {
   })
 
   it("keeps the selected thumbnail visible when repairing its full-size cache fails", async () => {
-    let finishRepair: (cached: boolean) => void = () => undefined
-    const repair = new Promise<boolean>((resolve) => {
+    let finishRepair: (result: { refreshed: boolean }) => void = () => undefined
+    const repair = new Promise<{ refreshed: boolean }>((resolve) => {
       finishRepair = resolve
     })
     const api = renderConfigPage({ background: "river-sailboat", ensureBackground: () => repair })
 
     await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg", "b".repeat(64)))
-    finishRepair(false)
+    finishRepair({ refreshed: false })
 
     await waitFor(() => expect(tileImage("River Sailboat")).toBeTruthy())
     expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true")
