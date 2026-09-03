@@ -22,7 +22,14 @@ const LOG_TAG = "[front] [backups] [features/installations/hooks/useMakeInstalla
  */
 const NON_BLOCKING_REASONS = new Set<MakeInstallationBackupFailure>(["installation-path-missing", "no-backups-folder", "backups-disabled"])
 
-export function useMakeInstallationBackup(): (installationId: string) => Promise<boolean> {
+export interface BackupOutcome {
+  /** Whether a backup was made or the failure was non-blocking (the launch may proceed). */
+  ok: boolean
+  /** The failure reason when a blocking failure stopped the backup, or undefined on success. */
+  blockingReason?: MakeInstallationBackupFailure
+}
+
+export function useMakeInstallationBackup(): (installationId: string) => Promise<BackupOutcome> {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const installations = useInstallations()
@@ -34,14 +41,14 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
    * Make a backup of the selected Installation.
    *
    * @param {string} installationId - The ID of the Installation to backup.
-   * @returns {Promise<boolean>} - If the backup was made or not.
+   * @returns {Promise<BackupOutcome>} - Whether the backup succeeded or a blocking failure stopped it.
    */
-  async function makeInstallationBackup(installationId: string): Promise<boolean> {
+  async function makeInstallationBackup(installationId: string): Promise<BackupOutcome> {
     const installation = installations.find((i) => i.id === installationId)
 
     if (!installation) {
       addNotification(t("features.installations.noInstallationFound"), "error")
-      return false
+      return { ok: false, blockingReason: undefined }
     }
 
     const setBackuping = (backuping: boolean): void => {
@@ -69,7 +76,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
 
     if (result.ok) {
       configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION_BACKUP, payload: { id: installation.id, backup: result.backup } })
-      return true
+      return { ok: true }
     }
 
     const { messageKey, logLine } = describeBackupFailure(result.reason, result.detail)
@@ -84,7 +91,8 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
 
     if (messageKey) addNotification(t(messageKey), "error")
 
-    return NON_BLOCKING_REASONS.has(result.reason)
+    if (NON_BLOCKING_REASONS.has(result.reason)) return { ok: true }
+    return { ok: false, blockingReason: result.reason }
   }
 
   return makeInstallationBackup

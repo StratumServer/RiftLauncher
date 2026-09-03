@@ -342,6 +342,8 @@
       "areYouSureDelete": "Are you sure you want to delete this Backup?",
       "deletingNotReversible": "Deletion is not reversible so you'll not be able to restore your worlds, data and other info using this Backup anymore.",
       "errorMakingBackup": "There was an error making a backup!",
+      "backupFailedSkipLaunch": "The backup failed. Launch without a backup this time?",
+      "backupFailedSkipDetail": "The backup failed ({{reason}}). Launch without a backup this time?",
       "installationPathMissing": "No backup made: this Installation has no data yet. Play it once to generate the data first.",
       "noBackupsFolder": "No backup made: you haven't set a Backups folder. Set one on the Config page.",
       "backupsDisabled": "No backup made: this Installation's Backups max amount is set to 0. Raise it on the Installation's edit page to turn backups back on.",

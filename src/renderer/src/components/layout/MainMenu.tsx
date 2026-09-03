@@ -84,8 +84,12 @@ function MainMenu(): JSX.Element {
       configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: gameVersionToRun.version, updates: { _playing: true } } })
 
       if (selectedInstallation.backupsAuto) {
-        const backupMade = await makeInstallationBackup(selectedInstallation.id)
-        if (!backupMade) return
+        const backupOutcome = await makeInstallationBackup(selectedInstallation.id)
+        if (!backupOutcome.ok) {
+          const detail = backupOutcome.blockingReason ? t("features.backups.backupFailedSkipDetail", { reason: backupOutcome.blockingReason }) : t("features.backups.backupFailedSkipLaunch")
+          const skipLaunch = window.confirm(detail)
+          if (!skipLaunch) return
+        }
       }
 
       const startedPlaying = Date.now()
