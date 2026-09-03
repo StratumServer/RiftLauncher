@@ -2,8 +2,6 @@ import { Input, Switch } from "@headlessui/react"
 import clsx from "clsx"
 import { PiEyeDuotone, PiEyeSlashDuotone } from "react-icons/pi"
 
-import { BUTTON_BASE_STYLES, BUTTON_VARIANT_STYLES } from "@renderer/components/ui/buttonStyles"
-
 const INPUT_BASE_STYLES = `h-8 px-2 py-1 rounded-md placeholder:text-zinc-400 overflow-hidden outline-hidden backdrop-blur-xs bg-zinc-950/50 border border-zinc-400/5 focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2`
 // `:invalid` matches required empty fields as soon as they mount. The
 // user-invalid variant waits for interaction or form submission, so a newly
@@ -202,7 +200,22 @@ export function FormInputPassword({
       {onToggleVisibility && (
         <button
           type="button"
-          className={clsx(BUTTON_BASE_STYLES, BUTTON_VARIANT_STYLES.ghost, "absolute right-1 top-1/2 size-8 min-h-0 min-w-0 -translate-y-1/2 p-0 text-zinc-300")}
+          /*
+           * Purpose-built overlay control, not composed from BUTTON_BASE_STYLES.
+           * That constant hardcodes `relative`, and Tailwind emits `relative`
+           * after `absolute`, so an `absolute` passed through className loses on
+           * a specificity tie and the toggle drops out of the field into the
+           * layout flow (same ordering trap as the px-0/w-full notes in
+           * buttonStyles.ts). The focus ring, disabled, and transition rules
+           * below are copied from there so it still matches every other button.
+           */
+          className={clsx(
+            "absolute right-1 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-sm p-0 text-zinc-300",
+            "transition-colors duration-150 hover:bg-zinc-800/40 active:bg-zinc-800/60",
+            "enabled:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50",
+            "focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2",
+            "[&_svg]:size-4"
+          )}
           onClick={onToggleVisibility}
           aria-label={visibilityLabel}
           title={visibilityLabel}
