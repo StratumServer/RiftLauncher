@@ -99,7 +99,7 @@ flowchart LR
     HK --> V
 ```
 
-The domain is consumed from both ends but depends on neither. The preload script (`src/preload/index.ts`, 101 lines) is the only file allowed to call both `contextBridge` and `ipcRenderer`; everything past it on the renderer side is `window.api.*`.
+The domain is consumed from both ends but depends on neither. The preload script (`src/preload/index.ts`, 107 lines) is the only file allowed to call both `contextBridge` and `ipcRenderer`; everything past it on the renderer side is `window.api.*`.
 
 ## The verdict convention
 

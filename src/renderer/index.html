@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <title>RiftLauncher</title>
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+         frame-ancestors is inert when delivered via <meta> (Chromium ignores it),
+         but it documents intent and still works if the CSP moves to a header. -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; connect-src 'self' https://api.vintagestory.at https://mods.vintagestory.at; script-src 'self'; style-src 'self'; img-src 'self' https://mods.vintagestory.at https://img.youtube.com https://raw.githubusercontent.com/StratumServer/RiftLauncher/backgrounds/thumbnails/ cachemodimg: icons: background: https://moddbcdn.vintagestory.at; frame-src 'none'"

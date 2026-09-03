@@ -125,7 +125,7 @@ describe("startup network boundaries", () => {
   })
 
   it("keeps the local app protocol CORS-aware and records non-renderer child exits", () => {
-    assert.equal(MAIN_SOURCE.includes("corsEnabled: true"), true, "the app protocol stopped enforcing CORS")
+    assert.equal(MAIN_SOURCE.includes("corsEnabled: true"), true, "the app protocol lost its CORS enforcement for cross-origin renderer paths")
     assert.equal(MAIN_SOURCE.includes('app.on("child-process-gone"'), true, "non-renderer child process failures are no longer logged")
   })
 })
@@ -133,7 +133,11 @@ describe("startup network boundaries", () => {
 describe("renderer document boundaries", () => {
   it("does not allow framed content in the renderer CSP", () => {
     assert.match(RENDERER_HTML, /frame-src 'none'/)
-    assert.doesNotMatch(RENDERER_HTML, /frame-src (?!'none')/)
+    // Match the full directive up to its semicolon or end-of-string so that
+    // frame-src 'none' https://evil.example does not slip through: when a
+    // source list holds 'none' alongside other expressions, browsers ignore
+    // the 'none' and honour the rest.
+    assert.doesNotMatch(RENDERER_HTML, /frame-src\s+'none'\s*[^';"\n]/)
   })
 
   it("exposes the preload bridge only in the main frame", () => {
@@ -143,6 +147,13 @@ describe("renderer document boundaries", () => {
     assert.notEqual(guardStart, -1, "preload stopped checking process.isMainFrame")
     assert.notEqual(exposeStart, -1, "preload stopped exposing the launcher API")
     assert.ok(guardStart < exposeStart, "preload exposes the API before its main-frame guard")
+    // Ensure the expose call sits inside the guarded block, not outside it
+    // as a dead-statement hoist. Only whitespace may separate them.
+    assert.match(PRELOAD_SOURCE.slice(guardStart, exposeStart), /\s+$/)
+    // Exactly one exposeInMainWorld keeps a future duplicate from leaking
+    // the bridge into every frame.
+    const exposeCount = PRELOAD_SOURCE.split("contextBridge.exposeInMainWorld").length - 1
+    assert.equal(exposeCount, 1, `preload has ${exposeCount} exposeInMainWorld calls; expected exactly 1`)
   })
 })
 
