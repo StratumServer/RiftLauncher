@@ -107,9 +107,14 @@ function ListInslallations(): JSX.Element {
         <ListWrapper className="max-w-[50rem] w-full my-auto">
           <ListGroup>
             <ListItem className="group">
-              <LinkButton to="/installations/add" title={t("features.installations.addNewInstallation")} variant="primary" size="lg" className="w-full h-12">
-                <PiPlusCircleDuotone className="text-3xl text-zinc-400/70 group-hover:scale-95 duration-200" />
-              </LinkButton>
+              <LinkButton
+                to="/installations/add"
+                title={t("features.installations.addNewInstallation")}
+                icon={<PiPlusCircleDuotone className="duration-200 group-hover:scale-95" />}
+                variant="primary"
+                size="lg"
+                className="w-full h-12"
+              />
             </ListItem>
 
             {installations.map((installation, index) => {
@@ -227,13 +232,9 @@ function ListInslallations(): JSX.Element {
               <Input id="delete-data" type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} />
               <label htmlFor="delete-data">{t("features.installations.deleteData")}</label>
             </div>
-            <ButtonsWrapper className="text-lg" bgDark={false} equalWidth>
-              <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setInstallationToDelete(null)} variant="secondary" size="md">
-                <PiXCircleDuotone />
-              </FormButton>
-              <FormButton title={t("generic.delete")} className="p-2" onClick={DeleteInstallationHandler} variant="destructive" size="md">
-                <PiTrashDuotone />
-              </FormButton>
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <FormButton title={t("generic.cancel")} onClick={() => setInstallationToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+              <FormButton title={t("generic.delete")} onClick={DeleteInstallationHandler} variant="destructive" size="md" icon={<PiTrashDuotone />} />
             </ButtonsWrapper>
           </>
         </PopupDialogPanel>

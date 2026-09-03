@@ -28,7 +28,7 @@ function InstalledFilter({
           {INSTALLED_FILTERS.filter((i) => i.key === installedFilter).map((lang) => (
             <ListboxButton key={lang.key} className={clsx(MENU_TRIGGER_STYLES, size)}>
               <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap text-sm">{lang.value}</p>
-              <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+              <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
             </ListboxButton>
           ))}
 

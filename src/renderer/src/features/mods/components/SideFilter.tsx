@@ -25,7 +25,7 @@ function SideFilter({ sideFilter, setSideFilter, size = "w-full h-8" }: Readonly
           {SIDE_FILTERS.filter((side) => side.key === sideFilter).map((lang) => (
             <ListboxButton key={lang.key} className={clsx(MENU_TRIGGER_STYLES, size)}>
               <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap text-sm">{lang.value}</p>
-              <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+              <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
             </ListboxButton>
           ))}
 

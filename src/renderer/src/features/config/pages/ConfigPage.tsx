@@ -364,12 +364,12 @@ function UIScale(): JSX.Element {
       {({ open }) => (
         <>
           {SCALE_OPTIONS.filter((scale) => scale.key === selectedScale).map((scale) => (
-            <ListboxButton key={scale.key} className={MENU_TRIGGER_STYLES}>
+            <ListboxButton key={scale.key} className={clsx(MENU_TRIGGER_STYLES, "w-full")}>
               <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
                 <span className="text-sm">{scale.value}</span>
                 {scale.key === 100 && <span className="text-ellipsis overflow-hidden text-zinc-400 text-xs">{t("generic.default")}</span>}
               </p>
-              <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+              <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
             </ListboxButton>
           ))}
 

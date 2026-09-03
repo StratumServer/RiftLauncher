@@ -32,8 +32,12 @@ describe("SessionButton", () => {
     expect(email.getAttribute("autocomplete")).toBe("username")
     expect(password.getAttribute("autocomplete")).toBe("current-password")
     expect(within(dialog).getByLabelText("2FA Code").getAttribute("autocomplete")).toBe("one-time-code")
-    expect(email.getAttribute("placeholder")).toBeNull()
-    expect(password.getAttribute("placeholder")).toBeNull()
+    // A placeholder here is a format example, never a second copy of the visible
+    // label: the label has to survive the field being filled in, the placeholder does not.
+    expect(email.getAttribute("placeholder")).toBe("name@example.com")
+    expect(email.getAttribute("placeholder")).not.toBe("Email")
+    expect(password.getAttribute("placeholder")).toBe("••••••••")
+    expect(password.getAttribute("placeholder")).not.toBe("Password")
     expect(email.className).toContain("user-invalid:border")
     expect(email.classList.contains("invalid:border")).toBe(false)
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeTruthy()

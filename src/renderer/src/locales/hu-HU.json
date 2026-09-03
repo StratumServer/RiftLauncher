@@ -45,7 +45,8 @@
     "tags": "Címkék",
     "totalTime": "Összesen: {{total}}",
     "notPlayedYet": "Még nem játszott",
-    "discordContact": "Discord"
+    "discordContact": "Discord",
+    "emailPlaceholder": "nev@pelda.com"
   },
   "features": {
     "generic": {
@@ -85,7 +86,9 @@
       "versionDeleting": "A Verzió törölve lett!",
       "versionPlaying": "Már futtatod ezt a Verziót!",
       "deleteWhilePlaying": "Nem törölhetsz egy Verziót miközben az fut!",
-      "installNewVersion": "Új verzió telepítése"
+      "installNewVersion": "Új verzió telepítése",
+      "deleteAnyway": "Törlés mindenképp",
+      "removeFromList": "Eltávolítás a listáról"
     },
     "installations": {
       "noInstallationsFound": "Nem találtam Telepítéseket.",
@@ -173,7 +176,7 @@
       "wrongtwofa": "A 2FA-kód hibás vagy lejárt. Ellenőrizd a hitelesítőt, majd próbáld újra.",
       "invalidEmailPass": "Érvénytelen e-mail-cím vagy jelszó!",
       "loggedin": "Bejelentkezve mint {{user}}!",
-      "onlyIfEnabledTwoFA": "Csak akkor adj meg értéket, ha a Vintage Story-fiókod 2FA-t használ. Ez a kód csak ehhez a bejelentkezéshez használatos.",
+      "onlyIfEnabledTwoFA": "Csak ha a fiókod 2FA-t használ. Csak ehhez a bejelentkezéshez.",
       "loginDialogTitle": "Bejelentkezés a Vintage Storyba",
       "loginAction": "Bejelentkezés",
       "requiresTwoFA": "Ehhez a fiókhoz 2FA-kód szükséges. Add meg a hitelesítőd kódját, majd próbáld újra.",
@@ -291,5 +294,8 @@
       "notNow": "Most nem"
     },
     "discard": "Értesítés elvetése"
+  },
+  "breadcrumbs": {
+    "mods": "Modok"
   }
 }

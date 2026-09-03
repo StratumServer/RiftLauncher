@@ -24,7 +24,7 @@ export function FromWrapper({ children, className }: Readonly<{ children: React.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
 export function FromGroup({ children, className, alignment = "x" }: Readonly<{ children: React.ReactNode; className?: string; alignment?: "x" | "y" }>): JSX.Element {
-  return <div className={clsx("w-full flex gap-2", alignment === "y" && "flex-col", className)}>{children}</div>
+  return <div className={clsx("w-full flex gap-2", alignment === "y" ? "flex-col" : "flex-col sm:flex-row", className)}>{children}</div>
 }
 
 /**
@@ -70,7 +70,7 @@ export function FormGroupWrapper({
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
 export function FormHead({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
-  return <div className={clsx("relative w-1/5 flex flex-col gap-2 shrink-0", className)}>{children}</div>
+  return <div className={clsx("relative w-full sm:w-1/5 flex flex-col gap-2 sm:shrink-0", className)}>{children}</div>
 }
 
 /**
@@ -82,7 +82,7 @@ export function FormHead({ children, className }: Readonly<{ children: React.Rea
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
 export function FormBody({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
-  return <div className={clsx("relative w-4/5 flex flex-col gap-2", className)}>{children}</div>
+  return <div className={clsx("relative w-full sm:w-4/5 flex flex-col gap-2", className)}>{children}</div>
 }
 
 /**
@@ -99,7 +99,7 @@ export function FormLabel({ className, content, htmlFor }: Readonly<{ className?
       {content}
     </span>
   )
-  const labelClassName = clsx("w-full h-8 flex gap-1 items-center flex-wrap justify-end text-right", className)
+  const labelClassName = clsx("w-full h-8 flex gap-1 items-center flex-wrap justify-start text-left text-trim-children sm:justify-end sm:text-right", className)
 
   return htmlFor ? (
     <label {...{ htmlFor }} className={labelClassName}>
@@ -150,7 +150,7 @@ export function FormFieldGroupWithDescription({ children, className, alignment =
  */
 export function FormFieldDescription({ className, content, id }: Readonly<{ className?: string; content: JSX.Element | string; id?: string }>): JSX.Element {
   return (
-    <p id={id} className={clsx("flex gap-1 items-center flex-wrap justify-start text-xs text-zinc-400 pl-1", className)}>
+    <p id={id} className={clsx("flex gap-1 items-center flex-wrap justify-start text-left text-xs text-zinc-400 pl-1", className)}>
       {content}
     </p>
   )

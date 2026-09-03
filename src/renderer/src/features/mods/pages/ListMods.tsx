@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 
 import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -11,13 +12,13 @@ import { logMods } from "@renderer/features/moddb/adapters/log"
 import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
 
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, ReloadButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 import ModsFilterBar from "@renderer/features/mods/components/ModsFilterBar"
 import ModsGrid from "@renderer/features/mods/components/ModsGrid"
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const installations = useInstallations()
   const favMods = useFavMods()
   const { lastUsedInstallation } = useSettingsConfig()
@@ -52,8 +53,6 @@ function ListMods(): JSX.Element {
   const [orderByOrder, setOrderByOrder] = useState<string>("desc")
 
   const [searching, setSearching] = useState<boolean>(true)
-
-  const [modToInstall, setModToInstall] = useState<DownloadableModOnListType | null>(null)
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -194,9 +193,11 @@ function ListMods(): JSX.Element {
         addNotification(t("features.installations.noInstallationSelected"), "error")
         return
       }
-      setModToInstall(mod)
+      // The card already knows the mod's name; handing it over means the page has something to
+      // show its heading before the ModDB answers, instead of a bare numeric id.
+      navigate(`/mods/install/${mod.modid}`, { state: { modName: mod.name } })
     },
-    [hasInstallation, addNotification, t]
+    [hasInstallation, addNotification, navigate, t]
   )
 
   const onToggleFavMod = useCallback(
@@ -277,21 +278,6 @@ function ListMods(): JSX.Element {
           onSelectMod={onSelectMod}
           onToggleFavMod={onToggleFavMod}
           onOpenModDb={onOpenModDb}
-        />
-
-        <InstallModPopup
-          modToInstall={modToInstall?.modid || null}
-          setModToInstall={() => setModToInstall(null)}
-          modName={modToInstall?.name}
-          installation={
-            installation && {
-              installation: installation,
-              oldMod: installationInstalledMods?.find((iMod) => modToInstall?.modidstrs.includes(iMod.modid))
-            }
-          }
-          onFinishInstallation={() => {
-            triggerGetInstalledMods()
-          }}
         />
       </div>
     </ScrollableContainer>

@@ -157,13 +157,9 @@ function AddVersion(): JSX.Element {
             </FromGroup>
           </FormGroupWrapper>
 
-          <ButtonsWrapper className="text-lg" equalWidth>
-            <FormLinkButton to="/versions" title={t("generic.goBack")} variant="secondary" size="md" className="p-2">
-              <PiXCircleDuotone />
-            </FormLinkButton>
-            <FormButton onClick={handleInstallVersion} title={t("generic.install")} variant="primary" size="md" className="p-2">
-              <PiDownloadDuotone />
-            </FormButton>
+          <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+            <FormLinkButton to="/versions" title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+            <FormButton onClick={handleInstallVersion} title={t("generic.install")} variant="primary" size="md" icon={<PiDownloadDuotone />} />
           </ButtonsWrapper>
         </FromWrapper>
       </div>

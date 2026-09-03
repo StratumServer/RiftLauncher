@@ -76,13 +76,9 @@ function LookForAVersion(): JSX.Element {
             </FromGroup>
           </FormGroupWrapper>
 
-          <ButtonsWrapper className="text-lg" equalWidth>
-            <FormLinkButton to="/versions" title={t("generic.cancel")} variant="secondary" size="md" className="p-2">
-              <PiXCircleDuotone />
-            </FormLinkButton>
-            <FormButton onClick={addVersion} title={t("generic.add")} variant="primary" size="md" className="p-2">
-              <PiFloppyDiskBackDuotone />
-            </FormButton>
+          <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+            <FormLinkButton to="/versions" title={t("generic.cancel")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+            <FormButton onClick={addVersion} title={t("generic.add")} variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
           </ButtonsWrapper>
         </FromWrapper>
       </div>

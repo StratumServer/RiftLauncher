@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { AnimatePresence, motion } from "motion/react"
 import clsx from "clsx"
-import { PiCaretDownDuotone, PiShieldCheckDuotone, PiSignInDuotone, PiSpinnerGapDuotone, PiTrashDuotone, PiUserDuotone, PiUserPlusDuotone, PiXCircleDuotone } from "react-icons/pi"
+import { PiCaretDownDuotone, PiInfoDuotone, PiShieldCheckDuotone, PiSignInDuotone, PiTrashDuotone, PiUserDuotone, PiUserPlusDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from "@headlessui/react"
 
@@ -24,7 +24,6 @@ import {
   FormGroupWrapper,
   FormHead,
   FormInputPassword,
-  FormInputTwoFactor,
   FormInputText,
   FormLabel,
   FromGroup,
@@ -143,12 +142,12 @@ function SessionButton(): JSX.Element {
         <Listbox value={activeAccountId} onChange={handleSelect}>
           {({ open }) => (
             <>
-              <ListboxButton title={t("features.config.switchAccountTitle")} className={MENU_TRIGGER_STYLES}>
+              <ListboxButton title={t("features.config.switchAccountTitle")} className={clsx(MENU_TRIGGER_STYLES, "w-full")}>
                 <p className="flex items-center gap-2 overflow-hidden">
                   <PiUserDuotone aria-hidden="true" className="shrink-0" />
                   <span className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">{activeAccount?.playerName ?? t("features.config.loginTitle")}</span>
                 </p>
-                <PiCaretDownDuotone aria-hidden="true" className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+                <PiCaretDownDuotone aria-hidden="true" className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
               </ListboxButton>
 
               <AnimatePresence>
@@ -201,113 +200,128 @@ function SessionButton(): JSX.Element {
         </Listbox>
       )}
 
-      <PopupDialogPanel title={t("features.config.loginDialogTitle")} isOpen={logInOpen} close={closeLogin}>
-        <FromWrapper className="w-full">
-          <form onSubmit={handleLogin} className="flex w-full flex-col items-center gap-4">
-            <FormGroupWrapper bgDark={false} flush>
-              <FromGroup className="flex-col">
-                <FormHead className="w-full">
-                  <FormLabel content={t("generic.email")} htmlFor="login-email" className="justify-start text-left" />
-                </FormHead>
+      <PopupDialogPanel title={t("features.config.loginDialogTitle")} isOpen={logInOpen} close={closeLogin} scrollBody>
+        <FromWrapper className="w-full min-h-0 flex-auto">
+          <form onSubmit={handleLogin} className="flex w-full min-h-0 flex-auto flex-col items-center gap-2">
+            <div className="flex w-full min-h-0 flex-auto flex-col items-center gap-2 overflow-y-auto">
+              <FormGroupWrapper bgDark={false} flush>
+                <FromGroup>
+                  <FormHead>
+                    <FormLabel content={t("generic.email")} htmlFor="login-email" />
+                  </FormHead>
 
-                <FormBody className="w-full">
-                  <FormFieldGroup>
-                    <FormInputText
-                      id="login-email"
-                      name="email"
-                      type="email"
-                      inputMode="email"
-                      autoComplete="username"
-                      autoFocus
-                      required
-                      className="w-full"
-                      value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value)
-                      }}
-                      readOnly={loggingIn}
-                    />
-                  </FormFieldGroup>
-                </FormBody>
-              </FromGroup>
+                  <FormBody>
+                    <FormFieldGroup>
+                      <FormInputText
+                        id="login-email"
+                        name="email"
+                        type="email"
+                        inputMode="email"
+                        autoComplete="username"
+                        autoFocus
+                        required
+                        placeholder={t("generic.emailPlaceholder")}
+                        className="w-full"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value)
+                        }}
+                        readOnly={loggingIn}
+                      />
+                    </FormFieldGroup>
+                  </FormBody>
+                </FromGroup>
 
-              <FromGroup className="flex-col">
-                <FormHead className="w-full">
-                  <FormLabel content={t("generic.password")} htmlFor="login-password" className="justify-start text-left" />
-                </FormHead>
+                <FromGroup>
+                  <FormHead>
+                    <FormLabel content={t("generic.password")} htmlFor="login-password" />
+                  </FormHead>
 
-                <FormBody className="w-full">
-                  <FormFieldGroup>
-                    <FormInputPassword
-                      id="login-password"
-                      name="password"
-                      autoComplete="current-password"
-                      required
-                      className="w-full"
-                      value={password}
-                      onChange={(e) => {
-                        setPassword(e.target.value)
-                      }}
-                      readOnly={loggingIn}
-                      showPassword={showPassword}
-                      onToggleVisibility={() => setShowPassword((visible) => !visible)}
-                      visibilityLabel={t(showPassword ? "features.config.hidePassword" : "features.config.showPassword")}
-                    />
-                  </FormFieldGroup>
-                </FormBody>
-              </FromGroup>
+                  <FormBody>
+                    <FormFieldGroup>
+                      {/*
+                        The placeholder is a masking pattern, not guidance: placeholder text
+                        disappears the moment the field is used, so a password field must not
+                        carry anything the player still needs to read.
+                      */}
+                      <FormInputPassword
+                        id="login-password"
+                        name="password"
+                        autoComplete="current-password"
+                        required
+                        placeholder="••••••••"
+                        className="w-full"
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value)
+                        }}
+                        readOnly={loggingIn}
+                        showPassword={showPassword}
+                        onToggleVisibility={() => setShowPassword((visible) => !visible)}
+                        visibilityLabel={t(showPassword ? "features.config.hidePassword" : "features.config.showPassword")}
+                      />
+                    </FormFieldGroup>
+                  </FormBody>
+                </FromGroup>
 
-              <FromGroup className="flex-col">
-                <FormHead className="w-full">
-                  <FormLabel content={t("generic.twofacode")} htmlFor="login-two-factor" className="justify-start text-left" />
-                </FormHead>
+                <FromGroup>
+                  <FormHead>
+                    <FormLabel content={t("generic.twofacode")} htmlFor="login-two-factor" />
+                  </FormHead>
 
-                <FormBody className="w-full">
-                  <FormFieldGroupWithDescription>
-                    <FormInputTwoFactor
-                      id="login-two-factor"
-                      name="one-time-code"
-                      autoComplete="one-time-code"
-                      className="w-full"
-                      value={twofacode}
-                      onChange={(e) => {
-                        setTwofacode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                      }}
-                      ariaDescribedBy="login-two-factor-help"
-                      readOnly={loggingIn}
-                    />
-                    <FormFieldDescription id="login-two-factor-help" content={t("features.config.onlyIfEnabledTwoFA")} />
-                  </FormFieldGroupWithDescription>
-                </FormBody>
-              </FromGroup>
-            </FormGroupWrapper>
+                  <FormBody>
+                    <FormFieldGroupWithDescription>
+                      <FormInputText
+                        id="login-two-factor"
+                        name="one-time-code"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        placeholder="000000"
+                        className="w-full"
+                        value={twofacode}
+                        onChange={(e) => {
+                          setTwofacode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                        }}
+                        ariaDescribedBy="login-two-factor-help"
+                        readOnly={loggingIn}
+                      />
+                      <FormFieldDescription
+                        id="login-two-factor-help"
+                        className="flex-nowrap items-start"
+                        content={
+                          <>
+                            <PiInfoDuotone aria-hidden="true" className="mt-0.5 shrink-0 text-vsl" />
+                            <span className="flex-1">{t("features.config.onlyIfEnabledTwoFA")}</span>
+                          </>
+                        }
+                      />
+                    </FormFieldGroupWithDescription>
+                  </FormBody>
+                </FromGroup>
+              </FormGroupWrapper>
 
-            <aside aria-labelledby="login-privacy-title" className="w-full rounded-md border border-vsl/30 bg-vsl/5 p-3 text-left text-sm">
-              <div className="flex items-start gap-2">
-                <PiShieldCheckDuotone aria-hidden="true" className="mt-0.5 shrink-0 text-vsl" />
-                <div className="flex flex-col gap-2">
-                  <h2 id="login-privacy-title" className="font-semibold">
-                    {t("features.config.loginPrivacyTitle")}
-                  </h2>
-                  <p className="text-zinc-300">{t("features.config.loginPrivacySent")}</p>
-                  <p className="text-zinc-300">{t("features.config.loginPrivacyStored")}</p>
-                  <p className="text-zinc-300">{t("features.config.loginPrivacyGame")}</p>
-                  <NormalButton onClick={() => openOnBrowser(PRIVACY_POLICY_URL)} title={t("features.config.loginPrivacyPolicy")} variant="link" className="w-fit text-left">
-                    {t("features.config.loginPrivacyPolicy")}
-                  </NormalButton>
+              <aside aria-labelledby="login-privacy-title" className="w-full rounded-md border border-vsl/30 bg-vsl/5 px-3 py-2.5 text-left text-sm">
+                <div className="flex items-start gap-2">
+                  <PiShieldCheckDuotone aria-hidden="true" className="mt-0.5 shrink-0 text-vsl" />
+                  <div className="flex flex-col gap-1.5">
+                    <h2 id="login-privacy-title" className="font-semibold">
+                      {t("features.config.loginPrivacyTitle")}
+                    </h2>
+                    <p className="text-zinc-300">{t("features.config.loginPrivacySent")}</p>
+                    <p className="text-zinc-300">{t("features.config.loginPrivacyStored")}</p>
+                    <p className="text-zinc-300">{t("features.config.loginPrivacyGame")}</p>
+                    <NormalButton onClick={() => openOnBrowser(PRIVACY_POLICY_URL)} title={t("features.config.loginPrivacyPolicy")} variant="link" className="w-fit text-left">
+                      {t("features.config.loginPrivacyPolicy")}
+                    </NormalButton>
+                  </div>
                 </div>
-              </div>
-            </aside>
+              </aside>
+            </div>
 
             <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <FormButton onClick={closeLogin} title={t("generic.cancel")} variant="secondary" size="md" disabled={loggingIn}>
-                <PiXCircleDuotone aria-hidden="true" />
-                <span>{t("generic.cancel")}</span>
-              </FormButton>
-              <FormButton nativeType="submit" title={t("features.config.loginAction")} variant="primary" size="md" disabled={loggingIn} ariaBusy={loggingIn}>
-                {loggingIn ? <PiSpinnerGapDuotone aria-hidden="true" className="animate-spin" /> : <PiSignInDuotone aria-hidden="true" />}
-                <span>{t("features.config.loginAction")}</span>
-              </FormButton>
+              <FormButton onClick={closeLogin} title={t("generic.cancel")} icon={<PiXCircleDuotone />} variant="secondary" size="md" disabled={loggingIn} />
+              <FormButton nativeType="submit" title={t("features.config.loginAction")} icon={<PiSignInDuotone />} variant="primary" size="md" busy={loggingIn} />
             </ButtonsWrapper>
           </form>
         </FromWrapper>
@@ -318,22 +332,17 @@ function SessionButton(): JSX.Element {
           <p>{t("features.config.areYouSureRemoveAccount", { user: activeAccount?.playerName ?? "" })}</p>
           <p className="text-zinc-400">{t("features.config.removeAccountNotReversible")}</p>
           <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-            <FormButton title={t("generic.cancel")} size="md" onClick={() => setRemoveOpen(false)} variant="secondary">
-              <PiXCircleDuotone aria-hidden="true" />
-              <span>{t("generic.cancel")}</span>
-            </FormButton>
+            <FormButton title={t("generic.cancel")} icon={<PiXCircleDuotone />} size="md" onClick={() => setRemoveOpen(false)} variant="secondary" />
             <FormButton
               title={t("features.config.removeAccountAction")}
+              icon={<PiTrashDuotone />}
               size="md"
               onClick={(e) => {
                 e.stopPropagation()
                 handleRemove()
               }}
               variant="destructive"
-            >
-              <PiTrashDuotone aria-hidden="true" />
-              <span>{t("features.config.removeAccountAction")}</span>
-            </FormButton>
+            />
           </ButtonsWrapper>
         </>
       </PopupDialogPanel>

@@ -40,12 +40,12 @@ function LanguagesMenu(): JSX.Element {
           {languages
             .filter((lang) => lang.code === selectedLanguage)
             .map((lang) => (
-              <ListboxButton key={lang.code} className={MENU_TRIGGER_STYLES}>
+              <ListboxButton key={lang.code} className={clsx(MENU_TRIGGER_STYLES, "w-full")}>
                 <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
                   <span className="text-sm">{lang.name}</span>
                   <span className="text-ellipsis overflow-hidden text-zinc-400 text-xs">{lang.credits}</span>
                 </p>
-                <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+                <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
               </ListboxButton>
             ))}
 

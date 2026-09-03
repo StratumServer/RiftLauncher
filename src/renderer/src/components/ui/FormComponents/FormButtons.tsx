@@ -2,7 +2,16 @@ import { Button as HButton } from "@headlessui/react"
 import clsx from "clsx"
 import { Link } from "react-router-dom"
 
-import { BUTTON_BASE_STYLES, BUTTON_GROUP_EQUAL_WIDTH_STYLES, BUTTON_SIZE_STYLES, BUTTON_VARIANT_STYLES, type ButtonSize, type ButtonVariant } from "@renderer/components/ui/buttonStyles"
+import {
+  BUTTON_BASE_STYLES,
+  BUTTON_GROUP_EQUAL_WIDTH_STYLES,
+  BUTTON_LINK_SIZE_STYLES,
+  BUTTON_SIZE_STYLES,
+  BUTTON_VARIANT_STYLES,
+  type ButtonSize,
+  type ButtonVariant
+} from "@renderer/components/ui/buttonStyles"
+import { renderActionContent, useActionBusy } from "@renderer/components/ui/actionContent"
 
 /**
  * A ButtonsWrapper must contain a FormButton or a FormLinkButton.
@@ -53,41 +62,45 @@ export function ButtonsWrapper({
  */
 export function FormButton({
   children,
+  icon,
   className,
   onClick,
   title,
   disabled,
+  busy,
   variant = "secondary",
   size = "sm",
   nativeType = "button",
   ariaLabel,
-  ariaBusy,
   ariaPressed
 }: Readonly<{
-  children: React.ReactNode
+  children?: React.ReactNode
+  icon?: React.ReactNode
   className?: string
-  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<unknown>
   title: string
   disabled?: boolean
+  busy?: boolean
   variant?: ButtonVariant
   size?: ButtonSize
   nativeType?: "button" | "submit" | "reset"
   ariaLabel?: string
-  ariaBusy?: boolean
   ariaPressed?: boolean
 }>): JSX.Element {
+  const action = useActionBusy(onClick, busy, disabled)
+
   return (
     <HButton
       type={nativeType}
-      disabled={disabled}
-      onClick={onClick}
+      disabled={disabled || action.busy}
+      onClick={action.onClick}
       title={!disabled ? title : ""}
       aria-label={ariaLabel ?? title}
-      aria-busy={ariaBusy}
+      aria-busy={action.busy}
       aria-pressed={ariaPressed}
-      className={clsx(BUTTON_BASE_STYLES, BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}
+      className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}
     >
-      {children}
+      {renderActionContent(children, icon, title, action.busy)}
     </HButton>
   )
 }
@@ -106,13 +119,15 @@ export function FormButton({
  */
 export function FormLinkButton({
   children,
+  icon,
   className,
   to,
   title,
   variant = "secondary",
   size = "sm"
 }: Readonly<{
-  children: React.ReactNode
+  children?: React.ReactNode
+  icon?: React.ReactNode
   className?: string
   to: string
   title: string
@@ -120,8 +135,12 @@ export function FormLinkButton({
   size?: ButtonSize
 }>): JSX.Element {
   return (
-    <Link to={to} title={title} className={clsx(BUTTON_BASE_STYLES, BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}>
-      {children}
+    <Link
+      to={to}
+      title={title}
+      className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}
+    >
+      {renderActionContent(children, icon, title)}
     </Link>
   )
 }

@@ -51,10 +51,8 @@ export function AddCustomIconPupup({ open, setOpen }: Readonly<{ open: boolean; 
           </FromGroup>
         </FormGroupWrapper>
 
-        <ButtonsWrapper className="text-lg" bgDark={false} equalWidth>
-          <FormButton onClick={() => setOpen(false)} title={t("generic.goBack")} variant="secondary" size="md" className="p-2">
-            <PiXCircleDuotone />
-          </FormButton>
+        <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+          <FormButton onClick={() => setOpen(false)} title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
           <FormButton
             onClick={(e) => {
               e.stopPropagation()
@@ -69,10 +67,8 @@ export function AddCustomIconPupup({ open, setOpen }: Readonly<{ open: boolean; 
             title={t("generic.add")}
             variant="primary"
             size="md"
-            className="p-2"
-          >
-            <PiFloppyDiskBackDuotone />
-          </FormButton>
+            icon={<PiFloppyDiskBackDuotone />}
+          />
         </ButtonsWrapper>
       </FromWrapper>
     </PopupDialogPanel>

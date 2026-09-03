@@ -47,6 +47,7 @@
     "notPlayedYet": "Nie gespielt",
     "compression": "Kompression",
     "email": "E-Mail",
+    "emailPlaceholder": "name@beispiel.com",
     "password": "Passwort",
     "twofacode": "2FA Einmalkennwort",
     "goToTop": "Zum Beginn springen",
@@ -95,7 +96,9 @@
       "versionDeleting": "Diese VS-Version wird gelöscht!",
       "versionPlaying": "Du spielst bereits diese VS-Version!",
       "deleteWhilePlaying": "Du kannst eine VS-Version nicht löschen, während du sie spielst!",
-      "installNewVersion": "Installiere eine neue VS-Version"
+      "installNewVersion": "Installiere eine neue VS-Version",
+      "deleteAnyway": "Trotzdem löschen",
+      "removeFromList": "Aus der Liste entfernen"
     },
     "installations": {
       "noInstallationsFound": "Keine Installation gefunden!",
@@ -187,7 +190,7 @@
       "wrongtwofa": "Dieser 2FA-Code ist falsch oder abgelaufen. Überprüfe deine Authenticator-App und versuche es erneut.",
       "invalidEmailPass": "Falsche E-Mailadresse oder Kennwort!",
       "loggedin": "Angemeldet als {{user}}!",
-      "onlyIfEnabledTwoFA": "Gib hier nur etwas ein, wenn dein Vintage-Story-Konto 2FA verwendet. Dieser Code wird nur für diese Anmeldung verwendet.",
+      "onlyIfEnabledTwoFA": "Nur wenn dein Konto 2FA verwendet. Gilt nur für diese Anmeldung.",
       "loginDialogTitle": "Bei Vintage Story anmelden",
       "loginAction": "Anmelden",
       "requiresTwoFA": "Für dieses Konto ist ein 2FA-Code erforderlich. Gib den Code aus deiner Authenticator-App ein und versuche es erneut.",
@@ -309,5 +312,8 @@
       "notNow": "Nicht jetzt"
     },
     "discard": "Benachrichtigungen löschen"
+  },
+  "breadcrumbs": {
+    "mods": "Mods"
   }
 }

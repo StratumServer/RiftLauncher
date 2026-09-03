@@ -136,8 +136,8 @@ function MainMenu(): JSX.Element {
         <InstallationsDropdownMenu />
 
         <div className="w-full flex gap-2 items-center">
-          <NormalButton title={t("generic.play")} disabled={!selectedInstallation} onClick={PlayHandler} variant="primary" size="lg" className="w-full">
-            <p className="text-2xl">{t("generic.play")}</p>
+          <NormalButton title={t("generic.play")} disabled={!selectedInstallation} onClick={PlayHandler} variant="primary" size="lg" className="h-14 w-full text-2xl">
+            <p>{t("generic.play")}</p>
           </NormalButton>
 
           {selectedInstallation && (

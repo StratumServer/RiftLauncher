@@ -36,7 +36,7 @@ function TagsFilter({
                     </span>
                   ))}
             </p>
-            <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+            <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
           </ListboxButton>
 
           <AnimatePresence>

@@ -235,12 +235,10 @@ describe("prompts the player is meant to read and act on", () => {
   })
 
   it("keeps the icons that stand in for a control above the non-text bar", () => {
-    // Each of these is the whole visible content of a button or a menu entry. Several have no
-    // label beside them, so the icon is the affordance and the 3:1 rule applies.
+    // Each of these is the whole visible content of a button: there is no label beside it, so the
+    // icon is the affordance and the 3:1 rule applies. Actions that ship a label are covered by
+    // the test below instead, because there the icon is no longer what carries the meaning.
     const icons: ReadonlyArray<readonly [string, Layer]> = [
-      ["install a new version", foreground("features/versions/pages/ListVersions.tsx", /PiPlusCircleDuotone className="text-xl text-(zinc-\d+)(?:\/(\d+))?/)],
-      ["look for a version", foreground("features/versions/pages/ListVersions.tsx", /PiMagnifyingGlassDuotone className="text-xl text-(zinc-\d+)(?:\/(\d+))?/)],
-      ["add an installation", foreground("features/installations/pages/ListInstallations.tsx", /PiPlusCircleDuotone className="text-3xl text-(zinc-\d+)(?:\/(\d+))?/)],
       ["add an icon from the picker", foreground("features/installations/components/NameAndIconPicker.tsx", /PiPlusCircleDuotone className="text-3xl text-(zinc-\d+)(?:\/(\d+))?/)],
       ["choose a custom icon file", foreground("components/ui/AddCustomIconPupup.tsx", /PiPlusCircleDuotone className="text-3xl text-(zinc-\d+)(?:\/(\d+))?/)]
     ]
@@ -253,6 +251,27 @@ describe("prompts the player is meant to read and act on", () => {
 
     assertReadable("Activity Center notification body", historyBody, TASKS_ROW, TEXT_FLOOR)
     assertReadable("Activity Center answered marker", answered, TASKS_ROW, TEXT_FLOOR)
+  })
+
+  /**
+   * An action that ships `icon` renders the icon and its label as one control, and the label's
+   * colour comes from the button variant. An icon that sets a `text-zinc-*` of its own there is
+   * always the dimmer of the two, which reads as a disabled control sitting next to live text.
+   * Nothing stops a call site from adding one back, so this pins the absence.
+   */
+  it("lets a labelled action's icon take the same colour as its label", () => {
+    const labelled = [
+      ["install a new version", "features/versions/pages/ListVersions.tsx", "PiPlusCircleDuotone"],
+      ["look for a version", "features/versions/pages/ListVersions.tsx", "PiMagnifyingGlassDuotone"],
+      ["add an installation", "features/installations/pages/ListInstallations.tsx", "PiPlusCircleDuotone"]
+    ] as const
+
+    for (const [label, file, icon] of labelled) {
+      const source = read(file)
+      const rendered = new RegExp(`icon=\\{<${icon}\\b[^}]*\\}`).exec(source)
+      assert.ok(rendered, `${label} no longer renders ${icon} through the shared icon prop`)
+      assert.ok(!/text-zinc-/.test(rendered[0]), `${label} dims its icon with ${rendered[0]}, so it no longer matches its own label`)
+    }
   })
 })
 

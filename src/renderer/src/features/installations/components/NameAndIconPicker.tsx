@@ -54,12 +54,12 @@ export function NameAndIconPicker({ name, onNameChange, icon, onIconChange, cust
       <Listbox value={icon} onChange={(selectedIcon: IconType) => onIconChange(selectedIcon)}>
         {({ open }) => (
           <>
-            <ListboxButton className={clsx(MENU_TRIGGER_STYLES, "h-13 p-1 pr-2 text-sm text-start", iconButtonClassName)}>
+            <ListboxButton className={clsx(MENU_TRIGGER_STYLES, "h-13 w-full p-1 pr-2 text-sm text-start", iconButtonClassName)}>
               <div className="w-full h-full flex items-center gap-1">
                 <img src={icon.custom ? `icons:${icon.icon}` : icon.icon} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
                 <p>{icon.name}</p>
               </div>
-              <PiCaretDownDuotone className={clsx("duration-200 shrink-0", open && "rotate-180")} />
+              <PiCaretDownDuotone className={clsx("caret-optical duration-200 shrink-0", open && "rotate-180")} />
             </ListboxButton>
 
             <AnimatePresence>

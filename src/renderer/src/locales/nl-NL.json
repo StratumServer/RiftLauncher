@@ -19,7 +19,8 @@
     "releaseDate": "Release Datum",
     "type": "Type",
     "install": "Installeren",
-    "discordContact": "Discord"
+    "discordContact": "Discord",
+    "emailPlaceholder": "naam@voorbeeld.com"
   },
   "features": {
     "generic": {
@@ -52,7 +53,10 @@
       "labelPreReleases": "Pre uitgavens",
       "searchForAGameVersion": "Zoek voor een spel versie",
       "missingFolderOrVersion": "You've no folder selected or there it no game version on the one you've selected!",
-      "versionFound": "Versie gevonden"
+      "versionFound": "Versie gevonden",
+      "installNewVersion": "Nieuwe VS-versie installeren",
+      "deleteAnyway": "Toch verwijderen",
+      "removeFromList": "Uit de lijst verwijderen"
     },
     "installations": {
       "noInstallationsFound": "Geen installaties gevonden",
@@ -78,7 +82,8 @@
       "startParams": "Start params",
       "startParamsDesc": "Lijst met alle beschikbare startparameters: <link />",
       "cantUseDataPath": "Start param --dataPad kan niet worden gebruikt omdat het door RiftLauncher wordt gebruikt. Als u een andere map wilt, wijzigt u deze tijdens de installatie.",
-      "startParamsLink": "Vintage Story Wiki"
+      "startParamsLink": "Vintage Story Wiki",
+      "addNewInstallation": "Nieuwe installatie toevoegen"
     },
     "mods": {
       "modsCount": "{{count}} Mods",
@@ -87,7 +92,9 @@
       "modsCount_two": "{{count}} Mods",
       "modsCount_few": "{{count}} Mods",
       "modsCount_many": "{{count}} Mods",
-      "modsCount_other": "{{count}} Mods"
+      "modsCount_other": "{{count}} Mods",
+      "installMod": "Mod installeren",
+      "installationPopupDesc": "Lijst met versies van de {{modName}} Mod"
     },
     "config": {
       "defaultInstallationsFolder": "Installaties:",
@@ -97,7 +104,7 @@
       "wrongtwofa": "Deze 2FA-code is onjuist of verlopen. Controleer je authenticator en probeer het opnieuw.",
       "invalidEmailPass": "Ongeldig e-mailadres of wachtwoord!",
       "loggedin": "Ingelogd als {{user}}!",
-      "onlyIfEnabledTwoFA": "Vul dit alleen in als je Vintage Story-account 2FA gebruikt. Deze code wordt alleen voor deze login gebruikt.",
+      "onlyIfEnabledTwoFA": "Alleen als je account 2FA gebruikt. Geldt alleen voor deze login.",
       "loginDialogTitle": "Inloggen bij Vintage Story",
       "loginAction": "Inloggen",
       "requiresTwoFA": "Dit account vereist een 2FA-code. Voer de code uit je authenticator in en probeer het opnieuw.",
@@ -188,5 +195,8 @@
       "notNow": "Niet nu"
     },
     "discard": "Notificatie weggooien"
+  },
+  "breadcrumbs": {
+    "mods": "Mods"
   }
 }

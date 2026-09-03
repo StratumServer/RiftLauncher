@@ -47,6 +47,7 @@
     "notPlayedYet": "Яшчэ не гулялі",
     "compression": "Сцісканне",
     "email": "Email",
+    "emailPlaceholder": "name@example.com",
     "password": "Пароль",
     "twofacode": "Код 2FA",
     "goToTop": "Наверх",
@@ -110,7 +111,9 @@
       "versionPlaying": "Вы ўжо гуляеце ў гэтую версію VS!",
       "deleteWhilePlaying": "Вы не можаце выдаліць версію VS, пакуль гуляеце ў яе!",
       "installNewVersion": "Усталяваць новую версію VS",
-      "deleteVersion": "Выдаліць версію"
+      "deleteVersion": "Выдаліць версію",
+      "deleteAnyway": "Усё роўна выдаліць",
+      "removeFromList": "Выдаліць са спісу"
     },
     "installations": {
       "noInstallationsFound": "Усталёўкі не знойдзены!",
@@ -213,7 +216,7 @@
       "wrongtwofa": "Гэты код 2FA няправільны або пратэрмінаваны. Праверце аўтэнтыфікатар і паспрабуйце яшчэ раз.",
       "invalidEmailPass": "Няправільны email ці пароль!",
       "loggedin": "Вы ўвайшлі як {{user}}!",
-      "onlyIfEnabledTwoFA": "Уводзьце гэта толькі для акаўнта Vintage Story з уключанай 2FA. Код выкарыстоўваецца толькі для гэтага ўваходу.",
+      "onlyIfEnabledTwoFA": "Толькі калі ў акаўнце ўключана 2FA. Толькі для гэтага ўваходу.",
       "uiScale": "Маштаб інтэрфейсу",
       "language": "Мова",
       "areYouSureLogout": "Вы ўпэўнены, што хочаце выйсці?",

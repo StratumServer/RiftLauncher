@@ -2,7 +2,8 @@ import { Button as HButton } from "@headlessui/react"
 import clsx from "clsx"
 import { Link } from "react-router-dom"
 
-import { BUTTON_BASE_STYLES, BUTTON_SIZE_STYLES, BUTTON_VARIANT_STYLES, type ButtonSize, type ButtonVariant } from "@renderer/components/ui/buttonStyles"
+import { BUTTON_BASE_STYLES, BUTTON_LINK_SIZE_STYLES, BUTTON_SIZE_STYLES, BUTTON_VARIANT_STYLES, type ButtonSize, type ButtonVariant } from "@renderer/components/ui/buttonStyles"
+import { renderActionContent, useActionBusy } from "@renderer/components/ui/actionContent"
 
 /**
  * Compact button for utility actions. Use a semantic variant when the action
@@ -23,38 +24,45 @@ import { BUTTON_BASE_STYLES, BUTTON_SIZE_STYLES, BUTTON_VARIANT_STYLES, type But
  */
 export function NormalButton({
   children,
+  icon,
   className,
   onClick,
   title,
   ariaLabel,
   disabled,
+  busy,
   nativeType = "button",
   variant = "ghost",
   size = "sm",
   ariaPressed
 }: Readonly<{
-  children: React.ReactNode
+  children?: React.ReactNode
+  icon?: React.ReactNode
   className?: string
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<unknown>
   title: string
   ariaLabel?: string
   disabled?: boolean
+  busy?: boolean
   nativeType?: "button" | "submit" | "reset"
   variant?: ButtonVariant
   size?: ButtonSize
   ariaPressed?: boolean
 }>): JSX.Element {
+  const action = useActionBusy(onClick, busy, disabled)
+
   return (
     <HButton
       type={nativeType}
-      disabled={disabled}
-      onClick={onClick}
+      disabled={disabled || action.busy}
+      onClick={action.onClick}
       title={!disabled ? title : ""}
       aria-label={ariaLabel ?? title}
+      aria-busy={action.busy}
       aria-pressed={ariaPressed}
-      className={clsx(BUTTON_BASE_STYLES, BUTTON_SIZE_STYLES[size], BUTTON_VARIANT_STYLES[variant], className)}
+      className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], BUTTON_VARIANT_STYLES[variant], className)}
     >
-      {children}
+      {renderActionContent(children, icon, title, action.busy)}
     </HButton>
   )
 }
@@ -74,6 +82,7 @@ export function NormalButton({
  */
 export function LinkButton({
   children,
+  icon,
   className,
   to,
   title,
@@ -81,7 +90,8 @@ export function LinkButton({
   variant = "ghost",
   size = "sm"
 }: Readonly<{
-  children: React.ReactNode
+  children?: React.ReactNode
+  icon?: React.ReactNode
   className?: string
   to: string
   title: string
@@ -90,8 +100,13 @@ export function LinkButton({
   size?: ButtonSize
 }>): JSX.Element {
   return (
-    <Link to={to} title={title} aria-label={ariaLabel ?? title} className={clsx(BUTTON_BASE_STYLES, BUTTON_SIZE_STYLES[size], BUTTON_VARIANT_STYLES[variant], className)}>
-      {children}
+    <Link
+      to={to}
+      title={title}
+      aria-label={ariaLabel ?? title}
+      className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], BUTTON_VARIANT_STYLES[variant], className)}
+    >
+      {renderActionContent(children, icon, title)}
     </Link>
   )
 }

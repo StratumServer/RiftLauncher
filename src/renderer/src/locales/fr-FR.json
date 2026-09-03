@@ -47,6 +47,7 @@
     "notPlayedYet": "Jamais joué",
     "compression": "Compression",
     "email": "E-mail",
+    "emailPlaceholder": "nom@exemple.com",
     "password": "Mot de passe",
     "twofacode": "Code 2FA",
     "goToTop": "Haut de la page",
@@ -110,7 +111,9 @@
       "versionPlaying": "Vous jouez déjà à cette version !",
       "deleteWhilePlaying": "Vous ne pouvez pas supprimer une version pendant que vous y jouez !",
       "installNewVersion": "Installer une nouvelle version",
-      "deleteVersion": "Supprimer la version"
+      "deleteVersion": "Supprimer la version",
+      "deleteAnyway": "Supprimer quand même",
+      "removeFromList": "Retirer de la liste"
     },
     "installations": {
       "noInstallationsFound": "Aucune installation trouvée !",
@@ -213,7 +216,7 @@
       "wrongtwofa": "Ce code 2FA est incorrect ou expiré. Vérifiez votre authentificateur et réessayez.",
       "invalidEmailPass": "E-mail ou mot de passe invalide !",
       "loggedin": "Connecté en tant que {{user}} !",
-      "onlyIfEnabledTwoFA": "Saisissez un code uniquement si votre compte Vintage Story utilise la 2FA. Ce code sert uniquement pour cette connexion.",
+      "onlyIfEnabledTwoFA": "Uniquement si votre compte utilise la 2FA. Valable pour cette connexion seulement.",
       "uiScale": "Échelle de l'interface",
       "language": "Langue",
       "areYouSureLogout": "Êtes-vous sûr de vouloir vous déconnecter ?",

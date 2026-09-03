@@ -44,9 +44,9 @@ function DropdownSection({
         )}
       >
         {title && (
-          <Button type="button" className={clsx(MENU_TRIGGER_STYLES, "relative z-1")} onClick={() => setOpen((prev) => !prev)}>
+          <Button type="button" className={clsx(MENU_TRIGGER_STYLES, "relative z-1 w-full")} onClick={() => setOpen((prev) => !prev)}>
             <h2 className="shrink-0 font-lg">{title}</h2>
-            <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+            <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
           </Button>
         )}
         <AnimatePresence>

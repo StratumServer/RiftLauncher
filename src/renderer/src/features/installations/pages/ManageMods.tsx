@@ -347,13 +347,9 @@ function ListMods(): JSX.Element {
                     <>
                       <p>{t("features.mods.areYouSureDelete")}</p>
                       <p className="text-zinc-400">{t("features.mods.deletingNotReversible")}</p>
-                      <ButtonsWrapper className="text-lg" bgDark={false} equalWidth>
-                        <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setModToDelete(null)} variant="secondary" size="md">
-                          <PiXCircleDuotone />
-                        </FormButton>
-                        <FormButton title={t("generic.delete")} className="p-2" onClick={DeleteModHandler} variant="destructive" size="md">
-                          <PiTrashDuotone />
-                        </FormButton>
+                      <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+                        <FormButton title={t("generic.cancel")} onClick={() => setModToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+                        <FormButton title={t("generic.delete")} onClick={DeleteModHandler} variant="destructive" size="md" icon={<PiTrashDuotone />} />
                       </ButtonsWrapper>
                     </>
                   </PopupDialogPanel>

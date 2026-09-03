@@ -187,13 +187,9 @@ function AddInslallation(): JSX.Element {
             onLaunchWrapperChange={fields.setLaunchWrapper}
           />
 
-          <ButtonsWrapper className="text-lg" equalWidth>
-            <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" className="p-2">
-              <PiXCircleDuotone />
-            </FormLinkButton>
-            <FormButton onClick={handleAddInstallation} title={t("generic.add")} variant="primary" size="md" className="p-2">
-              <PiFloppyDiskBackDuotone />
-            </FormButton>
+          <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+            <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+            <FormButton onClick={handleAddInstallation} title={t("generic.add")} variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
           </ButtonsWrapper>
         </FromWrapper>
       </div>

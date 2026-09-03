@@ -186,22 +186,18 @@ function ManageInstallationBackups(): JSX.Element {
           <>
             <p>{t("features.backups.areYouSureRestoreBackup")}</p>
             <p className="text-zinc-400">{t("features.backups.restoringNotReversible")}</p>
-            <ButtonsWrapper className="text-lg" bgDark={false} equalWidth>
-              <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setBackupToRestore(null)} variant="secondary" size="md">
-                <PiXCircleDuotone />
-              </FormButton>
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <FormButton title={t("generic.cancel")} onClick={() => setBackupToRestore(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
               <FormButton
                 title={t("generic.restore")}
-                className="p-2"
                 size="md"
                 onClick={() => {
                   RestoreBackupHandler(backupToRestore)
                   setBackupToRestore(null)
                 }}
                 variant="destructive"
-              >
-                <PiArrowCounterClockwiseDuotone />
-              </FormButton>
+                icon={<PiArrowCounterClockwiseDuotone />}
+              />
             </ButtonsWrapper>
           </>
         </PopupDialogPanel>
@@ -210,22 +206,18 @@ function ManageInstallationBackups(): JSX.Element {
           <>
             <p>{t("features.backups.areYouSureDelete")}</p>
             <p className="text-zinc-400">{t("features.backups.deletingNotReversible")}</p>
-            <ButtonsWrapper className="text-lg" bgDark={false} equalWidth>
-              <NormalButton title={t("generic.cancel")} className="p-2" onClick={() => setBackupToDelete(null)} variant="secondary" size="md">
-                <PiXCircleDuotone />
-              </NormalButton>
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <NormalButton title={t("generic.cancel")} onClick={() => setBackupToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
               <NormalButton
                 title={t("generic.delete")}
-                className="p-2"
                 size="md"
                 onClick={() => {
                   DeleteBackupHandler(backupToDelete)
                   setBackupToDelete(null)
                 }}
                 variant="destructive"
-              >
-                <PiTrashDuotone />
-              </NormalButton>
+                icon={<PiTrashDuotone />}
+              />
             </ButtonsWrapper>
           </>
         </PopupDialogPanel>

@@ -42,7 +42,7 @@ function AuthorFilter({
               className="w-full h-full placeholder:text-zinc-400 bg-transparent outline-hidden pl-2"
             />
             <ComboboxButton className={clsx(BUTTON_BASE_STYLES, BUTTON_VARIANT_STYLES.ghost, "h-full min-h-0 min-w-0 shrink-0 rounded-none px-2")}>
-              <PiCaretDownDuotone className={clsx("text-zinc-300 shrink-0 duration-200", open && "-rotate-180")} />
+              <PiCaretDownDuotone className={clsx("caret-optical text-zinc-300 shrink-0 duration-200", open && "-rotate-180")} />
             </ComboboxButton>
           </div>
 

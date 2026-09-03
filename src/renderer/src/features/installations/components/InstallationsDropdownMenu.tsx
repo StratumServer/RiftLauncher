@@ -54,7 +54,7 @@ function InstallationsDropdownMenu(): JSX.Element {
               {installations
                 .filter((i) => i.id === lastUsedInstallation)
                 .map((current) => (
-                  <ListboxButton key={current.id} className={clsx(MENU_TRIGGER_STYLES, "h-14 p-1 pr-2 text-sm text-start")}>
+                  <ListboxButton key={current.id} className={clsx(MENU_TRIGGER_STYLES, "h-14 w-full p-1 pr-2 text-sm text-start")}>
                     <img src={installationIconSrc(current.icon, customIcons)} alt={t("generic.icon")} className="h-full aspect-square object-cover rounded-sm" />
 
                     <div key={current.id} className="w-full flex flex-col justify-around overflow-hidden">

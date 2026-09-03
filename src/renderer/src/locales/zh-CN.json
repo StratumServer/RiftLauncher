@@ -19,7 +19,8 @@
     "releaseDate": "发布日期",
     "type": "类型",
     "install": "安装",
-    "discordContact": "Discord"
+    "discordContact": "Discord",
+    "emailPlaceholder": "name@example.com"
   },
   "features": {
     "generic": {
@@ -52,7 +53,10 @@
       "labelPreReleases": "预发布版本",
       "searchForAGameVersion": "查找游戏版本",
       "missingFolderOrVersion": "您未选择任何文件夹或您选择的文件夹中没有任何游戏版本！",
-      "versionFound": "找到版本"
+      "versionFound": "找到版本",
+      "installNewVersion": "安装新的 VS 版本",
+      "deleteAnyway": "仍要删除",
+      "removeFromList": "从列表中移除"
     },
     "installations": {
       "noInstallationsFound": "为找到任何安装！",
@@ -72,7 +76,8 @@
       "noInstallationFoundDesc": "您选择的安装不存在！",
       "deleteData": "删除数据",
       "installationSuccessfullyDeleted": "安装删除成功！",
-      "errorDeletingInstallation": "在删除安装时出现错误！"
+      "errorDeletingInstallation": "在删除安装时出现错误！",
+      "addNewInstallation": "添加新的安装"
     },
     "mods": {
       "modsCount": "{{count}} 个模组",
@@ -81,7 +86,9 @@
       "modsCount_two": "{{count}} 个模组",
       "modsCount_few": "{{count}} 个模组",
       "modsCount_many": "{{count}} 个模组",
-      "modsCount_other": "{{count}} 个模组"
+      "modsCount_other": "{{count}} 个模组",
+      "installMod": "安装模组",
+      "installationPopupDesc": "{{modName}} 模组的版本列表"
     },
     "config": {
       "loginTitle": "登录",
@@ -89,7 +96,7 @@
       "wrongtwofa": "2FA 验证码错误或已过期。请检查身份验证器后重试。",
       "invalidEmailPass": "电子邮箱或密码无效！",
       "loggedin": "已登录为 {{user}}！",
-      "onlyIfEnabledTwoFA": "仅当您的 Vintage Story 账户使用 2FA 时输入此代码。此代码仅用于本次登录。",
+      "onlyIfEnabledTwoFA": "仅当账户启用 2FA 时填写。仅用于本次登录。",
       "loginDialogTitle": "登录 Vintage Story",
       "loginAction": "登录",
       "requiresTwoFA": "此账户需要 2FA 验证码。请输入身份验证器中的代码，然后重试。",
@@ -176,5 +183,8 @@
       "notNow": "暂不"
     },
     "discard": "忽略通知"
+  },
+  "breadcrumbs": {
+    "mods": "模组"
   }
 }

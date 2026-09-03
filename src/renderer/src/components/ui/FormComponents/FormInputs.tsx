@@ -1,7 +1,6 @@
 import { Input, Switch } from "@headlessui/react"
 import clsx from "clsx"
 import { PiEyeDuotone, PiEyeSlashDuotone } from "react-icons/pi"
-import { useState } from "react"
 
 import { BUTTON_BASE_STYLES, BUTTON_VARIANT_STYLES } from "@renderer/components/ui/buttonStyles"
 
@@ -214,101 +213,6 @@ export function FormInputPassword({
           {showPassword ? <PiEyeSlashDuotone aria-hidden="true" /> : <PiEyeDuotone aria-hidden="true" />}
         </button>
       )}
-    </div>
-  )
-}
-
-/**
- * OTP input with six visual cells backed by one logical input. The single
- * input keeps paste, autofill and screen-reader interaction predictable while
- * the cells make the expected code length obvious at a glance.
- */
-export function FormInputTwoFactor({
-  className,
-  value,
-  onChange,
-  disabled,
-  readOnly = false,
-  id,
-  name,
-  autoComplete = "one-time-code",
-  autoFocus,
-  required,
-  ariaDescribedBy
-}: Readonly<{
-  className?: string
-  value: string
-  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
-  disabled?: boolean
-  readOnly?: boolean
-  id?: string
-  name?: string
-  autoComplete?: string
-  autoFocus?: boolean
-  required?: boolean
-  ariaDescribedBy?: string
-}>): JSX.Element {
-  const [isFocused, setIsFocused] = useState(false)
-  const [selectionStart, setSelectionStart] = useState(value.length)
-  const activeCell = Math.min(selectionStart, 5)
-
-  function syncSelection(input: HTMLInputElement): void {
-    setSelectionStart(input.selectionStart ?? input.value.length)
-  }
-
-  return (
-    <div
-      className={clsx(
-        "relative flex min-h-14 w-full items-center justify-center rounded-md border border-transparent transition-[background-color,border-color,box-shadow] duration-150",
-        "focus-within:border-zinc-200/30",
-        disabled && "opacity-50",
-        className
-      )}
-    >
-      <Input
-        type="text"
-        inputMode="numeric"
-        pattern="[0-9]*"
-        maxLength={6}
-        value={value}
-        onChange={(event) => {
-          syncSelection(event.currentTarget)
-          onChange?.(event)
-        }}
-        onFocus={(event) => {
-          setIsFocused(true)
-          syncSelection(event.currentTarget)
-        }}
-        onBlur={() => setIsFocused(false)}
-        onSelect={(event) => syncSelection(event.currentTarget)}
-        disabled={disabled}
-        readOnly={readOnly}
-        id={id}
-        name={name}
-        autoComplete={autoComplete}
-        autoFocus={autoFocus}
-        required={required}
-        aria-describedby={ariaDescribedBy}
-        className="absolute inset-0 z-10 h-full w-full cursor-text opacity-0"
-      />
-
-      <div aria-hidden="true" className="pointer-events-none grid w-full grid-cols-6 gap-2">
-        {Array.from({ length: 6 }, (_, index) => {
-          const digit = value[index]
-          return (
-            <span
-              key={index}
-              className={clsx(
-                "flex h-12 min-w-0 w-full items-center justify-center rounded-md border text-xl font-semibold tabular-nums transition-colors duration-150",
-                digit ? "border-zinc-300/40 bg-zinc-950/70 text-zinc-100" : "border-zinc-400/20 bg-zinc-950/30 text-zinc-500",
-                isFocused && index === activeCell && "border-vsl bg-vsl/10 shadow-sm shadow-vsl/20"
-              )}
-            >
-              {digit || ""}
-            </span>
-          )
-        })}
-      </div>
     </div>
   )
 }

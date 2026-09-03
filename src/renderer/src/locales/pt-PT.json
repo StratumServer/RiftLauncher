@@ -64,6 +64,7 @@
     "folders": "Pastas",
     "twofacode": "Código 2FA",
     "email": "Email",
+    "emailPlaceholder": "nome@exemplo.com",
     "general": "Geral",
     "goBackTo": "Voltar para:",
     "addIcon": "Adicionar icon",
@@ -92,6 +93,7 @@
       "versionUninstallationFailed": "Ocorreu um erro ao desinstalar a versão {{version}}!",
       "versionNotInstalled": "Versão {{version}} não instalada!",
       "labelGameVersion": "Versão do jogo",
+      "labelGameVersions": "Versões do VS",
       "versionFolder": "Pasta da versão",
       "gameVersionDownloadDesc": "A descarregar a versão do jogo {{version}}!",
       "gameVersionTaskName": "versão do jogo {{version}}",
@@ -109,8 +111,9 @@
       "versionPlaying": "Já está a jogar com essa versão!",
       "deleteWhilePlaying": "Não pode eliminar essa versão enquanto estiver a jogar!",
       "installNewVersion": "Instale uma nova versão",
-      "labelGameVersions": "Versões do VS",
-      "deleteVersion": "Eliminar Versão"
+      "deleteVersion": "Eliminar Versão",
+      "deleteAnyway": "Apagar mesmo assim",
+      "removeFromList": "Remover da lista"
     },
     "installations": {
       "noInstallationsFound": "Nenhuma instalação encontrada!",
@@ -214,7 +217,7 @@
       "loggingin": "Iniciando sessão!",
       "loginTitle": "Iniciar sessão",
       "logoutTitle": "Terminar sessão",
-      "onlyIfEnabledTwoFA": "Preencha apenas se a sua conta do Vintage Story utilizar 2FA. Este código é usado apenas para este início de sessão.",
+      "onlyIfEnabledTwoFA": "Só se a sua conta usar 2FA. Usado apenas neste início de sessão.",
       "uiScale": "Escala do UI",
       "wrongtwofa": "Esse código 2FA está incorreto ou expirou. Verifique o seu autenticador e tente novamente.",
       "loginoutNotReversible": "O término da sessão é irreversível, mas podes sempre voltar a iniciar a sessão com a mesma conta do Vintage Story!",

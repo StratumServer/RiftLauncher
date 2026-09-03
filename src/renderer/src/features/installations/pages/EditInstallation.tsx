@@ -202,13 +202,9 @@ function EditInslallation(): JSX.Element {
                 onLaunchWrapperChange={fields.setLaunchWrapper}
               />
 
-              <ButtonsWrapper className="text-lg" equalWidth>
-                <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" className="p-2">
-                  <PiXCircleDuotone />
-                </FormLinkButton>
-                <FormButton onClick={handleEditInstallation} title={t("generic.save")} variant="primary" size="md" className="p-2">
-                  <PiFloppyDiskBackDuotone />
-                </FormButton>
+              <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+                <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+                <FormButton onClick={handleEditInstallation} title={t("generic.save")} variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
               </ButtonsWrapper>
             </>
           )}
