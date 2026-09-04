@@ -13,8 +13,20 @@ import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { acquireWorker } from "@src/ipc/workerManager"
 import type { WorkerDisposition } from "@src/ipc/workerManager"
 import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
-import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, isRecord, MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
+import {
+  assertAllowedDownloadUrl,
+  assertBoolean,
+  assertInteger,
+  assertPath,
+  assertSafeFileName,
+  assertSafeTaskId,
+  comparablePath,
+  isPathWithin,
+  isRecord,
+  MAX_CUSTOM_ICON_BYTES
+} from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
+import { getConfig } from "@src/config/configManager"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
 import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
 import { isPngBytes, PNG_SIGNATURE_BYTES } from "@domain/backgrounds"
@@ -402,6 +414,32 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   return downloadedPath
 })
 
+/**
+ * Whether an archive is one the launcher wrote as a backup, and so is read back
+ * under the backup size ceilings instead of the strict ones (#362).
+ *
+ * The question is answered here rather than being taken from the caller. A flag
+ * on the IPC call would be a renderer asking for its own limit, and the whole
+ * point of the strict pair is that a downloaded mod or game archive cannot ask
+ * to be exempted from it. The main process already knows where backups live, so
+ * it can just look.
+ *
+ * Two sources, both config the main process owns. The configured backups folder
+ * covers every archive the launcher writes today (makeInstallationBackup puts
+ * them under it). The recorded backup paths cover the ones written before the
+ * player last moved that folder in settings, which still sit where they were
+ * made and still have to restore.
+ *
+ * `isPathWithin` rather than a prefix comparison, and on the resolved path, so
+ * a sibling folder whose name merely starts with the backups folder's name is
+ * not inside it. The folder itself is excluded: it is not an archive.
+ */
+async function isLauncherBackupArchive(filePath: string): Promise<boolean> {
+  const config = await getConfig()
+  if (config.backupsFolder && isPathWithin(config.backupsFolder, filePath, false)) return true
+  return config.installations.some((installation) => installation.backups.some((backup) => Boolean(backup.path) && comparablePath(backup.path) === comparablePath(filePath)))
+}
+
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: string, filePath: string, outputPath: string, deleteZip: boolean, unwrapSingleRootFolder = false): Promise<boolean> => {
   assertTrustedIpcSender(event)
   const safeId = assertSafeTaskId(id)
@@ -415,6 +453,8 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
   // runExtraction), not here: walking a table of contents is real CPU work that has no
   // business blocking the main process's event loop.
 
+  const isBackupArchive = await isLauncherBackupArchive(safeFilePath)
+
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
   await archiveConcurrency.run(() => {
     sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
@@ -423,7 +463,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
       safeId,
       IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS,
       extractWorker,
-      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, unwrapSingleRootFolder: shouldUnwrapSingleRootFolder },
+      { filePath: safeFilePath, outputPath: safeOutputPath, deleteZip: shouldDeleteZip, unwrapSingleRootFolder: shouldUnwrapSingleRootFolder, isBackupArchive },
       "EXTRACT_ON_PATH",
       () => true
     )

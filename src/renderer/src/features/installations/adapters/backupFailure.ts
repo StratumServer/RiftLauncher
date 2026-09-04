@@ -20,6 +20,7 @@ export interface BackupFailureFeedback {
  */
 const COMPRESS_FAILURE_NOTIFICATION: ReadonlyArray<readonly [RegExp, string]> = [
   [/is too large/, "features.backups.compressSourceTooLarge"],
+  [/Not enough free space/, "features.backups.compressNoFreeSpace"],
   [/unsafe filesystem entry/, "features.backups.compressUnsafeEntry"],
   [/Too many filesystem entries/, "features.backups.compressTooManyFiles"]
 ]

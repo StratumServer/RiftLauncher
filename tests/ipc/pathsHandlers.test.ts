@@ -68,18 +68,21 @@ let nextLeaseToken = 1
  * `worker_threads.Worker`. The returned object also carries `release`, the lease's own
  * mock, for tests that check whether a worker was handed back for reuse or discarded.
  */
-async function nextTrackedWorker(): Promise<EventEmitter & { release: ReturnType<typeof vi.fn> }> {
+async function nextTrackedWorker(): Promise<EventEmitter & { release: ReturnType<typeof vi.fn>; dispatch: ReturnType<typeof vi.fn> }> {
   const { acquireWorker } = await import("@src/ipc/workerManager")
   const token = nextLeaseToken++
   return new Promise((resolvePromise) => {
     vi.mocked(acquireWorker).mockImplementationOnce(() => {
       const release = vi.fn()
-      const worker = Object.assign(new EventEmitter(), { release })
+      // Carried on the worker too, so a test can read the payload the handler
+      // built (what it decided, not just that it started something).
+      const dispatch = vi.fn()
+      const worker = Object.assign(new EventEmitter(), { release, dispatch })
       resolvePromise(worker)
       return {
         worker: worker as unknown as import("worker_threads").Worker,
         token,
-        dispatch: vi.fn(),
+        dispatch,
         release
       }
     })
@@ -1151,5 +1154,79 @@ describe("RUN_INSTALLER", () => {
 
     const { acquireWorker } = await import("@src/ipc/workerManager")
     assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0)
+  })
+})
+
+/**
+ * Which pair of size ceilings an extraction runs under (#362).
+ *
+ * The decision has to be the main process's: a flag on the IPC call would let
+ * the renderer ask for the loose limit for a mod archive it just downloaded,
+ * which is the boundary the path policy exists to hold. So the handler works it
+ * out from the config it already reads, and these read the answer off the
+ * payload it hands the worker.
+ */
+describe("EXTRACT_ON_PATH: telling a backup apart from a downloaded archive", () => {
+  /** Starts an extraction and returns the payload the handler dispatched to the worker. */
+  async function dispatchedPayload(archivePath: string, outputPath: string): Promise<Record<string, unknown>> {
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH)(event, "task-limits", archivePath, outputPath, false)
+
+    const worker = await workerPromise
+    worker.emit("message", { type: "finished" })
+    await resultPromise
+
+    return worker.dispatch.mock.calls[0]?.[0] as Record<string, unknown>
+  }
+
+  function writeArchive(folder: string, name: string): string {
+    mkdirSync(folder, { recursive: true })
+    const archivePath = join(folder, name)
+    writeFileSync(archivePath, "not read by the handler")
+    return archivePath
+  }
+
+  it("marks an archive inside the configured backups folder", async () => {
+    const archivePath = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-09-04.tar.gz")
+
+    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, true)
+  })
+
+  it("does not mark a .tar.gz that merely happens to be a .tar.gz", async () => {
+    // A game build lands in the versions folder and is every bit as much a
+    // gzipped tar as a backup is. The name is not what decides this.
+    const archivePath = writeArchive(versionsFolder, "vs_client_linux-x64_1.22.6.tar.gz")
+
+    const payload = await dispatchedPayload(archivePath, join(versionsFolder, "1.22.6"))
+
+    assert.equal(payload.isBackupArchive, false)
+  })
+
+  it("does not mark an archive in a folder whose name merely starts with the backups folder's", async () => {
+    // Containment, not a prefix comparison: "<root>/Backups-old" starts with
+    // "<root>/Backups" as a string and is not inside it as a path.
+    const sibling = `${backupsFolder}-old`
+    const archivePath = writeArchive(sibling, "Survival_2026-08-01.tar.gz")
+    writeConfig({ installations: [{ id: "a", name: "A", path: sibling, backups: [] }] as unknown as ConfigType["installations"] })
+
+    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, false)
+  })
+
+  it("marks an archive the config still records as a backup after the backups folder moved", async () => {
+    // Changing the Backups folder in settings does not move the archives
+    // already made, and those still have to restore.
+    const archivePath = writeArchive(join(temporaryRoot, "OldBackups"), "Survival_2026-07-01.tar.gz")
+    writeConfig({
+      installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [{ id: "b1", date: 1, path: archivePath }] }] as unknown as ConfigType["installations"]
+    })
+
+    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, true)
   })
 })

@@ -18,9 +18,10 @@ import { join } from "node:path"
 import * as tar from "tar"
 
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
+import { describeBackupSpaceShortfall, describeOversizedBackupSource } from "@domain/installations/backupCapacity"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
-import { MAX_ARCHIVE_TOTAL_BYTES } from "../validation"
+import { MAX_BACKUP_TOTAL_BYTES } from "../validation"
 
 const MAX_ITEMS = 100_000
 
@@ -79,6 +80,41 @@ export function assertSafeCompressionTree(root: string, fileSystem: Pick<typeof 
   return totalBytes
 }
 
+/**
+ * Refuses a destination that does not have room for the archive.
+ *
+ * gzip never makes its output larger than its input, so the source total is a
+ * safe upper bound on the archive and no ratio has to be guessed at. Raising
+ * the ceiling to 64 GiB without this would trade a refused backup for a filled
+ * disk, which is the worse of the two.
+ *
+ * A filesystem that cannot answer the question is not a full disk, so a throw
+ * from statfs (an exotic mount, a platform that does not implement it) lets the
+ * backup go ahead. It then fails on the write if the disk really was full,
+ * which is the behaviour every backup had before this check existed.
+ *
+ * @param outputPath Folder the archive is written into. Must already exist.
+ * @param totalBytes Size of the source tree, as walked.
+ * @param fileSystem Filesystem to ask, defaulting to the real one.
+ * @throws When the destination has less free space than the source is large.
+ */
+export function assertRoomForArchive(outputPath: string, totalBytes: number, fileSystem: Pick<typeof fse, "statfsSync"> = fse): void {
+  let freeBytes: number | undefined
+
+  try {
+    const stats = fileSystem.statfsSync(outputPath)
+    // A block size of zero is an answer that means nothing, so it counts as no
+    // answer rather than as zero free bytes. bavail rather than bfree: the
+    // blocks reserved for root are not blocks this process can write into.
+    freeBytes = Number.isFinite(stats.bsize) && stats.bsize > 0 ? stats.bavail * stats.bsize : undefined
+  } catch {
+    freeBytes = undefined
+  }
+
+  const shortfall = describeBackupSpaceShortfall(totalBytes, freeBytes)
+  if (shortfall) throw new Error(shortfall)
+}
+
 export interface CompressionOptions {
   /** Folder whose contents are archived. Its own name is not kept. */
   inputPath: string
@@ -109,10 +145,19 @@ export async function runCompression(options: CompressionOptions): Promise<void>
   // backup; not refusing costs them a backup they only find out is useless on
   // the day they need it, and one prune slot that an older, restorable backup
   // used to hold.
-  if (totalBytes > MAX_ARCHIVE_TOTAL_BYTES) throw new Error("Compression source is too large")
+  //
+  // The backup ceiling rather than the archive one: this path only ever runs
+  // for a backup, and the number the archive ceiling carries is sized against
+  // hostile input rather than against the player's own folder (see #362 and
+  // the comment on MAX_BACKUP_TOTAL_BYTES). The restore side reads a backup
+  // under the same pair, which is what keeps the two ends honest.
+  const oversized = describeOversizedBackupSource(totalBytes, MAX_BACKUP_TOTAL_BYTES)
+  if (oversized) throw new Error(oversized)
   if (!fse.existsSync(inputPath) || !fse.lstatSync(inputPath).isDirectory()) throw new Error("Compression source must be a directory")
   if (!fse.existsSync(outputPath)) fse.mkdirSync(outputPath, { recursive: true })
   if (fse.lstatSync(outputPath).isSymbolicLink() || !fse.lstatSync(outputPath).isDirectory()) throw new Error("Compression destination is unsafe")
+  // After the destination exists, since that is the path whose filesystem is asked.
+  assertRoomForArchive(outputPath, totalBytes)
 
   const archivePath = join(outputPath, outputFileName)
   if (fse.existsSync(archivePath)) {
