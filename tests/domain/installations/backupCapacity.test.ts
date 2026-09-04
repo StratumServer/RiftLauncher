@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { describeBackupSpaceShortfall, describeOversizedBackupSource, formatByteSize } from "@domain/installations/backupCapacity"
+import { describeBackupSpaceShortfall, describeOversizedBackupSource, estimateBackupArchiveBytes, formatByteSize } from "@domain/installations/backupCapacity"
 import { MAX_ARCHIVE_TOTAL_BYTES, MAX_BACKUP_TOTAL_BYTES } from "@src/ipc/validation"
 
 /**
@@ -82,5 +82,16 @@ describe("describeBackupSpaceShortfall", () => {
 
   it("refuses a genuinely full disk, which does answer, with zero", () => {
     assert.equal(describeBackupSpaceShortfall(GIB, 0), "Not enough free space for the backup: 1 GB more is needed")
+  })
+})
+
+describe("estimateBackupArchiveBytes", () => {
+  it("reserves space for archive framing even when the source is tiny", () => {
+    assert.ok(estimateBackupArchiveBytes(1, 1) > 1)
+    assert.ok(estimateBackupArchiveBytes(0, 0) > 0)
+  })
+
+  it("grows with the number of entries", () => {
+    assert.ok(estimateBackupArchiveBytes(1, 2) > estimateBackupArchiveBytes(1, 1))
   })
 })

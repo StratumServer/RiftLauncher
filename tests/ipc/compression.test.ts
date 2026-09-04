@@ -10,7 +10,7 @@ import * as tar from "tar"
 import fse from "fs-extra"
 
 import { assertRoomForArchive, assertSafeCompressionTree, runCompression } from "@src/ipc/workers/compression"
-import { MAX_ARCHIVE_TOTAL_BYTES, MAX_BACKUP_TOTAL_BYTES } from "@src/ipc/validation"
+import { MAX_ARCHIVE_TOTAL_BYTES, MAX_BACKUP_ENTRY_BYTES, MAX_BACKUP_TOTAL_BYTES } from "@src/ipc/validation"
 
 /**
  * The backup compression, against real archives.
@@ -49,12 +49,12 @@ function fakeTree(lstat: (path: string) => FakeStats, readdir: (path: string) =>
 }
 
 /** A stat answer for a folder, a plain file, or something that is neither. */
-function fakeStats(kind: "directory" | "file" | "other"): FakeStats {
+function fakeStats(kind: "directory" | "file" | "other", size = 0): FakeStats {
   return {
     isSymbolicLink: (): boolean => false,
     isDirectory: (): boolean => kind === "directory",
     isFile: (): boolean => kind === "file",
-    size: 0
+    size
   }
 }
 
@@ -129,6 +129,39 @@ describe("assertSafeCompressionTree", () => {
           )
         ),
       /unsafe filesystem entry/
+    )
+  })
+
+  it("accepts a file exactly at the backup entry limit", () => {
+    const stats = fakeStats("file", MAX_BACKUP_ENTRY_BYTES)
+
+    assert.equal(
+      assertSafeCompressionTree(
+        FAKE_ROOT,
+        fakeTree(
+          () => stats,
+          () => []
+        )
+      ),
+      MAX_BACKUP_ENTRY_BYTES
+    )
+  })
+
+  it("refuses a file above the backup entry limit even below the total limit", () => {
+    const size = MAX_BACKUP_ENTRY_BYTES + 1
+    assert.ok(size < MAX_BACKUP_TOTAL_BYTES)
+    const stats = fakeStats("file", size)
+
+    assert.throws(
+      () =>
+        assertSafeCompressionTree(
+          FAKE_ROOT,
+          fakeTree(
+            () => stats,
+            () => []
+          )
+        ),
+      /file that is too large/
     )
   })
 
@@ -311,6 +344,17 @@ describe("runCompression", () => {
     // different drive from the installation, and the archive is written to one
     // of the two.
     assert.deepEqual(statfs.mock.calls, [[output]])
+    assert.deepEqual(readdirSync(output), [])
+  })
+
+  it("accounts for tar and gzip overhead when checking destination space", async () => {
+    const tinySource = workspacePath("tiny-installation")
+    mkdirSync(tinySource)
+    writeFileSync(join(tinySource, "one-byte"), "x")
+    vi.spyOn(fse, "statfsSync").mockImplementation(statfsAnswering(1 / 4096).statfsSync)
+
+    await assert.rejects(runCompression({ inputPath: tinySource, outputPath: output, outputFileName: "backup.tar.gz" }), /Not enough free space/)
+
     assert.deepEqual(readdirSync(output), [])
   })
 

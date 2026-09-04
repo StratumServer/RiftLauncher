@@ -12,6 +12,10 @@
  */
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const
+const TAR_BLOCK_BYTES = 512
+const TAR_BLOCKS_PER_ENTRY = 4
+const TAR_END_BLOCKS = 2
+const GZIP_HEADROOM_RATIO = 0.01
 
 /**
  * A byte count in the largest unit that keeps it readable, e.g. "2.6 GB".
@@ -52,12 +56,23 @@ export function describeOversizedBackupSource(totalBytes: number, limitBytes: nu
 }
 
 /**
+ * A conservative upper bound for a gzipped tar backup.
+ *
+ * The tar allowance covers each entry's header, block padding and room for
+ * portable metadata. The gzip allowance covers incompressible data and stream
+ * framing, so the free-space check never assumes compression saves bytes.
+ */
+export function estimateBackupArchiveBytes(sourceBytes: number, entryCount: number): number {
+  const tarBytes = sourceBytes + entryCount * TAR_BLOCK_BYTES * TAR_BLOCKS_PER_ENTRY + TAR_END_BLOCKS * TAR_BLOCK_BYTES
+  return tarBytes + Math.ceil(tarBytes * GZIP_HEADROOM_RATIO)
+}
+
+/**
  * The refusal for a destination without room for the archive, or nothing when
  * there is room or no answer.
  *
- * gzip output is never larger than what went in, so the source total is a safe
- * upper bound on what the archive will take and no compression ratio has to be
- * guessed at.
+ * The caller supplies a conservative archive estimate that includes tar
+ * headers/padding, portable metadata and gzip headroom.
  *
  * An unknown free-space figure is not a refusal. A filesystem that cannot
  * answer the question is not evidence of a full disk, and turning every exotic
@@ -66,12 +81,12 @@ export function describeOversizedBackupSource(totalBytes: number, limitBytes: nu
  * "could not tell", so the backup goes ahead and fails on the write if the
  * disk really was full.
  *
- * @param totalBytes Size of the source tree, the upper bound on the archive.
+ * @param requiredBytes Conservative size estimate for the archive.
  * @param freeBytes Free bytes on the destination, or undefined when unknown.
  * @returns The message to fail with, or undefined when there is room or no answer.
  */
-export function describeBackupSpaceShortfall(totalBytes: number, freeBytes: number | undefined): string | undefined {
+export function describeBackupSpaceShortfall(requiredBytes: number, freeBytes: number | undefined): string | undefined {
   if (freeBytes === undefined || !Number.isFinite(freeBytes) || freeBytes < 0) return undefined
-  if (freeBytes >= totalBytes) return undefined
-  return `Not enough free space for the backup: ${formatByteSize(totalBytes - freeBytes)} more is needed`
+  if (freeBytes >= requiredBytes) return undefined
+  return `Not enough free space for the backup: ${formatByteSize(requiredBytes - freeBytes)} more is needed`
 }

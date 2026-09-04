@@ -18,10 +18,10 @@ import { join } from "node:path"
 import * as tar from "tar"
 
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
-import { describeBackupSpaceShortfall, describeOversizedBackupSource } from "@domain/installations/backupCapacity"
+import { describeBackupSpaceShortfall, describeOversizedBackupSource, estimateBackupArchiveBytes, formatByteSize } from "@domain/installations/backupCapacity"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
-import { MAX_BACKUP_TOTAL_BYTES } from "../validation"
+import { MAX_BACKUP_ENTRY_BYTES, MAX_BACKUP_TOTAL_BYTES } from "../validation"
 
 const MAX_ITEMS = 100_000
 
@@ -58,7 +58,9 @@ class UnsharedLinkCache extends Map<`${number}:${number}`, string> {
  * @returns Total size in bytes of every plain file in the tree.
  * @throws When an entry is a symbolic link or a special file, or the tree is too large.
  */
-export function assertSafeCompressionTree(root: string, fileSystem: Pick<typeof fse, "lstatSync" | "readdirSync"> = fse): number {
+type CompressionTreeStats = { entries: number; bytes: number }
+
+function inspectSafeCompressionTree(root: string, fileSystem: Pick<typeof fse, "lstatSync" | "readdirSync"> = fse): CompressionTreeStats {
   const pending = [root]
   let itemCount = 0
   let totalBytes = 0
@@ -73,20 +75,26 @@ export function assertSafeCompressionTree(root: string, fileSystem: Pick<typeof 
     if (stats.isDirectory()) {
       for (const child of fileSystem.readdirSync(current)) pending.push(join(current, child))
     } else {
+      if (stats.size > MAX_BACKUP_ENTRY_BYTES) {
+        throw new Error(`Compression source contains a file that is too large: ${formatByteSize(stats.size)}, over the ${formatByteSize(MAX_BACKUP_ENTRY_BYTES)} backup entry limit`)
+      }
       totalBytes += stats.size
     }
   }
 
-  return totalBytes
+  return { entries: itemCount, bytes: totalBytes }
+}
+
+export function assertSafeCompressionTree(root: string, fileSystem: Pick<typeof fse, "lstatSync" | "readdirSync"> = fse): number {
+  return inspectSafeCompressionTree(root, fileSystem).bytes
 }
 
 /**
  * Refuses a destination that does not have room for the archive.
  *
- * gzip never makes its output larger than its input, so the source total is a
- * safe upper bound on the archive and no ratio has to be guessed at. Raising
- * the ceiling to 64 GiB without this would trade a refused backup for a filled
- * disk, which is the worse of the two.
+ * The estimate includes tar headers, padding, portable metadata and gzip
+ * headroom. Raising the ceiling to 64 GiB without this check would trade a
+ * refused backup for a filled disk, which is the worse of the two.
  *
  * A filesystem that cannot answer the question is not a full disk, so a throw
  * from statfs (an exotic mount, a platform that does not implement it) lets the
@@ -94,11 +102,11 @@ export function assertSafeCompressionTree(root: string, fileSystem: Pick<typeof 
  * which is the behaviour every backup had before this check existed.
  *
  * @param outputPath Folder the archive is written into. Must already exist.
- * @param totalBytes Size of the source tree, as walked.
+ * @param requiredBytes Conservative estimated size of the archive.
  * @param fileSystem Filesystem to ask, defaulting to the real one.
- * @throws When the destination has less free space than the source is large.
+ * @throws When the destination has less free space than the archive estimate.
  */
-export function assertRoomForArchive(outputPath: string, totalBytes: number, fileSystem: Pick<typeof fse, "statfsSync"> = fse): void {
+export function assertRoomForArchive(outputPath: string, requiredBytes: number, fileSystem: Pick<typeof fse, "statfsSync"> = fse): void {
   let freeBytes: number | undefined
 
   try {
@@ -111,7 +119,7 @@ export function assertRoomForArchive(outputPath: string, totalBytes: number, fil
     freeBytes = undefined
   }
 
-  const shortfall = describeBackupSpaceShortfall(totalBytes, freeBytes)
+  const shortfall = describeBackupSpaceShortfall(requiredBytes, freeBytes)
   if (shortfall) throw new Error(shortfall)
 }
 
@@ -138,7 +146,8 @@ export interface CompressionOptions {
 export async function runCompression(options: CompressionOptions): Promise<void> {
   const { inputPath, outputPath, outputFileName, compressionLevel = DEFAULT_COMPRESSION_LEVEL, onProgress } = options
 
-  const totalBytes = assertSafeCompressionTree(inputPath)
+  const treeStats = inspectSafeCompressionTree(inputPath)
+  const totalBytes = treeStats.bytes
   // The restore reader holds an archive to this same total and refuses anything
   // past it, so an installation over the cap would compress happily into a
   // backup that can never be put back. Refusing here costs the player a failed
@@ -157,7 +166,7 @@ export async function runCompression(options: CompressionOptions): Promise<void>
   if (!fse.existsSync(outputPath)) fse.mkdirSync(outputPath, { recursive: true })
   if (fse.lstatSync(outputPath).isSymbolicLink() || !fse.lstatSync(outputPath).isDirectory()) throw new Error("Compression destination is unsafe")
   // After the destination exists, since that is the path whose filesystem is asked.
-  assertRoomForArchive(outputPath, totalBytes)
+  assertRoomForArchive(outputPath, estimateBackupArchiveBytes(totalBytes, treeStats.entries))
 
   const archivePath = join(outputPath, outputFileName)
   if (fse.existsSync(archivePath)) {
