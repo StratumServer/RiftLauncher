@@ -1,8 +1,8 @@
 import { ipcMain } from "electron"
-import { autoUpdater } from "electron-updater"
 
 import { IPC_CHANNELS } from "../ipcChannels"
 import { isTrustedIpcSender } from "@src/ipc/ipcSecurity"
+import { loadAutoUpdater } from "@src/utils/autoUpdaterLoader"
 import { logMessage } from "@src/utils/logManager"
 
 /**
@@ -25,9 +25,13 @@ let updateDownloaded = false
  * which is what lets the user accept the retry the renderer offers them.
  */
 let updateDownloadStarted = false
+let offeredVersion = ""
+let sendToRenderer: (channel: string, payload?: unknown) => void = () => {}
 
-export function markUpdateAvailable(): void {
+export function markUpdateAvailable(version: string = "", send: (channel: string, payload?: unknown) => void = () => {}): void {
   updateAvailable = true
+  offeredVersion = version
+  sendToRenderer = send
 }
 
 /**
@@ -51,6 +55,7 @@ export function markUpdateDownloaded(): void {
 ipcMain.on(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, (event) => {
   if (!isTrustedIpcSender(event) || !updateAvailable || updateDownloadStarted) return
   updateDownloadStarted = true
+  sendToRenderer(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOAD_PROGRESS, { version: offeredVersion, progress: 0 })
 
   logMessage("info", "[back] [appUpdater] [ipc/handlers/appUpdaterHandlers.ts] [DOWNLOAD_UPDATE] Update accepted by the user. Downloading.")
 
@@ -58,17 +63,26 @@ ipcMain.on(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, (event) => {
   // is what tells the renderer the task died and clears the flag through
   // resetUpdateDownload; this catch only exists so the rejection of the very
   // same failure is not also an unhandled rejection, and clears the flag too
-  // for the case of a rejection with no matching event.
-  void autoUpdater.downloadUpdate().catch(() => {
-    updateDownloadStarted = false
-  })
+  // for the case of a rejection with no matching event. It now also covers a
+  // failed load of the updater module itself, which fails this download the
+  // same way an unreachable feed would.
+  void loadAutoUpdater()
+    .then((autoUpdater) => autoUpdater.downloadUpdate())
+    .catch(() => {
+      updateDownloadStarted = false
+    })
 })
 
+// Both channels read their consent flag before they reach loadAutoUpdater, and that order is the
+// point rather than a detail: neither flag is ever set unless registerAutoUpdaterEvents saw an
+// offer, which only main/index.ts's canAutoUpdate-ok branch arranges. A build that cannot install
+// an update therefore never loads the module through here either, however many times the renderer
+// sends the channel.
 ipcMain.on(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, (event) => {
   if (!isTrustedIpcSender(event) || !updateDownloaded) return
-  try {
-    autoUpdater.quitAndInstall(false, true)
-  } catch {
-    updateDownloaded = false
-  }
+  void loadAutoUpdater()
+    .then((autoUpdater) => autoUpdater.quitAndInstall(false, true))
+    .catch(() => {
+      updateDownloaded = false
+    })
 })

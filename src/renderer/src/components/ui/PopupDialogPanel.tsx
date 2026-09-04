@@ -8,13 +8,17 @@ function PopupDialogPanel({
   title,
   isOpen,
   close,
-  fixedWidth = true
+  fixedWidth = true,
+  scrollBody = false
 }: Readonly<{
   children: React.ReactElement
   title: JSX.Element | string
   isOpen: boolean
   close: (value: boolean) => void
   fixedWidth?: boolean
+  // Hand scrolling to the content instead of scrolling the whole panel, so a tall
+  // dialog keeps its actions pinned in view on a short window.
+  scrollBody?: boolean
 }>): JSX.Element {
   return (
     <AnimatePresence>
@@ -40,7 +44,17 @@ function PopupDialogPanel({
                 "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:rounded-md before:backdrop-blur-sm before:bg-zinc-950/40 before:shadow-sm before:shadow-zinc-950/50 before:border before:border-zinc-400/5"
               )}
             >
-              <DialogPanel className={clsx("relative flex flex-col gap-4 text-center p-6 rounded-lg backdrop-blur-x", fixedWidth && "w-[40rem]")}>
+              <DialogPanel
+                className={clsx(
+                  // The viewport is the ceiling, never the size: a panel that *is* 100vw wide
+                  // stops being a dialog and becomes the screen, which is what `fixedWidth={false}`
+                  // (the wide mod table) turned into. Capping instead lets that case go back to
+                  // sizing itself to its content while a narrow window still clamps both cases.
+                  "relative flex max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-lg p-4 text-center backdrop-blur-x",
+                  scrollBody ? "min-h-0 overflow-hidden" : "overflow-y-auto",
+                  fixedWidth && "w-[40rem]"
+                )}
+              >
                 <>
                   <DialogTitle className="text-2xl font-bold">{title}</DialogTitle>
                   {children}

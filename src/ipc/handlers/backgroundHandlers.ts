@@ -1,5 +1,6 @@
 import { app, ipcMain } from "electron"
 import fse from "fs-extra"
+import { createHash } from "node:crypto"
 import { extname, join } from "node:path"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
@@ -7,7 +8,7 @@ import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { requestBoundedBuffer } from "@src/ipc/network"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertAllowedApiUrl, assertPath, getApiUrlMaxBytes, MAX_BACKGROUND_IMAGE_BYTES } from "@src/ipc/validation"
-import { backgroundCacheFileName, backgroundImageUrl, CUSTOM_BACKGROUND_ID, isBackgroundFileName, isCatalogBackgroundId, isJpegBytes } from "@domain/backgrounds"
+import { backgroundCacheFileName, backgroundImageUrl, CUSTOM_BACKGROUND_ID, isBackgroundFileName, isBackgroundSha256, isCatalogBackgroundId, isJpegBytes } from "@domain/backgrounds"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
 const LOG_PREFIX = "[back] [ipc] [ipc/handlers/backgroundHandlers.ts]"
@@ -18,6 +19,22 @@ function backgroundsDirectory(): string {
 
 function backgroundPath(id: string): string {
   return join(backgroundsDirectory(), backgroundCacheFileName(id))
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex")
+}
+
+async function isCurrentCachedBackground(id: string, expectedSha256: string | undefined): Promise<boolean> {
+  const destination = backgroundPath(id)
+  if (!(await fse.pathExists(destination))) return false
+
+  const stats = await fse.lstat(destination)
+  if (!stats.isFile() || stats.isSymbolicLink()) throw new TypeError("Invalid background destination")
+  if (expectedSha256 === undefined) return true
+  if (stats.size > MAX_BACKGROUND_IMAGE_BYTES) return false
+
+  return sha256(await fse.readFile(destination)) === expectedSha256
 }
 
 /**
@@ -40,28 +57,31 @@ async function writeBackground(id: string, bytes: Buffer): Promise<void> {
 }
 
 /**
- * Downloads one catalog scene into the cache, unless it is already there.
+ * Downloads one catalog scene into the cache when it is missing or its manifest hash changed.
  *
  * Called when the player picks a scene, and again for the scene already selected each time the
  * settings section is opened, which is what quietly repairs a cache someone emptied by hand.
  */
-ipcMain.handle(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, async (event, id: unknown, file: unknown): Promise<boolean> => {
+ipcMain.handle(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, async (event, id: unknown, file: unknown, expectedSha256: unknown): Promise<EnsureBackgroundResult> => {
   assertTrustedIpcSender(event)
 
   try {
     if (!isCatalogBackgroundId(id) || !isBackgroundFileName(file)) throw new TypeError("Invalid background")
-    if (await fse.pathExists(backgroundPath(id))) return true
+    if (expectedSha256 !== undefined && !isBackgroundSha256(expectedSha256)) throw new TypeError("Invalid background hash")
+    const expectedHash = typeof expectedSha256 === "string" ? expectedSha256.toLowerCase() : undefined
+    if (await isCurrentCachedBackground(id, expectedHash)) return "current"
 
     const url = assertAllowedApiUrl(backgroundImageUrl(file))
     const bytes = await requestBoundedBuffer(url, { maxBytes: getApiUrlMaxBytes(url), accept: "image/jpeg" })
     if (!isJpegBytes(bytes)) throw new TypeError("Downloaded background is not a JPEG")
+    if (expectedHash !== undefined && sha256(bytes) !== expectedHash) throw new TypeError("Downloaded background hash mismatch")
 
     await writeBackground(id, bytes)
-    return true
+    return "refreshed"
   } catch (err) {
     logMessage("warn", `${LOG_PREFIX} [ENSURE_BACKGROUND] Could not cache the background.`)
     logMessage("debug", `${LOG_PREFIX} [ENSURE_BACKGROUND] ${getErrorMessage(err)}`)
-    return false
+    return "failed"
   }
 })
 

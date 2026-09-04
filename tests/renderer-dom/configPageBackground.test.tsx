@@ -13,26 +13,36 @@ const CATALOG_FAILED = "The background list couldn't be loaded. Check your conne
 const PICKED_PATH = "/home/player/pictures/sunset.jpg"
 
 const MANIFEST = JSON.stringify([
-  { id: "village-lane", name: "Village Lane", file: "village-lane.jpg", thumbnail: "thumbnails/village-lane.jpg" },
-  { id: "river-sailboat", name: "River Sailboat", file: "river-sailboat.jpg", thumbnail: "thumbnails/river-sailboat.jpg" }
+  { id: "village-lane", name: "Village Lane", file: "village-lane.jpg", thumbnail: "thumbnails/village-lane.jpg", sha256: "a".repeat(64) },
+  { id: "river-sailboat", name: "River Sailboat", file: "river-sailboat.jpg", thumbnail: "thumbnails/river-sailboat.jpg", sha256: "b".repeat(64) }
 ])
 
 type Options = {
   manifest?: () => Promise<string>
-  ensureBackground?: () => Promise<boolean>
+  ensureBackground?: (id: string, file: string, sha256?: string) => Promise<EnsureBackgroundResult>
   copyCustomBackground?: () => Promise<boolean>
   selectFolderDialog?: () => Promise<string[]>
   background?: string
 }
 
 const catalogManifest = async (): Promise<string> => MANIFEST
-const downloadWorks = async (): Promise<boolean> => true
 const copyWorks = async (): Promise<boolean> => true
 const dialogPicks = async (): Promise<string[]> => [PICKED_PATH]
 
+/** Mirrors the handler: the first ensure for an id writes bytes, every later one finds them current. */
+function cacheWrittenOnce(): (id: string) => Promise<EnsureBackgroundResult> {
+  const written = new Set<string>()
+
+  return async (id: string): Promise<EnsureBackgroundResult> => {
+    if (written.has(id)) return "current"
+    written.add(id)
+    return "refreshed"
+  }
+}
+
 function renderConfigPage({
   manifest = catalogManifest,
-  ensureBackground = downloadWorks,
+  ensureBackground = cacheWrittenOnce(),
   copyCustomBackground = copyWorks,
   selectFolderDialog = dialogPicks,
   background = "default"
@@ -103,15 +113,17 @@ describe("ConfigPage background picker", () => {
 
     await user.click(await screen.findByRole("button", { name: "Village Lane" }))
 
-    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg"))
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg", "a".repeat(64)))
     await waitFor(() => expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("true"))
     expect(tileImage("Village Lane")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/village-lane.jpg"))
+    // The click writes the file and dispatches once, taking the revision from 0 to 1. The
+    // follow-up ensureCached for the now-selected scene finds it current and dispatches nothing.
     expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toContain('url("background:village-lane.jpg?r=1")')
   })
 
   it("selects nothing when the download fails, and says so", async () => {
     const user = userEvent.setup()
-    renderConfigPage({ ensureBackground: async () => false })
+    renderConfigPage({ ensureBackground: async () => "failed" })
 
     await user.click(await screen.findByRole("button", { name: "Village Lane" }))
 
@@ -123,11 +135,13 @@ describe("ConfigPage background picker", () => {
   it("hides a failed thumbnail without disabling the scene tile", async () => {
     renderConfigPage()
 
-    const image = await screen.findByRole("button", { name: "Village Lane" }).then(() => tileImage("Village Lane"))
-    expect(image).toBeTruthy()
-    fireEvent.error(image!)
-
-    expect(tileImage("Village Lane")).toBeNull()
+    await screen.findByRole("button", { name: "Village Lane" })
+    await waitFor(() => {
+      const image = tileImage("Village Lane")
+      expect(image).toBeTruthy()
+      fireEvent.error(image!)
+      expect(tileImage("Village Lane")).toBeNull()
+    })
     expect(screen.getByRole("button", { name: "Village Lane" })).toBeTruthy()
   })
 
@@ -198,23 +212,83 @@ describe("ConfigPage background picker", () => {
   it("re-downloads the selected scene when the section opens, in case its cached file went missing", async () => {
     const api = renderConfigPage({ background: "river-sailboat" })
 
-    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg"))
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg", "b".repeat(64)))
     expect(tileImage("River Sailboat")?.getAttribute("src")).toBe(backgroundThumbnailSource("thumbnails/river-sailboat.jpg"))
     expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledTimes(1)
   })
 
   it("keeps the selected thumbnail visible when repairing its full-size cache fails", async () => {
-    let finishRepair: (cached: boolean) => void = () => undefined
-    const repair = new Promise<boolean>((resolve) => {
+    let finishRepair: (result: EnsureBackgroundResult) => void = () => undefined
+    const repair = new Promise<EnsureBackgroundResult>((resolve) => {
       finishRepair = resolve
     })
     const api = renderConfigPage({ background: "river-sailboat", ensureBackground: () => repair })
 
-    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg"))
-    finishRepair(false)
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("river-sailboat", "river-sailboat.jpg", "b".repeat(64)))
+    finishRepair("failed")
 
     await waitFor(() => expect(tileImage("River Sailboat")).toBeTruthy())
     expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true")
+  })
+
+  it("selects a scene whose cache is already current", async () => {
+    const user = userEvent.setup()
+    renderConfigPage({ ensureBackground: async () => "current" })
+
+    await user.click(await screen.findByRole("button", { name: "Village Lane" }))
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("true"))
+    expect(screen.queryByText("That background couldn't be downloaded. Check your connection and try again.")).toBeNull()
+  })
+
+  it("repaints the running session when the selected scene is refreshed", async () => {
+    const api = renderConfigPage({ background: "village-lane", ensureBackground: async () => "refreshed" })
+
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg", "a".repeat(64)))
+
+    // The stored choice paints at r=0. The branch replaced the bytes under the same name, so the
+    // revision has to move or the session keeps showing what it already read (#323).
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toContain('url("background:village-lane.jpg?r=1")'))
+  })
+
+  it("leaves the painted scene alone when its cache is already current", async () => {
+    const api = renderConfigPage({ background: "village-lane", ensureBackground: async () => "current" })
+
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg", "a".repeat(64)))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    // No new bytes, so no repaint and no config write. r=0 is the revision the config was read at.
+    expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toContain('url("background:village-lane.jpg?r=0")')
+  })
+
+  it("keeps the newly picked scene when a slow refresh of the previous one lands", async () => {
+    const user = userEvent.setup()
+    let finishRefresh: (result: EnsureBackgroundResult) => void = () => undefined
+    const slowRefresh = new Promise<EnsureBackgroundResult>((resolve) => {
+      finishRefresh = resolve
+    })
+    let call = 0
+
+    const api = renderConfigPage({
+      background: "village-lane",
+      ensureBackground: () => {
+        call += 1
+        // 1: the refresh of the scene already selected. 2: the pick the player makes while it is
+        // in flight. 3: the effect checking the newly picked scene, which is on disk by then.
+        return call === 1 ? slowRefresh : Promise.resolve<EnsureBackgroundResult>(call === 2 ? "refreshed" : "current")
+      }
+    })
+
+    await waitFor(() => expect(api.backgroundsManager.ensureBackground).toHaveBeenCalledWith("village-lane", "village-lane.jpg", "a".repeat(64)))
+
+    await user.click(await screen.findByRole("button", { name: "River Sailboat" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true"))
+
+    finishRefresh("refreshed")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true")
+    expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("false")
   })
 
   it("shows a replacement after a failed image when its source changes", async () => {

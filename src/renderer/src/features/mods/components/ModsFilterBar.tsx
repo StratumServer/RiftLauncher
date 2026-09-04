@@ -1,6 +1,7 @@
 import { Dispatch, SetStateAction } from "react"
 import { useTranslation } from "react-i18next"
 import { PiStarDuotone, PiEraserDuotone } from "react-icons/pi"
+import clsx from "clsx"
 
 import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuGroupWrapper, StickyMenuGroup } from "@renderer/components/ui/StickyMenu"
@@ -70,13 +71,19 @@ function ModsFilterBar({
 
         <InstalledFilter installedFilter={installedFilter} setInstalledFilter={setInstalledFilter} size="w-40 h-8" />
 
-        <FormButton title={t("features.mods.onlyFavMods")} onClick={() => setOnlyFav((prev) => !prev)} className="w-8 h-8 text-lg" type={onlyFav ? "warn" : "normal"}>
+        <FormButton
+          title={t("features.mods.onlyFavMods")}
+          onClick={() => setOnlyFav((prev) => !prev)}
+          className={clsx("w-8 h-8 text-lg", onlyFav && "text-yellow-400")}
+          variant="ghost"
+          ariaPressed={onlyFav}
+        >
           <PiStarDuotone />
         </FormButton>
 
         <OrderFilter orderBy={orderBy} setOrderBy={setOrderBy} orderByOrder={orderByOrder} setOrderByOrder={setOrderByOrder} />
 
-        <FormButton title={t("generic.clearFilter")} onClick={() => onClearFilters()} className="w-8 h-8 text-lg">
+        <FormButton title={t("generic.clearFilter")} onClick={() => onClearFilters()} className="w-8 h-8 text-lg" variant="ghost">
           <PiEraserDuotone />
         </FormButton>
       </StickyMenuGroup>

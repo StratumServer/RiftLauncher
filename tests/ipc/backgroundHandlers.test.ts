@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -30,9 +31,17 @@ vi.mock("@src/ipc/network", async (importOriginal) => {
 import "@src/ipc/handlers/backgroundHandlers"
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
+const UPDATED_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x12])
+// A third distinct JPEG, so a "the refresh download arrived but its hash was wrong" test can tell
+// "the stale file survived" apart from "the download was written and happened to match".
+const WRONG_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x14])
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])
 
-type EnsureHandler = (event: IpcMainInvokeEvent, id: unknown, file: unknown) => Promise<boolean>
+function sha256(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex")
+}
+
+type EnsureHandler = (event: IpcMainInvokeEvent, id: unknown, file: unknown, expectedSha256?: unknown) => Promise<boolean>
 type CopyHandler = (event: IpcMainInvokeEvent, path: unknown) => Promise<boolean>
 
 let temporaryRoot: string
@@ -101,7 +110,7 @@ describe("ENSURE_BACKGROUND", () => {
     vi.mocked(requestBoundedBuffer).mockResolvedValueOnce(JPEG)
     const event = await createTrustedEvent()
 
-    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg"), true)
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", sha256(JPEG)), "refreshed")
 
     const [url, options] = vi.mocked(requestBoundedBuffer).mock.calls[0]!
     assert.equal(url.toString(), "https://raw.githubusercontent.com/StratumServer/RiftLauncher/backgrounds/village-lane.jpg")
@@ -109,13 +118,63 @@ describe("ENSURE_BACKGROUND", () => {
     assert.deepEqual(readFileSync(cachedPath("village-lane.jpg")), JPEG)
   })
 
-  it("does not download a scene that is already cached", async () => {
+  it("does not download a scene whose cached bytes match the manifest hash", async () => {
     mkdirSync(cacheFolder(), { recursive: true })
     writeFileSync(cachedPath("village-lane.jpg"), JPEG)
     const event = await createTrustedEvent()
 
-    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg"), true)
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", sha256(JPEG)), "current")
     assert.equal(vi.mocked(requestBoundedBuffer).mock.calls.length, 0)
+  })
+
+  it("refreshes a cached scene when its manifest hash changed", async () => {
+    mkdirSync(cacheFolder(), { recursive: true })
+    writeFileSync(cachedPath("village-lane.jpg"), JPEG)
+    vi.mocked(requestBoundedBuffer).mockResolvedValueOnce(UPDATED_JPEG)
+    const event = await createTrustedEvent()
+
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", sha256(UPDATED_JPEG)), "refreshed")
+    assert.equal(vi.mocked(requestBoundedBuffer).mock.calls.length, 1)
+    assert.deepEqual(readFileSync(cachedPath("village-lane.jpg")), UPDATED_JPEG)
+  })
+
+  it("keeps a legacy cache hit working when an older manifest has no hash", async () => {
+    mkdirSync(cacheFolder(), { recursive: true })
+    writeFileSync(cachedPath("village-lane.jpg"), JPEG)
+    const event = await createTrustedEvent()
+
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg"), "current")
+    assert.equal(vi.mocked(requestBoundedBuffer).mock.calls.length, 0)
+  })
+
+  it("refuses downloaded bytes that do not match the manifest hash", async () => {
+    vi.mocked(requestBoundedBuffer).mockResolvedValueOnce(UPDATED_JPEG)
+    const event = await createTrustedEvent()
+
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", sha256(JPEG)), "failed")
+    assert.equal(existsSync(cachedPath("village-lane.jpg")), false)
+  })
+
+  it("reports a failed refresh as a failure even though the stale cached scene survives", async () => {
+    mkdirSync(cacheFolder(), { recursive: true })
+    writeFileSync(cachedPath("village-lane.jpg"), JPEG)
+    vi.mocked(requestBoundedBuffer).mockRejectedValueOnce(new Error("Network request failed"))
+    const event = await createTrustedEvent()
+
+    // Not "current": the file on disk is a version the manifest no longer describes, so the
+    // picker must not select it as if it were the scene the player asked for.
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", sha256(UPDATED_JPEG)), "failed")
+    assert.deepEqual(readFileSync(cachedPath("village-lane.jpg")), JPEG)
+  })
+
+  it("keeps the cached scene byte for byte when the refresh download fails the manifest hash", async () => {
+    mkdirSync(cacheFolder(), { recursive: true })
+    writeFileSync(cachedPath("village-lane.jpg"), JPEG)
+    vi.mocked(requestBoundedBuffer).mockResolvedValueOnce(WRONG_JPEG)
+    const event = await createTrustedEvent()
+
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", sha256(UPDATED_JPEG)), "failed")
+    assert.deepEqual(readFileSync(cachedPath("village-lane.jpg")), JPEG)
   })
 
   it("refuses an id or a file name that could reach outside the cache, without a request", async () => {
@@ -130,9 +189,16 @@ describe("ENSURE_BACKGROUND", () => {
       ["custom", "custom.jpg"],
       [7, "village-lane.jpg"]
     ] as const) {
-      assert.equal(await ensureHandler()(event, id, file), false, `${String(id)} ${file}`)
+      assert.equal(await ensureHandler()(event, id, file), "failed", `${String(id)} ${file}`)
     }
 
+    assert.equal(vi.mocked(requestBoundedBuffer).mock.calls.length, 0)
+  })
+
+  it("refuses a malformed manifest hash without a request", async () => {
+    const event = await createTrustedEvent()
+
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg", "not-a-hash"), "failed")
     assert.equal(vi.mocked(requestBoundedBuffer).mock.calls.length, 0)
   })
 
@@ -140,7 +206,7 @@ describe("ENSURE_BACKGROUND", () => {
     vi.mocked(requestBoundedBuffer).mockResolvedValueOnce(PNG)
     const event = await createTrustedEvent()
 
-    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg"), false)
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg"), "failed")
     assert.equal(existsSync(cachedPath("village-lane.jpg")), false)
   })
 
@@ -148,7 +214,7 @@ describe("ENSURE_BACKGROUND", () => {
     vi.mocked(requestBoundedBuffer).mockRejectedValueOnce(new Error("Network response is too large"))
     const event = await createTrustedEvent()
 
-    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg"), false)
+    assert.equal(await ensureHandler()(event, "village-lane", "village-lane.jpg"), "failed")
     assert.equal(existsSync(cachedPath("village-lane.jpg")), false)
   })
 })

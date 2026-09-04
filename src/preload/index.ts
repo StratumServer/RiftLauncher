@@ -40,6 +40,7 @@ const api: BridgeAPI = {
   modsManager: {
     getInstalledMods: (path: string): Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, path),
     setModEnabled: (path: string, enabled: boolean): Promise<SetModEnabledResult> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, path, enabled),
+    cacheModImage: (url: string): Promise<string | undefined> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.CACHE_MOD_IMAGE, url),
     exportModpack: (manifest: ModpackManifestType): Promise<{ success: boolean; path?: string }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, manifest),
     importModpack: (): Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK),
     clearModIconMemoryCache: (): void => ipcRenderer.send(IPC_CHANNELS.MODS_MANAGER.CLEAR_MOD_ICON_MEMORY_CACHE)
@@ -77,7 +78,7 @@ const api: BridgeAPI = {
     acceptModDbVisibility: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY)
   },
   backgroundsManager: {
-    ensureBackground: (id: string, file: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, id, file),
+    ensureBackground: (id: string, file: string, sha256?: string): Promise<EnsureBackgroundResult> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, id, file, sha256),
     copyCustomBackground: (path: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.COPY_CUSTOM_BACKGROUND, path)
   },
   accountManager: {
@@ -91,12 +92,17 @@ const api: BridgeAPI = {
 // just add to the DOM global.
 if (!process.contextIsolated) throw new Error("Context isolation is required")
 
-try {
-  contextBridge.exposeInMainWorld("api", api)
-  console.info("[preload] Exposed the launcher API.")
-} catch (err) {
-  console.error("[preload] Failed to expose the launcher API.")
-  throw err
+// Electron loads a preload for every frame in a page. The launcher does not use
+// frames, but keeping the bridge on the main frame makes that invariant explicit
+// and prevents a future embedded document from receiving launcher capabilities.
+if (process.isMainFrame) {
+  try {
+    contextBridge.exposeInMainWorld("api", api)
+    console.info("[preload] Exposed the launcher API.")
+  } catch (err) {
+    console.error("[preload] Failed to expose the launcher API.")
+    throw err
+  }
 }
 
 export type ApiType = typeof api

@@ -43,18 +43,25 @@ function ManageModsActionBar({
   return (
     <StickyMenuGroupWrapper type="centered">
       <StickyMenuGroup>
-        <FormButton title={t("features.mods.updateAll")} className="p-1 w-fit h-8" onClick={onUpdateAll}>
+        <FormButton title={t("features.mods.updateAll")} variant="primary" className="p-1 w-fit h-8" onClick={onUpdateAll}>
           <PiArrowClockwiseDuotone className="text-xl" />
           <p>{t("features.mods.updateAllButton")}</p>
         </FormButton>
 
-        <FormButton title={t("features.mods.exportModpack")} className="p-1 w-fit h-8" onClick={() => exportModpack({ installedMods: enabledMods, installation })} disabled={enabledMods.length === 0}>
+        <FormButton
+          title={t("features.mods.exportModpack")}
+          variant="secondary"
+          className="p-1 w-fit h-8"
+          onClick={() => exportModpack({ installedMods: enabledMods, installation })}
+          disabled={enabledMods.length === 0}
+        >
           <PiBoxArrowUpDuotone className="text-xl" />
           <p>{t("features.mods.exportModpackButton")}</p>
         </FormButton>
 
         <FormButton
           title={t("features.mods.exportServerModpack")}
+          variant="secondary"
           className="p-1 w-fit h-8"
           onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` } })}
           disabled={serverMods.length === 0}
@@ -63,13 +70,14 @@ function ManageModsActionBar({
           <p>{t("features.mods.exportServerModpackButton")}</p>
         </FormButton>
 
-        <FormButton title={t("features.mods.importModpack")} className="p-1 w-fit h-8" onClick={onImportModpack}>
+        <FormButton title={t("features.mods.importModpack")} variant="secondary" className="p-1 w-fit h-8" onClick={onImportModpack}>
           <PiBoxArrowDownDuotone className="text-xl" />
           <p>{t("features.mods.importModpackButton")}</p>
         </FormButton>
 
         <FormButton
           title={t("features.mods.openModsFolder")}
+          variant="ghost"
           className="w-8 h-8"
           onClick={async () => {
             const path = await resolveModsFolder(installation.path)

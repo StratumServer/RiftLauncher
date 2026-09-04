@@ -4,26 +4,38 @@
  * The worker thread is a shim over this module so the same code can be driven
  * from a test or a script. Nothing here touches Electron or `worker_threads`.
  *
- * Every archive lands in a temporary folder first. The tree is validated there,
- * and only then copied into the destination, so a hostile archive never gets to
- * write a single byte where the launcher keeps its files.
+ * Every archive lands in a staging folder first, a dot-prefixed child of the
+ * destination rather than a folder under the OS temporary directory: `/tmp` is
+ * tmpfs on most Linux and WSL systems, which would otherwise hold the whole
+ * extracted tree in RAM, and a separate drive for temp files means every byte
+ * is written twice. Staging inside the destination puts the staged tree on the
+ * destination's own filesystem, so publishing it is one rename per top-level
+ * entry, and it leaves the debris of a killed extraction in a folder the
+ * launcher already owns and already sweeps (main/orphanedTempFiles.ts).
+ *
+ * The tree is validated in the staging folder, and only then published. An
+ * archive's contents sit under `<destination>/.riftlauncher-extract-XXXXXX/`
+ * while they are unverified, so nothing an archive carries reaches a real
+ * content path in the destination until validateTree has passed.
  */
 
 import fse from "fs-extra"
 import yauzl from "yauzl"
-import { createReadStream, createWriteStream, mkdtempSync } from "node:fs"
+import { createReadStream, createWriteStream } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { tmpdir } from "node:os"
 import type { Readable } from "node:stream"
 import * as tar from "tar"
 
 // Relative so the module stays importable from a plain test run, like validation.ts.
-import { isSafeTarEntryType, isTarGzName } from "../validation"
+import type { ArchiveSizeLimits } from "../validation"
+// The size ceilings used to be re-declared here as local copies of the two in
+// validation.ts. They are imported now: a backup is read under a different pair
+// (#362) and two places to change one number is how the pairs drift apart.
+import { archiveSizeLimits, isSafeTarEntryType, isTarGzName } from "../validation"
 import { validateArchive } from "../archiveValidation"
 
 const MAX_ARCHIVE_ENTRIES = 100_000
-const MAX_ARCHIVE_ENTRY_BYTES = 512 * 1024 * 1024
-const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 
 export function assertNoSymlinkComponents(pathValue: string): void {
   let current = resolve(pathValue)
@@ -46,7 +58,7 @@ export function assertNoSymlinkComponents(pathValue: string): void {
 
 export type ArchiveStats = { entries: number; bytes: number }
 
-export function validateTree(root: string): ArchiveStats {
+export function validateTree(root: string, limits: ArchiveSizeLimits = archiveSizeLimits(false)): ArchiveStats {
   const stats: ArchiveStats = { entries: 0, bytes: 0 }
   const visit = (current: string): void => {
     const entry = fse.lstatSync(current)
@@ -55,7 +67,7 @@ export function validateTree(root: string): ArchiveStats {
     stats.entries++
     if (stats.entries > MAX_ARCHIVE_ENTRIES) throw new Error("Archive contains too many entries")
     if (entry.isFile()) {
-      if (entry.size > MAX_ARCHIVE_ENTRY_BYTES || stats.bytes + entry.size > MAX_ARCHIVE_TOTAL_BYTES) throw new Error("Archive is too large")
+      if (entry.size > limits.entryBytes || stats.bytes + entry.size > limits.totalBytes) throw new Error("Archive is too large")
       // entry.nlink is the OS's own hard-link count, unlike tracking dev:ino pairs by hand:
       // Windows has reused the same ino for two freshly written, otherwise-unrelated files
       // during a real install (nlink stayed 1 on both), which turned every install on Windows
@@ -108,6 +120,84 @@ export function copyTree(sourceRoot: string, destinationRoot: string): void {
   }
 
   copyEntry(sourceRoot)
+}
+
+/** Renames a whole subtree in one move, or copies it when that is not possible. */
+function renameOrCopyTree(source: string, destination: string): void {
+  if (!fse.existsSync(destination)) {
+    try {
+      fse.renameSync(source, destination)
+      return
+    } catch {
+      // Fall through to the copy path. EXDEV means the source and destination
+      // are on different filesystems; EPERM, EACCES and EBUSY are common on
+      // Windows when a handle without FILE_SHARE_DELETE is open on the file
+      // (for instance a real-time antivirus scanning a freshly written file).
+      // copyTree is the safe fallback for all of them.
+    }
+  }
+  // Either the rename could not cross filesystems, or something already sits
+  // under this name at the destination and a rename cannot land on top of it
+  // without possibly losing what that something already held. copyTree merges
+  // the two trees entry by entry the way it always has.
+  copyTree(source, destination)
+}
+
+/** Renames a single file, or copies it when that is not possible. */
+function renameOrCopyFile(source: string, destination: string): void {
+  try {
+    fse.renameSync(source, destination)
+  } catch {
+    // Fall through to the copy path for the same reasons as renameOrCopyTree.
+    fse.copyFileSync(source, destination)
+  }
+}
+
+/**
+ * Publishes a staged tree by renaming each top-level entry into the
+ * destination, rather than copying it in byte by byte.
+ *
+ * `runExtraction` always stages inside the destination, on the destination's
+ * own filesystem, so a rename here is ordinarily one metadata update instead
+ * of a full read and write of everything the archive held. A rename can still fail
+ * for several reasons: the destination already holds something under that
+ * name (an install that reuses a folder in place), a cross-device move
+ * (`EXDEV`, which can still happen if the destination is a separate mount),
+ * or a handle held without `FILE_SHARE_DELETE` on Windows (common with a
+ * real-time antivirus scanning freshly written files). Any rename failure
+ * falls back to copyTree, the same merge-and-overwrite behaviour a plain
+ * copy has always had.
+ */
+export function publishTree(sourceRoot: string, destinationRoot: string): void {
+  assertNoSymlinkComponents(destinationRoot)
+  fse.ensureDirSync(destinationRoot)
+  if (fse.lstatSync(destinationRoot).isSymbolicLink()) throw new Error("Destination is a symbolic link")
+  const resolvedDestinationRoot = resolve(destinationRoot)
+
+  for (const child of fse.readdirSync(sourceRoot)) {
+    const source = join(sourceRoot, child)
+    const destination = resolve(resolvedDestinationRoot, child)
+    const destinationRelativePath = relative(resolvedDestinationRoot, destination)
+    // child comes from readdirSync so it is always a single segment and this
+    // check cannot fire, but it mirrors copyTree's own guard as defense in depth.
+    if (!destinationRelativePath || destinationRelativePath === ".." || destinationRelativePath.startsWith(`..${sep}`) || isAbsolute(destinationRelativePath))
+      throw new Error("Archive output escaped its root")
+    assertNoSymlinkComponents(destination)
+
+    const entry = fse.lstatSync(source)
+    if (entry.isDirectory()) {
+      if (fse.existsSync(destination) && !fse.lstatSync(destination).isDirectory()) throw new Error("Archive output type conflict")
+      renameOrCopyTree(source, destination)
+      continue
+    }
+
+    if (fse.existsSync(destination)) {
+      const existing = fse.lstatSync(destination)
+      if (existing.isSymbolicLink() || existing.isDirectory()) throw new Error("Archive output contains an unsafe destination")
+      fse.unlinkSync(destination)
+    }
+    renameOrCopyFile(source, destination)
+  }
 }
 
 /**
@@ -364,6 +454,18 @@ export interface ExtractionOptions {
    * whose archive holds an installation's contents at the root already.
    */
   unwrapSingleRootFolder?: boolean
+  /**
+   * Whether this archive is one of the launcher's own backups, and so is read
+   * under the backup size ceilings rather than the strict ones.
+   *
+   * Decided in the main process, from where the file sits on disk
+   * (EXTRACT_ON_PATH in handlers/pathsHandlers.ts), and never by the caller
+   * that asked for the extraction. A renderer that could ask for the loose
+   * limit would be asking for its own limit, which is the boundary the path
+   * policy exists to hold: a downloaded mod or game archive keeps the strict
+   * pair no matter who asks.
+   */
+  isBackupArchive?: boolean
   /** Called with 0 to 100 as the work advances. */
   onProgress?: (progress: number) => void
 }
@@ -376,32 +478,50 @@ export interface ExtractionOptions {
  * files and folders, or busts the entry and size bounds.
  */
 export async function runExtraction(options: ExtractionOptions): Promise<void> {
-  const { filePath, outputPath, deleteArchive, unwrapSingleRootFolder = false, onProgress } = options
+  const { filePath, outputPath, deleteArchive, unwrapSingleRootFolder = false, isBackupArchive = false, onProgress } = options
+  const limits = archiveSizeLimits(isBackupArchive)
   let temporaryRoot: string | undefined
 
   // The first of two validation gates (see archiveValidation.ts's own comment): reads the
   // archive's table of contents and refuses it, before a single byte is written anywhere,
   // if it names an entry outside its root, repeats a name, carries a link, or busts the
   // entry/size bounds.
-  await validateArchive(filePath)
+  await validateArchive(filePath, limits)
 
   try {
     assertNoSymlinkComponents(outputPath)
     fse.ensureDirSync(outputPath)
     if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
 
-    temporaryRoot = mkdtempSync(join(tmpdir(), "riftlauncher-extract-"))
+    // Staged inside the destination rather than under the OS temp directory, so
+    // the publish below is a rename rather than a copy (see this module's own
+    // comment). The dot prefix keeps the folder from reading as content while
+    // the extraction runs, and it is the name the startup sweep matches
+    // (EXTRACTION_STAGING_PATTERN in main/orphanedTempFiles.ts).
+    //
+    // The fallback covers a destination that exists but cannot hold a new
+    // directory, for instance a read-only mount. It catches every failure, so
+    // a full destination filesystem (ENOSPC) stages under os.tmpdir() and pays
+    // the double write this module exists to avoid, then fails later when the
+    // publish runs out of the same space. This module carries no logger on
+    // purpose: it stays importable from a plain script, with no `@src` alias
+    // and no electron-log.
+    try {
+      temporaryRoot = fse.mkdtempSync(join(outputPath, ".riftlauncher-extract-"))
+    } catch {
+      temporaryRoot = fse.mkdtempSync(join(tmpdir(), "riftlauncher-extract-"))
+    }
     const extractionRoot = join(temporaryRoot, "payload")
     fse.ensureDirSync(extractionRoot)
 
     if (isTarGzName(filePath)) await extractTarGz(filePath, extractionRoot, onProgress)
     else await extractZip(filePath, extractionRoot, onProgress)
 
-    validateTree(extractionRoot)
+    validateTree(extractionRoot, limits)
     // Only the game archives wrap their contents in a folder, and only their caller
     // asks for that folder to be stepped into. A backup holds an installation's
     // contents at the root, and a restore has to put them back exactly as they were.
-    copyTree(unwrapSingleRootFolder ? contentRoot(extractionRoot) : extractionRoot, outputPath)
+    publishTree(unwrapSingleRootFolder ? contentRoot(extractionRoot) : extractionRoot, outputPath)
 
     if (deleteArchive) {
       assertNoSymlinkComponents(filePath)

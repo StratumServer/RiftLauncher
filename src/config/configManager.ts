@@ -349,6 +349,9 @@ function normalizeInstallation(value: unknown): InstallationType | null {
     envVars: asString(value.envVars, "", 8_192)
   }
 
+  const launchWrapper = asString(value.launchWrapper, "", 4_096).trim()
+  if (launchWrapper) installation.launchWrapper = launchWrapper
+
   return installation.id && installation.path ? installation : null
 }
 

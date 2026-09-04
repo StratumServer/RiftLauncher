@@ -24,6 +24,9 @@ import { assertAllowedDownloadUrl } from "../validation"
 const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 30_000
 
+/** Namespace used by temporary download siblings and the orphan sweep. */
+export const DOWNLOAD_TEMP_FILE_NAMESPACE = "riftlauncher"
+
 /**
  * The download is saved under exactly the name the caller asked for.
  *
@@ -71,7 +74,7 @@ export interface DownloadOptions {
 export function runDownload(options: DownloadOptions): Promise<string> {
   const { url, outputPath, fileName, expectedMd5, request = httpsRequest, onProgress } = options
   const pathToDownload = join(outputPath, assertSafeFileName(fileName))
-  const temporaryPath = `${pathToDownload}.${process.pid}.${Date.now()}.part`
+  const temporaryPath = `${pathToDownload}.${DOWNLOAD_TEMP_FILE_NAMESPACE}.${process.pid}.${Date.now()}.part`
 
   return new Promise<string>((resolvePromise, rejectPromise) => {
     let settled = false

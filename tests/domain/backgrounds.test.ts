@@ -9,6 +9,7 @@ import {
   CUSTOM_BACKGROUND_ID,
   DEFAULT_BACKGROUND_ID,
   isBackgroundFileName,
+  isBackgroundSha256,
   isBackgroundThumbnailFileName,
   isBackgroundId,
   isCatalogBackgroundId,
@@ -19,7 +20,7 @@ import {
 } from "@domain/backgrounds"
 
 function entry(overrides: Partial<BackgroundType> = {}): BackgroundType {
-  return { id: "village-lane", name: "Village Lane", file: "village-lane.jpg", ...overrides }
+  return { id: "village-lane", name: "Village Lane", file: "village-lane.jpg", sha256: "a".repeat(64), ...overrides }
 }
 
 describe("background ids", () => {
@@ -89,6 +90,16 @@ describe("background file names and URLs", () => {
   })
 })
 
+describe("background hashes", () => {
+  it("accepts exactly one SHA-256 digest", () => {
+    assert.equal(isBackgroundSha256("a".repeat(64)), true)
+    assert.equal(isBackgroundSha256("A".repeat(64)), true)
+    for (const value of ["a".repeat(63), "a".repeat(65), "g".repeat(64), "a".repeat(64) + "\n", 7]) {
+      assert.equal(isBackgroundSha256(value), false, String(value))
+    }
+  })
+})
+
 describe("parseBackgroundManifest", () => {
   it("reads the rows a well-formed manifest carries, in order", () => {
     const entries = parseBackgroundManifest(
@@ -105,7 +116,24 @@ describe("parseBackgroundManifest", () => {
     assert.equal(entries[0]!.name, "Village Lane")
     assert.equal(entries[0]!.file, "village-lane.jpg")
     assert.equal(entries[0]!.thumbnail, "thumbnails/village-lane.jpg")
+    assert.equal(entries[0]!.sha256, "a".repeat(64))
     assert.equal(entries[1]!.thumbnail, "thumbnails/river-sailboat.jpg")
+  })
+
+  it("keeps older rows without a hash usable during the manifest rollout", () => {
+    const [parsed] = parseBackgroundManifest(JSON.stringify([entry({ sha256: undefined })]))
+
+    assert.deepEqual(parsed, { id: "village-lane", name: "Village Lane", file: "village-lane.jpg" })
+  })
+
+  it("normalizes an uppercase hash and drops a malformed one", () => {
+    const parsed = parseBackgroundManifest(JSON.stringify([entry({ id: "upper", file: "upper.jpg", sha256: "B".repeat(64) }), entry({ id: "bad", file: "bad.jpg", sha256: "not-a-hash" })]))
+
+    assert.equal(parsed[0]!.sha256, "b".repeat(64))
+    assert.deepEqual(
+      parsed.map((item) => item.id),
+      ["upper"]
+    )
   })
 
   it("ignores an unsafe thumbnail path without dropping the usable scene", () => {
@@ -131,6 +159,7 @@ describe("parseBackgroundManifest", () => {
         entry({ file: "elsewhere.png" }),
         entry({ name: "" }),
         entry({ name: "x".repeat(65) }),
+        entry({ sha256: "not-a-hash" }),
         entry({ id: DEFAULT_BACKGROUND_ID }),
         entry({ id: CUSTOM_BACKGROUND_ID }),
         entry()

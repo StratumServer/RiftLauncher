@@ -1,114 +1,182 @@
-import { createContext, useState, useEffect, useContext, useRef } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { launcherUpdateName } from "@renderer/utils/launcherUpdateTask"
+export type NotificationTypes = "success" | "error" | "info" | "warning"
+export type NotificationPresentation = "toast" | "center" | "both"
+export type ToastDismissReason = "manual" | "timeout"
 
-type NotificationTypes = "success" | "error" | "info" | "warning"
-
-/**
- * A labelled button rendered inside the toast. Whatever it does, clicking it
- * also dismisses the notification, so a choice can only be answered once.
- *
- * An action with no `onClick` is a plain refusal ("Not now"): it closes the
- * toast and nothing else happens, which is the whole of declining an update
- * offer for this session.
- */
 export interface NotificationAction {
+  id?: string
   label: string
   onClick?: () => void
 }
 
 export interface NotificationOptions {
-  duration?: number
-  onClick?: () => void
+  /** Milliseconds before an unhandled toast closes; null keeps it open. */
+  duration?: number | null
   actions?: NotificationAction[]
+  presentation?: NotificationPresentation
 }
 
 export interface NotificationType {
   id: string
   body: string
   type: NotificationTypes
+  createdAt: number
+  /**
+   * The center has been open with this record in it, or its banner was closed
+   * by hand. Governs the trigger's new-activity dot, and never goes back to
+   * false: once the user has had the chance to look, the trigger stays quiet.
+   */
+  seen: boolean
+  /** The user acknowledged it: the row toggle, "Mark all read", or answering it. Governs the row marker and admits it to "Clear read". */
+  read: boolean
+  /** Only meaningful with `options.actions`: the question has been answered. */
+  resolved: boolean
+  /** Label of the action that answered it, so an answered question does not sit in the center still asking. */
+  resolvedWith?: string
   options?: NotificationOptions
 }
 
 interface NotificationsContextType {
+  /** The currently presented toast. Kept as an array for existing probes. */
   notifications: NotificationType[]
+  history: NotificationType[]
+  activeToast?: NotificationType
+  /** Center records the user has not had a chance to see yet. Drives the trigger dot. */
+  unseenCount: number
+  /** Center records the user has not acknowledged. Drives the panel row marker. */
+  unreadCount: number
   addNotification: (body: string, type: NotificationTypes, options?: NotificationOptions) => void
+  dismissToast: (id: string, reason?: ToastDismissReason) => void
+  invokeAction: (notificationId: string, actionId: string) => void
+  markAllSeen: () => void
+  markAllRead: () => void
+  setNotificationRead: (id: string, read: boolean) => void
   removeNotification: (id: string) => void
+  clearReadNotifications: () => void
 }
 
-const defaultValue: NotificationsContextType = { notifications: [], addNotification: () => {}, removeNotification: () => {} }
+const defaultValue: NotificationsContextType = {
+  notifications: [],
+  history: [],
+  unseenCount: 0,
+  unreadCount: 0,
+  addNotification: () => {},
+  dismissToast: () => {},
+  invokeAction: () => {},
+  markAllSeen: () => {},
+  markAllRead: () => {},
+  setNotificationRead: () => {},
+  removeNotification: () => {},
+  clearReadNotifications: () => {}
+}
 
 const NotificationsContext = createContext<NotificationsContextType>(defaultValue)
+const MAX_HISTORY = 50
+const DEFAULT_TOAST_DURATIONS: Record<NotificationTypes, number> = { success: 4500, info: 4500, warning: 8000, error: 8000 }
+
+function resolveToastDuration(type: NotificationTypes, options?: NotificationOptions): number | null {
+  if (options?.duration !== undefined) return options.duration
+  if (options?.actions && options.actions.length > 0) return null
+  return DEFAULT_TOAST_DURATIONS[type]
+}
+
+/** True while an actionable record still has an unanswered question on it. */
+export function awaitsAnswer(record: NotificationType): boolean {
+  return Boolean(record.options?.actions?.length) && !record.resolved
+}
+
+/**
+ * Trims to MAX_HISTORY *center* records. Toast-only entries share `records`
+ * but are transient and must never push real history out of it: a bulk mod
+ * update parks dozens of queued toasts here at once.
+ */
+function capHistory(records: NotificationType[]): NotificationType[] {
+  let excess = records.reduce((count, record) => count + (record.options?.presentation === "toast" ? 0 : 1), 0) - MAX_HISTORY
+  if (excess <= 0) return records
+  return records.filter((record) => {
+    if (excess <= 0 || record.options?.presentation === "toast") return true
+    excess -= 1
+    return false
+  })
+}
 
 const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX.Element => {
   const { t } = useTranslation()
-  const [notifications, setNotifications] = useState<NotificationType[]>([])
-
-  /**
-   * The version the main process offered, and whether the user accepted it.
-   *
-   * Both exist for the retry below. There is one update check per session, so
-   * nothing will name the version a second time, and the error event says only
-   * that something went wrong: an error that arrives before anyone accepted
-   * anything is a failed check, not a failed download, and must not put a
-   * download offer on screen.
-   */
+  const [records, setRecords] = useState<NotificationType[]>([])
+  const [toastQueue, setToastQueue] = useState<string[]>([])
+  const [activeToastId, setActiveToastId] = useState<string | null>(null)
+  const invokedActions = useRef<Set<string>>(new Set())
   const offeredVersion = useRef("")
   const downloadAccepted = useRef(false)
 
+  const history = useMemo(() => records.filter((record) => record.options?.presentation !== "toast"), [records])
+  const activeToast = activeToastId ? records.find((record) => record.id === activeToastId) : undefined
+  const unseenCount = useMemo(() => history.filter((record) => !record.seen).length, [history])
+  const unreadCount = useMemo(() => history.filter((record) => !record.read).length, [history])
+
+  // Only the presented toast owns a timer. Queued messages cannot expire unseen.
+  useEffect(() => {
+    if (activeToastId || toastQueue.length === 0) return
+    const nextId = toastQueue[0]
+    if (!nextId) return
+    if (!records.some((record) => record.id === nextId)) {
+      setToastQueue((queue) => queue.slice(1))
+      return
+    }
+    setActiveToastId(nextId)
+    setToastQueue((queue) => queue.slice(1))
+  }, [activeToastId, records, toastQueue])
+
+  // Keyed on the toast id alone, deliberately: opening the Activity Center
+  // marks the visible toast's record `seen`, replacing the record object while
+  // its id stays the same. Depending on `activeToast` here would restart the
+  // countdown on every seen/read mutation, so a user who keeps opening the
+  // panel could pin a toast on screen forever. `dismissToast` only ever calls
+  // functional setState updaters, so the captured copy is safe to reuse.
+  useEffect(() => {
+    if (!activeToast || activeToast.options?.duration == null) return
+    const timeout = window.setTimeout((): void => dismissToast(activeToast.id, "timeout"), activeToast.options.duration)
+    return (): void => window.clearTimeout(timeout)
+    // The timer follows the toast id. Depending on the whole record would restart it when
+    // Activity Center marks the record seen or read, allowing a toast to remain forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeToast?.id])
+
   useEffect((): (() => void) => {
-    // An offer now, not an announcement (#184). Nothing has been downloaded at
-    // this point and nothing will be until "Update now" is clicked, which is
-    // the only path to appUpdater.downloadUpdate anywhere in the renderer.
-    // Letting the toast expire, dismissing it, or answering "Not now" all mean
-    // the same thing: this session downloads nothing, and the next launch's
-    // check makes the offer again.
-    const offerDownload = (body: string, version: string): void => {
+    const offerDownload = (body: string): void => {
       addNotification(body, "info", {
-        duration: 60_000,
+        duration: null,
         actions: [
           {
+            id: "update-now",
             label: t("notifications.actions.updateNow"),
             onClick: (): void => {
               downloadAccepted.current = true
               window.api.appUpdater.downloadUpdate()
-              // Says where the progress bar the download drives can be found.
-              // The task itself lives in the task manager, alongside every
-              // other download the launcher runs.
-              addNotification(t("notifications.body.downloading", { downloadName: launcherUpdateName(version) }), "info")
             }
           },
-          { label: t("notifications.actions.notNow") }
+          { id: "not-now", label: t("notifications.actions.notNow") }
         ]
       })
     }
 
     const removeUpdateAvailableListener = window.api.appUpdater.onUpdateAvailable(({ version }) => {
       offeredVersion.current = version
-      // The 2 second wait is App.tsx's start-up loader, which covers the whole
-      // window (z-1000) for its first two seconds and would otherwise hide the
-      // toast for exactly as long as it is on screen.
-      setTimeout(() => {
-        offerDownload(t("notifications.body.updateAvailableConsent", { version }), version)
-      }, 2_000)
+      window.setTimeout(() => offerDownload(t("notifications.body.updateAvailableConsent", { version })), 2_000)
     })
-
-    // A download that dies halfway used to leave a red task in the list and
-    // nothing else until the launcher was restarted, because the session's one
-    // check had already happened and nothing was going to ask again. The offer
-    // itself is still good (the main process cleared its re-entrancy guard on
-    // the same error, and the version it found is still there), so the honest
-    // thing is to ask again rather than make the user relaunch.
     const removeUpdateErrorListener = window.api.appUpdater.onUpdateError(() => {
       if (!downloadAccepted.current) return
       downloadAccepted.current = false
-      offerDownload(t("notifications.body.updateDownloadFailedRetry", { version: offeredVersion.current }), offeredVersion.current)
+      offerDownload(t("notifications.body.updateDownloadFailedRetry", { version: offeredVersion.current }))
     })
-
     const removeUpdateDownloadedListener = window.api.appUpdater.onUpdateDownloaded(() => {
-      setTimeout(() => {
-        addNotification(t("notifications.body.updateDownloaded"), "success", { onClick: () => window.api.appUpdater.updateAndRestart(), duration: 60_000 })
+      window.setTimeout(() => {
+        addNotification(t("notifications.body.updateDownloaded"), "success", {
+          duration: null,
+          actions: [{ id: "restart-and-update", label: t("components.activityCenter.restartAndUpdate"), onClick: (): void => window.api.appUpdater.updateAndRestart() }]
+        })
       }, 2_000)
     })
 
@@ -121,29 +189,93 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
 
   const addNotification = (body: string, type: NotificationTypes, options?: NotificationOptions): void => {
     const id = crypto.randomUUID()
-    const duration = options?.duration || 6000
-    const onClick = options?.onClick
-    const actions = options?.actions
-
-    setNotifications((prev) => [...prev, { id, body, type, options: { duration, onClick, actions } }])
-
-    setTimeout(() => {
-      removeNotification(id)
-    }, duration)
+    const presentation = options?.presentation ?? "both"
+    const record: NotificationType = {
+      id,
+      body,
+      type,
+      createdAt: Date.now(),
+      seen: false,
+      read: false,
+      resolved: false,
+      options: { ...options, presentation, duration: resolveToastDuration(type, options) }
+    }
+    setRecords((previous) => capHistory([...previous, record]))
+    if (presentation !== "center") setToastQueue((queue) => [...queue, id])
   }
 
+  const dismissToast = (id: string, reason: ToastDismissReason = "manual"): void => {
+    setActiveToastId((activeId) => (activeId === id ? null : activeId))
+    setToastQueue((queue) => queue.filter((queuedId) => queuedId !== id))
+    // A banner closed by hand has been dealt with, so it stops counting as new;
+    // one that timed out has not, because the user may have been elsewhere.
+    setRecords((previous) =>
+      previous.flatMap((record) => {
+        if (record.id !== id) return [record]
+        if (record.options?.presentation === "toast") return []
+        return reason === "manual" && !record.seen ? [{ ...record, seen: true }] : [record]
+      })
+    )
+  }
+
+  const invokeAction = (notificationId: string, actionId: string): void => {
+    const guardKey = `${notificationId}:${actionId}`
+    if (invokedActions.current.has(guardKey)) return
+    const record = records.find((candidate) => candidate.id === notificationId)
+    const action = record?.options?.actions?.find((candidate, index) => (candidate.id ?? `action-${index}`) === actionId)
+    if (!record || !action) return
+    invokedActions.current.add(guardKey)
+    setRecords((previous) => previous.map((candidate) => (candidate.id === notificationId ? { ...candidate, seen: true, read: true, resolved: true, resolvedWith: action.label } : candidate)))
+    action.onClick?.()
+    dismissToast(notificationId, "manual")
+  }
+
+  // useCallback because the Activity Center's mark-seen effect lists this in its
+  // dependency array; the identity stays stable and the state bail-out stops
+  // that effect from looping.
+  const markAllSeen = useCallback((): void => {
+    setRecords((previous) =>
+      previous.some((record) => record.options?.presentation !== "toast" && !record.seen)
+        ? previous.map((record) => (record.options?.presentation === "toast" ? record : { ...record, seen: true }))
+        : previous
+    )
+  }, [])
+
+  const markAllRead = (): void => setRecords((previous) => (previous.some((record) => !record.read || !record.seen) ? previous.map((record) => ({ ...record, seen: true, read: true })) : previous))
+  const setNotificationRead = (id: string, read: boolean): void => setRecords((previous) => previous.map((record) => (record.id === id ? { ...record, seen: true, read } : record)))
   const removeNotification = (id: string): void => {
-    setNotifications((prev) => prev.filter((notification) => notification.id !== id))
+    setActiveToastId((activeId) => (activeId === id ? null : activeId))
+    setToastQueue((queue) => queue.filter((queuedId) => queuedId !== id))
+    setRecords((previous) => previous.filter((record) => record.id !== id))
+  }
+  const clearReadNotifications = (): void => {
+    setRecords((previous) => previous.filter((record) => !record.read || awaitsAnswer(record)))
   }
 
-  return <NotificationsContext.Provider value={{ notifications, addNotification, removeNotification }}>{children}</NotificationsContext.Provider>
+  const activeNotifications = activeToast ? [activeToast] : []
+  return (
+    <NotificationsContext.Provider
+      value={{
+        history,
+        notifications: activeNotifications,
+        activeToast,
+        unseenCount,
+        unreadCount,
+        addNotification,
+        dismissToast,
+        invokeAction,
+        markAllSeen,
+        markAllRead,
+        setNotificationRead,
+        removeNotification,
+        clearReadNotifications
+      }}
+    >
+      {children}
+    </NotificationsContext.Provider>
+  )
 }
 
-/**
- * The context ships the no-op `defaultValue` above, so a call from outside a
- * provider gets that and never nothing. There is no absent case to guard, which
- * is why this one has no throw where the task and config hooks have one.
- */
 const useNotificationsContext = (): NotificationsContextType => useContext(NotificationsContext)
 
 export { NotificationsProvider, useNotificationsContext }

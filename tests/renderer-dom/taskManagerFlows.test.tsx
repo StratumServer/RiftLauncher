@@ -4,8 +4,8 @@ import { act, renderHook, waitFor } from "@testing-library/react"
 import type { RenderHookResult } from "@testing-library/react"
 
 import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { ACTIONS, TaskProvider, taskReducer, useTaskContext } from "@renderer/contexts/TaskManagerContext"
-import type { TaskNotificationsMode, TaskType } from "@renderer/contexts/TaskManagerContext"
+import { ACTIONS, TASK_NOTIFICATION_POLICIES, TaskProvider, taskReducer, useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import type { TaskType } from "@renderer/contexts/TaskManagerContext"
 
 import { expectHookThrowsOutsideProvider } from "./helpers/render"
 import { installMockWindowApi } from "./helpers/windowApi"
@@ -22,10 +22,8 @@ import "@renderer/i18n"
  * effect all three share and the pure taskReducer/useTaskContext guard.
  *
  * The probe is a composite hook mounting both TaskProvider and
- * NotificationsProvider so a test can read back which toasts a run actually
- * produced (`result.current.notifications.notifications`), the only way to
- * observe TaskNotificationsMode's gating (showsStart/showsError in
- * TaskManagerContext.tsx) from outside the module.
+ * NotificationsProvider so a test can read back which terminal notifications
+ * a run actually produced.
  */
 function wrapper({ children }: { children: ReactNode }): ReactElement {
   return (
@@ -84,15 +82,15 @@ describe("useTaskContext", () => {
   })
 })
 
-describe("TaskManagerContext notification gating (PR #41)", () => {
-  const cases: Array<{ mode: TaskNotificationsMode; outcome: "success" | "error"; expectedTypes: string[] }> = [
-    { mode: "end", outcome: "success", expectedTypes: ["success"] },
-    { mode: "end", outcome: "error", expectedTypes: ["error"] },
-    { mode: "progress", outcome: "success", expectedTypes: ["info", "success"] },
-    { mode: "progress", outcome: "error", expectedTypes: ["info"] }
+describe("TaskManagerContext notification policies", () => {
+  const cases: Array<{ policy: typeof TASK_NOTIFICATION_POLICIES.individual | typeof TASK_NOTIFICATION_POLICIES.callerHandled; outcome: "success" | "error"; expectedTypes: string[] }> = [
+    { policy: TASK_NOTIFICATION_POLICIES.individual, outcome: "success", expectedTypes: ["success"] },
+    { policy: TASK_NOTIFICATION_POLICIES.individual, outcome: "error", expectedTypes: ["error"] },
+    { policy: TASK_NOTIFICATION_POLICIES.callerHandled, outcome: "success", expectedTypes: ["success"] },
+    { policy: TASK_NOTIFICATION_POLICIES.callerHandled, outcome: "error", expectedTypes: [] }
   ]
 
-  it.each(cases)("mode=$mode outcome=$outcome shows $expectedTypes", async ({ mode, outcome, expectedTypes }) => {
+  it.each(cases)("policy=$policy outcome=$outcome shows $expectedTypes", async ({ policy, outcome, expectedTypes }) => {
     installMockWindowApi({
       pathsManager: {
         downloadOnPath: vi.fn(async () => {
@@ -106,7 +104,7 @@ describe("TaskManagerContext notification gating (PR #41)", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.task.startDownload("Name", "desc", mode, "https://x", "/tmp/out", "file.zip", onFinish)
+      await result.current.task.startDownload("Name", "desc", policy, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(expectedTypes)
@@ -114,7 +112,7 @@ describe("TaskManagerContext notification gating (PR #41)", () => {
 })
 
 describe("progress event handling", () => {
-  it("updates a download task's progress and marks it completed at 100", async () => {
+  it("updates a download task's progress but waits for the operation at 100", async () => {
     let progressHandler: ProgressCallback | undefined
     let resolveDownload: (path: string) => void = () => {}
     const downloadPromise = new Promise<string>((resolvePromise) => {
@@ -135,7 +133,7 @@ describe("progress event handling", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", onFinish)
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -154,10 +152,17 @@ describe("progress event handling", () => {
     expect(result.current.task.tasks.find((t) => t.id === taskId)?.progress).toBe(42)
 
     act(() => progressHandler?.({ id: taskId, progress: 100 }))
-    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("completed"))
+    await waitFor(() => {
+      const task = result.current.task.tasks.find((t) => t.id === taskId)
+      expect(task?.progress).toBe(100)
+      expect(task?.status).toBe("in-progress")
+    })
 
     act(() => resolveDownload("/tmp/out/file.zip"))
-    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, "/tmp/out/file.zip", null))
+    await waitFor(() => {
+      expect(onFinish).toHaveBeenCalledWith(true, "/tmp/out/file.zip", null)
+      expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("completed")
+    })
   })
 
   it("updates an extract task's progress and marks it completed at 100", async () => {
@@ -182,7 +187,7 @@ describe("progress event handling", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      void result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -223,7 +228,7 @@ describe("progress event handling", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      void result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -274,7 +279,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", onFinish)
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -311,7 +316,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      void result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -347,7 +352,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      void result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -371,14 +376,14 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.task.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.task.startInstall("Install", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     expect(onFinish).toHaveBeenCalledWith(true, null)
     expect(result.current.task.tasks[0]).toMatchObject({ progress: 100, status: "completed" })
   })
 
-  it("completes once when a 100 event and the resolved download both land, leaving the state array untouched the second time", async () => {
+  it("waits for the resolved download after a 100 event", async () => {
     let progressHandler: ProgressCallback | undefined
     let resolveDownload: (path: string) => void = () => {}
     const downloadPromise = new Promise<string>((resolvePromise) => {
@@ -399,23 +404,22 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", onFinish)
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 100 }))
-    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("completed"))
+    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "in-progress" }))
     const tasksAfterTheEvent = result.current.task.tasks
 
     await act(async () => resolveDownload("/tmp/out/file.zip"))
     await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, "/tmp/out/file.zip", null))
 
-    // Same array instance: the success path's dispatch found nothing to change,
-    // so useReducer had no new state to render and the task never flickered
-    // out of "completed" and back into it.
-    expect(result.current.task.tasks).toBe(tasksAfterTheEvent)
+    // The progress event only paints 100. The resolved operation owns the one
+    // state transition that makes the task completed.
+    expect(result.current.task.tasks).not.toBe(tasksAfterTheEvent)
     expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "completed" })
   })
 
@@ -440,7 +444,7 @@ describe("completion driven by the resolved operation", () => {
     const onFinish = vi.fn()
 
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", onFinish)
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", onFinish)
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
@@ -473,7 +477,7 @@ describe("startExtract error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      await result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     expect(changePerms).not.toHaveBeenCalled()
@@ -497,7 +501,7 @@ describe("startExtract error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      await result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     const [status, error] = onFinish.mock.calls[0] as [boolean, Error | null]
@@ -518,7 +522,7 @@ describe("startExtract error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startExtract("Name", "desc", "end", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      await result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     const [status, error] = onFinish.mock.calls[0] as [boolean, Error | null]
@@ -526,7 +530,7 @@ describe("startExtract error arms", () => {
     expect(error?.message).toContain("chmod EPERM")
   })
 
-  it("resolves onFinish(true, null) and shows start+success toasts when extraction and chmod both succeed", async () => {
+  it("resolves onFinish(true, null) and shows only the completion toast when extraction and chmod both succeed", async () => {
     installMockWindowApi({
       pathsManager: {
         extractOnPath: vi.fn(async () => true),
@@ -537,11 +541,11 @@ describe("startExtract error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startExtract("Name", "desc", "progress", "/tmp/a.zip", "/tmp/out", false, onFinish)
+      await result.current.task.startExtract("Name", "desc", TASK_NOTIFICATION_POLICIES.callerHandled, "/tmp/a.zip", "/tmp/out", false, onFinish)
     })
 
     expect(onFinish).toHaveBeenCalledWith(true, null)
-    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "success"])
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["success"])
   })
 })
 
@@ -552,7 +556,7 @@ describe("startCompress error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      await result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     const [status, error] = onFinish.mock.calls[0] as [boolean, Error | null]
@@ -574,7 +578,7 @@ describe("startCompress error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      await result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     const [status, error] = onFinish.mock.calls[0] as [boolean, Error | null]
@@ -588,11 +592,11 @@ describe("startCompress error arms", () => {
     const { result } = renderTaskProbe()
     const onFinish = vi.fn()
     await act(async () => {
-      await result.current.task.startCompress("Name", "desc", "progress", "/tmp/in", "/tmp/out", "out.zip", onFinish)
+      await result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.callerHandled, "/tmp/in", "/tmp/out", "out.zip", onFinish)
     })
 
     expect(onFinish).toHaveBeenCalledWith(true, null)
-    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "success"])
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["success"])
   })
 
   it("passes a custom compressionLevel straight through to compressOnPath", async () => {
@@ -601,7 +605,7 @@ describe("startCompress error arms", () => {
 
     const { result } = renderTaskProbe()
     await act(async () => {
-      await result.current.task.startCompress("Name", "desc", "end", "/tmp/in", "/tmp/out", "out.zip", vi.fn(), 9)
+      await result.current.task.startCompress("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/in", "/tmp/out", "out.zip", vi.fn(), 9)
     })
 
     expect(compressOnPath).toHaveBeenCalledWith(expect.any(String), "/tmp/in", "/tmp/out", "out.zip", 9)
@@ -614,7 +618,7 @@ describe("removeTask", () => {
 
     const { result } = renderTaskProbe()
     act(() => {
-      void result.current.task.startDownload("Name", "desc", "end", "https://x", "/tmp/out", "file.zip", vi.fn())
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", vi.fn())
     })
 
     await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))

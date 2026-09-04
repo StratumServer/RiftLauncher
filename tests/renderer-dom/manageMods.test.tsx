@@ -14,10 +14,12 @@ const INSTALLATION_PATH = "/games/a"
 const ALPHA_PATH = "/games/a/Mods/alpha-1.0.0.zip"
 const BETA_PATH = "/games/a/Mods/beta-2.0.0.zip"
 const DELTA_PATH = "/games/a/Mods/delta-4.0.0.zip"
-const SEARCH_PLACEHOLDER = "Search by name or id"
+const SEARCH_PLACEHOLDER = "Search by name, id or author"
 const SUSPEND_TITLE = "Suspend updates for this Mod: Update all will skip it, you can still update it from here"
 const RESUME_TITLE = "Resume updates for this Mod: Update all will include it again"
 const EPSILON_PATH = "/games/a/Mods/epsilon-5.0.0.zip.disabled"
+const ALPHA_LOGO = "https://moddbcdn.vintagestory.at/alpha.png"
+const BETA_LOGO = "https://moddbcdn.vintagestory.at/beta.png"
 const DISABLE_TITLE = "Disable this Mod: it stays installed, Vintage Story just won't load it"
 const ENABLE_TITLE = "Enable this Mod: Vintage Story will load it again"
 
@@ -84,13 +86,34 @@ function duplicateModScan(): { mods: InstalledModType[]; errors: ErrorInstalledM
  * One `/api/mod/{id}` payload. `tags` carry no leading "v" because that is what
  * evaluateModCompatibility matches against the Installation's game version.
  */
-function aModDetail({ modid, assetid, name, modidstr, modversion, tags }: { modid: number; assetid: number; name: string; modidstr: string; modversion: string; tags: string[] }): string {
+function aModDetail({
+  modid,
+  assetid,
+  name,
+  modidstr,
+  modversion,
+  tags,
+  modTags,
+  logofile
+}: {
+  modid: number
+  assetid: number
+  name: string
+  modidstr: string
+  modversion: string
+  tags: string[]
+  /** The ModDB's category tags, which sit on the mod. `tags` above sits on the release and carries the game versions. */
+  modTags?: string[]
+  logofile?: string
+}): string {
   return JSON.stringify({
     statuscode: "200",
     mod: {
       modid,
       assetid,
       name,
+      ...(logofile ? { logofile } : {}),
+      ...(modTags ? { tags: modTags } : {}),
       releases: [
         {
           releaseid: modid,
@@ -109,9 +132,48 @@ function aModDetail({ modid, assetid, name, modidstr, modversion, tags }: { modi
   })
 }
 
+/** A detail with more than one release, for the game version axis: one mod can declare several. */
+function aMultiReleaseModDetail({
+  modid,
+  name,
+  modidstr,
+  releases,
+  modTags
+}: {
+  modid: number
+  name: string
+  modidstr: string
+  releases: { modversion: string; tags: string[] }[]
+  modTags?: string[]
+}): string {
+  return JSON.stringify({
+    statuscode: "200",
+    mod: {
+      modid,
+      assetid: modid + 100,
+      name,
+      ...(modTags ? { tags: modTags } : {}),
+      releases: releases.map((release, index) => ({
+        releaseid: modid * 10 + index,
+        mainfile: `https://mods.example/${modidstr}-${release.modversion}.zip`,
+        filename: `${modidstr}-${release.modversion}.zip`,
+        fileid: modid * 10 + index,
+        downloads: 0,
+        tags: release.tags,
+        modidstr,
+        modversion: release.modversion,
+        created: "",
+        changelog: ""
+      }))
+    }
+  })
+}
+
 function queryModDb(url: string): Promise<string> {
-  if (url.endsWith("/mod/alpha")) return Promise.resolve(aModDetail({ modid: 1, assetid: 101, name: "Alpha Mod", modidstr: "alpha", modversion: "1.1.0", tags: ["1.20.0"] }))
-  if (url.endsWith("/mod/beta")) return Promise.resolve(aModDetail({ modid: 2, assetid: 102, name: "Beta Mod", modidstr: "beta", modversion: "2.1.0", tags: ["1.20.0"] }))
+  // Alpha carries a logofile AND every scan fixture gives it a local _image, so the guard in
+  // useGetCompleteInstalledMods is the only thing keeping the network out of Alpha's row.
+  if (url.endsWith("/mod/alpha")) return Promise.resolve(aModDetail({ modid: 1, assetid: 101, name: "Alpha Mod", modidstr: "alpha", modversion: "1.1.0", tags: ["1.20.0"], logofile: ALPHA_LOGO }))
+  if (url.endsWith("/mod/beta")) return Promise.resolve(aModDetail({ modid: 2, assetid: 102, name: "Beta Mod", modidstr: "beta", modversion: "2.1.0", tags: ["1.20.0"], logofile: BETA_LOGO }))
   // Gamma's only newer release is tagged for another series, so it lands in the incompatible list.
   if (url.endsWith("/mod/gamma")) return Promise.resolve(aModDetail({ modid: 3, assetid: 103, name: "Gamma Mod", modidstr: "gamma", modversion: "3.1.0", tags: ["1.19.0"] }))
   if (url.endsWith("/mod/epsilon")) return Promise.resolve(aModDetail({ modid: 5, assetid: 105, name: "Epsilon Mod", modidstr: "epsilon", modversion: "5.1.0", tags: ["1.20.0"] }))
@@ -190,6 +252,30 @@ describe("ManageMods", () => {
     await waitFor(() => expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/mod/alpha"))).toHaveLength(1))
   })
 
+  it("prefers the archive's own icon and only reaches for the ModDB logo without one", async () => {
+    const cacheModImage = vi.fn(async (url: string) => (url === BETA_LOGO ? "beta-logo.png" : "unexpected.png"))
+    renderManageMods({ modsManager: { cacheModImage } })
+
+    expect(await screen.findByText("Beta Mod", {}, { timeout: 3000 })).toBeTruthy()
+    await waitFor(() => expect(cacheModImage).toHaveBeenCalledWith(BETA_LOGO))
+
+    // Beta ships no modicon.png, so its row falls back to the ModDB logo.
+    expect(screen.getByAltText("Beta Mod").getAttribute("src")).toBe("cachemodimg:beta-logo.png")
+    // Alpha ships its own modicon.png and its ModDB entry has a logo too, so the guard is the only
+    // thing keeping the network out of it and the row on its local file.
+    expect(cacheModImage).not.toHaveBeenCalledWith(ALPHA_LOGO)
+    expect(screen.getByAltText("Alpha Mod").getAttribute("src")).toBe("cachemodimg:alpha.png")
+  })
+
+  it("caches one ModDB logo for repeated installed mod ids", async () => {
+    const cacheModImage = vi.fn(async (url: string) => (url === ALPHA_LOGO ? "alpha-logo.png" : "unexpected.png"))
+    renderManageMods({ modsManager: { getInstalledMods: vi.fn(async () => duplicateModScan()), cacheModImage } })
+
+    expect(await screen.findByText("Alpha Mod copy", {}, { timeout: 3000 })).toBeTruthy()
+    await waitFor(() => expect(cacheModImage.mock.calls.filter(([url]) => url === ALPHA_LOGO)).toHaveLength(1))
+    expect(screen.getAllByAltText(/Alpha Mod/).map((img) => img.getAttribute("src"))).toEqual(["cachemodimg:alpha-logo.png", "cachemodimg:alpha-logo.png"])
+  })
+
   it("leaves the Mod on disk until the delete confirm dialog is accepted", async () => {
     const user = userEvent.setup()
     const deletePath = vi.fn(async () => true)
@@ -230,6 +316,7 @@ describe("ManageMods", () => {
 
     expect(await screen.findByText("1 Mods updated, 1 left as they were. The summary says which ones.", {}, { timeout: 3000 })).toBeTruthy()
     expect(screen.queryByText("All the Mods were updated successfully!")).toBeNull()
+    expect(screen.queryByText(/Finished download:/)).toBeNull()
 
     // Both attempts show up in the summary, the failed one without a target version.
     const summary = await screen.findByRole("dialog")
@@ -367,6 +454,26 @@ describe("ManageMods: searching the installed Mods", () => {
     expect(await screen.findByText("Delta Mod")).toBeTruthy()
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
     expect(screen.getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("finds a Mod by its author and restores the list when cleared", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const field = await searchFor(user, "ANN")
+
+    expect(await screen.findByText("Alpha Mod")).toBeTruthy()
+    expect(screen.queryByText("Beta Mod")).toBeNull()
+    expect(screen.queryByText("Gamma Mod")).toBeNull()
+    expect(screen.queryByText("Delta Mod")).toBeNull()
+    expect(screen.getAllByRole("listitem")).toHaveLength(1)
+
+    await user.clear(field)
+
+    expect(await screen.findByText("Beta Mod")).toBeTruthy()
+    expect(screen.getByText("Gamma Mod")).toBeTruthy()
+    expect(screen.getByText("Delta Mod")).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(5)
   })
 
   it("ignores case, on the name and on the id alike", async () => {
@@ -656,5 +763,256 @@ describe("ManageMods: icon cache", () => {
     expect(clearCache).toHaveBeenCalledTimes(1)
 
     cleanup()
+  })
+})
+
+/**
+ * Issue #307: narrowing the installed list by author, ModDB tag, and declared game version.
+ *
+ * Each case drives one or more headless UI dropdowns through userEvent, waiting on the scan and the
+ * ModDB mock between clicks, so the block runs with a wider timeout: these pass well inside 5s alone
+ * and only brush it when the whole suite is contending for the box.
+ */
+describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
+  const FILTER_GAMMA_PATH = "/games/a/Mods/gamma-3.0.0.zip"
+  const FILTER_ZETA_PATH = "/games/a/Mods/zeta-6.0.0.zip"
+
+  /**
+   * A folder the three dropdowns have something to say about.
+   *
+   * Ann is Alpha's SECOND author, so a filter reading only `authors[0]` misses it. Gamma and Delta
+   * credit the same author in different cases, so a case sensitive filter splits them. Zeta has no
+   * `authors` key and no ModDB entry, so it is the mod an unguarded `authors!` crashes on and the
+   * one every ModDB-derived axis has to leave out.
+   */
+  function aFilterableModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
+    return {
+      mods: [
+        { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, authors: ["Zed", "Ann"], contributors: [] },
+        { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, enabled: true, authors: ["Bob"], contributors: [] },
+        { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: FILTER_GAMMA_PATH, enabled: true, authors: ["Cal"], contributors: [] },
+        { name: "Delta Mod", modid: "delta", version: "4.0.0", path: DELTA_PATH, enabled: true, authors: ["cal"], contributors: [] },
+        { name: "Zeta Mod", modid: "zeta", version: "6.0.0", path: FILTER_ZETA_PATH, enabled: true, contributors: [] }
+      ],
+      errors: [{ zipname: "broken.zip", path: "/games/a/Mods/broken.zip" }]
+    }
+  }
+
+  /** Alpha declares 1.20.4 only, so it is the mod that answers a 1.20.0 pick on the same-minor rule. */
+  function filterQueryModDb(url: string): Promise<string> {
+    if (url.endsWith("/mod/alpha"))
+      return Promise.resolve(aMultiReleaseModDetail({ modid: 1, name: "Alpha Mod", modidstr: "alpha", modTags: ["storage", "qol"], releases: [{ modversion: "1.1.0", tags: ["1.20.4"] }] }))
+    if (url.endsWith("/mod/beta"))
+      return Promise.resolve(aMultiReleaseModDetail({ modid: 2, name: "Beta Mod", modidstr: "beta", modTags: ["storage"], releases: [{ modversion: "2.1.0", tags: ["1.19.4"] }] }))
+    if (url.endsWith("/mod/gamma"))
+      return Promise.resolve(
+        aMultiReleaseModDetail({
+          modid: 3,
+          name: "Gamma Mod",
+          modidstr: "gamma",
+          modTags: ["qol"],
+          releases: [
+            { modversion: "3.1.0", tags: ["1.20.0"] },
+            { modversion: "3.0.5", tags: ["1.19.4"] }
+          ]
+        })
+      )
+    // On the ModDB but with no category tags, so it is offered by the game version axis alone.
+    if (url.endsWith("/mod/delta")) return Promise.resolve(aMultiReleaseModDetail({ modid: 4, name: "Delta Mod", modidstr: "delta", releases: [{ modversion: "4.1.0", tags: ["1.20.0"] }] }))
+    return Promise.resolve(JSON.stringify({ statuscode: "404" }))
+  }
+
+  function renderFilterable(scan: () => { mods: InstalledModType[]; errors: ErrorInstalledModType[] } = aFilterableModScan): ReturnType<typeof renderManageMods> {
+    return renderManageMods({ netManager: { queryURL: vi.fn(filterQueryModDb) }, modsManager: { getInstalledMods: vi.fn(async () => scan()) } })
+  }
+
+  /**
+   * Opens one dropdown by the name it carries while unset. The findByRole wait doubles as the wait
+   * for the scan to land: the bar only mounts once there is more than one installed Mod.
+   */
+  async function openFilter(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
+    await user.click(await screen.findByRole("button", { name }, { timeout: 3000 }))
+  }
+
+  async function pick(user: ReturnType<typeof userEvent.setup>, control: string, option: string): Promise<void> {
+    await openFilter(user, control)
+    await user.click(await screen.findByRole("option", { name: option }))
+  }
+
+  it("names every control it offers, and offers no tag control for a folder the ModDB tagged none of", async () => {
+    renderManageMods()
+
+    // The default fixture's details carry release tags but no category tags at all.
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Author" })).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "VS Version" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Clear filters" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Tags" })).toBeNull()
+
+    // The rows keep their list semantics with the bar above them, and every Mod is still listed.
+    expect(screen.getAllByRole("listitem")).toHaveLength(5)
+  })
+
+  it("offers only the author control when the ModDB answers nothing", async () => {
+    renderManageMods({ netManager: { queryURL: vi.fn(async () => JSON.stringify({ statuscode: "404" })) } })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Author" })).toBeTruthy()
+    // Both ModDB-derived axes stay off screen rather than offering a filter that would hide the folder.
+    expect(screen.queryByRole("button", { name: "Tags" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "VS Version" })).toBeNull()
+    expect(screen.getAllByRole("listitem")).toHaveLength(5)
+  })
+
+  it("lists a Mod with no authors key rather than dropping it or crashing on it", async () => {
+    renderFilterable()
+
+    expect(await screen.findByText("Zeta Mod", {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(6)
+  })
+
+  it("filters on an author credited second, not only on the first one", async () => {
+    const user = userEvent.setup()
+    renderFilterable()
+
+    await pick(user, "Author", "Ann")
+
+    expect(await screen.findByText("Alpha Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Beta Mod")).toBeNull())
+    expect(screen.queryByText("Gamma Mod")).toBeNull()
+    expect(screen.queryByText("Delta Mod")).toBeNull()
+    expect(screen.queryByText("Zeta Mod")).toBeNull()
+  })
+
+  it("offers an author spelled two ways once, and matches both spellings", async () => {
+    const user = userEvent.setup()
+    renderFilterable()
+
+    await openFilter(user, "Author")
+    expect(await screen.findByRole("option", { name: "Cal" })).toBeTruthy()
+    expect(screen.queryByRole("option", { name: "cal" })).toBeNull()
+
+    await user.click(screen.getByRole("option", { name: "Cal" }))
+
+    // Delta credits "cal", so a case sensitive comparison would leave it out.
+    expect(await screen.findByText("Gamma Mod")).toBeTruthy()
+    expect(screen.getByText("Delta Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+  })
+
+  it("asks for every selected tag, so a second tag narrows what is left", async () => {
+    const user = userEvent.setup()
+    renderFilterable()
+
+    await pick(user, "Tags", "storage")
+
+    expect(await screen.findByText("Alpha Mod")).toBeTruthy()
+    expect(screen.getByText("Beta Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Gamma Mod")).toBeNull())
+    // Delta is on the ModDB with no category tags, and Zeta is not on it at all.
+    expect(screen.queryByText("Delta Mod")).toBeNull()
+    expect(screen.queryByText("Zeta Mod")).toBeNull()
+
+    await user.click(await screen.findByRole("option", { name: "qol" }))
+    await user.keyboard("{Escape}")
+
+    await waitFor(() => expect(screen.queryByText("Beta Mod")).toBeNull())
+    expect(screen.getByText("Alpha Mod")).toBeTruthy()
+    // Alpha plus the unreadable archive, which the three dropdowns leave alone.
+    expect(screen.getByText("broken.zip")).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(2)
+  })
+
+  it("offers the game versions the releases declare, not the Mods' own version numbers", async () => {
+    const user = userEvent.setup()
+    renderFilterable()
+
+    await openFilter(user, "VS Version")
+
+    // Newest first, and none of "1.0.0", "2.0.0", "3.0.0", "4.0.0" or "6.0.0" is on offer.
+    const options = (await screen.findAllByRole("option")).map((option) => option.textContent?.trim())
+    expect(options).toEqual(["- Any VS Version -", "1.20.4", "1.20.0", "1.19.4"])
+  })
+
+  it("filters on the game version a release declares", async () => {
+    const user = userEvent.setup()
+    renderFilterable()
+
+    await pick(user, "VS Version", "1.19.4")
+
+    expect(await screen.findByText("Beta Mod")).toBeTruthy()
+    expect(screen.getByText("Gamma Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    expect(screen.queryByText("Delta Mod")).toBeNull()
+    expect(screen.queryByText("Zeta Mod")).toBeNull()
+    // Beta, Gamma, and the unreadable archive the dropdowns leave alone.
+    expect(screen.getAllByRole("listitem")).toHaveLength(3)
+  })
+
+  it("counts a release tagged for the same minor series, like the sections under it do", async () => {
+    const user = userEvent.setup()
+    renderFilterable()
+
+    await pick(user, "VS Version", "1.20.0")
+
+    // Alpha declares 1.20.4 only. The updatable split already treats that as a 1.20.0 match.
+    expect(await screen.findByText("Alpha Mod")).toBeTruthy()
+    expect(screen.getByText("Gamma Mod")).toBeTruthy()
+    expect(screen.getByText("Delta Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Beta Mod")).toBeNull())
+  })
+
+  it("asks a Mod to clear every axis at once rather than any one of them", async () => {
+    const user = userEvent.setup()
+    renderFilterable()
+
+    await pick(user, "Author", "Cal")
+    await pick(user, "VS Version", "1.19.4")
+
+    // Cal covers Gamma and Delta. 1.19.4 covers Beta and Gamma. Together they leave Gamma alone.
+    expect(await screen.findByText("Gamma Mod")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("Delta Mod")).toBeNull())
+    expect(screen.queryByText("Beta Mod")).toBeNull()
+    expect(screen.queryByText("Alpha Mod")).toBeNull()
+    // Gamma and the unreadable archive the dropdowns leave alone.
+    expect(screen.getAllByRole("listitem")).toHaveLength(2)
+  })
+
+  it("says so when the filters leave nothing, instead of showing empty sections", async () => {
+    const user = userEvent.setup()
+    // No unreadable archive: those stay unfiltered on purpose, so the empty state needs a clean folder.
+    renderFilterable(() => ({ ...aFilterableModScan(), errors: [] }))
+
+    await pick(user, "Author", "Bob")
+    await pick(user, "Tags", "qol")
+
+    expect(await screen.findByText("There are no Mods that match your filters!")).toBeTruthy()
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0)
+  })
+
+  it("puts every Mod back when the clear button is pressed, on all three axes", async () => {
+    const user = userEvent.setup()
+    renderFilterable()
+
+    await pick(user, "Author", "Ann")
+    await pick(user, "Tags", "storage")
+    await user.keyboard("{Escape}")
+    await pick(user, "VS Version", "1.20.4")
+
+    await waitFor(() => expect(screen.queryByText("Beta Mod")).toBeNull())
+
+    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+
+    expect(await screen.findByText("Beta Mod")).toBeTruthy()
+    expect(screen.getByText("Gamma Mod")).toBeTruthy()
+    expect(screen.getByText("Delta Mod")).toBeTruthy()
+    expect(screen.getByText("Zeta Mod")).toBeTruthy()
+    expect(screen.getByText("broken.zip")).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(6)
+    // Each control is back to its unset name, so none of the three kept a value. Dropping the tags
+    // reset alone would leave the Tags button reading "storage" here.
+    expect(screen.getByRole("button", { name: "Author" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Tags" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "VS Version" })).toBeTruthy()
   })
 })

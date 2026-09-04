@@ -15,6 +15,7 @@ export interface InstallationFormFieldsValues {
   compressionLevel: number
   mesaGlThread: boolean
   envVars: string
+  launchWrapper: string
 }
 
 export interface InstallationFormFields extends InstallationFormFieldsValues {
@@ -27,6 +28,7 @@ export interface InstallationFormFields extends InstallationFormFieldsValues {
   setCompressionLevel: (compressionLevel: number) => void
   setMesaGlThread: (mesaGlThread: boolean) => void
   setEnvVars: (envVars: string) => void
+  setLaunchWrapper: (launchWrapper: string) => void
 }
 
 /**
@@ -48,6 +50,7 @@ export function useInstallationFormFields(defaults: InstallationFormFieldsValues
   const [compressionLevel, setCompressionLevel] = useState<number>(defaults.compressionLevel)
   const [mesaGlThread, setMesaGlThread] = useState<boolean>(defaults.mesaGlThread)
   const [envVars, setEnvVars] = useState<string>(defaults.envVars)
+  const [launchWrapper, setLaunchWrapper] = useState<string>(defaults.launchWrapper)
 
   return {
     icon,
@@ -67,6 +70,8 @@ export function useInstallationFormFields(defaults: InstallationFormFieldsValues
     mesaGlThread,
     setMesaGlThread,
     envVars,
-    setEnvVars
+    setEnvVars,
+    launchWrapper,
+    setLaunchWrapper
   }
 }

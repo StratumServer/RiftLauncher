@@ -101,7 +101,10 @@ describe("parseModListResponse", () => {
 
 describe("parseModDetailResponse", () => {
   it("reads a mod detail on success, carrying every other field through untouched", () => {
-    const raw = JSON.stringify({ statuscode: "200", mod: { modid: 1783, name: "Config lib", releases: [{ releaseid: 1, modversion: "1.12.0" }] } })
+    const raw = JSON.stringify({
+      statuscode: "200",
+      mod: { modid: 1783, name: "Config lib", logofile: "https://moddbcdn.vintagestory.at/config.png", releases: [{ releaseid: 1, modversion: "1.12.0" }] }
+    })
 
     const result = parseModDetailResponse(raw)
     assert.equal(result.ok, true)
@@ -109,6 +112,7 @@ describe("parseModDetailResponse", () => {
 
     assert.equal(result.payload.modid, 1783)
     assert.equal(result.payload.name, "Config lib")
+    assert.equal(result.payload.logofile, "https://moddbcdn.vintagestory.at/config.png")
     assert.deepEqual(result.payload["releases"], [{ releaseid: 1, modversion: "1.12.0" }])
   })
 

@@ -28,7 +28,15 @@ function GlobalModUpdateChecker(): null {
           configDispatch({ type: CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE, payload: { installationId: lastUsedInstallation.id } })
           window.setTimeout(() => {
             addNotification(t("features.mods.updatesAvailableInstallation", { count: updates }), "info", {
-              onClick: () => goTo(`/installations/mods/${lastUsedInstallation.id}`)
+              actions: [
+                {
+                  id: "view-updates",
+                  label: t("components.activityCenter.viewUpdates"),
+                  onClick: (): void => {
+                    void goTo(`/installations/mods/${lastUsedInstallation.id}`)
+                  }
+                }
+              ]
             })
           }, 2_000)
         }

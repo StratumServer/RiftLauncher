@@ -1,7 +1,6 @@
 import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain } from "electron"
 import { dirname, join } from "node:path"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
-import { autoUpdater } from "electron-updater"
 import Logger from "electron-log"
 import { pathToFileURL } from "node:url"
 import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMigration"
@@ -12,8 +11,8 @@ app.setPath("userData", userDataSetup.path)
 import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
-import { logMessage } from "@src/utils/logManager"
-import { createUpdaterLogger } from "@src/utils/updaterLogger"
+import { getErrorMessage, logMessage } from "@src/utils/logManager"
+import { loadAutoUpdater } from "@src/utils/autoUpdaterLoader"
 import { createSuppressedErrorRecorder, makeConsoleOutputFaultTolerant } from "@src/utils/consoleTransportSafety"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecurity"
@@ -23,9 +22,11 @@ import { registerAutoUpdaterEvents, scheduleUpdateCheck } from "@src/main/autoUp
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { pruneModCatalogCache } from "@src/ipc/catalogCache"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
+import { getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
 import fse from "fs-extra"
 
 import "@src/ipc"
@@ -53,15 +54,8 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
 
 logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
 
-// electron-updater's own constructor already attaches an "error" listener that logs
-// error.stack || error.message through whatever logger it is given, so a hand-written
-// listener here would be redundant. What it was given until now was the raw electron-log
-// instance, the one component writing to disk without passing through logMessage, so the
-// updater's cache paths and feed URLs escaped the redaction every other line gets.
-// Placed after resolvePathFn so nothing is logged before the app's Logs directory exists.
-autoUpdater.logger = createUpdaterLogger()
-
 let mainWindow: BrowserWindow
+let hasSweptOrphanedTempFiles = false
 const modIconMemoryCache = new IconMemoryCache()
 const packagedRendererPath = join(__dirname, "../renderer/index.html")
 const packagedRendererRoot = dirname(packagedRendererPath)
@@ -90,12 +84,22 @@ if (!is.dev) {
       standard: true,
       secure: true,
       supportFetchAPI: true,
+      // Keep fetch available for the local app shell while requiring explicit
+      // CORS headers if a future renderer path crosses origins.
+      corsEnabled: true,
       codeCache: true
     }
   })
 }
 
 protocol.registerSchemesAsPrivileged(privilegedSchemes)
+
+// Renderer exits have their own webContents event above. This catches failures
+// in Electron's other child processes (GPU, utility, and sandbox helpers) without
+// collecting crash reports or sending telemetry anywhere.
+app.on("child-process-gone", (_event, details) => {
+  logMessage("error", `[back] [index] [main/index.ts] [child-process-gone] ${details.type} process exited: ${details.reason} (exit code ${details.exitCode}).`)
+})
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -154,6 +158,16 @@ function createWindow(): void {
     if (oldWindowsState.maximized) mainWindow.maximize()
 
     mainWindow.show()
+
+    // The first config read is complete here, so this does not race migrations
+    // or a config write. Keep the sweep one-shot even when macOS recreates a
+    // window later in the same process.
+    if (!hasSweptOrphanedTempFiles) {
+      hasSweptOrphanedTempFiles = true
+      void sweepOrphanedTempFiles(getOrphanedTempFileSweepTargets(app.getPath("userData"), config)).catch((error: unknown) => {
+        logMessage("debug", `[back] [index] [main/index.ts] [ready-to-show] Could not sweep orphaned temporary files: ${error}`)
+      })
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -262,7 +276,9 @@ app.whenReady().then(async () => {
         }
 
         const filePath = resolveContainedPath(packagedRendererRoot, requestUrl.pathname)
-        if (!filePath || !(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
+        // Containment protects the path boundary; file safety protects the resolved filesystem object.
+        if (!filePath) return new Response(null, { status: 404 })
+        if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
         return net.fetch(pathToFileURL(filePath).toString())
       } catch {
         return new Response(null, { status: 400 })
@@ -270,8 +286,8 @@ app.whenReady().then(async () => {
     })
   }
 
-  // Handler for mod icons. Names in this folder are content-addressed, so a hit in
-  // modIconMemoryCache can never serve stale bytes.
+  // Handler for mod icons. Archive-icon names contain their bytes' sha256, while ModDB logo names
+  // contain their URL and may be refreshed; the protocol checks the file revision before a hit.
   protocol.handle(
     "cachemodimg",
     createCacheModImageProtocolHandler({
@@ -294,7 +310,8 @@ app.whenReady().then(async () => {
   protocol.handle("icons", async (req) => {
     const srcPath = join(app.getPath("userData"), "Icons")
     const filePath = resolveContainedPath(srcPath, new URL(req.url).pathname)
-    if (!filePath || !filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
+    if (!filePath) return new Response(null, { status: 404 })
+    if (!filePath.toLowerCase().endsWith(".png")) return new Response(null, { status: 404 })
     if (!(await isSafeProtocolFile(filePath))) return new Response(null, { status: 404 })
     return net.fetch(pathToFileURL(filePath).toString())
   })
@@ -319,23 +336,41 @@ app.whenReady().then(async () => {
   // dead there (#117).
   void pruneModIconCache()
 
+  // Same reasoning, same moment: the mods-catalog disk cache grows one file per distinct
+  // filter/search combination a player has ever used, with nothing else in the app that
+  // ever revisits every entry to decide what is still worth keeping.
+  void pruneModCatalogCache()
+
   const updateDecision = canAutoUpdate({
     platform: process.platform,
     env: { UPDATE: process.env["UPDATE"], APPIMAGE: process.env["APPIMAGE"] },
     linuxPackageType: process.platform === "linux" ? readLinuxPackageType() : undefined
   })
   if (updateDecision.ok) {
-    registerAutoUpdaterEvents((channel, payload) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
-    })
+    // Not awaited, so the 88.9 ms of require work inside the asar behind loadAutoUpdater stays off this handler
+    // and off the path to the first paint. Nothing downstream of it is time critical: the check
+    // it arms does not go out for another five seconds, and every renderer-facing update channel
+    // refuses to act until an offer has been made through the events registered here.
+    void loadAutoUpdater()
+      .then((autoUpdater) => {
+        registerAutoUpdaterEvents(autoUpdater, (channel, payload) => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+        })
 
-    // Who gets offered a beta, said out loud rather than left to electron-updater, which reads it
-    // off the running version alone: that leaves someone on a stable build with no way to ask for
-    // betas, and someone who tried one beta signed up for every beta after it. The stored answer
-    // wins when there is one, and the running version still decides when there is not. Read inside
-    // the callback, so the answer the check uses is the one the settings page has stored by then
-    // rather than the one it had at launch.
-    scheduleUpdateCheck(async () => resolveAllowPrerelease((await getConfig()).receiveBetaUpdates, app.getVersion()))
+        // Who gets offered a beta, said out loud rather than left to electron-updater, which reads
+        // it off the running version alone: that leaves someone on a stable build with no way to
+        // ask for betas, and someone who tried one beta signed up for every beta after it. The
+        // stored answer wins when there is one, and the running version still decides when there
+        // is not. Read inside the callback, so the answer the check uses is the one the settings
+        // page has stored by then rather than the one it had at launch.
+        scheduleUpdateCheck(autoUpdater, async () => resolveAllowPrerelease((await getConfig()).receiveBetaUpdates, app.getVersion()))
+      })
+      .catch((error: unknown) => {
+        // A packaged build missing its own updater is a broken package, not a reason to refuse to
+        // launch: everything else in the app works without it, and this is the only line that
+        // would otherwise have gone unreported now that the import is no longer at module scope.
+        logMessage("error", `[back] [index] [main/index.ts] [whenReady] Could not load the auto-updater: ${getErrorMessage(error)}.`)
+      })
   } else {
     logMessage("info", `[back] [index] [main/index.ts] [whenReady] Auto-update disabled: ${updateDecision.reason}.`)
   }

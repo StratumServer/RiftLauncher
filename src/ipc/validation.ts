@@ -10,6 +10,23 @@ export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 export const MAX_LOGIN_RESPONSE_BYTES = 512 * 1024
 export const MAX_ARCHIVE_ENTRY_BYTES = 512 * 1024 * 1024
 export const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
+// Backups get their own pair rather than reusing the two above, because the two
+// above are sized against hostile input. A mod archive or a game build arrives
+// over the network, a zip bomb is a real thing to refuse, and 2 GiB is already
+// more than any of them legitimately needs. A backup source is a folder the
+// player has on their own disk and asked the launcher to copy, so it never had
+// that threat model: it only inherited the number. A modded installation with a
+// world or two passes 2 GiB without being unusual, and one player reported a
+// 19 GB installation (#362), which is how a limit meant for hostile archives
+// ended up refusing ordinary backups.
+//
+// 64 GiB is several times the largest installation anyone has reported, so it
+// is a bound rather than no bound at all, and it keeps the promise the compress
+// and restore sides make each other: an archive the launcher agrees to write is
+// an archive it will still agree to read back. 16 GiB per entry because a
+// single world database is several GB on its own and is one file.
+export const MAX_BACKUP_ENTRY_BYTES = 16 * 1024 * 1024 * 1024
+export const MAX_BACKUP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 // The mods catalog has no server-side pagination: one growth spurt of the ~8000-mod
 // list (about 3.5 MB today) can outgrow the generic 4 MB ceiling with no fallback.
 // 16 MB gives years of headroom while staying a bounded, allow-listed exception rather
@@ -137,6 +154,24 @@ export type PathGrant = {
   descendants: boolean
 }
 
+/** The entry and total ceilings one archive is read under. */
+export type ArchiveSizeLimits = {
+  entryBytes: number
+  totalBytes: number
+}
+
+/**
+ * Which pair an archive is held to.
+ *
+ * The strict one is the default and stays the default: only a caller that has
+ * established the archive is one of the launcher's own backups passes true, and
+ * only the main process can establish that (EXTRACT_ON_PATH in
+ * handlers/pathsHandlers.ts decides it from where the file sits).
+ */
+export function archiveSizeLimits(isBackup: boolean): ArchiveSizeLimits {
+  return isBackup ? { entryBytes: MAX_BACKUP_ENTRY_BYTES, totalBytes: MAX_BACKUP_TOTAL_BYTES } : { entryBytes: MAX_ARCHIVE_ENTRY_BYTES, totalBytes: MAX_ARCHIVE_TOTAL_BYTES }
+}
+
 /** True when at least one grant covers `candidate`. */
 export function isPathGranted(grants: readonly PathGrant[], candidate: string): boolean {
   return grants.some((grant) => (grant.descendants ? isPathWithin(grant.path, candidate) : comparablePath(grant.path) === comparablePath(candidate)))
@@ -178,13 +213,14 @@ export function validateGameVersion(value: unknown): GameVersionType {
   }
 }
 
-export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> {
+export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper: string } {
   if (!isRecord(value)) throw new TypeError("Invalid installation")
   return {
     path: assertNonRootPath(value.path, "installation path"),
     startParams: assertBoundedString(value.startParams, "start parameters", 8_192),
     mesaGlThread: assertBoolean(value.mesaGlThread, "MESA GL thread flag"),
-    envVars: assertBoundedString(value.envVars, "environment variables", 8_192)
+    envVars: assertBoundedString(value.envVars, "environment variables", 8_192),
+    launchWrapper: assertBoundedString(value.launchWrapper ?? "", "launch wrapper", 4_096).trim()
   }
 }
 

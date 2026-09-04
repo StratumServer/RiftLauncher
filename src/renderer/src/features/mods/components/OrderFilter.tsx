@@ -5,6 +5,7 @@ import { PiArrowDownDuotone, PiArrowsDownUpDuotone, PiCalendarDuotone, PiChatCen
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react"
 
 import { NormalButton } from "@renderer/components/ui/Buttons"
+import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
@@ -55,10 +56,7 @@ function OrderFilter({
     <Menu>
       {({ open }) => (
         <>
-          <MenuButton
-            title={t("generic.order")}
-            className="w-8 h-8 flex items-center justify-center gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer text-lg"
-          >
+          <MenuButton title={t("generic.order")} className={`${MENU_TRIGGER_STYLES} size-8 p-0 text-lg`}>
             <PiArrowsDownUpDuotone />
           </MenuButton>
           <AnimatePresence>
@@ -76,9 +74,9 @@ function OrderFilter({
                       key={ob.key}
                       as={motion.li}
                       variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className="shrink-0 w-full h-8 flex items-center overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer whitespace-nowrap text-ellipsis text-sm px-2 py-1"
+                      className={`${MENU_OPTION_STYLES} odd:bg-zinc-800/30 even:bg-zinc-950/30 whitespace-nowrap text-ellipsis text-sm`}
                     >
-                      <NormalButton title={`${ob.value}`} onClick={() => changeOrder(ob.key)} className="w-full">
+                      <NormalButton title={`${ob.value}`} onClick={() => changeOrder(ob.key)} variant="ghost" className="w-full">
                         <div className="w-full flex items-center justify-between gap-1">
                           <p className="flex items-center gap-1">
                             <span>{ob.icon}</span>

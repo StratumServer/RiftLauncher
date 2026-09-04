@@ -8,31 +8,24 @@ export interface TaskType {
   id: string
   name: string
   desc: string
-  type: "download" | "extract" | "compress"
+  type: "download" | "extract" | "install" | "compress"
   progress: number
   status: "pending" | "in-progress" | "completed" | "failed"
 }
 
-/**
- * How a task's toasts are gated. The success toast always shows; what the two
- * modes differ on is the start toast and the generic error one.
- *
- * - "end": no start toast, and the generic error toast shows. For callers that
- *   do not report their own failures and want the ambient one.
- * - "progress": the start toast shows and the generic error one does not. For
- *   callers whose domain layer already raises its own specific failure
- *   notification, so the generic one would just be a second toast for the same
- *   event.
- */
-export type TaskNotificationsMode = "end" | "progress"
-
-function showsStart(mode: TaskNotificationsMode): boolean {
-  return mode === "progress"
+/** Describes which terminal task events should reach the notification system. */
+export interface TaskNotificationPolicy {
+  /** Whether the task runner owns a generic failure notification. */
+  failure: "generic" | "caller-handled"
+  /** Whether the task runner should announce successful completion. */
+  completion: "toast" | "silent"
 }
 
-function showsError(mode: TaskNotificationsMode): boolean {
-  return mode === "end"
-}
+export const TASK_NOTIFICATION_POLICIES = {
+  individual: { failure: "generic", completion: "toast" },
+  callerHandled: { failure: "caller-handled", completion: "toast" },
+  aggregate: { failure: "caller-handled", completion: "silent" }
+} as const satisfies Record<string, TaskNotificationPolicy>
 
 export enum ACTIONS {
   ADD_TASK = "ADD_TASK",
@@ -70,11 +63,11 @@ function changesNothing(task: TaskType, updates: Partial<Omit<TaskType, "id">>):
  * single field returns the very same state array, so `useReducer` bails out
  * instead of re-rendering every task consumer.
  *
- * A completed task now gets its completion dispatched twice on a normal run,
- * once by the progress listener seeing 100 and once by the flow's own success
- * path (both land on the same `{ progress: 100, status: "completed" }`), and
- * whichever arrives second has to be a no-op rather than a second render with
- * identical content.
+ * A progress event is not the terminal signal for an awaited operation. A
+ * download can report 100 while its promise still has to flush the file, so
+ * the operation marks itself completed after that promise resolves. Extract
+ * and compress retain the same idempotent terminal update when their progress
+ * listener and awaited operation finish together.
  */
 export function taskReducer(state: TaskType[], action: TaskAction): TaskType[] {
   switch (action.type) {
@@ -104,10 +97,11 @@ const COMPLETED: Partial<Omit<TaskType, "id">> = { progress: 100, status: "compl
 
 export interface TaskContextType {
   tasks: TaskType[]
+  activeTaskCount: number
   startDownload(
     name: string,
     desc: string,
-    notifications: TaskNotificationsMode,
+    notifications: TaskNotificationPolicy,
     url: string,
     outputPath: string,
     fileName: string,
@@ -116,7 +110,7 @@ export interface TaskContextType {
   startExtract(
     name: string,
     desc: string,
-    notifications: TaskNotificationsMode,
+    notifications: TaskNotificationPolicy,
     filePath: string,
     outputPath: string,
     deleteZip: boolean,
@@ -126,7 +120,7 @@ export interface TaskContextType {
   startInstall(
     name: string,
     desc: string,
-    notifications: TaskNotificationsMode,
+    notifications: TaskNotificationPolicy,
     filePath: string,
     outputPath: string,
     deleteInstaller: boolean,
@@ -135,7 +129,7 @@ export interface TaskContextType {
   startCompress(
     name: string,
     desc: string,
-    notifications: TaskNotificationsMode,
+    notifications: TaskNotificationPolicy,
     inputPath: string,
     outputPath: string,
     backupName: string,
@@ -166,7 +160,9 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   useEffect((): (() => void) => {
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for download progress.`)
     const removeDownloadProgressListener = window.api.pathsManager.onDownloadProgress(({ id, progress }) => {
-      if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
+      // The final progress tick can arrive before downloadOnPath has flushed and resolved. Only
+      // startDownload can mark a download completed, because that is the event that says the file
+      // is on disk for consumers such as ListMods.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
 
@@ -228,7 +224,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   async function startDownload(
     name: string,
     desc: string,
-    notifications: TaskNotificationsMode,
+    notifications: TaskNotificationPolicy,
     url: string,
     outputPath: string,
     fileName: string,
@@ -242,7 +238,6 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "download", progress: 0, status: "pending" } })
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Downloading...`)
-      if (showsStart(notifications)) addNotification(t("notifications.body.downloading", { downloadName: name }), "info")
       const downloadedFile = await window.api.pathsManager.downloadOnPath(id, url, outputPath, fileName)
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Downloaded.`)
@@ -251,13 +246,13 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       // task showing as still running forever. See the reducer above for why
       // dispatching this after a 100 tick already did costs nothing.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      addNotification(t("notifications.body.downloaded", { downloadName: name }), "success")
+      if (notifications.completion === "toast") addNotification(t("notifications.body.downloaded", { downloadName: name }), "success", { presentation: "toast" })
       onFinish(true, downloadedFile, null)
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Error downloading.`)
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Error downloading: ${err}`)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
-      if (showsError(notifications)) addNotification(t("notifications.body.downloadError", { downloadName: name }), "error")
+      if (notifications.failure === "generic") addNotification(t("notifications.body.downloadError", { downloadName: name }), "error")
       onFinish(false, "", new Error(`Error downloading ${url}: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished download.")
@@ -267,7 +262,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   async function startExtract(
     name: string,
     desc: string,
-    notifications: TaskNotificationsMode,
+    notifications: TaskNotificationPolicy,
     filePath: string,
     outputPath: string,
     deleteZip: boolean,
@@ -282,7 +277,6 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "extract", progress: 0, status: "pending" } })
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Extracting...`)
-      if (showsStart(notifications)) addNotification(t("notifications.body.extracting", { extractName: name }), "info")
       const result = await window.api.pathsManager.extractOnPath(id, filePath, outputPath, deleteZip, unwrapSingleRootFolder)
 
       if (!result) throw new Error("Extraction failed")
@@ -297,13 +291,13 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       // Completed once the extraction and the chmod are both through, so a
       // last progress tick under 100 cannot strand the task as running.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      addNotification(t("notifications.body.extracted", { extractName: name }), "success")
+      if (notifications.completion === "toast") addNotification(t("notifications.body.extracted", { extractName: name }), "success", { presentation: "toast" })
       onFinish(true, null)
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Error extracting.`)
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Error extracting: ${err}`)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
-      if (showsError(notifications)) addNotification(t("notifications.body.extractError", { extractName: name }), "error")
+      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error")
       onFinish(false, new Error(`Error extracting ${filePath}: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished extraction.")
@@ -313,7 +307,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   async function startInstall(
     name: string,
     desc: string,
-    notifications: TaskNotificationsMode,
+    notifications: TaskNotificationPolicy,
     filePath: string,
     outputPath: string,
     deleteInstaller: boolean,
@@ -324,10 +318,9 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     try {
       window.api.utils.setPreventAppClose("add", id, "Started installation.")
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Adding installation of ${filePath} to ${outputPath}.`)
-      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "extract", progress: 0, status: "pending" } })
+      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "install", progress: 0, status: "pending" } })
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Installing...`)
-      if (showsStart(notifications)) addNotification(t("notifications.body.extracting", { extractName: name }), "info")
       const result = await window.api.pathsManager.runInstaller(id, filePath, outputPath, deleteInstaller)
 
       // The wire tells apart why the installer never landed the game (see
@@ -341,13 +334,13 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       // a 100 tick, but one whose payload was read out instead reports whatever
       // the reader last counted, and neither is what says the task is done.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      addNotification(t("notifications.body.extracted", { extractName: name }), "success")
+      if (notifications.completion === "toast") addNotification(t("notifications.body.extracted", { extractName: name }), "success", { presentation: "toast" })
       onFinish(true, null)
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Error installing.`)
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Error installing: ${err}`)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
-      if (showsError(notifications)) addNotification(t("notifications.body.extractError", { extractName: name }), "error")
+      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error")
       onFinish(false, new Error(`Error installing ${filePath}: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished installation.")
@@ -357,7 +350,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   async function startCompress(
     name: string,
     desc: string,
-    notifications: TaskNotificationsMode,
+    notifications: TaskNotificationPolicy,
     inputPath: string,
     outputPath: string,
     fileName: string,
@@ -372,7 +365,6 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "compress", progress: 0, status: "pending" } })
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Compressing...`)
-      if (showsStart(notifications)) addNotification(t("notifications.body.compressing", { compressName: name }), "info")
       const result = await window.api.pathsManager.compressOnPath(id, inputPath, outputPath, fileName, compressionLevel)
 
       if (!result) throw new Error("Compression failed")
@@ -380,14 +372,14 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Compressed.`)
       // Same as the other three: the resolved call is the completion signal.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      addNotification(t("notifications.body.compressed", { compressName: name }), "success")
+      if (notifications.completion === "toast") addNotification(t("notifications.body.compressed", { compressName: name }), "success", { presentation: "toast" })
       onFinish(true, null)
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Error compressing.`)
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Error compressing: ${err}`)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
-      if (showsError(notifications)) addNotification(t("notifications.body.compressError", { compressName: name }), "error")
-      onFinish(false, new Error(`Error comrpessing ${inputPath}: ${err}`))
+      if (notifications.failure === "generic") addNotification(t("notifications.body.compressError", { compressName: name }), "error")
+      onFinish(false, new Error(`Error compressing ${inputPath}: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished compression.")
     }
@@ -397,7 +389,8 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id } })
   }
 
-  return <TaskContext.Provider value={{ tasks, startDownload, startExtract, startInstall, startCompress, removeTask }}>{children}</TaskContext.Provider>
+  const activeTaskCount = tasks.filter((task) => task.status === "pending" || task.status === "in-progress").length
+  return <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask }}>{children}</TaskContext.Provider>
 }
 
 export const useTaskContext = (): TaskContextType => {

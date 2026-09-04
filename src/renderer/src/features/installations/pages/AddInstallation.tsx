@@ -60,7 +60,8 @@ function AddInslallation(): JSX.Element {
     backupsAuto: false,
     compressionLevel: DEFAULT_COMPRESSION_LEVEL,
     mesaGlThread: false,
-    envVars: ""
+    envVars: "",
+    launchWrapper: ""
   })
 
   const { folder: path, setFolder: setPath, browseFolder } = useInstallationFolder(fields.name, settings.defaultInstallationsFolder)
@@ -81,6 +82,7 @@ function AddInslallation(): JSX.Element {
       compressionLevel: fields.compressionLevel,
       mesaGlThread: fields.mesaGlThread,
       envVars: fields.envVars,
+      launchWrapper: fields.launchWrapper.trim(),
       foldersInUse: toFoldersInUse({ backupsFolder: settings.backupsFolder, installations, gameVersions })
     })
 
@@ -139,7 +141,7 @@ function AddInslallation(): JSX.Element {
               icon={fields.icon}
               onIconChange={fields.setIcon}
               customIcons={customIcons}
-              iconButtonClassName="w-40 h-13 p-1 pr-2 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none text-sm text-start cursor-pointer shrink-0"
+              iconButtonClassName="w-40 h-13 p-1 pr-2 text-sm text-start shrink-0"
             />
 
             <GameVersionPicker gameVersions={gameVersions} version={fields.version} onSelect={fields.setVersion} />
@@ -151,7 +153,7 @@ function AddInslallation(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton onClick={browseFolder} title={t("generic.browse")} className="h-8 px-2 py-1">
+                  <FormButton onClick={browseFolder} title={t("generic.browse")} variant="secondary" className="h-8 px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText placeholder={t("features.installations.installationFolder")} value={path} onChange={(e) => setPath(e.target.value)} minLength={1} className="w-full" />
@@ -173,11 +175,7 @@ function AddInslallation(): JSX.Element {
             startParams={fields.startParams}
             onStartParamsChange={fields.setStartParams}
             startParamsLink={
-              <NormalButton
-                title={t("features.installations.startParamsLink")}
-                onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")}
-                className="text-vsl underline"
-              >
+              <NormalButton title={t("features.installations.startParamsLink")} onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")} variant="link">
                 {t("features.installations.startParamsLink")}
               </NormalButton>
             }
@@ -185,15 +183,13 @@ function AddInslallation(): JSX.Element {
             onMesaGlThreadChange={fields.setMesaGlThread}
             envVars={fields.envVars}
             onEnvVarsChange={fields.setEnvVars}
+            launchWrapper={fields.launchWrapper}
+            onLaunchWrapperChange={fields.setLaunchWrapper}
           />
 
-          <ButtonsWrapper className="text-lg">
-            <FormLinkButton to="/installations" title={t("generic.goBack")} type="error" className="p-2">
-              <PiXCircleDuotone />
-            </FormLinkButton>
-            <FormButton onClick={handleAddInstallation} title={t("generic.add")} type="success" className="p-2">
-              <PiFloppyDiskBackDuotone />
-            </FormButton>
+          <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+            <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+            <FormButton onClick={handleAddInstallation} title={t("generic.add")} variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
           </ButtonsWrapper>
         </FromWrapper>
       </div>

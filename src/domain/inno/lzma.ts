@@ -571,6 +571,8 @@ export interface Lzma2DecoderPort {
   readonly finished: boolean
   /** Reads and decodes one raw LZMA2 chunk. */
   decodeChunk(input: Lzma2Input): Promise<number>
+  /** Releases a decoder that stopped before consuming its terminating byte. */
+  close?: () => Promise<void>
 }
 
 /** Allows the Node worker to inject an optional native decoder without leaking Node into domain code. */
@@ -584,9 +586,9 @@ export type Lzma2DecoderFactory = (dictionarySizeProperties: number, onOutput: (
  * most 64 KiB of input, and this implementation hands each one to `onOutput`
  * before reading the next, so it never holds more than a chunk of either. That
  * bound is a property of this decoder, not of `Lzma2DecoderPort`: a decoder
- * backed by a library that does not stream, such as the injected native one,
- * can buffer a whole solid block before it starts draining, and its caller in
- * `extract.ts` has to allow for that. A control byte of zero ends the stream;
+ * backed by a streaming native library can preserve the same pull behavior,
+ * while adapters backed by a buffering library must account for that separately.
+ * A control byte of zero ends the stream;
  * the driver may also stop early once it has read as much as it wanted, which
  * is what the payload reader does with the last file of a block.
  */

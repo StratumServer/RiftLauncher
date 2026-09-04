@@ -23,7 +23,7 @@ function NoInstalledModsNotice({ gettingMods }: Readonly<{ gettingMods: boolean 
                 i18nKey="features.mods.noModsInstalled"
                 components={{
                   link: (
-                    <LinkButton title={t("components.mainMenu.modsTitle")} to="/mods" className="text-vsl underline">
+                    <LinkButton title={t("components.mainMenu.modsTitle")} to="/mods" variant="link">
                       {t("components.mainMenu.modsTitle")}
                     </LinkButton>
                   )

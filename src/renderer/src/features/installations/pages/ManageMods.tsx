@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
@@ -14,6 +14,9 @@ import { clearModIconMemoryCache, setModEnabled } from "@renderer/features/moddb
 
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 
+import { filterInstalledMods, hasActiveInstalledModFilters, installedModAuthors, installedModGameVersions, installedModTags, NO_INSTALLED_MOD_FILTERS } from "@domain/mods/installedFilters"
+import type { InstalledModFilters } from "@domain/mods/installedFilters"
+
 import { ListGroup, ListWrapper } from "@renderer/components/ui/List"
 import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeSummaryPopup"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -24,8 +27,9 @@ import InstalledModItem from "@renderer/features/mods/components/InstalledModIte
 import ErrorInstalledModItem from "@renderer/features/mods/components/ErrorInstalledModItem"
 import InstalledModsSectionHeader from "@renderer/features/mods/components/InstalledModsSectionHeader"
 import ManageModsActionBar from "@renderer/features/mods/components/ManageModsActionBar"
+import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
-import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
+import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 const LOG_TAG = "[front] [mods] [features/installations/pages/ManageMods.tsx]"
@@ -34,9 +38,9 @@ function byName(a: InstalledModType, b: InstalledModType): number {
   return a.name.localeCompare(b.name)
 }
 
-/** What the player types matched against what they can see of a Mod: its name, and the id the folder names it by. */
+/** What the player types matched against what they can see of a Mod: its name, id, or author. */
 function matchesSearch(iMod: InstalledModType, search: string): boolean {
-  return iMod.name.toLowerCase().includes(search) || iMod.modid.toLowerCase().includes(search)
+  return iMod.name.toLowerCase().includes(search) || iMod.modid.toLowerCase().includes(search) || (iMod.authors?.some((author) => author.toLowerCase().includes(search)) ?? false)
 }
 
 function ListMods(): JSX.Element {
@@ -53,13 +57,24 @@ function ListMods(): JSX.Element {
   const { installedMods, modsWithErrors, gettingMods, refresh } = useManageInstalledMods(installation)
 
   const [search, setSearch] = useState("")
+  const [filters, setFilters] = useState<InstalledModFilters>(NO_INSTALLED_MOD_FILTERS)
+
+  // Rebuilt only when the scan changes, not on every keystroke in the search field: each is a fresh
+  // array identity, and the dropdowns below sit next to rows this page already memoizes.
+  const allAuthors = useMemo(() => installedModAuthors(installedMods), [installedMods])
+  const allTags = useMemo(() => installedModTags(installedMods), [installedMods])
+  const allGameVersions = useMemo(() => installedModGameVersions(installedMods), [installedMods])
 
   // One list feeds everything below: the three sections, and the buttons that act on the folder at
   // once. What a player sees is what those buttons touch, filtered or not (#228).
   const query = search.trim().toLowerCase()
-  const visibleMods = query ? installedMods.filter((iMod) => matchesSearch(iMod, query)) : installedMods
+  const textFiltered = query ? installedMods.filter((iMod) => matchesSearch(iMod, query)) : installedMods
+  const visibleMods = filterInstalledMods(textFiltered, filters)
+  // Unreadable archives carry no author, tag or game version, so the three dropdowns have nothing to
+  // judge them by and leave them alone. Only the text query narrows them, by file name.
   const visibleModsWithErrors = query ? modsWithErrors.filter((iModE) => iModE.zipname.toLowerCase().includes(query)) : modsWithErrors
-  const nothingMatches = query.length > 0 && visibleMods.length < 1 && visibleModsWithErrors.length < 1
+  const hasActiveFilters = hasActiveInstalledModFilters(filters)
+  const nothingMatches = (query.length > 0 || hasActiveFilters) && visibleMods.length < 1 && visibleModsWithErrors.length < 1
 
   const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, visibleMods)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
@@ -193,6 +208,18 @@ function ListMods(): JSX.Element {
                   <StickyMenuGroup>
                     <FormInputText placeholder={t("features.mods.searchInstalledMods")} value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 h-8" />
                   </StickyMenuGroup>
+
+                  {/* One mod is nothing to narrow, so the bar stays off until there are two. */}
+                  {installedMods.length > 1 && (
+                    <InstalledModsFilterBar
+                      filters={filters}
+                      setFilters={setFilters}
+                      authors={allAuthors}
+                      tags={allTags}
+                      gameVersions={allGameVersions}
+                      onClearFilters={() => setFilters(NO_INSTALLED_MOD_FILTERS)}
+                    />
+                  )}
                 </StickyMenuGroupWrapper>
               )}
             </>
@@ -320,14 +347,10 @@ function ListMods(): JSX.Element {
                     <>
                       <p>{t("features.mods.areYouSureDelete")}</p>
                       <p className="text-zinc-400">{t("features.mods.deletingNotReversible")}</p>
-                      <div className="flex gap-4 items-center justify-center text-lg">
-                        <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setModToDelete(null)} type="success">
-                          <PiXCircleDuotone />
-                        </FormButton>
-                        <FormButton title={t("generic.delete")} className="p-2" onClick={DeleteModHandler} type="error">
-                          <PiTrashDuotone />
-                        </FormButton>
-                      </div>
+                      <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+                        <FormButton title={t("generic.cancel")} onClick={() => setModToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+                        <FormButton title={t("generic.delete")} onClick={DeleteModHandler} variant="destructive" size="md" icon={<PiTrashDuotone />} />
+                      </ButtonsWrapper>
                     </>
                   </PopupDialogPanel>
                 </>

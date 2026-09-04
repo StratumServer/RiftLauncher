@@ -13,16 +13,33 @@ const LOG_TAG = "[front] [backups] [features/installations/hooks/useMakeInstalla
  * Reasons that mean "there was nothing to back up", not "backing up broke".
  *
  * MainMenu's auto-backup-before-play reads this hook's return value to decide
- * whether to launch the game at all (`if (!backupMade) return`, before
- * executeGame runs). These three used to be silent and always returned true;
- * they now speak, but they must keep returning true, or turning on automatic
- * backups with, say, an empty Backups folder would silently stop the launcher
- * from ever launching anything. A real failure (compress-failed, prune-failed)
- * still returns false and still blocks the launch, unchanged.
+ * whether to launch the game at all. These three used to be silent and always
+ * returned a launch-proceeds result; they now speak, but they must keep
+ * returning `{ ok: true }`, or turning on automatic backups with, say, an
+ * empty Backups folder would silently stop the launcher from ever launching
+ * anything. A real failure (compress-failed, prune-failed) blocks the launch
+ * until the player answers a prompt (#338).
  */
 const NON_BLOCKING_REASONS = new Set<MakeInstallationBackupFailure>(["installation-path-missing", "no-backups-folder", "backups-disabled"])
 
-export function useMakeInstallationBackup(): (installationId: string) => Promise<boolean> {
+/**
+ * The launch was stopped before a backup was ever attempted, so there is
+ * nothing for the player to decide about it.
+ */
+export const BACKUP_NO_INSTALLATION = "no-installation"
+
+/**
+ * What the auto-backup-before-play flow needs to know.
+ *
+ * The failure arm carries its reason on purpose. MainMenu asks the player
+ * whether to launch anyway when a backup broke (#338), and a hard stop must
+ * not reach that question: `BACKUP_NO_INSTALLATION` means there is no
+ * installation to launch either. `ok: true` covers both a backup that was made
+ * and the three reasons that mean there was nothing to back up.
+ */
+export type BackupOutcome = { ok: true } | { ok: false; reason: MakeInstallationBackupFailure | typeof BACKUP_NO_INSTALLATION }
+
+export function useMakeInstallationBackup(): (installationId: string) => Promise<BackupOutcome> {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const installations = useInstallations()
@@ -34,14 +51,14 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
    * Make a backup of the selected Installation.
    *
    * @param {string} installationId - The ID of the Installation to backup.
-   * @returns {Promise<boolean>} - If the backup was made or not.
+   * @returns {Promise<BackupOutcome>} - Whether the backup succeeded or a blocking failure stopped it.
    */
-  async function makeInstallationBackup(installationId: string): Promise<boolean> {
+  async function makeInstallationBackup(installationId: string): Promise<BackupOutcome> {
     const installation = installations.find((i) => i.id === installationId)
 
     if (!installation) {
       addNotification(t("features.installations.noInstallationFound"), "error")
-      return false
+      return { ok: false, reason: BACKUP_NO_INSTALLATION }
     }
 
     const setBackuping = (backuping: boolean): void => {
@@ -69,19 +86,23 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
 
     if (result.ok) {
       configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION_BACKUP, payload: { id: installation.id, backup: result.backup } })
-      return true
+      return { ok: true }
     }
 
-    const { messageKey, logged } = describeBackupFailure(result.reason)
+    const { messageKey, logLine } = describeBackupFailure(result.reason, result.detail)
 
-    if (logged) {
-      window.api.utils.logMessage("error", `${LOG_TAG} Error creating backup.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Error creating backup: ${result.reason}`)
+    if (logLine) {
+      // The concrete cause goes to error level, per #337: the reason token alone
+      // ("compress-failed") never told a reader which failure it was. logMessage
+      // redacts absolute paths on the way to disk, so the failure kind is what
+      // survives, which is the part worth reading.
+      window.api.utils.logMessage("error", `${LOG_TAG} ${logLine}`)
     }
 
     if (messageKey) addNotification(t(messageKey), "error")
 
-    return NON_BLOCKING_REASONS.has(result.reason)
+    if (NON_BLOCKING_REASONS.has(result.reason)) return { ok: true }
+    return { ok: false, reason: result.reason }
   }
 
   return makeInstallationBackup

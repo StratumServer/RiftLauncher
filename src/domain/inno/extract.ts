@@ -190,25 +190,29 @@ async function writePlan(
 
   for (const run of chunkRuns(planned)) {
     const stream = await openChunk(cursor, script, dataOffset, run[0]!.entry, lzma2DecoderFactory)
-    let position = 0
+    try {
+      let position = 0
 
-    for (const { entry, paths } of run) {
-      if (entry.fileOffset < position) throw InnoFormatError.corrupt("the entries of a block do not follow each other")
+      for (const { entry, paths } of run) {
+        if (entry.fileOffset < position) throw InnoFormatError.corrupt("the entries of a block do not follow each other")
 
-      await stream.discard(entry.fileOffset - position)
-      const contents = await stream.read(entry.fileSize)
-      position = entry.fileOffset + entry.fileSize
+        await stream.discard(entry.fileOffset - position)
+        const contents = await stream.read(entry.fileSize)
+        position = entry.fileOffset + entry.fileSize
 
-      if (entry.callInstructionOptimized) undoCallInstructionFilter(contents)
-      verifyDigest(ports, contents, entry, paths[0]!)
+        if (entry.callInstructionOptimized) undoCallInstructionFilter(contents)
+        verifyDigest(ports, contents, entry, paths[0]!)
 
-      for (const relativePath of paths) {
-        await ports.sink.writeFile(relativePath, contents)
-        filesWritten++
+        for (const relativePath of paths) {
+          await ports.sink.writeFile(relativePath, contents)
+          filesWritten++
+        }
+
+        done += entry.fileSize
+        report(done)
       }
-
-      done += entry.fileSize
-      report(done)
+    } finally {
+      await stream.close?.()
     }
   }
 
@@ -268,6 +272,7 @@ function verifyDigest(ports: InnoExtractionPorts, contents: Uint8Array, entry: I
 interface ChunkStream {
   read(length: number): Promise<Uint8Array>
   discard(count: number): Promise<void>
+  close?: () => Promise<void>
 }
 
 async function openChunk(cursor: InstallerCursor, script: InnoSetupScript, dataOffset: number, entry: InnoDataEntry, lzma2DecoderFactory?: Lzma2DecoderFactory): Promise<ChunkStream> {
@@ -303,7 +308,12 @@ function storedStream(cursor: InstallerCursor): ChunkStream {
  *
  * Decoded bytes land in one staging buffer that is only refilled once it has
  * been drained, which is what lets the decoder hand out views onto its own
- * dictionary without anything copying them twice.
+ * dictionary without anything copying them twice. This bounds the decoded
+ * output owned by this driver, not buffering inside a WASM Web Streams
+ * polyfill: that polyfill may retain more than one chunk before a reader sees
+ * it. `read()` also allocates one Uint8Array per selected entry, so the precise
+ * claim is one staging buffer plus the current selected entry, not one buffer
+ * for the entire extraction.
  */
 function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number, lzma2DecoderFactory?: Lzma2DecoderFactory): ChunkStream {
   const staging = new Uint8Array(STAGING_BYTES)
@@ -321,27 +331,10 @@ function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number, lzma
    * Pulls from the decoder until at least one byte lands in staging or the
    * stream ends.
    *
-   * A decoder that hands bytes back as soon as it has them, the TypeScript one
-   * included, satisfies this after exactly one `decodeChunk` call: `end` moves
-   * off zero the same call that produced anything. The injected native decoder
-   * does not, because its underlying library decodes off a worker thread that
-   * usually has nothing to report yet; it can call back into `decodeChunk`
-   * many times over a whole solid block, buffering the entire decompressed
-   * result internally, before draining begins and this loop sees output at
-   * all. For that stretch it is the decoder holding the block, not this
-   * staging buffer, so `STAGING_BYTES` still bounds one `onOutput` call but no
-   * longer bounds what a decoder may be sitting on while it decides to make
-   * one. That trade is deliberate: it is what lets a solid block of any size
-   * use the fast decoder, and the memory it costs is larger than the block
-   * itself. Measured on a 400 MB decompressed block, the native path peaked
-   * at 997 MB of RSS against 147 MB for the TypeScript decoder, roughly two
-   * copies of the block plus its compressed input. About half of that is the
-   * defensive copy `queue()` makes in `src/ipc/workers/nativeLzma2.ts`, which
-   * a later change can skip on the `finish()` path where the library is done
-   * with the buffer. The other half is the block itself, and that half is
-   * inherent to this loop. A decoder whose blocks could grow past what a
-   * player's machine can spare would need a size check before the fast path
-   * is offered at all; nothing here enforces one.
+   * Both decoders hand bytes back as soon as they have them. The native adapter
+   * pulls the library's Web Stream one output chunk at a time and splits any
+   * larger chunk before calling `onOutput`, so this staging buffer remains the
+   * only decoded-output buffer owned by the extraction driver.
    */
   const pump = async (): Promise<void> => {
     start = 0
@@ -373,6 +366,9 @@ function lzma2Stream(cursor: InstallerCursor, dictionaryProperties: number, lzma
         start += take
         remaining -= take
       }
+    },
+    close: async (): Promise<void> => {
+      await decoder.close?.()
     }
   }
 }

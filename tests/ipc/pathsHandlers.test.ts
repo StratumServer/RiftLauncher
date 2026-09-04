@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events"
 import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve as resolvePath } from "node:path"
+import { join, resolve as resolvePath, sep } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import type { IpcMainInvokeEvent } from "electron"
@@ -68,18 +68,21 @@ let nextLeaseToken = 1
  * `worker_threads.Worker`. The returned object also carries `release`, the lease's own
  * mock, for tests that check whether a worker was handed back for reuse or discarded.
  */
-async function nextTrackedWorker(): Promise<EventEmitter & { release: ReturnType<typeof vi.fn> }> {
+async function nextTrackedWorker(): Promise<EventEmitter & { release: ReturnType<typeof vi.fn>; dispatch: ReturnType<typeof vi.fn> }> {
   const { acquireWorker } = await import("@src/ipc/workerManager")
   const token = nextLeaseToken++
   return new Promise((resolvePromise) => {
     vi.mocked(acquireWorker).mockImplementationOnce(() => {
       const release = vi.fn()
-      const worker = Object.assign(new EventEmitter(), { release })
+      // Carried on the worker too, so a test can read the payload the handler
+      // built (what it decided, not just that it started something).
+      const dispatch = vi.fn()
+      const worker = Object.assign(new EventEmitter(), { release, dispatch })
       resolvePromise(worker)
       return {
         worker: worker as unknown as import("worker_threads").Worker,
         token,
-        dispatch: vi.fn(),
+        dispatch,
         release
       }
     })
@@ -1151,5 +1154,115 @@ describe("RUN_INSTALLER", () => {
 
     const { acquireWorker } = await import("@src/ipc/workerManager")
     assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0)
+  })
+})
+
+/**
+ * Which pair of size ceilings an extraction runs under (#362).
+ *
+ * The decision has to be the main process's: a flag on the IPC call would let
+ * the renderer ask for the loose limit for a mod archive it just downloaded,
+ * which is the boundary the path policy exists to hold. So the handler works it
+ * out from the config it already reads, and these read the answer off the
+ * payload it hands the worker.
+ */
+describe("EXTRACT_ON_PATH: telling a backup apart from a downloaded archive", () => {
+  /** Starts an extraction and returns the payload the handler dispatched to the worker. */
+  async function dispatchedPayload(archivePath: string, outputPath: string): Promise<Record<string, unknown>> {
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH)(event, "task-limits", archivePath, outputPath, false)
+
+    const worker = await workerPromise
+    worker.emit("message", { type: "finished" })
+    await resultPromise
+
+    return worker.dispatch.mock.calls[0]?.[0] as Record<string, unknown>
+  }
+
+  function writeArchive(folder: string, name: string): string {
+    mkdirSync(folder, { recursive: true })
+    const archivePath = join(folder, name)
+    writeFileSync(archivePath, "not read by the handler")
+    return archivePath
+  }
+
+  it("marks an archive the config records as a backup", async () => {
+    const archivePath = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-09-04.tar.gz")
+    writeConfig({
+      installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [{ id: "b1", date: 1, path: archivePath }] }] as unknown as ConfigType["installations"]
+    })
+
+    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, true)
+  })
+
+  it("does not mark an unrecorded archive that merely sits in the backups folder", async () => {
+    // Sitting under the Backups folder is not what makes an archive a backup.
+    // Nothing stops a player nesting their versions folder there, and the
+    // download channel is granted that tree, so containment would be a way to
+    // hand a downloaded archive the backup ceiling.
+    const archivePath = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-09-04.tar.gz")
+    writeConfig({ installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [] }] as unknown as ConfigType["installations"] })
+
+    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, false)
+  })
+
+  it("does not mark a .tar.gz that merely happens to be a .tar.gz", async () => {
+    // A game build lands in the versions folder and is every bit as much a
+    // gzipped tar as a backup is. The name is not what decides this.
+    const archivePath = writeArchive(versionsFolder, "vs_client_linux-x64_1.22.6.tar.gz")
+
+    const payload = await dispatchedPayload(archivePath, join(versionsFolder, "1.22.6"))
+
+    assert.equal(payload.isBackupArchive, false)
+  })
+
+  it("marks a recorded backup whose stored path takes a detour to the same file", async () => {
+    // The config keeps whatever path was written when the backup was made, and
+    // a folder picker can hand back a path with a redundant segment. Both sides
+    // are resolved before they are compared, so the same file matches itself
+    // however its path is spelled.
+    const archivePath = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-09-04.tar.gz")
+    // Built by concatenation, not join: join would collapse the segment and the
+    // test would prove nothing about the comparison.
+    const detour = `${join(backupsFolder, "Installations", "Survival")}${sep}.${sep}Survival_2026-09-04.tar.gz`
+    writeConfig({
+      installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [{ id: "b1", date: 1, path: detour }] }] as unknown as ConfigType["installations"]
+    })
+
+    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, true)
+  })
+
+  it("does not mark an archive whose path differs from the recorded one", async () => {
+    // The comparison is on the whole resolved path, so a neighbour with a
+    // similar name is not the recorded backup.
+    const recorded = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-08-01.tar.gz")
+    const neighbour = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-08-01.tar.gz.old.tar.gz")
+    writeConfig({
+      installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [{ id: "b1", date: 1, path: recorded }] }] as unknown as ConfigType["installations"]
+    })
+
+    const payload = await dispatchedPayload(neighbour, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, false)
+  })
+
+  it("marks an archive the config still records as a backup after the backups folder moved", async () => {
+    // Changing the Backups folder in settings does not move the archives
+    // already made, and those still have to restore.
+    const archivePath = writeArchive(join(temporaryRoot, "OldBackups"), "Survival_2026-07-01.tar.gz")
+    writeConfig({
+      installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [{ id: "b1", date: 1, path: archivePath }] }] as unknown as ConfigType["installations"]
+    })
+
+    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, true)
   })
 })

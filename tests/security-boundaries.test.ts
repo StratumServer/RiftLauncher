@@ -63,10 +63,12 @@ describe("process and navigation boundaries", () => {
       path: "/tmp/installations/main",
       startParams: "",
       mesaGlThread: false,
-      envVars: ""
+      envVars: "",
+      launchWrapper: ""
     })
     assert.throws(() => validateGameVersion({ version: "1.22.6", path: "/" }), /Invalid game version path/)
     assert.throws(() => parseSafeEnvironment("PATH=/tmp"), /Invalid environment variable/)
+    assert.throws(() => validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "", launchWrapper: "x".repeat(4_097) }), /Invalid launch wrapper/)
   })
 
   it("accepts only the exact renderer document or development origin", () => {
@@ -96,6 +98,8 @@ describe("process and navigation boundaries", () => {
  * satisfy them.
  */
 const MAIN_SOURCE = readFileSync(resolve(__dirname, "../src/main/index.ts"), "utf8")
+const PRELOAD_SOURCE = readFileSync(resolve(__dirname, "../src/preload/index.ts"), "utf8")
+const RENDERER_HTML = readFileSync(resolve(__dirname, "../src/renderer/index.html"), "utf8")
 
 describe("startup network boundaries", () => {
   it("keeps both session calls that stop the spellcheck dictionary download", () => {
@@ -118,6 +122,80 @@ describe("startup network boundaries", () => {
   it("leaves the startup update check to the module that catches its rejection", () => {
     assert.equal(MAIN_SOURCE.includes("scheduleUpdateCheck("), true, "src/main/index.ts stopped arming the startup update check")
     assert.equal(MAIN_SOURCE.includes("autoUpdater.checkForUpdates("), false, "src/main/index.ts calls checkForUpdates itself again, where nothing catches its rejection")
+  })
+
+  it("keeps the local app protocol CORS-aware and records non-renderer child exits", () => {
+    assert.equal(MAIN_SOURCE.includes("corsEnabled: true"), true, "the app protocol lost its CORS enforcement for cross-origin renderer paths")
+    assert.equal(MAIN_SOURCE.includes('app.on("child-process-gone"'), true, "non-renderer child process failures are no longer logged")
+  })
+})
+
+describe("renderer document boundaries", () => {
+  it("does not allow framed content in the renderer CSP", () => {
+    assert.match(RENDERER_HTML, /frame-src 'none'/)
+    // Match the full directive up to its semicolon or end-of-string so that
+    // frame-src 'none' https://evil.example does not slip through: when a
+    // source list holds 'none' alongside other expressions, browsers ignore
+    // the 'none' and honour the rest.
+    assert.doesNotMatch(RENDERER_HTML, /frame-src\s+'none'\s*[^';"\n]/)
+  })
+
+  it("exposes the preload bridge only in the main frame", () => {
+    const guardStart = PRELOAD_SOURCE.lastIndexOf("if (process.isMainFrame)")
+    const exposeStart = PRELOAD_SOURCE.indexOf('contextBridge.exposeInMainWorld("api", api)')
+
+    assert.notEqual(guardStart, -1, "preload stopped checking process.isMainFrame")
+    assert.notEqual(exposeStart, -1, "preload stopped exposing the launcher API")
+    assert.ok(guardStart < exposeStart, "preload exposes the API before its main-frame guard")
+    // Ensure the expose call sits inside the guarded block, not outside it
+    // as a dead-statement hoist. The pattern is anchored so a dead guard
+    // followed by a hoisted expose (or an empty guard block) breaks it.
+    assert.match(PRELOAD_SOURCE.slice(guardStart, exposeStart), /^if \(process\.isMainFrame\) \{\s*(try \{\s*)?$/)
+    // Exactly one exposeInMainWorld keeps a future duplicate from leaking
+    // the bridge into every frame.
+    const exposeCount = PRELOAD_SOURCE.split("contextBridge.exposeInMainWorld").length - 1
+    assert.equal(exposeCount, 1, `preload has ${exposeCount} exposeInMainWorld calls; expected exactly 1`)
+  })
+})
+
+function mainHandlerSource(startMarker: string, endMarker: string): string {
+  const start = MAIN_SOURCE.indexOf(startMarker)
+  if (start === -1) throw new Error(`Could not find main-process handler: ${startMarker}`)
+
+  const end = MAIN_SOURCE.indexOf(endMarker, start + startMarker.length)
+  if (end === -1) throw new Error(`Could not find end of main-process handler: ${startMarker}`)
+
+  return MAIN_SOURCE.slice(start, end)
+}
+
+describe("main process protocol boundary wiring", () => {
+  // index.ts bootstraps Electron on import, so keep this contract scoped to each inline handler.
+  it("routes app and custom icon requests through containment before file checks", () => {
+    const appSource = mainHandlerSource('protocol.handle("app", async (request) => {', "\n  // Handler for mod icons")
+    const iconsSource = mainHandlerSource('protocol.handle("icons", async (req) => {', "\n  await ensureConfig()")
+    const handlers: ReadonlyArray<readonly [string, string]> = [
+      ["app", appSource],
+      ["icons", iconsSource]
+    ]
+
+    for (const [name, source] of handlers) {
+      const containmentCall = source.indexOf("const filePath = resolveContainedPath")
+      assert.notEqual(containmentCall, -1, `${name}: handler stopped resolving a contained path`)
+
+      const containmentReturn = source.indexOf("if (!filePath) return new Response(null, { status: 404 })", containmentCall)
+      assert.notEqual(containmentReturn, -1, `${name}: handler stopped rejecting paths outside its root explicitly`)
+      assert.equal(source.includes("if (!filePath ||"), false, `${name}: containment was folded into another gate`)
+
+      const filesystemCheck = source.indexOf("if (!(await isSafeProtocolFile(filePath)))", containmentReturn)
+      assert.notEqual(filesystemCheck, -1, `${name}: handler stopped checking the resolved filesystem object`)
+      assert.ok(containmentReturn < filesystemCheck, `${name}: filesystem safety ran before containment`)
+    }
+
+    const containmentReturn = iconsSource.indexOf("if (!filePath) return new Response(null, { status: 404 })")
+    const extensionCheck = iconsSource.indexOf('if (!filePath.toLowerCase().endsWith(".png"))', containmentReturn)
+    const filesystemCheck = iconsSource.indexOf("if (!(await isSafeProtocolFile(filePath)))", extensionCheck)
+    assert.ok(containmentReturn < extensionCheck, "icons: extension checking ran before containment")
+    assert.ok(extensionCheck < filesystemCheck, "icons: filesystem safety ran before the extension check")
   })
 })
 

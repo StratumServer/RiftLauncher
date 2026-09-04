@@ -17,7 +17,7 @@
 ## What's RiftLauncher?
 
 RiftLauncher is an independent launcher for Vintage Story, built by the [Stratum](https://github.com/StratumServer) team. The website at [riftlauncher.stratumvs.dev](https://riftlauncher.stratumvs.dev/) has the short version and the downloads.
-With it you can install multiple versions of Vintage Story, create separate installations with their own configs, mods and worlds, and manage backups, all in a few clicks. It currently works on Windows and Linux; MacOS support is planned but not built yet.
+With it you can install multiple versions of Vintage Story, create separate installations with their own configs, mods and worlds, and manage backups, all in a few clicks. It currently works on Windows and Linux; macOS support is planned but not built yet. When enabled, Electron 44 requires macOS 13 (Ventura) or later.
 
 RiftLauncher is a fork of [VS Launcher](https://github.com/XurxoMF/vs-launcher) by [XurxoMF](https://github.com/XurxoMF), archived by its original author. Everything the launcher does today started there. Thank you to XurxoMF and everyone who translated, tested and contributed to the original project; their work carries forward into this one, and the [contributors page](docs/important-info/contributors.md) credits them by name.
 

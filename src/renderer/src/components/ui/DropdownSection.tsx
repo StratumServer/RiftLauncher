@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from "motion/react"
 import { useRef, useState } from "react"
 import { PiCaretDownDuotone } from "react-icons/pi"
 
+import { MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
+
 /**
  * Dropdown with a blury background and a title.
  *
@@ -42,12 +44,9 @@ function DropdownSection({
         )}
       >
         {title && (
-          <Button
-            className="relative w-full flex items-center justify-between gap-2 px-2 py-1 z-1 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none border border-zinc-400/5 rounded-sm cursor-pointer"
-            onClick={() => setOpen((prev) => !prev)}
-          >
+          <Button type="button" className={clsx(MENU_TRIGGER_STYLES, "relative z-1 w-full")} onClick={() => setOpen((prev) => !prev)}>
             <h2 className="shrink-0 font-lg">{title}</h2>
-            <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+            <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
           </Button>
         )}
         <AnimatePresence>

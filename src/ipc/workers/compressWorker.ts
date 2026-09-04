@@ -11,5 +11,5 @@ serveTasks(
     }
     await runCompression({ inputPath, outputPath, outputFileName, compressionLevel, onProgress })
   },
-  () => "Compression failed"
+  (error) => (error instanceof Error ? error.message : "Compression failed")
 )

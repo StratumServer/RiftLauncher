@@ -2,7 +2,8 @@ import { ipcMain } from "electron"
 import { spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import fse from "fs-extra"
-import { join } from "node:path"
+import { constants } from "node:fs"
+import { delimiter, isAbsolute, join } from "node:path"
 import os from "node:os"
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
@@ -44,6 +45,62 @@ async function assertExecutable(pathValue: string): Promise<string> {
 }
 
 const paths: PathBuilder = { join: async (parts: string[]): Promise<string> => join(...parts) }
+
+/**
+ * Resolves a user-selected Linux wrapper to an absolute executable, with no shell.
+ *
+ * A bare name is looked up in the launcher's own PATH, an absolute path is taken as given, and
+ * anything relative is refused: a relative command is resolved against the spawned process's
+ * working directory, which is the game version folder rather than wherever the player was thinking
+ * of. PATH entries that are themselves relative are skipped for the same reason, so what `fse.stat`
+ * checks and what `spawn` runs cannot be two different files. The lookup can read `process.env.PATH`
+ * and the spawn can trust what it returns because PATH is in `DENIED_ENVIRONMENT_KEYS`, so an
+ * installation's own environment variables cannot move it out from under this. That also matters
+ * for `mono`, which the plan still passes as a bare name for the child to resolve.
+ *
+ * Handing the bare name straight to `spawn` would work, since `execvp` searches PATH itself.
+ * Resolving first is what lets a missing, non-executable or directory wrapper be refused before the
+ * client settings file is written, and what puts the real path in the log line.
+ *
+ * `stat` follows symlinks here, unlike the `lstat` in `assertExecutable` above. The asymmetry is
+ * deliberate: a game executable that is a symlink means the version folder is not what the launcher
+ * installed, while `/usr/bin/gamemoderun` and friends are symlinks on most distributions and
+ * refusing them would refuse the feature. The gap between this check and the spawn that follows is
+ * the same one `assertExecutable` has always had.
+ *
+ * What this cannot give the launcher is a hold on the game once a wrapper hands it off.
+ * `realGameProcess` settles on `close`, which waits for the child's stdio pipes rather than for a
+ * pid, so a wrapper that execs the game (`gamemoderun`, `mangohud`, `prime-run`), or even
+ * backgrounds it while it keeps those pipes, still keeps the launcher waiting for the real session.
+ * A wrapper that detaches properly, giving the game fresh stdio through `setsid` or a redirect,
+ * ends the launcher's session early: the game keeps running, but the app stops being held open, the
+ * installation stops reading as playing, and the playtime recorded is the wrapper's lifetime.
+ */
+async function resolveLaunchWrapper(value: string): Promise<string | undefined> {
+  const wrapper = value.trim()
+  if (!wrapper) return undefined
+
+  const candidates = isAbsolute(wrapper)
+    ? [wrapper]
+    : wrapper.includes("/") || wrapper.includes("\\")
+      ? []
+      : (process.env.PATH ?? "")
+          .split(delimiter)
+          .filter((directory) => isAbsolute(directory))
+          .map((directory) => join(directory, wrapper))
+
+  for (const candidate of candidates) {
+    try {
+      const stats = await fse.stat(candidate)
+      await fse.access(candidate, constants.X_OK)
+      if (stats.isFile()) return candidate
+    } catch {
+      // Try the next PATH entry. The final undefined is the user-facing launch refusal.
+    }
+  }
+
+  return undefined
+}
 
 /**
  * Whole-document JSON reads and writes, with a missing file reported as an
@@ -189,6 +246,16 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     return invalidRequestResult()
   }
 
+  let launchWrapper = ""
+  if (os.platform() === "linux" && safeInstallation.launchWrapper) {
+    const resolvedWrapper = await resolveLaunchWrapper(safeInstallation.launchWrapper)
+    if (!resolvedWrapper) {
+      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused an unavailable or non-executable launch wrapper.`)
+      return invalidExecutableResult()
+    }
+    launchWrapper = resolvedWrapper
+  }
+
   let fileNames: string[]
   try {
     fileNames = await fse.readdir(safeVersion.path)
@@ -206,7 +273,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       fileNames,
       installationPath: safeInstallation.path,
       startParams: safeInstallation.startParams,
-      mesaGlThread: safeInstallation.mesaGlThread
+      mesaGlThread: safeInstallation.mesaGlThread,
+      launchWrapper
     }
   )
 
@@ -300,11 +368,15 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     }
   }
 
-  logMessage("info", "[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable.")
+  logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable${launchWrapper ? ` through ${launchWrapper}` : ""}.`)
 
   const outcome = await realGameProcess().run({ command: plan.command, args: plan.args, env: { ...process.env, ...processEnv, ...plan.env }, cwd: plan.cwd })
 
-  if (!outcome.started) logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Failed to run Vintage Story: ${outcome.error ?? "unknown error"}.`)
+  if (!outcome.started)
+    logMessage(
+      "error",
+      `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Failed to run Vintage Story${launchWrapper ? ` through ${launchWrapper}` : ""}: ${outcome.error ?? "unknown error"}.`
+    )
   else logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
 
   return gameProcessOutcomeToResult(outcome)
@@ -328,6 +400,10 @@ const LOOK_FOR_A_GAME_VERSION_PROBE_TIMEOUT_MS = 10_000
  * the executable is validated with the same {@link assertExecutable} check
  * EXECUTE_GAME uses, stderr is logged but never fails the probe on its own,
  * and the process is run with `shell: false` and `windowsHide: true`.
+ *
+ * A configured launch wrapper is deliberately not applied here. The probe runs
+ * the executable with `-v` and reads the version off stdout, and nothing a
+ * wrapper does changes what that prints.
  */
 function realProcessProbe(): ProcessProbe {
   return {

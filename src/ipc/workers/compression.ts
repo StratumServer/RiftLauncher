@@ -18,9 +18,10 @@ import { join } from "node:path"
 import * as tar from "tar"
 
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
+import { describeBackupSpaceShortfall, describeOversizedBackupSource, estimateBackupArchiveBytes, formatByteSize } from "@domain/installations/backupCapacity"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
-import { MAX_ARCHIVE_TOTAL_BYTES } from "../validation"
+import { MAX_BACKUP_ENTRY_BYTES, MAX_BACKUP_TOTAL_BYTES } from "../validation"
 
 const MAX_ITEMS = 100_000
 
@@ -57,7 +58,9 @@ class UnsharedLinkCache extends Map<`${number}:${number}`, string> {
  * @returns Total size in bytes of every plain file in the tree.
  * @throws When an entry is a symbolic link or a special file, or the tree is too large.
  */
-export function assertSafeCompressionTree(root: string, fileSystem: Pick<typeof fse, "lstatSync" | "readdirSync"> = fse): number {
+type CompressionTreeStats = { entries: number; bytes: number }
+
+function inspectSafeCompressionTree(root: string, fileSystem: Pick<typeof fse, "lstatSync" | "readdirSync"> = fse): CompressionTreeStats {
   const pending = [root]
   let itemCount = 0
   let totalBytes = 0
@@ -72,11 +75,52 @@ export function assertSafeCompressionTree(root: string, fileSystem: Pick<typeof 
     if (stats.isDirectory()) {
       for (const child of fileSystem.readdirSync(current)) pending.push(join(current, child))
     } else {
+      if (stats.size > MAX_BACKUP_ENTRY_BYTES) {
+        throw new Error(`Compression source contains a file that is too large: ${formatByteSize(stats.size)}, over the ${formatByteSize(MAX_BACKUP_ENTRY_BYTES)} backup entry limit`)
+      }
       totalBytes += stats.size
     }
   }
 
-  return totalBytes
+  return { entries: itemCount, bytes: totalBytes }
+}
+
+export function assertSafeCompressionTree(root: string, fileSystem: Pick<typeof fse, "lstatSync" | "readdirSync"> = fse): number {
+  return inspectSafeCompressionTree(root, fileSystem).bytes
+}
+
+/**
+ * Refuses a destination that does not have room for the archive.
+ *
+ * The estimate includes tar headers, padding, portable metadata and gzip
+ * headroom. Raising the ceiling to 64 GiB without this check would trade a
+ * refused backup for a filled disk, which is the worse of the two.
+ *
+ * A filesystem that cannot answer the question is not a full disk, so a throw
+ * from statfs (an exotic mount, a platform that does not implement it) lets the
+ * backup go ahead. It then fails on the write if the disk really was full,
+ * which is the behaviour every backup had before this check existed.
+ *
+ * @param outputPath Folder the archive is written into. Must already exist.
+ * @param requiredBytes Conservative estimated size of the archive.
+ * @param fileSystem Filesystem to ask, defaulting to the real one.
+ * @throws When the destination has less free space than the archive estimate.
+ */
+export function assertRoomForArchive(outputPath: string, requiredBytes: number, fileSystem: Pick<typeof fse, "statfsSync"> = fse): void {
+  let freeBytes: number | undefined
+
+  try {
+    const stats = fileSystem.statfsSync(outputPath)
+    // A block size of zero is an answer that means nothing, so it counts as no
+    // answer rather than as zero free bytes. bavail rather than bfree: the
+    // blocks reserved for root are not blocks this process can write into.
+    freeBytes = Number.isFinite(stats.bsize) && stats.bsize > 0 ? stats.bavail * stats.bsize : undefined
+  } catch {
+    freeBytes = undefined
+  }
+
+  const shortfall = describeBackupSpaceShortfall(requiredBytes, freeBytes)
+  if (shortfall) throw new Error(shortfall)
 }
 
 export interface CompressionOptions {
@@ -102,17 +146,27 @@ export interface CompressionOptions {
 export async function runCompression(options: CompressionOptions): Promise<void> {
   const { inputPath, outputPath, outputFileName, compressionLevel = DEFAULT_COMPRESSION_LEVEL, onProgress } = options
 
-  const totalBytes = assertSafeCompressionTree(inputPath)
+  const treeStats = inspectSafeCompressionTree(inputPath)
+  const totalBytes = treeStats.bytes
   // The restore reader holds an archive to this same total and refuses anything
   // past it, so an installation over the cap would compress happily into a
   // backup that can never be put back. Refusing here costs the player a failed
   // backup; not refusing costs them a backup they only find out is useless on
   // the day they need it, and one prune slot that an older, restorable backup
   // used to hold.
-  if (totalBytes > MAX_ARCHIVE_TOTAL_BYTES) throw new Error("Compression source is too large")
+  //
+  // The backup ceiling rather than the archive one: this path only ever runs
+  // for a backup, and the number the archive ceiling carries is sized against
+  // hostile input rather than against the player's own folder (see #362 and
+  // the comment on MAX_BACKUP_TOTAL_BYTES). The restore side reads a backup
+  // under the same pair, which is what keeps the two ends honest.
+  const oversized = describeOversizedBackupSource(totalBytes, MAX_BACKUP_TOTAL_BYTES)
+  if (oversized) throw new Error(oversized)
   if (!fse.existsSync(inputPath) || !fse.lstatSync(inputPath).isDirectory()) throw new Error("Compression source must be a directory")
   if (!fse.existsSync(outputPath)) fse.mkdirSync(outputPath, { recursive: true })
   if (fse.lstatSync(outputPath).isSymbolicLink() || !fse.lstatSync(outputPath).isDirectory()) throw new Error("Compression destination is unsafe")
+  // After the destination exists, since that is the path whose filesystem is asked.
+  assertRoomForArchive(outputPath, estimateBackupArchiveBytes(totalBytes, treeStats.entries))
 
   const archivePath = join(outputPath, outputFileName)
   if (fse.existsSync(archivePath)) {
@@ -155,7 +209,7 @@ export async function runCompression(options: CompressionOptions): Promise<void>
       // unpacks back to an empty folder rather than to nothing at all.
       entries.length > 0 ? entries : ["."]
     )
-  } catch {
+  } catch (error) {
     // tar opens the archive as soon as it starts, so a write that failed partway
     // leaves a truncated file sitting in the backups folder. No backup record
     // ever names it, which is exactly what pruning walks, so it would never be
@@ -165,7 +219,10 @@ export async function runCompression(options: CompressionOptions): Promise<void>
     } catch {
       // Best effort. The compression failure below is the outcome that matters.
     }
-    throw new Error("Compression failed")
+    // Carry the cause (a full disk, a denied write, a file that vanished mid-write).
+    // redactSensitiveText strips absolute paths from the log, so the failure kind
+    // is what the reader is left with, which is the part worth keeping.
+    throw new Error(`Compression failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 
   onProgress?.(100)

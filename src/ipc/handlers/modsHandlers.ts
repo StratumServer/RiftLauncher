@@ -2,16 +2,54 @@ import { dialog, ipcMain } from "electron"
 import fse from "fs-extra"
 import { basename, dirname, join } from "node:path"
 import { IPC_CHANNELS } from "../ipcChannels"
-import { createScanInstalledModsPorts, pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { createModImageStorePort, createScanInstalledModsPorts, MAX_MOD_IMAGE_BYTES, pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
-import { assertBoolean, assertSafeFileName, assertString, isRecord } from "@src/ipc/validation"
+import { assertAllowedDownloadUrl, assertBoolean, assertSafeFileName, assertString, isRecord } from "@src/ipc/validation"
+import { requestBoundedBuffer } from "@src/ipc/network"
+import { isJpegBytes, isPngBytes } from "@domain/backgrounds"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
 
 const MAX_MODPACK_ENTRIES = 2_000
+
+// Narrows DOWNLOAD_URL_RULES, which already lists this host for archive downloads, to the one host
+// that serves images. A logofile pointing anywhere else fails here and the row keeps its
+// placeholder without a message, which is what #306 asks for. `assertAllowedDownloadUrl` already
+// checks the protocol and shape and lower-cases the host, so this is an equality check.
+const MOD_IMAGE_HOSTNAME = "moddbcdn.vintagestory.at"
+
+/**
+ * Finds or downloads one ModDB logo in the shared icon cache.
+ *
+ * The file is named by the sha256 of the URL, so a lookup answers before a socket is opened: a
+ * player who has run the launcher before sees a logo it already owns even with no network. The
+ * archive-icon path stays content-addressed; a logo belongs to one mod, so URL addressing costs
+ * nothing there. Roughly two in five ModDB logos are JPEG, so both formats are accepted and the
+ * cached file keeps the source extension for the `cachemodimg:` handler's Content-Type.
+ */
+async function cacheModImage(urlValue: unknown): Promise<string | undefined> {
+  let staleName: string | undefined
+  try {
+    const url = assertAllowedDownloadUrl(urlValue)
+    if (url.hostname !== MOD_IMAGE_HOSTNAME) throw new TypeError("Invalid ModDB image host")
+
+    const images = createModImageStorePort()
+    const key = url.toString()
+    const cached = await images.lookup(key)
+    if (cached?.fresh) return cached.name
+    staleName = cached?.name
+
+    const bytes = await requestBoundedBuffer(url, { maxBytes: MAX_MOD_IMAGE_BYTES, accept: "image/png,image/jpeg" })
+    if (!isPngBytes(bytes) && !isJpegBytes(bytes)) throw new TypeError("Downloaded ModDB image is not a PNG or JPEG")
+    return (await images.store(key, bytes)) ?? staleName
+  } catch (err) {
+    logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [CACHE_MOD_IMAGE] Could not cache ModDB image: ${getErrorMessage(err)}`)
+    return staleName
+  }
+}
 
 function parseModpackManifest(value: unknown): ModpackManifestType {
   if (!isRecord(value) || !Array.isArray(value.mods) || value.mods.length > MAX_MODPACK_ENTRIES) throw new TypeError("Invalid modpack file structure")
@@ -71,6 +109,11 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
     logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods: ${err}`)
     return { mods: [], errors: [] }
   }
+})
+
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.CACHE_MOD_IMAGE, async (event, url: unknown): Promise<string | undefined> => {
+  assertTrustedIpcSender(event)
+  return cacheModImage(url)
 })
 
 /**

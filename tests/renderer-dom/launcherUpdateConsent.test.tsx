@@ -6,7 +6,7 @@ import { NotificationsProvider, useNotificationsContext } from "@renderer/contex
 import type { NotificationType } from "@renderer/contexts/NotificationsContext"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
-import TasksMenu from "@renderer/components/ui/TasksMenu"
+import ActivityCenter from "@renderer/components/ui/ActivityCenter"
 
 import { installMockWindowApi } from "./helpers/windowApi"
 import type { MockedBridgeAPI } from "./helpers/windowApi"
@@ -21,8 +21,7 @@ import "@renderer/i18n"
  * toasts and the menu that draws the task list both on screen.
  *
  * Fake timers, because the consent toast is deliberately held back for two
- * seconds (App.tsx's start-up loader covers the whole window for that long) and
- * because letting an unanswered offer expire is one of the behaviors under test.
+ * seconds (App.tsx's start-up loader covers the whole window for that long).
  *
  * A toast leaving is read off `liveNotifications` rather than off the DOM.
  * NotificationsOverlay wraps its toasts in AnimatePresence, whose exit
@@ -52,7 +51,7 @@ function renderUpdateSurfaces(): ReturnType<typeof render> {
     <>
       <NotificationsProbe />
       <NotificationsOverlay />
-      <TasksMenu />
+      <ActivityCenter />
     </>,
     { wrapper }
   )
@@ -134,9 +133,9 @@ function offerIsLive(): boolean {
   return liveNotifications.some((notification) => notification.body.includes("is available"))
 }
 
-/** Opens the task menu popover, which is where every task's progress bar lives. */
-function openTasksMenu(): void {
-  fireEvent.click(screen.getByRole("button", { name: "Tasks" }))
+/** Opens the Activity Center, which is where every task's progress bar lives. */
+function openActivityCenter(): void {
+  fireEvent.click(screen.getByRole("button", { name: /active task/ }))
 }
 
 /** The task list's progress bar, or null when no task is running. */
@@ -180,7 +179,7 @@ describe("the update offer (#184)", () => {
     expect(api.appUpdater.downloadUpdate).toHaveBeenCalledTimes(1)
     // The offer has been answered, so it goes, and says where to watch instead.
     expect(offerIsLive()).toBe(false)
-    expect(screen.getByText("Starting download: RiftLauncher 1.7.0-beta.3!")).toBeTruthy()
+    expect(screen.queryByText("Starting download: RiftLauncher 1.7.0-beta.3!")).toBeNull()
   })
 
   it("can only be answered once, however fast the accept is clicked", () => {
@@ -199,7 +198,7 @@ describe("the update offer (#184)", () => {
     fireEvent.click(accept)
 
     expect(api.appUpdater.downloadUpdate).toHaveBeenCalledTimes(1)
-    expect(screen.getAllByText("Starting download: RiftLauncher 1.7.0-beta.3!")).toHaveLength(1)
+    expect(screen.queryByText("Starting download: RiftLauncher 1.7.0-beta.3!")).toBeNull()
     expect(offerIsLive()).toBe(false)
   })
 
@@ -221,7 +220,7 @@ describe("the update offer (#184)", () => {
     expect(api.appUpdater.downloadUpdate).not.toHaveBeenCalled()
   })
 
-  it("downloads nothing when the offer is simply left to expire", () => {
+  it("keeps an unanswered offer open until it is explicitly answered", () => {
     const { api, listeners } = installUpdaterApi()
     renderUpdateSurfaces()
 
@@ -232,12 +231,32 @@ describe("the update offer (#184)", () => {
       vi.advanceTimersByTime(60_000)
     })
 
-    expect(offerIsLive()).toBe(false)
+    expect(offerIsLive()).toBe(true)
+    expect(screen.getByRole("button", { name: "Update now" })).toBeTruthy()
+    expect(screen.queryByTestId("toast-timer")).toBeNull()
     expect(api.appUpdater.downloadUpdate).not.toHaveBeenCalled()
   })
 })
 
 describe("the download's progress bar (#185)", () => {
+  it("creates the task from the initial zero progress before the update is downloaded", () => {
+    const { api, listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    offerUpdate(listeners)
+    fireEvent.click(screen.getByRole("button", { name: "Update now" }))
+    act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 0 }))
+
+    openActivityCenter()
+    expect(screen.getByText("RiftLauncher 1.7.0-beta.3")).toBeTruthy()
+    expect(progressBar()?.getAttribute("aria-valuenow")).toBe("0")
+
+    fireDownloaded(listeners)
+
+    expect(progressBar()).toBeNull()
+    expect(api.appUpdater.downloadUpdate).toHaveBeenCalledTimes(1)
+  })
+
   it("draws a task whose bar follows the update's progress, and completes it when the update lands", () => {
     const { listeners } = installUpdaterApi()
     renderUpdateSurfaces()
@@ -245,14 +264,13 @@ describe("the download's progress bar (#185)", () => {
     offerUpdate(listeners)
     fireEvent.click(screen.getByRole("button", { name: "Update now" }))
 
-    openTasksMenu()
-    expect(screen.getByText("There are no tasks queued!")).toBeTruthy()
+    openActivityCenter()
+    expect(screen.queryByRole("progressbar")).toBeNull()
 
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 12 }))
 
-    expect(screen.queryByText("There are no tasks queued!")).toBeNull()
     expect(screen.getByText("RiftLauncher 1.7.0-beta.3")).toBeTruthy()
-    expect(screen.getByText("Downloading")).toBeTruthy()
+    expect(screen.getByText(/Downloading/)).toBeTruthy()
     expect(progressBar()?.getAttribute("aria-valuenow")).toBe("12")
 
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 68 }))
@@ -272,7 +290,7 @@ describe("the download's progress bar (#185)", () => {
 
     offerUpdate(listeners)
     fireEvent.click(screen.getByRole("button", { name: "Update now" }))
-    openTasksMenu()
+    openActivityCenter()
 
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 30 }))
 
@@ -283,12 +301,12 @@ describe("the download's progress bar (#185)", () => {
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 100 }))
 
     expect(progressBar()?.getAttribute("aria-valuenow")).toBe("100")
-    expect(screen.queryByTitle("Discard")).toBeNull()
+    expect(screen.queryByTitle("Discard task")).toBeNull()
 
     fireDownloaded(listeners)
 
     expect(progressBar()).toBeNull()
-    expect(screen.getByTitle("Discard")).toBeTruthy()
+    expect(screen.getByTitle("Discard task")).toBeTruthy()
   })
 
   it("shows the restart affordance once the update is downloaded, and restarts when it is taken", () => {
@@ -300,8 +318,7 @@ describe("the download's progress bar (#185)", () => {
       vi.advanceTimersByTime(2_000)
     })
 
-    const toast = screen.getByText("Update downloaded successfully! Click here to restart RiftLauncher and update it!")
-    fireEvent.click(toast)
+    fireEvent.click(screen.getByRole("button", { name: "Restart and update" }))
 
     expect(api.appUpdater.updateAndRestart).toHaveBeenCalledTimes(1)
   })
@@ -313,7 +330,7 @@ describe("the download's progress bar (#185)", () => {
     offerUpdate(listeners)
     fireEvent.click(screen.getByRole("button", { name: "Update now" }))
 
-    openTasksMenu()
+    openActivityCenter()
     act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress: 47 }))
     expect(progressBar()?.getAttribute("aria-valuenow")).toBe("47")
 
@@ -362,7 +379,7 @@ describe("the download's progress bar (#185)", () => {
 
     offerUpdate(listeners)
     fireEvent.click(screen.getByRole("button", { name: "Update now" }))
-    openTasksMenu()
+    openActivityCenter()
 
     for (const progress of [3, 17, 41, 82]) {
       act(() => listeners.progress?.({ version: "1.7.0-beta.3", progress }))
@@ -376,7 +393,7 @@ describe("the download's progress bar (#185)", () => {
     const { listeners } = installUpdaterApi()
     renderUpdateSurfaces()
 
-    openTasksMenu()
+    openActivityCenter()
     act(() => listeners.progress?.({ version: "", progress: 25 }))
 
     expect(screen.getByText("RiftLauncher")).toBeTruthy()

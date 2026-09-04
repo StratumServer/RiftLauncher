@@ -33,21 +33,21 @@ function InstalledModsSectionHeader({ titleKey, descriptionKey, reportKey }: Rea
                   e.stopPropagation()
                   openExternalLink(ISSUES_URL)
                 }}
-                className="text-vsl underline"
+                variant="link"
               >
                 {t("generic.issues")}
               </NormalButton>
             ),
             discord: (
               <NormalButton
-                title="Discord"
+                title={t("generic.discordContact")}
                 onClick={(e) => {
                   e.stopPropagation()
                   openExternalLink(DISCORD_URL)
                 }}
-                className="text-vsl underline"
+                variant="link"
               >
-                Discord
+                {t("generic.discordContact")}
               </NormalButton>
             )
           }}

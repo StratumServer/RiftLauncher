@@ -126,6 +126,8 @@ declare global {
     totalTimePlayed: number
     mesaGlThread: boolean
     envVars: string
+    /** Optional Linux command that receives the game command as its arguments. */
+    launchWrapper?: string
     _modsCount?: number
     _playing?: boolean
     _backuping?: boolean
@@ -212,6 +214,7 @@ declare global {
     trendingpoints: number
     comments: number
     side: string
+    logofile?: string
     createdat: string
     tags: string[]
     releases: DownloadableModReleaseType[]
@@ -268,12 +271,13 @@ declare global {
     custom?: boolean
   }
 
-  /** One scene as the `backgrounds` branch manifest lists it. `file` is full-size; `thumbnail` is optional. */
+  /** One scene as the `backgrounds` branch manifest lists it. `file` and the optional hash are full-size; `thumbnail` is optional. */
   type BackgroundType = {
     id: string
     name: string
     file: string
     thumbnail?: string
+    sha256?: string
   }
 
   type ModpackModEntryType = {
@@ -418,6 +422,24 @@ declare global {
 
   /** SET_MOD_ENABLED's verdict, carrying the archive's new path when it moved. */
   type SetModEnabledResult = { ok: true; path: string } | { ok: false; reason: SetModEnabledFailureReason }
+
+  /**
+   * ENSURE_BACKGROUND's verdict for one catalog scene.
+   *
+   * Three outcomes, not two, because the two callers need different halves of the answer. The
+   * picker only needs the file to be on disk under this id, which `current` and `refreshed` both
+   * say. The repaint fires on `refreshed` alone, since that is the one case where new bytes
+   * replaced the file the running session already read.
+   *
+   * - `refreshed`: the handler downloaded the scene and wrote it into the cache.
+   * - `current`: the cached file already matches the manifest hash, so the handler requested
+   *   nothing.
+   * - `failed`: the handler wrote nothing. The request was refused, the bytes were not a JPEG,
+   *   the bytes did not match the manifest hash, the arguments were malformed, or something that
+   *   is not a plain file is sitting on the cache name. A stale file may survive under the id and
+   *   the handler does not vouch for it.
+   */
+  type EnsureBackgroundResult = "refreshed" | "current" | "failed"
 
   declare module "*.png" {
     const value: string

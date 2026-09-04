@@ -19,7 +19,7 @@ import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { NormalButton } from "@renderer/components/ui/Buttons"
-import { FormButton } from "@renderer/components/ui/FormComponents"
+import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -155,13 +155,24 @@ function ManageInstallationBackups(): JSX.Element {
                     <ThinSeparator />
 
                     <div className="shrink-0 w-fit flex gap-1 text-lg">
-                      <NormalButton className="p-1" title={t("features.backups.restoreBackup")} onClick={() => setBackupToRestore(backup)} disabled={backup._deleting || backup._restoring}>
+                      <NormalButton
+                        className="p-1"
+                        title={t("features.backups.restoreBackup")}
+                        variant="ghost"
+                        onClick={() => setBackupToRestore(backup)}
+                        disabled={backup._deleting || backup._restoring}
+                      >
                         <PiArrowCounterClockwiseDuotone />
                       </NormalButton>
-                      <NormalButton onClick={() => setBackupToDelete(backup)} title={t("generic.delete")} className="p-1" disabled={backup._deleting || backup._restoring}>
+                      <NormalButton onClick={() => setBackupToDelete(backup)} title={t("generic.delete")} variant="ghost" className="p-1" disabled={backup._deleting || backup._restoring}>
                         <PiTrashDuotone />
                       </NormalButton>
-                      <NormalButton onClick={() => openPathInExplorer(backup.path, { parentOfFile: true })} title={`${t("generic.openOnFileExplorer")} · ${backup.path}`} className="p-1">
+                      <NormalButton
+                        onClick={() => openPathInExplorer(backup.path, { parentOfFile: true })}
+                        title={`${t("generic.openOnFileExplorer")} · ${backup.path}`}
+                        variant="ghost"
+                        className="p-1"
+                      >
                         <PiFolderOpenDuotone />
                       </NormalButton>
                     </div>
@@ -175,22 +186,19 @@ function ManageInstallationBackups(): JSX.Element {
           <>
             <p>{t("features.backups.areYouSureRestoreBackup")}</p>
             <p className="text-zinc-400">{t("features.backups.restoringNotReversible")}</p>
-            <div className="flex gap-4 items-center justify-center text-lg">
-              <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setBackupToRestore(null)} type="success">
-                <PiXCircleDuotone />
-              </FormButton>
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <FormButton title={t("generic.cancel")} onClick={() => setBackupToRestore(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
               <FormButton
                 title={t("generic.restore")}
-                className="p-2"
+                size="md"
                 onClick={() => {
                   RestoreBackupHandler(backupToRestore)
                   setBackupToRestore(null)
                 }}
-                type="error"
-              >
-                <PiArrowCounterClockwiseDuotone />
-              </FormButton>
-            </div>
+                variant="destructive"
+                icon={<PiArrowCounterClockwiseDuotone />}
+              />
+            </ButtonsWrapper>
           </>
         </PopupDialogPanel>
 
@@ -198,22 +206,19 @@ function ManageInstallationBackups(): JSX.Element {
           <>
             <p>{t("features.backups.areYouSureDelete")}</p>
             <p className="text-zinc-400">{t("features.backups.deletingNotReversible")}</p>
-            <div className="flex gap-4 items-center justify-center text-lg">
-              <NormalButton title={t("generic.cancel")} className="p-2" onClick={() => setBackupToDelete(null)} type="success">
-                <PiXCircleDuotone />
-              </NormalButton>
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <NormalButton title={t("generic.cancel")} onClick={() => setBackupToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
               <NormalButton
                 title={t("generic.delete")}
-                className="p-2"
+                size="md"
                 onClick={() => {
                   DeleteBackupHandler(backupToDelete)
                   setBackupToDelete(null)
                 }}
-                type="error"
-              >
-                <PiTrashDuotone />
-              </NormalButton>
-            </div>
+                variant="destructive"
+                icon={<PiTrashDuotone />}
+              />
+            </ButtonsWrapper>
           </>
         </PopupDialogPanel>
       </div>

@@ -1,12 +1,16 @@
 import assert from "node:assert/strict"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from "node:fs"
+import type { StatsFsBase } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { gunzipSync } from "node:zlib"
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import * as tar from "tar"
 
-import { assertSafeCompressionTree, runCompression } from "@src/ipc/workers/compression"
+import fse from "fs-extra"
+
+import { assertRoomForArchive, assertSafeCompressionTree, runCompression } from "@src/ipc/workers/compression"
+import { MAX_ARCHIVE_TOTAL_BYTES, MAX_BACKUP_ENTRY_BYTES, MAX_BACKUP_TOTAL_BYTES } from "@src/ipc/validation"
 
 /**
  * The backup compression, against real archives.
@@ -45,12 +49,12 @@ function fakeTree(lstat: (path: string) => FakeStats, readdir: (path: string) =>
 }
 
 /** A stat answer for a folder, a plain file, or something that is neither. */
-function fakeStats(kind: "directory" | "file" | "other"): FakeStats {
+function fakeStats(kind: "directory" | "file" | "other", size = 0): FakeStats {
   return {
     isSymbolicLink: (): boolean => false,
     isDirectory: (): boolean => kind === "directory",
     isFile: (): boolean => kind === "file",
-    size: 0
+    size
   }
 }
 
@@ -66,8 +70,40 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   rmSync(workspace, { recursive: true, force: true })
 })
+
+const GIB = 1024 * 1024 * 1024
+
+/**
+ * Makes one file stat at whatever size is asked for, without putting anything
+ * like that on disk.
+ *
+ * The ceilings are read off `stats.size`, so that is the only part of a
+ * multi-gigabyte installation a test needs. A sparse file would do the same on
+ * Linux and not on Windows, where CI also runs. Every other path keeps the real
+ * answer, so the safety walk, the destination checks and tar itself all still
+ * see the actual (tiny) tree.
+ */
+function statFileAs(target: string, sizeBytes: number): void {
+  const realLstatSync = fse.lstatSync.bind(fse)
+  vi.spyOn(fse, "lstatSync").mockImplementation(((pathValue: Parameters<typeof fse.lstatSync>[0], options: Parameters<typeof fse.lstatSync>[1]) => {
+    const stats = realLstatSync(pathValue, options as never)
+    if (pathValue === target && stats) stats.size = sizeBytes
+    return stats
+  }) as typeof fse.lstatSync)
+}
+
+/** A statfs answer, or a throw when `bavail` is left out. */
+function statfsAnswering(freeBlocks: number | undefined, blockSize = 4096): Pick<typeof fse, "statfsSync"> {
+  return {
+    statfsSync: ((): StatsFsBase<number> => {
+      if (freeBlocks === undefined) throw new Error("ENOTSUP: statfs is not supported on this filesystem")
+      return { type: 0, bsize: blockSize, blocks: freeBlocks, bfree: freeBlocks, bavail: freeBlocks, files: 0, ffree: 0 }
+    }) as unknown as typeof fse.statfsSync
+  }
+}
 
 describe("assertSafeCompressionTree", () => {
   it("accepts a tree of plain files and folders and totals their bytes", () => {
@@ -93,6 +129,39 @@ describe("assertSafeCompressionTree", () => {
           )
         ),
       /unsafe filesystem entry/
+    )
+  })
+
+  it("accepts a file exactly at the backup entry limit", () => {
+    const stats = fakeStats("file", MAX_BACKUP_ENTRY_BYTES)
+
+    assert.equal(
+      assertSafeCompressionTree(
+        FAKE_ROOT,
+        fakeTree(
+          () => stats,
+          () => []
+        )
+      ),
+      MAX_BACKUP_ENTRY_BYTES
+    )
+  })
+
+  it("refuses a file above the backup entry limit even below the total limit", () => {
+    const size = MAX_BACKUP_ENTRY_BYTES + 1
+    assert.ok(size < MAX_BACKUP_TOTAL_BYTES)
+    const stats = fakeStats("file", size)
+
+    assert.throws(
+      () =>
+        assertSafeCompressionTree(
+          FAKE_ROOT,
+          fakeTree(
+            () => stats,
+            () => []
+          )
+        ),
+      /file that is too large/
     )
   })
 
@@ -237,12 +306,24 @@ describe("runCompression", () => {
     assert.equal(readFileSync(workspacePath("someone-elses-file"), "utf8"), "")
   })
 
-  it.skipIf(process.platform === "win32")("refuses a source past the total the restore reader will accept", async () => {
-    // A sparse file: 3 GiB by every stat the walk makes, no blocks on disk. The
-    // point is the size the reader would read back, and that is what stat says.
-    const huge = join(source, "world.vcdbs")
-    writeFileSync(huge, "")
-    truncateSync(huge, 3 * 1024 * 1024 * 1024)
+  // Issue #362: three modded installations, 4 GB, 2.6 GB and 19 GB, every
+  // automatic backup refused. The ceiling was MAX_ARCHIVE_TOTAL_BYTES, which is
+  // sized against archives arriving over the network and has nothing to say
+  // about a folder the player already has.
+  it("compresses a source past the old 2 GiB archive ceiling", async () => {
+    const world = join(source, "world.vcdbs")
+    writeFileSync(world, "a world")
+    statFileAs(world, 4 * GIB)
+
+    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" })
+
+    assert.deepEqual(await archiveEntryNames(join(output, "backup.tar.gz")), ["Vintagestory", "assets/", "assets/version.txt", "world.vcdbs"])
+  })
+
+  it("refuses a source past the total the restore reader will accept", async () => {
+    const world = join(source, "world.vcdbs")
+    writeFileSync(world, "a world")
+    statFileAs(world, 65 * GIB)
 
     await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /too large/)
 
@@ -250,12 +331,54 @@ describe("runCompression", () => {
     assert.deepEqual(readdirSync(output), [])
   })
 
+  it("refuses when the destination drive has less room than the source is large", async () => {
+    const world = join(source, "world.vcdbs")
+    writeFileSync(world, "a world")
+    statFileAs(world, 4 * GIB)
+    // 1 GiB free against a 4 GiB source.
+    const statfs = vi.spyOn(fse, "statfsSync").mockImplementation(statfsAnswering(GIB / 4096).statfsSync)
+
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /Not enough free space/)
+
+    // The destination, not the source: the Backups folder is regularly on a
+    // different drive from the installation, and the archive is written to one
+    // of the two.
+    assert.deepEqual(statfs.mock.calls, [[output]])
+    assert.deepEqual(readdirSync(output), [])
+  })
+
+  it("accounts for tar and gzip overhead when checking destination space", async () => {
+    const tinySource = workspacePath("tiny-installation")
+    mkdirSync(tinySource)
+    writeFileSync(join(tinySource, "one-byte"), "x")
+    vi.spyOn(fse, "statfsSync").mockImplementation(statfsAnswering(1 / 4096).statfsSync)
+
+    await assert.rejects(runCompression({ inputPath: tinySource, outputPath: output, outputFileName: "backup.tar.gz" }), /Not enough free space/)
+
+    assert.deepEqual(readdirSync(output), [])
+  })
+
+  it("compresses anyway when the filesystem cannot say how much room is left", async () => {
+    const world = join(source, "world.vcdbs")
+    writeFileSync(world, "a world")
+    statFileAs(world, 4 * GIB)
+    vi.spyOn(fse, "statfsSync").mockImplementation(statfsAnswering(undefined).statfsSync)
+
+    // An unreadable free-space figure is not evidence of a full disk, and every
+    // backup on an exotic filesystem refusing would be worse than #362 itself.
+    await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" })
+
+    assert.deepEqual(readdirSync(output), ["backup.tar.gz"])
+  })
+
   it.skipIf(process.platform !== "linux" || process.getuid?.() === 0)("takes the half written archive away when the write fails", async () => {
     // A file the safety walk can stat but tar cannot read, so the failure lands
     // after tar has already created the archive and written the first bytes.
     chmodSync(join(source, "Vintagestory"), 0o000)
 
-    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /Compression failed/)
+    // "Compression failed: <cause>", not the bare string: the tar write failure
+    // is the one #337 case where an errno says something, so the catch carries it.
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /Compression failed: \S/)
 
     // A failed backup leaves no record behind, and pruning only ever walks the
     // records, so anything left here would stay for good and a retry would add
@@ -269,5 +392,39 @@ describe("runCompression", () => {
     await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" })
 
     assert.deepEqual(await archiveEntryNames(join(output, "backup.tar.gz")), ["Vintagestory", "assets/", "assets/version.txt"])
+  })
+})
+
+describe("assertRoomForArchive", () => {
+  it("refuses when the free blocks do not cover the source", () => {
+    assert.throws(() => assertRoomForArchive(output, 4 * GIB, statfsAnswering(GIB / 4096)), /Not enough free space for the backup: 3 GB more is needed/)
+  })
+
+  it("accepts when they do", () => {
+    assertRoomForArchive(output, 4 * GIB, statfsAnswering((8 * GIB) / 4096))
+  })
+
+  it("accepts when statfs throws", () => {
+    assertRoomForArchive(output, 4 * GIB, statfsAnswering(undefined))
+  })
+
+  it("accepts when the block size is a number that means nothing", () => {
+    // bsize 0 would multiply out to zero free bytes and refuse every backup on
+    // that mount, which is the answer "I do not know" wearing the answer "full".
+    assertRoomForArchive(output, 4 * GIB, statfsAnswering(1_000_000, 0))
+  })
+
+  it("counts the blocks this process may write into, not the ones reserved for root", () => {
+    const reserved = {
+      statfsSync: ((): StatsFsBase<number> => ({ type: 0, bsize: 4096, blocks: (16 * GIB) / 4096, bfree: (8 * GIB) / 4096, bavail: 0, files: 0, ffree: 0 })) as unknown as typeof fse.statfsSync
+    }
+    assert.throws(() => assertRoomForArchive(output, GIB, reserved), /Not enough free space/)
+  })
+})
+
+describe("the two ceilings stay apart", () => {
+  it("keeps the backup ceiling well above the one for archives the launcher did not write", () => {
+    assert.equal(MAX_BACKUP_TOTAL_BYTES, 64 * GIB)
+    assert.equal(MAX_ARCHIVE_TOTAL_BYTES, 2 * GIB)
   })
 })

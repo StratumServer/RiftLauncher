@@ -120,6 +120,7 @@ export function parseModListResponse(rawText: string): ModDbResponse<ModDbModSum
 export interface ModDbModDetail extends Record<string, unknown> {
   modid: number
   name: string
+  logofile?: string
 }
 
 function readModDetail(value: unknown): ModDbModDetail | undefined {
@@ -133,7 +134,7 @@ function readModDetail(value: unknown): ModDbModDetail | undefined {
   // known to always send, hence the explicit check rather than trusting the shape.
   if (!Array.isArray(value["releases"])) return undefined
 
-  return { ...value, modid, name }
+  return { ...value, modid, name, ...(typeof value["logofile"] === "string" ? { logofile: value["logofile"] } : {}) }
 }
 
 /**

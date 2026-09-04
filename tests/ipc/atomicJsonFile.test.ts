@@ -51,11 +51,9 @@ describe("writeJsonAtomic", () => {
     assert.deepEqual(JSON.parse(readFileSync(dest, "utf8")), { fresh: true })
   })
 
-  it("applies the requested mode to the destination", () => {
+  it.skipIf(process.platform === "win32")("applies the requested mode to the destination", () => {
     // Windows has no POSIX mode bits to assert; this is a Unix-only guarantee, and the
     // account store's own explicit chmod (accountStore.ts) is the cross-platform belt for it.
-    if (process.platform === "win32") return
-
     const dest = join(temporaryRoot, "secret.json")
 
     return writeJsonAtomic(dest, { k: "v" }, { mode: 0o600 }).then(() => {

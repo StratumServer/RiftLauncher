@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import { act, renderHook, waitFor } from "@testing-library/react"
 
 import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import { TASK_NOTIFICATION_POLICIES, TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 
 import { installMockWindowApi } from "./helpers/windowApi"
 
@@ -36,7 +36,7 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.startInstall("Install", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, null))
@@ -51,7 +51,7 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.startInstall("Install", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalled())
@@ -69,7 +69,7 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.startInstall("Install", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalled())
@@ -79,11 +79,10 @@ describe("TaskManagerContext.startInstall", () => {
   })
 
   /**
-   * The tests above only ever look at onFinish, so they never pin which toasts
-   * startInstall raises (PR #41's gating). These two pin that both modes gate
-   * startInstall the same way startDownload/startExtract/startCompress are gated.
+   * The tests above only ever look at onFinish, so these pin the terminal
+   * notifications for both task policies.
    */
-  it("shows the start and success toasts when RUN_INSTALLER reports ok in mode=progress", async () => {
+  it("shows the completion toast when RUN_INSTALLER reports ok for caller-handled failures", async () => {
     installMockWindowApi({
       pathsManager: { runInstaller: vi.fn(async () => ({ ok: true }) as InstallerRunResult) }
     })
@@ -92,14 +91,14 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.task.startInstall("Install", "desc", "progress", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.task.startInstall("Install", "desc", TASK_NOTIFICATION_POLICIES.callerHandled, "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, null))
-    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["info", "success"])
+    expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["success"])
   })
 
-  it("shows the error toast when RUN_INSTALLER fails in mode=end", async () => {
+  it("shows the generic error toast when RUN_INSTALLER fails for an individual task", async () => {
     installMockWindowApi({
       pathsManager: { runInstaller: vi.fn(async () => ({ ok: false, reason: "installer-failed" }) as InstallerRunResult) }
     })
@@ -108,7 +107,7 @@ describe("TaskManagerContext.startInstall", () => {
     const onFinish = vi.fn()
 
     await act(async () => {
-      await result.current.task.startInstall("Install", "desc", "end", "/tmp/setup.exe", "/tmp/out", true, onFinish)
+      await result.current.task.startInstall("Install", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/setup.exe", "/tmp/out", true, onFinish)
     })
 
     await waitFor(() => expect(onFinish).toHaveBeenCalled())

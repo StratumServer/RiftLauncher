@@ -22,7 +22,8 @@
 import yauzl from "yauzl"
 import * as tar from "tar"
 
-import { isArchiveSymlink, isSafeArchiveEntry, isSafeTarEntryType, isTarGzName, MAX_ARCHIVE_ENTRY_BYTES, MAX_ARCHIVE_TOTAL_BYTES } from "./validation"
+import type { ArchiveSizeLimits } from "./validation"
+import { archiveSizeLimits, isArchiveSymlink, isSafeArchiveEntry, isSafeTarEntryType, isTarGzName } from "./validation"
 
 const MAX_ARCHIVE_ENTRIES = 100_000
 
@@ -31,7 +32,7 @@ function comparableArchiveEntry(entryName: string): string {
   return process.platform === "win32" ? normalizedName.toLowerCase() : normalizedName
 }
 
-export function validateZipArchive(filePath: string): Promise<void> {
+export function validateZipArchive(filePath: string, limits: ArchiveSizeLimits = archiveSizeLimits(false)): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     let settled = false
     let totalUncompressedBytes = 0
@@ -62,8 +63,8 @@ export function validateZipArchive(filePath: string): Promise<void> {
           isArchiveSymlink(entry.externalFileAttributes) ||
           !Number.isFinite(entrySize) ||
           entrySize < 0 ||
-          entrySize > MAX_ARCHIVE_ENTRY_BYTES ||
-          totalUncompressedBytes + entrySize > MAX_ARCHIVE_TOTAL_BYTES
+          entrySize > limits.entryBytes ||
+          totalUncompressedBytes + entrySize > limits.totalBytes
         ) {
           try {
             zipFile.close()
@@ -92,7 +93,7 @@ export function validateZipArchive(filePath: string): Promise<void> {
  * The tar reader states an entry's kind outright, so links are refused by type
  * rather than by reading an attributes column.
  */
-export async function validateTarGzArchive(filePath: string): Promise<void> {
+export async function validateTarGzArchive(filePath: string, limits: ArchiveSizeLimits = archiveSizeLimits(false)): Promise<void> {
   let entryCount = 0
   let totalUncompressedBytes = 0
   const entryNames = new Set<string>()
@@ -114,8 +115,8 @@ export async function validateTarGzArchive(filePath: string): Promise<void> {
       entryNames.has(comparableName) ||
       !Number.isFinite(size) ||
       size < 0 ||
-      size > MAX_ARCHIVE_ENTRY_BYTES ||
-      totalUncompressedBytes > MAX_ARCHIVE_TOTAL_BYTES
+      size > limits.entryBytes ||
+      totalUncompressedBytes > limits.totalBytes
     ) {
       failure = new Error("Archive contains an unsafe entry")
       return
@@ -145,10 +146,12 @@ export async function validateTarGzArchive(filePath: string): Promise<void> {
  * rather than handed to a reader that would have to guess at it.
  *
  * @param filePath Archive on disk. Its name decides the reader.
+ * @param limits Entry and total ceilings, the strict pair unless the caller has
+ *   established this is one of the launcher's own backups.
  * @throws When the archive cannot be read or holds an entry the launcher refuses to unpack.
  */
-export async function validateArchive(filePath: string): Promise<void> {
-  if (isTarGzName(filePath)) return validateTarGzArchive(filePath)
-  if (filePath.toLowerCase().endsWith(".zip")) return validateZipArchive(filePath)
+export async function validateArchive(filePath: string, limits: ArchiveSizeLimits = archiveSizeLimits(false)): Promise<void> {
+  if (isTarGzName(filePath)) return validateTarGzArchive(filePath, limits)
+  if (filePath.toLowerCase().endsWith(".zip")) return validateZipArchive(filePath, limits)
   throw new Error("Archive format is not supported")
 }

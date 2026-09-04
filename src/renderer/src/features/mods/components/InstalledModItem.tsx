@@ -98,22 +98,28 @@ function InstalledModItem({
 
         <div className="flex gap-1 justify-end text-lg">
           <NormalButton
-            className="p-1"
             title={iMod.enabled ? t("features.mods.disableMod") : t("features.mods.enableMod")}
-            type={iMod.enabled ? "normal" : "warn"}
+            variant="ghost"
+            className={clsx("p-1", !iMod.enabled && "text-yellow-400")}
             disabled={busy}
             onClick={onToggleEnabledClick}
           >
             <PiPowerDuotone />
           </NormalButton>
 
-          <NormalButton className="p-1" title={suspended ? t("features.mods.resumeUpdates") : t("features.mods.suspendUpdates")} type={suspended ? "warn" : "normal"} onClick={onToggleSuspendClick}>
+          <NormalButton
+            className={clsx("p-1", suspended && "text-yellow-400")}
+            title={suspended ? t("features.mods.resumeUpdates") : t("features.mods.suspendUpdates")}
+            variant="ghost"
+            onClick={onToggleSuspendClick}
+          >
             <PiMoonDuotone />
           </NormalButton>
 
           <NormalButton
             className="p-1"
             title={t("generic.update")}
+            variant="ghost"
             disabled={busy}
             onClick={async () => {
               onUpdateClick()
@@ -125,6 +131,7 @@ function InstalledModItem({
           <NormalButton
             className="p-1"
             title={t("features.mods.openOnTheModDB")}
+            variant="ghost"
             onClick={(e) => {
               e.stopPropagation()
               openExternalLink(`https://mods.vintagestory.at/show/mod/${iMod._mod?.assetid}`)
@@ -136,6 +143,8 @@ function InstalledModItem({
           <NormalButton
             className="p-1"
             title={t("generic.delete")}
+            variant="ghost"
+            ariaLabel={t("generic.delete")}
             disabled={busy}
             onClick={async () => {
               onDeleteClick()
