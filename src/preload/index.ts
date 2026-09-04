@@ -78,7 +78,7 @@ const api: BridgeAPI = {
     acceptModDbVisibility: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY)
   },
   backgroundsManager: {
-    ensureBackground: (id: string, file: string, sha256?: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, id, file, sha256),
+    ensureBackground: (id: string, file: string, sha256?: string): Promise<EnsureBackgroundResult> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, id, file, sha256),
     copyCustomBackground: (path: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.BACKGROUNDS_MANAGER.COPY_CUSTOM_BACKGROUND, path)
   },
   accountManager: {

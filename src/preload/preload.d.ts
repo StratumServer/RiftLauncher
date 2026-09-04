@@ -81,8 +81,8 @@ declare global {
       acceptModDbVisibility: () => Promise<boolean>
     }
     backgroundsManager: {
-      /** Downloads one catalog scene into the cache if it is missing or its manifest hash changed. False if it could not be. */
-      ensureBackground: (id: string, file: string, sha256?: string) => Promise<boolean>
+      /** Downloads one catalog scene into the cache when it is missing or its manifest hash changed, and reports what it did. */
+      ensureBackground: (id: string, file: string, sha256?: string) => Promise<EnsureBackgroundResult>
       /** Copies the player's own picture into the cache under the reserved custom name. */
       copyCustomBackground: (path: string) => Promise<boolean>
     }

@@ -423,6 +423,24 @@ declare global {
   /** SET_MOD_ENABLED's verdict, carrying the archive's new path when it moved. */
   type SetModEnabledResult = { ok: true; path: string } | { ok: false; reason: SetModEnabledFailureReason }
 
+  /**
+   * ENSURE_BACKGROUND's verdict for one catalog scene.
+   *
+   * Three outcomes, not two, because the two callers need different halves of the answer. The
+   * picker only needs the file to be on disk under this id, which `current` and `refreshed` both
+   * say. The repaint fires on `refreshed` alone, since that is the one case where new bytes
+   * replaced the file the running session already read.
+   *
+   * - `refreshed`: the handler downloaded the scene and wrote it into the cache.
+   * - `current`: the cached file already matches the manifest hash, so the handler requested
+   *   nothing.
+   * - `failed`: the handler wrote nothing. The request was refused, the bytes were not a JPEG,
+   *   the bytes did not match the manifest hash, the arguments were malformed, or something that
+   *   is not a plain file is sitting on the cache name. A stale file may survive under the id and
+   *   the handler does not vouch for it.
+   */
+  type EnsureBackgroundResult = "refreshed" | "current" | "failed"
+
   declare module "*.png" {
     const value: string
     export default value

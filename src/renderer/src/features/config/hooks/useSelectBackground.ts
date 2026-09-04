@@ -9,12 +9,16 @@ import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/con
 export type SelectBackgroundActions = {
   /** The bundled scene. Costs nothing and always works, so it never reports a failure. */
   selectDefault: () => void
-  /** Downloads the scene if it is not cached yet, then selects it. Selects nothing if that fails. */
+  /** Selects the scene once its file is on disk, downloading it first when it is not. Selects nothing if that fails. */
   selectFromCatalog: (entry: BackgroundType) => Promise<void>
   /** Picks a JPEG off the player's disk, copies it into the cache and selects it. */
   pickCustom: () => Promise<void>
-  /** Re-downloads the cached file for a selected catalog scene when it has gone missing. */
-  ensureCached: (entry: BackgroundType) => Promise<void>
+  /**
+   * Downloads the cached file for a selected catalog scene when it is missing or the branch has
+   * replaced it, and reports what it did. Dispatches nothing: the caller owns the repaint, because
+   * only the caller knows whether the entry is still the one the player has selected.
+   */
+  ensureCached: (entry: BackgroundType) => Promise<EnsureBackgroundResult>
 }
 
 /**
@@ -35,7 +39,10 @@ export function useSelectBackground(): SelectBackgroundActions {
 
   const selectFromCatalog = useCallback(
     async (entry: BackgroundType): Promise<void> => {
-      if (!(await window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256))) {
+      const result = await window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256)
+      // "current" and "refreshed" both leave the file on disk under this id, which is all the
+      // selection needs. Only "failed" leaves the player with nothing to paint.
+      if (result === "failed") {
         return addNotification(t("notifications.body.backgroundDownloadFailed"), "error")
       }
 
@@ -57,10 +64,12 @@ export function useSelectBackground(): SelectBackgroundActions {
     configDispatch({ type: CONFIG_ACTIONS.SET_BACKGROUND, payload: CUSTOM_BACKGROUND_ID })
   }, [addNotification, configDispatch, t])
 
-  const ensureCached = useCallback(async (entry: BackgroundType): Promise<void> => {
+  const ensureCached = useCallback(async (entry: BackgroundType): Promise<EnsureBackgroundResult> => {
     // Silent on failure on purpose: nothing was asked for. The launcher is showing the bundled
-    // scene in the meantime and will try again the next time this section is opened.
-    await window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256).catch(() => false)
+    // scene in the meantime and will try again the next time this section is opened. The caller
+    // decides whether a "refreshed" result should still repaint, because by the time this
+    // resolves the player may have picked a different scene.
+    return window.api.backgroundsManager.ensureBackground(entry.id, entry.file, entry.sha256).catch((): EnsureBackgroundResult => "failed")
   }, [])
 
   return { selectDefault, selectFromCatalog, pickCustom, ensureCached }
