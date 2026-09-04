@@ -142,6 +142,11 @@ function tailwindColor(name: string): Rgb {
   return oklchToSrgb(Number(found[1] as string) / 100, Number(found[2] as string), Number(found[3] as string))
 }
 
+/** One `text-<token>` foreground outside the zinc ramp, read out of the component that ships it. */
+function paletteForeground(file: string, anchor: RegExp): Layer {
+  return [tailwindColor(match(file, anchor)[1] as string), 1]
+}
+
 /** A layer this pass did not touch, kept here so the stacks below are the real ones. */
 function fixed(color: keyof typeof ZINC, alpha: number): Layer {
   return [ZINC[color], alpha]
@@ -210,6 +215,9 @@ const POPUP = [popupShell, popupPanel] as const
 const FORM_INPUT = [shell, section, inputFill] as const
 const MOD_FILTER = [shell, stickyMenu, filterControl] as const
 const POPUP_TABLE_ROW = [popupShell, popupPanel, tableFill, rowTint] as const
+// The same release table also renders on the browse page, which has no popup panel over the shell,
+// so a row there sits on one scrim fewer and is the worse of the two backdrops.
+const PAGE_TABLE_ROW = [shell, tableFill, rowTint] as const
 /** The thinnest stack any of the actionable icons sits on, so the worst of the five. */
 const ICON = [shell, section, dropdownFill, rowTint] as const
 
@@ -289,6 +297,35 @@ describe("prompts the player is meant to read and act on", () => {
     // The arrow reads as part of the sentence it sits in, so it follows that row rather than the
     // weaker non-text bar. Pinning it to the row colour keeps the two from drifting apart.
     assert.deepEqual(arrow, alreadyPresent, "the summary arrow should carry the same grey as the row it sits in")
+  })
+
+  /**
+   * #366: the release table's compatibility verdict. The three hues used to be handed to the
+   * download FormButton through `className`, where the ghost variant's own `text-zinc-200` won the
+   * cascade, so none of them ever painted anything and none of them was ever measured. They paint
+   * now (the icon and the word beside it), which puts them in scope here for the first time.
+   *
+   * That is how `text-red-700` survived: rendered for real it reads 2.18:1 on a table row, below
+   * even the non-text floor. The verdict word takes the text floor. The icon takes the non-text
+   * floor and gets its own stack, because the row the launcher recommends updating to paints a
+   * lime tint behind the icon which lifts the backdrop under it.
+   */
+  it("keeps the release compatibility verdict readable in both flows", () => {
+    const file = "features/mods/components/ModReleaseList.tsx"
+    const updatableTint: Layer = [tailwindColor("lime-600"), Number(match(file, /_updatableTo === release\.modversion && "bg-lime-600\/(\d+)"/)[1]) / 100]
+
+    const verdicts: ReadonlyArray<readonly [string, RegExp]> = [
+      ["declared", /declared: \{ className: "text-([a-z]+-\d+)"/],
+      ["same-minor", /"same-minor": \{ className: "text-([a-z]+-\d+)"/],
+      ["undeclared", /undeclared: \{ className: "text-([a-z]+-\d+)"/]
+    ]
+
+    for (const [verdict, anchor] of verdicts) {
+      const colour = paletteForeground(file, anchor)
+      assertReadable(`${verdict} verdict word on the browse page`, colour, PAGE_TABLE_ROW, TEXT_FLOOR)
+      assertReadable(`${verdict} verdict word in the update popup`, colour, POPUP_TABLE_ROW, TEXT_FLOOR)
+      assertReadable(`${verdict} verdict icon on the recommended row`, colour, [...PAGE_TABLE_ROW, updatableTint], NON_TEXT_FLOOR)
+    }
   })
 
   it("keeps the icons that stand in for a control above the non-text bar", () => {

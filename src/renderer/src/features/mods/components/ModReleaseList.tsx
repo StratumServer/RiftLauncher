@@ -14,11 +14,26 @@ import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapp
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { ReloadButton } from "@renderer/components/ui/StickyMenu"
 
-/** Button styling for what the author declared about a release. Undeclared keeps its long-standing red. */
-const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { className: string; titleKey: string }> = {
-  declared: { className: "text-lime-600", titleKey: "features.mods.worksOnTheVersion" },
-  "same-minor": { className: "text-yellow-400", titleKey: "features.mods.shouldWorkOnTheVersion" },
-  undeclared: { className: "text-red-700", titleKey: "features.mods.probablyDontWorkOnTheVersion" }
+/**
+ * How each verdict reads on a release row: a short word, a hue, and the long sentence behind the
+ * tooltip and the button's accessible name.
+ *
+ * `className` goes on the icon and on the label, never on the FormButton. The ghost variant carries
+ * `text-zinc-200` and Tailwind emits it after all three of these, so a colour handed to the button
+ * through `className` sits at the same specificity and loses the cascade: every icon rendered grey
+ * from #350 until #366. A child's own `text-*` has nothing to lose to.
+ *
+ * `labelKey` is the part that does not depend on hue. Whether a release fits your installation is a
+ * call players make on every row of this table, and a colour plus a hover tooltip left anyone who
+ * cannot separate lime from red with nothing to read.
+ */
+const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { className: string; titleKey: string; labelKey: string }> = {
+  declared: { className: "text-lime-600", titleKey: "features.mods.worksOnTheVersion", labelKey: "features.mods.compatibilityTagged" },
+  "same-minor": { className: "text-yellow-400", titleKey: "features.mods.shouldWorkOnTheVersion", labelKey: "features.mods.compatibilityLikely" },
+  // Red-700 was the long-standing undeclared colour, but it only ever shipped as a class nothing
+  // painted. Rendered for real it reads 2.18:1 on the table row, under even the non-text floor, so
+  // this moves up the ramp to a red that clears the text floor. See tests/text-contrast.test.ts.
+  undeclared: { className: "text-red-400", titleKey: "features.mods.probablyDontWorkOnTheVersion", labelKey: "features.mods.compatibilityUntagged" }
 }
 
 export interface IInstallationToInstallModIn {
@@ -73,6 +88,13 @@ function ModReleaseList({
         </TableHeadRow>
       </TableHead>
 
+      {/*
+       * The browse page hands `installation` from the last used one, which a fresh profile has not
+       * picked yet. Nothing is installable then and every Actions cell is empty, so say why once
+       * rather than leaving a blank column the player has to guess at.
+       */}
+      {!installation && <p className="px-2 py-1 text-xs text-center text-zinc-400">{t("features.installations.noInstallationSelected")}</p>}
+
       {failed ? (
         <div className="flex flex-col items-center justify-center gap-2 py-10">
           <p className="text-sm text-zinc-400">{t("features.mods.versionsLoadFailed")}</p>
@@ -91,10 +113,14 @@ function ModReleaseList({
               <TableBodyRow key={release.releaseid}>
                 <TableCell className="w-2/12">{release.modversion}</TableCell>
                 <TableCell className="w-3/12">{new Date(release.created).toLocaleDateString("es")}</TableCell>
-                <TableCell className="w-5/12 overflow-hidden whitespace-nowrap text-ellipsis">
-                  <input type="text" value={release.tags.join(", ")} readOnly className="w-full bg-transparent outline-hidden text-center" />
-                </TableCell>
-                <TableCell className="w-2/12 flex gap-2 items-center justify-center text-lg">
+                {/*
+                 * Plain wrapping text, not the read-only input this used to be: a release can carry
+                 * eight game versions and the input clipped the list mid-item with no tooltip and no
+                 * way to read the rest, which is the one thing this column exists for. Nobody edits
+                 * it either, so as an input it was also a focus stop announcing itself as a textbox.
+                 */}
+                <TableCell className="w-5/12 text-center break-words">{release.tags.join(", ")}</TableCell>
+                <TableCell className="w-2/12 flex flex-col gap-1 items-center justify-center">
                   {installation && compatibility && (
                     <FormButton
                       disabled={installation.oldMod?.version === release.modversion}
@@ -122,14 +148,21 @@ function ModReleaseList({
                         return undefined
                       }}
                       variant="ghost"
-                      className={clsx("w-7 h-7", compatibility.className)}
+                      className="w-7 h-7 text-lg"
                       title={t(compatibility.titleKey)}
                     >
-                      <div className={clsx("w-full h-full rounded-sm flex items-center justify-center", installation.oldMod?._updatableTo === release.modversion && "bg-lime-600/15")}>
+                      <div
+                        className={clsx(
+                          "w-full h-full rounded-sm flex items-center justify-center",
+                          compatibility.className,
+                          installation.oldMod?._updatableTo === release.modversion && "bg-lime-600/15"
+                        )}
+                      >
                         {installation.oldMod ? <PiArrowClockwiseDuotone /> : <PiDownloadDuotone />}
                       </div>
                     </FormButton>
                   )}
+                  {compatibility && <span className={clsx("text-xs leading-none", compatibility.className)}>{t(compatibility.labelKey)}</span>}
                 </TableCell>
               </TableBodyRow>
             )
