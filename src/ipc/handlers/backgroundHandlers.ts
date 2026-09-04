@@ -62,14 +62,14 @@ async function writeBackground(id: string, bytes: Buffer): Promise<void> {
  * Called when the player picks a scene, and again for the scene already selected each time the
  * settings section is opened, which is what quietly repairs a cache someone emptied by hand.
  */
-ipcMain.handle(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, async (event, id: unknown, file: unknown, expectedSha256: unknown): Promise<{ refreshed: boolean }> => {
+ipcMain.handle(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, async (event, id: unknown, file: unknown, expectedSha256: unknown): Promise<EnsureBackgroundResult> => {
   assertTrustedIpcSender(event)
 
   try {
     if (!isCatalogBackgroundId(id) || !isBackgroundFileName(file)) throw new TypeError("Invalid background")
     if (expectedSha256 !== undefined && !isBackgroundSha256(expectedSha256)) throw new TypeError("Invalid background hash")
     const expectedHash = typeof expectedSha256 === "string" ? expectedSha256.toLowerCase() : undefined
-    if (await isCurrentCachedBackground(id, expectedHash)) return { refreshed: false }
+    if (await isCurrentCachedBackground(id, expectedHash)) return "current"
 
     const url = assertAllowedApiUrl(backgroundImageUrl(file))
     const bytes = await requestBoundedBuffer(url, { maxBytes: getApiUrlMaxBytes(url), accept: "image/jpeg" })
@@ -77,11 +77,11 @@ ipcMain.handle(IPC_CHANNELS.BACKGROUNDS_MANAGER.ENSURE_BACKGROUND, async (event,
     if (expectedHash !== undefined && sha256(bytes) !== expectedHash) throw new TypeError("Downloaded background hash mismatch")
 
     await writeBackground(id, bytes)
-    return { refreshed: true }
+    return "refreshed"
   } catch (err) {
     logMessage("warn", `${LOG_PREFIX} [ENSURE_BACKGROUND] Could not cache the background.`)
     logMessage("debug", `${LOG_PREFIX} [ENSURE_BACKGROUND] ${getErrorMessage(err)}`)
-    return { refreshed: false }
+    return "failed"
   }
 })
 

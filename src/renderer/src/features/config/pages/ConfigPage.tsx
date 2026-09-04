@@ -233,13 +233,28 @@ function BackgroundPicker(): JSX.Element {
   const { background, backgroundRevision } = useSettingsConfig()
   const { entries, loading, failed, retry } = useBackgroundCatalog()
   const { selectDefault, selectFromCatalog, pickCustom, ensureCached } = useSelectBackground()
+  const configDispatch = useConfigDispatch()
 
-  // Repairs a cached file that has gone missing under a still-selected scene. The launcher is
-  // showing the bundled default until it lands, which is what the missing file already made it do.
+  // Repairs a cached file that has gone missing under a still-selected scene, and picks up a scene
+  // the branch has replaced since the last launch. A refresh writes new bytes under the same name,
+  // so the revision has to move for the running session to read them. The flag drops a refresh
+  // that lands after the player picked something else, which would otherwise put the old scene
+  // back and save it to the config.
   useEffect(() => {
     const selected = entries.find((entry) => entry.id === background)
-    if (selected) void ensureCached(selected)
-  }, [entries, background, ensureCached])
+    if (!selected) return
+
+    let cancelled = false
+
+    void ensureCached(selected).then((result) => {
+      if (cancelled || result !== "refreshed") return
+      configDispatch({ type: CONFIG_ACTIONS.SET_BACKGROUND, payload: selected.id })
+    })
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [entries, background, ensureCached, configDispatch])
 
   return (
     <div className="w-full flex flex-col gap-2">
