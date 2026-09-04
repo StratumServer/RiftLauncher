@@ -130,7 +130,39 @@ describe("startup network boundaries", () => {
   })
 })
 
+/**
+ * The renderer CSP is one long attribute, so a substring match on it is a poor
+ * pin: "script-src 'self'" is still present after someone appends a host to the
+ * source list. Parsing the attribute into directives means the assertion below
+ * compares the value the browser will actually apply, and it survives a
+ * reordering or a reflow of the attribute.
+ */
+function rendererCspDirectives(): Map<string, string> {
+  const policy = /http-equiv="Content-Security-Policy"\s+content="([^"]*)"/.exec(RENDERER_HTML)?.[1]
+  if (policy === undefined) throw new Error("src/renderer/index.html no longer carries a Content-Security-Policy meta tag")
+
+  return new Map(
+    policy
+      .split(";")
+      .map((directive) => directive.trim())
+      .filter(Boolean)
+      .map((directive) => {
+        const [name = "", ...sources] = directive.split(/\s+/)
+        return [name, sources.join(" ")] as const
+      })
+  )
+}
+
 describe("renderer document boundaries", () => {
+  it("keeps every renderer script source local", () => {
+    const directives = rendererCspDirectives()
+
+    assert.equal(directives.get("script-src"), "'self'", `renderer script-src is now ${JSON.stringify(directives.get("script-src"))}; the renderer must not run script from anywhere but the bundle`)
+    assert.equal(directives.get("default-src"), "'self'", `renderer default-src is now ${JSON.stringify(directives.get("default-src"))}; it is the fallback every directive that goes missing lands on`)
+    assert.equal(directives.get("object-src"), "'none'", "renderer object-src stopped blocking plugin content")
+    assert.equal(directives.get("base-uri"), "'none'", "renderer base-uri stopped blocking a rewritten document base")
+  })
+
   it("does not allow framed content in the renderer CSP", () => {
     assert.match(RENDERER_HTML, /frame-src 'none'/)
     // Match the full directive up to its semicolon or end-of-string so that
@@ -167,6 +199,68 @@ function mainHandlerSource(startMarker: string, endMarker: string): string {
 
   return MAIN_SOURCE.slice(start, end)
 }
+
+/**
+ * Reads the boolean webPreferences the main window is built with as values
+ * rather than as text. A substring pin on "sandbox: true" would also be
+ * satisfied by a comment mentioning it, and it says nothing when the flag flips;
+ * this fails with the flag that changed and its new value. Comment lines and
+ * non-boolean options (preload, icon) do not match, so they are simply skipped.
+ */
+function mainWindowFlags(): Map<string, boolean> {
+  const source = mainHandlerSource("webPreferences: {", "\n  })")
+  return new Map([...source.matchAll(/^\s*(\w+): (true|false),?\s*$/gm)].map(([, name = "", value]) => [name, value === "true"] as const))
+}
+
+/**
+ * The renderer defenses the main process holds on its own side of the bridge.
+ * None of them can be exercised for real here: index.ts bootstraps Electron on
+ * import, and the only harness that drives a rendered window is the packaged CDP
+ * run under tests/e2e, which is started by hand from a workflow rather than by
+ * vitest. So these read the source, the same way the assertions above do, with
+ * the values pulled out where they can be (the webPreferences flags) and matched
+ * as anchored patterns where they cannot (the handler bodies). Each pattern is
+ * written to accept a renamed local or a prettier pass and to reject a weakened
+ * value.
+ */
+describe("main process renderer defenses", () => {
+  it("builds the main window with the renderer locked out of node", () => {
+    const flags = mainWindowFlags()
+
+    assert.equal(flags.get("sandbox"), true, `the main window webPreferences set sandbox: ${flags.get("sandbox")}, which drops the renderer out of the OS sandbox`)
+    assert.equal(flags.get("nodeIntegration"), false, `the main window webPreferences set nodeIntegration: ${flags.get("nodeIntegration")}, which hands the renderer require()`)
+    assert.equal(flags.get("contextIsolation"), true, `the main window webPreferences set contextIsolation: ${flags.get("contextIsolation")}, which puts the preload bridge in the page's own world`)
+  })
+
+  it("blocks any main-frame navigation the renderer policy rejects", () => {
+    // will-navigate alone is not the boundary: a redirect and a frame
+    // navigation reach the same window through their own events, so all three
+    // guards are pinned together.
+    for (const event of ["will-navigate", "will-redirect", "will-frame-navigate"]) {
+      const marker = `.on("${event}"`
+      assert.ok(MAIN_SOURCE.includes(marker), `src/main/index.ts stopped registering the ${event} guard, so the renderer can navigate the window away from the bundle`)
+      // Accepts a renamed parameter or guard function, rejects a body that
+      // stops preventing, and rejects the negation being dropped.
+      assert.match(mainHandlerSource(marker, "\n  })"), /if \(.*!.*\) \w+\.preventDefault\(\)/, `the ${event} guard no longer prevents a URL the renderer policy rejects`)
+    }
+  })
+
+  it("denies every window the renderer asks Electron to open", () => {
+    const handler = mainHandlerSource("setWindowOpenHandler(", "\n  })")
+
+    assert.match(handler, /return \{ action: "deny" \}/, "the window open handler stopped denying, so a renderer window.open() gets a real Electron window instead of the external browser")
+    assert.doesNotMatch(handler, /action: "allow"/, "the window open handler can now open an Electron window for the renderer")
+  })
+
+  it("refuses every renderer permission request", () => {
+    assert.match(
+      MAIN_SOURCE,
+      /setPermissionRequestHandler\(\([^)]*\) => \{?\s*\w+\(false\)/,
+      "the permission request handler stopped answering false, so the renderer can be granted device permissions"
+    )
+    assert.match(MAIN_SOURCE, /setPermissionCheckHandler\(\([^)]*\) => false\)/, "the permission check handler stopped answering false, so a synchronous permission check now passes")
+  })
+})
 
 describe("main process protocol boundary wiring", () => {
   // index.ts bootstraps Electron on import, so keep this contract scoped to each inline handler.
