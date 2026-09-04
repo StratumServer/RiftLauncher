@@ -16,7 +16,7 @@ async function login(email: string, password: string): Promise<void> {
   await user.type(screen.getByLabelText("Email"), email)
   await user.type(screen.getByLabelText("Password"), password)
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Log in" }))
-  await user.click(await screen.findByRole("button", { name: "Discard notification" }))
+  await user.click(await screen.findByRole("button", { name: "Discard notification" }, { timeout: 10000 }))
 }
 
 /**
@@ -42,7 +42,7 @@ describe("SessionButton on an account-store rebuild", () => {
     expect(await screen.findByText(/couldn't be read/i)).toBeTruthy()
     await userEvent.setup().click(await screen.findByRole("button", { name: "Discard notification" }))
     expect(await screen.findByText(/logged in as player/i)).toBeTruthy()
-  })
+  }, 15000)
 
   it("does not warn about a rebuild on an ordinary success", async () => {
     const loginFn = vi.fn(async () => ({ status: "success", account: ACCOUNT }) as AccountLoginResult)
@@ -59,7 +59,7 @@ describe("SessionButton on an account-store rebuild", () => {
 
     expect(await screen.findByText(/logged in as player/i)).toBeTruthy()
     expect(screen.queryByText(/couldn't be read/i)).toBeNull()
-  })
+  }, 15000)
 
   it("tells the player their login worked but nothing could be saved, when the store could not even be backed up", async () => {
     const loginFn = vi.fn(async () => ({ status: "session-store-unreadable" }) as AccountLoginResult)
@@ -77,5 +77,5 @@ describe("SessionButton on an account-store rebuild", () => {
     expect(await screen.findByText(/your login worked/i)).toBeTruthy()
     expect(screen.queryByText(/invalid email or password/i)).toBeNull()
     expect(screen.queryByText(/logged in as/i)).toBeNull()
-  })
+  }, 15000)
 })

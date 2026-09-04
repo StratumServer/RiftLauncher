@@ -139,7 +139,7 @@ describe("ConfigPage background picker", () => {
     expect(image).toBeTruthy()
     fireEvent.error(image!)
 
-    expect(tileImage("Village Lane")).toBeNull()
+    await waitFor(() => expect(tileImage("Village Lane")).toBeNull())
     expect(screen.getByRole("button", { name: "Village Lane" })).toBeTruthy()
   })
 

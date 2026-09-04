@@ -101,7 +101,7 @@ describe("SessionButton", () => {
     expect((within(dialog).getByLabelText("Email") as HTMLInputElement).value).toBe("player@example.test")
   })
 
-  it("supports password visibility and opens a fresh dialog with no password material", async () => {
+  it("clears transient login fields when the dialog closes", async () => {
     const user = userEvent.setup()
     installMockWindowApi()
 
@@ -123,7 +123,7 @@ describe("SessionButton", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), { timeout: 3000 })
-    await user.click(await screen.findByRole("button", { name: "Log in" }, { timeout: 3000 }))
+    await user.click(screen.getByRole("button", { name: "Log in" }))
     const reopenedDialog = await screen.findByRole("dialog")
     // openLogin does not clear the fields. This empty reopened dialog therefore pins closeLogin's
     // cleanup, while the refused-login test above pins the clear after credentials are sent.
