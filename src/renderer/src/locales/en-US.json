@@ -23,6 +23,8 @@
     "restore": "Restore",
     "text": "Text",
     "author": "Author",
+    "anyAuthor": "Any author",
+    "anyGameVersion": "Any VS Version",
     "everyone": "Everyone",
     "versions": "Versions",
     "clearFilter": "Clear filters",

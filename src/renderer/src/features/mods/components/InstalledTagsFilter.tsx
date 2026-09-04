@@ -1,6 +1,5 @@
 import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
-import { Dispatch, SetStateAction } from "react"
 import { useTranslation } from "react-i18next"
 import { PiCaretDownDuotone, PiCheckFatDuotone } from "react-icons/pi"
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
@@ -14,7 +13,7 @@ function InstalledTagsFilter({
   size = "w-40 h-8"
 }: Readonly<{
   tagsFilter: string[]
-  setTagsFilter: Dispatch<SetStateAction<string[]>>
+  setTagsFilter: (tags: string[]) => void
   tags: string[]
   size?: string
 }>): JSX.Element {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
@@ -13,6 +13,9 @@ import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpack
 import { clearModIconMemoryCache, setModEnabled } from "@renderer/features/moddb/adapters/modsManager"
 
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
+
+import { filterInstalledMods, hasActiveInstalledModFilters, installedModAuthors, installedModGameVersions, installedModTags, NO_INSTALLED_MOD_FILTERS } from "@domain/mods/installedFilters"
+import type { InstalledModFilters } from "@domain/mods/installedFilters"
 
 import { ListGroup, ListWrapper } from "@renderer/components/ui/List"
 import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeSummaryPopup"
@@ -54,30 +57,23 @@ function ListMods(): JSX.Element {
   const { installedMods, modsWithErrors, gettingMods, refresh } = useManageInstalledMods(installation)
 
   const [search, setSearch] = useState("")
-  const [authorFilter, setAuthorFilter] = useState("")
-  const [tagsFilter, setTagsFilter] = useState<string[]>([])
-  const [versionFilter, setVersionFilter] = useState("")
+  const [filters, setFilters] = useState<InstalledModFilters>(NO_INSTALLED_MOD_FILTERS)
 
-  // Collect unique values for the filter dropdowns from the full installed list.
-  const allAuthors = Array.from(new Set(installedMods.flatMap((m) => m.authors ?? []))).sort()
-  const allTags = Array.from(new Set(installedMods.flatMap((m) => m._mod?.tags ?? []))).sort()
-  const allVersions = Array.from(new Set(installedMods.map((m) => m.version).filter(Boolean))).sort()
+  // Rebuilt only when the scan changes, not on every keystroke in the search field: each is a fresh
+  // array identity, and the dropdowns below sit next to rows this page already memoizes.
+  const allAuthors = useMemo(() => installedModAuthors(installedMods), [installedMods])
+  const allTags = useMemo(() => installedModTags(installedMods), [installedMods])
+  const allGameVersions = useMemo(() => installedModGameVersions(installedMods), [installedMods])
 
   // One list feeds everything below: the three sections, and the buttons that act on the folder at
   // once. What a player sees is what those buttons touch, filtered or not (#228).
   const query = search.trim().toLowerCase()
   const textFiltered = query ? installedMods.filter((iMod) => matchesSearch(iMod, query)) : installedMods
-  const authorFiltered = authorFilter ? textFiltered.filter((m) => m.authors?.some((a) => a.toLowerCase() === authorFilter.toLowerCase())) : textFiltered
-  const tagsFiltered =
-    tagsFilter.length > 0
-      ? authorFiltered.filter((m) => {
-          const modTags: string[] = m._mod?.tags ?? []
-          return tagsFilter.every((f) => modTags.includes(f))
-        })
-      : authorFiltered
-  const visibleMods = versionFilter ? tagsFiltered.filter((m) => m.version === versionFilter) : tagsFiltered
+  const visibleMods = filterInstalledMods(textFiltered, filters)
+  // Unreadable archives carry no author, tag or game version, so the three dropdowns have nothing to
+  // judge them by and leave them alone. Only the text query narrows them, by file name.
   const visibleModsWithErrors = query ? modsWithErrors.filter((iModE) => iModE.zipname.toLowerCase().includes(query)) : modsWithErrors
-  const hasActiveFilters = authorFilter !== "" || tagsFilter.length > 0 || versionFilter !== ""
+  const hasActiveFilters = hasActiveInstalledModFilters(filters)
   const nothingMatches = (query.length > 0 || hasActiveFilters) && visibleMods.length < 1 && visibleModsWithErrors.length < 1
 
   const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, visibleMods)
@@ -213,22 +209,15 @@ function ListMods(): JSX.Element {
                     <FormInputText placeholder={t("features.mods.searchInstalledMods")} value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 h-8" />
                   </StickyMenuGroup>
 
+                  {/* One mod is nothing to narrow, so the bar stays off until there are two. */}
                   {installedMods.length > 1 && (
                     <InstalledModsFilterBar
-                      authorFilter={authorFilter}
-                      setAuthorFilter={setAuthorFilter}
+                      filters={filters}
+                      setFilters={setFilters}
                       authors={allAuthors}
-                      tagsFilter={tagsFilter}
-                      setTagsFilter={setTagsFilter}
                       tags={allTags}
-                      versionFilter={versionFilter}
-                      setVersionFilter={setVersionFilter}
-                      versions={allVersions}
-                      onClearFilters={() => {
-                        setAuthorFilter("")
-                        setTagsFilter([])
-                        setVersionFilter("")
-                      }}
+                      gameVersions={allGameVersions}
+                      onClearFilters={() => setFilters(NO_INSTALLED_MOD_FILTERS)}
                     />
                   )}
                 </StickyMenuGroupWrapper>
