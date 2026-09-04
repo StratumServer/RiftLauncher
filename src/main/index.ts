@@ -22,6 +22,7 @@ import { registerAutoUpdaterEvents, scheduleUpdateCheck } from "@src/main/autoUp
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
+import { pruneModCatalogCache } from "@src/ipc/catalogCache"
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
@@ -334,6 +335,11 @@ app.whenReady().then(async () => {
   // folder holds every installation's icons, so a scan can never decide what is
   // dead there (#117).
   void pruneModIconCache()
+
+  // Same reasoning, same moment: the mods-catalog disk cache grows one file per distinct
+  // filter/search combination a player has ever used, with nothing else in the app that
+  // ever revisits every entry to decide what is still worth keeping.
+  void pruneModCatalogCache()
 
   const updateDecision = canAutoUpdate({
     platform: process.platform,
