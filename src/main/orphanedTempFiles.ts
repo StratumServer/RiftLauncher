@@ -1,6 +1,7 @@
 import fse from "fs-extra"
 import { join, resolve } from "node:path"
 
+import { DOWNLOAD_TEMP_FILE_NAMESPACE } from "@src/ipc/workers/download"
 import { logMessage } from "@src/utils/logManager"
 
 /** A week leaves plenty of time for a slow or interrupted download to be resumed manually. */
@@ -14,8 +15,17 @@ export const ORPHANED_TEMP_FILE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000
 export const ATOMIC_JSON_TEMP_FILE_PATTERN =
   /^(?:config(?:\.pre-migration\.bak)?\.json|account-secrets(?:\.json|(?:\.pre-migration|\.unreadable(?:\.v\d+)?)\.bak\.json)|clientsettings\.json|[a-f0-9]{64}\.json)\.\d+$/i
 
-/** The namespaced temporary sibling created by `runDownload`. */
-export const DOWNLOAD_PART_FILE_PATTERN = /^.+\.riftlauncher\.\d+\.\d+\.part$/
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * Only names `runDownload` creates are owned by this sweep. The legacy
+ * unnamespaced shape is deliberately not matched because generic numeric
+ * `.part` files may belong to another tool and broad matching risks deleting
+ * its data.
+ */
+export const DOWNLOAD_PART_FILE_PATTERN = new RegExp(`^.+\\.${escapeRegExp(DOWNLOAD_TEMP_FILE_NAMESPACE)}\\.\\d+\\.\\d+\\.part$`)
 
 /** The staging directory `runExtraction` creates inside the destination folder. */
 export const EXTRACTION_STAGING_PATTERN = /^\.riftlauncher-extract-/

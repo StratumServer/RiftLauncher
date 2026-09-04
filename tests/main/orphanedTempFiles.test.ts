@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 
+import { DOWNLOAD_TEMP_FILE_NAMESPACE } from "@src/ipc/workers/download"
 import { ATOMIC_JSON_TEMP_FILE_PATTERN, DOWNLOAD_PART_FILE_PATTERN, EXTRACTION_STAGING_PATTERN, getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
 
 let workspace: string
@@ -36,10 +37,12 @@ describe("temporary file patterns", () => {
   })
 
   it("matches only the namespaced download worker's pid and timestamp shape", () => {
-    assert.equal(DOWNLOAD_PART_FILE_PATTERN.test("game.tar.gz.riftlauncher.123.456.part"), true)
+    assert.equal(DOWNLOAD_PART_FILE_PATTERN.test(`game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.123.456.part`), true)
     assert.equal(DOWNLOAD_PART_FILE_PATTERN.test("game.tar.gz.123.456.part"), false)
     assert.equal(DOWNLOAD_PART_FILE_PATTERN.test("game.tar.gz.part"), false)
     assert.equal(DOWNLOAD_PART_FILE_PATTERN.test("game.tar.gz.123.part"), false)
+    assert.equal(DOWNLOAD_PART_FILE_PATTERN.test(`legacy\n game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.123.456.part`), false)
+    assert.equal(DOWNLOAD_PART_FILE_PATTERN.test(`game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.123.456.part.bak`), false)
   })
 
   it("matches extraction staging folder names", () => {
@@ -60,7 +63,7 @@ describe("sweepOrphanedTempFiles", () => {
 
     const atomicTemp = join(userData, "config.json.123")
     const catalogTemp = join(catalog, `${"b".repeat(64)}.json.456`)
-    const partTemp = join(downloads, "game.tar.gz.riftlauncher.123.456.part")
+    const partTemp = join(downloads, `game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.123.456.part`)
     const genericPart = join(downloads, "old-tool.123.456.part")
     writeOldFile(atomicTemp)
     writeOldFile(catalogTemp)
@@ -99,10 +102,10 @@ describe("sweepOrphanedTempFiles", () => {
     mkdirSync(root, { recursive: true })
     writeFileSync(elsewhere, "keep me")
 
-    const recent = join(root, "game.tar.gz.riftlauncher.123.456.part")
+    const recent = join(root, `game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.123.456.part`)
     const unrelated = join(root, "notes.txt")
     const liveTarget = join(root, "config.json")
-    const linkedTemp = join(root, "linked.tar.gz.riftlauncher.123.456.part")
+    const linkedTemp = join(root, `linked.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.123.456.part`)
     writeFileSync(recent, "recent")
     writeFileSync(unrelated, "unrelated")
     writeFileSync(liveTarget, "live config")
@@ -122,7 +125,7 @@ describe("sweepOrphanedTempFiles", () => {
     const outside = pathInWorkspace("outside")
     mkdirSync(root, { recursive: true })
     mkdirSync(outside, { recursive: true })
-    const outsideTemp = join(outside, "game.tar.gz.riftlauncher.123.456.part")
+    const outsideTemp = join(outside, `game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.123.456.part`)
     writeOldFile(outsideTemp)
     symlinkSync(outside, join(root, "linked-folder"), "junction")
 
@@ -245,7 +248,7 @@ describe("getOrphanedTempFileSweepTargets", () => {
     const root = pathInWorkspace("versions")
     const staging = join(root, ".riftlauncher-extract-Cd34Ef")
     mkdirSync(staging, { recursive: true })
-    writeOldFile(join(staging, "game.tar.gz.riftlauncher.1.2.part"))
+    writeOldFile(join(staging, `game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.1.2.part`))
     const oldDate = new Date(Date.now() - 10_000)
     utimesSync(staging, oldDate, oldDate)
 
@@ -266,7 +269,7 @@ describe("getOrphanedTempFileSweepTargets", () => {
     const root = pathInWorkspace("versions")
     const staging = join(root, ".riftlauncher-extract-Ef56Gh")
     mkdirSync(staging, { recursive: true })
-    writeOldFile(join(staging, "game.tar.gz.riftlauncher.1.2.part"))
+    writeOldFile(join(staging, `game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.1.2.part`))
 
     const removed = await sweepOrphanedTempFiles([{ path: root, kinds: ["atomic-json", "download-part", "extraction-staging"], recursive: true }], {
       nowMs: Date.now(),
@@ -276,6 +279,6 @@ describe("getOrphanedTempFileSweepTargets", () => {
 
     assert.equal(removed, 0)
     assert.notEqual(lstatSync(staging, { throwIfNoEntry: false }), undefined)
-    assert.notEqual(lstatSync(join(staging, "game.tar.gz.riftlauncher.1.2.part"), { throwIfNoEntry: false }), undefined)
+    assert.notEqual(lstatSync(join(staging, `game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.1.2.part`), { throwIfNoEntry: false }), undefined)
   })
 })
