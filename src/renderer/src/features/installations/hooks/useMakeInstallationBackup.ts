@@ -13,21 +13,31 @@ const LOG_TAG = "[front] [backups] [features/installations/hooks/useMakeInstalla
  * Reasons that mean "there was nothing to back up", not "backing up broke".
  *
  * MainMenu's auto-backup-before-play reads this hook's return value to decide
- * whether to launch the game at all (`if (!backupMade) return`, before
- * executeGame runs). These three used to be silent and always returned true;
- * they now speak, but they must keep returning true, or turning on automatic
- * backups with, say, an empty Backups folder would silently stop the launcher
- * from ever launching anything. A real failure (compress-failed, prune-failed)
- * still returns false and still blocks the launch, unchanged.
+ * whether to launch the game at all. These three used to be silent and always
+ * returned a launch-proceeds result; they now speak, but they must keep
+ * returning `{ ok: true }`, or turning on automatic backups with, say, an
+ * empty Backups folder would silently stop the launcher from ever launching
+ * anything. A real failure (compress-failed, prune-failed) blocks the launch
+ * until the player answers a prompt (#338).
  */
 const NON_BLOCKING_REASONS = new Set<MakeInstallationBackupFailure>(["installation-path-missing", "no-backups-folder", "backups-disabled"])
 
-export interface BackupOutcome {
-  /** Whether a backup was made or the failure was non-blocking (the launch may proceed). */
-  ok: boolean
-  /** The failure reason when a blocking failure stopped the backup, or undefined on success. */
-  blockingReason?: MakeInstallationBackupFailure
-}
+/**
+ * The launch was stopped before a backup was ever attempted, so there is
+ * nothing for the player to decide about it.
+ */
+export const BACKUP_NO_INSTALLATION = "no-installation"
+
+/**
+ * What the auto-backup-before-play flow needs to know.
+ *
+ * The failure arm carries its reason on purpose. MainMenu asks the player
+ * whether to launch anyway when a backup broke (#338), and a hard stop must
+ * not reach that question: `BACKUP_NO_INSTALLATION` means there is no
+ * installation to launch either. `ok: true` covers both a backup that was made
+ * and the three reasons that mean there was nothing to back up.
+ */
+export type BackupOutcome = { ok: true } | { ok: false; reason: MakeInstallationBackupFailure | typeof BACKUP_NO_INSTALLATION }
 
 export function useMakeInstallationBackup(): (installationId: string) => Promise<BackupOutcome> {
   const { t } = useTranslation()
@@ -48,7 +58,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
 
     if (!installation) {
       addNotification(t("features.installations.noInstallationFound"), "error")
-      return { ok: false, blockingReason: undefined }
+      return { ok: false, reason: BACKUP_NO_INSTALLATION }
     }
 
     const setBackuping = (backuping: boolean): void => {
@@ -92,7 +102,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
     if (messageKey) addNotification(t(messageKey), "error")
 
     if (NON_BLOCKING_REASONS.has(result.reason)) return { ok: true }
-    return { ok: false, blockingReason: result.reason }
+    return { ok: false, reason: result.reason }
   }
 
   return makeInstallationBackup

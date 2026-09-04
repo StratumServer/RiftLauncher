@@ -1,18 +1,31 @@
-import { ReactNode, useEffect, useState } from "react"
+import { ReactNode, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation } from "react-router-dom"
-import { PiBoxArrowDownDuotone, PiFolderOpenDuotone, PiGearDuotone, PiWrenchDuotone, PiGitForkDuotone, PiHouseLineDuotone, PiPencilDuotone, PiPlusCircleDuotone, PiInfoDuotone } from "react-icons/pi"
+import {
+  PiBoxArrowDownDuotone,
+  PiFolderOpenDuotone,
+  PiGearDuotone,
+  PiWrenchDuotone,
+  PiGitForkDuotone,
+  PiHouseLineDuotone,
+  PiPencilDuotone,
+  PiPlusCircleDuotone,
+  PiInfoDuotone,
+  PiXCircleDuotone,
+  PiPlayCircleDuotone
+} from "react-icons/pi"
 import clsx from "clsx"
 
 import { useInstallations, useGameVersions, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
-import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
+import { BACKUP_NO_INSTALLATION, useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
 import { checkInstallationPathExists, logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
 
 import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
 import ActivityCenter from "@renderer/components/ui/ActivityCenter"
+import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import { FormButton, FormLinkButton } from "@renderer/components/ui/FormComponents"
 import SessionButton from "../ui/SessionButton"
@@ -36,10 +49,44 @@ function MainMenu(): JSX.Element {
 
   const [selectedInstallation, setSelectedInstallation] = useState<InstallationType | undefined>(undefined)
 
+  // #338's question is awaited from inside PlayHandler rather than driven from a
+  // click handler, so the launch stays one linear function: the finally block
+  // still owns clearing _playing and releasing the close guard on every path.
+  // Both stay held while the question is on screen, which is what a launch
+  // waiting on an answer is.
+  const [skipBackupPromptOpen, setSkipBackupPromptOpen] = useState(false)
+  const skipBackupAnswerRef = useRef<((launchAnyway: boolean) => void) | null>(null)
+
+  /** Closes the prompt and hands the answer to the PlayHandler call waiting on it. */
+  function answerSkipBackupPrompt(launchAnyway: boolean): void {
+    setSkipBackupPromptOpen(false)
+    skipBackupAnswerRef.current?.(launchAnyway)
+    skipBackupAnswerRef.current = null
+  }
+
+  /** Asks whether to launch without a backup. Cancel, Escape and a click outside all answer no. */
+  function askToLaunchWithoutBackup(): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      skipBackupAnswerRef.current = resolve
+      setSkipBackupPromptOpen(true)
+    })
+  }
+
   useEffect(() => {
     const si = installations.find((i) => i.id === lastUsedInstallation)
     setSelectedInstallation(si)
   }, [lastUsedInstallation, installations])
+
+  // App.tsx keeps MainMenu mounted for as long as the launcher runs, so this
+  // only fires on teardown. It answers "do not launch" rather than leaving
+  // PlayHandler parked on a promise nobody can resolve, which would hold the
+  // close guard until the process exits.
+  useEffect(() => {
+    return (): void => {
+      skipBackupAnswerRef.current?.(false)
+      skipBackupAnswerRef.current = null
+    }
+  }, [])
 
   const GROUP_1: MainMenuLinkProps[] = [
     { icon: <PiHouseLineDuotone />, text: t("components.mainMenu.homeTitle"), desc: t("components.mainMenu.homeDesc"), to: "/" },
@@ -85,10 +132,14 @@ function MainMenu(): JSX.Element {
 
       if (selectedInstallation.backupsAuto) {
         const backupOutcome = await makeInstallationBackup(selectedInstallation.id)
+
+        // A backup that broke is the player's call now (#338): the archive is
+        // gone but the game is still there to play. A missing installation is
+        // not a call anyone can make, so it stops here without a question.
         if (!backupOutcome.ok) {
-          const detail = backupOutcome.blockingReason ? t("features.backups.backupFailedSkipDetail", { reason: backupOutcome.blockingReason }) : t("features.backups.backupFailedSkipLaunch")
-          const skipLaunch = window.confirm(detail)
-          if (!skipLaunch) return
+          if (backupOutcome.reason === BACKUP_NO_INSTALLATION) return
+          const launchAnyway = await askToLaunchWithoutBackup()
+          if (!launchAnyway) return
         }
       }
 
@@ -170,6 +221,24 @@ function MainMenu(): JSX.Element {
           )}
         </div>
       </div>
+
+      {/* Cancel comes first in the DOM because HeadlessUI's focus trap focuses
+          the first focusable child, so Enter on a freshly opened prompt keeps
+          the launch stopped. The restore and delete confirms order themselves
+          the same way for the same reason. */}
+      <PopupDialogPanel title={t("features.backups.backupFailedTitle")} isOpen={skipBackupPromptOpen} close={() => answerSkipBackupPrompt(false)}>
+        <>
+          <p>{t("features.backups.backupFailedSkipLaunch")}</p>
+          <div className="flex gap-4 items-center justify-center text-lg">
+            <FormButton title={t("generic.cancel")} className="p-2" onClick={() => answerSkipBackupPrompt(false)} type="success">
+              <PiXCircleDuotone />
+            </FormButton>
+            <FormButton title={t("features.backups.launchAnyway")} className="p-2" onClick={() => answerSkipBackupPrompt(true)} type="error">
+              <PiPlayCircleDuotone />
+            </FormButton>
+          </div>
+        </>
+      </PopupDialogPanel>
     </header>
   )
 }
