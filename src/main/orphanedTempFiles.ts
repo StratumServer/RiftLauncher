@@ -14,8 +14,8 @@ export const ORPHANED_TEMP_FILE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000
 export const ATOMIC_JSON_TEMP_FILE_PATTERN =
   /^(?:config(?:\.pre-migration\.bak)?\.json|account-secrets(?:\.json|(?:\.pre-migration|\.unreadable(?:\.v\d+)?)\.bak\.json)|clientsettings\.json|[a-f0-9]{64}\.json)\.\d+$/i
 
-/** The temporary sibling created by `runDownload`. */
-export const DOWNLOAD_PART_FILE_PATTERN = /^.+\.\d+\.\d+\.part$/
+/** The namespaced temporary sibling created by `runDownload`. */
+export const DOWNLOAD_PART_FILE_PATTERN = /^.+\.riftlauncher\.\d+\.\d+\.part$/
 
 /** The staging directory `runExtraction` creates inside the destination folder. */
 export const EXTRACTION_STAGING_PATTERN = /^\.riftlauncher-extract-/

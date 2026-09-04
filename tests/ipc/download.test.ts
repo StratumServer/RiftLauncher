@@ -391,15 +391,16 @@ describe("runDownload", () => {
   it("clears a stale part file left by an interrupted run", async () => {
     const payload = body("a complete download this time")
     const transport = respondWith(new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks))
-    // The temporary name carries the pid and a timestamp, so a stale one from
-    // this very process is the reachable case: write every shape and let the
-    // run pick its own.
-    const stalePart = join(destination, `game.tar.gz.${process.pid}.${Date.now()}.part`)
+    // The temporary name carries the launcher namespace, pid and timestamp,
+    // so a stale one from this very process is the reachable case: write every
+    // shape and let the run pick its own.
+    const stalePart = join(destination, `game.tar.gz.riftlauncher.${process.pid}.${Date.now()}.part`)
     writeFileSync(stalePart, "half a download")
 
     const result = await runDownload({ url: ALLOWED_URL, outputPath: destination, fileName: "game.tar.gz", request: transport.fn })
 
     assert.equal(readFileSync(result, "utf8"), payload.text)
+    assert.equal(existsSync(stalePart), false)
   })
 
   it("fails when the transport errors before any byte arrives", async () => {

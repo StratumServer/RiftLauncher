@@ -71,7 +71,7 @@ export interface DownloadOptions {
 export function runDownload(options: DownloadOptions): Promise<string> {
   const { url, outputPath, fileName, expectedMd5, request = httpsRequest, onProgress } = options
   const pathToDownload = join(outputPath, assertSafeFileName(fileName))
-  const temporaryPath = `${pathToDownload}.${process.pid}.${Date.now()}.part`
+  const temporaryPath = `${pathToDownload}.riftlauncher.${process.pid}.${Date.now()}.part`
 
   return new Promise<string>((resolvePromise, rejectPromise) => {
     let settled = false
