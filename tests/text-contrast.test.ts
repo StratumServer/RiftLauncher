@@ -215,7 +215,9 @@ describe("prompts the player is meant to read and act on", () => {
     const prompts: ReadonlyArray<readonly [string, Layer]> = [
       ["author filter placeholder", foreground("features/mods/components/AuthorFilter.tsx", /placeholder:text-(zinc-\d+)(?:\/(\d+))?/)],
       ["tag filter prompt", foreground("features/mods/components/TagsFilter.tsx", /tagsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
-      ["version filter prompt", foreground("features/mods/components/VersionsFilter.tsx", /versionsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)]
+      ["version filter prompt", foreground("features/mods/components/VersionsFilter.tsx", /versionsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
+      ["installed mods select filter prompt", foreground("features/mods/components/InstalledModsSelectFilter.tsx", /!value && "text-(zinc-\d+)(?:\/(\d+))?"/)],
+      ["installed mods tag filter prompt", foreground("features/mods/components/InstalledTagsFilter.tsx", /tagsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)]
     ]
     for (const [label, prompt] of prompts) assertReadable(label, prompt, MOD_FILTER, TEXT_FLOOR)
   })
