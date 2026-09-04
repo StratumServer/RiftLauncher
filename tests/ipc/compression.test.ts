@@ -255,7 +255,9 @@ describe("runCompression", () => {
     // after tar has already created the archive and written the first bytes.
     chmodSync(join(source, "Vintagestory"), 0o000)
 
-    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /Compression failed/)
+    // "Compression failed: <cause>", not the bare string: the tar write failure
+    // is the one #337 case where an errno says something, so the catch carries it.
+    await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /Compression failed: \S/)
 
     // A failed backup leaves no record behind, and pruning only ever walks the
     // records, so anything left here would stay for good and a retry would add

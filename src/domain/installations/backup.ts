@@ -55,7 +55,9 @@ export type MakeInstallationBackupFailure =
   | "prune-failed"
   | "compress-failed"
 
-export type MakeInstallationBackupResult = { ok: true; backup: BackupRecord; deletedBackupIds: string[] } | { ok: false; reason: MakeInstallationBackupFailure; deletedBackupIds: string[] }
+export type MakeInstallationBackupResult =
+  | { ok: true; backup: BackupRecord; deletedBackupIds: string[] }
+  | { ok: false; reason: MakeInstallationBackupFailure; deletedBackupIds: string[]; detail?: string }
 
 export interface MakeInstallationBackupPorts {
   fileSystem: FileSystem
@@ -84,12 +86,14 @@ export interface MakeInstallationBackupEvents {
   onFinished?(): void
 }
 
-function refuse(reason: MakeInstallationBackupFailure, deletedBackupIds: string[] = []): MakeInstallationBackupResult {
-  return { ok: false, reason, deletedBackupIds }
+function refuse(reason: MakeInstallationBackupFailure, deletedBackupIds: string[] = [], detail?: string): MakeInstallationBackupResult {
+  // The six reasons with nothing to explain keep the shape they always had:
+  // `detail` is present only when there is a cause to carry.
+  return { ok: false, reason, deletedBackupIds, ...(detail !== undefined ? { detail } : {}) }
 }
 
 /** What pruning removed, and whether it got all the way to the limit. */
-type PruneOutcome = { ok: true; deletedBackupIds: string[] } | { ok: false; reason: "prune-failed"; deletedBackupIds: string[] }
+type PruneOutcome = { ok: true; deletedBackupIds: string[] } | { ok: false; reason: "prune-failed"; deletedBackupIds: string[]; failedBackupId: string }
 
 /**
  * Removes archives from the oldest end until the installation has room for one
@@ -117,7 +121,7 @@ async function pruneOldestBackups(fileSystem: FileSystem, installation: Installa
     // there, untouched) once that other operation finishes.
     if (!result.ok && result.reason === "backup-in-use") continue
 
-    if (!result.ok) return { ok: false, reason: "prune-failed", deletedBackupIds }
+    if (!result.ok) return { ok: false, reason: "prune-failed", deletedBackupIds, failedBackupId: oldest.id }
 
     deletedBackupIds.push(oldest.id)
     events.onBackupDeleted?.(oldest)
@@ -151,7 +155,7 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
   try {
     const pruned = await pruneOldestBackups(ports.fileSystem, installation, events)
     const { deletedBackupIds } = pruned
-    if (!pruned.ok) return refuse(pruned.reason, deletedBackupIds)
+    if (!pruned.ok) return refuse(pruned.reason, deletedBackupIds, pruned.failedBackupId)
 
     const date = ports.clock.now()
     // Falls back to a slice of the installation id when the name sanitises
@@ -171,7 +175,7 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
       outcome = reported
     })
 
-    if (!outcome.ok) return refuse("compress-failed", deletedBackupIds)
+    if (!outcome.ok) return refuse("compress-failed", deletedBackupIds, outcome.error)
 
     return { ok: true, backup: { id: ports.ids.newId(), date, path: archivePath }, deletedBackupIds }
   } finally {

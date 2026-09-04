@@ -185,7 +185,8 @@ describe("makeInstallationBackup pruning", () => {
 
     const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
 
-    assert.deepEqual(result, { ok: false, reason: "prune-failed", deletedBackupIds: ["b3"] })
+    // b3 came off, b2 could not, so prune stops and names b2 as the one it left behind.
+    assert.deepEqual(result, { ok: false, reason: "prune-failed", deletedBackupIds: ["b3"], detail: "b2" })
     assert.equal(
       trace.some((entry) => entry.startsWith("compress:")),
       false
@@ -300,7 +301,7 @@ describe("makeInstallationBackup archiving", () => {
 
     const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot(), backupsFolder: "/backups" }, recordingEvents())
 
-    assert.deepEqual(result, { ok: false, reason: "compress-failed", deletedBackupIds: [] })
+    assert.deepEqual(result, { ok: false, reason: "compress-failed", deletedBackupIds: [], detail: "7z exploded" })
     assert.equal(trace.at(-2), "guard-release")
     assert.equal(trace.at(-1), "finished")
   })

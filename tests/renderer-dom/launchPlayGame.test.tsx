@@ -290,9 +290,11 @@ describe("MainMenu Play button", () => {
         )
       },
       // The installation "exists" on disk, so the backup service gets past its
-      // path-missing guard and all the way to compressing -- where it is left
-      // to fail, since compressOnPath is not mocked here (see windowApi.ts's
+      // path-missing guard and all the way to compressing, where it is left to
+      // fail, since compressOnPath is not mocked here (see windowApi.ts's
       // notMocked default), landing on the blocking "compress-failed" reason.
+      // The cause is not one of the recognised compression kinds, so the
+      // notification is the write-failure sentence.
       pathsManager: { checkPathExists: vi.fn(async () => true) },
       gameManager: { executeGame }
     })
@@ -300,7 +302,7 @@ describe("MainMenu Play button", () => {
     renderMainMenu()
     await clickPlay(user)
 
-    await screen.findByText("There was an error making a backup!")
+    await screen.findByText("No backup made: the backup archive could not be written. Check that the Backups folder is on a writable drive with free space.")
 
     expect(executeGame).not.toHaveBeenCalled()
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
