@@ -47,11 +47,16 @@ let loading: Promise<AppUpdater> | undefined
  *
  * It used to be a top-level import in main/index.ts. Measured in the packaged
  * app by timing each top-level require, that import alone cost 88.9 ms of the
- * main module's 163.8 ms, more than every other dependency put together, and it
- * pulls 159 modules of its own. Every launch paid it, including the Linux
- * deb/rpm/pacman builds where the very next line logged is
- * "Auto-update disabled: linux-unsupported-package", and including every launch
- * of every platform where the player never accepts an update.
+ * main module's 163.8 ms inside the asar (reading out of the packaged archive),
+ * more than every other dependency put together, and it pulls 159 modules of
+ * its own. Against an unpacked build on a faster host the same import is
+ * 24.9 ms, within the noise of the other dependencies. Every launch paid it,
+ * including the ones that go on to log "Auto-update disabled" and never use
+ * the module: a run started with `UPDATE=false`, a Linux run with no
+ * `APPIMAGE` set and no deb, rpm or pacman marker next to the packaged app
+ * (a Flatpak install, or a dev run), and macOS, which has no published build
+ * to update to. It also cost every launch where the updater does arm and the
+ * player never accepts an update.
  *
  * The logger is attached here rather than left to the caller so the redaction
  * cannot be missed. electron-updater logs feed URLs and cache paths, and
