@@ -10,7 +10,11 @@ RiftLauncher works on ANY Linux distro thanks to the AppImage compilation we're 
 Installing it on Linux is as easy as downloading the AppImage and double clicking it.... that's it. Let's get started:
 
 {% hint style="success" %}
-If you're using Arch Linux or a derivative there is a `.pacman` package on the releases page. There is no RiftLauncher package on the AUR: the `vs-launcher` AUR package belongs to the archived original project and does not track our releases. There's no distro repository either, so the first install is always a manual download from the releases page; if you'd like to maintain a repository or an AUR package, say hi on the [Stratum Discord server](https://discord.gg/vQm6z2urZs).
+If you're using Arch Linux or a derivative there is a `.pacman` package on the releases page. Community AUR packages are welcome. [`riftlauncher-bin`](https://aur.archlinux.org/packages/riftlauncher-bin) is one, maintained outside Stratum: we do not build or support it. If you want to package RiftLauncher yourself, say hi on the [Stratum Discord server](https://discord.gg/vQm6z2urZs) so we can coordinate. There is no distro repository, so your first install comes from the releases page or from a community AUR package.
+{% endhint %}
+
+{% hint style="warning" %}
+**AUR installs and the built-in updater.** The built-in updater runs on any `.pacman` install: it downloads the release `.pacman` and installs it through pacman, using the package marker electron-builder writes next to the app. On an AUR install that puts the launcher and your package manager in charge of the same files, so update an AUR install through your package manager: `yay -Syu` or `paru -Syu`. The maintainer of `riftlauncher-bin` reports on [issue #262](https://github.com/StratumServer/RiftLauncher/issues/262) that it updates cleanly that way. If you maintain an AUR package, document the update path in its description.
 {% endhint %}
 
 {% stepper %}
