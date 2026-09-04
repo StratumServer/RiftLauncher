@@ -1187,12 +1187,28 @@ describe("EXTRACT_ON_PATH: telling a backup apart from a downloaded archive", ()
     return archivePath
   }
 
-  it("marks an archive inside the configured backups folder", async () => {
+  it("marks an archive the config records as a backup", async () => {
     const archivePath = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-09-04.tar.gz")
+    writeConfig({
+      installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [{ id: "b1", date: 1, path: archivePath }] }] as unknown as ConfigType["installations"]
+    })
 
     const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
 
     assert.equal(payload.isBackupArchive, true)
+  })
+
+  it("does not mark an unrecorded archive that merely sits in the backups folder", async () => {
+    // Sitting under the Backups folder is not what makes an archive a backup.
+    // Nothing stops a player nesting their versions folder there, and the
+    // download channel is granted that tree, so containment would be a way to
+    // hand a downloaded archive the backup ceiling.
+    const archivePath = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-09-04.tar.gz")
+    writeConfig({ installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [] }] as unknown as ConfigType["installations"] })
+
+    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, false)
   })
 
   it("does not mark a .tar.gz that merely happens to be a .tar.gz", async () => {
@@ -1205,14 +1221,16 @@ describe("EXTRACT_ON_PATH: telling a backup apart from a downloaded archive", ()
     assert.equal(payload.isBackupArchive, false)
   })
 
-  it("does not mark an archive in a folder whose name merely starts with the backups folder's", async () => {
-    // Containment, not a prefix comparison: "<root>/Backups-old" starts with
-    // "<root>/Backups" as a string and is not inside it as a path.
-    const sibling = `${backupsFolder}-old`
-    const archivePath = writeArchive(sibling, "Survival_2026-08-01.tar.gz")
-    writeConfig({ installations: [{ id: "a", name: "A", path: sibling, backups: [] }] as unknown as ConfigType["installations"] })
+  it("does not mark an archive whose path differs from the recorded one", async () => {
+    // The comparison is on the whole resolved path, so a neighbour with a
+    // similar name is not the recorded backup.
+    const recorded = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-08-01.tar.gz")
+    const neighbour = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-08-01.tar.gz.old.tar.gz")
+    writeConfig({
+      installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [{ id: "b1", date: 1, path: recorded }] }] as unknown as ConfigType["installations"]
+    })
 
-    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+    const payload = await dispatchedPayload(neighbour, join(managedFolder, "Survival"))
 
     assert.equal(payload.isBackupArchive, false)
   })

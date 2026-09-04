@@ -21,7 +21,6 @@ import {
   assertSafeFileName,
   assertSafeTaskId,
   comparablePath,
-  isPathWithin,
   isRecord,
   MAX_CUSTOM_ICON_BYTES
 } from "@src/ipc/validation"
@@ -424,20 +423,26 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
  * to be exempted from it. The main process already knows where backups live, so
  * it can just look.
  *
- * Two sources, both config the main process owns. The configured backups folder
- * covers every archive the launcher writes today (makeInstallationBackup puts
- * them under it). The recorded backup paths cover the ones written before the
- * player last moved that folder in settings, which still sit where they were
- * made and still have to restore.
+ * One source: the backup records the config already holds. `BackupType.path` is
+ * required, the restore screen offers nothing but those records, and they keep
+ * pointing where an archive was made even after the player moves the Backups
+ * folder in settings, so they cover every restore the launcher can perform.
  *
- * `isPathWithin` rather than a prefix comparison, and on the resolved path, so
- * a sibling folder whose name merely starts with the backups folder's name is
- * not inside it. The folder itself is excluded: it is not an archive.
+ * Containment in the configured backups folder was the other candidate and is
+ * deliberately not used. It answers true for anything sitting under that folder,
+ * including a game build downloaded there (nothing stops a player nesting their
+ * versions folder inside it, and DOWNLOAD_ON_PATH is granted the tree), which
+ * would hand a downloaded archive the backup ceiling. Matching the exact
+ * recorded path cannot do that, and its failure mode is a refusal rather than a
+ * loosened limit.
+ *
+ * `comparablePath` resolves both sides first, so `..`, a trailing separator and
+ * Windows casing all normalise before they are compared.
  */
 async function isLauncherBackupArchive(filePath: string): Promise<boolean> {
   const config = await getConfig()
-  if (config.backupsFolder && isPathWithin(config.backupsFolder, filePath, false)) return true
-  return config.installations.some((installation) => installation.backups.some((backup) => Boolean(backup.path) && comparablePath(backup.path) === comparablePath(filePath)))
+  const candidate = comparablePath(filePath)
+  return config.installations.some((installation) => installation.backups.some((backup) => Boolean(backup.path) && comparablePath(backup.path) === candidate))
 }
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: string, filePath: string, outputPath: string, deleteZip: boolean, unwrapSingleRootFolder = false): Promise<boolean> => {
