@@ -303,10 +303,14 @@ describe("runCompression", () => {
     writeFileSync(world, "a world")
     statFileAs(world, 4 * GIB)
     // 1 GiB free against a 4 GiB source.
-    vi.spyOn(fse, "statfsSync").mockImplementation(statfsAnswering(GIB / 4096).statfsSync)
+    const statfs = vi.spyOn(fse, "statfsSync").mockImplementation(statfsAnswering(GIB / 4096).statfsSync)
 
     await assert.rejects(runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" }), /Not enough free space/)
 
+    // The destination, not the source: the Backups folder is regularly on a
+    // different drive from the installation, and the archive is written to one
+    // of the two.
+    assert.deepEqual(statfs.mock.calls, [[output]])
     assert.deepEqual(readdirSync(output), [])
   })
 

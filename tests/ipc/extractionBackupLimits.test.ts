@@ -115,6 +115,22 @@ describe("runExtraction under the backup ceilings", () => {
   })
 })
 
+describe("validateTree with no pair named", () => {
+  it("keeps the strict ceiling, which is what the Inno payload walk runs under", async () => {
+    // innoExtraction.ts calls validateTree(payloadRoot) with no limits, so the
+    // default is that path's only ceiling. A loose default would raise it there
+    // with nothing in the call to say so.
+    const { validateTree } = await import("@src/ipc/workers/extraction")
+    const payloadRoot = join(workspace, "payload")
+    mkdirSync(payloadRoot, { recursive: true })
+    writeFileSync(join(payloadRoot, "world.vcdbs"), "a world")
+    statFilesNamedAs("world.vcdbs", 4 * GIB)
+
+    assert.throws(() => validateTree(payloadRoot), /Archive is too large/)
+    assert.equal(validateTree(payloadRoot, BACKUP_LIMITS).bytes, 4 * GIB)
+  })
+})
+
 describe("validateArchive under an explicit pair", () => {
   it("refuses a tar.gz whose entries bust the pair it was handed", async () => {
     const { validateTarGzArchive } = await import("@src/ipc/archiveValidation")
