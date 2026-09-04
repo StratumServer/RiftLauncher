@@ -8,6 +8,7 @@ import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from "@headless
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { useChangeLanguage } from "@renderer/features/config/hooks/useChangeLanguage"
+import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 function LanguagesMenu(): JSX.Element {
   const { i18n, t } = useTranslation()
@@ -39,15 +40,12 @@ function LanguagesMenu(): JSX.Element {
           {languages
             .filter((lang) => lang.code === selectedLanguage)
             .map((lang) => (
-              <ListboxButton
-                key={lang.code}
-                className="w-full h-8 px-2 py-1 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer"
-              >
+              <ListboxButton key={lang.code} className={clsx(MENU_TRIGGER_STYLES, "w-full")}>
                 <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
                   <span className="text-sm">{lang.name}</span>
                   <span className="text-ellipsis overflow-hidden text-zinc-400 text-xs">{lang.credits}</span>
                 </p>
-                <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+                <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
               </ListboxButton>
             ))}
 
@@ -67,7 +65,7 @@ function LanguagesMenu(): JSX.Element {
                       value={lang.code}
                       as={motion.li}
                       variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className="w-full h-8 px-2 py-1 shrink-0 flex items-center overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer"
+                      className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
                     >
                       <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
                         <span className="text-sm">{lang.name}</span>

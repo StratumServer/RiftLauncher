@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { Button } from "@headlessui/react"
 import { PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH, validateInstallationFields } from "@domain/installations/create"
@@ -22,6 +21,7 @@ import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuB
 
 import { ButtonsWrapper, FormLinkButton, FormGroupWrapper, FormButton, FromWrapper } from "@renderer/components/ui/FormComponents"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
+import { NormalButton } from "@renderer/components/ui/Buttons"
 
 const LOG_TAG = "[front] [installations] [features/installations/pages/EditInstallation.tsx]"
 
@@ -171,7 +171,7 @@ function EditInslallation(): JSX.Element {
                   icon={fields.icon}
                   onIconChange={fields.setIcon}
                   customIcons={customIcons}
-                  iconButtonClassName="w-1/3 h-13 p-1 pr-2 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none text-sm text-start cursor-pointer"
+                  iconButtonClassName="w-1/3 h-13 p-1 pr-2 text-sm text-start"
                 />
 
                 <GameVersionPicker gameVersions={gameVersions} version={fields.version} onSelect={fields.setVersion} missingVersion={missingGameVersion} />
@@ -190,9 +190,9 @@ function EditInslallation(): JSX.Element {
                 startParams={fields.startParams}
                 onStartParamsChange={fields.setStartParams}
                 startParamsLink={
-                  <Button onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")} className="text-vsl underline">
+                  <NormalButton title={t("features.installations.startParamsLink")} onClick={() => openExternalLink("https://wiki.vintagestory.at/Client_startup_parameters")} variant="link">
                     {t("features.installations.startParamsLink")}
-                  </Button>
+                  </NormalButton>
                 }
                 mesaGlThread={fields.mesaGlThread}
                 onMesaGlThreadChange={fields.setMesaGlThread}
@@ -202,13 +202,9 @@ function EditInslallation(): JSX.Element {
                 onLaunchWrapperChange={fields.setLaunchWrapper}
               />
 
-              <ButtonsWrapper className="text-lg">
-                <FormLinkButton to="/installations" title={t("generic.goBack")} type="error" className="p-2">
-                  <PiXCircleDuotone />
-                </FormLinkButton>
-                <FormButton onClick={handleEditInstallation} title={t("generic.save")} type="success" className="p-2">
-                  <PiFloppyDiskBackDuotone />
-                </FormButton>
+              <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+                <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+                <FormButton onClick={handleEditInstallation} title={t("generic.save")} variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
               </ButtonsWrapper>
             </>
           )}

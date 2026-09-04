@@ -58,7 +58,7 @@ function InfoAndHelpPage(): JSX.Element {
                 i18nKey="features.infoAndHelp.includeLogs"
                 components={{
                   folderlink: (
-                    <NormalButton title={t("features.infoAndHelp.logsFolderTitle")} onClick={openLogsFolder} className="text-vsl underline">
+                    <NormalButton title={t("features.infoAndHelp.logsFolderTitle")} onClick={openLogsFolder} variant="link">
                       {t("features.infoAndHelp.thisFolder")}
                     </NormalButton>
                   )
@@ -76,13 +76,7 @@ function SocialButtons({ icon, to, text }: Readonly<{ icon: JSX.Element; to: str
   const { openOnBrowser } = useExternalLinks()
 
   return (
-    <FormButton
-      title={text}
-      onClick={() => openOnBrowser(to)}
-      className={
-        "text-lg backdrop-blur-xs border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none flex items-center justify-center gap-1 rounded-sm cursor-pointer px-1 duration-200"
-      }
-    >
+    <FormButton title={text} onClick={() => openOnBrowser(to)} variant="secondary" size="md" className="text-lg px-1">
       {icon}
       <span>{text}</span>
     </FormButton>

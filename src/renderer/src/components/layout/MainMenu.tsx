@@ -136,13 +136,8 @@ function MainMenu(): JSX.Element {
         <InstallationsDropdownMenu />
 
         <div className="w-full flex gap-2 items-center">
-          <NormalButton
-            title={t("generic.play")}
-            disabled={!selectedInstallation}
-            onClick={PlayHandler}
-            className="w-full h-14 bg-vs disabled:opacity-50 shadow-sm shadow-zinc-950/50 hover:shadow-none"
-          >
-            <p className="text-2xl">{t("generic.play")}</p>
+          <NormalButton title={t("generic.play")} disabled={!selectedInstallation} onClick={PlayHandler} variant="primary" size="lg" className="h-14 w-full text-2xl">
+            <p>{t("generic.play")}</p>
           </NormalButton>
 
           {selectedInstallation && (
@@ -150,6 +145,7 @@ function MainMenu(): JSX.Element {
               <FormButton
                 className="p-1"
                 title={t("features.installations.backupInstallation")}
+                variant="ghost"
                 onClick={async () => {
                   if (!(await checkInstallationPathExists(selectedInstallation.path))) return addNotification(t("features.backups.folderDoesntExists"), "error")
                   makeInstallationBackup(selectedInstallation.id)
@@ -157,13 +153,13 @@ function MainMenu(): JSX.Element {
               >
                 <PiBoxArrowDownDuotone />
               </FormButton>
-              <FormLinkButton to={`/installations/mods/${selectedInstallation.id}`} title={t("features.mods.manageMods")}>
+              <FormLinkButton to={`/installations/mods/${selectedInstallation.id}`} title={t("features.mods.manageMods")} variant="ghost">
                 <PiWrenchDuotone />
               </FormLinkButton>
-              <FormLinkButton title={t("features.installations.editInstallation")} to={`/installations/edit/${selectedInstallation.id}`}>
+              <FormLinkButton title={t("features.installations.editInstallation")} to={`/installations/edit/${selectedInstallation.id}`} variant="ghost">
                 <PiPencilDuotone />
               </FormLinkButton>
-              <FormLinkButton title={t("features.installations.addNewInstallation")} to="/installations/add">
+              <FormLinkButton title={t("features.installations.addNewInstallation")} to="/installations/add" variant="ghost">
                 <PiPlusCircleDuotone />
               </FormLinkButton>
             </div>

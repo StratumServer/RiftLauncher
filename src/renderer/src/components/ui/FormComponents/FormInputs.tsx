@@ -1,8 +1,12 @@
 import { Input, Switch } from "@headlessui/react"
 import clsx from "clsx"
+import { PiEyeDuotone, PiEyeSlashDuotone } from "react-icons/pi"
 
-const INPUT_BASE_STYLES = `h-8 px-2 py-1 rounded-md placeholder:text-zinc-400 overflow-hidden outline-hidden backdrop-blur-xs bg-zinc-950/50 border border-zinc-400/5`
-const INPUT_INVALID_STYLES = "invalid:border invalid:border-red-800 invalid:bg-red-800/20"
+const INPUT_BASE_STYLES = `h-8 px-2 py-1 rounded-md placeholder:text-zinc-400 overflow-hidden outline-hidden backdrop-blur-xs bg-zinc-950/50 border border-zinc-400/5 focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2`
+// `:invalid` matches required empty fields as soon as they mount. The
+// user-invalid variant waits for interaction or form submission, so a newly
+// opened form does not look broken before the player has done anything.
+const INPUT_INVALID_STYLES = "user-invalid:border user-invalid:border-red-800 user-invalid:bg-red-800/20"
 const INPUT_VALID_STYLES = ""
 const INPUT_ENABLED_STYLES = "enabled:shadow-sm enabled:shadow-zinc-950/50 enabled:hover:shadow-none"
 const INPUT_DISABLED_STYLES = "disabled:opacity-50"
@@ -28,7 +32,15 @@ export function FormInputText({
   maxLength,
   placeholder,
   disabled,
-  readOnly = false
+  readOnly = false,
+  id,
+  name,
+  type = "text",
+  inputMode,
+  autoComplete,
+  autoFocus,
+  required,
+  ariaDescribedBy
 }: Readonly<{
   className?: string
   value: string
@@ -38,10 +50,18 @@ export function FormInputText({
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
+  id?: string
+  name?: string
+  type?: "text" | "email"
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]
+  autoComplete?: string
+  autoFocus?: boolean
+  required?: boolean
+  ariaDescribedBy?: string
 }>): JSX.Element {
   return (
     <Input
-      type="text"
+      type={type}
       className={clsx(INPUT_BASE_STYLES, INPUT_INVALID_STYLES, INPUT_VALID_STYLES, INPUT_DISABLED_STYLES, INPUT_ENABLED_STYLES, className)}
       value={value}
       onChange={onChange}
@@ -50,6 +70,13 @@ export function FormInputText({
       maxLength={maxLength}
       disabled={disabled}
       readOnly={readOnly}
+      id={id}
+      name={name}
+      inputMode={inputMode}
+      autoComplete={autoComplete}
+      autoFocus={autoFocus}
+      required={required}
+      aria-describedby={ariaDescribedBy}
     />
   )
 }
@@ -122,7 +149,16 @@ export function FormInputPassword({
   maxLength,
   placeholder,
   disabled,
-  readOnly = false
+  readOnly = false,
+  id,
+  name,
+  autoComplete,
+  autoFocus,
+  required,
+  showPassword = false,
+  onToggleVisibility,
+  visibilityLabel,
+  ariaDescribedBy
 }: Readonly<{
   className?: string
   value: string
@@ -132,19 +168,65 @@ export function FormInputPassword({
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
+  id?: string
+  name?: string
+  autoComplete?: string
+  autoFocus?: boolean
+  required?: boolean
+  showPassword?: boolean
+  onToggleVisibility?: () => void
+  visibilityLabel?: string
+  ariaDescribedBy?: string
 }>): JSX.Element {
   return (
-    <Input
-      type="password"
-      className={clsx(INPUT_BASE_STYLES, INPUT_INVALID_STYLES, INPUT_VALID_STYLES, INPUT_DISABLED_STYLES, INPUT_ENABLED_STYLES, className)}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      minLength={minLength}
-      maxLength={maxLength}
-      disabled={disabled}
-      readOnly={readOnly}
-    />
+    <div className="relative">
+      <Input
+        type={showPassword ? "text" : "password"}
+        className={clsx(INPUT_BASE_STYLES, INPUT_INVALID_STYLES, INPUT_VALID_STYLES, INPUT_DISABLED_STYLES, INPUT_ENABLED_STYLES, onToggleVisibility && "pr-10", className)}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        minLength={minLength}
+        maxLength={maxLength}
+        disabled={disabled}
+        readOnly={readOnly}
+        id={id}
+        name={name}
+        autoComplete={autoComplete}
+        autoFocus={autoFocus}
+        required={required}
+        aria-describedby={ariaDescribedBy}
+      />
+      {onToggleVisibility && (
+        <button
+          type="button"
+          /*
+           * Purpose-built overlay control, not composed from BUTTON_BASE_STYLES.
+           * That constant hardcodes `relative`, and Tailwind emits `relative`
+           * after `absolute`, so an `absolute` passed through className loses on
+           * a specificity tie and the toggle drops out of the field into the
+           * layout flow (same ordering trap as the px-0/w-full notes in
+           * buttonStyles.ts). The focus ring, disabled, and transition rules
+           * below are copied from there so it still matches every other button.
+           */
+          className={clsx(
+            "absolute right-1 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-sm p-0 text-zinc-300",
+            "transition-colors duration-150 hover:bg-zinc-800/40 active:bg-zinc-800/60",
+            "enabled:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50",
+            "focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2",
+            "[&_svg]:size-4"
+          )}
+          onClick={onToggleVisibility}
+          aria-label={visibilityLabel}
+          title={visibilityLabel}
+          aria-pressed={showPassword}
+          aria-controls={id}
+          disabled={disabled || readOnly}
+        >
+          {showPassword ? <PiEyeSlashDuotone aria-hidden="true" /> : <PiEyeDuotone aria-hidden="true" />}
+        </button>
+      )}
+    </div>
   )
 }
 

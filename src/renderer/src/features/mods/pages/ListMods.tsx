@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 
 import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 
 import { useQueryMods } from "@renderer/features/mods/hooks/useQueryMods"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
@@ -11,13 +13,13 @@ import { logMods } from "@renderer/features/moddb/adapters/log"
 import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
 
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, ReloadButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 import ModsFilterBar from "@renderer/features/mods/components/ModsFilterBar"
 import ModsGrid from "@renderer/features/mods/components/ModsGrid"
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const installations = useInstallations()
   const favMods = useFavMods()
   const { lastUsedInstallation } = useSettingsConfig()
@@ -30,6 +32,7 @@ function ListMods(): JSX.Element {
   const getInstalledMods = useGetInstalledMods()
   const syncModsCount = useSyncModsCount()
   const { openModOnModDb } = useExternalLinks()
+  const { tasks } = useTaskContext()
 
   const [modsList, setModsList] = useState<DownloadableModOnListType[]>([])
   const [visibleMods, setVisibleMods] = useState<number>(DEFAULT_LOADED_MODS)
@@ -52,8 +55,6 @@ function ListMods(): JSX.Element {
   const [orderByOrder, setOrderByOrder] = useState<string>("desc")
 
   const [searching, setSearching] = useState<boolean>(true)
-
-  const [modToInstall, setModToInstall] = useState<DownloadableModOnListType | null>(null)
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -110,6 +111,40 @@ function ListMods(): JSX.Element {
     // function redeclared every render, already closing over the current `installation`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installation?.id, installation?.path])
+
+  /*
+   * A mod install queues a download and leaves this page mounted: the install page navigates back
+   * here the moment the transfer starts, so the scan above ran before the archive existed and the
+   * grid's installed markers stay wrong until the player reloads by hand. The download task
+   * reaching "completed" is what says the archive is on disk (the task is completed by the
+   * resolved download, not by a progress tick), so the markers are re-read on that.
+   *
+   * The effect observes task IDs rather than a count. The task list is rebuilt on every progress
+   * tick, but a folder scan happens only when a new ID enters the completed set. IDs also avoid
+   * losing a completion when a finished task is removed in the same render that another finishes.
+   * The ref is seeded from the first render, so finished downloads already present in the list do
+   * not cause a second scan on top of the mount scan above.
+   *
+   * This cannot feed itself the way the effect above could: triggerGetInstalledMods writes
+   * _modsCount back through syncModsCount, which hands useMemo a new installation object, but
+   * nothing it writes reaches the task list, so the value this effect keys on does not move.
+   */
+  const completedDownloadIds = tasks.filter((task) => task.type === "download" && task.status === "completed").map((task) => task.id)
+  const seenCompletedDownloadIds = useRef<Set<string> | null>(null)
+
+  useEffect(() => {
+    const completedIds = new Set(completedDownloadIds)
+    const previousCompletedIds = seenCompletedDownloadIds.current
+    seenCompletedDownloadIds.current = completedIds
+    const finishedSinceLastScan = previousCompletedIds !== null && [...completedIds].some((id) => !previousCompletedIds.has(id))
+    // The guard is not decoration: triggerGetInstalledMods raises an error toast when there is no
+    // installation, and a download finishing is no reason to tell the player that.
+    if (!finishedSinceLastScan || !installation) return
+    triggerGetInstalledMods()
+    // triggerGetInstalledMods and `installation` are excluded for the same reason as the effects
+    // above: a plain function redeclared every render, already closing over the current values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, installation?.id, installation?.path])
 
   useEffect(() => {
     if (installedFilter !== "all") triggerQueryMods(false)
@@ -194,9 +229,11 @@ function ListMods(): JSX.Element {
         addNotification(t("features.installations.noInstallationSelected"), "error")
         return
       }
-      setModToInstall(mod)
+      // The card already knows the mod's name; handing it over means the page has something to
+      // show its heading before the ModDB answers, instead of a bare numeric id.
+      navigate(`/mods/install/${mod.modid}`, { state: { modName: mod.name } })
     },
-    [hasInstallation, addNotification, t]
+    [hasInstallation, addNotification, navigate, t]
   )
 
   const onToggleFavMod = useCallback(
@@ -277,21 +314,6 @@ function ListMods(): JSX.Element {
           onSelectMod={onSelectMod}
           onToggleFavMod={onToggleFavMod}
           onOpenModDb={onOpenModDb}
-        />
-
-        <InstallModPopup
-          modToInstall={modToInstall?.modid || null}
-          setModToInstall={() => setModToInstall(null)}
-          modName={modToInstall?.name}
-          installation={
-            installation && {
-              installation: installation,
-              oldMod: installationInstalledMods?.find((iMod) => modToInstall?.modidstrs.includes(iMod.modid))
-            }
-          }
-          onFinishInstallation={() => {
-            triggerGetInstalledMods()
-          }}
         />
       </div>
     </ScrollableContainer>

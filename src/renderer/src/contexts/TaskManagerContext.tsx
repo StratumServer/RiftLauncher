@@ -63,11 +63,11 @@ function changesNothing(task: TaskType, updates: Partial<Omit<TaskType, "id">>):
  * single field returns the very same state array, so `useReducer` bails out
  * instead of re-rendering every task consumer.
  *
- * A completed task now gets its completion dispatched twice on a normal run,
- * once by the progress listener seeing 100 and once by the flow's own success
- * path (both land on the same `{ progress: 100, status: "completed" }`), and
- * whichever arrives second has to be a no-op rather than a second render with
- * identical content.
+ * A progress event is not the terminal signal for an awaited operation. A
+ * download can report 100 while its promise still has to flush the file, so
+ * the operation marks itself completed after that promise resolves. Extract
+ * and compress retain the same idempotent terminal update when their progress
+ * listener and awaited operation finish together.
  */
 export function taskReducer(state: TaskType[], action: TaskAction): TaskType[] {
   switch (action.type) {
@@ -160,7 +160,9 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   useEffect((): (() => void) => {
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for download progress.`)
     const removeDownloadProgressListener = window.api.pathsManager.onDownloadProgress(({ id, progress }) => {
-      if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
+      // The final progress tick can arrive before downloadOnPath has flushed and resolved. Only
+      // startDownload can mark a download completed, because that is the event that says the file
+      // is on disk for consumers such as ListMods.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
 

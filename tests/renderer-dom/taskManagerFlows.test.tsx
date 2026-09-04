@@ -112,7 +112,7 @@ describe("TaskManagerContext notification policies", () => {
 })
 
 describe("progress event handling", () => {
-  it("updates a download task's progress and marks it completed at 100", async () => {
+  it("updates a download task's progress but waits for the operation at 100", async () => {
     let progressHandler: ProgressCallback | undefined
     let resolveDownload: (path: string) => void = () => {}
     const downloadPromise = new Promise<string>((resolvePromise) => {
@@ -152,10 +152,17 @@ describe("progress event handling", () => {
     expect(result.current.task.tasks.find((t) => t.id === taskId)?.progress).toBe(42)
 
     act(() => progressHandler?.({ id: taskId, progress: 100 }))
-    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("completed"))
+    await waitFor(() => {
+      const task = result.current.task.tasks.find((t) => t.id === taskId)
+      expect(task?.progress).toBe(100)
+      expect(task?.status).toBe("in-progress")
+    })
 
     act(() => resolveDownload("/tmp/out/file.zip"))
-    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, "/tmp/out/file.zip", null))
+    await waitFor(() => {
+      expect(onFinish).toHaveBeenCalledWith(true, "/tmp/out/file.zip", null)
+      expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("completed")
+    })
   })
 
   it("updates an extract task's progress and marks it completed at 100", async () => {
@@ -376,7 +383,7 @@ describe("completion driven by the resolved operation", () => {
     expect(result.current.task.tasks[0]).toMatchObject({ progress: 100, status: "completed" })
   })
 
-  it("completes once when a 100 event and the resolved download both land, leaving the state array untouched the second time", async () => {
+  it("waits for the resolved download after a 100 event", async () => {
     let progressHandler: ProgressCallback | undefined
     let resolveDownload: (path: string) => void = () => {}
     const downloadPromise = new Promise<string>((resolvePromise) => {
@@ -404,16 +411,15 @@ describe("completion driven by the resolved operation", () => {
     const taskId = result.current.task.tasks[0]!.id
 
     act(() => progressHandler?.({ id: taskId, progress: 100 }))
-    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)?.status).toBe("completed"))
+    await waitFor(() => expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "in-progress" }))
     const tasksAfterTheEvent = result.current.task.tasks
 
     await act(async () => resolveDownload("/tmp/out/file.zip"))
     await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, "/tmp/out/file.zip", null))
 
-    // Same array instance: the success path's dispatch found nothing to change,
-    // so useReducer had no new state to render and the task never flickered
-    // out of "completed" and back into it.
-    expect(result.current.task.tasks).toBe(tasksAfterTheEvent)
+    // The progress event only paints 100. The resolved operation owns the one
+    // state transition that makes the task completed.
+    expect(result.current.task.tasks).not.toBe(tasksAfterTheEvent)
     expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "completed" })
   })
 

@@ -47,6 +47,7 @@
     "notPlayedYet": "Nie gespielt",
     "compression": "Kompression",
     "email": "E-Mail",
+    "emailPlaceholder": "name@beispiel.com",
     "password": "Passwort",
     "twofacode": "2FA Einmalkennwort",
     "goToTop": "Zum Beginn springen",
@@ -95,7 +96,9 @@
       "versionDeleting": "Diese VS-Version wird gelöscht!",
       "versionPlaying": "Du spielst bereits diese VS-Version!",
       "deleteWhilePlaying": "Du kannst eine VS-Version nicht löschen, während du sie spielst!",
-      "installNewVersion": "Installiere eine neue VS-Version"
+      "installNewVersion": "Installiere eine neue VS-Version",
+      "deleteAnyway": "Trotzdem löschen",
+      "removeFromList": "Aus der Liste entfernen"
     },
     "installations": {
       "noInstallationsFound": "Keine Installation gefunden!",
@@ -184,10 +187,25 @@
       "logoutTitle": "Abmelden",
       "loggedout": "Abgemeldet!",
       "loggingin": "Anmeldevorgang gestartet!",
-      "wrongtwofa": "Falsches 2FA Einmalkennwort!",
+      "wrongtwofa": "Dieser 2FA-Code ist falsch oder abgelaufen. Überprüfe deine Authenticator-App und versuche es erneut.",
       "invalidEmailPass": "Falsche E-Mailadresse oder Kennwort!",
       "loggedin": "Angemeldet als {{user}}!",
-      "onlyIfEnabledTwoFA": "Fülle dieses Eingabefeld nur aus, wenn du 2FA aktiviert hast!"
+      "onlyIfEnabledTwoFA": "Nur wenn dein Konto 2FA verwendet. Gilt nur für diese Anmeldung.",
+      "loginDialogTitle": "Bei Vintage Story anmelden",
+      "loginAction": "Anmelden",
+      "requiresTwoFA": "Für dieses Konto ist ein 2FA-Code erforderlich. Gib den Code aus deiner Authenticator-App ein und versuche es erneut.",
+      "loginUnreachable": "Der Anmeldedienst konnte nicht erreicht werden. Überprüfe deine Verbindung oder Firewall und versuche es erneut.",
+      "unexpectedResponse": "Der Kontodienst hat auf eine Weise geantwortet, die der Launcher nicht lesen konnte. Dein Passwort wurde nicht abgelehnt. Versuche es nach einem Update erneut.",
+      "sessionStoreUnreadable": "Die Anmeldung war erfolgreich, aber die Datei mit den gespeicherten Konten konnte nicht gelesen oder gesichert werden. Der Launcher hat sie nicht überschrieben. Diesmal wurde nichts gespeichert.",
+      "sessionStoreRebuilt": "Die Datei mit den gespeicherten Konten konnte nicht gelesen werden. Eine Kopie wurde behalten und der Launcher hat eine neue Datei erstellt. Andere Konten auf diesem Gerät müssen sich erneut anmelden.",
+      "showPassword": "Passwort anzeigen",
+      "hidePassword": "Passwort verbergen",
+      "loginPrivacyTitle": "So funktioniert diese Anmeldung",
+      "loginPrivacySent": "RiftLauncher sendet deine E-Mail-Adresse, dein Passwort und den optionalen 2FA-Code über HTTPS an den offiziellen Vintage-Story-Kontodienst.",
+      "loginPrivacyStored": "Dein Passwort und dein 2FA-Code werden nicht von RiftLauncher gespeichert. Dein Kontoprofil und deine Sitzungsdaten bleiben auf diesem Gerät, damit du dich nicht erneut anmelden musst. Du kannst das Konto über das Kontomenü entfernen.",
+      "loginPrivacyGame": "Beim Start des Spiels werden die von Vintage Story benötigten Sitzungsdaten in die ausgewählte Installation geschrieben.",
+      "loginPrivacyPolicy": "Datenschutzerklärung lesen",
+      "removeAccountAction": "Konto entfernen"
     },
     "backups": {
       "backupInProgress": "Es wird bereits eine Datensicherung durchgeführt!",
@@ -294,5 +312,8 @@
       "notNow": "Nicht jetzt"
     },
     "discard": "Benachrichtigungen löschen"
+  },
+  "breadcrumbs": {
+    "mods": "Mods"
   }
 }

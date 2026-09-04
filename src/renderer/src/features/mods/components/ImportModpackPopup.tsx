@@ -14,6 +14,7 @@ import { useQueryMod } from "../hooks/useQueryMod"
 
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
+import { NormalButton } from "@renderer/components/ui/Buttons"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import ModChangeSummaryPopup from "./ModChangeSummaryPopup"
 
@@ -172,16 +173,17 @@ function ImportModpackPopup({
                   <PiWarningDuotone className="text-lg shrink-0" />
                   {t("features.mods.importModpackDowngradeWarning", { count: downgradedMods.length })}
                 </span>
-                <button
-                  type="button"
-                  className="shrink-0 underline hover:text-orange-200 duration-150"
+                <NormalButton
+                  variant="link"
+                  title={t("features.mods.importModpackDowngradeBackupLink")}
+                  className="shrink-0 text-orange-300 hover:text-orange-200"
                   onClick={() => {
                     handleClose()
                     navigate(`/installations/backups/${installation.id}`)
                   }}
                 >
                   {t("features.mods.importModpackDowngradeBackupLink")}
-                </button>
+                </NormalButton>
               </div>
             )}
 
@@ -229,12 +231,12 @@ function ImportModpackPopup({
 
             <div className="flex gap-2 justify-center">
               {!importing ? (
-                <FormButton title={t("features.mods.importModpackButton")} className="p-1 px-4 h-8" onClick={handleImport} type="success" disabled={manifest.mods.length === 0}>
+                <FormButton title={t("features.mods.importModpackButton")} className="p-1 px-4 h-8" onClick={handleImport} variant="primary" disabled={manifest.mods.length === 0}>
                   <PiDownloadDuotone className="text-xl" />
                   <p>{t("features.mods.importModpackButton")}</p>
                 </FormButton>
               ) : (
-                <FormButton title={t("features.mods.importModpackImporting")} className="p-1 px-4 h-8" type="normal" disabled onClick={() => {}}>
+                <FormButton title={t("features.mods.importModpackImporting")} className="p-1 px-4 h-8" variant="primary" disabled onClick={() => {}}>
                   <FiLoader className="animate-spin text-xl" />
                   <p>{t("features.mods.importModpackImporting")}</p>
                 </FormButton>

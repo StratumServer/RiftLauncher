@@ -27,6 +27,60 @@
   }
 
   /*
+   * Flexbox `items-center` centres a label by its line box, and a line box is not
+   * the glyphs: the system sans stack allocates far more room above the baseline
+   * (Segoe UI ascends 1.079em) than below it (descends 0.251em), so the visible
+   * letters sit below the optical centre by half that difference. It scales with
+   * font size, so it is about a pixel on a text-base control and about two on the
+   * text-2xl Play label, and it reads as the text hanging low next to an icon,
+   * which has no such padding. `text-box` trims the box back to the cap height and
+   * the alphabetic baseline, so what the flexbox centres is the glyph box itself.
+   * Unsupported engines ignore the property and keep today's line-box centring.
+   */
+  .text-trim {
+    text-box: trim-both cap alphabetic;
+    /*
+     * The trim ends the box at the baseline, so a descender ("Log in") hangs
+     * outside it and any label that clips its own overflow to truncate would cut
+     * the tail off. The padding is symmetric, so it restores that room above and
+     * below without moving the cap/baseline midline the flexbox centres on.
+     *
+     * The negative margin cancels the padding's effect on the surrounding layout,
+     * leaving only the room it makes inside. That matters because `text-box` does
+     * nothing to an element that is itself a flex container (it has no line boxes
+     * of its own), and a few labels are: without this they would take the padding,
+     * skip the trim, and grow their control by 0.6em for nothing.
+     */
+    padding-block: 0.3em;
+    margin-block: -0.3em;
+  }
+
+  /*
+   * Same trim, applied from a control to whatever label element it was handed.
+   * Buttons and form labels take arbitrary children (p, span, div), so the trim
+   * belongs on the container rather than on every call site. Icons are excluded:
+   * an svg has no text box, and Phosphor glyphs are already centred in their
+   * viewBox.
+   */
+  .text-trim-children > :not(svg) {
+    text-box: trim-both cap alphabetic;
+    padding-block: 0.3em;
+    margin-block: -0.3em;
+  }
+
+  /*
+   * A chevron is centred by its bounding box, but its ink is not spread evenly inside that box:
+   * the two arms are widest at the top and meet at a point at the bottom, so the mass sits above
+   * the middle. Measured against the label beside it in the mods filter bar, the caret's ink
+   * centre lands about a pixel above the label's cap/baseline midline at the 16px base size.
+   * Nudging by position rather than transform keeps it correct while the caret is rotated open.
+   */
+  .caret-optical {
+    position: relative;
+    top: 0.06em;
+  }
+
+  /*
    * Skips layout/paint for elements scrolled out of view, the same win a windowing library gives
    * without unmounting anything (AnimatePresence in Grid.tsx and Table.tsx needs every item mounted
    * to animate it in and out, and Grid.tsx also runs useInView, which can only observe an item that

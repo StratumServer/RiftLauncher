@@ -25,6 +25,7 @@ function ErrorInstalledModItem({ iModE, onDeleteClick }: Readonly<{ iModE: Error
           <NormalButton
             className="p-1"
             title={t("generic.delete")}
+            variant="ghost"
             onClick={async () => {
               onDeleteClick()
             }}

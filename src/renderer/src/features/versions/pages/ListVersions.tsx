@@ -13,7 +13,7 @@ import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { LinkButton, NormalButton } from "@renderer/components/ui/Buttons"
-import { FormButton } from "@renderer/components/ui/FormComponents"
+import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -82,14 +82,22 @@ function ListVersions(): JSX.Element {
           <ListGroup>
             <div className="flex gap-2">
               <ListItem className="group">
-                <LinkButton to="/versions/add" title={t("features.versions.installNewVersion")} className="w-full h-8">
-                  <PiPlusCircleDuotone className="text-xl text-zinc-400/70 group-hover:scale-95 duration-200" />
-                </LinkButton>
+                <LinkButton
+                  to="/versions/add"
+                  title={t("features.versions.installNewVersion")}
+                  icon={<PiPlusCircleDuotone className="duration-200 group-hover:scale-95" />}
+                  variant="primary"
+                  className="w-full h-8"
+                />
               </ListItem>
               <ListItem className="group">
-                <LinkButton to="/versions/look-for-a-version" title={t("features.versions.searchForAGameVersion")} className="w-full h-8">
-                  <PiMagnifyingGlassDuotone className="text-xl text-zinc-400/70 group-hover:scale-95 duration-200" />
-                </LinkButton>
+                <LinkButton
+                  to="/versions/look-for-a-version"
+                  title={t("features.versions.searchForAGameVersion")}
+                  icon={<PiMagnifyingGlassDuotone className="duration-200 group-hover:scale-95" />}
+                  variant="secondary"
+                  className="w-full h-8"
+                />
               </ListItem>
             </div>
             {gameVersions
@@ -106,12 +114,13 @@ function ListVersions(): JSX.Element {
 
                     <div className="shrink-0 w-fit flex gap-1 items-center text-lg">
                       {gv.linked && <PiLinkDuotone className="p-1" title={t("features.versions.linkedVersion")} />}
-                      <NormalButton onClick={() => openVersionFolder(gv.path)} title={`${t("generic.openOnFileExplorer")} · ${gv.path}`} className="p-1">
+                      <NormalButton onClick={() => openVersionFolder(gv.path)} title={`${t("generic.openOnFileExplorer")} · ${gv.path}`} variant="ghost" className="p-1">
                         <PiFolderOpenDuotone />
                       </NormalButton>
                       <NormalButton
                         className="p-1"
                         title={gv.linked ? t("features.versions.removeFromList") : t("features.versions.deleteVersion")}
+                        variant="ghost"
                         onClick={async () => {
                           setVersionToDelete(gv)
                         }}
@@ -133,14 +142,16 @@ function ListVersions(): JSX.Element {
           <>
             <p>{t(versionToDelete?.linked ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall")}</p>
             <p className="text-zinc-400">{t(versionToDelete?.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
-            <div className="flex gap-4 items-center justify-center text-lg">
-              <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setVersionToDelete(null)} type="success">
-                <PiXCircleDuotone />
-              </FormButton>
-              <FormButton title={t(versionToDelete?.linked ? "features.versions.removeFromList" : "generic.uninstall")} className="p-2" onClick={DeleteVersionHandler} type="error">
-                <PiTrashDuotone />
-              </FormButton>
-            </div>
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <FormButton title={t("generic.cancel")} onClick={() => setVersionToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+              <FormButton
+                title={t(versionToDelete?.linked ? "features.versions.removeFromList" : "generic.uninstall")}
+                onClick={DeleteVersionHandler}
+                variant="destructive"
+                size="md"
+                icon={<PiTrashDuotone />}
+              />
+            </ButtonsWrapper>
           </>
         </PopupDialogPanel>
 
@@ -151,14 +162,10 @@ function ListVersions(): JSX.Element {
               <span>{t("features.versions.versionInUseByInstallations", { installations: formatUsedByInstallations(versionInUseWarning?.usedByInstallations ?? []) })}</span>
             </div>
             <p className="text-zinc-400">{t(versionInUseWarning?.version.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
-            <div className="flex gap-4 items-center justify-center text-lg">
-              <FormButton title={t("generic.cancel")} className="p-2" onClick={() => setVersionInUseWarning(null)} type="success">
-                <PiXCircleDuotone />
-              </FormButton>
-              <FormButton title={t("features.versions.deleteAnyway")} className="p-2" onClick={DeleteVersionAnywayHandler} type="error">
-                <PiTrashDuotone />
-              </FormButton>
-            </div>
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <FormButton title={t("generic.cancel")} onClick={() => setVersionInUseWarning(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+              <FormButton title={t("features.versions.deleteAnyway")} onClick={DeleteVersionAnywayHandler} variant="destructive" size="md" icon={<PiTrashDuotone />} />
+            </ButtonsWrapper>
           </>
         </PopupDialogPanel>
       </div>

@@ -12,6 +12,7 @@ import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { backgroundImageSource } from "@renderer/utils/backgroundStyle"
 import { backgroundThumbnailSource } from "@renderer/utils/backgroundThumbnail"
+import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 
@@ -31,6 +32,7 @@ import {
   FormInputText,
   FormToggle
 } from "@renderer/components/ui/FormComponents"
+import { NormalButton } from "@renderer/components/ui/Buttons"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import LanguagesMenu from "@renderer/components/ui/LanguagesMenu"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
@@ -117,7 +119,7 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton onClick={pickInstallationsFolder} title={t("generic.browse")} className="px-2 py-1">
+                  <FormButton onClick={pickInstallationsFolder} title={t("generic.browse")} variant="secondary" className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText value={settings.defaultInstallationsFolder} readOnly className="w-full" />
@@ -132,7 +134,7 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton onClick={pickVersionsFolder} title={t("generic.browse")} className="px-2 py-1">
+                  <FormButton onClick={pickVersionsFolder} title={t("generic.browse")} variant="secondary" className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText value={settings.defaultVersionsFolder} readOnly className="w-full" />
@@ -147,7 +149,7 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <FormFieldGroup alignment="x">
-                  <FormButton onClick={pickBackupsFolder} title={t("generic.browse")} className="px-2 py-1">
+                  <FormButton onClick={pickBackupsFolder} title={t("generic.browse")} variant="secondary" className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
                   <FormInputText value={settings.backupsFolder} readOnly className="w-full" />
@@ -316,12 +318,14 @@ function BackgroundTile({
   }, [source])
 
   return (
-    <button
-      type="button"
+    <NormalButton
+      variant="secondary"
+      size="lg"
       onClick={onClick}
-      aria-pressed={selected}
+      ariaPressed={selected}
+      title={name}
       className={clsx(
-        "relative aspect-video w-full rounded-sm overflow-hidden bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
+        "relative aspect-video w-full overflow-hidden",
         // Two colours meet at this border and only one of them is unknown. Inside is the player's
         // thumbnail, where --color-vsl can fall to 2.51:1 against a light image; outside is the
         // section panel over the shell, the same fixed stack the accent links sit on, where it
@@ -333,7 +337,7 @@ function BackgroundTile({
     >
       {source && !imageFailed && <img src={source} alt="" loading={loading} decoding="async" onError={() => setImageFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
       <span className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-xs text-center bg-zinc-950/70 overflow-hidden whitespace-nowrap text-ellipsis">{name}</span>
-    </button>
+    </NormalButton>
   )
 }
 
@@ -360,15 +364,12 @@ function UIScale(): JSX.Element {
       {({ open }) => (
         <>
           {SCALE_OPTIONS.filter((scale) => scale.key === selectedScale).map((scale) => (
-            <ListboxButton
-              key={scale.key}
-              className="w-full h-8 px-2 py-1 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer"
-            >
+            <ListboxButton key={scale.key} className={clsx(MENU_TRIGGER_STYLES, "w-full")}>
               <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
                 <span className="text-sm">{scale.value}</span>
                 {scale.key === 100 && <span className="text-ellipsis overflow-hidden text-zinc-400 text-xs">{t("generic.default")}</span>}
               </p>
-              <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
+              <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
             </ListboxButton>
           ))}
 
@@ -388,7 +389,7 @@ function UIScale(): JSX.Element {
                       value={scale.key}
                       as={motion.li}
                       variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className="w-full h-8 px-2 py-1 shrink-0 flex items-center overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer"
+                      className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
                     >
                       <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
                         <span className="text-sm">{scale.value}</span>

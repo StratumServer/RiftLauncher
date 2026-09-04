@@ -19,7 +19,8 @@
     "releaseDate": "Release Datum",
     "type": "Type",
     "install": "Installeren",
-    "discordContact": "Discord"
+    "discordContact": "Discord",
+    "emailPlaceholder": "naam@voorbeeld.com"
   },
   "features": {
     "generic": {
@@ -52,7 +53,10 @@
       "labelPreReleases": "Pre uitgavens",
       "searchForAGameVersion": "Zoek voor een spel versie",
       "missingFolderOrVersion": "You've no folder selected or there it no game version on the one you've selected!",
-      "versionFound": "Versie gevonden"
+      "versionFound": "Versie gevonden",
+      "installNewVersion": "Nieuwe VS-versie installeren",
+      "deleteAnyway": "Toch verwijderen",
+      "removeFromList": "Uit de lijst verwijderen"
     },
     "installations": {
       "noInstallationsFound": "Geen installaties gevonden",
@@ -78,7 +82,8 @@
       "startParams": "Start params",
       "startParamsDesc": "Lijst met alle beschikbare startparameters: <link />",
       "cantUseDataPath": "Start param --dataPad kan niet worden gebruikt omdat het door RiftLauncher wordt gebruikt. Als u een andere map wilt, wijzigt u deze tijdens de installatie.",
-      "startParamsLink": "Vintage Story Wiki"
+      "startParamsLink": "Vintage Story Wiki",
+      "addNewInstallation": "Nieuwe installatie toevoegen"
     },
     "mods": {
       "modsCount": "{{count}} Mods",
@@ -87,11 +92,34 @@
       "modsCount_two": "{{count}} Mods",
       "modsCount_few": "{{count}} Mods",
       "modsCount_many": "{{count}} Mods",
-      "modsCount_other": "{{count}} Mods"
+      "modsCount_other": "{{count}} Mods",
+      "installMod": "Mod installeren",
+      "installationPopupDesc": "Lijst met versies van de {{modName}} Mod"
     },
     "config": {
       "defaultInstallationsFolder": "Installaties:",
-      "defaultVersionsFolder": "Versies:"
+      "defaultVersionsFolder": "Versies:",
+      "loginTitle": "Inloggen",
+      "loggingin": "Bezig met inloggen!",
+      "wrongtwofa": "Deze 2FA-code is onjuist of verlopen. Controleer je authenticator en probeer het opnieuw.",
+      "invalidEmailPass": "Ongeldig e-mailadres of wachtwoord!",
+      "loggedin": "Ingelogd als {{user}}!",
+      "onlyIfEnabledTwoFA": "Alleen als je account 2FA gebruikt. Geldt alleen voor deze login.",
+      "loginDialogTitle": "Inloggen bij Vintage Story",
+      "loginAction": "Inloggen",
+      "requiresTwoFA": "Dit account vereist een 2FA-code. Voer de code uit je authenticator in en probeer het opnieuw.",
+      "loginUnreachable": "De inlogservice kon niet worden bereikt. Controleer je verbinding of firewall en probeer het opnieuw.",
+      "unexpectedResponse": "De accountservice gaf een antwoord dat de launcher niet kon lezen. Je wachtwoord is niet afgewezen. Probeer het opnieuw na een update.",
+      "sessionStoreUnreadable": "Het inloggen is gelukt, maar het bestand met opgeslagen accounts kon niet worden gelezen of geback-upt. De launcher heeft het daarom niet overschreven. Er is deze keer niets opgeslagen.",
+      "sessionStoreRebuilt": "Het bestand met opgeslagen accounts kon niet worden gelezen. Er is een kopie bewaard en de launcher heeft een nieuw bestand gemaakt. Andere accounts op dit apparaat moeten opnieuw inloggen.",
+      "showPassword": "Wachtwoord tonen",
+      "hidePassword": "Wachtwoord verbergen",
+      "loginPrivacyTitle": "Zo werkt deze login",
+      "loginPrivacySent": "RiftLauncher stuurt je e-mailadres, wachtwoord en optionele 2FA-code via HTTPS naar de officiële Vintage Story-accountservice.",
+      "loginPrivacyStored": "RiftLauncher slaat je wachtwoord en 2FA-code niet op. Je accountprofiel en sessiegegevens blijven op dit apparaat staan, zodat je niet opnieuw hoeft in te loggen. Je kunt het account verwijderen via het accountmenu.",
+      "loginPrivacyGame": "Wanneer je de game start, worden de sessiegegevens die Vintage Story nodig heeft naar de geselecteerde installatie geschreven.",
+      "loginPrivacyPolicy": "Privacybeleid lezen",
+      "removeAccountAction": "Account verwijderen"
     }
   },
   "components": {
@@ -167,5 +195,8 @@
       "notNow": "Niet nu"
     },
     "discard": "Notificatie weggooien"
+  },
+  "breadcrumbs": {
+    "mods": "Mods"
   }
 }

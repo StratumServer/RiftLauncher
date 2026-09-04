@@ -56,7 +56,7 @@ describe("SessionButton with more than one saved account", () => {
     await user.click(await screen.findByRole("button", { name: "Alice" }))
     await user.click(await screen.findByRole("option", { name: /Add another account/ }))
 
-    expect(await screen.findByPlaceholderText("Email")).toBeTruthy()
+    expect(await screen.findByLabelText("Email")).toBeTruthy()
   })
 
   it("removes the active account on confirm", async () => {
@@ -71,7 +71,7 @@ describe("SessionButton with more than one saved account", () => {
 
     await user.click(await screen.findByRole("button", { name: "Alice" }))
     await user.click(await screen.findByRole("option", { name: "Remove Alice" }))
-    await user.click(await screen.findByRole("button", { name: "Remove Alice" }))
+    await user.click(await screen.findByRole("button", { name: "Remove account" }))
 
     expect(removeAccount).toHaveBeenCalledWith("uid-a")
     // Alice is gone, Bob is promoted and shown on the trigger.
@@ -95,7 +95,7 @@ describe("SessionButton with more than one saved account", () => {
 
     await user.click(await screen.findByRole("button", { name: "Alice" }))
     await user.click(await screen.findByRole("option", { name: "Remove Alice" }))
-    await user.click(await screen.findByRole("button", { name: "Remove Alice" }))
+    await user.click(await screen.findByRole("button", { name: "Remove account" }))
 
     expect(removeAccount).toHaveBeenCalledWith("uid-a")
     expect(await screen.findByText("Couldn't remove that account. Try again.")).toBeTruthy()

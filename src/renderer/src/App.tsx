@@ -27,6 +27,7 @@ const ListVersions = lazy(() => import("@renderer/features/versions/pages/ListVe
 const AddVersion = lazy(() => import("@renderer/features/versions/pages/AddVersion"))
 const LookForAVersion = lazy(() => import("@renderer/features/versions/pages/LookForAVersion"))
 const ListMods = lazy(() => import("@renderer/features/mods/pages/ListMods"))
+const InstallMod = lazy(() => import("@renderer/features/mods/pages/InstallMod"))
 const ConfigPage = lazy(() => import("@renderer/features/config/pages/ConfigPage"))
 const InfoAndHelpPage = lazy(() => import("./features/info/pages/InfoAndHelpPage"))
 
@@ -95,6 +96,7 @@ function AnimatedRoutes(): JSX.Element {
         <Route path="/versions/add" element={<AnimatedRoute element={<AddVersion />} />} />
         <Route path="/versions/look-for-a-version" element={<AnimatedRoute element={<LookForAVersion />} />} />
         <Route path="/mods" element={<AnimatedRoute element={<ListMods />} />} />
+        <Route path="/mods/install/:modid" element={<AnimatedRoute element={<InstallMod />} />} />
         <Route path="/config" element={<AnimatedRoute element={<ConfigPage />} />} />
         <Route path="/info-and-help" element={<AnimatedRoute element={<InfoAndHelpPage />} />} />
       </Routes>

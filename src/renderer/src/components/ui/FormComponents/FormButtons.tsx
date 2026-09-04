@@ -2,12 +2,16 @@ import { Button as HButton } from "@headlessui/react"
 import clsx from "clsx"
 import { Link } from "react-router-dom"
 
-const COLOR_BY_TYPE = {
-  normal: "text-zinc-200",
-  error: "text-red-700",
-  warn: "text-yellow-400",
-  success: "text-lime-600"
-}
+import {
+  BUTTON_BASE_STYLES,
+  BUTTON_GROUP_EQUAL_WIDTH_STYLES,
+  BUTTON_LINK_SIZE_STYLES,
+  BUTTON_SIZE_STYLES,
+  BUTTON_VARIANT_STYLES,
+  type ButtonSize,
+  type ButtonVariant
+} from "@renderer/components/ui/buttonStyles"
+import { renderActionContent, useActionBusy } from "@renderer/components/ui/actionContent"
 
 /**
  * A ButtonsWrapper must contain a FormButton or a FormLinkButton.
@@ -17,19 +21,28 @@ const COLOR_BY_TYPE = {
  * @param {React.ReactNode} props.children - The content to be wrapped.
  * @param {string} props.className - Additional class names for styling.
  * @param {boolean} [props.bgDark] - Add or not the darker background.
+ * @param {boolean} [props.equalWidth] - Give direct action children equal responsive widths.
+ * @param {boolean} [props.flush] - Remove the group's inner inset so actions align with adjacent content.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function ButtonsWrapper({ children, className, bgDark = true }: Readonly<{ children: React.ReactNode; className?: string; bgDark?: boolean }>): JSX.Element {
+export function ButtonsWrapper({
+  children,
+  className,
+  bgDark = true,
+  equalWidth = false,
+  flush = false
+}: Readonly<{ children: React.ReactNode; className?: string; bgDark?: boolean; equalWidth?: boolean; flush?: boolean }>): JSX.Element {
   return (
     <div
       className={clsx(
         "relative w-fit",
+        equalWidth && "w-full",
         bgDark &&
           "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:rounded-md before:backdrop-blur-sm before:bg-zinc-950/15 before:shadow-sm before:shadow-zinc-950/50 before:border before:border-zinc-400/5",
         className
       )}
     >
-      <div className={clsx("relative flex gap-4 p-2 justify-center items-center", className)}>{children}</div>
+      <div className={clsx("relative flex gap-4 justify-center items-center", flush ? "p-0" : "p-2", equalWidth && BUTTON_GROUP_EQUAL_WIDTH_STYLES, className)}>{children}</div>
     </div>
   )
 }
@@ -43,36 +56,61 @@ export function ButtonsWrapper({ children, className, bgDark = true }: Readonly<
  * @param {() => void} props.onClick - The function to be called when the button is clicked.
  * @param {string} props.title - The title and content of the button.
  * @param {boolean} props.disabled - If the button is dissabled or not.
- * @param {string} props.type - "normal" || "error" || "warn" || "success"
+ * @param {boolean} [props.equalWidth] - Give direct action children equal responsive widths.
+ * @param {string} [props.variant] - Semantic action variant: "primary" || "secondary" || "destructive" || "ghost" || "link".
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
+type FormButtonHandler = (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<unknown>
+
+/**
+ * A FormButton either runs a handler or submits the form it sits in. It has to be one of the two:
+ * the submit button is the only one with nothing to run on click, and making onClick optional for
+ * its sake meant a button with no handler at all typechecked. One shipped that way already.
+ */
+type FormButtonAction = { nativeType?: "button" | "reset"; onClick: FormButtonHandler } | { nativeType: "submit"; onClick?: FormButtonHandler }
+
+type FormButtonProps = Readonly<{
+  children?: React.ReactNode
+  icon?: React.ReactNode
+  className?: string
+  title: string
+  disabled?: boolean
+  busy?: boolean
+  variant?: ButtonVariant
+  size?: ButtonSize
+  ariaLabel?: string
+  ariaPressed?: boolean
+}> &
+  Readonly<FormButtonAction>
+
 export function FormButton({
   children,
+  icon,
   className,
   onClick,
   title,
   disabled,
-  type
-}: Readonly<{
-  children: React.ReactNode
-  className?: string
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void
-  title: string
-  disabled?: boolean
-  type?: "normal" | "error" | "warn" | "success"
-}>): JSX.Element {
+  busy,
+  variant = "secondary",
+  size = "sm",
+  nativeType = "button",
+  ariaLabel,
+  ariaPressed
+}: FormButtonProps): JSX.Element {
+  const action = useActionBusy(onClick, busy, disabled)
+
   return (
     <HButton
-      disabled={disabled}
-      onClick={onClick}
+      type={nativeType}
+      disabled={disabled || action.busy}
+      onClick={action.onClick}
       title={!disabled ? title : ""}
-      className={clsx(
-        "flex items-center justify-center gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 enabled:shadow-sm enabled:shadow-zinc-950/50 enabled:hover:shadow-none enabled:cursor-pointer disabled:opacity-50",
-        type && COLOR_BY_TYPE[type],
-        className
-      )}
+      aria-label={ariaLabel ?? title}
+      aria-busy={action.busy}
+      aria-pressed={ariaPressed}
+      className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}
     >
-      {children}
+      {renderActionContent(children, icon, title, action.busy)}
     </HButton>
   )
 }
@@ -85,33 +123,34 @@ export function FormButton({
  * @param {string} props.className - Additional class names for styling.
  * @param {string} props.to - Route to the page.
  * @param {string} props.title - The title and content of the button.
- * @param {string} props.type - "normal" || "error" || "warn" || "success"
+ * @param {string} [props.variant] - Semantic action variant.
+ * @param {string} [props.size] - Control size: "sm" || "md" || "lg".
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
 export function FormLinkButton({
   children,
+  icon,
   className,
   to,
   title,
-  type
+  variant = "secondary",
+  size = "sm"
 }: Readonly<{
-  children: React.ReactNode
+  children?: React.ReactNode
+  icon?: React.ReactNode
   className?: string
   to: string
   title: string
-  type?: "normal" | "error" | "warn" | "success"
+  variant?: ButtonVariant
+  size?: ButtonSize
 }>): JSX.Element {
   return (
     <Link
       to={to}
       title={title}
-      className={clsx(
-        "flex items-center justify-center gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
-        type && COLOR_BY_TYPE[type],
-        className
-      )}
+      className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}
     >
-      {children}
+      {renderActionContent(children, icon, title)}
     </Link>
   )
 }
