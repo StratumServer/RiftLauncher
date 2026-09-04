@@ -135,11 +135,13 @@ describe("ConfigPage background picker", () => {
   it("hides a failed thumbnail without disabling the scene tile", async () => {
     renderConfigPage()
 
-    const image = await screen.findByRole("button", { name: "Village Lane" }).then(() => tileImage("Village Lane"))
-    expect(image).toBeTruthy()
-    fireEvent.error(image!)
-
-    await waitFor(() => expect(tileImage("Village Lane")).toBeNull())
+    await screen.findByRole("button", { name: "Village Lane" })
+    await waitFor(() => {
+      const image = tileImage("Village Lane")
+      expect(image).toBeTruthy()
+      fireEvent.error(image!)
+      expect(tileImage("Village Lane")).toBeNull()
+    })
     expect(screen.getByRole("button", { name: "Village Lane" })).toBeTruthy()
   })
 
