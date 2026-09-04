@@ -4,8 +4,9 @@ import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import * as tar from "tar"
+import fse from "fs-extra"
 
-import { contentRoot, extractTarGz, extractZip, resolveEntryDestination, runExtraction, validateTree } from "../../src/ipc/workers/extraction"
+import { contentRoot, extractTarGz, extractZip, publishTree, resolveEntryDestination, runExtraction, validateTree } from "../../src/ipc/workers/extraction"
 import { runCompression } from "../../src/ipc/workers/compression"
 import { restoreInstallationBackup } from "../../src/domain/installations/restore"
 import type { Extractor, FileSystem } from "../../src/domain/ports"
@@ -123,6 +124,73 @@ describe("validateTree", () => {
   })
 })
 
+describe("publishTree", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it("renames a fresh top-level entry instead of copying it", () => {
+    writeTree(workspacePath("source"), { Vintagestory: "elf", assets: { "seed.json": "{}" } })
+    const fileIno = statSync(workspacePath("source", "Vintagestory")).ino
+    const folderIno = statSync(workspacePath("source", "assets")).ino
+
+    publishTree(workspacePath("source"), workspacePath("target"))
+
+    // A rename keeps the inode; a copy would have allocated a new one under it.
+    assert.equal(statSync(workspacePath("target", "Vintagestory")).ino, fileIno)
+    assert.equal(statSync(workspacePath("target", "assets")).ino, folderIno)
+    assert.equal(readFileSync(workspacePath("target", "assets", "seed.json"), "utf8"), "{}")
+  })
+
+  it("falls back to a copy when the rename crosses a filesystem boundary (EXDEV)", () => {
+    writeTree(workspacePath("source"), { Vintagestory: "elf", assets: { "seed.json": "{}" } })
+    vi.spyOn(fse, "renameSync").mockImplementation(() => {
+      throw Object.assign(new Error("cross-device link"), { code: "EXDEV" })
+    })
+
+    publishTree(workspacePath("source"), workspacePath("target"))
+
+    assert.equal(readFileSync(workspacePath("target", "Vintagestory"), "utf8"), "elf")
+    assert.equal(readFileSync(workspacePath("target", "assets", "seed.json"), "utf8"), "{}")
+  })
+
+  it("falls back to a copy when the rename fails with EPERM (Windows handle without FILE_SHARE_DELETE)", () => {
+    writeTree(workspacePath("source"), { Vintagestory: "elf", assets: { "seed.json": "{}" } })
+    vi.spyOn(fse, "renameSync").mockImplementation(() => {
+      throw Object.assign(new Error("permission denied"), { code: "EPERM" })
+    })
+
+    publishTree(workspacePath("source"), workspacePath("target"))
+
+    assert.equal(readFileSync(workspacePath("target", "Vintagestory"), "utf8"), "elf")
+    assert.equal(readFileSync(workspacePath("target", "assets", "seed.json"), "utf8"), "{}")
+  })
+
+  it("merges into a top-level folder that already exists, the way copyTree has always merged", () => {
+    writeTree(workspacePath("target"), { assets: { "kept.txt": "already there" } })
+    writeTree(workspacePath("source"), { assets: { "seed.json": "{}" } })
+
+    publishTree(workspacePath("source"), workspacePath("target"))
+
+    assert.equal(readFileSync(workspacePath("target", "assets", "kept.txt"), "utf8"), "already there")
+    assert.equal(readFileSync(workspacePath("target", "assets", "seed.json"), "utf8"), "{}")
+  })
+
+  it("refuses a top-level type conflict the same way copyTree does", () => {
+    writeTree(workspacePath("target"), { assets: "a file where a folder should be" })
+    writeTree(workspacePath("source"), { assets: { "seed.json": "{}" } })
+
+    assert.throws(() => publishTree(workspacePath("source"), workspacePath("target")), /type conflict/)
+  })
+
+  it("refuses an unsafe destination the same way copyTree does", () => {
+    writeTree(workspacePath("target"), { Vintagestory: {} })
+    writeTree(workspacePath("source"), { Vintagestory: "elf" })
+
+    assert.throws(() => publishTree(workspacePath("source"), workspacePath("target")), /unsafe destination/)
+  })
+})
+
 describe("runExtraction on a gzipped tar", () => {
   it("unpacks a wrapped archive straight into the target folder", async () => {
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "version-1.22.6.txt": "", "seed.json": "{}" } } })
@@ -211,21 +279,73 @@ describe("runExtraction on a gzipped tar", () => {
     assert.equal(existsSync(workspacePath("target")), false)
   })
 
-  it("leaves no temporary workspace behind", async () => {
-    // Same reasoning as the Inno extraction's own cleanup test: the machine-wide
-    // temp root holds other runs' staging folders, so this one gets a root of its
-    // own and what is left in it at the end belongs to this call.
-    const temporaryRoot = workspacePath("temp-root")
-    mkdirSync(temporaryRoot)
-    vi.stubEnv("TMPDIR", temporaryRoot)
-    vi.stubEnv("TMP", temporaryRoot)
-    vi.stubEnv("TEMP", temporaryRoot)
+  it("stages inside the destination folder rather than under the OS temp directory", async () => {
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf" } })
-    const archivePath = await makeTarGz("clean.tar.gz", workspacePath("source"))
+    const archivePath = await makeTarGz("stage-location.tar.gz", workspacePath("source"))
+    const mkdtempSpy = vi.spyOn(fse, "mkdtempSync")
 
     await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
 
-    assert.deepEqual(readdirSync(temporaryRoot), [])
+    assert.equal(mkdtempSpy.mock.calls.length, 1)
+    assert.equal(mkdtempSpy.mock.calls[0]?.[0], join(workspacePath("target"), ".riftlauncher-extract-"))
+    vi.restoreAllMocks()
+  })
+
+  it("leaves no staging folder in the destination once it succeeds", async () => {
+    // The staging folder is a dot-prefixed child of the destination now (see
+    // runExtraction's own comment), so that is where a leftover would show up.
+    writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf" } })
+    const archivePath = await makeTarGz("clean.tar.gz", workspacePath("source"))
+
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("games", "target"), deleteArchive: false, unwrapSingleRootFolder: true })
+
+    assert.deepEqual(readdirSync(workspacePath("games")), ["target"])
+    assert.deepEqual(readdirSync(workspacePath("games", "target")).sort(), ["Vintagestory"])
+  })
+
+  it("falls back to the OS temp directory when the destination cannot hold the staging folder", async () => {
+    writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "seed.json": "{}" } } })
+    const archivePath = await makeTarGz("fallback-staging.tar.gz", workspacePath("source"))
+    const mkdtempSpy = vi.spyOn(fse, "mkdtempSync").mockImplementationOnce(() => {
+      throw Object.assign(new Error("permission denied"), { code: "EACCES" })
+    })
+
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
+
+    assert.deepEqual(readdirSync(workspacePath("target")).sort(), ["Vintagestory", "assets"])
+    assert.equal(readFileSync(workspacePath("target", "Vintagestory"), "utf8"), "elf")
+    assert.equal(mkdtempSpy.mock.calls.length, 2)
+    assert.equal(mkdtempSpy.mock.calls[1]?.[0], join(tmpdir(), "riftlauncher-extract-"))
+    vi.restoreAllMocks()
+  })
+
+  it("publishes by renaming entries rather than copying them, when the destination is on the same filesystem", async () => {
+    writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "seed.json": "{}" } } })
+    const archivePath = await makeTarGz("rename-publish.tar.gz", workspacePath("source"))
+    const renameSpy = vi.spyOn(fse, "renameSync")
+    const copySpy = vi.spyOn(fse, "copyFileSync")
+
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
+
+    assert.equal(copySpy.mock.calls.length, 0)
+    assert.equal(renameSpy.mock.calls.length > 0, true)
+    vi.restoreAllMocks()
+  })
+
+  it("falls back to a copy when the rename fails with EXDEV or EPERM", async () => {
+    writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "seed.json": "{}" } } })
+    const archivePath = await makeTarGz("rename-fallback.tar.gz", workspacePath("source"))
+    vi.spyOn(fse, "renameSync").mockImplementation(() => {
+      throw Object.assign(new Error("permission denied"), { code: "EPERM" })
+    })
+    const copySpy = vi.spyOn(fse, "copyFileSync")
+
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
+
+    assert.deepEqual(readdirSync(workspacePath("target")).sort(), ["Vintagestory", "assets"])
+    assert.equal(readFileSync(workspacePath("target", "Vintagestory"), "utf8"), "elf")
+    assert.equal(copySpy.mock.calls.length > 0, true)
+    vi.restoreAllMocks()
   })
 })
 
@@ -355,9 +475,16 @@ describe("a gzipped tar whose entries fail to land", () => {
 
     await assert.rejects(runExtraction({ filePath: archivePath, outputPath: workspacePath("restored"), deleteArchive: false }), /Extraction failed/)
 
-    // Nothing was copied out of the temporary folder, so the destination is as
-    // empty as it was: a partial tree is not a restore.
+    // The destination is empty: a partial tree is not a restore, and the
+    // staging folder that held the half-written tree lived under "restored"
+    // and the finally removed it, so nothing is left there either.
     assert.deepEqual(readdirSync(workspacePath("restored")), [])
+    // Nothing was staged beside the destination as debris beside a real
+    // installation folder either.
+    assert.deepEqual(
+      readdirSync(workspace).filter((name) => name.startsWith(".riftlauncher-extract-")),
+      []
+    )
   })
 
   it("leaves the installation where it is, because the swap only happens once the extraction succeeded", async () => {

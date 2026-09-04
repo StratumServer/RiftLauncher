@@ -4,14 +4,24 @@
  * The worker thread is a shim over this module so the same code can be driven
  * from a test or a script. Nothing here touches Electron or `worker_threads`.
  *
- * Every archive lands in a temporary folder first. The tree is validated there,
- * and only then copied into the destination, so a hostile archive never gets to
- * write a single byte where the launcher keeps its files.
+ * Every archive lands in a staging folder first, a dot-prefixed child of the
+ * destination rather than a folder under the OS temporary directory: `/tmp` is
+ * tmpfs on most Linux and WSL systems, which would otherwise hold the whole
+ * extracted tree in RAM, and a separate drive for temp files means every byte
+ * is written twice. Staging inside the destination puts the staged tree on the
+ * destination's own filesystem, so publishing it is one rename per top-level
+ * entry, and it leaves the debris of a killed extraction in a folder the
+ * launcher already owns and already sweeps (main/orphanedTempFiles.ts).
+ *
+ * The tree is validated in the staging folder, and only then published. An
+ * archive's contents sit under `<destination>/.riftlauncher-extract-XXXXXX/`
+ * while they are unverified, so nothing an archive carries reaches a real
+ * content path in the destination until validateTree has passed.
  */
 
 import fse from "fs-extra"
 import yauzl from "yauzl"
-import { createReadStream, createWriteStream, mkdtempSync } from "node:fs"
+import { createReadStream, createWriteStream } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { tmpdir } from "node:os"
 import type { Readable } from "node:stream"
@@ -108,6 +118,84 @@ export function copyTree(sourceRoot: string, destinationRoot: string): void {
   }
 
   copyEntry(sourceRoot)
+}
+
+/** Renames a whole subtree in one move, or copies it when that is not possible. */
+function renameOrCopyTree(source: string, destination: string): void {
+  if (!fse.existsSync(destination)) {
+    try {
+      fse.renameSync(source, destination)
+      return
+    } catch {
+      // Fall through to the copy path. EXDEV means the source and destination
+      // are on different filesystems; EPERM, EACCES and EBUSY are common on
+      // Windows when a handle without FILE_SHARE_DELETE is open on the file
+      // (for instance a real-time antivirus scanning a freshly written file).
+      // copyTree is the safe fallback for all of them.
+    }
+  }
+  // Either the rename could not cross filesystems, or something already sits
+  // under this name at the destination and a rename cannot land on top of it
+  // without possibly losing what that something already held. copyTree merges
+  // the two trees entry by entry the way it always has.
+  copyTree(source, destination)
+}
+
+/** Renames a single file, or copies it when that is not possible. */
+function renameOrCopyFile(source: string, destination: string): void {
+  try {
+    fse.renameSync(source, destination)
+  } catch {
+    // Fall through to the copy path for the same reasons as renameOrCopyTree.
+    fse.copyFileSync(source, destination)
+  }
+}
+
+/**
+ * Publishes a staged tree by renaming each top-level entry into the
+ * destination, rather than copying it in byte by byte.
+ *
+ * `runExtraction` always stages inside the destination, on the destination's
+ * own filesystem, so a rename here is ordinarily one metadata update instead
+ * of a full read and write of everything the archive held. A rename can still fail
+ * for several reasons: the destination already holds something under that
+ * name (an install that reuses a folder in place), a cross-device move
+ * (`EXDEV`, which can still happen if the destination is a separate mount),
+ * or a handle held without `FILE_SHARE_DELETE` on Windows (common with a
+ * real-time antivirus scanning freshly written files). Any rename failure
+ * falls back to copyTree, the same merge-and-overwrite behaviour a plain
+ * copy has always had.
+ */
+export function publishTree(sourceRoot: string, destinationRoot: string): void {
+  assertNoSymlinkComponents(destinationRoot)
+  fse.ensureDirSync(destinationRoot)
+  if (fse.lstatSync(destinationRoot).isSymbolicLink()) throw new Error("Destination is a symbolic link")
+  const resolvedDestinationRoot = resolve(destinationRoot)
+
+  for (const child of fse.readdirSync(sourceRoot)) {
+    const source = join(sourceRoot, child)
+    const destination = resolve(resolvedDestinationRoot, child)
+    const destinationRelativePath = relative(resolvedDestinationRoot, destination)
+    // child comes from readdirSync so it is always a single segment and this
+    // check cannot fire, but it mirrors copyTree's own guard as defense in depth.
+    if (!destinationRelativePath || destinationRelativePath === ".." || destinationRelativePath.startsWith(`..${sep}`) || isAbsolute(destinationRelativePath))
+      throw new Error("Archive output escaped its root")
+    assertNoSymlinkComponents(destination)
+
+    const entry = fse.lstatSync(source)
+    if (entry.isDirectory()) {
+      if (fse.existsSync(destination) && !fse.lstatSync(destination).isDirectory()) throw new Error("Archive output type conflict")
+      renameOrCopyTree(source, destination)
+      continue
+    }
+
+    if (fse.existsSync(destination)) {
+      const existing = fse.lstatSync(destination)
+      if (existing.isSymbolicLink() || existing.isDirectory()) throw new Error("Archive output contains an unsafe destination")
+      fse.unlinkSync(destination)
+    }
+    renameOrCopyFile(source, destination)
+  }
 }
 
 /**
@@ -390,7 +478,24 @@ export async function runExtraction(options: ExtractionOptions): Promise<void> {
     fse.ensureDirSync(outputPath)
     if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
 
-    temporaryRoot = mkdtempSync(join(tmpdir(), "riftlauncher-extract-"))
+    // Staged inside the destination rather than under the OS temp directory, so
+    // the publish below is a rename rather than a copy (see this module's own
+    // comment). The dot prefix keeps the folder from reading as content while
+    // the extraction runs, and it is the name the startup sweep matches
+    // (EXTRACTION_STAGING_PATTERN in main/orphanedTempFiles.ts).
+    //
+    // The fallback covers a destination that exists but cannot hold a new
+    // directory, for instance a read-only mount. It catches every failure, so
+    // a full destination filesystem (ENOSPC) stages under os.tmpdir() and pays
+    // the double write this module exists to avoid, then fails later when the
+    // publish runs out of the same space. This module carries no logger on
+    // purpose: it stays importable from a plain script, with no `@src` alias
+    // and no electron-log.
+    try {
+      temporaryRoot = fse.mkdtempSync(join(outputPath, ".riftlauncher-extract-"))
+    } catch {
+      temporaryRoot = fse.mkdtempSync(join(tmpdir(), "riftlauncher-extract-"))
+    }
     const extractionRoot = join(temporaryRoot, "payload")
     fse.ensureDirSync(extractionRoot)
 
@@ -401,7 +506,7 @@ export async function runExtraction(options: ExtractionOptions): Promise<void> {
     // Only the game archives wrap their contents in a folder, and only their caller
     // asks for that folder to be stepped into. A backup holds an installation's
     // contents at the root, and a restore has to put them back exactly as they were.
-    copyTree(unwrapSingleRootFolder ? contentRoot(extractionRoot) : extractionRoot, outputPath)
+    publishTree(unwrapSingleRootFolder ? contentRoot(extractionRoot) : extractionRoot, outputPath)
 
     if (deleteArchive) {
       assertNoSymlinkComponents(filePath)
