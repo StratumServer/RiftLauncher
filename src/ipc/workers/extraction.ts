@@ -4,18 +4,24 @@
  * The worker thread is a shim over this module so the same code can be driven
  * from a test or a script. Nothing here touches Electron or `worker_threads`.
  *
- * Every archive lands in a staging folder first, beside the destination rather
- * than under the OS temporary directory: `/tmp` is tmpfs on most Linux and WSL
- * systems, which would otherwise hold the whole extracted tree in RAM, and a
- * separate drive for temp files means every byte is written twice. The tree is
- * validated in the staging folder, and only then published into the
- * destination, so a hostile archive never gets to write a single byte where
- * the launcher keeps its files.
+ * Every archive lands in a staging folder first, a dot-prefixed child of the
+ * destination rather than a folder under the OS temporary directory: `/tmp` is
+ * tmpfs on most Linux and WSL systems, which would otherwise hold the whole
+ * extracted tree in RAM, and a separate drive for temp files means every byte
+ * is written twice. Staging inside the destination puts the staged tree on the
+ * destination's own filesystem, so publishing it is one rename per top-level
+ * entry, and it leaves the debris of a killed extraction in a folder the
+ * launcher already owns and already sweeps (main/orphanedTempFiles.ts).
+ *
+ * The tree is validated in the staging folder, and only then published. An
+ * archive's contents sit under `<destination>/.riftlauncher-extract-XXXXXX/`
+ * while they are unverified, so nothing an archive carries reaches a real
+ * content path in the destination until validateTree has passed.
  */
 
 import fse from "fs-extra"
 import yauzl from "yauzl"
-import { createReadStream, createWriteStream, mkdtempSync } from "node:fs"
+import { createReadStream, createWriteStream } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { tmpdir } from "node:os"
 import type { Readable } from "node:stream"
@@ -149,9 +155,9 @@ function renameOrCopyFile(source: string, destination: string): void {
  * Publishes a staged tree by renaming each top-level entry into the
  * destination, rather than copying it in byte by byte.
  *
- * `runExtraction` always stages beside the destination, on the same
- * filesystem, so a rename here is ordinarily one metadata update instead of a
- * full read and write of everything the archive held. A rename can still fail
+ * `runExtraction` always stages inside the destination, on the destination's
+ * own filesystem, so a rename here is ordinarily one metadata update instead
+ * of a full read and write of everything the archive held. A rename can still fail
  * for several reasons: the destination already holds something under that
  * name (an install that reuses a folder in place), a cross-device move
  * (`EXDEV`, which can still happen if the destination is a separate mount),
@@ -469,27 +475,26 @@ export async function runExtraction(options: ExtractionOptions): Promise<void> {
 
   try {
     assertNoSymlinkComponents(outputPath)
+    fse.ensureDirSync(outputPath)
+    if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
 
-    // Staged beside the destination rather than under the OS temp directory, so
-    // the eventual publish below is a rename rather than a copy (see this
-    // module's own comment). The dot prefix keeps the staging folder from
-    // reading as real content if anything lists the parent directory while the
-    // extraction is still running. Falling back to os.tmpdir() when the
-    // destination's parent is not writable (for instance a version folder that
-    // is itself a mount point under a read-only parent) keeps the extraction
-    // possible on layouts that work today.
+    // Staged inside the destination rather than under the OS temp directory, so
+    // the publish below is a rename rather than a copy (see this module's own
+    // comment). The dot prefix keeps the folder from reading as content while
+    // the extraction runs, and it is the name the startup sweep matches
+    // (EXTRACTION_STAGING_PATTERN in main/orphanedTempFiles.ts).
+    //
+    // The fallback covers a destination that exists but cannot hold a new
+    // directory, for instance a read-only mount. It catches every failure, so
+    // a full destination filesystem (ENOSPC) stages under os.tmpdir() and pays
+    // the double write this module exists to avoid, then fails later when the
+    // publish runs out of the same space. This module carries no logger on
+    // purpose: it stays importable from a plain script, with no `@src` alias
+    // and no electron-log.
     try {
-      fse.ensureDirSync(outputPath)
-      if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
-      temporaryRoot = mkdtempSync(join(dirname(outputPath), ".riftlauncher-extract-"))
-    } catch (error) {
-      if (error instanceof Error && error.message === "Extraction destination is a symbolic link") throw error
-      // The destination's parent may exist but not be writable (read-only
-      // mount, permissions). Ensure the destination exists and stage under
-      // os.tmpdir() instead.
-      fse.ensureDirSync(outputPath)
-      if (fse.lstatSync(outputPath).isSymbolicLink()) throw new Error("Extraction destination is a symbolic link")
-      temporaryRoot = mkdtempSync(join(tmpdir(), "riftlauncher-extract-"))
+      temporaryRoot = fse.mkdtempSync(join(outputPath, ".riftlauncher-extract-"))
+    } catch {
+      temporaryRoot = fse.mkdtempSync(join(tmpdir(), "riftlauncher-extract-"))
     }
     const extractionRoot = join(temporaryRoot, "payload")
     fse.ensureDirSync(extractionRoot)

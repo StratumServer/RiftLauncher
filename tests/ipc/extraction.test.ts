@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -279,35 +279,44 @@ describe("runExtraction on a gzipped tar", () => {
     assert.equal(existsSync(workspacePath("target")), false)
   })
 
-  it("leaves no staging folder beside the destination once it succeeds", async () => {
-    // The staging folder is a sibling of the destination now, not a folder
-    // under the OS temp directory (see runExtraction's own comment), so that
-    // is where a leftover would show up.
+  it("stages inside the destination folder rather than under the OS temp directory", async () => {
+    writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf" } })
+    const archivePath = await makeTarGz("stage-location.tar.gz", workspacePath("source"))
+    const mkdtempSpy = vi.spyOn(fse, "mkdtempSync")
+
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
+
+    assert.equal(mkdtempSpy.mock.calls.length, 1)
+    assert.equal(mkdtempSpy.mock.calls[0]?.[0], join(workspacePath("target"), ".riftlauncher-extract-"))
+    vi.restoreAllMocks()
+  })
+
+  it("leaves no staging folder in the destination once it succeeds", async () => {
+    // The staging folder is a dot-prefixed child of the destination now (see
+    // runExtraction's own comment), so that is where a leftover would show up.
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf" } })
     const archivePath = await makeTarGz("clean.tar.gz", workspacePath("source"))
 
     await runExtraction({ filePath: archivePath, outputPath: workspacePath("games", "target"), deleteArchive: false, unwrapSingleRootFolder: true })
 
     assert.deepEqual(readdirSync(workspacePath("games")), ["target"])
+    assert.deepEqual(readdirSync(workspacePath("games", "target")).sort(), ["Vintagestory"])
   })
 
-  it("falls back to os.tmpdir() when the destination parent is not writable", async () => {
+  it("falls back to the OS temp directory when the destination cannot hold the staging folder", async () => {
     writeTree(workspacePath("source"), { vintagestory: { Vintagestory: "elf", assets: { "seed.json": "{}" } } })
     const archivePath = await makeTarGz("fallback-staging.tar.gz", workspacePath("source"))
-    // Create the destination so that ensureDirSync succeeds, then make the
-    // parent read-only so that mkdtempSync beside it fails.
-    const readOnlyParent = workspacePath("read-only-parent")
-    mkdirSync(join(readOnlyParent, "target"), { recursive: true })
-    chmodSync(readOnlyParent, 0o555)
+    const mkdtempSpy = vi.spyOn(fse, "mkdtempSync").mockImplementationOnce(() => {
+      throw Object.assign(new Error("permission denied"), { code: "EACCES" })
+    })
 
-    try {
-      await runExtraction({ filePath: archivePath, outputPath: join(readOnlyParent, "target"), deleteArchive: false, unwrapSingleRootFolder: true })
-      // The extraction should succeed by falling back to os.tmpdir().
-      assert.deepEqual(readdirSync(join(readOnlyParent, "target")).sort(), ["Vintagestory", "assets"])
-      assert.equal(readFileSync(join(readOnlyParent, "target", "Vintagestory"), "utf8"), "elf")
-    } finally {
-      chmodSync(readOnlyParent, 0o755)
-    }
+    await runExtraction({ filePath: archivePath, outputPath: workspacePath("target"), deleteArchive: false, unwrapSingleRootFolder: true })
+
+    assert.deepEqual(readdirSync(workspacePath("target")).sort(), ["Vintagestory", "assets"])
+    assert.equal(readFileSync(workspacePath("target", "Vintagestory"), "utf8"), "elf")
+    assert.equal(mkdtempSpy.mock.calls.length, 2)
+    assert.equal(mkdtempSpy.mock.calls[1]?.[0], join(tmpdir(), "riftlauncher-extract-"))
+    vi.restoreAllMocks()
   })
 
   it("publishes by renaming entries rather than copying them, when the destination is on the same filesystem", async () => {
@@ -466,12 +475,12 @@ describe("a gzipped tar whose entries fail to land", () => {
 
     await assert.rejects(runExtraction({ filePath: archivePath, outputPath: workspacePath("restored"), deleteArchive: false }), /Extraction failed/)
 
-    // Nothing was copied out of the temporary folder, so the destination is as
-    // empty as it was: a partial tree is not a restore.
+    // The destination is empty: a partial tree is not a restore, and the
+    // staging folder that held the half-written tree lived under "restored"
+    // and the finally removed it, so nothing is left there either.
     assert.deepEqual(readdirSync(workspacePath("restored")), [])
-    // The staging folder that held the half-written tree is a sibling of
-    // "restored", and it is gone too rather than left as debris beside a real
-    // installation folder.
+    // Nothing was staged beside the destination as debris beside a real
+    // installation folder either.
     assert.deepEqual(
       readdirSync(workspace).filter((name) => name.startsWith(".riftlauncher-extract-")),
       []

@@ -17,7 +17,7 @@ export const ATOMIC_JSON_TEMP_FILE_PATTERN =
 /** The temporary sibling created by `runDownload`. */
 export const DOWNLOAD_PART_FILE_PATTERN = /^.+\.\d+\.\d+\.part$/
 
-/** The staging directory created by `runExtraction` beside the destination. */
+/** The staging directory `runExtraction` creates inside the destination folder. */
 export const EXTRACTION_STAGING_PATTERN = /^\.riftlauncher-extract-/
 
 export type TemporaryFileKind = "atomic-json" | "download-part" | "extraction-staging"
@@ -64,13 +64,12 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
   for (const entry of entries) {
     const entryPath = join(folder, entry.name)
 
-    if (target.recursive && entry.isDirectory()) {
-      removed += await sweepDirectory(target, options, entryPath)
-      continue
-    }
-
     // Extraction staging folders are directories, not files: remove them
-    // recursively when they match and are old enough.
+    // recursively when they match and are old enough. This runs before the
+    // recursive branch on purpose. A recursive target claims any directory and
+    // walks into it, so a staging folder checked after that branch is never
+    // reached. Every exit here continues, so the sweep also stays out of a
+    // staging folder that is still in flight.
     if (entry.isDirectory() && target.kinds.includes("extraction-staging") && matchesKind(entry.name, "extraction-staging")) {
       let stats: fse.Stats
       try {
@@ -87,6 +86,11 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
       } catch (error) {
         if (!isMissing(error)) options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Could not remove ${entryPath}: ${error}`)
       }
+      continue
+    }
+
+    if (target.recursive && entry.isDirectory()) {
+      removed += await sweepDirectory(target, options, entryPath)
       continue
     }
 
@@ -134,8 +138,10 @@ export async function sweepOrphanedTempFiles(targets: readonly TemporaryFileSwee
 
 /**
  * Returns the three startup areas described by issue #266. Download files are
- * siblings of their final destination today, so the known installation and
- * version roots are the download staging area and need a symlink-safe walk.
+ * siblings of their final destination and extraction staging folders are
+ * children of it, so the known installation and version roots cover both, with
+ * a symlink-safe recursive walk that reaches a staging folder one level down in
+ * a version or installation folder.
  */
 export function getOrphanedTempFileSweepTargets(userDataPath: string, config: ConfigType): TemporaryFileSweepTarget[] {
   const targets: TemporaryFileSweepTarget[] = [
@@ -155,25 +161,7 @@ export function getOrphanedTempFileSweepTargets(userDataPath: string, config: Co
     const path = resolve(downloadRoot)
     if (seenPaths.has(path)) continue
     seenPaths.add(path)
-    targets.push({ path, kinds: ["atomic-json", "download-part"], recursive: true })
-  }
-
-  // Extraction staging folders sit beside the destination, which is the
-  // installation or version folder itself. The sweep walks the parent of each
-  // configured path to find and remove old staging folders.
-  const stagingParents = [
-    config.defaultInstallationsFolder,
-    config.defaultVersionsFolder,
-    ...config.installations.map((installation) => installation.path),
-    ...config.gameVersions.map((version) => version.path)
-  ]
-
-  for (const stagingParent of stagingParents) {
-    if (!stagingParent) continue
-    const path = resolve(stagingParent)
-    if (seenPaths.has(path)) continue
-    seenPaths.add(path)
-    targets.push({ path, kinds: ["extraction-staging"] })
+    targets.push({ path, kinds: ["atomic-json", "download-part", "extraction-staging"], recursive: true })
   }
 
   return targets

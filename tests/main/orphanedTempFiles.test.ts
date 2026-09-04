@@ -188,9 +188,90 @@ describe("getOrphanedTempFileSweepTargets", () => {
       ]
     )
     assert.deepEqual(targets[0]?.kinds, ["atomic-json"])
-    assert.deepEqual(targets[2]?.kinds, ["atomic-json", "download-part"])
+    assert.deepEqual(targets[2]?.kinds, ["atomic-json", "download-part", "extraction-staging"])
     assert.equal(targets[2]?.recursive, true)
-    // All configured paths are deduplicated: the staging parent loop sees the
-    // same paths as the download root loop and skips them.
+    // A custom version path is pinned too, not only a default folder.
+    assert.deepEqual(targets[5]?.kinds, ["atomic-json", "download-part", "extraction-staging"])
+    assert.equal(targets[5]?.recursive, true)
+    // The staging kind rides on the recursive download-root targets, which is
+    // what reaches a staging folder inside a version or installation folder.
+  })
+
+  it("removes a staging folder left inside a version folder under the default versions root", async () => {
+    const config = {
+      defaultInstallationsFolder: pathInWorkspace("installations"),
+      defaultVersionsFolder: pathInWorkspace("versions"),
+      installations: [],
+      gameVersions: []
+    } as unknown as ConfigType
+
+    const staging = pathInWorkspace("versions", "1.22.6", ".riftlauncher-extract-Ab12Cd")
+    mkdirSync(join(staging, "payload", "Vintagestory"), { recursive: true })
+    writeFileSync(join(staging, "payload", "Vintagestory", "elf"), "binary")
+    const oldDate = new Date(Date.now() - 10_000)
+    utimesSync(staging, oldDate, oldDate)
+
+    const removed = await sweepOrphanedTempFiles(getOrphanedTempFileSweepTargets(pathInWorkspace("user-data"), config), { nowMs: Date.now(), maxAgeMs: 1_000, log: () => undefined })
+
+    assert.equal(removed, 1)
+    assert.equal(lstatSync(staging, { throwIfNoEntry: false }), undefined)
+    assert.notEqual(lstatSync(pathInWorkspace("versions", "1.22.6"), { throwIfNoEntry: false }), undefined)
+  })
+
+  it("removes a staging folder left in a version folder outside the default roots", async () => {
+    const config = {
+      defaultInstallationsFolder: pathInWorkspace("installations"),
+      defaultVersionsFolder: pathInWorkspace("versions"),
+      installations: [],
+      gameVersions: [{ path: pathInWorkspace("custom-version") }]
+    } as unknown as ConfigType
+
+    const staging = pathInWorkspace("custom-version", ".riftlauncher-extract-ZzZzZz")
+    mkdirSync(join(staging, "payload"), { recursive: true })
+    const oldDate = new Date(Date.now() - 10_000)
+    utimesSync(staging, oldDate, oldDate)
+
+    const removed = await sweepOrphanedTempFiles(getOrphanedTempFileSweepTargets(pathInWorkspace("user-data"), config), { nowMs: Date.now(), maxAgeMs: 1_000, log: () => undefined })
+
+    assert.equal(removed, 1)
+    assert.equal(lstatSync(staging, { throwIfNoEntry: false }), undefined)
+  })
+
+  it("removes a staging folder without walking into it first", async () => {
+    const root = pathInWorkspace("versions")
+    const staging = join(root, ".riftlauncher-extract-Cd34Ef")
+    mkdirSync(staging, { recursive: true })
+    writeOldFile(join(staging, "game.tar.gz.1.2.part"))
+    const oldDate = new Date(Date.now() - 10_000)
+    utimesSync(staging, oldDate, oldDate)
+
+    const removed = await sweepOrphanedTempFiles([{ path: root, kinds: ["atomic-json", "download-part", "extraction-staging"], recursive: true }], {
+      nowMs: Date.now(),
+      maxAgeMs: 1_000,
+      log: () => undefined
+    })
+
+    // Under the old order the recursion claimed the folder and the count was
+    // still 1 from the inner .part file, but the folder survived. The existence
+    // check is what pins the reorder.
+    assert.equal(removed, 1)
+    assert.equal(lstatSync(staging, { throwIfNoEntry: false }), undefined)
+  })
+
+  it("leaves a staging folder that is still in flight untouched, files inside it included", async () => {
+    const root = pathInWorkspace("versions")
+    const staging = join(root, ".riftlauncher-extract-Ef56Gh")
+    mkdirSync(staging, { recursive: true })
+    writeOldFile(join(staging, "game.tar.gz.1.2.part"))
+
+    const removed = await sweepOrphanedTempFiles([{ path: root, kinds: ["atomic-json", "download-part", "extraction-staging"], recursive: true }], {
+      nowMs: Date.now(),
+      maxAgeMs: 1_000,
+      log: () => undefined
+    })
+
+    assert.equal(removed, 0)
+    assert.notEqual(lstatSync(staging, { throwIfNoEntry: false }), undefined)
+    assert.notEqual(lstatSync(join(staging, "game.tar.gz.1.2.part"), { throwIfNoEntry: false }), undefined)
   })
 })
