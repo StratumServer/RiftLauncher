@@ -13,6 +13,12 @@ describe("describeBackupFailure notification key", () => {
   it("maps each compress failure kind to its own sentence", () => {
     assert.equal(describeBackupFailure("compress-failed", "Error compressing [PATH]: Error: Compression source is too large").messageKey, "features.backups.compressSourceTooLarge")
     assert.equal(describeBackupFailure("compress-failed", "Error compressing [PATH]: Error: Compression source contains an unsafe filesystem entry").messageKey, "features.backups.compressUnsafeEntry")
+    // A shortfall is its own sentence, not "the archive could not be written":
+    // the player can act on "the drive is full" and cannot act on the other.
+    assert.equal(
+      describeBackupFailure("compress-failed", "Error compressing [PATH]: Error: Not enough free space for the backup: 12 GB more is needed").messageKey,
+      "features.backups.compressNoFreeSpace"
+    )
     assert.equal(describeBackupFailure("compress-failed", "Error compressing [PATH]: Error: Too many filesystem entries").messageKey, "features.backups.compressTooManyFiles")
   })
 

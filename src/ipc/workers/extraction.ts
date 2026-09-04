@@ -28,12 +28,14 @@ import type { Readable } from "node:stream"
 import * as tar from "tar"
 
 // Relative so the module stays importable from a plain test run, like validation.ts.
-import { isSafeTarEntryType, isTarGzName } from "../validation"
+import type { ArchiveSizeLimits } from "../validation"
+// The size ceilings used to be re-declared here as local copies of the two in
+// validation.ts. They are imported now: a backup is read under a different pair
+// (#362) and two places to change one number is how the pairs drift apart.
+import { archiveSizeLimits, isSafeTarEntryType, isTarGzName } from "../validation"
 import { validateArchive } from "../archiveValidation"
 
 const MAX_ARCHIVE_ENTRIES = 100_000
-const MAX_ARCHIVE_ENTRY_BYTES = 512 * 1024 * 1024
-const MAX_ARCHIVE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 
 export function assertNoSymlinkComponents(pathValue: string): void {
   let current = resolve(pathValue)
@@ -56,7 +58,7 @@ export function assertNoSymlinkComponents(pathValue: string): void {
 
 export type ArchiveStats = { entries: number; bytes: number }
 
-export function validateTree(root: string): ArchiveStats {
+export function validateTree(root: string, limits: ArchiveSizeLimits = archiveSizeLimits(false)): ArchiveStats {
   const stats: ArchiveStats = { entries: 0, bytes: 0 }
   const visit = (current: string): void => {
     const entry = fse.lstatSync(current)
@@ -65,7 +67,7 @@ export function validateTree(root: string): ArchiveStats {
     stats.entries++
     if (stats.entries > MAX_ARCHIVE_ENTRIES) throw new Error("Archive contains too many entries")
     if (entry.isFile()) {
-      if (entry.size > MAX_ARCHIVE_ENTRY_BYTES || stats.bytes + entry.size > MAX_ARCHIVE_TOTAL_BYTES) throw new Error("Archive is too large")
+      if (entry.size > limits.entryBytes || stats.bytes + entry.size > limits.totalBytes) throw new Error("Archive is too large")
       // entry.nlink is the OS's own hard-link count, unlike tracking dev:ino pairs by hand:
       // Windows has reused the same ino for two freshly written, otherwise-unrelated files
       // during a real install (nlink stayed 1 on both), which turned every install on Windows
@@ -452,6 +454,18 @@ export interface ExtractionOptions {
    * whose archive holds an installation's contents at the root already.
    */
   unwrapSingleRootFolder?: boolean
+  /**
+   * Whether this archive is one of the launcher's own backups, and so is read
+   * under the backup size ceilings rather than the strict ones.
+   *
+   * Decided in the main process, from where the file sits on disk
+   * (EXTRACT_ON_PATH in handlers/pathsHandlers.ts), and never by the caller
+   * that asked for the extraction. A renderer that could ask for the loose
+   * limit would be asking for its own limit, which is the boundary the path
+   * policy exists to hold: a downloaded mod or game archive keeps the strict
+   * pair no matter who asks.
+   */
+  isBackupArchive?: boolean
   /** Called with 0 to 100 as the work advances. */
   onProgress?: (progress: number) => void
 }
@@ -464,14 +478,15 @@ export interface ExtractionOptions {
  * files and folders, or busts the entry and size bounds.
  */
 export async function runExtraction(options: ExtractionOptions): Promise<void> {
-  const { filePath, outputPath, deleteArchive, unwrapSingleRootFolder = false, onProgress } = options
+  const { filePath, outputPath, deleteArchive, unwrapSingleRootFolder = false, isBackupArchive = false, onProgress } = options
+  const limits = archiveSizeLimits(isBackupArchive)
   let temporaryRoot: string | undefined
 
   // The first of two validation gates (see archiveValidation.ts's own comment): reads the
   // archive's table of contents and refuses it, before a single byte is written anywhere,
   // if it names an entry outside its root, repeats a name, carries a link, or busts the
   // entry/size bounds.
-  await validateArchive(filePath)
+  await validateArchive(filePath, limits)
 
   try {
     assertNoSymlinkComponents(outputPath)
@@ -502,7 +517,7 @@ export async function runExtraction(options: ExtractionOptions): Promise<void> {
     if (isTarGzName(filePath)) await extractTarGz(filePath, extractionRoot, onProgress)
     else await extractZip(filePath, extractionRoot, onProgress)
 
-    validateTree(extractionRoot)
+    validateTree(extractionRoot, limits)
     // Only the game archives wrap their contents in a folder, and only their caller
     // asks for that folder to be stepped into. A backup holds an installation's
     // contents at the root, and a restore has to put them back exactly as they were.
