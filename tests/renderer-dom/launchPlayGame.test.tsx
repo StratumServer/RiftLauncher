@@ -90,6 +90,7 @@ async function clickPlay(user: ReturnType<typeof userEvent.setup>): Promise<void
 }
 
 const BACKUP_WRITE_FAILED = "No backup made: the backup archive could not be written. Check that the Backups folder is on a writable drive with free space."
+const BACKUP_PRUNE_FAILED = "No backup made: an old backup could not be removed to make room for the new one."
 const SKIP_PROMPT = "The backup failed. Launch without a backup this time?"
 
 /**
@@ -114,6 +115,32 @@ function withFailingAutoBackup(executeGame: Mock): void {
       )
     },
     pathsManager: { checkPathExists: vi.fn(async () => true) },
+    gameManager: { executeGame }
+  })
+}
+
+function withPruneFailingAutoBackup(executeGame: Mock): void {
+  installMockWindowApi({
+    configManager: {
+      getConfig: vi.fn(async () =>
+        createMockConfig({
+          backupsFolder: "/backups",
+          lastUsedInstallation: "install-a",
+          installations: [
+            anInstallation({
+              backupsAuto: true,
+              backupsLimit: 1,
+              backups: [{ id: "backup-1", date: 1, path: "/backups/backup-1.zip" }]
+            })
+          ],
+          gameVersions: [aGameVersion()]
+        })
+      )
+    },
+    pathsManager: {
+      checkPathExists: vi.fn(async () => true),
+      deletePath: vi.fn(async () => false)
+    },
     gameManager: { executeGame }
   })
 }
@@ -352,9 +379,17 @@ describe("MainMenu Play button", () => {
     expect(readProbe().gameVersionPlaying).toBe(false)
   })
 
-  it("launches once without a backup when the player picks Launch anyway", async () => {
+  it("launches twice only after answering each failed-backup prompt", async () => {
     const user = userEvent.setup()
-    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+    let resolveFirstRun!: (result: GameExecutionResult) => void
+    let resolveSecondRun!: (result: GameExecutionResult) => void
+    const firstRun = new Promise<GameExecutionResult>((resolve) => {
+      resolveFirstRun = resolve
+    })
+    const secondRun = new Promise<GameExecutionResult>((resolve) => {
+      resolveSecondRun = resolve
+    })
+    const executeGame = vi.fn().mockReturnValueOnce(firstRun).mockReturnValueOnce(secondRun)
     withFailingAutoBackup(executeGame)
 
     renderMainMenu()
@@ -364,6 +399,18 @@ describe("MainMenu Play button", () => {
     await user.click(within(await screen.findByRole("dialog")).getByTitle("Launch anyway"))
 
     await waitFor(() => expect(executeGame).toHaveBeenCalledTimes(1))
+    resolveFirstRun({ ok: true, exitCode: 0 })
+    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
+    expect(readProbe().gameVersionPlaying).toBe(false)
+
+    await clickPlay(user)
+    await screen.findByText(SKIP_PROMPT)
+    expect(executeGame).toHaveBeenCalledTimes(1)
+
+    await user.click(within(await screen.findByRole("dialog")).getByTitle("Launch anyway"))
+
+    await waitFor(() => expect(executeGame).toHaveBeenCalledTimes(2))
+    resolveSecondRun({ ok: true, exitCode: 0 })
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
     expect(readProbe().gameVersionPlaying).toBe(false)
   })
@@ -418,6 +465,80 @@ describe("MainMenu Play button", () => {
 
     await waitFor(() => expect(executeGame).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  it("blocks a non-recoverable auto-backup failure without offering an override", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn()
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            backupsFolder: "/backups",
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation({ backupsAuto: true, _backuping: true })],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText("There is a backup already in progress!")
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(executeGame).not.toHaveBeenCalled()
+    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
+    expect(readProbe().gameVersionPlaying).toBe(false)
+  })
+
+  it("blocks an auto-backup while the installation is restoring without offering an override", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn()
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            backupsFolder: "/backups",
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation({ backupsAuto: true, _restoringBackup: true })],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText("There's a Backup restoration already in progress!")
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(executeGame).not.toHaveBeenCalled()
+    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
+    expect(readProbe().gameVersionPlaying).toBe(false)
+  })
+
+  it("offers the override for a failed backup prune", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+    withPruneFailingAutoBackup(executeGame)
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText(BACKUP_PRUNE_FAILED)
+    expect(await screen.findByRole("dialog")).toBeTruthy()
+
+    await user.click(within(await screen.findByRole("dialog")).getByTitle("Launch anyway"))
+
+    await waitFor(() => expect(executeGame).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
   })
 })
 

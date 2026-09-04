@@ -19,7 +19,7 @@ import clsx from "clsx"
 import { useInstallations, useGameVersions, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
-import { BACKUP_NO_INSTALLATION, useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
+import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
 import { checkInstallationPathExists, logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
 
@@ -133,11 +133,14 @@ function MainMenu(): JSX.Element {
       if (selectedInstallation.backupsAuto) {
         const backupOutcome = await makeInstallationBackup(selectedInstallation.id)
 
-        // A backup that broke is the player's call now (#338): the archive is
-        // gone but the game is still there to play. A missing installation is
-        // not a call anyone can make, so it stops here without a question.
+        // Only an archive compression or pruning failure is recoverable: the
+        // installation still exists and the player can knowingly launch
+        // without this backup (#338). Busy, playing, restoring, and missing
+        // installation states are hard stops and must not offer an override.
         if (!backupOutcome.ok) {
-          if (backupOutcome.reason === BACKUP_NO_INSTALLATION) return
+          const canLaunchWithoutBackup = backupOutcome.reason === "compress-failed" || backupOutcome.reason === "prune-failed"
+          if (!canLaunchWithoutBackup) return
+
           const launchAnyway = await askToLaunchWithoutBackup()
           if (!launchAnyway) return
         }
@@ -230,10 +233,10 @@ function MainMenu(): JSX.Element {
         <>
           <p>{t("features.backups.backupFailedSkipLaunch")}</p>
           <div className="flex gap-4 items-center justify-center text-lg">
-            <FormButton title={t("generic.cancel")} className="p-2" onClick={() => answerSkipBackupPrompt(false)} type="success">
+            <FormButton title={t("generic.cancel")} className="p-2" onClick={() => answerSkipBackupPrompt(false)} variant="secondary">
               <PiXCircleDuotone />
             </FormButton>
-            <FormButton title={t("features.backups.launchAnyway")} className="p-2" onClick={() => answerSkipBackupPrompt(true)} type="error">
+            <FormButton title={t("features.backups.launchAnyway")} className="p-2" onClick={() => answerSkipBackupPrompt(true)} variant="destructive">
               <PiPlayCircleDuotone />
             </FormButton>
           </div>
