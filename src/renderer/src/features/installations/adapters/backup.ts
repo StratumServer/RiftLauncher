@@ -1,4 +1,4 @@
-import type { BackupSnapshot, InstallationSnapshot, MakeInstallationBackupFailure, MakeInstallationBackupPorts } from "@domain/installations/backup"
+import type { BackupSnapshot, InstallationSnapshot, MakeInstallationBackupPorts } from "@domain/installations/backup"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 import { TASK_NOTIFICATION_POLICIES, type TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
@@ -69,44 +69,7 @@ export function toBackupSnapshot(backup: BackupType): BackupSnapshot {
   }
 }
 
-export interface BackupFailureFeedback {
-  /** i18n key to notify with, or null when the launcher stays quiet. */
-  messageKey: string | null
-  /** Whether the refusal also goes to the log. */
-  logged: boolean
-  /** Underlying cause from the worker, when available. */
-  detail?: string
-}
-
-/**
- * How the UI reacts to a refusal.
- *
- * The three "nothing to back up" entries (installation-path-missing,
- * no-backups-folder, backups-disabled) were a single silent no-op branch
- * before the service split them apart, and stayed silent for parity with
- * the pre-domain code even after the split. They speak now: each gets its
- * own sentence naming what to do about it. useMakeInstallationBackup still
- * treats them as a non-blocking outcome (see the comment there) because
- * auto-backup-before-play reads this hook's return value to decide whether
- * to launch the game at all, and a missed backup must never refuse to play.
- */
-export function describeBackupFailure(reason: MakeInstallationBackupFailure, detail?: string): BackupFailureFeedback {
-  switch (reason) {
-    case "installation-busy":
-      return { messageKey: "features.backups.backupInProgress", logged: false }
-    case "installation-playing":
-      return { messageKey: "features.backups.backupWhilePlaying", logged: false }
-    case "restore-in-progress":
-      return { messageKey: "features.backups.restoreInProgress", logged: false }
-    case "compress-failed":
-      return { messageKey: "features.backups.errorMakingBackup", logged: true, detail }
-    case "prune-failed":
-      return { messageKey: "features.backups.errorMakingBackup", logged: true, detail }
-    case "installation-path-missing":
-      return { messageKey: "features.backups.installationPathMissing", logged: true }
-    case "no-backups-folder":
-      return { messageKey: "features.backups.noBackupsFolder", logged: true }
-    case "backups-disabled":
-      return { messageKey: "features.backups.backupsDisabled", logged: true }
-  }
-}
+// describeBackupFailure and BackupFailureFeedback moved to ./backupFailure so
+// they stay importable from a plain node test: this file also builds the IPC
+// ports, which pull in @renderer/adapters and the task manager.
+export { describeBackupFailure, type BackupFailureFeedback } from "@renderer/features/installations/adapters/backupFailure"

@@ -72,11 +72,14 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
       return true
     }
 
-    const { messageKey, logged, detail } = describeBackupFailure(result.reason, result.detail)
+    const { messageKey, logLine } = describeBackupFailure(result.reason, result.detail)
 
-    if (logged) {
-      window.api.utils.logMessage("error", `${LOG_TAG} Error creating backup.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Error creating backup: ${result.reason}${detail ? ": " + detail : ""}`)
+    if (logLine) {
+      // The concrete cause goes to error level, per #337: the reason token alone
+      // ("compress-failed") never told a reader which failure it was. logMessage
+      // redacts absolute paths on the way to disk, so the failure kind is what
+      // survives, which is the part worth reading.
+      window.api.utils.logMessage("error", `${LOG_TAG} ${logLine}`)
     }
 
     if (messageKey) addNotification(t(messageKey), "error")

@@ -106,7 +106,7 @@ describe("makeInstallationBackup preconditions", () => {
   it("refuses an installation that is already being backed up", async () => {
     const result = await makeInstallationBackup(fakePorts(), { installation: snapshot({ isBackingUp: true }), backupsFolder: "/backups" })
 
-    assert.deepEqual(result, { ok: false, reason: "installation-busy", deletedBackupIds: [], detail: undefined })
+    assert.deepEqual(result, { ok: false, reason: "installation-busy", deletedBackupIds: [] })
     assert.deepEqual(trace, [])
   })
 
@@ -185,7 +185,8 @@ describe("makeInstallationBackup pruning", () => {
 
     const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
 
-    assert.deepEqual(result, { ok: false, reason: "prune-failed", deletedBackupIds: ["b3"], detail: undefined })
+    // b3 came off, b2 could not, so prune stops and names b2 as the one it left behind.
+    assert.deepEqual(result, { ok: false, reason: "prune-failed", deletedBackupIds: ["b3"], detail: "b2" })
     assert.equal(
       trace.some((entry) => entry.startsWith("compress:")),
       false

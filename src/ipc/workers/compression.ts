@@ -155,7 +155,7 @@ export async function runCompression(options: CompressionOptions): Promise<void>
       // unpacks back to an empty folder rather than to nothing at all.
       entries.length > 0 ? entries : ["."]
     )
-  } catch {
+  } catch (error) {
     // tar opens the archive as soon as it starts, so a write that failed partway
     // leaves a truncated file sitting in the backups folder. No backup record
     // ever names it, which is exactly what pruning walks, so it would never be
@@ -165,7 +165,10 @@ export async function runCompression(options: CompressionOptions): Promise<void>
     } catch {
       // Best effort. The compression failure below is the outcome that matters.
     }
-    throw new Error("Compression failed")
+    // Carry the cause (a full disk, a denied write, a file that vanished mid-write).
+    // redactSensitiveText strips absolute paths from the log, so the failure kind
+    // is what the reader is left with, which is the part worth keeping.
+    throw new Error(`Compression failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 
   onProgress?.(100)

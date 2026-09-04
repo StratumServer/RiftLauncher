@@ -102,6 +102,23 @@ describe("serveTasks", () => {
     assert.deepEqual(lastMessage(), { type: "error", token: 2, message: "Download failed" })
   })
 
+  it("hands the thrown error to describeFailure, so a worker can forward its own message", async () => {
+    // compressWorker and extractWorker both pass (error) => error.message here.
+    // If serveTasks stopped handing the error over, every distinct compression
+    // failure would collapse back to one string (#337).
+    const { serveTasks } = await import("@src/ipc/workers/workerHost")
+    serveTasks(
+      async () => {
+        throw new Error("Compression source is too large")
+      },
+      (error) => (error instanceof Error ? error.message : "Compression failed")
+    )
+
+    port.emit("message", { type: "task", token: 1, payload: {} })
+    await vi.waitFor(() => assert.equal(lastMessage() !== undefined, true))
+    assert.deepEqual(lastMessage(), { type: "error", token: 1, message: "Compression source is too large" })
+  })
+
   it("posts an error, not an uncaught exception, when the handler throws synchronously", async () => {
     const { serveTasks } = await import("@src/ipc/workers/workerHost")
     serveTasks(

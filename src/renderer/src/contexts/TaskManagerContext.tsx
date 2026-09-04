@@ -377,7 +377,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Error compressing: ${err}`)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
       if (notifications.failure === "generic") addNotification(t("notifications.body.compressError", { compressName: name }), "error")
-      onFinish(false, new Error(`Error comrpessing ${inputPath}: ${err}`))
+      onFinish(false, new Error(`Error compressing ${inputPath}: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished compression.")
     }
