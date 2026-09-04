@@ -13,17 +13,7 @@ import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { acquireWorker } from "@src/ipc/workerManager"
 import type { WorkerDisposition } from "@src/ipc/workerManager"
 import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
-import {
-  assertAllowedDownloadUrl,
-  assertBoolean,
-  assertInteger,
-  assertPath,
-  assertSafeFileName,
-  assertSafeTaskId,
-  comparablePath,
-  isRecord,
-  MAX_CUSTOM_ICON_BYTES
-} from "@src/ipc/validation"
+import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, comparablePath, isRecord, MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { getConfig } from "@src/config/configManager"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"

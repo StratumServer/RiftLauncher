@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events"
 import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve as resolvePath } from "node:path"
+import { join, resolve as resolvePath, sep } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import type { IpcMainInvokeEvent } from "electron"
@@ -1219,6 +1219,24 @@ describe("EXTRACT_ON_PATH: telling a backup apart from a downloaded archive", ()
     const payload = await dispatchedPayload(archivePath, join(versionsFolder, "1.22.6"))
 
     assert.equal(payload.isBackupArchive, false)
+  })
+
+  it("marks a recorded backup whose stored path takes a detour to the same file", async () => {
+    // The config keeps whatever path was written when the backup was made, and
+    // a folder picker can hand back a path with a redundant segment. Both sides
+    // are resolved before they are compared, so the same file matches itself
+    // however its path is spelled.
+    const archivePath = writeArchive(join(backupsFolder, "Installations", "Survival"), "Survival_2026-09-04.tar.gz")
+    // Built by concatenation, not join: join would collapse the segment and the
+    // test would prove nothing about the comparison.
+    const detour = `${join(backupsFolder, "Installations", "Survival")}${sep}.${sep}Survival_2026-09-04.tar.gz`
+    writeConfig({
+      installations: [{ id: "a", name: "A", path: join(managedFolder, "Survival"), backups: [{ id: "b1", date: 1, path: detour }] }] as unknown as ConfigType["installations"]
+    })
+
+    const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
+
+    assert.equal(payload.isBackupArchive, true)
   })
 
   it("does not mark an archive whose path differs from the recorded one", async () => {
