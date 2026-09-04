@@ -136,7 +136,6 @@
     "tasksMenu": {
       "downloading": "Downloaden",
       "extracting": "Uitpakken",
-      "installing": "Installeren",
       "compressing": "Comprimeren",
       "error": "Er is een fout opgetreden tijdens het proces!",
       "noTasksAvailable": "Er staan ​​geen taken in de wachtrij!"

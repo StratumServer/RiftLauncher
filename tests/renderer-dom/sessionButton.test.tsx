@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen, within } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import SessionButton from "@renderer/components/ui/SessionButton"
@@ -48,7 +48,60 @@ describe("SessionButton", () => {
     expect(api.utils.openOnBrowser).toHaveBeenCalledWith("https://github.com/StratumServer/RiftLauncher/blob/main/PRIVACY.md")
   })
 
-  it("supports password visibility and clears password material when cancelled", async () => {
+  it("does not submit the form when the reveal toggle is clicked", async () => {
+    const user = userEvent.setup()
+    // An explicit mock, not the helper's default rejection: a stray submit has to be countable
+    // here, not a thrown "was called without a mock override" from somewhere else in the tree.
+    const login = vi.fn(async () => ({ status: "invalid-credentials" }) as AccountLoginResult)
+    installMockWindowApi({ accountManager: { login } })
+
+    renderWithProviders(<SessionButton />)
+
+    await user.click(await screen.findByRole("button", { name: "Log in" }))
+    const dialog = await screen.findByRole("dialog", { name: "Log in to Vintage Story" })
+
+    await user.type(within(dialog).getByLabelText("Email"), "player@example.test")
+    await user.type(within(dialog).getByLabelText("Password"), "hunter2")
+
+    // The toggle sits inside the login form. A button inside a form submits it unless it says
+    // otherwise, so without its type the eye posts the credentials the player is still typing.
+    await user.click(within(dialog).getByRole("button", { name: "Show password" }))
+
+    expect(login).toHaveBeenCalledTimes(0)
+    // Asserted together so the test cannot pass by the toggle having disappeared.
+    expect(within(dialog).getByLabelText("Password").getAttribute("type")).toBe("text")
+    expect(within(dialog).getByRole("button", { name: "Hide password" })).toBeTruthy()
+  })
+
+  it("clears the password out of the open dialog when a login is refused", async () => {
+    const user = userEvent.setup()
+    const login = vi.fn(async () => ({ status: "invalid-credentials" }) as AccountLoginResult)
+    installMockWindowApi({ accountManager: { login } })
+
+    renderWithProviders(<SessionButton />)
+
+    await user.click(await screen.findByRole("button", { name: "Log in" }))
+    const dialog = await screen.findByRole("dialog", { name: "Log in to Vintage Story" })
+    await user.type(within(dialog).getByLabelText("Email"), "player@example.test")
+    await user.type(within(dialog).getByLabelText("Password"), "correct-horse-battery-staple")
+    await user.type(within(dialog).getByLabelText("2FA Code"), "123456")
+
+    await user.click(within(dialog).getByRole("button", { name: "Log in" }))
+    await waitFor(() => expect(login).toHaveBeenCalledTimes(1))
+
+    // A refusal leaves the dialog open, which is the only moment the clear is observable: the
+    // reopen path clears on the way in, so asserting on a reopened dialog proves nothing about
+    // what handleLogin did with the credentials it just sent.
+    await waitFor(() => {
+      const stillOpen = screen.getByRole("dialog", { name: "Log in to Vintage Story" })
+      expect((within(stillOpen).getByLabelText("Password") as HTMLInputElement).value).toBe("")
+      expect((within(stillOpen).getByLabelText("2FA Code") as HTMLInputElement).value).toBe("")
+    })
+    // The email survives on purpose: the player retypes the secret, not the whole form.
+    expect((within(dialog).getByLabelText("Email") as HTMLInputElement).value).toBe("player@example.test")
+  })
+
+  it("supports password visibility and opens a fresh dialog with no password material", async () => {
     const user = userEvent.setup()
     installMockWindowApi()
 
@@ -71,6 +124,9 @@ describe("SessionButton", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
     await user.click(await screen.findByRole("button", { name: "Log in" }))
     const reopenedDialog = await screen.findByRole("dialog")
+    // This pins the clear-on-open, not the clear-on-cancel: openLogin clears before it opens, so a
+    // reopened dialog is empty either way. The refused-login test above is what pins the clear that
+    // runs after credentials have actually been sent.
     expect((within(reopenedDialog).getByLabelText("Password") as HTMLInputElement).value).toBe("")
     expect((within(reopenedDialog).getByLabelText("2FA Code") as HTMLInputElement).value).toBe("")
   })

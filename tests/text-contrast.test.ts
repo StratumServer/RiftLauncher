@@ -28,6 +28,9 @@ import { describe, it } from "vitest"
 
 const RENDERER = resolve(__dirname, "..", "src", "renderer", "src")
 
+/** Tailwind's own palette. `bg-red-700` has no hex anywhere in this repo to read it from. */
+const TAILWIND_THEME = resolve(__dirname, "..", "node_modules", "tailwindcss", "theme.css")
+
 const TEXT_FLOOR = 4.5
 const NON_TEXT_FLOOR = 3
 
@@ -37,6 +40,7 @@ type Layer = readonly [Rgb, number]
 
 /** Tailwind's zinc ramp in sRGB. The scrims and every piece of low-emphasis text come from here. */
 const ZINC = {
+  "zinc-100": [244, 244, 245],
   "zinc-200": [228, 228, 231],
   "zinc-300": [212, 212, 216],
   "zinc-400": [161, 161, 170],
@@ -83,6 +87,59 @@ function themeColor(name: string): Rgb {
   const found = match("styles.css", new RegExp(`--color-${name}:\\s*#([0-9a-fA-F]{6})`))
   const hex = found[1] as string
   return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)]
+}
+
+type ButtonVariant = "primary" | "destructive"
+type ButtonState = "default" | "hover" | "active"
+
+function buttonVariantStyle(variant: ButtonVariant): string {
+  const found = match("components/ui/buttonStyles.ts", new RegExp(`${variant}: "([^"]+)"`))
+  return found[1] as string
+}
+
+/** Reads one background utility from the shared variant, including its state prefix and alpha. */
+function buttonFill(variant: ButtonVariant, state: ButtonState, token: string, color: Rgb): Layer {
+  const utility = state === "default" ? `bg-${token}` : `${state}:bg-${token}`
+  const escapedUtility = utility.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const found = new RegExp(`(?:^| )${escapedUtility}(?:/(\\d+))?(?: |$)`).exec(buttonVariantStyle(variant))
+  assert.ok(found, `${variant} ${state} no longer uses ${utility}`)
+  return [color, found[1] === undefined ? 1 : Number(found[1]) / 100]
+}
+
+/**
+ * Tailwind v4 publishes its palette in OKLCH, so a fill like `bg-red-700` carries no hex to read:
+ * the ratio below needs the sRGB a screen actually shows. This is Ottosson's OKLab basis and matrix
+ * into linear-light sRGB, then the sRGB transfer function.
+ *
+ * Out-of-gamut channels are clamped rather than gamut-mapped. red-700 is the one that needs it, its
+ * green converts to -17, and clamping lands on 193,0,7, the value Tailwind publishes for that token.
+ * The assertion below checks this against a shade the table above already carries, so a mistyped
+ * coefficient cannot pass unnoticed.
+ */
+function oklchToSrgb(lightness: number, chroma: number, hueDegrees: number): Rgb {
+  const hue = (hueDegrees * Math.PI) / 180
+  const a = chroma * Math.cos(hue)
+  const b = chroma * Math.sin(hue)
+  const long = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const medium = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const short = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3
+  const encode = (linear: number): number => {
+    const gamma = linear <= 0.0031308 ? 12.92 * linear : 1.055 * Math.pow(linear, 1 / 2.4) - 0.055
+    return Math.min(255, Math.max(0, Math.round(gamma * 255)))
+  }
+  return [
+    encode(4.0767416621 * long - 3.3077115913 * medium + 0.2309699292 * short),
+    encode(-1.2684380046 * long + 2.6097574011 * medium - 0.3413193965 * short),
+    encode(-0.0041960863 * long - 0.7034186147 * medium + 1.707614701 * short)
+  ]
+}
+
+/** One `--color-*` from Tailwind's theme, read as the OKLCH it ships and converted to sRGB. */
+function tailwindColor(name: string): Rgb {
+  const theme = readFileSync(TAILWIND_THEME, "utf8")
+  const found = new RegExp(`--color-${name}:\\s*oklch\\(([\\d.]+)%\\s+([\\d.]+)\\s+([\\d.]+)\\)`).exec(theme)
+  assert.ok(found, `no --color-${name} in tailwindcss/theme.css, the palette this test reads has moved`)
+  return oklchToSrgb(Number(found[1] as string) / 100, Number(found[2] as string), Number(found[3] as string))
 }
 
 /** A layer this pass did not touch, kept here so the stacks below are the real ones. */
@@ -341,5 +398,42 @@ describe("the brand accent where it carries text", () => {
     // width, which is what keeps hue from being the only mark of the selected state, so this checks
     // the border is still 2px and still --color-vsl.
     match("features/config/pages/ConfigPage.tsx", /selected \? "border-2 border-vsl" : "border border-zinc-400\/5"/)
+  })
+})
+
+/**
+ * The two filled variants put their label on a fill of their own, so nothing else in this file
+ * measures them: every other stack here ends at the player's background image, and these two never
+ * reach it. Each assertion reads the fill and the shade out of the shipped variant string, so
+ * changing either one has to come back through here. State fills are included because a hover or
+ * active colour that lightens past the text floor is still the same readable control to the player.
+ */
+describe("button labels on the fill they ship on", () => {
+  it("reads Tailwind's OKLCH palette the same way the sRGB table above does", () => {
+    // zinc-200 is in both the hand-maintained table at the top of this file and Tailwind's own
+    // theme. They have to agree, or the red-700 conversion below is measuring an invented colour.
+    assert.deepEqual(tailwindColor("zinc-200"), ZINC["zinc-200"])
+  })
+
+  it("keeps the primary action's label readable on the brand fill", () => {
+    // The fill is named in the anchor on purpose: moving it off bg-vs fails this loudly instead of
+    // silently measuring a colour the button no longer uses.
+    const label = foreground("components/ui/buttonStyles.ts", /primary: "[^"]*\bbg-vs\b[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
+    const fills: ReadonlyArray<readonly [ButtonState, string, Rgb]> = [
+      ["default", "vs", themeColor("vs")],
+      ["hover", "vs", themeColor("vs")],
+      ["active", "vsd", themeColor("vsd")]
+    ]
+    for (const [state, token, color] of fills) assertReadable(`primary button label in ${state}`, label, [buttonFill("primary", state, token, color)], TEXT_FLOOR)
+  })
+
+  it("keeps the destructive action's label readable on the red fill", () => {
+    const label = foreground("components/ui/buttonStyles.ts", /destructive: "[^"]*\bbg-red-700\b[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
+    const fills: ReadonlyArray<readonly [ButtonState, string, Rgb]> = [
+      ["default", "red-700", tailwindColor("red-700")],
+      ["hover", "red-700", tailwindColor("red-700")],
+      ["active", "red-800", tailwindColor("red-800")]
+    ]
+    for (const [state, token, color] of fills) assertReadable(`destructive button label in ${state}`, label, [buttonFill("destructive", state, token, color)], TEXT_FLOOR)
   })
 })

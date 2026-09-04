@@ -18,7 +18,6 @@
       "downloading": "Descargando",
       "error": "¡Ha ocurrido un error durante el proceso!",
       "extracting": "Extrayendo",
-      "installing": "Instalando",
       "noTasksAvailable": "¡No hay tareas en cola!",
       "compressing": "Comprimiendo"
     },

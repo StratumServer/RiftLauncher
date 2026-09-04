@@ -386,7 +386,6 @@
       "title": "Tasks",
       "downloading": "Downloading",
       "extracting": "Extracting",
-      "installing": "Installing",
       "compressing": "Compressing",
       "error": "An error has occurred during the process!",
       "noTasksAvailable": "There are no tasks queued!"

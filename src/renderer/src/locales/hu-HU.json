@@ -234,7 +234,6 @@
     "tasksMenu": {
       "downloading": "Letöltés",
       "extracting": "Kicsomagolás",
-      "installing": "Telepítés",
       "compressing": "Tömörítés",
       "error": "A művelet közben hiba lépett fel!",
       "noTasksAvailable": "Nincsnek sorbaállítva feladatok!"

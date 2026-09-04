@@ -60,6 +60,29 @@ export function ButtonsWrapper({
  * @param {string} [props.variant] - Semantic action variant: "primary" || "secondary" || "destructive" || "ghost" || "link".
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
+type FormButtonHandler = (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<unknown>
+
+/**
+ * A FormButton either runs a handler or submits the form it sits in. It has to be one of the two:
+ * the submit button is the only one with nothing to run on click, and making onClick optional for
+ * its sake meant a button with no handler at all typechecked. One shipped that way already.
+ */
+type FormButtonAction = { nativeType?: "button" | "reset"; onClick: FormButtonHandler } | { nativeType: "submit"; onClick?: FormButtonHandler }
+
+type FormButtonProps = Readonly<{
+  children?: React.ReactNode
+  icon?: React.ReactNode
+  className?: string
+  title: string
+  disabled?: boolean
+  busy?: boolean
+  variant?: ButtonVariant
+  size?: ButtonSize
+  ariaLabel?: string
+  ariaPressed?: boolean
+}> &
+  Readonly<FormButtonAction>
+
 export function FormButton({
   children,
   icon,
@@ -73,20 +96,7 @@ export function FormButton({
   nativeType = "button",
   ariaLabel,
   ariaPressed
-}: Readonly<{
-  children?: React.ReactNode
-  icon?: React.ReactNode
-  className?: string
-  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<unknown>
-  title: string
-  disabled?: boolean
-  busy?: boolean
-  variant?: ButtonVariant
-  size?: ButtonSize
-  nativeType?: "button" | "submit" | "reset"
-  ariaLabel?: string
-  ariaPressed?: boolean
-}>): JSX.Element {
+}: FormButtonProps): JSX.Element {
   const action = useActionBusy(onClick, busy, disabled)
 
   return (

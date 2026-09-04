@@ -9,9 +9,9 @@ export const BUTTON_BASE_STYLES =
   "relative inline-flex items-center justify-center gap-2 rounded-sm border text-trim-children transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2 enabled:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
 
 export const BUTTON_VARIANT_STYLES: Record<ButtonVariant, string> = {
-  primary: "border-vsl bg-vs text-zinc-100 shadow-sm shadow-zinc-950/50 hover:bg-vs/90 active:bg-vs/80",
+  primary: "border-vsl bg-vs text-zinc-100 shadow-sm shadow-zinc-950/50 hover:bg-vs/90 active:bg-vsd",
   secondary: "border-zinc-400/20 bg-zinc-950/40 text-zinc-200 hover:bg-zinc-800/60 active:bg-zinc-800/80",
-  destructive: "border-red-600 bg-red-700 text-zinc-100 shadow-sm shadow-zinc-950/50 hover:bg-red-600 active:bg-red-800",
+  destructive: "border-red-600 bg-red-700 text-zinc-100 shadow-sm shadow-zinc-950/50 hover:bg-red-700 active:bg-red-800",
   ghost: "border-transparent bg-transparent text-zinc-200 hover:bg-zinc-800/40 active:bg-zinc-800/60",
   link: "border-transparent bg-transparent text-vsl underline hover:text-zinc-200 active:text-zinc-100"
 }

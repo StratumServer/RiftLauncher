@@ -89,6 +89,13 @@ function InstallMod(): JSX.Element {
             modToInstall={modid ?? null}
             modName={displayedModName}
             installation={installation && { installation, oldMod }}
+            /*
+             * No onFinishInstallation here: this page is gone by the time the archive lands, since
+             * the install starts and the player is sent back to the list in the same click. The
+             * list watches the download task instead and re-reads its installed markers when it
+             * completes. The update flow inside an installation is still a popup that outlives its
+             * own download, so ModReleaseList keeps the callback for it.
+             */
             onInstallStarted={() => navigate("/mods")}
           />
         </div>

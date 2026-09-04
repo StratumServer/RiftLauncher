@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom"
 
 import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 
 import { useQueryMods } from "@renderer/features/mods/hooks/useQueryMods"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
@@ -31,6 +32,7 @@ function ListMods(): JSX.Element {
   const getInstalledMods = useGetInstalledMods()
   const syncModsCount = useSyncModsCount()
   const { openModOnModDb } = useExternalLinks()
+  const { tasks } = useTaskContext()
 
   const [modsList, setModsList] = useState<DownloadableModOnListType[]>([])
   const [visibleMods, setVisibleMods] = useState<number>(DEFAULT_LOADED_MODS)
@@ -109,6 +111,40 @@ function ListMods(): JSX.Element {
     // function redeclared every render, already closing over the current `installation`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installation?.id, installation?.path])
+
+  /*
+   * A mod install queues a download and leaves this page mounted: the install page navigates back
+   * here the moment the transfer starts, so the scan above ran before the archive existed and the
+   * grid's installed markers stay wrong until the player reloads by hand. The download task
+   * reaching "completed" is what says the archive is on disk (the task is completed by the
+   * resolved download, not by a progress tick), so the markers are re-read on that.
+   *
+   * The effect observes task IDs rather than a count. The task list is rebuilt on every progress
+   * tick, but a folder scan happens only when a new ID enters the completed set. IDs also avoid
+   * losing a completion when a finished task is removed in the same render that another finishes.
+   * The ref is seeded from the first render, so finished downloads already present in the list do
+   * not cause a second scan on top of the mount scan above.
+   *
+   * This cannot feed itself the way the effect above could: triggerGetInstalledMods writes
+   * _modsCount back through syncModsCount, which hands useMemo a new installation object, but
+   * nothing it writes reaches the task list, so the value this effect keys on does not move.
+   */
+  const completedDownloadIds = tasks.filter((task) => task.type === "download" && task.status === "completed").map((task) => task.id)
+  const seenCompletedDownloadIds = useRef<Set<string> | null>(null)
+
+  useEffect(() => {
+    const completedIds = new Set(completedDownloadIds)
+    const previousCompletedIds = seenCompletedDownloadIds.current
+    seenCompletedDownloadIds.current = completedIds
+    const finishedSinceLastScan = previousCompletedIds !== null && [...completedIds].some((id) => !previousCompletedIds.has(id))
+    // The guard is not decoration: triggerGetInstalledMods raises an error toast when there is no
+    // installation, and a download finishing is no reason to tell the player that.
+    if (!finishedSinceLastScan || !installation) return
+    triggerGetInstalledMods()
+    // triggerGetInstalledMods and `installation` are excluded for the same reason as the effects
+    // above: a plain function redeclared every render, already closing over the current values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, installation?.id, installation?.path])
 
   useEffect(() => {
     if (installedFilter !== "all") triggerQueryMods(false)

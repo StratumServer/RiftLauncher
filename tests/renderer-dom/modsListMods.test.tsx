@@ -3,7 +3,7 @@ import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import ListMods from "@renderer/features/mods/pages/ListMods"
-import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
+import { TASK_NOTIFICATION_POLICIES, TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
@@ -58,6 +58,36 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
 function EditInstallationPathButton({ newPath }: { newPath: string }): JSX.Element {
   const configDispatch = useConfigDispatch()
   return <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: "install-a", updates: { path: newPath } } })}>edit installation path</button>
+}
+
+/**
+ * Queues a download through the same context a mod install goes through, so the task list moves the
+ * way it does in the app instead of by a hand-written status.
+ */
+function StartModDownloadButton(): JSX.Element {
+  const { startDownload } = useTaskContext()
+  return (
+    <button
+      onClick={() =>
+        void startDownload(
+          "Better Ruins",
+          "Downloading Better Ruins",
+          TASK_NOTIFICATION_POLICIES.individual,
+          "https://mods.example/betterruins-1.0.0.zip",
+          "/games/a/Mods",
+          "betterruins-1.0.0.zip",
+          () => {}
+        )
+      }
+    >
+      start mod download
+    </button>
+  )
+}
+
+function DownloadStatus(): JSX.Element {
+  const { tasks } = useTaskContext()
+  return <output data-testid="download-status">{tasks[0]?.status}</output>
 }
 
 describe("ListMods", () => {
@@ -239,5 +269,77 @@ describe("ListMods", () => {
       expect(lastSavedConfig?.favMods).toEqual([])
     })
     expect(screen.getByTitle("Favorite").className).not.toContain("text-yellow-400")
+  })
+
+  it("re-reads the installed markers when a mod download finishes", async () => {
+    const user = userEvent.setup()
+
+    // Empty when the page arrives, holding the mod once the transfer lands. That is the order the
+    // browse flow sees: the install page queues the download and navigates back here long before
+    // the archive is on disk.
+    let installedMods: InstalledModType[] = []
+    const getInstalledMods = vi.fn(async () => ({ mods: installedMods, errors: [] }))
+
+    let downloadId: string | undefined
+    let progressHandler: ProgressCallback | undefined
+    let finishDownload: ((path: string) => void) | undefined
+    const downloadOnPath = vi.fn((id: string) => {
+      downloadId = id
+      return new Promise<string>((resolve) => (finishDownload = resolve))
+    })
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [anInstallation()] }))
+      },
+      modsManager: { getInstalledMods },
+      pathsManager: {
+        downloadOnPath,
+        onDownloadProgress: vi.fn((callback: ProgressCallback): Unsubscribe => {
+          progressHandler = callback
+          return () => {}
+        })
+      },
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+        <StartModDownloadButton />
+        <DownloadStatus />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    await screen.findByText("Better Ruins", {}, { timeout: 3000 })
+    await waitFor(() => expect(getInstalledMods).toHaveBeenCalled())
+    const scansBeforeInstall = getInstalledMods.mock.calls.length
+    expect((screen.getByText("Better Ruins").closest("li")?.firstElementChild as HTMLElement).className).not.toContain("bg-vsd/50")
+
+    await user.click(screen.getByRole("button", { name: "start mod download" }))
+    await waitFor(() => expect(finishDownload).toBeTruthy())
+
+    // Electron can report 100 before downloadOnPath resolves. That paints the progress bar, but
+    // must not make ListMods scan while the archive is still absent.
+    progressHandler?.({ id: downloadId!, progress: 100 })
+    await waitFor(() => expect(screen.getByTestId("download-status").textContent).toBe("in-progress"))
+    expect(getInstalledMods).toHaveBeenCalledTimes(scansBeforeInstall)
+
+    // From here the archive is on disk, which is the moment the grid's markers went stale.
+    installedMods = [{ name: "Better Ruins", modid: "betterruins", version: "1.0.0", path: "/games/a/Mods/betterruins-1.0.0.zip", enabled: true }]
+    finishDownload?.("/games/a/Mods/betterruins-1.0.0.zip")
+
+    await waitFor(() => expect(screen.getByTestId("download-status").textContent).toBe("completed"), { timeout: 3000 })
+    await waitFor(() => expect(getInstalledMods).toHaveBeenCalledTimes(scansBeforeInstall + 1), { timeout: 3000 })
+    await waitFor(() => {
+      const card = screen.getByText("Better Ruins").closest("li")?.firstElementChild as HTMLElement
+      expect(card.className).toContain("bg-vsd/50")
+    })
   })
 })

@@ -293,7 +293,6 @@
     "tasksMenu": {
       "downloading": "Завантаження",
       "extracting": "Видобування",
-      "installing": "Встановлення",
       "compressing": "Стиснення",
       "error": "Під час процесу сталася помилка!",
       "noTasksAvailable": "У черзі немає завдань!"

@@ -23,7 +23,6 @@
       "downloading": "Scaricando",
       "error": "C'è stato un errore durante il processo!",
       "extracting": "Estraendo",
-      "installing": "Installando",
       "noTasksAvailable": "Non ci sono compiti in coda!"
     },
     "activityCenter": {

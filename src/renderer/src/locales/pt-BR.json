@@ -347,7 +347,6 @@
     "tasksMenu": {
       "downloading": "Baixando",
       "extracting": "Extraindo",
-      "installing": "Instalando",
       "compressing": "Comprimindo",
       "error": "Ocorreu um erro durante o processo!",
       "noTasksAvailable": "Não há tarefas na fila!"

@@ -250,7 +250,6 @@
     "tasksMenu": {
       "downloading": "Herunterladend",
       "extracting": "Extrahierend",
-      "installing": "Installierend",
       "compressing": "Komprimierend",
       "error": "Während des Vorgangs ist ein Fehler aufgetreten!",
       "noTasksAvailable": "Es gibt keine anstehenden Aufgaben!"

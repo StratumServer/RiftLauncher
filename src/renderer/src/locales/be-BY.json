@@ -293,7 +293,6 @@
     "tasksMenu": {
       "downloading": "Спамвоўванне",
       "extracting": "Выманне",
-      "installing": "Усталяванне",
       "compressing": "Сцісканне",
       "error": "Адбылася памылка падчас працэсу!",
       "noTasksAvailable": "Няма задач у чарзе!"
