@@ -10,11 +10,10 @@
  * `iconCache.ts`) and holds on the order of a thousand realistic catalog responses, which run from a
  * few KB (a narrow search) to a few hundred KB (an unfiltered page), nowhere near the defensive
  * 16 MiB per-entry ceiling, which exists for a malformed or hostile response, not a typical one.
- */
-/**
- * How many bytes the mod catalog disk cache is allowed to keep. Enforced once per launch by
- * `pruneModCatalogCache`, not live: a long session with heavy filter churn can pass this budget
- * and stay past it until the next start.
+ *
+ * `pruneModCatalogCache` enforces this budget once per launch, not live: a long session with heavy
+ * filter churn can pass it and stay past it until the next start. The mod icon cache next to it has
+ * the same property.
  */
 export const MOD_CATALOG_CACHE_MAX_BYTES = 64 * 1024 * 1024
 

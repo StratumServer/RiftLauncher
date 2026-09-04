@@ -12,8 +12,9 @@ import { logMessage } from "@src/utils/logManager"
 // Disk cache for the mods-catalog API response, used to serve the last good body when a
 // fresh fetch fails (network down, ceiling tripped, non-2xx status). One file per cached
 // URL, keyed by a hash of the URL so distinct filter/search queries do not collide. The
-// cache self-heals on the next successful fetch of the same URL, and entries that go
-// unused (over the byte cap, or past the TTL) are swept by pruneModCatalogCache below.
+// cache self-heals on the next successful fetch of the same URL, and pruneModCatalogCache
+// below sweeps least recently written entries once the folder passes its byte cap. Age
+// alone evicts nothing: an old body is exactly what the offline fallback has to serve.
 
 const CACHE_STORE_VERSION = 1
 

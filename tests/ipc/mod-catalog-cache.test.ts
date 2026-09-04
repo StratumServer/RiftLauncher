@@ -88,6 +88,11 @@ function respondWith(scenario: RequestScenario): void {
 const CATALOG_URL = "https://mods.vintagestory.at/api/mods"
 const TAGS_URL = "https://mods.vintagestory.at/api/tags"
 
+/** Where catalogCache.ts writes, derived the same way getCacheDirectory() does. */
+function cacheDirectory(): string {
+  return join(mockState.userDataDir, "Cache", "ModCatalog")
+}
+
 describe("mod catalog disk cache and serve-stale (issue #24)", () => {
   beforeEach(() => {
     mockState.userDataDir = mkdtempSync(join(tmpdir(), "riftlauncher-catalog-cache-"))
@@ -97,6 +102,21 @@ describe("mod catalog disk cache and serve-stale (issue #24)", () => {
     rmSync(mockState.userDataDir, { recursive: true, force: true })
     vi.resetModules()
   })
+
+  /**
+   * Backdates the one entry in the cache folder, mtime and atime alike, so a test can
+   * reach readCatalogCache with a body that is genuinely old rather than one written a
+   * millisecond earlier.
+   */
+  function ageTheOnlyCacheEntry(ageMs: number): void {
+    const [name] = readdirSync(cacheDirectory())
+    assert.ok(name, "expected exactly one cache entry to age")
+    const aged = new Date(Date.now() - ageMs)
+    fse.utimesSync(join(cacheDirectory(), name), aged, aged)
+  }
+
+  /** Older than any TTL anyone has proposed for this cache, including the 30 days this branch removed. */
+  const A_MONTH_MS = 31 * 24 * 60 * 60 * 1_000
 
   it("writes the catalog response to disk on a successful fetch and serves it back verbatim", async () => {
     const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
@@ -124,6 +144,39 @@ describe("mod catalog disk cache and serve-stale (issue #24)", () => {
     assert.ok(warnSpy.mock.calls.some(([level]) => level === "warn"))
   })
 
+  it("serves an entry nobody has re-fetched in a month, because age is what the offline fallback is for", async () => {
+    // Every other test on this path reads a body written milliseconds earlier, so an age
+    // check bolted onto readCatalogCache would pass all of them. This one holds the read
+    // path to what the cache exists for: a player who has not browsed mods since last
+    // month, launching with no network, still gets the mod browser.
+    const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
+    const { writeCatalogCache } = await import("@src/ipc/catalogCache")
+
+    await writeCatalogCache(new URL(CATALOG_URL), '{"mods":[{"modid":"seeded-a-month-ago"}]}')
+    ageTheOnlyCacheEntry(A_MONTH_MS)
+
+    respondWith({ kind: "request-error", message: "network is down" })
+    assert.equal(await queryUrl(CATALOG_URL), '{"mods":[{"modid":"seeded-a-month-ago"}]}')
+  })
+
+  it("keeps that month-old entry through the startup sweep at the production budget and still serves it", async () => {
+    // The real launch order: pruneModCatalogCache() runs from main/index.ts before the
+    // player ever opens the mod browser. At the 64 MiB default a folder holding one
+    // small entry is nowhere near budget, so the sweep evicts nothing and the read
+    // path still has its fallback.
+    const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
+    const { pruneModCatalogCache, writeCatalogCache } = await import("@src/ipc/catalogCache")
+
+    await writeCatalogCache(new URL(CATALOG_URL), '{"mods":[{"modid":"seeded-a-month-ago"}]}')
+    ageTheOnlyCacheEntry(A_MONTH_MS)
+
+    await pruneModCatalogCache()
+    assert.equal(readdirSync(cacheDirectory()).length, 1)
+
+    respondWith({ kind: "request-error", message: "network is down" })
+    assert.equal(await queryUrl(CATALOG_URL), '{"mods":[{"modid":"seeded-a-month-ago"}]}')
+  })
+
   it("still throws on a cache miss when the fetch fails", async () => {
     const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
 
@@ -137,10 +190,9 @@ describe("mod catalog disk cache and serve-stale (issue #24)", () => {
 
     await writeCatalogCache(new URL(CATALOG_URL), '{"mods":[{"modid":"will-be-corrupted"}]}')
 
-    const cacheDir = join(mockState.userDataDir, "Cache", "ModCatalog")
-    const [cacheFile] = readdirSync(cacheDir)
+    const [cacheFile] = readdirSync(cacheDirectory())
     assert.ok(cacheFile, "expected a cache file to exist before corrupting it")
-    writeFileSync(join(cacheDir, cacheFile), "{ not valid json", "utf8")
+    writeFileSync(join(cacheDirectory(), cacheFile), "{ not valid json", "utf8")
 
     respondWith({ kind: "request-error", message: "network is down" })
     await assert.rejects(() => queryUrl(CATALOG_URL), /network is down/)
@@ -188,11 +240,10 @@ describe("pruneModCatalogCache", () => {
   afterEach(() => {
     rmSync(mockState.userDataDir, { recursive: true, force: true })
     vi.resetModules()
+    // The mtime-moved test spies on fse.stat with a persistent implementation. Without
+    // this, that spy leaks into whichever test vitest schedules next.
+    vi.restoreAllMocks()
   })
-
-  function cacheDirectory(): string {
-    return join(mockState.userDataDir, "Cache", "ModCatalog")
-  }
 
   /** Writes a file straight into the cache folder, with a timestamp of its own. */
   function seedEntry(name: string, bytes: number, modifiedAt: number): string {
@@ -208,7 +259,7 @@ describe("pruneModCatalogCache", () => {
     return `${seed.repeat(64).slice(0, 64)}.json`
   }
 
-  it("keeps every entry while the folder fits the budget and is within the TTL", async () => {
+  it("keeps every entry while the folder fits the budget", async () => {
     const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
     const first = seedEntry(contentName("a"), 32, Date.now())
     const second = seedEntry(contentName("b"), 32, Date.now())
@@ -295,15 +346,24 @@ describe("pruneModCatalogCache", () => {
 
   it("skips a directory named like an entry instead of removing it", async () => {
     const { pruneModCatalogCache } = await import("@src/ipc/catalogCache")
-    const dirName = contentName("dir")
+    // The seed has to be hex. CONTENT_ADDRESSED_NAME is /^[0-9a-f]{64}\.json$/, so a name
+    // built from "dir" is rejected by the readdir filter before fse.stat ever runs and the
+    // isFile() guard never gets a say. A name of 64 "d"s reaches the guard.
+    const dirName = contentName("d")
+    const nested = join(cacheDirectory(), dirName, "inner.json")
     fse.ensureDirSync(join(cacheDirectory(), dirName))
+    writeFileSync(nested, "a real file, removed along with its parent if the guard goes")
+    const doomed = seedEntry(contentName("a"), 16, 1_000)
 
     await pruneModCatalogCache(0)
 
-    // The directory was counted toward the budget (its stat was collected) but
-    // the isFile() guard prevented it from being handed to fse.remove.
-    assert.equal(existsSync(join(cacheDirectory(), dirName)), true)
+    // The sweep ran and evicted what it was allowed to evict.
+    assert.equal(existsSync(join(cacheDirectory(), doomed)), false)
+    // The directory's name matched and its stat ran, but isFile() is false, so it never
+    // entered the candidate list. It is neither counted toward the budget nor named for
+    // removal, and the file underneath it survives with it.
     assert.equal(fse.lstatSync(join(cacheDirectory(), dirName)).isDirectory(), true)
+    assert.equal(existsSync(nested), true)
   })
 
   it("never deletes anything outside its own cache folder", async () => {
