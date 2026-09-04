@@ -62,7 +62,6 @@ function SessionButton(): JSX.Element {
   }
 
   function openLogin(): void {
-    clearTransientLoginFields()
     setLogInOpen(true)
   }
 

@@ -122,11 +122,11 @@ describe("SessionButton", () => {
     expect(within(dialog).getByRole("button", { name: "Hide password" }).getAttribute("aria-pressed")).toBe("true")
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
-    await user.click(await screen.findByRole("button", { name: "Log in" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), { timeout: 3000 })
+    await user.click(await screen.findByRole("button", { name: "Log in" }, { timeout: 3000 }))
     const reopenedDialog = await screen.findByRole("dialog")
-    // This pins the clear-on-open, not the clear-on-cancel: openLogin clears before it opens, so a
-    // reopened dialog is empty either way. The refused-login test above is what pins the clear that
-    // runs after credentials have actually been sent.
+    // openLogin does not clear the fields. This empty reopened dialog therefore pins closeLogin's
+    // cleanup, while the refused-login test above pins the clear after credentials are sent.
     expect((within(reopenedDialog).getByLabelText("Password") as HTMLInputElement).value).toBe("")
     expect((within(reopenedDialog).getByLabelText("2FA Code") as HTMLInputElement).value).toBe("")
   })
