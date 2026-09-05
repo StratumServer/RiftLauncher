@@ -198,7 +198,9 @@ describe("real mod database shapes (#370)", () => {
 
   it("reads a tags field that is not a list as no tags, and releases that are not a list as no releases", () => {
     const detail = aDetail([], [])
-    const mod = aMod("Odd", { _mod: { ...detail, tags: "Cosmetics" as unknown as string[], releases: null as unknown as typeof detail.releases } })
+    // A string rather than null on purpose: `null ?? []` would read as empty by accident, and the
+    // guard has to hold for anything that is not a list, not only for the absent case.
+    const mod = aMod("Odd", { _mod: { ...detail, tags: "Cosmetics" as unknown as string[], releases: "1.21.0" as unknown as typeof detail.releases } })
     assert.deepEqual(installedModTags([mod]), [])
     assert.deepEqual(installedModGameVersions([mod]), [])
     assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, tags: ["cosmetics"] }), false)
