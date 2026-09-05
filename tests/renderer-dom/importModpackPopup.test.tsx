@@ -151,7 +151,18 @@ describe("ImportModpackPopup, before Import is clicked", () => {
 
     const row = await rowFor("Alloy Calculator")
     expect(within(row).getByText("alloycalculatorstuzzichino")).toBeTruthy()
-    expect(within(row).getByText("Not found on ModDB")).toBeTruthy()
+    expect(within(row).getByText("Not on the mod database")).toBeTruthy()
+  })
+
+  it("explains what was checked for the mods the database does not declare", async () => {
+    mountPopup()
+
+    await rowFor("Alloy Calculator")
+    expect(
+      screen.getByText(
+        "2 mod(s) are not on the mod database: no listing there declares the mod id in any of its releases. Those are most likely forks or private builds, and have to be installed by hand."
+      )
+    ).toBeTruthy()
   })
 
   it("falls back to the bare modid for a pack exported before names were written, with no second line", async () => {

@@ -96,6 +96,8 @@ function ImportModpackPopup({
 
   const planByModid = useMemo(() => new Map((plan?.items ?? []).map((item): [string, ModpackPlanItem] => [item.modid, item])), [plan])
 
+  const notOnModDbCount = useMemo(() => (plan?.items ?? []).filter((item) => item.decision === "skip" && item.reason === "not-on-moddb").length, [plan])
+
   const completedCount = useMemo(() => {
     return Object.values(modStatuses).filter((s) => s !== "pending" && s !== "downloading").length
   }, [modStatuses])
@@ -254,6 +256,8 @@ function ImportModpackPopup({
                   })}
               </TableBody>
             </TableWrapper>
+
+            {notOnModDbCount > 0 && <p className="text-sm text-zinc-400">{t("features.mods.importModpackNotOnModDbNote", { count: notOnModDbCount })}</p>}
 
             {importing && (
               <div className="flex flex-col gap-1">
