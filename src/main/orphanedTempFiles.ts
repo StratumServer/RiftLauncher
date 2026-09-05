@@ -1,6 +1,7 @@
 import fse from "fs-extra"
-import { join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 
+import { isRestoreStagingWorkspaceName } from "@src/ipc/validation"
 import { DOWNLOAD_TEMP_FILE_NAMESPACE } from "@src/ipc/workers/download"
 import { logMessage } from "@src/utils/logManager"
 
@@ -30,7 +31,13 @@ export const DOWNLOAD_PART_FILE_PATTERN = new RegExp(`^.+\\.${escapeRegExp(DOWNL
 /** The staging directory `runExtraction` creates inside the destination folder. */
 export const EXTRACTION_STAGING_PATTERN = /^\.riftlauncher-extract-/
 
-export type TemporaryFileKind = "atomic-json" | "download-part" | "extraction-staging"
+export type TemporaryFileKind = "atomic-json" | "download-part" | "extraction-staging" | "restore-workspace"
+
+/**
+ * Kinds that name a folder rather than a file. They are checked before the
+ * recursive branch, so the sweep never walks into one of them.
+ */
+const DIRECTORY_KINDS: readonly TemporaryFileKind[] = ["extraction-staging", "restore-workspace"]
 
 export interface TemporaryFileSweepTarget {
   /** Directory to inspect. A missing directory is an ordinary first-run state. */
@@ -39,6 +46,12 @@ export interface TemporaryFileSweepTarget {
   kinds: readonly TemporaryFileKind[]
   /** Download destinations contain version and installation subdirectories. */
   recursive?: boolean
+  /**
+   * Installation folder names whose abandoned restore workspaces may sit in this
+   * directory. Only used by the `restore-workspace` kind, which refuses to match
+   * anything that is not named after a configured installation.
+   */
+  installationNames?: readonly string[]
 }
 
 export interface TemporaryFileSweepOptions {
@@ -50,9 +63,10 @@ export interface TemporaryFileSweepOptions {
   log?: (mode: ErrorTypes, message: string) => void
 }
 
-function matchesKind(name: string, kind: TemporaryFileKind): boolean {
+function matchesKind(name: string, kind: TemporaryFileKind, target: TemporaryFileSweepTarget): boolean {
   if (kind === "atomic-json") return ATOMIC_JSON_TEMP_FILE_PATTERN.test(name)
   if (kind === "download-part") return DOWNLOAD_PART_FILE_PATTERN.test(name)
+  if (kind === "restore-workspace") return (target.installationNames ?? []).some((installationName) => isRestoreStagingWorkspaceName(installationName, name))
   return EXTRACTION_STAGING_PATTERN.test(name)
 }
 
@@ -74,13 +88,15 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
   for (const entry of entries) {
     const entryPath = join(folder, entry.name)
 
-    // Extraction staging folders are directories, not files: remove them
-    // recursively when they match and are old enough. This runs before the
-    // recursive branch on purpose. A recursive target claims any directory and
-    // walks into it, so a staging folder checked after that branch is never
-    // reached. Every exit here continues, so the sweep also stays out of a
-    // staging folder that is still in flight.
-    if (entry.isDirectory() && target.kinds.includes("extraction-staging") && matchesKind(entry.name, "extraction-staging")) {
+    // Extraction staging folders and abandoned restore workspaces are
+    // directories, not files: remove them recursively when they match and are
+    // old enough. This runs before the recursive branch on purpose. A recursive
+    // target claims any directory and walks into it, so a folder checked after
+    // that branch is never reached. Every exit here continues, so the sweep also
+    // stays out of a folder whose work is still in flight.
+    const directoryKind = entry.isDirectory() ? DIRECTORY_KINDS.find((kind) => target.kinds.includes(kind) && matchesKind(entry.name, kind, target)) : undefined
+
+    if (directoryKind) {
       let stats: fse.Stats
       try {
         stats = await fse.lstat(entryPath)
@@ -89,10 +105,11 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
         continue
       }
       if (stats.isSymbolicLink() || options.nowMs - stats.mtimeMs <= options.maxAgeMs) continue
+      const label = directoryKind === "restore-workspace" ? "abandoned restore workspace" : "orphaned staging folder"
       try {
         await fse.remove(entryPath)
         removed += 1
-        options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Removed orphaned staging folder ${entryPath}.`)
+        options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Removed ${label} ${entryPath}.`)
       } catch (error) {
         if (!isMissing(error)) options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Could not remove ${entryPath}: ${error}`)
       }
@@ -104,7 +121,7 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
       continue
     }
 
-    if (!entry.isFile() || !target.kinds.some((kind) => matchesKind(entry.name, kind))) continue
+    if (!entry.isFile() || !target.kinds.some((kind) => matchesKind(entry.name, kind, target))) continue
 
     let stats: fse.Stats
     try {
@@ -147,11 +164,16 @@ export async function sweepOrphanedTempFiles(targets: readonly TemporaryFileSwee
 }
 
 /**
- * Returns the three startup areas described by issue #266. Download files are
- * siblings of their final destination and extraction staging folders are
+ * Returns the startup areas described by issues #266 and #353. Download files
+ * are siblings of their final destination and extraction staging folders are
  * children of it, so the known installation and version roots cover both, with
  * a symlink-safe recursive walk that reaches a staging folder one level down in
  * a version or installation folder.
+ *
+ * A restore workspace is a sibling of the installation folder rather than a
+ * child of it, and an installation can live anywhere, so each installation also
+ * contributes its parent folder. That folder is inspected for the one name the
+ * restore builds out of that installation's own folder name, and nothing else.
  */
 export function getOrphanedTempFileSweepTargets(userDataPath: string, config: ConfigType): TemporaryFileSweepTarget[] {
   const targets: TemporaryFileSweepTarget[] = [
@@ -172,6 +194,25 @@ export function getOrphanedTempFileSweepTargets(userDataPath: string, config: Co
     if (seenPaths.has(path)) continue
     seenPaths.add(path)
     targets.push({ path, kinds: ["atomic-json", "download-part", "extraction-staging"], recursive: true })
+  }
+
+  for (const installation of config.installations) {
+    if (!installation.path) continue
+    const parent = resolve(dirname(installation.path))
+    const name = basename(installation.path)
+    if (!name) continue
+
+    // The parent is usually the installations root, which is already a target.
+    // Folding the kind into that one target matters: the restore workspace has
+    // to be judged before the recursive walk claims it as an ordinary folder.
+    const existing = targets.find((target) => resolve(target.path) === parent)
+    if (!existing) {
+      targets.push({ path: parent, kinds: ["restore-workspace"], installationNames: [name] })
+      continue
+    }
+
+    if (!existing.kinds.includes("restore-workspace")) existing.kinds = [...existing.kinds, "restore-workspace"]
+    existing.installationNames = [...(existing.installationNames ?? []), name]
   }
 
   return targets

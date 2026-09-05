@@ -1,9 +1,11 @@
 import assert from "node:assert/strict"
+import { randomUUID } from "node:crypto"
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 
+import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "@src/domain/installations/restore"
 import { DOWNLOAD_TEMP_FILE_NAMESPACE } from "@src/ipc/workers/download"
 import { ATOMIC_JSON_TEMP_FILE_PATTERN, DOWNLOAD_PART_FILE_PATTERN, EXTRACTION_STAGING_PATTERN, getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
 
@@ -191,7 +193,9 @@ describe("getOrphanedTempFileSweepTargets", () => {
         pathInWorkspace("installations"),
         pathInWorkspace("versions"),
         pathInWorkspace("custom-installation"),
-        pathInWorkspace("custom-version")
+        pathInWorkspace("custom-version"),
+        // The custom installation's parent, where its restore workspace lands.
+        workspace
       ]
     )
     assert.deepEqual(targets[0]?.kinds, ["atomic-json"])
@@ -202,6 +206,25 @@ describe("getOrphanedTempFileSweepTargets", () => {
     assert.equal(targets[5]?.recursive, true)
     // The staging kind rides on the recursive download-root targets, which is
     // what reaches a staging folder inside a version or installation folder.
+    assert.deepEqual(targets[6]?.kinds, ["restore-workspace"])
+    assert.deepEqual(targets[6]?.installationNames, ["custom-installation"])
+    assert.equal(targets[6]?.recursive, undefined)
+  })
+
+  it("folds the restore-workspace kind into the installations root instead of adding a second target", () => {
+    const config = {
+      defaultInstallationsFolder: pathInWorkspace("installations"),
+      defaultVersionsFolder: pathInWorkspace("versions"),
+      installations: [{ path: pathInWorkspace("installations", "Main") }, { path: pathInWorkspace("installations", "Modded") }],
+      gameVersions: []
+    } as unknown as ConfigType
+
+    const targets = getOrphanedTempFileSweepTargets(pathInWorkspace("user-data"), config)
+    const root = targets.filter((target) => target.path === pathInWorkspace("installations"))
+
+    assert.equal(root.length, 1)
+    assert.deepEqual(root[0]?.kinds, ["atomic-json", "download-part", "extraction-staging", "restore-workspace"])
+    assert.deepEqual(root[0]?.installationNames, ["Main", "Modded"])
   })
 
   it("removes a staging folder left inside a version folder under the default versions root", async () => {
@@ -280,5 +303,109 @@ describe("getOrphanedTempFileSweepTargets", () => {
     assert.equal(removed, 0)
     assert.notEqual(lstatSync(staging, { throwIfNoEntry: false }), undefined)
     assert.notEqual(lstatSync(join(staging, `game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.1.2.part`), { throwIfNoEntry: false }), undefined)
+  })
+})
+
+describe("abandoned restore workspaces", () => {
+  const installationsRoot = (): string => pathInWorkspace("installations")
+
+  /** The names `restoreInstallationBackup` builds, from the same two constants it uses. */
+  function restoreWorkspacePaths(installationPath: string): { staging: string; replaced: string } {
+    const token = randomUUID()
+    return { staging: `${installationPath}${RESTORE_STAGING_SUFFIX}${token}`, replaced: `${installationPath}${RESTORE_REPLACED_SUFFIX}${token}` }
+  }
+
+  function age(path: string): void {
+    const oldDate = new Date(Date.now() - 10_000)
+    utimesSync(path, oldDate, oldDate)
+  }
+
+  function configWith(installationPaths: string[]): ConfigType {
+    return {
+      defaultInstallationsFolder: installationsRoot(),
+      defaultVersionsFolder: pathInWorkspace("versions"),
+      installations: installationPaths.map((path) => ({ path })),
+      gameVersions: []
+    } as unknown as ConfigType
+  }
+
+  function sweep(config: ConfigType): Promise<number> {
+    return sweepOrphanedTempFiles(getOrphanedTempFileSweepTargets(pathInWorkspace("user-data"), config), { nowMs: Date.now(), maxAgeMs: 1_000, log: () => undefined })
+  }
+
+  it("removes the extraction workspace an interrupted restore left behind, and keeps the set-aside copy", async () => {
+    const installation = join(installationsRoot(), "Main")
+    mkdirSync(installation, { recursive: true })
+    writeFileSync(join(installation, "Vintagestory.dll"), "live")
+
+    const { staging, replaced } = restoreWorkspacePaths(installation)
+    mkdirSync(join(staging, "assets", "game"), { recursive: true })
+    writeFileSync(join(staging, "assets", "game", "blocks.json"), "extracted")
+    mkdirSync(join(replaced, "Data"), { recursive: true })
+    writeFileSync(join(replaced, "Data", "save.vcdbs"), "the player's own world")
+    age(staging)
+    age(replaced)
+
+    const removed = await sweep(configWith([installation]))
+
+    assert.equal(removed, 1)
+    assert.equal(lstatSync(staging, { throwIfNoEntry: false }), undefined)
+    assert.equal(readFileSync(join(replaced, "Data", "save.vcdbs"), "utf8"), "the player's own world")
+    assert.equal(readFileSync(join(installation, "Vintagestory.dll"), "utf8"), "live")
+  })
+
+  it("leaves a restore that is still running alone, including the files inside its workspace", async () => {
+    const installation = join(installationsRoot(), "Main")
+    mkdirSync(installation, { recursive: true })
+
+    const { staging } = restoreWorkspacePaths(installation)
+    mkdirSync(staging, { recursive: true })
+    const inFlight = join(staging, `game.tar.gz.${DOWNLOAD_TEMP_FILE_NAMESPACE}.1.2.part`)
+    writeOldFile(inFlight)
+
+    const removed = await sweep(configWith([installation]))
+
+    assert.equal(removed, 0)
+    assert.notEqual(lstatSync(staging, { throwIfNoEntry: false }), undefined)
+    assert.equal(readFileSync(inFlight, "utf8"), "temporary")
+  })
+
+  it("keeps sibling folders that only start with the same prefix", async () => {
+    const installation = join(installationsRoot(), "Main")
+    mkdirSync(installation, { recursive: true })
+
+    const token = randomUUID()
+    const decoys = [
+      // No token at all, so not a folder any restore ever created.
+      `${installation}${RESTORE_STAGING_SUFFIX}notes`,
+      // A token with something appended is not a token either.
+      `${installation}${RESTORE_STAGING_SUFFIX}${token}-copy`,
+      // Named after a folder that is not a configured installation.
+      join(installationsRoot(), `Main Saves${RESTORE_STAGING_SUFFIX}${token}`)
+    ]
+    for (const decoy of decoys) {
+      mkdirSync(decoy, { recursive: true })
+      writeFileSync(join(decoy, "keep.txt"), "keep me")
+      age(decoy)
+    }
+
+    const removed = await sweep(configWith([installation]))
+
+    assert.equal(removed, 0)
+    for (const decoy of decoys) assert.equal(readFileSync(join(decoy, "keep.txt"), "utf8"), "keep me")
+  })
+
+  it("reaches an installation that lives outside the default roots", async () => {
+    const installation = pathInWorkspace("elsewhere", "Portable Install")
+    mkdirSync(installation, { recursive: true })
+    const { staging } = restoreWorkspacePaths(installation)
+    mkdirSync(join(staging, "assets"), { recursive: true })
+    age(staging)
+
+    const removed = await sweep(configWith([installation]))
+
+    assert.equal(removed, 1)
+    assert.equal(lstatSync(staging, { throwIfNoEntry: false }), undefined)
+    assert.notEqual(lstatSync(installation, { throwIfNoEntry: false }), undefined)
   })
 })

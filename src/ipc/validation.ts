@@ -395,6 +395,13 @@ export function isSafeArchiveEntry(entryName: unknown): entryName is string {
 
 const RESTORE_WORKSPACE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
+function hasRestoreWorkspaceName(installationName: string, candidateName: string, suffixes: readonly string[]): boolean {
+  if (!installationName || !candidateName.startsWith(installationName)) return false
+
+  const remainder = candidateName.slice(installationName.length)
+  return suffixes.some((suffix) => remainder.startsWith(suffix) && RESTORE_WORKSPACE_TOKEN_PATTERN.test(remainder.slice(suffix.length)))
+}
+
 /**
  * True when `candidateName` is one of the two temporary folders the backup
  * restore puts beside an installation folder named `installationName`.
@@ -403,10 +410,21 @@ const RESTORE_WORKSPACE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0
  * names live in the same parent folder.
  */
 export function isRestoreWorkspaceName(installationName: string, candidateName: string): boolean {
-  if (!installationName || !candidateName.startsWith(installationName)) return false
+  return hasRestoreWorkspaceName(installationName, candidateName, [RESTORE_STAGING_SUFFIX, RESTORE_REPLACED_SUFFIX])
+}
 
-  const remainder = candidateName.slice(installationName.length)
-  return [RESTORE_STAGING_SUFFIX, RESTORE_REPLACED_SUFFIX].some((suffix) => remainder.startsWith(suffix) && RESTORE_WORKSPACE_TOKEN_PATTERN.test(remainder.slice(suffix.length)))
+/**
+ * True for the extraction workspace only, the folder the archive is unpacked
+ * into before it takes the installation's place.
+ *
+ * The set-aside folder is deliberately excluded: it holds the player's own
+ * installation data when a swap fails, and a failed restore reports it as the
+ * stranded path. Its contents exist nowhere else, so nothing may delete it
+ * behind the player's back. The extraction workspace only ever holds a copy of
+ * an archive that is still on disk.
+ */
+export function isRestoreStagingWorkspaceName(installationName: string, candidateName: string): boolean {
+  return hasRestoreWorkspaceName(installationName, candidateName, [RESTORE_STAGING_SUFFIX])
 }
 
 /**
