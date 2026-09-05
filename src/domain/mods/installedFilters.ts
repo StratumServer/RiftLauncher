@@ -25,6 +25,32 @@ export const NO_INSTALLED_MOD_FILTERS: InstalledModFilters = { author: "", tags:
 const GAME_VERSION_TAG = /^\d+(\.\d+)+/
 
 /**
+ * Keeps only the string entries of a list handed to us by the mod database or a modinfo.
+ *
+ * The API's documented shape says `tags` is a list of strings. The live detail endpoint returns
+ * `["Cosmetics", "Crafting", "Storage", null]` for Vanilla Variants (#370). Every reader below folds
+ * case or tests a prefix, both of which throw on `null`, and one throw during the first render blanks
+ * the whole page. So nothing in this module trusts the shape: whatever is not a string is dropped, and
+ * a field that is not a list at all reads as empty.
+ */
+function textEntries(values: unknown): string[] {
+  return Array.isArray(values) ? values.filter((value): value is string => typeof value === "string") : []
+}
+
+/**
+ * The releases the mod database lists for a mod, keeping only the entries that are objects.
+ *
+ * Guarding the outer field is not enough: `{ releases: [null] }` passes an array check and then
+ * `release.tags` throws on the entry, the same render crash this module exists to rule out. So each
+ * entry is checked too, and a missing or malformed field reads as no releases at all.
+ */
+function releasesOf(mod: InstalledModType): readonly { tags?: unknown }[] {
+  const releases: unknown = mod._mod?.releases
+  if (!Array.isArray(releases)) return []
+  return releases.filter((release): release is { tags?: unknown } => typeof release === "object" && release !== null)
+}
+
+/**
  * Deduplicates ignoring case, keeping the first spelling seen.
  *
  * The matchers below fold case, so two mods crediting "Ann" and "ann" are one author to a player and
@@ -42,7 +68,7 @@ function uniqueIgnoringCase(values: readonly string[]): string[] {
 
 /** Every author across the scan, A to Z. Read from the local modinfo, so this axis needs no network. */
 export function installedModAuthors(mods: readonly InstalledModType[]): string[] {
-  return uniqueIgnoringCase(mods.flatMap((mod) => mod.authors ?? [])).sort((a, b) => a.localeCompare(b))
+  return uniqueIgnoringCase(mods.flatMap((mod) => textEntries(mod.authors))).sort((a, b) => a.localeCompare(b))
 }
 
 /**
@@ -52,7 +78,7 @@ export function installedModAuthors(mods: readonly InstalledModType[]): string[]
  * modinfo.ts shows, so this list is empty for a folder the ModDB cannot answer for.
  */
 export function installedModTags(mods: readonly InstalledModType[]): string[] {
-  return uniqueIgnoringCase(mods.flatMap((mod) => mod._mod?.tags ?? [])).sort((a, b) => a.localeCompare(b))
+  return uniqueIgnoringCase(mods.flatMap((mod) => textEntries(mod._mod?.tags))).sort((a, b) => a.localeCompare(b))
 }
 
 /**
@@ -63,7 +89,7 @@ export function installedModTags(mods: readonly InstalledModType[]): string[] {
  * are the category tags the other dropdown offers.
  */
 export function installedModGameVersions(mods: readonly InstalledModType[]): string[] {
-  const tags = mods.flatMap((mod) => (mod._mod?.releases ?? []).flatMap((release) => release.tags ?? []))
+  const tags = mods.flatMap((mod) => releasesOf(mod).flatMap((release) => textEntries(release.tags)))
   return Array.from(new Set(tags.filter((tag) => GAME_VERSION_TAG.test(tag)))).sort((a, b) => compareVersions(b, a))
 }
 
@@ -71,13 +97,13 @@ export function installedModGameVersions(mods: readonly InstalledModType[]): str
 function matchesAuthor(mod: InstalledModType, author: string): boolean {
   if (author === "") return true
   const wanted = author.toLowerCase()
-  return (mod.authors ?? []).some((name) => name.toLowerCase() === wanted)
+  return textEntries(mod.authors).some((name) => name.toLowerCase() === wanted)
 }
 
 /** Every selected tag has to be present, so picking a second tag narrows the list rather than widening it. */
 function matchesTags(mod: InstalledModType, tags: readonly string[]): boolean {
   if (tags.length < 1) return true
-  const modTags = (mod._mod?.tags ?? []).map((tag) => tag.toLowerCase())
+  const modTags = textEntries(mod._mod?.tags).map((tag) => tag.toLowerCase())
   return tags.every((tag) => modTags.includes(tag.toLowerCase()))
 }
 
@@ -91,7 +117,7 @@ function matchesTags(mod: InstalledModType, tags: readonly string[]): boolean {
  */
 function matchesGameVersion(mod: InstalledModType, gameVersion: string): boolean {
   if (gameVersion === "") return true
-  return (mod._mod?.releases ?? []).some((release) => evaluateModCompatibility(release.tags ?? [], gameVersion) !== "undeclared")
+  return releasesOf(mod).some((release) => evaluateModCompatibility(textEntries(release.tags), gameVersion) !== "undeclared")
 }
 
 /** All three axes at once. A mod clears every one of them, so each pick narrows what is left. */
