@@ -100,7 +100,7 @@ describe("a page that throws", () => {
     expect(alert.textContent).toContain("Debug info")
   })
 
-  it("writes the error name, message and component stack to the log", async () => {
+  it("writes the error name, message token and component stack to the log", async () => {
     const api = renderApp()
 
     await findFallback()
@@ -108,7 +108,7 @@ describe("a page that throws", () => {
     const logged = errorLogLines(api).find((line) => line.includes("PageErrorBoundary"))
     expect(logged).toBeDefined()
     expect(logged).toContain("TypeError")
-    expect(logged).toContain("Cannot read properties of null (reading 'toLowerCase')")
+    expect(logged).toContain("null-property-read")
     expect(logged).toContain("Component stack:")
     expect(logged).toContain("ExplodingManageMods")
   })

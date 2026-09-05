@@ -8,59 +8,94 @@ const LOG_TAG = "[front] [app] [adapters/errorLog.ts]"
  */
 const SAFE_ERROR_NAMES: ReadonlySet<string> = new Set(["Error", "TypeError", "RangeError", "SyntaxError", "ReferenceError", "AbortError", "DOMException"])
 
-/** A JS identifier or a dotted member path, which is all a runtime message ever names. */
-const IDENTIFIER_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/
-const IDENTIFIER_MAX_LENGTH = 48
-
-/** What goes in the place of an identifier that did not look like one. */
-const UNKNOWN_IDENTIFIER = "?"
-
 /** What goes in the place of a message that matched no known shape. */
 const UNCLASSIFIED_MESSAGE = "unclassified-message"
 
 /**
- * The runtime-error messages worth keeping, and the only ones kept.
+ * The runtime-error messages worth telling apart, reduced to a fixed token each.
  *
  * An error message is an arbitrary string: `new Error(token)` puts a credential in it, and so does
  * a rejected fetch quoting a signed URL. Forwarding it and hoping the main-process redactor
- * recognises the value is the mistake #368 closed everywhere else. So no message is forwarded as
- * it was written. A message either matches one of the shapes V8 raises by itself, in which case
- * the shape's own fixed template is emitted with at most an identifier lifted out of it, or it is
- * replaced by a token.
+ * recognises the value is the mistake #368 closed everywhere else.
  *
- * The shapes below cover what a page actually dies of: a null dereference, a bad assignment, a
- * bad call, a bad spread, a runaway recursion, a bad array size. A maintainer can still tell them apart, which is the whole
- * job of the message field.
+ * A first attempt kept the identifier V8 interpolates into these messages, on the grounds that a
+ * property name is identifier-shaped and therefore harmless. That is wrong, and it is the same
+ * mistake twice: identifier syntax proves formatting, not provenance. `new TypeError("PASSWORD123
+ * is not a function")` is a message any code can build, and `PASSWORD123` is a perfectly good
+ * identifier. So nothing captured out of a message is forwarded now. A message either matches one
+ * of the shapes below, in which case its fixed token is emitted and nothing else, or it becomes
+ * UNCLASSIFIED_MESSAGE.
+ *
+ * The token says what kind of failure it was: a null dereference, a bad assignment, a bad call, a
+ * bad spread, a runaway recursion, a bad array size. Which property or callee it was is not here
+ * on purpose. The stack frames below say which file and line to open, which is where a maintainer
+ * reads the name off our own source.
  */
-const MESSAGE_SHAPES: readonly { readonly pattern: RegExp; readonly build: (match: RegExpExecArray) => string }[] = [
-  {
-    pattern: /^Cannot read properties of (null|undefined) \(reading '([^']*)'\)$/,
-    build: (match) => `Cannot read properties of ${match[1]} (reading '${asIdentifier(match[2])}')`
-  },
-  {
-    pattern: /^Cannot set properties of (null|undefined) \(setting '([^']*)'\)$/,
-    build: (match) => `Cannot set properties of ${match[1]} (setting '${asIdentifier(match[2])}')`
-  },
-  { pattern: /^(.*) is not a function$/, build: (match) => `${asIdentifier(match[1])} is not a function` },
-  { pattern: /^(.*) is not iterable$/, build: (match) => `${asIdentifier(match[1])} is not iterable` },
-  { pattern: /^Maximum call stack size exceeded$/, build: () => "Maximum call stack size exceeded" },
-  { pattern: /^Invalid array length$/, build: () => "Invalid array length" }
+const MESSAGE_TOKENS: readonly { readonly pattern: RegExp; readonly token: string }[] = [
+  { pattern: /^Cannot read properties of null \(reading '[^']*'\)$/, token: "null-property-read" },
+  { pattern: /^Cannot read properties of undefined \(reading '[^']*'\)$/, token: "undefined-property-read" },
+  { pattern: /^Cannot set properties of null \(setting '[^']*'\)$/, token: "null-property-write" },
+  { pattern: /^Cannot set properties of undefined \(setting '[^']*'\)$/, token: "undefined-property-write" },
+  { pattern: / is not a function$/, token: "not-a-function" },
+  { pattern: / is not iterable$/, token: "not-iterable" },
+  { pattern: /^Maximum call stack size exceeded$/, token: "stack-overflow" },
+  { pattern: /^Invalid array length$/, token: "invalid-array-length" }
 ]
 
 /**
- * A JS stack frame, kept only in the shape V8 writes for a named call site.
+ * A JS stack frame, in either shape V8 writes: `at name (location)` and the bare `at location`.
  *
- * The header line of a stack repeats the message, an interpolated string thrown instead of an
- * Error lands in the stack too, and a frame from an eval or a data URL carries whatever was in it.
- * None of those match this, so all of them are dropped. What survives is a function name and a
- * source location, which is what points at the bug.
+ * Only the location is captured. A function name is a capture like any other, and a stack is not
+ * a trusted document: `error.stack` is a writable property, and a string thrown instead of an
+ * Error lands there verbatim. `at PASSWORD123 (app://renderer/assets/index-abc123.js:1:1)` is a
+ * frame anything can write, so the name goes and the location is checked separately.
  */
-const STACK_FRAME_PATTERN = /^\s*at (?:new |async )?((?:[A-Za-z_$][A-Za-z0-9_$]*|<anonymous>)(?:\.(?:[A-Za-z_$][A-Za-z0-9_$]*|<anonymous>|<computed>))*) \(([^\s()]{1,400}:\d{1,9}:\d{1,9})\)$/
+const STACK_FRAME_PATTERN = /^\s*at (?:[^()]*\(([^\s()]{1,400})\)|([^\s()]{1,400}))\s*$/
 
-/** A React component-stack line. React writes the component name itself, the location is dropped. */
-const COMPONENT_FRAME_PATTERN = /^\s*at ([A-Za-z_$][A-Za-z0-9_$]*)(?:[\s(]|$)/
+/**
+ * The only source locations the renderer is allowed to name, and the file name lifted out of one.
+ *
+ * The two prefixes are where our own renderer code actually runs, taken from src/main/index.ts:
+ * the packaged window loads `app://renderer/index.html` and the app protocol serves it out of the
+ * bundle directory, so every compiled chunk is `app://renderer/assets/<name>-<hash>.js`; the dev
+ * window loads `process.env.ELECTRON_RENDERER_URL`, the vite server on localhost, which serves
+ * modules under `/src/`. `isAllowedRendererUrl` in src/ipc/validation.ts is the main-process side
+ * of the same two shapes.
+ *
+ * Anything else is dropped whole, which is what closes the second finding: the old pattern took
+ * any non-whitespace text, so `app://renderer/PASSWORD123:12:9` was a valid location and the
+ * secret went to the log. A path is not under one of these two prefixes unless our own build put
+ * it there.
+ *
+ * Only the last segment is emitted, and only when it is a plain file name. Directory segments are
+ * dropped: they are noise once the file name is known, and a shorter surface is a cheaper one to
+ * argue about. Residual: a hand-written `stack` naming a file that does not exist in the bundle,
+ * `app://renderer/assets/PASSWORD123.js:1:1`, still yields `PASSWORD123.js`. That is one path
+ * segment with no separators and a source-file extension. Real frames come from files the build
+ * produced, so tightening past this would cost more than the residual is worth.
+ */
+const TRUSTED_LOCATION_PATTERN =
+  /^(?:app:\/\/renderer\/assets\/|https?:\/\/(?:localhost|127\.0\.0\.1):\d{1,5}\/src\/)(?:[A-Za-z0-9_.-]{1,64}\/)*([A-Za-z0-9_.-]{1,64}\.(?:js|mjs|ts|tsx))(?:\?[^\s:]{0,128})?:(\d{1,9}):(\d{1,9})$/
 
-/** A coarse ceiling on how deep a stack is worth reading. The byte budget below is the real bound. */
+/**
+ * A React component-stack line, reduced to the component name.
+ *
+ * These names are treated as provenance-safe where message identifiers are not, and the reason is
+ * where they come from rather than what they look like. React builds a component stack out of the
+ * function names of the components it rendered, so every name in it was written in our own source
+ * and shipped in our own bundle. A message identifier is the opposite: it is whatever value was in
+ * scope when the error was built, which is exactly where a credential lives.
+ *
+ * The shape check is here anyway, because that argument is about the normal path and this code
+ * runs on the abnormal one. A component stack arrives as a plain string on React's error info and
+ * on a manually thrown value, so the name must still be a short PascalCase word, and the count is
+ * capped. Residual, tested and accepted: an uppercase credential-shaped word such as `PASSWORD123`
+ * passes the shape check. Closing it would need an allowlist of every component we ship, which is
+ * a build-time list to keep in sync for a value React does not put there.
+ */
+const COMPONENT_FRAME_PATTERN = /^\s*at ([A-Z][A-Za-z0-9]{0,40})(?:[\s(]|$)/
+
+/** How many frames of either kind are worth forwarding. The byte budget below is the other bound. */
 const MAX_FRAMES = 60
 
 /**
@@ -68,9 +103,9 @@ const MAX_FRAMES = 60
  *
  * `assertString(message, "log message", 16_384)` in src/ipc/handlers/utilsHandlers.ts rejects
  * anything longer, and a rejected line is replaced by a generic warning: the whole event is lost,
- * which is worse than a short one. A recursion stack is tens of thousands of frames and a bundled
- * path is long, so an unbounded report crosses that limit easily. This sits at half of it, leaving
- * room for the tag and for redaction, which only ever makes a line longer.
+ * which is worse than a short one. A recursion stack is tens of thousands of frames, so an
+ * unbounded report crosses that limit easily. This sits at half of it, leaving room for the tag
+ * and for redaction, which only ever makes a line longer.
  */
 const MAX_REPORT_BYTES = 8_192
 
@@ -83,27 +118,32 @@ function guarded<T>(read: () => T, fallback: T): T {
   }
 }
 
-function asIdentifier(value: string | undefined): string {
-  return value !== undefined && value.length <= IDENTIFIER_MAX_LENGTH && IDENTIFIER_PATTERN.test(value) ? value : UNKNOWN_IDENTIFIER
-}
-
 function classifyMessage(message: string): string {
-  for (const { pattern, build } of MESSAGE_SHAPES) {
-    const match = pattern.exec(message)
-    if (match) return build(match)
-  }
-
-  return UNCLASSIFIED_MESSAGE
+  return MESSAGE_TOKENS.find(({ pattern }) => pattern.test(message))?.token ?? UNCLASSIFIED_MESSAGE
 }
 
-function safeFrames(stack: string, pattern: RegExp, render: (match: RegExpExecArray) => string): string[] {
+/** The sanitised `file.js:12:9` for a stack line, or undefined when the line is not ours to keep. */
+function safeStackFrame(line: string): string | undefined {
+  const frame = STACK_FRAME_PATTERN.exec(line)
+  if (!frame) return undefined
+
+  const location = TRUSTED_LOCATION_PATTERN.exec(frame[1] ?? frame[2] ?? "")
+  return location ? `    at ${location[1]}:${Number(location[2])}:${Number(location[3])}` : undefined
+}
+
+function safeComponentFrame(line: string): string | undefined {
+  const match = COMPONENT_FRAME_PATTERN.exec(line)
+  return match ? `    at ${match[1]}` : undefined
+}
+
+function safeFrames(stack: string, render: (line: string) => string | undefined): string[] {
   const frames: string[] = []
 
   for (const line of stack.split("\n")) {
     if (frames.length >= MAX_FRAMES) break
 
-    const match = pattern.exec(line)
-    if (match) frames.push(render(match))
+    const frame = render(line)
+    if (frame !== undefined) frames.push(frame)
   }
 
   return frames
@@ -121,9 +161,9 @@ function joinReport(header: string, frames: readonly string[], componentFrames: 
 }
 
 /**
- * Turns whatever was thrown into a fixed payload: a known error name, a classified message, and
- * two lists of frames that matched a frame pattern. No value read off the error reaches the log
- * unless it survived one of those filters.
+ * Turns whatever was thrown into a fixed payload: a known error name, a message token, file names
+ * from our own bundle with a line and a column, and component names. Nothing else. No text read
+ * off the error is forwarded as it was written.
  *
  * Every read happens through `guarded`, field by field. A hostile getter or a `toString` that
  * throws is a real shape here (the global "error" listener sees whatever a page threw), and this
@@ -138,8 +178,8 @@ function buildReport(source: string, error: unknown, componentStack?: string | n
   const name = SAFE_ERROR_NAMES.has(rawName) ? rawName : "Error"
   const message = isError ? classifyMessage(guarded(() => String((error as Error).message), "")) : `non-error-throw (${guarded(() => typeof error, "unknown")})`
 
-  const frames = guarded(() => safeFrames(String((error as Error).stack ?? ""), STACK_FRAME_PATTERN, (match) => `    at ${match[1]} (${match[2]})`), [] as string[])
-  const componentFrames = guarded(() => safeFrames(String(componentStack ?? ""), COMPONENT_FRAME_PATTERN, (match) => `    at ${match[1]}`), [] as string[])
+  const frames = guarded(() => safeFrames(String((error as Error).stack ?? ""), safeStackFrame), [] as string[])
+  const componentFrames = guarded(() => safeFrames(String(componentStack ?? ""), safeComponentFrame), [] as string[])
 
   const header = `${LOG_TAG} [${source}] ${name}: ${message}`
 
