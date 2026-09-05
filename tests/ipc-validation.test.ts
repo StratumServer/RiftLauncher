@@ -11,6 +11,7 @@ import {
   isArchiveSymlink,
   isPathGranted,
   isPathWithin,
+  isRestoreStagingWorkspaceName,
   isRestoreWorkspaceName,
   isSafeArchiveEntry,
   isSafeTarEntryType,
@@ -96,6 +97,17 @@ describe("IPC boundary validators", () => {
     assert.equal(isRestoreWorkspaceName("My Install", `My Install-removed-${token}`), false)
     assert.equal(isRestoreWorkspaceName("My Install", `My Install Saves-restoring-${token}`), false)
     assert.equal(isRestoreWorkspaceName("", `-restoring-${token}`), false)
+  })
+
+  it("narrows to the extraction workspace alone when the sweep asks", () => {
+    const token = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+    assert.equal(isRestoreStagingWorkspaceName("My Install", `My Install-restoring-${token}`), true)
+    // The set-aside folder holds the player's own data, so it is never swept.
+    assert.equal(isRestoreStagingWorkspaceName("My Install", `My Install-replaced-${token}`), false)
+    assert.equal(isRestoreStagingWorkspaceName("My Install", "My Install-restoring-notauuid"), false)
+    assert.equal(isRestoreStagingWorkspaceName("My Install", `My Install-restoring-${token}-extra`), false)
+    assert.equal(isRestoreStagingWorkspaceName("My Install", `My Install Saves-restoring-${token}`), false)
   })
 
   it("contains a path to its root, and never to a sibling or a parent", () => {
