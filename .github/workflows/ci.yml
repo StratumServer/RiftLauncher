@@ -9,8 +9,15 @@ on:
   workflow_dispatch:
 
 jobs:
+  # typecheck and lint run tsc, eslint and prettier. None of them launches
+  # Electron, so neither job needs the platform binary that `npm ci`'s
+  # postinstall would otherwise fetch from the download mirror. Skipping it
+  # means a mirror hiccup can no longer fail a job whose only work is static
+  # analysis (issue #377). The test-matrix and build jobs keep the download.
   typecheck:
     runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,6 +29,8 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
