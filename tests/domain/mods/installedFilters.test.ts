@@ -167,3 +167,52 @@ describe("matching one installed mod against the filters", () => {
     assert.equal(hasActiveInstalledModFilters(filters({ gameVersion: "1.20.0" })), true)
   })
 })
+
+describe("real mod database shapes (#370)", () => {
+  // The detail endpoint returns exactly this for Vanilla Variants: a null among the category tags.
+  // The documented shape says strings only, and the launcher used to believe it.
+  const nullTag = ["Cosmetics", "Crafting", "Storage", null] as unknown as string[]
+  const vanillaVariants = aMod("VanillaVariants", { _mod: aDetail(nullTag, [["1.21.0", "1.21.1"]]) })
+
+  it("collects category tags past a null in the list instead of throwing", () => {
+    assert.deepEqual(installedModTags([vanillaVariants]), ["Cosmetics", "Crafting", "Storage"])
+  })
+
+  it("still matches the tags that are real when a null sits beside them", () => {
+    assert.equal(matchesInstalledModFilters(vanillaVariants, { ...NO_INSTALLED_MOD_FILTERS, tags: ["storage"] }), true)
+    assert.equal(matchesInstalledModFilters(vanillaVariants, { ...NO_INSTALLED_MOD_FILTERS, tags: ["Food"] }), false)
+  })
+
+  it("collects game versions past a null in a release's tags", () => {
+    const releaseWithNull = [["1.21.0", null, "1.21.1"]] as unknown as string[][]
+    const mod = aMod("Odd", { _mod: aDetail(["Other"], releaseWithNull) })
+    assert.deepEqual(installedModGameVersions([mod]), ["1.21.1", "1.21.0"])
+    assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, gameVersion: "1.21.0" }), true)
+  })
+
+  it("skips a null entry inside an otherwise valid releases list", () => {
+    // { releases: [null, {...}] } passes an array check and used to throw on `release.tags`.
+    const detail = aDetail(["Other"], [["1.21.0"]])
+    const mod = aMod("Odd", { _mod: { ...detail, releases: [null, ...detail.releases] as unknown as typeof detail.releases } })
+    assert.deepEqual(installedModGameVersions([mod]), ["1.21.0"])
+    assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, gameVersion: "1.21.0" }), true)
+  })
+
+  it("ignores an author entry that is not a string", () => {
+    const mod = aMod("Odd", { authors: ["Ann", null, 42, "Bob"] as unknown as string[] })
+    assert.deepEqual(installedModAuthors([mod]), ["Ann", "Bob"])
+    assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, author: "bob" }), true)
+  })
+
+  it("reads a tags field that is not a list as no tags, and releases that are not a list as no releases", () => {
+    const detail = aDetail([], [])
+    // A string rather than null on purpose: `null ?? []` would read as empty by accident, and the
+    // guard has to hold for anything that is not a list, not only for the absent case.
+    const mod = aMod("Odd", { _mod: { ...detail, tags: "Cosmetics" as unknown as string[], releases: "1.21.0" as unknown as typeof detail.releases } })
+    assert.deepEqual(installedModTags([mod]), [])
+    assert.deepEqual(installedModGameVersions([mod]), [])
+    assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, tags: ["cosmetics"] }), false)
+    assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, gameVersion: "1.21.0" }), false)
+    assert.equal(filterInstalledMods([mod], NO_INSTALLED_MOD_FILTERS).length, 1)
+  })
+})
