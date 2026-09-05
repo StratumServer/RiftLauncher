@@ -1,6 +1,6 @@
 /**
  * Turns whatever the LOGIN handler caught into a short, greppable reason,
- * without ever putting the thrown message in the log.
+ * without ever putting anything the error carries in the log.
  *
  * The login path is the one place in the launcher where a password, a
  * six-digit code and a pre-login token are all in scope at once, and the log
@@ -15,9 +15,17 @@
  * is "the message never reaches the log", not "no current thrower misbehaves".
  *
  * So this maps the error onto a fixed vocabulary instead. Every value it can
- * return is either a literal spelled out here or a substring the guards below
- * prove is digits, or a screaming-snake-case identifier: nothing derived from
- * a message body, a response, or a credential can be one.
+ * return is a literal spelled out in this file, or the three digits of an
+ * HTTP status. `code` and `name` are both public and writable, so a value
+ * that merely looks like a Node enum member proves nothing about where it
+ * came from: they are read as lookup keys into the tables below and never
+ * copied into the answer. A key that is not in a table maps to that table's
+ * catch-all token.
+ *
+ * The other half of the answer is where the error came from. The handler's
+ * catch wraps two very different things: the network round trip and the
+ * account-store write. `AccountStorageFailure` is the marker that keeps them
+ * apart, so a full disk is never reported as a network problem.
  *
  * Pure and Electron-free, so a test can pin the mapping directly, which is
  * the same reason accountLoginOutcome.ts and loginRequestBody.ts live beside
@@ -28,19 +36,38 @@
  */
 
 /**
- * The messages the login path's own code throws, mapped to their reason.
+ * Marks an error as raised by the account-store write rather than by the
+ * network, so {@link loginFailureReason} classifies it against the storage
+ * tables. `accountHandlers.ts` wraps at the one call site that touches the
+ * store, which is the only place that can know the origin for certain: by the
+ * time the outer catch sees the error, a bare `ENOSPC` from a keyring write
+ * and an `ENOSPC` from a socket look exactly alike.
+ */
+export class AccountStorageFailure extends Error {
+  constructor(cause: unknown) {
+    super("Account storage failed", { cause })
+    this.name = "AccountStorageFailure"
+  }
+}
+
+/**
+ * The network messages the login path's own code throws, mapped to their reason.
  *
  * A lookup, not a pattern match: these are literals thrown by
- * `requestBoundedTextViaNode` and `assertSecureStorage`, and matching them
- * exactly means an unrecognised message falls through to `unclassified-*`
- * rather than being mislabelled. If one of those strings is ever reworded,
- * the reason degrades to `unclassified-Error` and this table needs the new
- * wording; nothing breaks and no secret escapes in the meantime.
+ * `requestBoundedTextViaNode`, and matching them exactly means an
+ * unrecognised message falls through to `unclassified` rather than being
+ * mislabelled. If one of those strings is ever reworded, the reason degrades
+ * to `unclassified-Error` and this table needs the new wording; nothing
+ * breaks and no secret escapes in the meantime.
  */
-const KNOWN_MESSAGES = new Map<string, string>([
+const NETWORK_MESSAGES = new Map<string, string>([
   ["Network request timed out", "timeout"],
   ["Network response is too large", "response-too-large"],
-  ["Network response was aborted", "response-aborted"],
+  ["Network response was aborted", "response-aborted"]
+])
+
+/** The literals `assertSecureStorage` throws, reached through {@link AccountStorageFailure}. */
+const STORAGE_MESSAGES = new Map<string, string>([
   ["Secure account storage is unavailable", "secure-storage-unavailable"],
   ["A system password store is required for account storage", "no-system-password-store"]
 ])
@@ -49,21 +76,96 @@ const KNOWN_MESSAGES = new Map<string, string>([
 const STATUS_MESSAGE = /^Network request failed with status (\d{3}|unknown)$/
 
 /**
- * Node's system error codes (`ENOTFOUND`, `ECONNRESET`, `CERT_HAS_EXPIRED`).
+ * The socket and TLS failures the login round trip can actually surface,
+ * each mapped to the token that names it.
  *
- * `code` is a public, writable property, so an error from elsewhere could
- * carry anything at all in it. Anchored and length-capped for that reason:
- * an identifier-shaped code is a Node enum member, and a value that is not
- * identifier-shaped is not one and is dropped.
+ * The values are literals, not the key spliced into a prefix: `code` is a
+ * writable property, so `Object.assign(new Error("boom"), { code: secret })`
+ * must not be able to put anything in the log even when the secret happens to
+ * be shaped like a Node enum member. Being in this table is what makes a
+ * value loggable, and what is logged is this table's own string.
+ *
+ * The socket codes are what `http(s).request` reports on `error` for a DNS,
+ * routing or peer failure. The TLS ones are on the list because the login
+ * pass goes to `https://auth3.vintagestory.at` through the Node transport
+ * (see `requestBoundedTextViaNode`), so a certificate this machine will not
+ * accept, most often a corporate middlebox or a clock that is badly wrong,
+ * arrives on the same `error` event as the rest.
  */
-const SYSTEM_ERROR_CODE = /^[A-Z][A-Z0-9_]{1,31}$/
+const NETWORK_CODES = new Map<string, string>([
+  ["ENOTFOUND", "network-ENOTFOUND"],
+  ["EAI_AGAIN", "network-EAI_AGAIN"],
+  ["ECONNREFUSED", "network-ECONNREFUSED"],
+  ["ECONNRESET", "network-ECONNRESET"],
+  ["ECONNABORTED", "network-ECONNABORTED"],
+  ["EPIPE", "network-EPIPE"],
+  ["ETIMEDOUT", "network-ETIMEDOUT"],
+  ["EHOSTUNREACH", "network-EHOSTUNREACH"],
+  ["ENETUNREACH", "network-ENETUNREACH"],
+  ["ENETDOWN", "network-ENETDOWN"],
+  ["EPROTO", "network-EPROTO"],
+  ["ERR_SOCKET_CONNECTION_TIMEOUT", "network-ERR_SOCKET_CONNECTION_TIMEOUT"],
+  ["ERR_STREAM_PREMATURE_CLOSE", "network-ERR_STREAM_PREMATURE_CLOSE"],
+  ["CERT_HAS_EXPIRED", "network-CERT_HAS_EXPIRED"],
+  ["CERT_NOT_YET_VALID", "network-CERT_NOT_YET_VALID"],
+  ["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "network-UNABLE_TO_VERIFY_LEAF_SIGNATURE"],
+  ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "network-UNABLE_TO_GET_ISSUER_CERT_LOCALLY"],
+  ["SELF_SIGNED_CERT_IN_CHAIN", "network-SELF_SIGNED_CERT_IN_CHAIN"],
+  ["DEPTH_ZERO_SELF_SIGNED_CERT", "network-DEPTH_ZERO_SELF_SIGNED_CERT"],
+  ["ERR_TLS_CERT_ALTNAME_INVALID", "network-ERR_TLS_CERT_ALTNAME_INVALID"]
+])
 
-/** Same argument as {@link SYSTEM_ERROR_CODE}, for `name`, which is writable too. */
-const ERROR_NAME = /^[A-Za-z][A-Za-z0-9_]{0,31}$/
+/**
+ * What the account-store write reports when the filesystem refuses it.
+ *
+ * Grouped rather than listed one for one: the maintainer's question after a
+ * failed save is "is the disk full, is it a permissions problem, or is it
+ * something else", and three answers cover it. Same rule as
+ * {@link NETWORK_CODES}, the value logged is this table's string.
+ */
+const STORAGE_CODES = new Map<string, string>([
+  ["ENOSPC", "storage-no-space"],
+  ["EDQUOT", "storage-no-space"],
+  ["EFBIG", "storage-no-space"],
+  ["EACCES", "storage-permission"],
+  ["EPERM", "storage-permission"],
+  ["EROFS", "storage-permission"],
+  ["EBUSY", "storage-locked"],
+  ["ETXTBSY", "storage-locked"],
+  ["EIO", "storage-io"],
+  ["EMFILE", "storage-other"],
+  ["ENFILE", "storage-other"]
+])
 
-function systemErrorCode(error: Error): string | undefined {
+/**
+ * The built-in error classes worth telling apart when nothing else matched.
+ *
+ * `name` is writable too, so this is a lookup and not a pattern: an error
+ * whose name is a valid-format credential is not in this table and becomes
+ * plain `unclassified`. Keeping the handful that are here is what still
+ * separates a bug in our own parsing (a `TypeError`) from a call the user
+ * cancelled (an `AbortError`).
+ */
+const ERROR_NAMES = new Map<string, string>([
+  ["Error", "unclassified-Error"],
+  ["TypeError", "unclassified-TypeError"],
+  ["RangeError", "unclassified-RangeError"],
+  ["SyntaxError", "unclassified-SyntaxError"],
+  ["ReferenceError", "unclassified-ReferenceError"],
+  ["AbortError", "unclassified-AbortError"]
+])
+
+/** The `code` an error carries, as a lookup key only: a non-string is no key at all. */
+function codeOf(error: Error): string {
   const code: unknown = (error as { code?: unknown }).code
-  return typeof code === "string" && SYSTEM_ERROR_CODE.test(code) ? code : undefined
+  return typeof code === "string" ? code : ""
+}
+
+/** Classifies what the account-store write threw, never as a network failure. */
+function storageReason(cause: unknown): string {
+  if (!(cause instanceof Error)) return "storage-other"
+
+  return STORAGE_MESSAGES.get(cause.message) ?? STORAGE_CODES.get(codeOf(cause)) ?? "storage-other"
 }
 
 /**
@@ -71,19 +173,20 @@ function systemErrorCode(error: Error): string | undefined {
  * @returns One token naming what went wrong, safe to log verbatim.
  */
 export function loginFailureReason(error: unknown): string {
+  if (error instanceof AccountStorageFailure) return storageReason(error.cause)
   if (!(error instanceof Error)) return "non-error-throw"
 
-  const known = KNOWN_MESSAGES.get(error.message)
+  const known = NETWORK_MESSAGES.get(error.message)
   if (known) return known
 
   const status = STATUS_MESSAGE.exec(error.message)
   if (status) return `http-status-${status[1]}`
 
-  const code = systemErrorCode(error)
-  if (code) return `network-${code}`
+  const code = codeOf(error)
+  if (code) return NETWORK_CODES.get(code) ?? "network-other"
 
-  // Nothing recognised the message, so the class name is all that is left.
-  // It still separates a thrown TypeError from a failed keyring call, which
-  // is the difference a maintainer reading a field report needs first.
-  return ERROR_NAME.test(error.name) ? `unclassified-${error.name}` : "unclassified"
+  // Nothing recognised the message, so the class is all that is left. It
+  // still separates a thrown TypeError from anything else, which is the
+  // difference a maintainer reading a field report needs first.
+  return ERROR_NAMES.get(error.name) ?? "unclassified"
 }

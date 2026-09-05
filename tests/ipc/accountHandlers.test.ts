@@ -409,6 +409,68 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
       assertNothingSecretIn(lines, [LEAKY_PASSWORD])
     }
   })
+
+  it("logs no credential when the secret is sitting in the error's own code and name", async () => {
+    // Both fields are public and writable, so a value shaped like a Node error
+    // code or a class name proves nothing about where it came from. A reason
+    // built by splicing either one into a prefix puts this password in the log.
+    const thrown = Object.assign(new Error("boom"), { code: "PLACEHOLDER_HORSE_9" })
+    thrown.name = "PlaceholderHorseBatteryStaple"
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(thrown)
+
+    const lines = await logLinesDuring(async () => {
+      await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+    })
+
+    assertNothingSecretIn(lines, ["PLACEHOLDER_HORSE_9", "PlaceholderHorseBatteryStaple"])
+    assert.ok(
+      lines.some((line) => line.includes("Login failure reason: network-other.")),
+      `the failure was not classified: ${lines.join(" / ")}`
+    )
+
+    // Again with the name alone, which is the branch a code-carrying error never reaches.
+    const named = new Error("boom")
+    named.name = "PlaceholderHorseBatteryStaple"
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(named)
+
+    const moreLines = await logLinesDuring(async () => {
+      await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+    })
+
+    assertNothingSecretIn(moreLines, ["PlaceholderHorseBatteryStaple"])
+    assert.ok(
+      moreLines.some((line) => line.includes("Login failure reason: unclassified.")),
+      `the failure was not classified: ${moreLines.join(" / ")}`
+    )
+  })
+
+  it("reports a failed session write as storage, not as a network failure", async () => {
+    // Same catch block wraps the round trip and the account-store write, so
+    // without a marker on the way out a full disk reads as a dropped socket
+    // and sends whoever reads the report after the wrong problem.
+    for (const [code, expectedReason] of [
+      ["ENOSPC", "storage-no-space"],
+      ["EACCES", "storage-permission"]
+    ] as const) {
+      transportAnswers(SUCCESS_BODY)
+      vi.mocked(saveAccountSecrets).mockRejectedValueOnce(Object.assign(new Error(`${code}: writing placeholder-session-key`), { code }))
+
+      const lines = await logLinesDuring(async () => {
+        await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+      })
+
+      assert.ok(
+        lines.some((line) => line.includes(`Login failure reason: ${expectedReason}.`)),
+        `the store failure was not named ${expectedReason}: ${lines.join(" / ")}`
+      )
+      assert.equal(
+        lines.some((line) => line.includes("network")),
+        false,
+        `a storage failure was reported as a network one: ${lines.join(" / ")}`
+      )
+      assertNothingSecretIn(lines, ["placeholder-session-key"])
+    }
+  })
 })
 
 describe("REMOVE_ACCOUNT", () => {
