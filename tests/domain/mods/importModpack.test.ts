@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, planModpackImport } from "../../../src/domain/mods/importModpack"
+import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, planModpackImport } from "../../../src/domain/mods/importModpack"
 import type { InstalledModSnapshot, ModpackEntry, ModpackImportEntryReport, ModpackInstallItem, ModpackModDetail, ModpackPlanItem, ModpackRelease } from "../../../src/domain/mods/importModpack"
 import type { InstallModResult } from "../../../src/domain/mods/install"
 
@@ -333,5 +333,33 @@ describe("executeModpackImport", () => {
     const report = await executeModpackImport({ installer }, { plan: planModpackImport({ entries: [], installed: [], gameVersion: GAME_VERSION, details: new Map() }) })
 
     assert.deepEqual(report, { entries: [], installed: 0, failed: 0 })
+  })
+})
+
+describe("modpackRowLabel", () => {
+  it("prefers the name the ModDB answered with", () => {
+    assert.equal(modpackRowLabel({ modid: "tradie", version: "1.4.0", name: "Traders Expansion (local build)" }, "Traders Expansion"), "Traders Expansion")
+  })
+
+  it("falls back to the name the pack was exported with when nothing resolved (#379)", () => {
+    assert.equal(modpackRowLabel({ modid: "alloycalculatorstuzzichino", version: "1.0.4", name: "Alloy Calculator" }, undefined), "Alloy Calculator")
+  })
+
+  // A skipped plan item names itself after its own modid when no ModDB page answered, so a resolved
+  // name equal to the modid is not a name at all.
+  it("reads a resolved name equal to the modid as no name and takes the local one", () => {
+    assert.equal(modpackRowLabel({ modid: "animationslib", version: "1.2.0", name: "Animations Library" }, "animationslib"), "Animations Library")
+  })
+
+  it("falls back to the modid for a pack exported before names were written", () => {
+    assert.equal(modpackRowLabel({ modid: "waterwheelriverflowfix", version: "1.0.0" }, undefined), "waterwheelriverflowfix")
+  })
+
+  it("treats a blank local name as no name", () => {
+    assert.equal(modpackRowLabel({ modid: "sandwich", version: "2.1.0", name: "   " }, undefined), "sandwich")
+  })
+
+  it("takes the ModDB name over a modid even when the pack carries no local name", () => {
+    assert.equal(modpackRowLabel({ modid: "hqzlights", version: "1.1.0" }, "Braziers"), "Braziers")
   })
 })

@@ -5,8 +5,8 @@ import { PiCheckCircleDuotone, PiProhibitInsetDuotone, PiDownloadDuotone, PiMinu
 import { FiLoader } from "react-icons/fi"
 import clsx from "clsx"
 
-import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, planModpackImport } from "@domain/mods/importModpack"
-import type { ModpackEntryStatus, ModpackModDetail } from "@domain/mods/importModpack"
+import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, planModpackImport } from "@domain/mods/importModpack"
+import type { ModpackEntryStatus, ModpackModDetail, ModpackPlanItem } from "@domain/mods/importModpack"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { toInstalledModSnapshot, toModChangeSummaryEntry, toModpackModDetail } from "@renderer/features/mods/adapters/importModpack"
 import { useInstallMod } from "../hooks/useInstallMod"
@@ -47,11 +47,51 @@ function ImportModpackPopup({
   const [importing, setImporting] = useState(false)
   const [summaryEntries, setSummaryEntries] = useState<ModChangeSummaryEntry[]>([])
   const [showSummary, setShowSummary] = useState(false)
+  const [details, setDetails] = useState<ReadonlyMap<string, ModpackModDetail> | null>(null)
+
+  const installed = useMemo(() => installedMods.map(toInstalledModSnapshot), [installedMods])
 
   const downgradedMods = useMemo(() => {
     if (!manifest) return []
-    return modpackDowngrades(manifest.mods, installedMods.map(toInstalledModSnapshot))
-  }, [manifest, installedMods])
+    return modpackDowngrades(manifest.mods, installed)
+  }, [manifest, installed])
+
+  /**
+   * The lookups run when the manifest opens rather than when Import is clicked.
+   *
+   * They cost the same either way, the import needs them regardless, and running them first is what
+   * lets the table name a mod and say what will happen to it before the player commits to anything.
+   * Only the entries the folder does not already satisfy are asked about, as before.
+   */
+  useEffect(() => {
+    if (!manifest) return
+
+    let cancelled = false
+    setDetails(null)
+
+    void (async (): Promise<void> => {
+      const toResolve = modpackEntriesToResolve(manifest.mods, installed)
+      const fetched = await Promise.all(toResolve.map(async (entry) => [entry.modid, await queryMod({ modid: entry.modid })] as const))
+      if (cancelled) return
+
+      const resolved = new Map<string, ModpackModDetail>()
+      for (const [modid, mod] of fetched) {
+        if (mod) resolved.set(modid, toModpackModDetail(mod))
+      }
+      setDetails(resolved)
+    })()
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [manifest, installed, queryMod])
+
+  const plan = useMemo(() => {
+    if (!manifest || !details) return null
+    return planModpackImport({ entries: manifest.mods, installed, gameVersion: installation.version, details })
+  }, [manifest, details, installed, installation.version])
+
+  const planByModid = useMemo(() => new Map((plan?.items ?? []).map((item): [string, ModpackPlanItem] => [item.modid, item])), [plan])
 
   const completedCount = useMemo(() => {
     return Object.values(modStatuses).filter((s) => s !== "pending" && s !== "downloading").length
@@ -73,27 +113,13 @@ function ImportModpackPopup({
   }
 
   async function handleImport(): Promise<void> {
-    if (!manifest) return
+    if (!manifest || !plan) return
 
     // The same precondition every sibling flow has. Importing a pack writes to the Mods folder just
     // as an update does, and it was the one write that ran straight through a backup.
     if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
 
     setImporting(true)
-
-    const installed = installedMods.map(toInstalledModSnapshot)
-
-    // Only the entries the folder does not already satisfy cost a lookup, which is what the old
-    // interleaved loop achieved by checking the folder before it queried.
-    const toResolve = modpackEntriesToResolve(manifest.mods, installed)
-    const fetched = await Promise.all(toResolve.map(async (entry) => [entry.modid, await queryMod({ modid: entry.modid })] as const))
-
-    const details = new Map<string, ModpackModDetail>()
-    for (const [modid, mod] of fetched) {
-      if (mod) details.set(modid, toModpackModDetail(mod))
-    }
-
-    const plan = planModpackImport({ entries: manifest.mods, installed, gameVersion: installation.version, details })
 
     const collected: ModChangeSummaryEntry[] = []
 
@@ -201,13 +227,17 @@ function ImportModpackPopup({
                   .sort((a, b) => a.modid.localeCompare(b.modid))
                   .map((mod) => {
                     const status = modStatuses[mod.modid] || "pending"
+                    const label = modpackRowLabel(mod, planByModid.get(mod.modid)?.name)
                     return (
                       <TableBodyRow key={mod.modid}>
-                        <TableCell className="w-5/12 overflow-hidden whitespace-nowrap text-ellipsis">{mod.modid}</TableCell>
+                        <TableCell className="w-5/12 overflow-hidden">
+                          <p className="overflow-hidden whitespace-nowrap text-ellipsis">{label}</p>
+                          {label !== mod.modid && <p className="overflow-hidden whitespace-nowrap text-ellipsis text-xs text-zinc-400">{mod.modid}</p>}
+                        </TableCell>
                         <TableCell className="w-3/12">{mod.version}</TableCell>
                         <TableCell className="w-4/12">
-                          <span className={clsx("flex items-center justify-center gap-1 text-sm", statusColor(status))}>
-                            <StatusIcon status={status} />
+                          <span className={clsx("flex items-center gap-1 text-sm", statusColor(status))}>
+                            <StatusIcon status={status} className="shrink-0" />
                             {statusLabel(status, t)}
                           </span>
                         </TableCell>
@@ -231,9 +261,15 @@ function ImportModpackPopup({
 
             <div className="flex gap-2 justify-center">
               {!importing ? (
-                <FormButton title={t("features.mods.importModpackButton")} className="p-1 px-4 h-8" onClick={handleImport} variant="primary" disabled={manifest.mods.length === 0}>
-                  <PiDownloadDuotone className="text-xl" />
-                  <p>{t("features.mods.importModpackButton")}</p>
+                <FormButton
+                  title={plan ? t("features.mods.importModpackButton") : t("features.mods.importModpackChecking")}
+                  className="p-1 px-4 h-8"
+                  onClick={handleImport}
+                  variant="primary"
+                  disabled={manifest.mods.length === 0 || !plan}
+                >
+                  {plan ? <PiDownloadDuotone className="text-xl" /> : <FiLoader className="animate-spin text-xl" />}
+                  <p>{plan ? t("features.mods.importModpackButton") : t("features.mods.importModpackChecking")}</p>
                 </FormButton>
               ) : (
                 <FormButton title={t("features.mods.importModpackImporting")} className="p-1 px-4 h-8" variant="primary" disabled onClick={() => {}}>
@@ -249,18 +285,18 @@ function ImportModpackPopup({
   )
 }
 
-function StatusIcon({ status }: Readonly<{ status: ModStatus }>): JSX.Element {
+function StatusIcon({ status, className }: Readonly<{ status: ModStatus; className?: string }>): JSX.Element {
   switch (status) {
     case "installed":
-      return <PiCheckCircleDuotone />
+      return <PiCheckCircleDuotone className={className} />
     case "already-present":
-      return <PiMinusCircleDuotone />
+      return <PiMinusCircleDuotone className={className} />
     case "downloading":
-      return <FiLoader className="animate-spin" />
+      return <FiLoader className={clsx("animate-spin", className)} />
     case "pending":
-      return <PiDownloadDuotone />
+      return <PiDownloadDuotone className={className} />
     default:
-      return <PiProhibitInsetDuotone />
+      return <PiProhibitInsetDuotone className={className} />
   }
 }
 

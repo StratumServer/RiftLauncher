@@ -263,6 +263,7 @@
       "importModpackVersionWarning": "This modpack was made for game version {{packVersion}}, but this Installation uses version {{installVersion}}. Some Mods may not be compatible.",
       "importModpackInvalidFile": "Invalid modpack file!",
       "importModpackImporting": "Importing...",
+      "importModpackChecking": "Checking the mod database...",
       "importModpackManualRequired": "Manual install required",
       "importModpackNotFound": "Not found on ModDB",
       "importModpackNoRelease": "No compatible release",

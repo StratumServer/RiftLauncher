@@ -151,6 +151,27 @@ export function modpackDowngrades(entries: readonly ModpackEntry[], installed: r
 }
 
 /**
+ * The best name a row of the import table can put on one manifest entry.
+ *
+ * Three sources, in falling order of trust: the name the ModDB answered with, the name the exporting
+ * launcher read off the local modinfo.json, and the modid. The middle one is what makes an entry the
+ * ModDB cannot resolve readable at all, and it is why the export carries it.
+ *
+ * `resolvedName` is read off a plan item, which names an unresolvable entry after its own modid, so
+ * a resolved name equal to the modid counts as no name and falls through to the local one.
+ *
+ * @param entry The manifest entry, with the local name when the pack carries one.
+ * @param resolvedName The ModDB name, when the lookup answered.
+ */
+export function modpackRowLabel(entry: ModpackEntry, resolvedName?: string): string {
+  const resolved = resolvedName?.trim()
+  if (resolved !== undefined && resolved.length > 0 && resolved !== entry.modid) return resolved
+
+  const local = entry.name?.trim()
+  return local !== undefined && local.length > 0 ? local : entry.modid
+}
+
+/**
  * Picks the release to install for one entry.
  *
  * The order is the one the import has always used and is not an accident:
