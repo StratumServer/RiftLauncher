@@ -171,6 +171,42 @@ export function modpackRowLabel(entry: ModpackEntry, resolvedName?: string): str
   return local !== undefined && local.length > 0 ? local : entry.modid
 }
 
+/** What one row of the import table says will happen to that mod, before anything happens. */
+export type ModpackRowStatusKind =
+  /** Not installed at all: the pack adds it. */
+  | "new"
+  /** Installed at an older version than the release the import picked. */
+  | "update"
+  /** Installed at a newer version than the release the import picked. */
+  | "downgrade"
+  | ModpackSkipReason
+
+/** One row's plan, with the versions its wording needs. */
+export interface ModpackRowStatus {
+  kind: ModpackRowStatusKind
+  /** Version installed now, or null when the mod is new to the installation. */
+  fromVersion: string | null
+  /** Version the import would leave behind, or null when it will not install anything. */
+  toVersion: string | null
+}
+
+/**
+ * Reads one plan item as the sentence its row shows.
+ *
+ * Every branch here is already decided by {@link planModpackImport}; this only reads the decision
+ * back as the sentence a row shows.
+ */
+export function modpackRowStatus(item: ModpackPlanItem): ModpackRowStatus {
+  if (item.decision === "skip") {
+    return { kind: item.reason, fromVersion: item.fromVersion, toVersion: item.reason === "already-present" ? item.fromVersion : null }
+  }
+
+  const toVersion = item.release.modversion
+  if (item.fromVersion === null) return { kind: "new", fromVersion: null, toVersion }
+
+  return { kind: item.downgrade ? "downgrade" : "update", fromVersion: item.fromVersion, toVersion }
+}
+
 /**
  * Picks the release to install for one entry.
  *

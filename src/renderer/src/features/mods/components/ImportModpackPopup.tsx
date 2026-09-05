@@ -5,8 +5,8 @@ import { PiCheckCircleDuotone, PiProhibitInsetDuotone, PiDownloadDuotone, PiMinu
 import { FiLoader } from "react-icons/fi"
 import clsx from "clsx"
 
-import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, planModpackImport } from "@domain/mods/importModpack"
-import type { ModpackEntryStatus, ModpackModDetail, ModpackPlanItem } from "@domain/mods/importModpack"
+import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, modpackRowStatus, planModpackImport } from "@domain/mods/importModpack"
+import type { ModpackEntryStatus, ModpackModDetail, ModpackPlanItem, ModpackRowStatus, ModpackRowStatusKind } from "@domain/mods/importModpack"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { toInstalledModSnapshot, toModChangeSummaryEntry, toModpackModDetail } from "@renderer/features/mods/adapters/importModpack"
 import { useInstallMod } from "../hooks/useInstallMod"
@@ -18,8 +18,11 @@ import { NormalButton } from "@renderer/components/ui/Buttons"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import ModChangeSummaryPopup from "./ModChangeSummaryPopup"
 
-/** What one row of the table shows: the two states of an entry in flight, then whatever it settled on. */
-type ModStatus = "pending" | "downloading" | ModpackEntryStatus
+/**
+ * What one row of the table shows: what the plan intends, the two states of an entry in flight, then
+ * whatever it settled on.
+ */
+type ModStatus = "pending" | "downloading" | ModpackEntryStatus | ModpackRowStatusKind
 
 function ImportModpackPopup({
   isOpen,
@@ -226,8 +229,13 @@ function ImportModpackPopup({
                 {[...manifest.mods]
                   .sort((a, b) => a.modid.localeCompare(b.modid))
                   .map((mod) => {
-                    const status = modStatuses[mod.modid] || "pending"
-                    const label = modpackRowLabel(mod, planByModid.get(mod.modid)?.name)
+                    const live = modStatuses[mod.modid] || "pending"
+                    const item = planByModid.get(mod.modid)
+                    const label = modpackRowLabel(mod, item?.name)
+                    // The plan owns the row until the import starts moving it: once an entry is
+                    // downloading or settled, what happened outranks what was going to happen.
+                    const planned = live === "pending" && item ? modpackRowStatus(item) : undefined
+                    const status: ModStatus = planned?.kind ?? live
                     return (
                       <TableBodyRow key={mod.modid}>
                         <TableCell className="w-5/12 overflow-hidden">
@@ -238,7 +246,7 @@ function ImportModpackPopup({
                         <TableCell className="w-4/12">
                           <span className={clsx("flex items-center gap-1 text-sm", statusColor(status))}>
                             <StatusIcon status={status} className="shrink-0" />
-                            {statusLabel(status, t)}
+                            {statusLabel(status, t, planned)}
                           </span>
                         </TableCell>
                       </TableBodyRow>
@@ -293,6 +301,10 @@ function StatusIcon({ status, className }: Readonly<{ status: ModStatus; classNa
       return <PiMinusCircleDuotone className={className} />
     case "downloading":
       return <FiLoader className={clsx("animate-spin", className)} />
+    case "downgrade":
+      return <PiWarningDuotone className={className} />
+    case "new":
+    case "update":
     case "pending":
       return <PiDownloadDuotone className={className} />
     default:
@@ -307,7 +319,13 @@ function statusColor(status: ModStatus): string {
     case "already-present":
       return "text-zinc-400"
     case "downloading":
+    case "update":
       return "text-blue-400"
+    case "downgrade":
+      return "text-orange-300"
+    // Kept last in its group and on its own line: tests/text-contrast.test.ts reads the colour of a
+    // pending row straight out of this switch.
+    case "new":
     case "pending":
       return "text-zinc-400"
     default:
@@ -315,8 +333,16 @@ function statusColor(status: ModStatus): string {
   }
 }
 
-function statusLabel(status: ModStatus, t: (key: string) => string): string {
+function statusLabel(status: ModStatus, t: (key: string, options?: Record<string, unknown>) => string, planned?: ModpackRowStatus): string {
+  const versions = { from: planned?.fromVersion ?? "", to: planned?.toVersion ?? "" }
+
   switch (status) {
+    case "new":
+      return t("features.mods.importModpackStatusNew")
+    case "update":
+      return t("features.mods.importModpackStatusUpdate", versions)
+    case "downgrade":
+      return t("features.mods.importModpackStatusDowngrade", versions)
     case "installed":
       return t("features.mods.importModpackStatusDone")
     case "already-present":

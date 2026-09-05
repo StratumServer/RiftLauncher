@@ -10,9 +10,9 @@ import { renderWithProviders } from "./helpers/render"
 /**
  * The import table before anything is clicked (#379).
  *
- * NekoJess read a 200-row table of modids and could not tell what her pack held. The name is in the
- * plan already, so this mounts the popup over a manifest with one row of every kind and reads the
- * labels without pressing Import.
+ * NekoJess read a 200-row table of modids and could not tell what her pack held, nor what the import
+ * was about to do to her folder. Both answers exist in the plan already, so this mounts the popup
+ * over a manifest with one row of every kind and reads the table without pressing Import.
  */
 
 const GAME_VERSION = "1.20.4"
@@ -125,6 +125,25 @@ describe("ImportModpackPopup, before Import is clicked", () => {
 
     const row = await rowFor("Traders Expansion")
     expect(within(row).getByText("tradie")).toBeTruthy()
+    expect(within(row).getByText("New install")).toBeTruthy()
+  })
+
+  it("says an update, from the installed version to the one the pack asks for", async () => {
+    mountPopup()
+
+    expect(within(await rowFor("Carry On")).getByText("Update from 1.9.0 to 2.0.0")).toBeTruthy()
+  })
+
+  it("says a downgrade, both versions named", async () => {
+    mountPopup()
+
+    expect(within(await rowFor("Primitive Survival")).getByText("Downgrade from 3.7.0 to 3.6.0")).toBeTruthy()
+  })
+
+  it("says a mod already sitting at the pack's version needs nothing, without ever asking the mod database", async () => {
+    mountPopup()
+
+    expect(within(await rowFor("Sammiches")).getByText("Already installed")).toBeTruthy()
   })
 
   it("names an unresolvable mod by the name the pack was exported with, not by its modid", async () => {
@@ -132,6 +151,7 @@ describe("ImportModpackPopup, before Import is clicked", () => {
 
     const row = await rowFor("Alloy Calculator")
     expect(within(row).getByText("alloycalculatorstuzzichino")).toBeTruthy()
+    expect(within(row).getByText("Not found on ModDB")).toBeTruthy()
   })
 
   it("falls back to the bare modid for a pack exported before names were written, with no second line", async () => {
@@ -139,6 +159,12 @@ describe("ImportModpackPopup, before Import is clicked", () => {
 
     const row = await rowFor("animationslib")
     expect(within(row).getAllByText("animationslib").length).toBe(1)
+  })
+
+  it("says a mod whose page publishes no release at all cannot be installed", async () => {
+    mountPopup()
+
+    expect(within(await rowFor("Ghost Mod")).getByText("No compatible release")).toBeTruthy()
   })
 
   it("keeps the rows as plain list items, so the second line does not turn one into a control", async () => {

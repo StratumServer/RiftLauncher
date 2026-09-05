@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, planModpackImport } from "../../../src/domain/mods/importModpack"
+import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, modpackRowStatus, planModpackImport } from "../../../src/domain/mods/importModpack"
 import type { InstalledModSnapshot, ModpackEntry, ModpackImportEntryReport, ModpackInstallItem, ModpackModDetail, ModpackPlanItem, ModpackRelease } from "../../../src/domain/mods/importModpack"
 import type { InstallModResult } from "../../../src/domain/mods/install"
 
@@ -361,5 +361,47 @@ describe("modpackRowLabel", () => {
 
   it("takes the ModDB name over a modid even when the pack carries no local name", () => {
     assert.equal(modpackRowLabel({ modid: "hqzlights", version: "1.1.0" }, "Braziers"), "Braziers")
+  })
+})
+
+describe("modpackRowStatus", () => {
+  function statusOf(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>): ReturnType<typeof modpackRowStatus> {
+    return modpackRowStatus(onlyItem(plan(entries, installed, details)))
+  }
+
+  it("calls a mod the installation does not have a new install", () => {
+    const status = statusOf([{ modid: "carryon", version: "2.0.1" }], [], [["carryon", detail([release("2.0.1", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "new", fromVersion: null, toVersion: "2.0.1" })
+  })
+
+  it("calls a newer release over an older copy an update, and carries both versions", () => {
+    const status = statusOf([{ modid: "carryon", version: "2.0.1" }], [installedCopy()], [["carryon", detail([release("2.0.1", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "update", fromVersion: "1.9.0", toVersion: "2.0.1" })
+  })
+
+  it("calls an older release over a newer copy a downgrade, and carries both versions", () => {
+    const status = statusOf([{ modid: "carryon", version: "1.5.0" }], [installedCopy()], [["carryon", detail([release("1.5.0", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "downgrade", fromVersion: "1.9.0", toVersion: "1.5.0" })
+  })
+
+  it("says a mod already sitting at the requested version stays where it is", () => {
+    const status = statusOf([{ modid: "carryon", version: "1.9.0" }], [installedCopy()], [])
+
+    assert.deepEqual(status, { kind: "already-present", fromVersion: "1.9.0", toVersion: "1.9.0" })
+  })
+
+  it("says nothing will be installed for a modid no listing declares", () => {
+    const status = statusOf([{ modid: "alloycalculatorstuzzichino", version: "1.0.4" }], [], [])
+
+    assert.deepEqual(status, { kind: "not-on-moddb", fromVersion: null, toVersion: null })
+  })
+
+  it("says nothing will be installed for a page that publishes no release, and still names the copy on disk", () => {
+    const status = statusOf([{ modid: "carryon", version: "2.0.1" }], [installedCopy()], [["carryon", detail([])]])
+
+    assert.deepEqual(status, { kind: "no-release", fromVersion: "1.9.0", toVersion: null })
   })
 })
