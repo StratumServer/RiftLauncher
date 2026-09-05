@@ -146,6 +146,12 @@ describe("ImportModpackPopup, before Import is clicked", () => {
     expect(within(await rowFor("Sammiches")).getByText("Already installed")).toBeTruthy()
   })
 
+  it("warns that a copy the pack does not accept, here a disabled one, will be replaced (#379)", async () => {
+    mountPopup()
+
+    expect(within(await rowFor("Braziers")).getByText("The installed copy (1.1.0) will be replaced by 1.1.0")).toBeTruthy()
+  })
+
   it("names an unresolvable mod by the name the pack was exported with, not by its modid", async () => {
     mountPopup()
 

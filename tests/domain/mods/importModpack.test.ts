@@ -387,6 +387,22 @@ describe("modpackRowStatus", () => {
     assert.deepEqual(status, { kind: "downgrade", fromVersion: "1.9.0", toVersion: "1.5.0" })
   })
 
+  // #287: a pack is a playable set, so a copy the player turned off is reinstalled enabled. The row
+  // has to say the copy on disk is going away rather than call it a fresh install.
+  it("warns that a disabled copy at the very same version is still replaced", () => {
+    const status = statusOf([{ modid: "carryon", version: "1.9.0" }], [installedCopy({ enabled: false })], [["carryon", detail([release("1.9.0", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "replace", fromVersion: "1.9.0", toVersion: "1.9.0" })
+  })
+
+  // The hand-edited copy from the #379 report: its version string was changed locally, so nothing on
+  // the ModDB matches it and the release that is picked lands on the same version it already has.
+  it("warns that a copy whose version the manifest does not match is replaced", () => {
+    const status = statusOf([{ modid: "carryon", version: "1.9.0-mine" }], [installedCopy()], [["carryon", detail([release("1.9.0", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "replace", fromVersion: "1.9.0", toVersion: "1.9.0" })
+  })
+
   it("says a mod already sitting at the requested version stays where it is", () => {
     const status = statusOf([{ modid: "carryon", version: "1.9.0" }], [installedCopy()], [])
 

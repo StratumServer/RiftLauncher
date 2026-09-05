@@ -306,6 +306,7 @@ function StatusIcon({ status, className }: Readonly<{ status: ModStatus; classNa
     case "downloading":
       return <FiLoader className={clsx("animate-spin", className)} />
     case "downgrade":
+    case "replace":
       return <PiWarningDuotone className={className} />
     case "new":
     case "update":
@@ -326,6 +327,7 @@ function statusColor(status: ModStatus): string {
     case "update":
       return "text-blue-400"
     case "downgrade":
+    case "replace":
       return "text-orange-300"
     // Kept last in its group and on its own line: tests/text-contrast.test.ts reads the colour of a
     // pending row straight out of this switch.
@@ -347,6 +349,8 @@ function statusLabel(status: ModStatus, t: (key: string, options?: Record<string
       return t("features.mods.importModpackStatusUpdate", versions)
     case "downgrade":
       return t("features.mods.importModpackStatusDowngrade", versions)
+    case "replace":
+      return t("features.mods.importModpackStatusReplace", versions)
     case "installed":
       return t("features.mods.importModpackStatusDone")
     case "already-present":

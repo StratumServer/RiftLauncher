@@ -179,6 +179,12 @@ export type ModpackRowStatusKind =
   | "update"
   /** Installed at a newer version than the release the import picked. */
   | "downgrade"
+  /**
+   * Installed at the version the import would put there, and still replaced: the copy on disk is
+   * turned off, or its version string does not match what the manifest asked for. A copy edited by
+   * hand lands here, and the row has to say so before the edit is overwritten.
+   */
+  | "replace"
   | ModpackSkipReason
 
 /** One row's plan, with the versions its wording needs. */
@@ -193,8 +199,9 @@ export interface ModpackRowStatus {
 /**
  * Reads one plan item as the sentence its row shows.
  *
- * Every branch here is already decided by {@link planModpackImport}; this only reads the decision
- * back as the sentence a row shows.
+ * Every branch here is already decided by {@link planModpackImport}; this only tells the three ways
+ * of replacing an installed copy apart, which is the difference between "Update from 1.9.0 to
+ * 2.0.0" and a silent overwrite of a copy the player edited themselves.
  */
 export function modpackRowStatus(item: ModpackPlanItem): ModpackRowStatus {
   if (item.decision === "skip") {
@@ -203,8 +210,9 @@ export function modpackRowStatus(item: ModpackPlanItem): ModpackRowStatus {
 
   const toVersion = item.release.modversion
   if (item.fromVersion === null) return { kind: "new", fromVersion: null, toVersion }
+  if (item.downgrade) return { kind: "downgrade", fromVersion: item.fromVersion, toVersion }
 
-  return { kind: item.downgrade ? "downgrade" : "update", fromVersion: item.fromVersion, toVersion }
+  return { kind: compareVersions(toVersion, item.fromVersion) > 0 ? "update" : "replace", fromVersion: item.fromVersion, toVersion }
 }
 
 /**

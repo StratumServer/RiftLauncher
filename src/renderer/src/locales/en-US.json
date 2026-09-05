@@ -270,6 +270,7 @@
       "importModpackStatusNew": "New install",
       "importModpackStatusUpdate": "Update from {{from}} to {{to}}",
       "importModpackStatusDowngrade": "Downgrade from {{from}} to {{to}}",
+      "importModpackStatusReplace": "The installed copy ({{from}}) will be replaced by {{to}}",
       "importModpackNoRelease": "No compatible release",
       "importModpackOldVersionStuck": "Old version still on disk",
       "importModpackStatusPending": "Pending",
