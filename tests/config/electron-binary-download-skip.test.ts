@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { readFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import { describe, it } from "vitest"
 
 /**
@@ -31,12 +32,40 @@ describe("electron binary download opt-out", () => {
     assert.doesNotMatch(result.stdout, /running node_modules\/electron\/install\.js/)
   })
 
+  it("runs the electron installer when the variable is not set", () => {
+    // The repo's own node_modules already has the binary, so the script would
+    // fast-exit here and prove nothing. A sandbox with a stub installer shows
+    // the guard falling through without touching the download mirror.
+    const sandbox = mkdtempSync(join(tmpdir(), "electron-skip-"))
+    try {
+      mkdirSync(join(sandbox, "scripts"))
+      mkdirSync(join(sandbox, "node_modules", "electron"), { recursive: true })
+      copyFileSync(resolve(repoRoot, "scripts/fix-native-deps.js"), join(sandbox, "scripts", "fix-native-deps.js"))
+      writeFileSync(join(sandbox, "node_modules", "electron", "install.js"), 'console.log("stub installer ran")\n')
+
+      const env = { ...process.env }
+      delete env.ELECTRON_SKIP_BINARY_DOWNLOAD
+      const result = spawnSync(process.execPath, [join(sandbox, "scripts", "fix-native-deps.js")], { env, encoding: "utf8" })
+
+      assert.equal(result.status, 0)
+      assert.match(result.stdout, /electron binary missing, running node_modules\/electron\/install\.js/)
+      assert.match(result.stdout, /stub installer ran/)
+      assert.doesNotMatch(result.stdout, /skipping the electron binary download/)
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
   it("sets the variable on the typecheck and lint jobs only", () => {
     const workflow = readFileSync(resolve(repoRoot, ".github/workflows/ci.yml"), "utf8")
+    // Only look below `jobs:`. The top-level `on:` keys sit at the same
+    // indentation as a job name, so parsing the whole file would turn
+    // `workflow_dispatch:` into a pseudo-job holding the `jobs:` comment block.
+    const jobsSection = /^jobs:$([\s\S]*)/m.exec(workflow)?.[1] ?? ""
     // Job blocks start at two-space indentation and run to the next one.
     const jobs = new Map<string, string>()
     let current: string | undefined
-    for (const line of workflow.split("\n")) {
+    for (const line of jobsSection.split("\n")) {
       const name = /^ {2}(\S+):$/.exec(line)?.[1]
       if (name !== undefined) {
         current = name
