@@ -113,7 +113,7 @@ describe("parseModDetailResponse", () => {
     assert.equal(result.payload.modid, 1783)
     assert.equal(result.payload.name, "Config lib")
     assert.equal(result.payload.logofile, "https://moddbcdn.vintagestory.at/config.png")
-    assert.deepEqual(result.payload["releases"], [{ releaseid: 1, modversion: "1.12.0" }])
+    assert.deepEqual(result.payload["releases"], [{ releaseid: 1, modversion: "1.12.0", tags: [] }])
   })
 
   it("names a mod field that is not an object as malformed", () => {
@@ -139,6 +139,72 @@ describe("parseModDetailResponse", () => {
   it("names a mod whose releases is not an array as malformed", () => {
     const result = parseModDetailResponse(JSON.stringify({ statuscode: "200", mod: { modid: 1783, name: "Config lib", releases: "none" } }))
     assert.deepEqual(result, { ok: false, reason: "malformed-response", statusCode: "200" })
+  })
+})
+
+/**
+ * Issue #370: the ModDB served Vanilla Variants with a `null` among its tags, and the first render
+ * of Manage Mods died on it. The hotfix taught the installed filters to survive that. These pin the
+ * same shapes at the boundary instead, so that no reader downstream has to know about them.
+ */
+describe("parseModDetailResponse: shapes the ModDB actually sends", () => {
+  function detailOf(mod: unknown): ModDbModDetail {
+    const result = parseModDetailResponse(JSON.stringify({ statuscode: "200", mod }))
+    if (!result.ok) throw new Error("unreachable")
+    return result.payload
+  }
+
+  it("keeps a null out of the mod's own tags, the Vanilla Variants payload that took the page down", () => {
+    const detail = detailOf({ modid: 1, name: "Vanilla Variants", tags: ["Cosmetics", "Crafting", "Storage", null], releases: [] })
+    assert.deepEqual(detail.tags, ["Cosmetics", "Crafting", "Storage"])
+  })
+
+  it("reads a missing or wrongly typed mod tags field as no tags at all", () => {
+    assert.deepEqual(detailOf({ modid: 1, name: "No Tags", releases: [] }).tags, [])
+    assert.deepEqual(detailOf({ modid: 1, name: "Odd Tags", tags: "Storage", releases: [] }).tags, [])
+  })
+
+  it("drops a release that is not an object, which every consumer dereferences unchecked", () => {
+    const detail = detailOf({ modid: 1, name: "Nulled", releases: [null, { releaseid: 2, modversion: "1.1.0" }, "not a release"] })
+    assert.deepEqual(
+      detail.releases.map((release) => release["releaseid"]),
+      [2]
+    )
+  })
+
+  it("keeps a null out of a release's tags, which reach evaluateModCompatibility raw", () => {
+    const detail = detailOf({
+      modid: 1,
+      name: "Tagged",
+      releases: [
+        { modversion: "1.1.0", tags: ["1.21.0", null] },
+        { modversion: "1.0.0", tags: null }
+      ]
+    })
+    assert.deepEqual(
+      detail.releases.map((release) => release["tags"]),
+      [["1.21.0"], []]
+    )
+  })
+
+  it("reads a release modversion that is not a string as an empty one, rather than dropping the release", () => {
+    // Dropping it would shift releases[0], which newestReleaseFileId turns into the download URL.
+    const detail = detailOf({ modid: 1, name: "Versionless", releases: [{ fileid: 42, modversion: null }] })
+    assert.equal(detail.releases[0]?.["modversion"], "")
+    assert.equal(newestReleaseFileId(detail), 42)
+  })
+
+  it("carries every other release field through untouched", () => {
+    const detail = detailOf({ modid: 1, name: "Whole", releases: [{ releaseid: 9, fileid: 42, mainfile: "https://mods.example/a.zip", modidstr: "a", changelog: "<p>hi</p>" }] })
+    assert.deepEqual(detail.releases[0], {
+      releaseid: 9,
+      fileid: 42,
+      mainfile: "https://mods.example/a.zip",
+      modidstr: "a",
+      changelog: "<p>hi</p>",
+      modversion: "",
+      tags: []
+    })
   })
 })
 
