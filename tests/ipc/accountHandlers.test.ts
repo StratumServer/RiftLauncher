@@ -305,6 +305,219 @@ describe("LOGIN", () => {
   })
 })
 
+/**
+ * The log file is what players paste into bug reports, and this handler's
+ * catch block is the only place in the launcher where a password, a
+ * two-factor code and a pre-login token are all in scope at once (issue
+ * #352). It used to log the caught error's message: `redactSensitiveText`
+ * only rewrites `password: value`, `password=value` and absolute paths, so a
+ * bare secret sitting in prose went through untouched.
+ *
+ * These tests hold the property rather than the implementation. They stub the
+ * transport to throw a message with the secrets spliced into it, run the real
+ * handler, and read what actually reached electron-log, after logManager's own
+ * redaction. Putting the message back on that line turns them red.
+ *
+ * Every value below is a placeholder. `LEAKY_PASSWORD` deliberately does not
+ * contain the word "password": a value that did would be caught by the
+ * keyword pattern, and the hole being pinned here is the one where nothing
+ * marks the secret as a secret.
+ */
+describe("LOGIN keeps credentials out of the log when it fails", () => {
+  const LEAKY_PASSWORD = "placeholder-Correct-Horse-9"
+  const PRE_LOGIN_TOKEN = "placeholder-pre-login-token"
+
+  /** Runs `attempt` and hands back every line that reached electron-log while it ran. */
+  async function logLinesDuring(attempt: () => Promise<void>): Promise<string[]> {
+    const Logger = (await import("electron-log")).default
+    const spies = (["error", "warn", "info", "debug", "verbose"] as const).map((level) => vi.spyOn(Logger, level).mockImplementation(() => undefined))
+
+    try {
+      await attempt()
+      return spies.flatMap((spy) => spy.mock.calls.map((call) => String(call[0])))
+    } finally {
+      for (const spy of spies) spy.mockRestore()
+    }
+  }
+
+  function assertNothingSecretIn(lines: string[], secrets: string[]): void {
+    for (const secret of secrets)
+      assert.equal(
+        lines.some((line) => line.includes(secret)),
+        false,
+        `a secret reached the log: ${lines.join(" / ")}`
+      )
+  }
+
+  it("logs no credential when the first pass throws a message carrying all three", async () => {
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(new Error(`upstream refused body: ${LEAKY_PASSWORD} ${TWO_FACTOR_CODE} ${PRE_LOGIN_TOKEN}`))
+
+    const lines = await logLinesDuring(async () => {
+      await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD, TWO_FACTOR_CODE), /Login failed/)
+    })
+
+    assertNothingSecretIn(lines, [LEAKY_PASSWORD, TWO_FACTOR_CODE, PRE_LOGIN_TOKEN])
+    assert.ok(
+      lines.some((line) => line.includes("Login failed.")),
+      `the failure itself was not logged: ${lines.join(" / ")}`
+    )
+  })
+
+  it("logs no credential when the second pass throws, where the token is live too", async () => {
+    transportAnswers(JSON.stringify({ valid: 0, reason: "requiretotpcode", prelogintoken: PRE_LOGIN_TOKEN }))
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(new Error(`upstream refused body: ${LEAKY_PASSWORD} ${TWO_FACTOR_CODE} ${PRE_LOGIN_TOKEN}`))
+
+    const lines = await logLinesDuring(async () => {
+      await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD, TWO_FACTOR_CODE), /Login failed/)
+    })
+
+    assertNothingSecretIn(lines, [LEAKY_PASSWORD, TWO_FACTOR_CODE, PRE_LOGIN_TOKEN])
+  })
+
+  it("logs no session secret when storing the session is what threw", async () => {
+    // The credentials were good here, so the failure carries the session key
+    // rather than the password. Same catch block, same rule.
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockRejectedValueOnce(new Error("keyring write failed for placeholder-session-key / placeholder-session-signature"))
+
+    const lines = await logLinesDuring(async () => {
+      await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+    })
+
+    assertNothingSecretIn(lines, ["placeholder-session-key", "placeholder-session-signature"])
+  })
+
+  it("still says what kind of failure it was, so a field report stays diagnosable", async () => {
+    // Dropping the message must not mean dropping the diagnostic: an outage,
+    // a name that does not resolve and a keyring that is not there have to
+    // stay three different lines in the log.
+    for (const [thrown, expectedReason] of [
+      [Object.assign(new Error(`getaddrinfo ENOTFOUND while sending ${LEAKY_PASSWORD}`), { code: "ENOTFOUND" }), "network-ENOTFOUND"],
+      [new Error("Network request failed with status 503"), "http-unavailable"],
+      [new Error("Network request timed out"), "timeout"]
+    ] as const) {
+      vi.mocked(requestBoundedTextViaNode).mockReset().mockRejectedValueOnce(thrown)
+
+      const lines = await logLinesDuring(async () => {
+        await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+      })
+
+      assert.ok(
+        lines.some((line) => line.includes(`Login failure reason: ${expectedReason}.`)),
+        `no line named the reason ${expectedReason}: ${lines.join(" / ")}`
+      )
+      assertNothingSecretIn(lines, [LEAKY_PASSWORD])
+    }
+  })
+
+  it("logs no credential when the secret is sitting in the error's own code and name", async () => {
+    // Both fields are public and writable, so a value shaped like a Node error
+    // code or a class name proves nothing about where it came from. A reason
+    // built by splicing either one into a prefix puts this password in the log.
+    const thrown = Object.assign(new Error("boom"), { code: "PLACEHOLDER_HORSE_9" })
+    thrown.name = "PlaceholderHorseBatteryStaple"
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(thrown)
+
+    const lines = await logLinesDuring(async () => {
+      await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+    })
+
+    assertNothingSecretIn(lines, ["PLACEHOLDER_HORSE_9", "PlaceholderHorseBatteryStaple"])
+    assert.ok(
+      lines.some((line) => line.includes("Login failure reason: network-other.")),
+      `the failure was not classified: ${lines.join(" / ")}`
+    )
+
+    // Again with the name alone, which is the branch a code-carrying error never reaches.
+    const named = new Error("boom")
+    named.name = "PlaceholderHorseBatteryStaple"
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(named)
+
+    const moreLines = await logLinesDuring(async () => {
+      await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+    })
+
+    assertNothingSecretIn(moreLines, ["PlaceholderHorseBatteryStaple"])
+    assert.ok(
+      moreLines.some((line) => line.includes("Login failure reason: unclassified.")),
+      `the failure was not classified: ${moreLines.join(" / ")}`
+    )
+  })
+
+  it("reports a failed session write as storage, not as a network failure", async () => {
+    // Same catch block wraps the round trip and the account-store write, so
+    // without a marker on the way out a full disk reads as a dropped socket
+    // and sends whoever reads the report after the wrong problem.
+    for (const [code, expectedReason] of [
+      ["ENOSPC", "storage-no-space"],
+      ["EACCES", "storage-permission"]
+    ] as const) {
+      transportAnswers(SUCCESS_BODY)
+      vi.mocked(saveAccountSecrets).mockRejectedValueOnce(Object.assign(new Error(`${code}: writing placeholder-session-key`), { code }))
+
+      const lines = await logLinesDuring(async () => {
+        await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+      })
+
+      assert.ok(
+        lines.some((line) => line.includes(`Login failure reason: ${expectedReason}.`)),
+        `the store failure was not named ${expectedReason}: ${lines.join(" / ")}`
+      )
+      assert.equal(
+        lines.some((line) => line.includes("network")),
+        false,
+        `a storage failure was reported as a network one: ${lines.join(" / ")}`
+      )
+      assertNothingSecretIn(lines, ["placeholder-session-key"])
+    }
+  })
+
+  it("logs no credential when the password is the same digits as the HTTP status", async () => {
+    // `assertString` accepts `503` as a password, and `network.ts` writes
+    // "Network request failed with status 503" from the response's own status
+    // line. A reason built by splicing those digits in therefore writes the
+    // password to the log the moment the auth service goes down, without the
+    // thrower doing anything unusual.
+    const password = "503"
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(new Error(`Network request failed with status ${password}`))
+
+    const lines = await logLinesDuring(async () => {
+      await assert.rejects(loginHandler()(trustedEvent, EMAIL, password), /Login failed/)
+    })
+
+    assertNothingSecretIn(lines, [password])
+    assert.ok(
+      lines.some((line) => line.includes("Login failure reason: http-unavailable.")),
+      `the outage was not classified: ${lines.join(" / ")}`
+    )
+  })
+
+  it("still tells the HTTP failures apart without printing any of their digits", async () => {
+    // Dropping the digits must not flatten a rejected credential, a throttle
+    // and an outage into one line, which is the first split a field report
+    // needs.
+    for (const [status, expectedReason] of [
+      ["401", "http-unauthorized"],
+      ["429", "http-rate-limited"],
+      ["503", "http-unavailable"]
+    ] as const) {
+      vi.mocked(requestBoundedTextViaNode)
+        .mockReset()
+        .mockRejectedValueOnce(new Error(`Network request failed with status ${status}`))
+
+      const lines = await logLinesDuring(async () => {
+        await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+      })
+
+      assert.ok(
+        lines.some((line) => line.includes(`Login failure reason: ${expectedReason}.`)),
+        `no line named the reason ${expectedReason}: ${lines.join(" / ")}`
+      )
+      assertNothingSecretIn(lines, [LEAKY_PASSWORD, status])
+    }
+  })
+})
+
 describe("REMOVE_ACCOUNT", () => {
   it("refuses a sender nothing registered as trusted", async () => {
     await assert.rejects(removeAccountHandler()(createUntrustedEvent(), "uid-a"), /sender|trusted|refused/i)
