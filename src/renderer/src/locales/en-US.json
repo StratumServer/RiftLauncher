@@ -401,6 +401,13 @@
       "title": "Welcome to RiftLauncher!",
       "desc": "We are preparing everything for you!"
     },
+    "pageError": {
+      "title": "This page couldn't be displayed",
+      "desc": "Something went wrong while drawing this page. The rest of the launcher still works, so you can keep using it.",
+      "logsHint": "What went wrong was written to the log files. Open Info & Help, then Debug info, to find the folder they are in and send them with your report.",
+      "goHome": "Go to the main menu",
+      "goToInfoAndHelp": "Open Info & Help"
+    },
     "moddbVisibility": {
       "title": "Help other players find RiftLauncher",
       "body": "RiftLauncher is listed on ModDB, where a listing's download count is most of what decides whether anyone finds it. If you want to help, the launcher can ask ModDB once for that listing's archive, which registers as one download there. The archive is a 315 byte text file pointing at the releases page, not the launcher itself, and the launcher does not keep it. Nothing is installed and nothing else changes.",
