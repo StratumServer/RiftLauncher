@@ -15,11 +15,14 @@
  * is "the message never reaches the log", not "no current thrower misbehaves".
  *
  * So this maps the error onto a fixed vocabulary instead. Every value it can
- * return is a literal spelled out in this file, or the three digits of an
- * HTTP status. `code` and `name` are both public and writable, so a value
- * that merely looks like a Node enum member proves nothing about where it
- * came from: they are read as lookup keys into the tables below and never
- * copied into the answer. A key that is not in a table maps to that table's
+ * return is a literal spelled out in this file, with nothing interpolated
+ * into it. `code` and `name` are both public and writable, so a value that
+ * merely looks like a Node enum member proves nothing about where it came
+ * from: they are read as lookup keys into the tables below and never copied
+ * into the answer. An HTTP status is parsed out of the message as a number
+ * and then used the same way, because the message is written from the
+ * response and a status the caller can influence is no safer than a field the
+ * thrower can set. A key that is not in a table maps to that table's
  * catch-all token.
  *
  * The other half of the answer is where the error came from. The handler's
@@ -72,8 +75,36 @@ const STORAGE_MESSAGES = new Map<string, string>([
   ["A system password store is required for account storage", "no-system-password-store"]
 ])
 
-/** `Network request failed with status 503`. Only the three digits, or the literal `unknown`, are carried over. */
+/** `Network request failed with status 503`. The digits are read as a number, never carried over as text. */
 const STATUS_MESSAGE = /^Network request failed with status (\d{3}|unknown)$/
+
+/**
+ * The HTTP statuses the auth service actually answers with, each mapped to
+ * the token that names it.
+ *
+ * Not `http-status-${status}`: `network.ts` writes that message from the
+ * response's own status line, and `assertString` accepts `503` as a password,
+ * so a login with that password and an outage on the other end used to put
+ * the password in the log. The status is parsed into a number here and then
+ * treated exactly like `code`, as a lookup key whose value never reaches the
+ * answer. A status outside the table degrades to its range, which still
+ * separates "the service rejected us" from "the service is broken", and
+ * anything that is not a 4xx or 5xx (a redirect this transport does not
+ * follow, or the literal `unknown` when the response had no status line at
+ * all) is `http-other`.
+ */
+const HTTP_STATUSES = new Map<number, string>([
+  [400, "http-bad-request"],
+  [401, "http-unauthorized"],
+  [403, "http-forbidden"],
+  [404, "http-not-found"],
+  [408, "http-request-timeout"],
+  [429, "http-rate-limited"],
+  [500, "http-server-error"],
+  [502, "http-bad-gateway"],
+  [503, "http-unavailable"],
+  [504, "http-gateway-timeout"]
+])
 
 /**
  * The socket and TLS failures the login round trip can actually surface,
@@ -155,6 +186,17 @@ const ERROR_NAMES = new Map<string, string>([
   ["AbortError", "unclassified-AbortError"]
 ])
 
+/** Names an HTTP failure without ever formatting the status back into a string. */
+function httpReason(status: string | undefined): string {
+  const code = Number(status) // `unknown` and a missing group are both NaN, and every comparison below is false for NaN.
+  const named = HTTP_STATUSES.get(code)
+  if (named) return named
+  if (code >= 400 && code < 500) return "http-4xx"
+  if (code >= 500 && code < 600) return "http-5xx"
+
+  return "http-other"
+}
+
 /** The `code` an error carries, as a lookup key only: a non-string is no key at all. */
 function codeOf(error: Error): string {
   const code: unknown = (error as { code?: unknown }).code
@@ -180,7 +222,7 @@ export function loginFailureReason(error: unknown): string {
   if (known) return known
 
   const status = STATUS_MESSAGE.exec(error.message)
-  if (status) return `http-status-${status[1]}`
+  if (status) return httpReason(status[1])
 
   const code = codeOf(error)
   if (code) return NETWORK_CODES.get(code) ?? "network-other"

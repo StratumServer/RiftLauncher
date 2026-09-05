@@ -23,10 +23,28 @@ describe("loginFailureReason names what went wrong", () => {
     })
   }
 
-  it("carries the HTTP status through, so a 503 outage is not read as a wrong password", () => {
-    assert.equal(loginFailureReason(new Error("Network request failed with status 503")), "http-status-503")
-    assert.equal(loginFailureReason(new Error("Network request failed with status 401")), "http-status-401")
-    assert.equal(loginFailureReason(new Error("Network request failed with status unknown")), "http-status-unknown")
+  it("names the HTTP failure, so a 503 outage is not read as a wrong password", () => {
+    assert.equal(loginFailureReason(new Error("Network request failed with status 401")), "http-unauthorized")
+    assert.equal(loginFailureReason(new Error("Network request failed with status 429")), "http-rate-limited")
+    assert.equal(loginFailureReason(new Error("Network request failed with status 503")), "http-unavailable")
+  })
+
+  it("never writes the status digits, which the response picks and a password can equal", () => {
+    // `network.ts` builds this message from the response's own status line,
+    // and `assertString` accepts `503` as a password, so a token built by
+    // splicing the digits in puts that password in the log the moment the
+    // service goes down. Every token below is a literal from the module.
+    for (const status of ["401", "403", "429", "500", "503", "418", "599", "302", "unknown"]) {
+      const reason = loginFailureReason(new Error(`Network request failed with status ${status}`))
+      assert.equal(reason.includes(status), false, `the status digits reached the reason: ${reason}`)
+    }
+  })
+
+  it("degrades an unlisted status to its range, and anything else to http-other", () => {
+    assert.equal(loginFailureReason(new Error("Network request failed with status 418")), "http-4xx")
+    assert.equal(loginFailureReason(new Error("Network request failed with status 599")), "http-5xx")
+    assert.equal(loginFailureReason(new Error("Network request failed with status 302")), "http-other")
+    assert.equal(loginFailureReason(new Error("Network request failed with status unknown")), "http-other")
   })
 
   it("names the system error code when the socket is what failed", () => {
@@ -144,7 +162,7 @@ describe("loginFailureReason cannot carry a secret out", () => {
     assert.equal(reason, "storage-other")
   })
 
-  it("keeps only the digits out of a status message, never the rest of it", () => {
+  it("matches the status message whole, so a longer one is not sliced for its middle", () => {
     const reason = loginFailureReason(new Error(`Network request failed with status 500 for body ${PASSWORD}`))
 
     assert.equal(reason.includes(PASSWORD), false)

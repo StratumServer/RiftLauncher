@@ -393,7 +393,7 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
     // stay three different lines in the log.
     for (const [thrown, expectedReason] of [
       [Object.assign(new Error(`getaddrinfo ENOTFOUND while sending ${LEAKY_PASSWORD}`), { code: "ENOTFOUND" }), "network-ENOTFOUND"],
-      [new Error("Network request failed with status 503"), "http-status-503"],
+      [new Error("Network request failed with status 503"), "http-unavailable"],
       [new Error("Network request timed out"), "timeout"]
     ] as const) {
       vi.mocked(requestBoundedTextViaNode).mockReset().mockRejectedValueOnce(thrown)
@@ -469,6 +469,51 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
         `a storage failure was reported as a network one: ${lines.join(" / ")}`
       )
       assertNothingSecretIn(lines, ["placeholder-session-key"])
+    }
+  })
+
+  it("logs no credential when the password is the same digits as the HTTP status", async () => {
+    // `assertString` accepts `503` as a password, and `network.ts` writes
+    // "Network request failed with status 503" from the response's own status
+    // line. A reason built by splicing those digits in therefore writes the
+    // password to the log the moment the auth service goes down, without the
+    // thrower doing anything unusual.
+    const password = "503"
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(new Error(`Network request failed with status ${password}`))
+
+    const lines = await logLinesDuring(async () => {
+      await assert.rejects(loginHandler()(trustedEvent, EMAIL, password), /Login failed/)
+    })
+
+    assertNothingSecretIn(lines, [password])
+    assert.ok(
+      lines.some((line) => line.includes("Login failure reason: http-unavailable.")),
+      `the outage was not classified: ${lines.join(" / ")}`
+    )
+  })
+
+  it("still tells the HTTP failures apart without printing any of their digits", async () => {
+    // Dropping the digits must not flatten a rejected credential, a throttle
+    // and an outage into one line, which is the first split a field report
+    // needs.
+    for (const [status, expectedReason] of [
+      ["401", "http-unauthorized"],
+      ["429", "http-rate-limited"],
+      ["503", "http-unavailable"]
+    ] as const) {
+      vi.mocked(requestBoundedTextViaNode)
+        .mockReset()
+        .mockRejectedValueOnce(new Error(`Network request failed with status ${status}`))
+
+      const lines = await logLinesDuring(async () => {
+        await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+      })
+
+      assert.ok(
+        lines.some((line) => line.includes(`Login failure reason: ${expectedReason}.`)),
+        `no line named the reason ${expectedReason}: ${lines.join(" / ")}`
+      )
+      assertNothingSecretIn(lines, [LEAKY_PASSWORD, status])
     }
   })
 })
