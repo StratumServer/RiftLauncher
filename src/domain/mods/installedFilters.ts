@@ -37,10 +37,17 @@ function textEntries(values: unknown): string[] {
   return Array.isArray(values) ? values.filter((value): value is string => typeof value === "string") : []
 }
 
-/** The releases the mod database lists for a mod, or none when the field is missing or malformed. */
+/**
+ * The releases the mod database lists for a mod, keeping only the entries that are objects.
+ *
+ * Guarding the outer field is not enough: `{ releases: [null] }` passes an array check and then
+ * `release.tags` throws on the entry, the same render crash this module exists to rule out. So each
+ * entry is checked too, and a missing or malformed field reads as no releases at all.
+ */
 function releasesOf(mod: InstalledModType): readonly { tags?: unknown }[] {
   const releases: unknown = mod._mod?.releases
-  return Array.isArray(releases) ? (releases as { tags?: unknown }[]) : []
+  if (!Array.isArray(releases)) return []
+  return releases.filter((release): release is { tags?: unknown } => typeof release === "object" && release !== null)
 }
 
 /**

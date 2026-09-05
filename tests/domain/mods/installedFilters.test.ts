@@ -190,6 +190,14 @@ describe("real mod database shapes (#370)", () => {
     assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, gameVersion: "1.21.0" }), true)
   })
 
+  it("skips a null entry inside an otherwise valid releases list", () => {
+    // { releases: [null, {...}] } passes an array check and used to throw on `release.tags`.
+    const detail = aDetail(["Other"], [["1.21.0"]])
+    const mod = aMod("Odd", { _mod: { ...detail, releases: [null, ...detail.releases] as unknown as typeof detail.releases } })
+    assert.deepEqual(installedModGameVersions([mod]), ["1.21.0"])
+    assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, gameVersion: "1.21.0" }), true)
+  })
+
   it("ignores an author entry that is not a string", () => {
     const mod = aMod("Odd", { authors: ["Ann", null, 42, "Bob"] as unknown as string[] })
     assert.deepEqual(installedModAuthors([mod]), ["Ann", "Bob"])
