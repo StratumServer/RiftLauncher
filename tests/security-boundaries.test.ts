@@ -292,6 +292,84 @@ function unwrapParentheses(node: ts.Expression): ts.Expression {
   return ts.isParenthesizedExpression(node) ? unwrapParentheses(node.expression) : node
 }
 
+/**
+ * Whether the statement can hand control out of the handler body on any path:
+ * a return, a throw, or a break or continue, wherever it sits inside the
+ * statement. Bodies of nested functions are skipped, because a return in there
+ * leaves that function, not this handler.
+ *
+ * This is the conservative half of a choice. Deciding that `if (x) return` only
+ * leaves on one path, and that the statements after it still run on the other,
+ * needs a real control-flow walk where the denial has to dominate every exit.
+ * The shipped handlers in src/main/index.ts do not need that: the only
+ * statement any of them runs before its denial is the try/catch in the
+ * window-open handler, which contains no return, throw, break or continue. So
+ * anything that can leave early stops the scan, and a handler that grows a
+ * genuine early exit has to reflow rather than argue with the pin.
+ */
+function canLeaveTheBody(statement: ts.Statement): boolean {
+  let found = false
+
+  function visit(node: ts.Node): void {
+    if (found || ts.isFunctionLike(node)) return
+    if (ts.isReturnStatement(node) || ts.isThrowStatement(node) || ts.isBreakStatement(node) || ts.isContinueStatement(node)) {
+      found = true
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(statement)
+  return found
+}
+
+/**
+ * The direct statements of a handler body the runtime always reaches: the
+ * statements of the block itself, stopping after the first one that can leave
+ * it on any path. A statement nested in an if, a ternary, a try, a loop or
+ * another function is not in this list, and neither is anything written after a
+ * conditional return or throw. That is the whole point. findNodes walks the
+ * entire subtree, so a defense pinned with it alone is satisfied by a call the
+ * runtime can skip, which is what happened here: `if (false) callback(false)`
+ * matched, and so did `if (x) return; callback(false)`.
+ */
+function reachableStatements(body: ts.ConciseBody): ts.Statement[] {
+  if (!ts.isBlock(body)) return []
+  const reachable: ts.Statement[] = []
+  for (const statement of body.statements) {
+    reachable.push(statement)
+    if (canLeaveTheBody(statement)) break
+  }
+  return reachable
+}
+
+/**
+ * An expression a handler evaluates directly, with the way it is written kept
+ * alongside it: `x` in `() => x` and `return x` produce the handler's answer,
+ * while `x;` on its own line evaluates and throws the value away. Telling those
+ * apart is what stops a bare `false` expression statement from reading as a
+ * denial.
+ */
+interface DirectExpression {
+  expression: ts.Expression
+  isAnswer: boolean
+}
+
+/**
+ * The expressions a handler always evaluates: its expression body, or the
+ * expressions of the reachable direct statements of its block body. Both shapes
+ * matter because the real permission handlers are one-expression arrows.
+ */
+function directExpressions(body: ts.ConciseBody): DirectExpression[] {
+  if (!ts.isBlock(body)) return [{ expression: unwrapParentheses(body), isAnswer: true }]
+  const expressions: DirectExpression[] = []
+  for (const statement of reachableStatements(body)) {
+    if (ts.isExpressionStatement(statement)) expressions.push({ expression: unwrapParentheses(statement.expression), isAnswer: false })
+    else if (ts.isReturnStatement(statement) && statement.expression !== undefined) expressions.push({ expression: unwrapParentheses(statement.expression), isAnswer: true })
+  }
+  return expressions
+}
+
 function isCallToPreventDefault(node: ts.Statement, parameter: string): boolean {
   if (!ts.isExpressionStatement(node) || !ts.isCallExpression(node.expression)) return false
   const call = node.expression
@@ -332,7 +410,7 @@ function assertNavigationHandler(source: string, eventName: string): void {
   const handler = registrations[0].arguments[1]
   if (handler === undefined || !ts.isArrowFunction(handler) || !ts.isBlock(handler.body)) throw new Error(`${eventName} must use a block-bodied arrow-function handler`)
 
-  const guard = handler.body.statements.filter(ts.isIfStatement)
+  const guard = reachableStatements(handler.body).filter(ts.isIfStatement)
   if (guard.length !== 1 || guard[0] === undefined || guard[0].elseStatement !== undefined) throw new Error(`${eventName} must have exactly one direct guard without an alternate branch`)
   const ifStatement = guard[0]
   const consequent = onlyStatement(ifStatement.thenStatement)
@@ -409,38 +487,66 @@ function assertPermissionRequestHandlerDenies(source: string): void {
   const callbackParameter = handler.parameters[2]?.name
   if (callbackParameter === undefined || !ts.isIdentifier(callbackParameter)) throw new Error("The permission request callback must be the third handler parameter")
 
+  const name = callbackParameter.text
+  const isDenial = (expression: ts.Expression): boolean =>
+    ts.isCallExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === name &&
+    expression.arguments.length === 1 &&
+    expression.arguments[0]?.kind === ts.SyntaxKind.FalseKeyword
+
   const callbackCalls = findNodes(handler.body, (node): node is ts.CallExpression => {
-    if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== callbackParameter.text) return false
+    if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== name) return false
     return true
   })
-  if (callbackCalls.length === 0) throw new Error(`permission request callback ${callbackParameter.text} is not called`)
+  if (callbackCalls.length === 0) throw new Error(`setPermissionRequestHandler: permission request callback ${name} is not called`)
   for (const callbackCall of callbackCalls) {
-    if (callbackCall.arguments.length !== 1 || callbackCall.arguments[0]?.kind !== ts.SyntaxKind.FalseKeyword)
-      throw new Error(`permission request callback ${callbackParameter.text} must be called with false`)
+    if (!isDenial(callbackCall)) throw new Error(`setPermissionRequestHandler: permission request callback ${name} must be called with false`)
   }
+  // The denial here is the call itself, so only a call expression counts: a
+  // bare `false`, or a mention of the callback that never calls it, answers
+  // nothing.
+  if (!directExpressions(handler.body).some((direct) => isDenial(direct.expression)))
+    throw new Error(
+      `setPermissionRequestHandler: permission request callback ${name} must be called with false as a reachable direct statement of the handler body, not from a branch, a ternary, a try, a loop, a nested function or after an earlier exit`
+    )
 }
 
 function assertPermissionCheckHandlerDenies(source: string): void {
   const ast = sourceAst(source, "permission-check-fixture.ts")
   const handler = sessionHandler(ast, "setPermissionCheckHandler")
-  const body = handler.body
-  const block = ts.isBlock(body) ? body : undefined
-  const firstStatement = block?.statements[0]
-  const returnsFalse =
-    body.kind === ts.SyntaxKind.FalseKeyword ||
-    (block !== undefined && firstStatement !== undefined && ts.isReturnStatement(firstStatement) && firstStatement.expression?.kind === ts.SyntaxKind.FalseKeyword && block.statements.length === 1)
-  if (!returnsFalse) throw new Error("permission check handler must return false")
+  const returns = findNodes(handler.body, ts.isReturnStatement)
+  if (returns.length > 1) throw new Error(`setPermissionCheckHandler: permission check handler must return false and nothing else, found ${returns.length} return statements`)
+  // Electron reads the value this handler produces, so only the expression body
+  // of `() => false` or a reachable `return false` denies. `{ false }` returns
+  // undefined and `{ false; return true }` grants, and both used to pass.
+  if (!directExpressions(handler.body).some((direct) => direct.isAnswer && direct.expression.kind === ts.SyntaxKind.FalseKeyword))
+    throw new Error(
+      "setPermissionCheckHandler: permission check handler must return false, as the expression body of the handler or as a reachable direct statement of the handler body, not from a branch, a ternary, a try, a loop, a nested function, an expression statement that discards it or after an earlier exit"
+    )
 }
 
 function assertWindowOpenHandlerDenies(source: string): void {
   const ast = sourceAst(source, "window-open-fixture.ts")
   const handler = webContentsHandler(ast, "setWindowOpenHandler")
+  // One object return only, wherever it sits, so a second one cannot allow the
+  // window before the denial the pin reads.
   const returns = findNodes(handler.body, ts.isReturnStatement)
-  const returnStatement = returns[0]
-  if (returns.length !== 1 || returnStatement === undefined || returnStatement.expression === undefined || !ts.isObjectLiteralExpression(returnStatement.expression))
-    throw new Error("window open handler must have exactly one object return")
-  const action = uniqueProperty(returnStatement.expression, "action").initializer
-  if (!ts.isStringLiteral(action) || action.text !== "deny") throw new Error("window open handler must return action deny")
+  if (returns.length > 1) throw new Error(`setWindowOpenHandler: window open handler must have exactly one object return, found ${returns.length} return statements`)
+
+  // The denial is the value the handler answers with, so a bare
+  // `({ action: "deny" })` expression statement is not one.
+  const directDenial = directExpressions(handler.body).find((direct) => direct.isAnswer && ts.isObjectLiteralExpression(direct.expression))
+  const nestedReturn = returns[0]?.expression
+  const object = directDenial?.expression ?? (nestedReturn !== undefined && ts.isObjectLiteralExpression(nestedReturn) ? nestedReturn : undefined)
+  if (object === undefined || !ts.isObjectLiteralExpression(object)) throw new Error("setWindowOpenHandler: window open handler must have exactly one object return")
+
+  const action = uniqueProperty(object, "action").initializer
+  if (!ts.isStringLiteral(action) || action.text !== "deny") throw new Error("setWindowOpenHandler: window open handler must return action deny")
+  if (directDenial === undefined)
+    throw new Error(
+      "setWindowOpenHandler: window open handler must return action deny, as the expression body of the handler or as a reachable direct statement of the handler body, not from a branch, a ternary, a try, a loop, a nested function or after an earlier exit"
+    )
 }
 
 /**
@@ -479,11 +585,17 @@ describe("main process renderer defenses", () => {
     const deadBranch = `function createWindow() { mainWindow.webContents.on("will-navigate", (event, url) => { if (false) { if (!isAllowedMainFrameUrl(url)) event.preventDefault() } }) }`
     const weakenedCondition = `function createWindow() { mainWindow.webContents.on("will-navigate", (event, url) => { if (!isAllowedMainFrameUrl(url) && false) event.preventDefault() }) }`
     const frameWithoutMainFrameCheck = `function createWindow() { mainWindow.webContents.on("will-frame-navigate", (details) => { if (!isAllowedMainFrameUrl(details.url)) details.preventDefault() }) }`
+    // The guard sits at the top level of the body, so a dead branch around it is
+    // caught, but an early return in front of it left it unreachable and green.
+    const unreachableGuard = `function createWindow() { mainWindow.webContents.on("will-navigate", (event, url) => { return; if (!isAllowedMainFrameUrl(url)) event.preventDefault() }) }`
+    const guardInsideTry = `function createWindow() { mainWindow.webContents.on("will-navigate", (event, url) => { try { if (!isAllowedMainFrameUrl(url)) event.preventDefault() } catch {} }) }`
 
     assert.throws(() => assertNavigationHandler(commentOnly, "will-navigate"))
     assert.throws(() => assertNavigationHandler(deadBranch, "will-navigate"))
     assert.throws(() => assertNavigationHandler(weakenedCondition, "will-navigate"))
     assert.throws(() => assertNavigationHandler(frameWithoutMainFrameCheck, "will-frame-navigate"))
+    assert.throws(() => assertNavigationHandler(unreachableGuard, "will-navigate"), /exactly one direct guard/)
+    assert.throws(() => assertNavigationHandler(guardInsideTry, "will-navigate"), /exactly one direct guard/)
   })
 
   it("denies every window the renderer asks Electron to open", () => {
@@ -516,6 +628,151 @@ describe("main process renderer defenses", () => {
     assert.throws(() => assertPermissionRequestHandlerDenies(deadBranch), /must be called with false/)
     assert.throws(() => assertPermissionRequestHandlerDenies(anotherFalseCall), /must be called with false/)
     assert.throws(() => assertPermissionCheckHandlerDenies(weakCheck), /must return false/)
+  })
+
+  // A denial the runtime can step over is not a denial. Everything below calls
+  // the callback with false, or returns false, somewhere in the handler, and
+  // every one of them leaves a permission request unanswered or answered later
+  // by something else.
+  it("rejects a permission request denial the handler can skip", () => {
+    const deadBranch = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { if (false) callback(false) })"
+    const insideTry = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { try { callback(false) } catch {} })"
+    const ternaryWithAllow = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { granted ? callback(false) : callback(true) })"
+    const ternaryDenial = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { granted ? callback(false) : callback(false) })"
+    const nestedFunction = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { const deny = () => callback(false) })"
+    const emptyBody = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {})"
+
+    assert.throws(() => assertPermissionRequestHandlerDenies(deadBranch), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(insideTry), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(ternaryWithAllow), /must be called with false/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(ternaryDenial), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(nestedFunction), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(emptyBody), /is not called/)
+  })
+
+  it("rejects a permission check or window-open denial the handler can skip", () => {
+    const checkInBranch = "session.defaultSession.setPermissionCheckHandler(() => { if (false) return false })"
+    const checkInTry = "session.defaultSession.setPermissionCheckHandler(() => { try { return false } catch {} })"
+    const checkTernary = "session.defaultSession.setPermissionCheckHandler(() => (granted ? false : false))"
+    const checkNestedFunction = "session.defaultSession.setPermissionCheckHandler(() => { const deny = () => false })"
+    const checkAfterAllow = "session.defaultSession.setPermissionCheckHandler(() => { if (granted) return true; return false })"
+    const checkEmptyBody = "session.defaultSession.setPermissionCheckHandler(() => {})"
+    const openInBranch = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { if (details.url) { return { action: "deny" } } }) }`
+    const openInTry = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { try { return { action: "deny" } } catch {} }) }`
+    const openUnreachable = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { throw new Error("unreachable"); return { action: "deny" } }) }`
+    const openEmptyBody = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => {}) }`
+
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkInBranch), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkInTry), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkTernary), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkNestedFunction), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkAfterAllow), /found 2 return statements/)
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkEmptyBody), /direct statement of the handler body/)
+    assert.throws(() => assertWindowOpenHandlerDenies(openInBranch), /direct statement of the handler body/)
+    assert.throws(() => assertWindowOpenHandlerDenies(openInTry), /direct statement of the handler body/)
+    assert.throws(() => assertWindowOpenHandlerDenies(openUnreachable), /direct statement of the handler body/)
+    assert.throws(() => assertWindowOpenHandlerDenies(openEmptyBody), /exactly one object return/)
+  })
+
+  // Evaluating a value and throwing it away is not answering with it. Both of
+  // these used to satisfy the contract: the first hands Electron undefined, the
+  // second hands it true, and Electron reads what the handler returns.
+  it("rejects a denial written as an expression statement that discards it", () => {
+    const checkDiscarded = "session.defaultSession.setPermissionCheckHandler(() => { false })"
+    const checkDiscardedThenAllow = "session.defaultSession.setPermissionCheckHandler(() => { false; return true })"
+    const requestBareFalse = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { false })"
+    const requestCallbackUnused = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { callback })"
+    const openDiscarded = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { ({ action: "deny" }) }) }`
+
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkDiscarded), /must return false/)
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkDiscardedThenAllow), /must return false/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(requestBareFalse), /is not called/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(requestCallbackUnused), /is not called/)
+    assert.throws(() => assertWindowOpenHandlerDenies(openDiscarded), /exactly one object return/)
+  })
+
+  // A denial written after something that can leave the handler runs on some
+  // paths and not others. reachableStatements used to stop only at an exit
+  // written directly in the block, so every shape below reached its denial in
+  // the pin and skipped it at runtime.
+  it("rejects a denial reached only when an earlier statement does not leave the handler", () => {
+    const requestAfterConditionalReturn = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { if (granted) return; callback(false) })"
+    const requestAfterConditionalThrow = 'session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { if (granted) throw new Error("no"); callback(false) })'
+    const requestAfterTryExit = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { try { return } catch {} callback(false) })"
+    const requestAfterLoopExit = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => { for (const p of pending) { return } callback(false) })"
+
+    const checkAfterConditionalThrow = 'session.defaultSession.setPermissionCheckHandler(() => { if (granted) throw new Error("no"); return false })'
+    const checkAfterTryExit = 'session.defaultSession.setPermissionCheckHandler(() => { try { throw new Error("no") } catch {} return false })'
+    const checkAfterLoopExit = "session.defaultSession.setPermissionCheckHandler(() => { for (const p of pending) { return true } return false })"
+
+    const navAfterConditionalReturn = `function createWindow() { mainWindow.webContents.on("will-navigate", (event, url) => { if (trusted) return; if (!isAllowedMainFrameUrl(url)) event.preventDefault() }) }`
+    const navAfterConditionalThrow = `function createWindow() { mainWindow.webContents.on("will-navigate", (event, url) => { if (trusted) throw new Error("no"); if (!isAllowedMainFrameUrl(url)) event.preventDefault() }) }`
+    const navAfterTryExit = `function createWindow() { mainWindow.webContents.on("will-navigate", (event, url) => { try { return } catch {} if (!isAllowedMainFrameUrl(url)) event.preventDefault() }) }`
+    const navAfterLoopExit = `function createWindow() { mainWindow.webContents.on("will-navigate", (event, url) => { for (const frame of frames) { return } if (!isAllowedMainFrameUrl(url)) event.preventDefault() }) }`
+
+    const openAfterConditionalThrow = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { if (details.url) throw new Error("no"); return { action: "deny" } }) }`
+    const openAfterTryExit = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { try { throw new Error("no") } catch {} return { action: "deny" } }) }`
+    const openAfterLoopExit = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { for (const feature of details.features) { throw new Error("no") } return { action: "deny" } }) }`
+    // A conditional return before the denial puts a second return in the
+    // handler, which the one-object-return rule rejects first.
+    const openAfterConditionalReturn = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { if (details.url) return; return { action: "deny" } }) }`
+
+    assert.throws(() => assertPermissionRequestHandlerDenies(requestAfterConditionalReturn), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(requestAfterConditionalThrow), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(requestAfterTryExit), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionRequestHandlerDenies(requestAfterLoopExit), /direct statement of the handler body/)
+
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkAfterConditionalThrow), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkAfterTryExit), /direct statement of the handler body/)
+    assert.throws(() => assertPermissionCheckHandlerDenies(checkAfterLoopExit), /found 2 return statements/)
+
+    assert.throws(() => assertNavigationHandler(navAfterConditionalReturn, "will-navigate"), /must prevent a rejected URL/)
+    assert.throws(() => assertNavigationHandler(navAfterConditionalThrow, "will-navigate"), /must prevent a rejected URL/)
+    assert.throws(() => assertNavigationHandler(navAfterTryExit, "will-navigate"), /exactly one direct guard/)
+    assert.throws(() => assertNavigationHandler(navAfterLoopExit, "will-navigate"), /exactly one direct guard/)
+
+    assert.throws(() => assertWindowOpenHandlerDenies(openAfterConditionalThrow), /direct statement of the handler body/)
+    assert.throws(() => assertWindowOpenHandlerDenies(openAfterTryExit), /direct statement of the handler body/)
+    assert.throws(() => assertWindowOpenHandlerDenies(openAfterLoopExit), /direct statement of the handler body/)
+    assert.throws(() => assertWindowOpenHandlerDenies(openAfterConditionalReturn), /exactly one object return/)
+  })
+
+  // The rule is about where the denial sits, not about how it is spelled, so a
+  // rename and a reflow of the real shapes stay accepted.
+  it("accepts the shipped denials after a rename and a reformat", () => {
+    const renamedRequest = `session.defaultSession.setPermissionRequestHandler((contents, requested, respond) => {
+      respond(false)
+    })`
+    const renamedCheck = `session.defaultSession.setPermissionCheckHandler(() => {
+      return false
+    })`
+    const renamedOpen = `function createWindow() {
+      mainWindow.webContents.setWindowOpenHandler((request) => {
+        try {
+          const safeUrl = assertAllowedBrowserUrl(request.url)
+          void shell.openExternal(safeUrl.toString())
+        } catch {
+          logMessage("warn", "Blocked an unsafe external window URL.")
+        }
+        return { action: "deny" }
+      })
+    }`
+
+    assert.doesNotThrow(() => assertPermissionRequestHandlerDenies(renamedRequest))
+    assert.doesNotThrow(() => assertPermissionCheckHandlerDenies(renamedCheck))
+    assert.doesNotThrow(() => assertWindowOpenHandlerDenies(renamedOpen))
+  })
+
+  // An expression body answers with its value, so it is the same denial written
+  // shorter, and the check handler already ships that way.
+  it("accepts an expression-bodied denial in each handler", () => {
+    const expressionRequest = "session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))"
+    const expressionCheck = "session.defaultSession.setPermissionCheckHandler(() => false)"
+    const expressionOpen = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => ({ action: "deny" })) }`
+
+    assert.doesNotThrow(() => assertPermissionRequestHandlerDenies(expressionRequest))
+    assert.doesNotThrow(() => assertPermissionCheckHandlerDenies(expressionCheck))
+    assert.doesNotThrow(() => assertWindowOpenHandlerDenies(expressionOpen))
   })
 })
 
