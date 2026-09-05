@@ -199,10 +199,11 @@ describe("QUERY_URL concurrency bound", () => {
     const event = await createTrustedEvent()
     const pending = Array.from({ length: 40 }, () => handler(event, TAGS_URL))
 
-    // Let every call that can start, start. Each held request parks after onStart, so once
-    // the queue stops growing the number parked is exactly the ceiling under test.
-    while (finishers.length < 6) await new Promise((resolve) => setImmediate(resolve))
-    await new Promise((resolve) => setImmediate(resolve))
+    // Let every call that can start, start. Each held request parks after onStart, so once the
+    // queue stops growing the number parked is exactly the ceiling under test. A fixed drain
+    // rather than a wait for six, so a bound lower than expected fails on the count below
+    // instead of hanging until the suite timeout.
+    for (let tick = 0; tick < 50; tick++) await new Promise((resolve) => setImmediate(resolve))
 
     assert.equal(peak, 6)
 
