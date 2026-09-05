@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
+import { fileURLToPath } from "node:url"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 vi.mock("worker_threads", () => ({ parentPort: null }))
@@ -200,5 +201,41 @@ describe("serveTasks", () => {
     assert.doesNotThrow(() => port.emit("message", null))
 
     assert.equal(port.postMessage.mock.calls.length, 0)
+  })
+})
+
+/**
+ * Issue #358. The describer compressWorker ships is written inline in its
+ * `serveTasks` call and nothing else imports it, so every test above passes one
+ * of its own and collapsing the shipped one back to a constant went unnoticed.
+ * The worker module is imported for real here, over the same fake port, and the
+ * failures are the ones the filesystem actually raises: a missing folder and a
+ * source that is a file. Both take the route a full disk (ENOSPC) or a denied
+ * write (EACCES) takes, which is the case #337 was reported for.
+ */
+describe("the compress worker's own failure describer", () => {
+  it("forwards each distinct compression failure instead of one constant sentence", async () => {
+    // Imported after beforeEach has put the fake port in place: serveTasks reads
+    // parentPort when the module body runs.
+    await import("@src/ipc/workers/compressWorker")
+
+    const missingSource = { inputPath: "/nonexistent-riftlauncher-backup-source", outputPath: "/tmp", outputFileName: "backup.tar.gz" }
+    port.emit("message", { type: "task", token: 1, payload: missingSource })
+    await vi.waitFor(() => assert.equal(lastMessage() !== undefined, true))
+
+    const missingSourceMessage = (lastMessage() as { message: string }).message
+    assert.match(missingSourceMessage, /ENOENT/, `expected the filesystem's own reason, got: ${missingSourceMessage}`)
+    assert.notEqual(missingSourceMessage, "Compression failed")
+
+    port.postMessage.mockClear()
+    // A file rather than a folder: a different throw in compression.ts, and it
+    // has to arrive as a different sentence.
+    const fileAsSource = { inputPath: fileURLToPath(import.meta.url), outputPath: "/tmp", outputFileName: "backup.tar.gz" }
+    port.emit("message", { type: "task", token: 2, payload: fileAsSource })
+    await vi.waitFor(() => assert.equal(lastMessage() !== undefined, true))
+
+    const fileAsSourceMessage = (lastMessage() as { message: string }).message
+    assert.equal(fileAsSourceMessage, "Compression source must be a directory")
+    assert.notEqual(fileAsSourceMessage, missingSourceMessage)
   })
 })

@@ -541,8 +541,16 @@ function assertWindowOpenHandlerDenies(source: string): void {
   const object = directDenial?.expression ?? (nestedReturn !== undefined && ts.isObjectLiteralExpression(nestedReturn) ? nestedReturn : undefined)
   if (object === undefined || !ts.isObjectLiteralExpression(object)) throw new Error("setWindowOpenHandler: window open handler must have exactly one object return")
 
-  const action = uniqueProperty(object, "action").initializer
+  const actionProperty = uniqueProperty(object, "action")
+  const action = actionProperty.initializer
   if (!ts.isStringLiteral(action) || action.text !== "deny") throw new Error("setWindowOpenHandler: window open handler must return action deny")
+  // Later keys win in an object literal, so a spread written after `action`
+  // hands Electron whatever that object carries while this contract still reads
+  // "deny" off the literal in front of it. A spread before `action` is harmless
+  // for the same reason: `action` is the later key and wins (#378).
+  const actionPosition = object.properties.indexOf(actionProperty)
+  if (object.properties.some((property, position) => position > actionPosition && ts.isSpreadAssignment(property)))
+    throw new Error("setWindowOpenHandler: window open handler must return action deny with nothing spread over it, since a spread after action replaces it at runtime")
   if (directDenial === undefined)
     throw new Error(
       "setWindowOpenHandler: window open handler must return action deny, as the expression body of the handler or as a reachable direct statement of the handler body, not from a branch, a ternary, a try, a loop, a nested function or after an earlier exit"
@@ -606,6 +614,31 @@ describe("main process renderer defenses", () => {
     const weakenedSource = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { if (details.url) return { action: "allow" }; return { action: "deny" } }) }`
 
     assert.throws(() => assertWindowOpenHandlerDenies(weakenedSource), /exactly one object return/)
+  })
+
+  // Issue #378. The denial the contract reads is a static literal; the object
+  // Electron reads is what that literal evaluates to. A spread after `action`
+  // is the one shape where those two disagree, so the handler can grant every
+  // window the renderer asks for while this file stays green.
+  it("rejects a spread written after the window-open denial and accepts one written before it", () => {
+    const spreadAfterAction = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { return { action: "deny", ...override } }) }`
+    const spreadBeforeAction = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => { return { ...override, action: "deny" } }) }`
+    const spreadAfterActionInline = `function createWindow() { mainWindow.webContents.setWindowOpenHandler((details) => ({ action: "deny", ...override })) }`
+
+    assert.throws(() => assertWindowOpenHandlerDenies(spreadAfterAction), /nothing spread over it/)
+    assert.throws(() => assertWindowOpenHandlerDenies(spreadAfterActionInline), /nothing spread over it/)
+    // `action` is the later key here, so it wins at runtime and the handler
+    // still denies. Rejecting this one would be a rule about spelling.
+    assert.doesNotThrow(() => assertWindowOpenHandlerDenies(spreadBeforeAction))
+  })
+
+  it("catches a spread appended to the shipped window-open denial", () => {
+    const SHIPPED_DENIAL = 'return { action: "deny" }'
+    assert.ok(MAIN_SOURCE.includes(SHIPPED_DENIAL), "the shipped window-open denial is no longer written as a plain object return, so this mutant no longer applies")
+
+    const mutated = MAIN_SOURCE.replace(SHIPPED_DENIAL, 'return { action: "deny", ...windowOpenOverride }')
+
+    assert.throws(() => assertWindowOpenHandlerDenies(mutated), /setWindowOpenHandler: window open handler must return action deny with nothing spread over it/)
   })
 
   it("refuses every renderer permission request", () => {
