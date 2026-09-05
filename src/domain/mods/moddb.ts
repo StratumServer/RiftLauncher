@@ -120,7 +120,30 @@ export function parseModListResponse(rawText: string): ModDbResponse<ModDbModSum
 export interface ModDbModDetail extends Record<string, unknown> {
   modid: number
   name: string
+  /** Always a list of strings, whatever the API sent: see {@link readModDetail}. */
+  tags: string[]
+  /** Always a list of objects, each with string `modversion` and string-only `tags`: see {@link readRelease}. */
+  releases: Record<string, unknown>[]
   logofile?: string
+}
+
+/**
+ * Cleans one entry of a detail's `releases` array.
+ *
+ * Every reader downstream, the update scan, the release list, the modpack planner, treats a release
+ * as an object with a string `modversion` and a `tags` array of strings, because that is what the
+ * ModDB documents. It is not what the ModDB always sends: a listing has been seen with a `null` in
+ * the array and with `null` under `tags`, which is what took the Manage Mods page down in beta.7.
+ *
+ * `modversion` is coerced to an empty string rather than dropping the release, because
+ * {@link newestReleaseFileId} reads `releases[0]` to build the download URL for the newest file:
+ * removing an entry here would silently shift which file "install newest" picks. Every reader
+ * already treats a falsy `modversion` as unusable, so an empty one costs that release nothing but
+ * the version comparisons it could never have taken part in anyway.
+ */
+function readRelease(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined
+  return { ...value, tags: cleanStrings(value["tags"]), modversion: typeof value["modversion"] === "string" ? value["modversion"] : "" }
 }
 
 function readModDetail(value: unknown): ModDbModDetail | undefined {
@@ -132,9 +155,20 @@ function readModDetail(value: unknown): ModDbModDetail | undefined {
   // The install popup maps `releases` directly, so a detail without the array would crash it
   // instead of reaching its failure state. Unlike modid and name this is not a field the API is
   // known to always send, hence the explicit check rather than trusting the shape.
-  if (!Array.isArray(value["releases"])) return undefined
+  const releases = value["releases"]
+  if (!Array.isArray(releases)) return undefined
 
-  return { ...value, modid, name, ...(typeof value["logofile"] === "string" ? { logofile: value["logofile"] } : {}) }
+  return {
+    ...value,
+    modid,
+    name,
+    // Mod-level tags carry the same `null` the Vanilla Variants listing shipped in beta.7. The
+    // installed filters tolerate it on their own since #371, cleaning it here makes that tolerance
+    // a second line rather than the only one.
+    tags: cleanStrings(value["tags"]),
+    releases: releases.map(readRelease).filter((release): release is Record<string, unknown> => release !== undefined),
+    ...(typeof value["logofile"] === "string" ? { logofile: value["logofile"] } : {})
+  }
 }
 
 /**
@@ -155,10 +189,7 @@ export function parseModDetailResponse(rawText: string): ModDbResponse<ModDbModD
  * rather than trusted because it ends up in a URL.
  */
 export function newestReleaseFileId(detail: ModDbModDetail): number | undefined {
-  const newest = (detail["releases"] as unknown[])[0]
-  if (!isRecord(newest)) return undefined
-
-  const fileId = newest["fileid"]
+  const fileId = detail.releases[0]?.["fileid"]
   return typeof fileId === "number" && Number.isSafeInteger(fileId) && fileId > 0 ? fileId : undefined
 }
 

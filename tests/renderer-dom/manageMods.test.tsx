@@ -1016,3 +1016,66 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
     expect(screen.getByRole("button", { name: "VS Version" })).toBeTruthy()
   })
 })
+
+/**
+ * Issue #370, and Zaldaryon's review of #374 on top of it. Beta.7 shipped a blank Manage Mods page
+ * because the ModDB served Vanilla Variants with a `null` among its tags. The hotfix taught the
+ * installed filters to read around that, but `useGetCompleteInstalledMods` still walks the raw
+ * `releases` array first, so the page died before the filters ever ran.
+ *
+ * The payload below is deliberately raw and deliberately ugly: it goes through the real
+ * `parseModDetailResponse` on its way in, which is where the shape is now fixed.
+ */
+describe("ManageMods: a ModDB payload with nulls in it", () => {
+  const ALPHA_MALFORMED = JSON.stringify({
+    statuscode: "200",
+    mod: {
+      modid: 1,
+      assetid: 101,
+      name: "Alpha Mod",
+      // The Vanilla Variants tag list, verbatim.
+      tags: ["Cosmetics", "Crafting", "Storage", null],
+      releases: [
+        // A hole in the array: `release.modversion` on this one is what threw.
+        null,
+        { releaseid: 14, mainfile: "https://mods.example/alpha-1.3.0.zip", filename: "alpha-1.3.0.zip", fileid: 14, tags: null, modidstr: "alpha", modversion: "1.3.0" },
+        { releaseid: 13, mainfile: "https://mods.example/alpha-1.2.0.zip", filename: "alpha-1.2.0.zip", fileid: 13, tags: ["1.20.0", null], modidstr: "alpha", modversion: "1.2.0" },
+        { releaseid: 12, mainfile: "https://mods.example/alpha-1.1.0.zip", filename: "alpha-1.1.0.zip", fileid: 12, tags: ["1.20.0"], modidstr: "alpha", modversion: null }
+      ]
+    }
+  })
+
+  function queryMalformedModDb(url: string): Promise<string> {
+    if (url.endsWith("/mod/alpha")) return Promise.resolve(ALPHA_MALFORMED)
+    return queryModDb(url)
+  }
+
+  it("finishes loading and lists the Mod instead of taking the page down", async () => {
+    renderManageMods({ netManager: { queryURL: vi.fn(queryMalformedModDb) } })
+
+    // The page renders at all, which is the whole of #370.
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.getByText("Beta Mod")).toBeTruthy()
+    expect(screen.getByText("Gamma Mod")).toBeTruthy()
+    expect(screen.getByText("broken.zip")).toBeTruthy()
+  })
+
+  it("still reads the update off the releases that survived the cleaning", async () => {
+    const user = userEvent.setup()
+    renderManageMods({
+      netManager: { queryURL: vi.fn(queryMalformedModDb) },
+      modsManager: { getInstalledMods: vi.fn(async () => ({ mods: [aModScan().mods[0] as InstalledModType], errors: [] })) },
+      pathsManager: { deletePath: vi.fn(async () => true), downloadOnPath: vi.fn(async () => "/games/a/Mods/alpha-1.2.0.zip") }
+    })
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    expect(screen.getByText("Mods with updates")).toBeTruthy()
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    // 1.3.0 is newer still, but its tags came in as `null`: undeclared, so the offer is 1.2.0, the
+    // newest release actually tagged for this Installation once its own null tag was dropped.
+    const summary = await screen.findByRole("dialog", {}, { timeout: 3000 })
+    expect(within(summary).getByText("v1.2.0")).toBeTruthy()
+  })
+})
