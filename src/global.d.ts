@@ -283,6 +283,12 @@ declare global {
   type ModpackModEntryType = {
     modid: string
     version: string
+    /**
+     * Display name read off the installed mod's modinfo.json when the pack was
+     * exported. Absent from every pack exported before #379, so no reader may
+     * require it.
+     */
+    name?: string
   }
 
   type ModpackManifestType = {

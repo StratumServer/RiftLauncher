@@ -21,6 +21,11 @@ import type { InstalledModCopy, InstallModFailure, InstallModResult, ModReleaseT
 export interface ModpackEntry {
   modid: string
   version: string
+  /**
+   * Display name of the copy the pack was exported from, when the manifest carries one. Older packs
+   * do not, and nothing here may depend on it: it is a label of last resort, never an identifier.
+   */
+  name?: string
 }
 
 /** A mod already in the installation's Mods folder, copied out of wherever it lives. */

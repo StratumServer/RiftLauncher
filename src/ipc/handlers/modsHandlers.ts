@@ -59,7 +59,11 @@ function parseModpackManifest(value: unknown): ModpackManifestType {
     gameVersion: assertString(value.gameVersion, "modpack game version", 128),
     mods: value.mods.map((entry) => {
       if (!isRecord(entry)) throw new TypeError("Invalid modpack entry")
-      return { modid: assertString(entry.modid, "mod id", 256), version: assertString(entry.version, "mod version", 128) }
+      const parsed = { modid: assertString(entry.modid, "mod id", 256), version: assertString(entry.version, "mod version", 128) }
+      // Every pack exported before #379 carries modid and version only, so the name is read when it
+      // is there and never required. A name of the wrong type is still a refusal, like every other
+      // field: the manifest comes off disk and this is the only place its shape is checked.
+      return entry.name === undefined ? parsed : { ...parsed, name: assertString(entry.name, "mod name", 256) }
     })
   }
 }

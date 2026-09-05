@@ -557,7 +557,7 @@ describe("ManageMods: searching the installed Mods", () => {
     await user.click(plainExport)
 
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
-    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "quirkid", version: "4.0.0" }])
+    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "quirkid", version: "4.0.0", name: "Delta Mod" }])
   })
 
   it("writes the server modpack from the same visible list that decides the button", async () => {
@@ -579,7 +579,7 @@ describe("ManageMods: searching the installed Mods", () => {
     expect(manifest.name).toBe("Install A (Server)")
     // Beta and nothing else: not Delta, which is on screen but client-only, and not Alpha or Gamma,
     // which a server would load but the search took away.
-    expect(manifest.mods).toEqual([{ modid: "beta", version: "2.0.0" }])
+    expect(manifest.mods).toEqual([{ modid: "beta", version: "2.0.0", name: "Beta Mod" }])
   })
 })
 
@@ -715,12 +715,12 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
-    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0" }])
+    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0", name: "Alpha Mod" }])
 
     // Epsilon declares no side, which the server export otherwise reads as "the server loads it".
     await user.click(screen.getByText("Export Server Modpack").closest("button") as HTMLElement)
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(2))
-    expect(exportModpack.mock.calls[1]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0" }])
+    expect(exportModpack.mock.calls[1]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0", name: "Alpha Mod" }])
   })
 
   it("finds a disabled Mod by search like any other, name or id", async () => {

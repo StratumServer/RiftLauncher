@@ -297,6 +297,34 @@ describe("IMPORT_MODPACK", () => {
     assert.deepEqual(result, { success: false, error: "Error reading modpack file." })
   })
 
+  it("imports a manifest that carries a display name per mod (#379)", async () => {
+    const importDirectory = join(temporaryRoot, "imports")
+    mkdirSync(importDirectory, { recursive: true })
+    const namedFile = join(importDirectory, "named.json")
+    const named: ModpackManifestType = { name: "My Modpack", gameVersion: "1.20.0", mods: [{ modid: "tradie", version: "1.4.0", name: "Traders Expansion" }] }
+    writeFileSync(namedFile, JSON.stringify(named), "utf-8")
+
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [namedFile] })
+
+    const event = await createTrustedEvent()
+    const result = await importModpackHandler()(event)
+    assert.deepEqual(result, { success: true, manifest: named })
+  })
+
+  it("refuses a manifest whose mod name is not a string", async () => {
+    const importDirectory = join(temporaryRoot, "imports")
+    mkdirSync(importDirectory, { recursive: true })
+    const badFile = join(importDirectory, "bad-name.json")
+    writeFileSync(badFile, JSON.stringify({ name: "Pack", gameVersion: "1.20.0", mods: [{ modid: "tradie", version: "1.4.0", name: 7 }] }), "utf-8")
+
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [badFile] })
+
+    const event = await createTrustedEvent()
+    const result = await importModpackHandler()(event)
+    assert.deepEqual(result, { success: false, error: "Error reading modpack file." })
+  })
+
+  // Every pack exported before #379 has modid and version only. The reader has to keep taking them.
   it("imports a valid modpack manifest", async () => {
     const importDirectory = join(temporaryRoot, "imports")
     mkdirSync(importDirectory, { recursive: true })
