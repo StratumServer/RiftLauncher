@@ -186,7 +186,7 @@ describe("QUERY_URL concurrency bound", () => {
       new FakeRequest({
         kind: "held",
         body: '["tag-a"]',
-        onStart: (finish) => {
+        onStart: (finish): void => {
           inFlight++
           peak = Math.max(peak, inFlight)
           finishers.push(() => {
