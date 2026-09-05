@@ -16,6 +16,7 @@ import MainMenu from "@renderer/components/layout/MainMenu"
 import GlobalActionsWrapper from "@renderer/components/layout/GlobalActionsWrapper"
 import DeferredGlobalModUpdateChecker from "@renderer/components/layout/DeferredGlobalModUpdateChecker"
 import ModDbVisibilityPrompt from "@renderer/components/layout/ModDbVisibilityPrompt"
+import PageErrorBoundary from "@renderer/components/layout/PageErrorBoundary"
 
 const HomePage = lazy(() => import("@renderer/features/home/pages/HomePage"))
 const ListInslallations = lazy(() => import("@renderer/features/installations/pages/ListInstallations"))
@@ -84,23 +85,27 @@ function AnimatedRoutes(): JSX.Element {
   const location = useLocation()
 
   return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<AnimatedRoute element={<HomePage />} />} />
-        <Route path="/installations" element={<AnimatedRoute element={<ListInslallations />} />} />
-        <Route path="/installations/add" element={<AnimatedRoute element={<AddInslallation />} />} />
-        <Route path="/installations/edit/:id" element={<AnimatedRoute element={<EditInslallation />} />} />
-        <Route path="/installations/backups/:id" element={<AnimatedRoute element={<ManageInstallationBackups />} />} />
-        <Route path="/installations/mods/:id" element={<AnimatedRoute element={<ManageInstallationMods />} />} />
-        <Route path="/versions" element={<AnimatedRoute element={<ListVersions />} />} />
-        <Route path="/versions/add" element={<AnimatedRoute element={<AddVersion />} />} />
-        <Route path="/versions/look-for-a-version" element={<AnimatedRoute element={<LookForAVersion />} />} />
-        <Route path="/mods" element={<AnimatedRoute element={<ListMods />} />} />
-        <Route path="/mods/install/:modid" element={<AnimatedRoute element={<InstallMod />} />} />
-        <Route path="/config" element={<AnimatedRoute element={<ConfigPage />} />} />
-        <Route path="/info-and-help" element={<AnimatedRoute element={<InfoAndHelpPage />} />} />
-      </Routes>
-    </AnimatePresence>
+    // The boundary wraps the routes and nothing above them: a page that throws is replaced in
+    // place, and everything outside <main> keeps running.
+    <PageErrorBoundary resetKey={location.pathname}>
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          <Route path="/" element={<AnimatedRoute element={<HomePage />} />} />
+          <Route path="/installations" element={<AnimatedRoute element={<ListInslallations />} />} />
+          <Route path="/installations/add" element={<AnimatedRoute element={<AddInslallation />} />} />
+          <Route path="/installations/edit/:id" element={<AnimatedRoute element={<EditInslallation />} />} />
+          <Route path="/installations/backups/:id" element={<AnimatedRoute element={<ManageInstallationBackups />} />} />
+          <Route path="/installations/mods/:id" element={<AnimatedRoute element={<ManageInstallationMods />} />} />
+          <Route path="/versions" element={<AnimatedRoute element={<ListVersions />} />} />
+          <Route path="/versions/add" element={<AnimatedRoute element={<AddVersion />} />} />
+          <Route path="/versions/look-for-a-version" element={<AnimatedRoute element={<LookForAVersion />} />} />
+          <Route path="/mods" element={<AnimatedRoute element={<ListMods />} />} />
+          <Route path="/mods/install/:modid" element={<AnimatedRoute element={<InstallMod />} />} />
+          <Route path="/config" element={<AnimatedRoute element={<ConfigPage />} />} />
+          <Route path="/info-and-help" element={<AnimatedRoute element={<InfoAndHelpPage />} />} />
+        </Routes>
+      </AnimatePresence>
+    </PageErrorBoundary>
   )
 }
 
