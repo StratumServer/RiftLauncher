@@ -6,10 +6,10 @@ import yauzl from "yauzl"
 import writeFileAtomic from "write-file-atomic"
 
 import type { DirectoryReader, IconStore, ModArchiveContent, ModArchiveReader, ModArchiveResult, ModImageCache, ModImageCacheEntry, PathBuilder } from "@domain/ports"
-import type { CachedIcon } from "@domain/mods/iconCache"
 import type { ScanInstalledModsPorts } from "@domain/mods/scanInstalled"
 import { MOD_ICON_CACHE_MAX_BYTES, planIconCacheEviction } from "@domain/mods/iconCache"
 import { isJpegBytes, isPngBytes } from "@domain/backgrounds"
+import { sweepCacheFolder } from "@src/ipc/cacheSweep"
 import { assertSafeFileName } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
 
@@ -317,51 +317,22 @@ export async function pruneModIconCache(maxBytes: number = MOD_ICON_CACHE_MAX_BY
 }
 
 async function doPruneModIconCache(maxBytes: number): Promise<void> {
-  const folder = modImagesFolder()
-
-  let names: string[]
-  try {
-    names = await fse.readdir(folder)
-  } catch {
-    // No cache folder yet, or it just vanished: nothing to sweep either way.
-    return
-  }
-
-  const entries: CachedIcon[] = []
-  for (const name of names) {
-    try {
+  await sweepCacheFolder({
+    folder: modImagesFolder(),
+    origin: "[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache]",
+    subject: "the icon cache",
+    accepts: (name) => {
+      // Throws its own reason rather than returning false, and the sweep logs it.
       assertSafeFileName(name)
-      const stats = await fse.stat(join(folder, name))
-      if (stats.isFile()) entries.push({ name, bytes: stats.size, accessedAt: stats.atimeMs })
-    } catch (err) {
-      logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Skipping ${name}: ${err}`)
-    }
-  }
-
-  const doomed = planIconCacheEviction(entries, maxBytes)
-  if (doomed.length === 0) return
-
-  const accessTimeByName = new Map(entries.map((entry) => [entry.name, entry.accessedAt]))
-  const bytesByName = new Map(entries.map((entry) => [entry.name, entry.bytes]))
-  let reclaimed = 0
-
-  await Promise.all(
-    doomed.map(async (name) => {
-      try {
-        // Re-stat before removal: if access time moved since the snapshot, a
-        // concurrent scan just touched/recreated this icon. Skip it.
-        const current = await fse.stat(join(folder, name))
-        if (current.atimeMs !== accessTimeByName.get(name)) return
-
-        await fse.remove(join(folder, name))
-        reclaimed += bytesByName.get(name) ?? 0
-      } catch (err) {
-        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Could not remove ${name} from the icon cache: ${err}`)
-      }
-    })
-  )
-
-  logMessage("info", `[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache] Removed ${doomed.length} icons from the cache, ${reclaimed} bytes reclaimed.`)
+      return true
+    },
+    recencyOf: (stats) => stats.atimeMs,
+    plan: (entries) =>
+      planIconCacheEviction(
+        entries.map(({ name, bytes, recencyMs }) => ({ name, bytes, accessedAt: recencyMs })),
+        maxBytes
+      )
+  })
 }
 
 /**
