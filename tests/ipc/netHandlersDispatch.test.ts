@@ -37,7 +37,9 @@ const mockState = vi.hoisted(() => ({
 vi.mock("electron", () => ({
   app: {
     getPath: (name: string): string => (name === "userData" ? mockState.userDataDir : tmpdir()),
-    isPackaged: true
+    isPackaged: true,
+    // netHandlers.ts registers its limiter shutdown on before-quit; nothing here quits.
+    on: (): void => {}
   },
   ipcMain: {
     handle: (channel: string, listener: (event: IpcMainInvokeEvent, ...args: never[]) => unknown): void => {
@@ -58,7 +60,11 @@ class FakeResponse extends EventEmitter {
   }
 }
 
-type RequestScenario = { kind: "success"; body: string } | { kind: "request-error"; message: string }
+type RequestScenario =
+  | { kind: "success"; body: string }
+  | { kind: "request-error"; message: string }
+  /** Answers nothing until the test calls back the `finish` it is handed, so requests can be held open and overlap. */
+  | { kind: "held"; body: string; onStart: (finish: () => void) => void }
 
 class FakeRequest extends EventEmitter {
   aborted = false
@@ -77,6 +83,16 @@ class FakeRequest extends EventEmitter {
 
   end(): void {
     const scenario = this.scenario
+
+    if (scenario.kind === "held") {
+      scenario.onStart(() => {
+        const response = new FakeResponse({}, 200)
+        this.emit("response", response)
+        response.emit("data", Buffer.from(scenario.body, "utf8"))
+        response.emit("end")
+      })
+      return
+    }
 
     if (scenario.kind === "request-error") {
       this.emit("error", new Error(scenario.message))
@@ -141,5 +157,66 @@ describe("QUERY_URL ipcMain.handle wrapper", () => {
 
     const event = await createTrustedEvent()
     await assert.rejects(() => handler(event, "https://example.com/api/mods"), /URL is not allowed/)
+  })
+})
+
+/**
+ * The bound on how many requests QUERY_URL lets out at once (#384).
+ *
+ * The modpack import resolves one mod-detail lookup per entry the folder does not already
+ * satisfy, and since #384 it does that when the manifest loads rather than when Import is
+ * clicked, so a 200-mod pack used to fire 200 requests at the mod database off a file
+ * chooser. Manage Mods fans out the same way over installed mods.
+ *
+ * This drives the real handler with the transport stubbed, holding every request open until
+ * the peak has been observed, so what it measures is the handler's own ceiling and not a
+ * timing accident. The expected peak is written out as a literal on purpose: reading
+ * QUERY_URL_CONCURRENCY_LIMIT back out of the module would make the test agree with whatever
+ * the constant happened to say.
+ */
+describe("QUERY_URL concurrency bound", () => {
+  it("never has more than 6 requests in flight, and still answers all 40", async () => {
+    const handler = getIpcHandler<QueryUrlHandler>(IPC_CHANNELS.NET_MANAGER.QUERY_URL)
+
+    let inFlight = 0
+    let peak = 0
+    const finishers: Array<() => void> = []
+
+    mockState.requestHandler = (): FakeRequest =>
+      new FakeRequest({
+        kind: "held",
+        body: '["tag-a"]',
+        onStart: (finish) => {
+          inFlight++
+          peak = Math.max(peak, inFlight)
+          finishers.push(() => {
+            inFlight--
+            finish()
+          })
+        }
+      })
+
+    const event = await createTrustedEvent()
+    const pending = Array.from({ length: 40 }, () => handler(event, TAGS_URL))
+
+    // Let every call that can start, start. Each held request parks after onStart, so once
+    // the queue stops growing the number parked is exactly the ceiling under test.
+    while (finishers.length < 6) await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.equal(peak, 6)
+
+    // Release them one at a time, so a limiter that handed out extra slots on a release would
+    // show up as a peak above the bound rather than as a slower run.
+    while (finishers.length > 0) {
+      finishers.shift()?.()
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+
+    const answers = await Promise.all(pending)
+    assert.equal(answers.length, 40)
+    assert.ok(answers.every((text) => text === '["tag-a"]'))
+    assert.equal(peak, 6)
+    assert.equal(inFlight, 0)
   })
 })

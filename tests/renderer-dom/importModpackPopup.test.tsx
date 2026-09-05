@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { screen, within } from "@testing-library/react"
+import { act, screen, waitFor, within } from "@testing-library/react"
 
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
@@ -190,5 +190,62 @@ describe("ImportModpackPopup, before Import is clicked", () => {
     const row = await rowFor("Traders Expansion")
     expect(row.tagName).toBe("LI")
     expect(within(row).queryByRole("button")).toBeNull()
+  })
+})
+
+/**
+ * Closing the popup while the lookups are still out (#384).
+ *
+ * The lookups now start when the manifest loads, and the main process holds them to six at a
+ * time, so a big pack spends real seconds resolving and a player can easily close the popup
+ * and open another pack before the first batch has come back. The effect's cancelled flag is
+ * what keeps that first batch from landing on the second pack's table.
+ *
+ * The stale batch is released last on purpose. A resolution that comes back before the fresh
+ * one would be overwritten anyway; the one that has to be dropped is the one that arrives
+ * after the popup has already been re-opened on something else.
+ */
+describe("ImportModpackPopup, closed mid-lookup", () => {
+  const FIRST: ModpackManifestType = { name: "First pack", gameVersion: GAME_VERSION, mods: [{ modid: "tradie", version: "1.4.0", name: "Traders Expansion" }] }
+  const SECOND: ModpackManifestType = { name: "Second pack", gameVersion: GAME_VERSION, mods: [{ modid: "carryon", version: "2.0.0", name: "Carry On" }] }
+
+  it("drops a lookup that comes back after the popup was closed and re-opened on another pack", async () => {
+    const held = new Map<string, (response: string) => void>()
+
+    installMockWindowApi({
+      netManager: {
+        queryURL: (url: string) =>
+          new Promise<string>((resolve) => {
+            held.set(url.split("/mod/")[1] ?? "", resolve)
+          })
+      }
+    })
+
+    function popup(manifest: ModpackManifestType | null): JSX.Element {
+      return (
+        <TaskProvider>
+          <ImportModpackPopup isOpen={manifest !== null} manifest={manifest} close={(): void => {}} installation={installation()} installedMods={[]} onFinish={(): void => {}} />
+        </TaskProvider>
+      )
+    }
+
+    const { rerender } = renderWithProviders(popup(FIRST))
+    await waitFor(() => expect(held.has("tradie")).toBe(true))
+
+    rerender(popup(null))
+    rerender(popup(SECOND))
+    await waitFor(() => expect(held.has("carryon")).toBe(true))
+
+    await act(async () => {
+      held.get("carryon")?.(detailResponse("Carry On", ["2.0.0"]))
+    })
+    expect(within(await rowFor("Carry On")).getByText("New install")).toBeTruthy()
+
+    await act(async () => {
+      held.get("tradie")?.(detailResponse("Traders Expansion", ["1.4.0"]))
+    })
+
+    expect(screen.queryByText("Traders Expansion")).toBeNull()
+    expect(within(await rowFor("Carry On")).getByText("New install")).toBeTruthy()
   })
 })

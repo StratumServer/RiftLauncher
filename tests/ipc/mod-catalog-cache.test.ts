@@ -22,7 +22,9 @@ const mockState = vi.hoisted(() => ({
 vi.mock("electron", () => ({
   app: {
     getPath: (name: string): string => (name === "userData" ? mockState.userDataDir : tmpdir()),
-    isPackaged: true
+    isPackaged: true,
+    // netHandlers.ts registers its limiter shutdown on before-quit; nothing here quits.
+    on: (): void => {}
   },
   ipcMain: { handle: vi.fn() },
   net: { request: (options: unknown): FakeRequest => mockState.requestHandler(options) }
