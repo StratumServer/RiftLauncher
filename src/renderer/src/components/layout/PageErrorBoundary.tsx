@@ -14,10 +14,12 @@ import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponen
  * broken. A single boundary around the whole app would have turned every page bug into an app
  * with nothing left to click.
  *
- * `resetKey` is the current pathname. React keeps a boundary in its error state until something
- * changes it, and the fallback's own action navigates, so without this the launcher would show
- * the fallback for the rest of the session. Clearing on a pathname change also means a player who
- * reaches the crashed page again gets a real attempt at rendering it, not a cached failure.
+ * `resetKey` is the current pathname, and a change to it clears the error: a player who reaches
+ * the crashed page again gets a real attempt at rendering it, not a cached failure. That alone is
+ * not a recovery path, though. The Home route is inside this boundary too, so a fallback that only
+ * navigates home leaves `resetKey` at "/" when Home is what threw, React holds the boundary in its
+ * error state until something changes it, and the one button does nothing at all. Hence `reset`:
+ * the fallback's actions clear the state themselves and do not depend on the route changing.
  */
 class PageErrorBoundary extends Component<Readonly<{ resetKey: string; children: ReactNode }>, { error: Error | null }> {
   state: { error: Error | null } = { error: null }
@@ -34,25 +36,40 @@ class PageErrorBoundary extends Component<Readonly<{ resetKey: string; children:
     if (this.state.error && previous.resetKey !== this.props.resetKey) this.setState({ error: null })
   }
 
+  reset = (): void => {
+    this.setState({ error: null })
+  }
+
   render(): ReactNode {
-    return this.state.error ? <PageErrorFallback /> : this.props.children
+    return this.state.error ? <PageErrorFallback onReset={this.reset} /> : this.props.children
   }
 }
 
 /**
  * What the player sees instead of a blank window: what happened, that the rest of the launcher is
- * fine, where the log that explains it lives, and one way out.
+ * fine, where the log that explains it lives, and two ways out.
+ *
+ * Both clear the boundary first, then navigate. "Go to the main menu" is the one a player wants,
+ * and on any page but Home it is enough on its own. Home is the case it cannot cover: if Home is
+ * what threw, resetting re-renders it and it throws again, which is why the second action leads
+ * somewhere that is not Home. Info & Help is the useful destination for it, since it is where the
+ * text above says the logs are.
  */
-function PageErrorFallback(): JSX.Element {
+function PageErrorFallback({ onReset }: Readonly<{ onReset: () => void }>): JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const actionRef = useRef<HTMLDivElement | null>(null)
 
   // The page the player was looking at just vanished, so keyboard focus is somewhere that no
-  // longer exists. Parking it on the one action here is both the a11y fix and the useful default.
+  // longer exists. Parking it on the first action here is both the a11y fix and the useful default.
   useEffect(() => {
     actionRef.current?.querySelector("button")?.focus()
   }, [])
+
+  function recoverTo(route: string): void {
+    onReset()
+    navigate(route)
+  }
 
   return (
     <div className="w-full h-full flex items-center justify-center p-4">
@@ -65,7 +82,8 @@ function PageErrorFallback(): JSX.Element {
 
             <div ref={actionRef}>
               <ButtonsWrapper>
-                <FormButton title={t("components.pageError.goHome")} onClick={() => navigate("/")} variant="primary" size="md" />
+                <FormButton title={t("components.pageError.goHome")} onClick={() => recoverTo("/")} variant="primary" size="md" />
+                <FormButton title={t("components.pageError.goToInfoAndHelp")} onClick={() => recoverTo("/info-and-help")} variant="secondary" size="md" />
               </ButtonsWrapper>
             </div>
           </div>
