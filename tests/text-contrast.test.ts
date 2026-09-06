@@ -144,7 +144,7 @@ function tailwindColor(name: string): Rgb {
 
 /** The four `text-*` shades of one status/kind map, keyed by the name the component gives them. */
 function colourMap(file: string, anchor: RegExp): Record<string, string> {
-  const entries = [...match(file, anchor)[1].matchAll(/"?([a-z-]+)"?:\s*"text-([a-z]+-\d+|vsl?d?)"/g)]
+  const entries = [...(match(file, anchor)[1] as string).matchAll(/"?([a-z-]+)"?:\s*"text-([a-z]+-\d+|vsl?d?)"/g)]
   assert.ok(entries.length >= 4, `${anchor} in ${file} no longer lists four colours`)
   return Object.fromEntries(entries.map((entry) => [entry[1] as string, entry[2] as string]))
 }
