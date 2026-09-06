@@ -385,12 +385,7 @@ describe("modpackRowLabel", () => {
 })
 
 describe("modpackRowStatus", () => {
-  function statusOf(
-    entries: ModpackEntry[],
-    installed: InstalledModSnapshot[],
-    details: Array<[string, ModpackModDetail]>,
-    failedModids?: readonly string[]
-  ): ReturnType<typeof modpackRowStatus> {
+  function statusOf(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>, failedModids?: readonly string[]): ReturnType<typeof modpackRowStatus> {
     return modpackRowStatus(onlyItem(plan(entries, installed, details, failedModids)))
   }
 
