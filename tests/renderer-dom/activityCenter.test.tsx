@@ -306,7 +306,10 @@ describe("ActivityCenter", () => {
     fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
     fireEvent.click(screen.getByRole("button", { name: "Add actionable warning" }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Resolve" })).toBeTruthy())
-    expect(screen.queryByTestId("toast-timer")).toBeNull()
+    // waitFor, not a bare read: the dismissed banner plays an exit animation with its own countdown
+    // still drawn, so on a slow runner both banners are briefly on screen. What this holds is that
+    // once only the warning is left, it has no countdown of its own.
+    await waitFor(() => expect(screen.queryByTestId("toast-timer")).toBeNull())
   })
 
   it("records how an actionable notification was answered", () => {
