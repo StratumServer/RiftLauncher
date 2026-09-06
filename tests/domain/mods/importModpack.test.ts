@@ -1,7 +1,16 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, modpackRowStatus, planModpackImport } from "../../../src/domain/mods/importModpack"
+import {
+  clampModpackModName,
+  executeModpackImport,
+  MAX_MODPACK_MOD_NAME_LENGTH,
+  modpackDowngrades,
+  modpackEntriesToResolve,
+  modpackRowLabel,
+  modpackRowStatus,
+  planModpackImport
+} from "../../../src/domain/mods/importModpack"
 import type { InstalledModSnapshot, ModpackEntry, ModpackImportEntryReport, ModpackInstallItem, ModpackModDetail, ModpackPlanItem, ModpackRelease } from "../../../src/domain/mods/importModpack"
 import type { InstallModResult } from "../../../src/domain/mods/install"
 
@@ -19,8 +28,8 @@ function installedCopy(overrides: Partial<InstalledModSnapshot> = {}): Installed
   return { modid: "carryon", name: "Carry On", version: "1.9.0", path: "/installations/main/Mods/carryon-1.9.0.zip", enabled: true, assetid: 4711, ...overrides }
 }
 
-function plan(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>): ModpackPlanItem[] {
-  return planModpackImport({ entries, installed, gameVersion: GAME_VERSION, details: new Map(details) }).items
+function plan(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>, failedModids?: readonly string[]): ModpackPlanItem[] {
+  return planModpackImport({ entries, installed, gameVersion: GAME_VERSION, details: new Map(details), failedModids: failedModids && new Set(failedModids) }).items
 }
 
 function onlyItem(items: ModpackPlanItem[]): ModpackPlanItem {
@@ -167,6 +176,17 @@ describe("planModpackImport decisions", () => {
     const item = onlyItem(plan([{ modid: "ghostmod", version: "1.0.0" }], [], []))
 
     assert.deepEqual(item, { decision: "skip", modid: "ghostmod", requestedVersion: "1.0.0", name: "ghostmod", reason: "not-on-moddb", fromVersion: null })
+  })
+
+  // #384: a modid absent from `details` is not always a clean 404. When the caller has told the
+  // plan that this particular lookup never answered, the row must say the database was
+  // unreachable, not that the mod is a fork or a private build.
+  it("tells a lookup that failed apart from one that genuinely found nothing, for the same absent detail", () => {
+    const failed = onlyItem(plan([{ modid: "ghostmod", version: "1.0.0" }], [], [], ["ghostmod"]))
+    assert.deepEqual(failed, { decision: "skip", modid: "ghostmod", requestedVersion: "1.0.0", name: "ghostmod", reason: "lookup-failed", fromVersion: null })
+
+    const notFound = onlyItem(plan([{ modid: "ghostmod", version: "1.0.0" }], [], []))
+    assert.equal(notFound.decision === "skip" && notFound.reason, "not-on-moddb")
   })
 
   it("reports a page that publishes no release at all", () => {
@@ -365,8 +385,13 @@ describe("modpackRowLabel", () => {
 })
 
 describe("modpackRowStatus", () => {
-  function statusOf(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>): ReturnType<typeof modpackRowStatus> {
-    return modpackRowStatus(onlyItem(plan(entries, installed, details)))
+  function statusOf(
+    entries: ModpackEntry[],
+    installed: InstalledModSnapshot[],
+    details: Array<[string, ModpackModDetail]>,
+    failedModids?: readonly string[]
+  ): ReturnType<typeof modpackRowStatus> {
+    return modpackRowStatus(onlyItem(plan(entries, installed, details, failedModids)))
   }
 
   it("calls a mod the installation does not have a new install", () => {
@@ -415,9 +440,42 @@ describe("modpackRowStatus", () => {
     assert.deepEqual(status, { kind: "not-on-moddb", fromVersion: null, toVersion: null })
   })
 
+  it("says the lookup could not be checked, for a modid whose query failed rather than answered 404", () => {
+    const status = statusOf([{ modid: "alloycalculatorstuzzichino", version: "1.0.4" }], [], [], ["alloycalculatorstuzzichino"])
+
+    assert.deepEqual(status, { kind: "lookup-failed", fromVersion: null, toVersion: null })
+  })
+
   it("says nothing will be installed for a page that publishes no release, and still names the copy on disk", () => {
     const status = statusOf([{ modid: "carryon", version: "2.0.1" }], [installedCopy()], [["carryon", detail([])]])
 
     assert.deepEqual(status, { kind: "no-release", fromVersion: "1.9.0", toVersion: null })
+  })
+})
+
+describe("clampModpackModName", () => {
+  it("leaves a name at or under the cap untouched", () => {
+    assert.equal(clampModpackModName("Traders Expansion"), "Traders Expansion")
+    const atCap = "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH)
+    assert.equal(clampModpackModName(atCap), atCap)
+  })
+
+  it("cuts a name over the cap down to exactly the cap the manifest reader accepts", () => {
+    const long = "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH + 50)
+    const clamped = clampModpackModName(long)
+
+    assert.equal(clamped.length, MAX_MODPACK_MOD_NAME_LENGTH)
+    assert.equal(clamped, "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH))
+  })
+
+  // A cut that lands mid-surrogate-pair leaves a lone high surrogate at the end of the string,
+  // which is not a character at all. The whole astral character is dropped instead, one code unit
+  // short of the cap, rather than shipping half of it.
+  it("never splits a surrogate pair sitting right on the cut", () => {
+    const straddling = "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH - 1) + "🎮" + "bbbb"
+    const clamped = clampModpackModName(straddling)
+
+    assert.equal(clamped, "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH - 1))
+    assert.equal(clamped.length, MAX_MODPACK_MOD_NAME_LENGTH - 1)
   })
 })

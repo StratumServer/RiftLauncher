@@ -1,3 +1,4 @@
+import { clampModpackModName } from "@domain/mods/importModpack"
 import type { InstalledModSnapshot, ModpackImportEntryReport, ModpackModDetail } from "@domain/mods/importModpack"
 
 /**
@@ -5,13 +6,15 @@ import type { InstalledModSnapshot, ModpackImportEntryReport, ModpackModDetail }
  *
  * The local display name rides along with the modid because the two diverge often (`tradie` is
  * Traders Expansion, `sandwich` is Sammiches), and the importing launcher has nothing else to call a
- * mod the ModDB cannot resolve. Nothing reads it as an identifier: the modid stays the key.
+ * mod the ModDB cannot resolve. Nothing reads it as an identifier: the modid stays the key, and the
+ * name is clamped rather than passed through verbatim, so one mod with an oversized modinfo.json
+ * name can never fail the whole export.
  */
 export function toModpackManifest(installation: InstallationType, installedMods: readonly InstalledModType[]): ModpackManifestType {
   return {
     name: installation.name,
     gameVersion: installation.version,
-    mods: installedMods.map((mod) => ({ modid: mod.modid, version: mod.version, name: mod.name }))
+    mods: installedMods.map((mod) => ({ modid: mod.modid, version: mod.version, name: clampModpackModName(mod.name) }))
   }
 }
 

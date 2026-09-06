@@ -28,6 +28,28 @@ export interface ModpackEntry {
   name?: string
 }
 
+/**
+ * The manifest reader (`src/ipc/handlers/modsHandlers.ts`) refuses a mod name longer than this.
+ * The writer below must never emit one, so the two stay in agreement without being copy-pasted.
+ */
+export const MAX_MODPACK_MOD_NAME_LENGTH = 256
+
+/**
+ * Cuts a mod's display name down to the length the manifest reader accepts.
+ *
+ * The name rides along for display only: it is never an identifier, and it must never be the
+ * reason an export fails. A modinfo.json name can run up to 4096 characters, well past the
+ * reader's cap, so anything over the cap is cut down here rather than left to the reader to
+ * reject. The cut lands on a UTF-16 code unit boundary that never splits a surrogate pair, so a
+ * name ending on an astral character (an emoji, say) keeps or drops it whole rather than leaving
+ * a lone surrogate behind.
+ */
+export function clampModpackModName(name: string): string {
+  if (name.length <= MAX_MODPACK_MOD_NAME_LENGTH) return name
+  const cut = name.slice(0, MAX_MODPACK_MOD_NAME_LENGTH)
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut
+}
+
 /** A mod already in the installation's Mods folder, copied out of wherever it lives. */
 export interface InstalledModSnapshot extends InstalledModCopy {
   modid: string
@@ -59,6 +81,11 @@ export type ModpackSkipReason =
   | "not-on-moddb"
   /** The page exists but publishes no release at all. */
   | "no-release"
+  /**
+   * The ModDB lookup itself did not answer: a transport failure, not a 404. Unlike
+   * "not-on-moddb", nothing here says the mod does not exist, so the row must not say so either.
+   */
+  | "lookup-failed"
 
 /** An entry the import will install, with the release it settled on. */
 export interface ModpackInstallItem {
@@ -108,6 +135,12 @@ export interface ModpackPlanInput {
   gameVersion: string
   /** ModDB detail per modid, for every entry {@link modpackEntriesToResolve} asked for. */
   details: ReadonlyMap<string, ModpackModDetail>
+  /**
+   * Modids whose lookup did not answer at all, transport failure rather than a clean miss. Absent
+   * from `details` the same way a genuine 404 is, but the caller has to tell the two apart to
+   * avoid calling a mod a fork when the database was simply unreachable.
+   */
+  failedModids?: ReadonlySet<string>
 }
 
 function installedFor(installed: readonly InstalledModSnapshot[], modid: string): InstalledModSnapshot | undefined {
@@ -251,7 +284,10 @@ function planEntry(entry: ModpackEntry, input: ModpackPlanInput): ModpackPlanIte
   }
 
   const detail = input.details.get(entry.modid)
-  if (!detail) return { decision: "skip", modid: entry.modid, requestedVersion: entry.version, name: entry.modid, reason: "not-on-moddb", fromVersion }
+  if (!detail) {
+    const reason = input.failedModids?.has(entry.modid) ? "lookup-failed" : "not-on-moddb"
+    return { decision: "skip", modid: entry.modid, requestedVersion: entry.version, name: entry.modid, reason, fromVersion }
+  }
 
   const release = pickRelease(detail.releases, entry.version, input.gameVersion)
   if (!release) {

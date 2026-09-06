@@ -230,6 +230,35 @@ describe("EXPORT_MODPACK", () => {
     assert.equal(vi.mocked(writeJsonAtomic).mock.calls.length, 1)
     assert.deepEqual(vi.mocked(writeJsonAtomic).mock.calls[0]?.[2], { spaces: 2 })
   })
+
+  // #384: the writer (toModpackManifest) clamps a mod name to 256 characters before it ever
+  // reaches this handler, so the reader's own cap has to accept a name at exactly that length or
+  // the two would disagree again the moment either one moved.
+  it("accepts and exports a mod name at exactly the 256-character cap the writer can emit", async () => {
+    const exportDirectory = join(temporaryRoot, "exports-long-name")
+    mkdirSync(exportDirectory, { recursive: true })
+    const targetFile = join(exportDirectory, "Long Name Pack.json")
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: targetFile })
+
+    const longName = "A".repeat(256)
+    const manifest: ModpackManifestType = { name: "Long Name Pack", gameVersion: "1.20.0", mods: [{ modid: "a", version: "1.0.0", name: longName }] }
+
+    const event = await createTrustedEvent()
+    const result = await exportModpackHandler()(event, manifest)
+    assert.deepEqual(result, { success: true, path: targetFile })
+
+    const { readFileSync } = await import("node:fs")
+    assert.deepEqual(JSON.parse(readFileSync(targetFile, "utf-8")), manifest)
+  })
+
+  it("still refuses a mod name one character over that cap, so raising it silently could not go unnoticed", async () => {
+    const event = await createTrustedEvent()
+    const manifest = { name: "Pack", gameVersion: "1.20.0", mods: [{ modid: "a", version: "1.0.0", name: "A".repeat(257) }] }
+    const result = await exportModpackHandler()(event, manifest as unknown as ModpackManifestType)
+
+    assert.deepEqual(result, { success: false })
+    assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
+  })
 })
 
 describe("IMPORT_MODPACK", () => {
@@ -322,6 +351,23 @@ describe("IMPORT_MODPACK", () => {
     const event = await createTrustedEvent()
     const result = await importModpackHandler()(event)
     assert.deepEqual(result, { success: false, error: "Error reading modpack file." })
+  })
+
+  // #384: the round trip the fix promises. A name clamped to the writer's cap on export is exactly
+  // the shape the reader accepts, so the file that export produced imports cleanly too.
+  it("imports a manifest whose mod name sits at the 256-character cap the export clamp emits", async () => {
+    const importDirectory = join(temporaryRoot, "imports-long-name")
+    mkdirSync(importDirectory, { recursive: true })
+    const longNameFile = join(importDirectory, "long-name.json")
+    const longName = "A".repeat(256)
+    const manifest: ModpackManifestType = { name: "Long Name Pack", gameVersion: "1.20.0", mods: [{ modid: "a", version: "1.0.0", name: longName }] }
+    writeFileSync(longNameFile, JSON.stringify(manifest), "utf-8")
+
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [longNameFile] })
+
+    const event = await createTrustedEvent()
+    const result = await importModpackHandler()(event)
+    assert.deepEqual(result, { success: true, manifest })
   })
 
   // Every pack exported before #379 has modid and version only. The reader has to keep taking them.

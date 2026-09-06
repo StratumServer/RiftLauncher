@@ -12,6 +12,7 @@ import { isJpegBytes, isPngBytes } from "@domain/backgrounds"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
+import { MAX_MODPACK_MOD_NAME_LENGTH } from "@domain/mods/importModpack"
 
 const MAX_MODPACK_ENTRIES = 2_000
 
@@ -63,7 +64,7 @@ function parseModpackManifest(value: unknown): ModpackManifestType {
       // Every pack exported before #379 carries modid and version only, so the name is read when it
       // is there and never required. A name of the wrong type is still a refusal, like every other
       // field: the manifest comes off disk and this is the only place its shape is checked.
-      return entry.name === undefined ? parsed : { ...parsed, name: assertString(entry.name, "mod name", 256) }
+      return entry.name === undefined ? parsed : { ...parsed, name: assertString(entry.name, "mod name", MAX_MODPACK_MOD_NAME_LENGTH) }
     })
   }
 }
