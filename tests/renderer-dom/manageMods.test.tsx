@@ -1103,8 +1103,8 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
 
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
     expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([
-      { modid: "gamma", version: "3.0.0" },
-      { modid: "delta", version: "4.0.0" }
+      { modid: "gamma", version: "3.0.0", name: "Gamma Mod" },
+      { modid: "delta", version: "4.0.0", name: "Delta Mod" }
     ])
   })
 })
