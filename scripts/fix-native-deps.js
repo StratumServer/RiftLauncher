@@ -12,6 +12,12 @@
  * since this script already runs on install.
  *
  * The fix is idempotent and safe to run on every `npm install`.
+ *
+ * Set ELECTRON_SKIP_BINARY_DOWNLOAD to opt out. A job that only runs tsc or
+ * eslint never launches Electron, so a hiccup on the download mirror should
+ * not be able to fail it. The check lives here rather than downstream:
+ * electron 44's install.js does not read that variable, and neither does
+ * @electron/get 5, so nothing below this script would honour it.
  */
 
 const { existsSync } = require("node:fs")
@@ -19,6 +25,11 @@ const { join } = require("node:path")
 const { spawnSync } = require("node:child_process")
 
 function ensureElectronBinaryIsDownloaded() {
+  if (process.env.ELECTRON_SKIP_BINARY_DOWNLOAD) {
+    console.log("[fix-native-deps] ELECTRON_SKIP_BINARY_DOWNLOAD is set, skipping the electron binary download")
+    return
+  }
+
   const electronDir = join(__dirname, "..", "node_modules", "electron")
   const installScript = join(electronDir, "install.js")
 
