@@ -142,6 +142,26 @@ function tailwindColor(name: string): Rgb {
   return oklchToSrgb(Number(found[1] as string) / 100, Number(found[2] as string), Number(found[3] as string))
 }
 
+/** The four `text-*` shades of one status/kind map, keyed by the name the component gives them. */
+function colourMap(file: string, anchor: RegExp): Record<string, string> {
+  const entries = [...match(file, anchor)[1].matchAll(/"?([a-z-]+)"?:\s*"text-([a-z]+-\d+|vsl?d?)"/g)]
+  assert.ok(entries.length >= 4, `${anchor} in ${file} no longer lists four colours`)
+  return Object.fromEntries(entries.map((entry) => [entry[1] as string, entry[2] as string]))
+}
+
+function toastTypeColours(file: string): Record<string, string> {
+  return colourMap(file, /const FONT_COLOR_TYPES = \{([^}]+)\}/)
+}
+
+function taskStatusColours(file: string): Record<string, string> {
+  return colourMap(file, /const STATUS_COLORS = \{([^}]+)\}/)
+}
+
+/** A `text-*` token from either Tailwind's palette or this repo's own `--color-*` theme block. */
+function tailwindOrTheme(token: string): Rgb {
+  return /^vs/.test(token) ? themeColor(token) : tailwindColor(token)
+}
+
 /** One `text-<token>` foreground outside the zinc ramp, read out of the component that ships it. */
 function paletteForeground(file: string, anchor: RegExp): Layer {
   return [tailwindColor(match(file, anchor)[1] as string), 1]
@@ -233,6 +253,8 @@ const TOAST = [shell, toast] as const
 // ActivityCenter renders inside MainMenu's own header scrim (`<ActivityCenter />` in MainMenu.tsx), so the
 // real stack under a task row carries that scrim too, not just the popover panel's own.
 const TASKS_ROW = [shell, menu, tasksPanel, rowTint] as const
+// The panel's own chrome (headings, summary, empty state) sits on the panel with no row under it.
+const TASKS_PANEL = [shell, menu, tasksPanel] as const
 
 describe("text over the player's background image", () => {
   it("keeps page text readable where the shell scrim is all there is", () => {
@@ -353,6 +375,61 @@ describe("prompts the player is meant to read and act on", () => {
       ["choose a custom icon file", foreground("components/ui/AddCustomIconPupup.tsx", /PiPlusCircleDuotone className="text-3xl text-(zinc-\d+)(?:\/(\d+))?/)]
     ]
     for (const [label, icon] of icons) assertReadable(label, icon, ICON, NON_TEXT_FLOOR)
+  })
+
+  /**
+   * Everything the notification area puts on screen, pinned in one place.
+   *
+   * The audit that came with this found two real failures here and a dozen values that happened to
+   * pass with nothing holding them there. red-800 on a failed task row read 1.97:1, which made the
+   * one line a player has to read the least readable thing in the panel, and the error toast's icon
+   * read 2.34:1. Both are read out of the components below rather than written down again, so a
+   * shade that moves fails here instead of shipping.
+   */
+  it("keeps every toast readable on the scrim it ships on", () => {
+    const overlay = "components/layout/NotificationsOverlay.tsx"
+    const body = foreground(overlay, /text-xs text-(zinc-\d+)(?:\/(\d+))? break-words/)
+    const dismiss = foreground(overlay, /p-1 text-(zinc-\d+)(?:\/(\d+))? shrink-0/)
+
+    assertReadable("toast body", body, TOAST, TEXT_FLOOR)
+    assertReadable("toast dismiss icon", dismiss, TOAST, NON_TEXT_FLOOR)
+
+    // The type icon is the only thing that says which kind of message this is, so it carries a
+    // meaning on its own and the non-text bar applies to all four.
+    for (const [kind, token] of Object.entries(toastTypeColours(overlay))) {
+      assertReadable(`${kind} toast icon`, [tailwindOrTheme(token), 1], TOAST, NON_TEXT_FLOOR)
+    }
+  })
+
+  it("keeps every Activity Center task row readable", () => {
+    const panel = "components/ui/ActivityCenter.tsx"
+    const operation = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? break-words/)
+    const description = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? line-clamp-2/)
+    const percentage = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? tabular-nums/)
+    const failure = paletteForeground(panel, /task.status === "failed" && <p className="text-xs text-([a-z]+-\d+)"/)
+    const heading = foreground(panel, /text-xs uppercase tracking-wide text-(zinc-\d+)(?:\/(\d+))?/)
+    const summary = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? leading-tight/)
+    const emptyState = foreground(panel, /p-4 text-center text-sm font-bold text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("task operation and status line", operation, TASKS_ROW, TEXT_FLOOR)
+    assertReadable("task description", description, TASKS_ROW, TEXT_FLOOR)
+    assertReadable("task percentage", percentage, TASKS_ROW, TEXT_FLOOR)
+    assertReadable("failed task explanation", failure, TASKS_ROW, TEXT_FLOOR)
+    assertReadable("section heading", heading, TASKS_PANEL, TEXT_FLOOR)
+    assertReadable("panel summary", summary, TASKS_PANEL, TEXT_FLOOR)
+    assertReadable("empty state", emptyState, TASKS_PANEL, TEXT_FLOOR)
+
+    // Each status icon is the row's only colour cue for how that task ended.
+    for (const [status, token] of Object.entries(taskStatusColours(panel))) {
+      if (token === "vsl") continue // the accent, already covered by the block below
+      assertReadable(`${status} task icon`, [tailwindOrTheme(token), 1], TASKS_ROW, NON_TEXT_FLOOR)
+    }
+  })
+
+  it("keeps the active task badge readable on the accent fill it sits on", () => {
+    const badge = match("components/ui/ActivityCenter.tsx", /rounded-full bg-(vs) text-\[10px\] leading-none text-(white)/)
+    assert.equal(badge[2], "white", "the active task count no longer paints its own label")
+    assertReadable("active task count", [WHITE, 1], [[themeColor(badge[1] as string), 1]], TEXT_FLOOR)
   })
 
   it("keeps Activity Center history text readable on both row tints", () => {

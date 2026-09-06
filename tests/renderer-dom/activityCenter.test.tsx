@@ -505,6 +505,212 @@ describe("NotificationsContext history caps", () => {
   })
 })
 
+/** Fires five errors with bodies that can be told apart, so the burst's order is readable. */
+function BurstControls(): JSX.Element {
+  const { addNotification } = useNotificationsContext()
+  return <button onClick={() => [1, 2, 3, 4, 5].forEach((index) => addNotification("burst " + index, "error"))}>Fire five errors</button>
+}
+
+/**
+ * Runs the fake clock forward in slices, each in its own act.
+ *
+ * One long advanceTimersByTime only ever moves the queue on by a single toast: the timer for the
+ * next one is not scheduled until React has re-rendered and run the hand-off effect, which does
+ * not happen until act flushes.
+ */
+function tick(milliseconds: number): void {
+  for (let elapsed = 0; elapsed < milliseconds; elapsed += 250) act(() => vi.advanceTimersByTime(250))
+}
+
+/** The presented banner itself, so a lookup does not collide with the probe span's copy of its text. */
+function toast(): HTMLElement {
+  return screen.getByRole("status").firstElementChild as HTMLElement
+}
+
+describe("toast queue timing", () => {
+  it("puts the last of a five error burst on screen in under nine seconds instead of thirty-two", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <BurstControls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Fire five errors" }))
+      expect(screen.getByTestId("active-toast").textContent).toBe("burst 1")
+
+      // Each error carries an 8s turn of its own. Serving all five in full left the last of them
+      // 32s out, which is the measurement in the audit; only the second would be up by now.
+      tick(8_500)
+      expect(screen.getByTestId("active-toast").textContent).toBe("burst 5")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("gives the last of a burst its whole turn, since nothing is waiting behind it", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <BurstControls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Fire five errors" }))
+
+      tick(15_000)
+      expect(screen.getByTestId("active-toast").textContent).toBe("burst 5")
+      tick(1_500)
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("gives a toast with an empty queue behind it its whole turn", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+
+      act(() => vi.advanceTimersByTime(7_000))
+      expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+      act(() => vi.advanceTimersByTime(1_500))
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("holds the countdown while the pointer is over the toast", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+      fireEvent.mouseEnter(toast())
+      act(() => vi.advanceTimersByTime(30_000))
+      expect(screen.getByTestId("active-toast").textContent).toBe("A successful action")
+
+      fireEvent.mouseLeave(toast())
+      act(() => vi.advanceTimersByTime(5_000))
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("holds the countdown while focus is inside the toast, for a player who tabbed to its buttons", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+      fireEvent.focus(screen.getByRole("button", { name: "Discard notification" }))
+
+      act(() => vi.advanceTimersByTime(30_000))
+      expect(screen.getByTestId("active-toast").textContent).toBe("A successful action")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not park a dropped toast in the record list where it can never be shown", () => {
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    act(() => {
+      for (let index = 0; index < 40; index += 1) result.current.addNotification("toast " + index, "success", { presentation: "toast" })
+    })
+
+    expect(result.current.notifications.length + result.current.history.length).toBeLessThan(40)
+  })
+})
+
+describe("Activity Center keyboard reach", () => {
+  it("moves focus into the panel on open, because it is portalled away from the trigger", () => {
+    installMockWindowApi()
+
+    render(<ActivityCenter />, { wrapper })
+    openCenter()
+
+    expect(panel().contains(document.activeElement)).toBe(true)
+  })
+
+  it("closes on Escape and hands focus back to the trigger", async () => {
+    installMockWindowApi()
+
+    render(<ActivityCenter />, { wrapper })
+    openCenter()
+    fireEvent.keyDown(panel(), { key: "Escape" })
+
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Activity Center" })).toBeNull())
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Activity Center:/ }))
+  })
+})
+
+describe("Activity Center section order", () => {
+  it("puts the section a player has to act on above the one they can only watch", () => {
+    installMockWindowApi({ pathsManager: { downloadOnPath: vi.fn(() => new Promise<string>(() => {})) } })
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Start task" }))
+    openCenter()
+
+    const headings = within(panel())
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent)
+    expect(headings).toEqual(["Needs attention", "In progress", "Completed", "Notifications"].filter((heading) => headings.includes(heading)))
+    expect(headings).toContain("In progress")
+  })
+})
+
 function ProbeRemoveSecond(): JSX.Element {
   const { history, removeNotification } = useNotificationsContext()
   return <button onClick={() => history[1] && removeNotification(history[1].id)}>Remove second</button>
