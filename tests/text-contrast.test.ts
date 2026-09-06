@@ -300,6 +300,22 @@ describe("prompts the player is meant to read and act on", () => {
   })
 
   /**
+   * #384: the downgrade/replace and downloading/update hues joined statusColor's switch as part of
+   * the readable-table pass, but nothing before this measured them the way #366 measures the
+   * release verdicts below, which is exactly how text-red-700 shipped at 2.18:1 unnoticed. Both are
+   * outside the zinc ramp, so they read through paletteForeground/tailwindColor like the verdict
+   * words rather than through the zinc table at the top of this file.
+   */
+  it("keeps the modpack import row's downgrade and update hues readable on the popup table", () => {
+    const file = "features/mods/components/ImportModpackPopup.tsx"
+    const downgradeOrReplace = paletteForeground(file, /case "downgrade":\s*\n\s*case "replace":\s*\n\s*return "text-([a-z]+-\d+)"/)
+    const downloadingOrUpdate = paletteForeground(file, /case "downloading":\s*\n\s*case "update":\s*\n\s*return "text-([a-z]+-\d+)"/)
+
+    assertReadable("downgrade/replace row hue", downgradeOrReplace, POPUP_TABLE_ROW, TEXT_FLOOR)
+    assertReadable("downloading/update row hue", downloadingOrUpdate, POPUP_TABLE_ROW, TEXT_FLOOR)
+  })
+
+  /**
    * #366: the release table's compatibility verdict. The three hues used to be handed to the
    * download FormButton through `className`, where the ghost variant's own `text-zinc-200` won the
    * cascade, so none of them ever painted anything and none of them was ever measured. They paint
