@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react"
 import { PiBoxArrowDownDuotone, PiBoxArrowUpDuotone, PiDownloadDuotone, PiEnvelopeDuotone, PiEnvelopeOpenDuotone, PiPulseDuotone, PiWrenchDuotone, PiXCircleDuotone } from "react-icons/pi"
@@ -15,7 +15,10 @@ const OPERATION_LABELS = {
   install: "components.activityCenter.installing",
   compress: "components.tasksMenu.compressing"
 } as const
-const STATUS_COLORS = { pending: "text-vsl", "in-progress": "text-yellow-400", failed: "text-red-800", completed: "text-lime-600" } as const
+// red-800 read 1.97:1 on a task row over a bright background image, so the least readable thing in
+// the panel was the one line a player has to read. red-400 is the nearest shade that clears both
+// the 4.5:1 text bar and the 3:1 icon bar. tests/text-contrast.test.ts pins every colour here.
+const STATUS_COLORS = { pending: "text-vsl", "in-progress": "text-yellow-400", failed: "text-red-400", completed: "text-lime-600" } as const
 const STATUS_LABELS = {
   pending: "components.activityCenter.starting",
   "in-progress": "components.activityCenter.inProgress",
@@ -49,7 +52,7 @@ function ActivityTask({ task, removeTask }: Readonly<{ task: TaskType; removeTas
               {t(OPERATION_LABELS[task.type])} · {t(statusKey)}
             </p>
             {task.desc && task.desc !== task.name && <p className="text-xs text-zinc-400 line-clamp-2">{task.desc}</p>}
-            {task.status === "failed" && <p className="text-xs text-red-800">{t("components.tasksMenu.error")}</p>}
+            {task.status === "failed" && <p className="text-xs text-red-400">{t("components.tasksMenu.error")}</p>}
           </div>
         </div>
         {terminal && (
@@ -103,6 +106,7 @@ function TaskSection({ id, title, items, removeTask }: Readonly<{ id: string; ti
 function ActivityPanel(): JSX.Element {
   const { t } = useTranslation()
   const reduceMotion = useReducedMotion()
+  const panelRef = useRef<HTMLDivElement>(null)
   const { tasks, activeTaskCount, removeTask } = useTaskContext()
   const { history, unreadCount, markAllSeen, markAllRead, setNotificationRead, clearReadNotifications, invokeAction, removeNotification } = useNotificationsContext()
 
@@ -112,6 +116,14 @@ function ActivityPanel(): JSX.Element {
     markAllSeen()
   }, [history.length, markAllSeen])
 
+  // Moving focus in is the other half of the keyboard fix below. The panel is portalled to the end
+  // of the document, so a player who opens it and presses Tab lands on whatever follows the trigger
+  // in the header instead of on anything in here. On mount only: the panel re-renders on every
+  // progress tick, and stealing focus back on each one would fight the player.
+  useEffect(() => {
+    panelRef.current?.focus()
+  }, [])
+
   const activeTasks = tasks.filter((task) => task.status === "pending" || task.status === "in-progress")
   const failedTasks = tasks.filter((task) => task.status === "failed")
   const completedTasks = tasks.filter((task) => task.status === "completed")
@@ -119,12 +131,14 @@ function ActivityPanel(): JSX.Element {
 
   return (
     <motion.div
+      ref={panelRef}
       role="region"
+      tabIndex={-1}
       aria-labelledby="activity-center-title"
       initial={reduceMotion ? false : { opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
-      className="max-h-[32rem] flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 rounded-sm overflow-y-auto text-sm"
+      className="max-h-[32rem] flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 rounded-sm overflow-y-auto text-sm focus:outline-none"
     >
       <div className="flex flex-col gap-0.5 p-2 border-b border-zinc-400/5">
         <h2 id="activity-center-title" className="font-bold leading-tight">
@@ -134,8 +148,10 @@ function ActivityPanel(): JSX.Element {
           {t("components.activityCenter.panelSummary", { active: activeTaskCount, unread: unreadCount })}
         </span>
       </div>
-      <TaskSection id="in-progress" title={t("components.activityCenter.inProgressHeading")} items={activeTasks} removeTask={removeTask} />
+      {/* Failures first. The one section a player has to act on used to sit under the one they can
+          only watch, which is the wrong way round for a panel opened because something went wrong. */}
       <TaskSection id="attention" title={t("components.activityCenter.attentionHeading")} items={failedTasks} removeTask={removeTask} />
+      <TaskSection id="in-progress" title={t("components.activityCenter.inProgressHeading")} items={activeTasks} removeTask={removeTask} />
       <TaskSection id="completed" title={t("components.activityCenter.completedHeading")} items={completedTasks} removeTask={removeTask} />
       <section aria-labelledby="activity-notifications">
         <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-2 pt-2 pb-1">
@@ -218,12 +234,14 @@ function ActivityCenter(): JSX.Element {
   const { t } = useTranslation()
   const { activeTaskCount } = useTaskContext()
   const { unseenCount } = useNotificationsContext()
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   return (
     <Popover className="relative">
-      {({ open }) => (
+      {({ open, close }) => (
         <>
           <PopoverButton
+            ref={triggerRef}
             title={t("components.activityCenter.title")}
             aria-label={
               t("components.activityCenter.title") +
@@ -250,7 +268,20 @@ function ActivityCenter(): JSX.Element {
           </PopoverButton>
           <AnimatePresence>
             {open && (
-              <PopoverPanel static anchor="bottom" className="w-96 z-600 mt-1 ml-2 select-none rounded-sm overflow-hidden">
+              // `static` is what lets AnimatePresence play the exit animation, and it also takes
+              // Headless UI's own panel handling with it: no focus move on open, no Escape to
+              // close. Both are restored by hand here and in ActivityPanel rather than by giving
+              // up the animation. Closing hands focus back to the trigger the player came from.
+              <PopoverPanel
+                static
+                anchor="bottom"
+                className="w-96 z-600 mt-1 ml-2 select-none rounded-sm overflow-hidden"
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return
+                  event.stopPropagation()
+                  close(triggerRef)
+                }}
+              >
                 <ActivityPanel />
               </PopoverPanel>
             )}

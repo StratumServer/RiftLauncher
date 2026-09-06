@@ -169,7 +169,7 @@ describe("the release table with no installation picked", () => {
   it("lists the releases and says why nothing can be installed", async () => {
     await renderTable(VERDICTS, { withInstallation: false })
 
-    expect(screen.getByText("No Installation selected!")).toBeTruthy()
+    expect(screen.getByText("No Installation selected.")).toBeTruthy()
     for (const { modversion, tags } of VERDICTS) {
       expect(screen.getByText(modversion)).toBeTruthy()
       expect(screen.getByText(tags.join(", "))).toBeTruthy()
@@ -188,6 +188,6 @@ describe("the release table with no installation picked", () => {
   it("keeps the notice out of the way once an installation is picked", async () => {
     await renderTable(VERDICTS)
 
-    expect(screen.queryByText("No Installation selected!")).toBeNull()
+    expect(screen.queryByText("No Installation selected.")).toBeNull()
   })
 })

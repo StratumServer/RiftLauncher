@@ -6,15 +6,17 @@ import clsx from "clsx"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { NormalButton } from "../ui/Buttons"
 
-const FONT_COLOR_TYPES = { success: "text-lime-600", info: "text-vsl", error: "text-red-700", warning: "text-yellow-400" }
-const TIMER_COLOR_TYPES = { success: "bg-lime-600", info: "bg-vs", error: "bg-red-800", warning: "bg-yellow-400" }
+// red-700 read 2.34:1 on the toast scrim over a bright background image, under the 3:1 an icon that
+// carries a meaning of its own needs. red-400 is the nearest shade that clears it. See
+// tests/text-contrast.test.ts, which pins all four.
+const FONT_COLOR_TYPES = { success: "text-lime-600", info: "text-vsl", error: "text-red-400", warning: "text-yellow-400" }
+const TIMER_COLOR_TYPES = { success: "bg-lime-600", info: "bg-vs", error: "bg-red-400", warning: "bg-yellow-400" }
 const ICON_TYPES = { success: <PiCheckCircleDuotone />, info: <PiInfoDuotone />, error: <PiProhibitInsetDuotone />, warning: <PiWarningDuotone /> }
 
 function NotificationsOverlay(): JSX.Element {
   const { t } = useTranslation()
-  const { activeToast, dismissToast, invokeAction } = useNotificationsContext()
+  const { activeToast, activeToastDuration, dismissToast, invokeAction, setToastPaused, toastPaused } = useNotificationsContext()
   const reduceMotion = useReducedMotion()
-  const toastDuration = activeToast?.options?.duration
 
   return (
     // Always-mounted polite live region: a queued toast inserted here minutes
@@ -27,6 +29,14 @@ function NotificationsOverlay(): JSX.Element {
             // Errors keep their own assertive region, which does announce on
             // insertion; everything else is announced by the polite parent.
             role={activeToast.type === "error" ? "alert" : undefined}
+            // A player reading a long message, or tabbing to the answer buttons, must not have the
+            // banner pulled out from under them. Leaving it restarts the full turn rather than
+            // resuming what was left of it: the point is to give back the reading time, not to
+            // hand back two hundred milliseconds of it.
+            onMouseEnter={() => setToastPaused(true)}
+            onMouseLeave={() => setToastPaused(false)}
+            onFocusCapture={() => setToastPaused(true)}
+            onBlurCapture={() => setToastPaused(false)}
             className="relative w-full flex items-center justify-between gap-2 p-2 rounded-sm text-center bg-zinc-950/60 backdrop-blur-sm overflow-hidden"
             initial={reduceMotion ? false : { x: 400 }}
             animate={{ x: 0 }}
@@ -37,7 +47,7 @@ function NotificationsOverlay(): JSX.Element {
                 {ICON_TYPES[activeToast.type]}
               </span>
               <div className="flex flex-col items-start justify-center gap-2 min-w-0">
-                <p className="text-xs text-zinc-400 break-words">{activeToast.body}</p>
+                <p className="text-xs text-zinc-300 break-words">{activeToast.body}</p>
                 {activeToast.options?.actions && activeToast.options.actions.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
                     {activeToast.options.actions.map((action, index) => {
@@ -61,14 +71,16 @@ function NotificationsOverlay(): JSX.Element {
             >
               <PiXCircleDuotone />
             </NormalButton>
-            {toastDuration != null && (
+            {activeToastDuration != null && (
               <motion.div
                 data-testid="toast-timer"
                 aria-hidden="true"
                 className={clsx("absolute inset-x-0 bottom-0 h-0.5 origin-left", TIMER_COLOR_TYPES[activeToast.type])}
+                // Paused snaps the bar back to full with no animation, and resuming runs the whole
+                // length again. That is not a cosmetic choice: it is what the timer itself does.
                 initial={{ scaleX: 1 }}
-                animate={{ scaleX: 0 }}
-                transition={reduceMotion ? { duration: 0 } : { duration: toastDuration / 1000, ease: "linear" }}
+                animate={{ scaleX: toastPaused ? 1 : 0 }}
+                transition={reduceMotion || toastPaused ? { duration: 0 } : { duration: activeToastDuration / 1000, ease: "linear" }}
               />
             )}
           </motion.div>

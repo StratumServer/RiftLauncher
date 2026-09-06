@@ -337,7 +337,7 @@ describe("the download's progress bar (#185)", () => {
     fireError(listeners)
 
     expect(progressBar()).toBeNull()
-    expect(screen.getByText("An error has occurred during the process!")).toBeTruthy()
+    expect(screen.getByText("This task stopped before it finished. The log has the details.")).toBeTruthy()
   })
 
   it("offers the download again when it fails, rather than leaving a red task until the next launch", () => {

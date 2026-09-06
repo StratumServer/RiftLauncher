@@ -61,7 +61,7 @@ describe("SessionButton", () => {
     fireEvent.click(await screen.findByTitle("Discard notification"))
 
     expect(await screen.findByText("Couldn't reach the login service. Check your connection or firewall and try again.")).toBeTruthy()
-    expect(screen.queryByText("Invalid email or password!")).toBeNull()
+    expect(screen.queryByText("Invalid email or password.")).toBeNull()
   })
 
   it("renders the logged-out state once the config has loaded", async () => {

@@ -40,7 +40,7 @@ const GAME_VERSIONS: GameVersionType[] = [
 const GAME_VERSIONS_WITHOUT_1_19_8: GameVersionType[] = [{ version: "1.22.6", path: "/versions/1.22.6" }]
 const ORPHAN_WARNING = "This Installation's VS Version (1.19.8) is not installed anymore. Install it again or pick another one. Saving without picking one keeps it as it is."
 const UNSET_WARNING = "This Installation has no VS Version set. Pick one to set it. Saving without picking one leaves it unset."
-const VERSION_LEFT_UNCHANGED = "Everything else was saved, but this Installation still has no installed VS Version!"
+const VERSION_LEFT_UNCHANGED = "Everything else was saved, but this Installation still has no VS Version installed."
 
 /**
  * Stands in for ListInstallations: EditInstallation's post-submit navigation target.
@@ -160,7 +160,7 @@ describe("EditInstallation", () => {
       { route: "/installations/edit/does-not-exist" }
     )
 
-    await screen.findByText("Installation not found!")
+    await screen.findByText("Installation not found.")
     expect(screen.queryByText("Install A")).toBeNull()
   })
 
@@ -178,7 +178,7 @@ describe("EditInstallation", () => {
 
     await user.click(screen.getByTitle("Save"))
 
-    expect(await screen.findByText("Installation edited successfully!")).toBeTruthy()
+    expect(await screen.findByText("Installation edited successfully.")).toBeTruthy()
     expect(await screen.findByText("installations-list")).toBeTruthy()
   })
 
@@ -213,7 +213,7 @@ describe("EditInstallation", () => {
     await screen.findByDisplayValue("Install A")
     await user.click(screen.getByTitle("Save"))
 
-    await screen.findByText("You can't edit an Installation while playing it!")
+    await screen.findByText("You can't edit an Installation while playing it.")
     expect(screen.queryByText("installations-list")).toBeNull()
   })
 
@@ -272,7 +272,7 @@ describe("EditInstallation", () => {
     await user.type(nameInput, "Renamed Install")
     await user.click(screen.getByTitle("Save"))
 
-    await screen.findByText("Installation edited successfully!")
+    await screen.findByText("Installation edited successfully.")
     await user.click(screen.getByRole("button", { name: "Discard notification" }))
     await screen.findByText(VERSION_LEFT_UNCHANGED)
     await screen.findByText("installations-list")
@@ -302,7 +302,7 @@ describe("EditInstallation", () => {
     await user.type(nameInput, "Renamed Install")
     await user.click(screen.getByTitle("Save"))
 
-    await screen.findByText("Installation edited successfully!")
+    await screen.findByText("Installation edited successfully.")
     await user.click(screen.getByRole("button", { name: "Discard notification" }))
     await screen.findByText(VERSION_LEFT_UNCHANGED)
     await screen.findByText("installations-list")
@@ -330,7 +330,7 @@ describe("EditInstallation", () => {
     await user.click(screen.getByText("1.22.6"))
     await user.click(screen.getByTitle("Save"))
 
-    await screen.findByText("Installation edited successfully!")
+    await screen.findByText("Installation edited successfully.")
     await screen.findByText("installations-list")
     await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.version === "1.22.6")).toBe(true))
     expect(screen.queryByText(VERSION_LEFT_UNCHANGED)).toBeNull()
