@@ -1,7 +1,8 @@
-import { ipcMain } from "electron"
+import { app, ipcMain } from "electron"
 
 import { IPC_CHANNELS } from "../ipcChannels"
 import { readCatalogCache, writeCatalogCache } from "@src/ipc/catalogCache"
+import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { requestBoundedBuffer, requestBoundedText } from "@src/ipc/network"
 import { assertAllowedApiUrl, assertAllowedDownloadUrl, getApiUrlMaxBytes, MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"
@@ -18,8 +19,41 @@ function isModCatalogUrl(url: URL): boolean {
 }
 
 /**
+ * Nothing capped how many QUERY_URL calls the renderer could have in flight at once, so a
+ * burst of mod-detail lookups went straight out as one request per mod with no ceiling.
+ * The modpack import is the loudest caller: it resolves every entry the folder does not
+ * already satisfy, and it now does that when the manifest loads instead of when Import is
+ * clicked, so a 200-mod pack opened 200 sockets at the mod database before the player had
+ * decided anything. Manage Mods does the same shape of thing, one detail per installed mod.
+ *
+ * The bound belongs here rather than in the popup because every caller of this channel
+ * shares the one remote host, and only the main process sees all of them at once. A queued
+ * call looks to the renderer exactly like a slow one, a promise that has not settled, which
+ * is what the popup's "Checking the mod database..." state already renders.
+ *
+ * 6 is the per-host connection cap Chrome and Firefox have used for years, so a burst from
+ * the launcher never puts more on the mod database, which is community-run on modest
+ * hosting, than an ordinary visit to one of its pages does. It also keeps a big pack quick:
+ * 200 lookups in lanes of 6 is 34 rounds, a few seconds at a normal response time, rather
+ * than the minutes a smaller bound would cost.
+ *
+ * Queueing cannot trip a request's own timeout: requestBoundedText starts its wall clock
+ * inside the task, which the limiter does not run until a slot is free.
+ */
+const QUERY_URL_CONCURRENCY_LIMIT = 6
+
+const queryConcurrency = new ConcurrencyLimiter(QUERY_URL_CONCURRENCY_LIMIT)
+
+// Same reason pathsHandlers.ts shuts its limiters down here: before-quit can preventDefault
+// (the config flush in main/index.ts), so a queued lookup could otherwise still be handed a
+// slot and start a fresh request while the app is on its way out.
+app.on("before-quit", () => {
+  queryConcurrency.shutdown()
+})
+
+/**
  * Validates and fetches a bounded API response, applying the per-rule ceiling (see
- * API_URL_RULES). The mods-catalog endpoint additionally serves its last good disk-cached
+ * API_URL_RULES) and taking a slot in {@link queryConcurrency} for the request itself. The mods-catalog endpoint additionally serves its last good disk-cached
  * response, with a logged warning, when the fresh fetch fails for any reason (network
  * down, ceiling tripped, non-2xx status). Every other endpoint fails as before.
  */
@@ -29,7 +63,7 @@ export async function queryUrl(url: unknown): Promise<string> {
   const isCatalog = isModCatalogUrl(safeUrl)
 
   try {
-    const text = await requestBoundedText(safeUrl, { maxBytes })
+    const text = await queryConcurrency.run(() => requestBoundedText(safeUrl, { maxBytes }))
     if (isCatalog) {
       await writeCatalogCache(safeUrl, text).catch((cacheErr: unknown) => {
         logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] Failed to write mod catalog cache: ${getErrorMessage(cacheErr)}`)

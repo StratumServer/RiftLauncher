@@ -12,6 +12,7 @@ import { isJpegBytes, isPngBytes } from "@domain/backgrounds"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
+import { MAX_MODPACK_MOD_NAME_LENGTH } from "@domain/mods/importModpack"
 
 const MAX_MODPACK_ENTRIES = 2_000
 
@@ -59,7 +60,11 @@ function parseModpackManifest(value: unknown): ModpackManifestType {
     gameVersion: assertString(value.gameVersion, "modpack game version", 128),
     mods: value.mods.map((entry) => {
       if (!isRecord(entry)) throw new TypeError("Invalid modpack entry")
-      return { modid: assertString(entry.modid, "mod id", 256), version: assertString(entry.version, "mod version", 128) }
+      const parsed = { modid: assertString(entry.modid, "mod id", 256), version: assertString(entry.version, "mod version", 128) }
+      // Every pack exported before #379 carries modid and version only, so the name is read when it
+      // is there and never required. A name of the wrong type is still a refusal, like every other
+      // field: the manifest comes off disk and this is the only place its shape is checked.
+      return entry.name === undefined ? parsed : { ...parsed, name: assertString(entry.name, "mod name", MAX_MODPACK_MOD_NAME_LENGTH) }
     })
   }
 }

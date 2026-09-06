@@ -43,7 +43,10 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
       const pending = modDetails.get(key)
       if (pending) return pending
 
-      const request = queryMod({ modid })
+      // Not-found and lookup-failed both leave this scan with no detail for the mod, which is all
+      // it has ever distinguished (a plain compatibility/update pass, not the modpack import
+      // table this outcome type exists for).
+      const request = queryMod({ modid }).then((outcome) => (outcome.status === "found" ? outcome.mod : undefined))
       modDetails.set(key, request)
       return request
     }

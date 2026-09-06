@@ -14,12 +14,11 @@ export type ModReleaseCatalogState = {
 /**
  * Queries one mod's detail (its release list) and reports whether that query worked.
  *
- * useQueryMod answers `undefined` both when the ModDB call throws and when the payload does not
- * parse, and it logs either one. That is enough for the callers that merge the answer into a
- * bigger list, but not for a screen whose whole content is that answer: without a failure flag
- * they cannot tell "still loading" from "never coming", which is how the install popup ended up
- * spinning forever whenever the ModDB was slow or down. `failed` is that flag, and `retry` is the
- * way out of it, the same shape useGameVersionCatalog gives the version list.
+ * useQueryMod tells a clean 404 apart from a lookup that never answered, but this screen has
+ * nothing more useful to say about either one than "it did not work": without a failure flag of
+ * its own it cannot tell "still loading" from "never coming", which is how the install popup ended
+ * up spinning forever whenever the ModDB was slow or down. `failed` is that flag, and `retry` is
+ * the way out of it, the same shape useGameVersionCatalog gives the version list.
  */
 export function useModReleaseCatalog(modid: number | string | null): ModReleaseCatalogState {
   const queryMod = useQueryMod()
@@ -44,11 +43,11 @@ export function useModReleaseCatalog(modid: number | string | null): ModReleaseC
     setLoading(true)
     setFailed(false)
     ;(async (): Promise<void> => {
-      const found = await queryMod({ modid })
+      const outcome = await queryMod({ modid })
       if (cancelled) return
-      setMod(found ?? null)
+      setMod(outcome.status === "found" ? outcome.mod : null)
       setLoading(false)
-      setFailed(found === undefined)
+      setFailed(outcome.status !== "found")
     })()
 
     return (): void => {

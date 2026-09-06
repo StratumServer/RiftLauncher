@@ -21,6 +21,33 @@ import type { InstalledModCopy, InstallModFailure, InstallModResult, ModReleaseT
 export interface ModpackEntry {
   modid: string
   version: string
+  /**
+   * Display name of the copy the pack was exported from, when the manifest carries one. Older packs
+   * do not, and nothing here may depend on it: it is a label of last resort, never an identifier.
+   */
+  name?: string
+}
+
+/**
+ * The manifest reader (`src/ipc/handlers/modsHandlers.ts`) refuses a mod name longer than this.
+ * The writer below must never emit one, so the two stay in agreement without being copy-pasted.
+ */
+export const MAX_MODPACK_MOD_NAME_LENGTH = 256
+
+/**
+ * Cuts a mod's display name down to the length the manifest reader accepts.
+ *
+ * The name rides along for display only: it is never an identifier, and it must never be the
+ * reason an export fails. A modinfo.json name can run up to 4096 characters, well past the
+ * reader's cap, so anything over the cap is cut down here rather than left to the reader to
+ * reject. The cut lands on a UTF-16 code unit boundary that never splits a surrogate pair, so a
+ * name ending on an astral character (an emoji, say) keeps or drops it whole rather than leaving
+ * a lone surrogate behind.
+ */
+export function clampModpackModName(name: string): string {
+  if (name.length <= MAX_MODPACK_MOD_NAME_LENGTH) return name
+  const cut = name.slice(0, MAX_MODPACK_MOD_NAME_LENGTH)
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut
 }
 
 /** A mod already in the installation's Mods folder, copied out of wherever it lives. */
@@ -54,6 +81,11 @@ export type ModpackSkipReason =
   | "not-on-moddb"
   /** The page exists but publishes no release at all. */
   | "no-release"
+  /**
+   * The ModDB lookup itself did not answer: a transport failure, not a 404. Unlike
+   * "not-on-moddb", nothing here says the mod does not exist, so the row must not say so either.
+   */
+  | "lookup-failed"
 
 /** An entry the import will install, with the release it settled on. */
 export interface ModpackInstallItem {
@@ -103,6 +135,12 @@ export interface ModpackPlanInput {
   gameVersion: string
   /** ModDB detail per modid, for every entry {@link modpackEntriesToResolve} asked for. */
   details: ReadonlyMap<string, ModpackModDetail>
+  /**
+   * Modids whose lookup did not answer at all, transport failure rather than a clean miss. Absent
+   * from `details` the same way a genuine 404 is, but the caller has to tell the two apart to
+   * avoid calling a mod a fork when the database was simply unreachable.
+   */
+  failedModids?: ReadonlySet<string>
 }
 
 function installedFor(installed: readonly InstalledModSnapshot[], modid: string): InstalledModSnapshot | undefined {
@@ -146,6 +184,71 @@ export function modpackDowngrades(entries: readonly ModpackEntry[], installed: r
 }
 
 /**
+ * The best name a row of the import table can put on one manifest entry.
+ *
+ * Three sources, in falling order of trust: the name the ModDB answered with, the name the exporting
+ * launcher read off the local modinfo.json, and the modid. The middle one is what makes an entry the
+ * ModDB cannot resolve readable at all, and it is why the export carries it.
+ *
+ * `resolvedName` is read off a plan item, which names an unresolvable entry after its own modid, so
+ * a resolved name equal to the modid counts as no name and falls through to the local one.
+ *
+ * @param entry The manifest entry, with the local name when the pack carries one.
+ * @param resolvedName The ModDB name, when the lookup answered.
+ */
+export function modpackRowLabel(entry: ModpackEntry, resolvedName?: string): string {
+  const resolved = resolvedName?.trim()
+  if (resolved !== undefined && resolved.length > 0 && resolved !== entry.modid) return resolved
+
+  const local = entry.name?.trim()
+  return local !== undefined && local.length > 0 ? local : entry.modid
+}
+
+/** What one row of the import table says will happen to that mod, before anything happens. */
+export type ModpackRowStatusKind =
+  /** Not installed at all: the pack adds it. */
+  | "new"
+  /** Installed at an older version than the release the import picked. */
+  | "update"
+  /** Installed at a newer version than the release the import picked. */
+  | "downgrade"
+  /**
+   * Installed at the version the import would put there, and still replaced: the copy on disk is
+   * turned off, or its version string does not match what the manifest asked for. A copy edited by
+   * hand lands here, and the row has to say so before the edit is overwritten.
+   */
+  | "replace"
+  | ModpackSkipReason
+
+/** One row's plan, with the versions its wording needs. */
+export interface ModpackRowStatus {
+  kind: ModpackRowStatusKind
+  /** Version installed now, or null when the mod is new to the installation. */
+  fromVersion: string | null
+  /** Version the import would leave behind, or null when it will not install anything. */
+  toVersion: string | null
+}
+
+/**
+ * Reads one plan item as the sentence its row shows.
+ *
+ * Every branch here is already decided by {@link planModpackImport}; this only tells the three ways
+ * of replacing an installed copy apart, which is the difference between "Update from 1.9.0 to
+ * 2.0.0" and a silent overwrite of a copy the player edited themselves.
+ */
+export function modpackRowStatus(item: ModpackPlanItem): ModpackRowStatus {
+  if (item.decision === "skip") {
+    return { kind: item.reason, fromVersion: item.fromVersion, toVersion: item.reason === "already-present" ? item.fromVersion : null }
+  }
+
+  const toVersion = item.release.modversion
+  if (item.fromVersion === null) return { kind: "new", fromVersion: null, toVersion }
+  if (item.downgrade) return { kind: "downgrade", fromVersion: item.fromVersion, toVersion }
+
+  return { kind: compareVersions(toVersion, item.fromVersion) > 0 ? "update" : "replace", fromVersion: item.fromVersion, toVersion }
+}
+
+/**
  * Picks the release to install for one entry.
  *
  * The order is the one the import has always used and is not an accident:
@@ -181,7 +284,10 @@ function planEntry(entry: ModpackEntry, input: ModpackPlanInput): ModpackPlanIte
   }
 
   const detail = input.details.get(entry.modid)
-  if (!detail) return { decision: "skip", modid: entry.modid, requestedVersion: entry.version, name: entry.modid, reason: "not-on-moddb", fromVersion }
+  if (!detail) {
+    const reason = input.failedModids?.has(entry.modid) ? "lookup-failed" : "not-on-moddb"
+    return { decision: "skip", modid: entry.modid, requestedVersion: entry.version, name: entry.modid, reason, fromVersion }
+  }
 
   const release = pickRelease(detail.releases, entry.version, input.gameVersion)
   if (!release) {
