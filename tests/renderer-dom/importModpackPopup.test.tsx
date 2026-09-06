@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { act, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
@@ -247,5 +247,95 @@ describe("ImportModpackPopup, closed mid-lookup", () => {
 
     expect(screen.queryByText("Traders Expansion")).toBeNull()
     expect(within(await rowFor("Carry On")).getByText("New install")).toBeTruthy()
+  })
+})
+
+/**
+ * The mod database being unreachable (#384).
+ *
+ * useQueryMod used to fold a thrown network error into the same "nothing answered" bucket as a
+ * clean 404, so an outage read as every unresolved mod being a fork the player has to install by
+ * hand. These tests pin the fix: a lookup that never answered is told apart from one that did,
+ * shown as its own row status with a way to try again, and a total outage replaces the table
+ * rather than drowning it in false "not on the mod database" rows.
+ */
+describe("ImportModpackPopup, when the mod database cannot be reached", () => {
+  const MIXED: ModpackManifestType = {
+    name: "Mixed pack",
+    gameVersion: GAME_VERSION,
+    mods: [
+      { modid: "tradie", version: "1.4.0", name: "Traders Expansion" },
+      { modid: "unreachablemod", version: "1.0.0", name: "Unreachable Mod" },
+      { modid: "trulymissing", version: "1.0.0", name: "Truly Missing" }
+    ]
+  }
+
+  function mountWith(queryURL: (url: string) => Promise<string>): void {
+    installMockWindowApi({ netManager: { queryURL } })
+    renderWithProviders(
+      <TaskProvider>
+        <ImportModpackPopup isOpen manifest={MIXED} close={(): void => {}} installation={installation()} installedMods={[]} onFinish={(): void => {}} />
+      </TaskProvider>
+    )
+  }
+
+  /** Answers one modid of MIXED, throwing instead for whichever ones are named as still down. */
+  function respond(modid: string, downFor: ReadonlySet<string> = new Set()): Promise<string> {
+    if (downFor.has(modid)) return Promise.reject(new Error("network down"))
+    if (modid === "tradie") return Promise.resolve(detailResponse("Traders Expansion", ["1.4.0"]))
+    if (modid === "unreachablemod") return Promise.resolve(detailResponse("Unreachable Mod", ["1.0.0"]))
+    if (modid === "trulymissing") return Promise.resolve(JSON.stringify({ statuscode: "404" }))
+    return Promise.reject(new Error(`The popup queried an unexpected mod: ${modid}`))
+  }
+
+  it("tells a lookup that failed apart from a clean 404, and counts each on its own note", async () => {
+    mountWith(async (url) => respond(url.split("/mod/")[1] ?? "", new Set(["unreachablemod"])))
+
+    expect(within(await rowFor("Unreachable Mod")).getByText("Couldn't reach the mod database")).toBeTruthy()
+    expect(within(await rowFor("Truly Missing")).getByText("Not on the mod database")).toBeTruthy()
+    expect(within(await rowFor("Traders Expansion")).getByText("New install")).toBeTruthy()
+
+    // Only the genuine 404 counts toward the fork/private-build note.
+    expect(
+      screen.getByText(
+        "1 mod(s) are not on the mod database: no listing there declares the mod id in any of its releases. Those are most likely forks or private builds, and have to be installed by hand."
+      )
+    ).toBeTruthy()
+    expect(screen.getByText("1 mod(s) could not be checked: the mod database could not be reached.")).toBeTruthy()
+  })
+
+  it("shows the whole pack as unreachable, not a table of forks, when every lookup fails", async () => {
+    mountWith(async () => Promise.reject(new Error("network down")))
+
+    expect(await screen.findByText("The mod database could not be reached, so none of these mods could be checked yet.")).toBeTruthy()
+    // The table, with its "not on the mod database" rows, never renders at all.
+    expect(screen.queryByText("Status")).toBeNull()
+    expect(screen.queryByText("Not on the mod database")).toBeNull()
+  })
+
+  it("retries the failed lookups, and the table replaces the unreachable state once they answer", async () => {
+    let down = true
+    mountWith(async (url) => (down ? Promise.reject(new Error("network down")) : respond(url.split("/mod/")[1] ?? "")))
+
+    await screen.findByText("The mod database could not be reached, so none of these mods could be checked yet.")
+
+    down = false
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+
+    expect(within(await rowFor("Traders Expansion")).getByText("New install")).toBeTruthy()
+    expect(within(await rowFor("Truly Missing")).getByText("Not on the mod database")).toBeTruthy()
+    expect(screen.queryByText("The mod database could not be reached, so none of these mods could be checked yet.")).toBeNull()
+  })
+
+  it("retries a mixed failure back to a resolved row from the note's own retry action", async () => {
+    let down = true
+    mountWith(async (url) => respond(url.split("/mod/")[1] ?? "", down ? new Set(["unreachablemod"]) : new Set()))
+
+    expect(within(await rowFor("Unreachable Mod")).getByText("Couldn't reach the mod database")).toBeTruthy()
+
+    down = false
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+
+    expect(within(await rowFor("Unreachable Mod")).getByText("New install")).toBeTruthy()
   })
 })
