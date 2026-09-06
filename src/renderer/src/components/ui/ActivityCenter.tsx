@@ -103,7 +103,7 @@ function TaskSection({ id, title, items, removeTask }: Readonly<{ id: string; ti
  * The panel body. Rendered only while the Popover is open, so its mount is the
  * "user opened the Activity Center" signal that marks every center record seen.
  */
-function ActivityPanel({ close }: Readonly<{ close: () => void }>): JSX.Element {
+function ActivityPanel(): JSX.Element {
   const { t } = useTranslation()
   const reduceMotion = useReducedMotion()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -135,13 +135,6 @@ function ActivityPanel({ close }: Readonly<{ close: () => void }>): JSX.Element 
       role="region"
       tabIndex={-1}
       aria-labelledby="activity-center-title"
-      // Escape lives here rather than on PopoverPanel because `static` is what took Headless UI's
-      // own handling away, and its panel does not pass a keydown handler of ours through.
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return
-        event.stopPropagation()
-        close()
-      }}
       initial={reduceMotion ? false : { opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
@@ -241,14 +234,12 @@ function ActivityCenter(): JSX.Element {
   const { t } = useTranslation()
   const { activeTaskCount } = useTaskContext()
   const { unseenCount } = useNotificationsContext()
-  const triggerRef = useRef<HTMLButtonElement>(null)
 
   return (
     <Popover className="relative">
-      {({ open, close }) => (
+      {({ open }) => (
         <>
           <PopoverButton
-            ref={triggerRef}
             title={t("components.activityCenter.title")}
             aria-label={
               t("components.activityCenter.title") +
@@ -274,19 +265,14 @@ function ActivityCenter(): JSX.Element {
             {unseenCount > 0 && <span className="absolute left-0.5 bottom-0.5 w-1.5 h-1.5 rounded-full bg-vsl" aria-hidden="true" />}
           </PopoverButton>
           {/* `static` is what lets AnimatePresence play the exit animation, and it also takes Headless
-              UI's own panel handling with it: no focus move on open, no Escape to close. The panel is
-              portalled to the end of the document, so without both restored by hand a keyboard player
-              who opens the Activity Center tabs into the rest of the app and has no way to close it.
-              ActivityPanel takes focus on mount and owns the Escape key; closing hands focus back to
-              the trigger they came from. */}
+              UI's own focus move with it. The panel is portalled to the end of the document, so
+              without that move a keyboard player who opens the Activity Center and presses Tab lands
+              on the rest of the app, and Escape does nothing either. ActivityPanel takes focus on
+              mount; that one line brings Escape and the focus return back with it. */}
           <AnimatePresence>
             {open && (
-              // `static` is what lets AnimatePresence play the exit animation, and it also takes
-              // Headless UI's own panel handling with it: no focus move on open, no Escape to
-              // close. Both are restored by hand here and in ActivityPanel rather than by giving
-              // up the animation. Closing hands focus back to the trigger the player came from.
               <PopoverPanel static anchor="bottom" className="w-96 z-600 mt-1 ml-2 select-none rounded-sm overflow-hidden">
-                <ActivityPanel close={() => close(triggerRef)} />
+                <ActivityPanel />
               </PopoverPanel>
             )}
           </AnimatePresence>

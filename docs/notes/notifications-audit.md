@@ -149,9 +149,12 @@ player acknowledged it and gates "Clear read". The distinction is documented at
 stops nagging once you look, the row marker stays until you deal with it. **fine**
 
 **Clearing completed rows.** One at a time only, through the per-row discard button at
-`ActivityCenter.tsx:55`. There is no bulk clear, while the notification half right below it
-has both "Mark all read" and "Clear read". After an installation with a dozen steps the player
-dismisses a dozen rows by hand. **fix**
+`ActivityCenter.tsx:55`. There is no bulk clear, while the notification half right below it has
+both "Mark all read" and "Clear read". After an installation with a dozen steps the player
+dismisses a dozen rows by hand. I built it and then took it back out:
+`tests/i18n/i18n-parity.test.ts` holds the whole `components.activityCenter` namespace complete
+in all fourteen locales, and a new label there is a translation round, not a polish pass. It
+belongs in its own change with the translations beside it. **follow-up**
 
 **A failed row does not explain itself.** It shows the same
 `components.tasksMenu.error` sentence for every failure (`ActivityCenter.tsx:52`). See the
@@ -166,14 +169,19 @@ what it says. **fine**
 
 **Keyboard reachability, and this is the bad one.** `PopoverPanel` is rendered with `static`
 (`ActivityCenter.tsx:253`) so it can play an exit animation through `AnimatePresence`. `static`
-also turns off everything Headless UI does for a panel: Escape does not close it, focus is
-never moved into it, and the panel is portalled through `anchor` to the end of the document.
-Measured on the mounted component: after opening the panel, `document.activeElement` is still
-the trigger, Escape leaves the panel open, and the panel is not inside the trigger's subtree.
-So a keyboard player opens the Activity Center, presses Tab, and lands on whatever follows the
-trigger in the header. Every control in the panel is reachable only after tabbing through the
-rest of the app, and the panel cannot be closed from the keyboard at all except by finding the
-trigger again. **fix**
+also turns off what Headless UI does for a panel, and the panel is portalled through `anchor`
+to the end of the document. Measured on the mounted component: after opening the panel,
+`document.activeElement` is still the trigger, Escape leaves the panel open, and the panel is
+not inside the trigger's subtree. So a keyboard player opens the Activity Center, presses Tab,
+and lands on whatever follows the trigger in the header. Every control in the panel is
+reachable only after tabbing through the rest of the app, and the panel cannot be closed from
+the keyboard at all.
+
+Worth writing down, because it is not what I expected when I started fixing it: the Escape key
+is not a second problem. Headless UI's own Escape handling is gated on focus being inside the
+panel, so moving focus in on open is the whole fix and an Escape handler of my own on top of it
+is dead code. A mutant proved that: flipping the handler's key comparison changed nothing,
+because the framework was already doing the work. **fix**
 
 **Names on controls.** Every button in the panel and the overlay passes `ariaLabel`, and
 `NormalButton` falls back to `title` anyway
@@ -242,18 +250,19 @@ as the other dropdowns, the toast slides in from `x: 400`. **fine**
 
 ## What this pass does
 
-1. Cap how long a queued toast waits behind a backlog.
+1. Cap how long a queued toast waits behind a backlog, and stop the modpack import raising a
+   completion toast per mod into it.
 2. Pause the countdown while the pointer is over a toast or focus is inside it.
 3. Fix the two red contrast failures and pin every notification text class.
-4. Reword: no "Click here" where a button exists, no "them them", no exclamation marks on
-   notification and task strings, a backup description that says something, drop the dead
-   `errorMakingBackup` key.
-5. Activity Center: failures first, a bulk clear for completed rows, and a panel a keyboard
-   player can actually open, use and close.
+4. Reword: no "Click here" where a button exists, no "them them", no exclamation marks on any
+   string that reaches a notification, a backup description that says something its own row was
+   not already saying, drop the dead `errorMakingBackup` key.
+5. Activity Center: failures first, and a panel a keyboard player can open, use and close.
 
 ## What it leaves
 
 - Stacking more than one toast at a time.
+- A bulk clear for completed rows, which needs fourteen translations.
 - A concrete cause on a failed task row, which needs a field on `TaskType` and waits on #387.
 - Dropping the success toast that repeats the Completed row.
 - The `cmpressTaskName` typo, which is a fourteen-locale rename.

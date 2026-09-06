@@ -33,6 +33,9 @@ function Controls(): JSX.Element {
       <button onClick={() => void startDownload("Example download", "An active download", TASK_NOTIFICATION_POLICIES.individual, "https://example.test/file", "/tmp", "file.zip", () => {})}>
         Start task
       </button>
+      <button onClick={() => void startDownload("Doomed download", "A download that dies", TASK_NOTIFICATION_POLICIES.aggregate, "https://example.test/boom", "/tmp", "boom.zip", () => {})}>
+        Start failing task
+      </button>
     </>
   )
 }
@@ -689,8 +692,12 @@ describe("Activity Center keyboard reach", () => {
 })
 
 describe("Activity Center section order", () => {
-  it("puts the section a player has to act on above the one they can only watch", () => {
-    installMockWindowApi({ pathsManager: { downloadOnPath: vi.fn(() => new Promise<string>(() => {})) } })
+  it("puts the section a player has to act on above the one they can only watch", async () => {
+    installMockWindowApi({
+      pathsManager: {
+        downloadOnPath: vi.fn((_id: string, url: string) => (url.endsWith("boom") ? Promise.reject(new Error("the transfer died")) : new Promise<string>(() => {})))
+      }
+    })
 
     render(
       <>
@@ -701,13 +708,13 @@ describe("Activity Center section order", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Start task" }))
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Start failing task" })))
     openCenter()
 
     const headings = within(panel())
       .getAllByRole("heading", { level: 3 })
       .map((heading) => heading.textContent)
-    expect(headings).toEqual(["Needs attention", "In progress", "Completed", "Notifications"].filter((heading) => headings.includes(heading)))
-    expect(headings).toContain("In progress")
+    expect(headings).toEqual(["Needs attention", "In progress", "Notifications"])
   })
 })
 
