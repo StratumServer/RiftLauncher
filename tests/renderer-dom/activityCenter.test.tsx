@@ -377,6 +377,52 @@ describe("ActivityCenter", () => {
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100")
     expect(screen.queryByTitle("Discard task")).toBeNull()
   })
+
+  it("reads a finished download as completed, not finalizing, when its last tick lands after it finished (#387)", async () => {
+    let progressHandler: ProgressCallback | undefined
+    let taskId = ""
+    let finishDownload: (path: string) => void = () => {}
+    const downloadPromise = new Promise<string>((resolvePromise) => {
+      finishDownload = resolvePromise
+    })
+
+    installMockWindowApi({
+      pathsManager: {
+        onDownloadProgress: vi.fn((callback: ProgressCallback): Unsubscribe => {
+          progressHandler = callback
+          return () => {}
+        }),
+        downloadOnPath: vi.fn((id: string) => {
+          taskId = id
+          return downloadPromise
+        })
+      }
+    })
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Start task" }))
+    openCenter()
+    act(() => progressHandler?.({ id: taskId, progress: 64 }))
+
+    await act(async () => finishDownload("/tmp/file.zip"))
+    const row = (): HTMLElement => within(panel()).getByText("Example download").closest("li") as HTMLElement
+    expect(row().textContent).toContain("Completed")
+
+    // The tick the main process had already sent when the promise resolved.
+    act(() => progressHandler?.({ id: taskId, progress: 100 }))
+
+    expect(row().textContent).toContain("Completed")
+    expect(row().textContent).not.toContain("Finalizing")
+    expect(within(panel()).queryByRole("progressbar")).toBeNull()
+    expect(within(panel()).getByTitle("Discard task")).toBeTruthy()
+  })
 })
 
 describe("NotificationsOverlay live region", () => {
