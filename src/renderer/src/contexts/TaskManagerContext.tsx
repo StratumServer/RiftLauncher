@@ -59,9 +59,30 @@ function changesNothing(task: TaskType, updates: Partial<Omit<TaskType, "id">>):
 }
 
 /**
+ * What is left of an update once the task it targets has finished: everything
+ * but its status and its progress, which a terminal task keeps for good.
+ *
+ * Completion is owned by the awaited operation, not by the progress stream
+ * (see the reducer below), and nothing orders the last progress tick of a
+ * download before the promise that flushed it. Without this, the 100 tick
+ * that lands after `downloadOnPath` resolved pushed a completed task back to
+ * in-progress at 100, which the Activity Center reads as "finalizing" until
+ * the next launch (#387). Every flow's updates go through here, so the three
+ * progress listeners and the launcher update are all covered at once.
+ */
+function applicableUpdates(task: TaskType, updates: Partial<Omit<TaskType, "id">>): Partial<Omit<TaskType, "id">> {
+  if (task.status !== "completed" && task.status !== "failed") return updates
+  const applicable = { ...updates }
+  delete applicable.status
+  delete applicable.progress
+  return applicable
+}
+
+/**
  * UPDATE_TASK is deliberately idempotent: an update that would not change a
  * single field returns the very same state array, so `useReducer` bails out
- * instead of re-rendering every task consumer.
+ * instead of re-rendering every task consumer. An update stripped down to
+ * nothing by the guard above counts as one of those.
  *
  * A progress event is not the terminal signal for an awaited operation. A
  * download can report 100 while its promise still has to flush the file, so
@@ -71,13 +92,18 @@ function changesNothing(task: TaskType, updates: Partial<Omit<TaskType, "id">>):
  */
 export function taskReducer(state: TaskType[], action: TaskAction): TaskType[] {
   switch (action.type) {
+    // Ids are fresh per run everywhere but the launcher update, which reuses
+    // one id for every attempt: adding it again restarts that task instead of
+    // stacking a second card under the same id.
     case ACTIONS.ADD_TASK:
-      return [action.payload, ...state]
+      return [action.payload, ...state.filter((task) => task.id !== action.payload.id)]
     case ACTIONS.UPDATE_TASK: {
       const { id, updates } = action.payload
       const target = state.find((task) => task.id === id)
-      if (!target || changesNothing(target, updates)) return state
-      return state.map((task) => (task.id === id ? { ...task, ...updates } : task))
+      if (!target) return state
+      const applicable = applicableUpdates(target, updates)
+      if (changesNothing(target, applicable)) return state
+      return state.map((task) => (task.id === id ? { ...task, ...applicable } : task))
     }
     case ACTIONS.REMOVE_TASK:
       return state.filter((task) => task.id !== action.payload.id)
@@ -209,6 +235,11 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     // that does not exist; the reducer's missing-id arm makes that a no-op.
     const removeUpdateErrorListener = window.api.appUpdater.onUpdateError(() => {
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id: LAUNCHER_UPDATE_TASK_ID, updates: { status: "failed" } } })
+      // The failure offers the download again (NotificationsContext), and that
+      // retry runs under this same id on a task the reducer now holds
+      // terminal. Forgetting the task here is what lets the next tick start a
+      // fresh one rather than try, and fail, to update a dead one.
+      launcherUpdateTaskAdded.current = false
     })
 
     return () => {

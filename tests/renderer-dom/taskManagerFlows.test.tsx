@@ -5,6 +5,7 @@ import type { RenderHookResult } from "@testing-library/react"
 
 import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { ACTIONS, TASK_NOTIFICATION_POLICIES, TaskProvider, taskReducer, useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import { LAUNCHER_UPDATE_TASK_ID } from "@renderer/utils/launcherUpdateTask"
 import type { TaskType } from "@renderer/contexts/TaskManagerContext"
 
 import { expectHookThrowsOutsideProvider } from "./helpers/render"
@@ -73,6 +74,42 @@ describe("taskReducer", () => {
     const state = [baseTask]
     const result = taskReducer(state, { type: ACTIONS.UPDATE_TASK, payload: { id: "nope", updates: { status: "completed" } } })
     expect(result).toBe(state)
+  })
+
+  it("UPDATE_TASK refuses to move a completed task back to in-progress, and returns the same state array", () => {
+    const state = [{ ...baseTask, progress: 100, status: "completed" as const }]
+    const result = taskReducer(state, { type: ACTIONS.UPDATE_TASK, payload: { id: "a", updates: { progress: 100, status: "in-progress" } } })
+    expect(result).toBe(state)
+    expect(result[0]).toMatchObject({ progress: 100, status: "completed" })
+  })
+
+  it("UPDATE_TASK refuses to walk a completed task's progress back", () => {
+    const state = [{ ...baseTask, progress: 100, status: "completed" as const }]
+    const result = taskReducer(state, { type: ACTIONS.UPDATE_TASK, payload: { id: "a", updates: { progress: 12, status: "in-progress" } } })
+    expect(result).toBe(state)
+    expect(result[0]).toMatchObject({ progress: 100, status: "completed" })
+  })
+
+  it("UPDATE_TASK refuses to restart a failed task, whatever the tick says", () => {
+    const state = [{ ...baseTask, progress: 62, status: "failed" as const }]
+    const result = taskReducer(state, { type: ACTIONS.UPDATE_TASK, payload: { id: "a", updates: { progress: 50, status: "in-progress" } } })
+    expect(result).toBe(state)
+    expect(result[0]).toMatchObject({ progress: 62, status: "failed" })
+  })
+
+  it("UPDATE_TASK refuses one terminal status for the other, in both directions", () => {
+    const failed = [{ ...baseTask, progress: 62, status: "failed" as const }]
+    expect(taskReducer(failed, { type: ACTIONS.UPDATE_TASK, payload: { id: "a", updates: { progress: 100, status: "completed" } } })).toBe(failed)
+
+    const completed = [{ ...baseTask, progress: 100, status: "completed" as const }]
+    expect(taskReducer(completed, { type: ACTIONS.UPDATE_TASK, payload: { id: "a", updates: { status: "failed" } } })).toBe(completed)
+  })
+
+  it("ADD_TASK for an id already in state replaces it rather than stacking a second card", () => {
+    const state = [{ ...baseTask, progress: 62, status: "failed" as const }]
+    const restarted: TaskType = { ...baseTask, progress: 0, status: "in-progress" }
+    const result = taskReducer(state, { type: ACTIONS.ADD_TASK, payload: restarted })
+    expect(result).toEqual([restarted])
   })
 })
 
@@ -461,6 +498,138 @@ describe("completion driven by the resolved operation", () => {
     expect(error?.message).toContain("connection reset")
     expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 62, status: "failed" })
     expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["error"])
+  })
+})
+
+/**
+ * Issue #387: the flip side of #108. Completion belongs to the resolved
+ * operation, and nothing orders the download's last progress tick before the
+ * promise that flushed it, so the 100 tick regularly lands on a task that is
+ * already completed. It used to push that task back to in-progress at 100,
+ * which the Activity Center reads as "finalizing", for the rest of the run.
+ * The events are driven through the mocked bridge here rather than dispatched
+ * by hand, because it is the listener path that produces them in the wild.
+ */
+describe("late progress ticks on a finished task", () => {
+  /** Starts a download whose promise and progress stream the test drives itself. */
+  function startControlledDownload(): {
+    result: RenderHookResult<TaskProbe, unknown>["result"]
+    onFinish: ReturnType<typeof vi.fn>
+    tick: (progress: number) => void
+    finish: (path: string) => void
+    fail: (err: Error) => void
+  } {
+    let progressHandler: ProgressCallback | undefined
+    let finish: (path: string) => void = () => {}
+    let fail: (err: Error) => void = () => {}
+    const downloadPromise = new Promise<string>((resolvePromise, rejectPromise) => {
+      finish = resolvePromise
+      fail = rejectPromise
+    })
+
+    installMockWindowApi({
+      pathsManager: {
+        onDownloadProgress: vi.fn((callback: ProgressCallback): Unsubscribe => {
+          progressHandler = callback
+          return () => {}
+        }),
+        downloadOnPath: vi.fn(() => downloadPromise)
+      }
+    })
+
+    const { result } = renderTaskProbe()
+    const onFinish = vi.fn()
+
+    act(() => {
+      void result.current.task.startDownload("Name", "desc", TASK_NOTIFICATION_POLICIES.individual, "https://x", "/tmp/out", "file.zip", onFinish)
+    })
+
+    return {
+      result,
+      onFinish,
+      tick: (progress: number) => act(() => progressHandler?.({ id: result.current.task.tasks[0]!.id, progress })),
+      finish,
+      fail
+    }
+  }
+
+  it("leaves a completed download completed when the final 100 tick arrives after it resolved", async () => {
+    const { result, onFinish, tick, finish } = startControlledDownload()
+
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
+    const taskId = result.current.task.tasks[0]!.id
+
+    tick(64)
+    await act(async () => finish("/tmp/out/file.zip"))
+    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(true, "/tmp/out/file.zip", null))
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "completed" })
+
+    const tasksWhenCompleted = result.current.task.tasks
+    tick(100)
+
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "completed" })
+    // Refused outright, so the state array is the very same one: nothing that
+    // reads a task re-renders for a tick that changes nothing.
+    expect(result.current.task.tasks).toBe(tasksWhenCompleted)
+
+    // A source whose stream trails off under 100 must not drag the bar back either.
+    tick(97)
+
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 100, status: "completed" })
+    expect(result.current.task.tasks).toBe(tasksWhenCompleted)
+  })
+
+  it("leaves a failed download failed, at the progress it died on, when a later tick arrives", async () => {
+    const { result, onFinish, tick, fail } = startControlledDownload()
+
+    await waitFor(() => expect(result.current.task.tasks).toHaveLength(1))
+    const taskId = result.current.task.tasks[0]!.id
+
+    tick(50)
+    await act(async () => fail(new Error("connection reset")))
+    await waitFor(() => expect(onFinish).toHaveBeenCalled())
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 50, status: "failed" })
+
+    const tasksWhenFailed = result.current.task.tasks
+    tick(50)
+    tick(100)
+
+    expect(result.current.task.tasks.find((t) => t.id === taskId)).toMatchObject({ progress: 50, status: "failed" })
+    expect(result.current.task.tasks).toBe(tasksWhenFailed)
+  })
+
+  it("still lets a retried launcher update run, on a fresh task rather than the failed one", () => {
+    let progressHandler: UpdateProgressCallback | undefined
+    // Both providers subscribe to the error channel, so this is a list: the
+    // task one has to be called even though the notification one subscribed last.
+    const errorHandlers: Array<() => void> = []
+
+    installMockWindowApi({
+      appUpdater: {
+        onUpdateDownloadProgress: vi.fn((callback: UpdateProgressCallback): Unsubscribe => {
+          progressHandler = callback
+          return () => {}
+        }),
+        onUpdateError: vi.fn((callback: () => void): Unsubscribe => {
+          errorHandlers.push(callback)
+          return () => {}
+        })
+      }
+    })
+
+    const { result } = renderTaskProbe()
+
+    act(() => progressHandler?.({ version: "1.7.0-beta.8", progress: 47 }))
+    expect(result.current.task.tasks[0]).toMatchObject({ id: LAUNCHER_UPDATE_TASK_ID, progress: 47, status: "in-progress" })
+
+    act(() => errorHandlers.forEach((callback) => callback()))
+    expect(result.current.task.tasks[0]).toMatchObject({ progress: 47, status: "failed" })
+
+    // The retry offer downloads again under this same id (NotificationsContext).
+    act(() => progressHandler?.({ version: "1.7.0-beta.8", progress: 8 }))
+
+    expect(result.current.task.tasks).toHaveLength(1)
+    expect(result.current.task.tasks[0]).toMatchObject({ id: LAUNCHER_UPDATE_TASK_ID, progress: 8, status: "in-progress" })
   })
 })
 
