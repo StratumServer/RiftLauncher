@@ -43,7 +43,7 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
   })
 
   /**
-   * Zaldaryon's catch on the first cut: the link always went to the Linux page, so a Windows
+   * The review of the first cut caught that the link always went to the Linux page, so a Windows
    * player was sent to instructions for another OS. macOS has no .NET section of its own and
    * the OS is empty until the async read resolves, so both get the index rather than a wrong page.
    */

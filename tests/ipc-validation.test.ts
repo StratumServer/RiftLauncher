@@ -26,6 +26,9 @@ describe("IPC boundary validators", () => {
     assert.equal(assertAllowedApiUrl("https://auth3.vintagestory.at/v2/gamelogin").pathname, "/v2/gamelogin")
     assert.equal(assertAllowedBrowserUrl("https://github.com/StratumServer/RiftLauncher/issues").hostname, "github.com")
     assert.equal(assertAllowedBrowserUrl("https://discord.gg/vQm6z2urZs").pathname, "/vQm6z2urZs")
+    // The install guide the missing-.NET notification opens: the page it links must be openable or the button is a no-op.
+    assert.equal(assertAllowedBrowserUrl("https://riftlauncher.stratumvs.dev/docs/get-started/installation/windows").hostname, "riftlauncher.stratumvs.dev")
+    assert.throws(() => assertAllowedBrowserUrl("https://riftlauncher.stratumvs.dev/"), /URL is not allowed/)
 
     assert.throws(() => assertAllowedApiUrl("http://mods.vintagestory.at/api/tags"), /Invalid URL/)
     assert.throws(() => assertAllowedApiUrl("https://example.com/api/tags"), /URL is not allowed/)
