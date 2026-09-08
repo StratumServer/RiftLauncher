@@ -52,7 +52,7 @@ export function flattenTranslationObject(value: unknown, prefix = ""): Record<st
 export type TranslationCall = {
   /** Absolute path to the source file the call was found in. */
   file: string
-  /** The literal key passed to t(), e.g. "features.backups.errorMakingBackup". */
+  /** The literal key passed to t(), e.g. "features.backups.backupWhilePlaying". */
   key: string
   /** Whether the call passed a second argument, e.g. t("key", { count }). */
   hasInterpolationArg: boolean

@@ -59,10 +59,31 @@ describe("capNotificationRecords", () => {
     assert.equal(capped[0]?.id, "c3")
   })
 
-  it("keeps the toast on screen plus a full backlog and drops the oldest toasts past that", () => {
+  it("with nothing on screen keeps a full backlog plus the one about to take the screen", () => {
     const capped = capNotificationRecords(records(0, MAX_TOAST_BACKLOG + 4), isToastOnly)
     assert.equal(capped.length, MAX_TOAST_BACKLOG + 1)
     assert.equal(capped[0]?.id, "t3")
+  })
+
+  /**
+   * The regression Zaldaryon caught on the first cut of this rule. A toast-only record leaves
+   * the list when it is dismissed, so the oldest survivor is the one being read; trimming
+   * oldest first unmounted it mid-sentence and left the overlay blank until its timer ran out.
+   */
+  it("never drops the pinned toast on screen, and drops the oldest waiting one instead", () => {
+    const isPinned = (entry: { id: string }): boolean => entry.id === "t0"
+    const capped = capNotificationRecords(records(0, MAX_TOAST_BACKLOG + 2), isToastOnly, isPinned)
+    assert.deepEqual(
+      capped.map((entry) => entry.id),
+      ["t0", "t2", "t3", "t4", "t5"]
+    )
+  })
+
+  it("keeps exactly the on screen toast plus a full backlog when one is pinned", () => {
+    const isPinned = (entry: { id: string }): boolean => entry.id === "t0"
+    const full = records(0, MAX_TOAST_BACKLOG + 1)
+    assert.equal(capNotificationRecords(full, isToastOnly, isPinned), full)
+    assert.equal(capNotificationRecords(records(0, MAX_TOAST_BACKLOG + 2), isToastOnly, isPinned).length, MAX_TOAST_BACKLOG + 1)
   })
 
   it("never lets a pile of queued toasts push real history out", () => {

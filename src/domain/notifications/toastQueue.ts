@@ -47,16 +47,29 @@ export function backlogToastDuration(duration: number | null, waiting: number): 
  * transient, exist solely to be shown once, and must never push real history
  * out; capping them at the backlog is also what stops a dropped toast from
  * sitting in the record list forever with no way to ever reach the screen.
+ *
+ * A pinned record is never dropped and does not count against the toast
+ * budget. The provider pins the toast on screen: a toast-only record leaves
+ * the list the moment it is dismissed, so without the pin the oldest survivor
+ * is always the one being read, and a burst would unmount it mid-sentence.
  */
-export function capNotificationRecords<T>(records: readonly T[], isToastOnly: (record: T) => boolean): readonly T[] {
-  let centerExcess = records.reduce((count, record) => count + (isToastOnly(record) ? 0 : 1), 0) - MAX_CENTER_HISTORY
-  // One more than the backlog: the toast on screen is not waiting for anything.
-  let toastExcess = records.reduce((count, record) => count + (isToastOnly(record) ? 1 : 0), 0) - (MAX_TOAST_BACKLOG + 1)
+export function capNotificationRecords<T>(records: readonly T[], isToastOnly: (record: T) => boolean, isPinned: (record: T) => boolean = () => false): readonly T[] {
+  let centerCount = 0
+  let pinnedToasts = 0
+  let waitingToasts = 0
+  for (const record of records) {
+    if (!isToastOnly(record)) centerCount += 1
+    else if (isPinned(record)) pinnedToasts += 1
+    else waitingToasts += 1
+  }
+  let centerExcess = centerCount - MAX_CENTER_HISTORY
+  // With nothing on screen the next render puts one up, so one more may wait.
+  let toastExcess = waitingToasts - (MAX_TOAST_BACKLOG + (pinnedToasts === 0 ? 1 : 0))
   if (centerExcess <= 0 && toastExcess <= 0) return records
 
   return records.filter((record) => {
     if (isToastOnly(record)) {
-      if (toastExcess <= 0) return true
+      if (isPinned(record) || toastExcess <= 0) return true
       toastExcess -= 1
       return false
     }

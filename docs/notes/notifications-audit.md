@@ -2,7 +2,8 @@
 
 Everything a player reads as a notification: the toast overlay, the Activity Center, the task
 rows it draws from, and the call sites that fire a message. Written against `origin/dev` at
-5f6c464.
+5f6c464. File and line references are relative to that commit and are not maintained after merge;
+the decisions that outlive this pass are the ones in `docs/decisions/`.
 
 Each finding is ranked:
 

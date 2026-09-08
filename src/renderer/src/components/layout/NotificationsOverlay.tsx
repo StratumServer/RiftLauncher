@@ -47,7 +47,7 @@ function NotificationsOverlay(): JSX.Element {
                 {ICON_TYPES[activeToast.type]}
               </span>
               <div className="flex flex-col items-start justify-center gap-2 min-w-0">
-                <p className="text-xs text-zinc-300 break-words">{activeToast.body}</p>
+                <p className="text-xs text-zinc-400 break-words">{activeToast.body}</p>
                 {activeToast.options?.actions && activeToast.options.actions.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
                     {activeToast.options.actions.map((action, index) => {

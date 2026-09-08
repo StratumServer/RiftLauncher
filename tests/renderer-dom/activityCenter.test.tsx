@@ -3,6 +3,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@te
 import { describe, expect, it, vi } from "vitest"
 
 import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { MAX_TOAST_BACKLOG } from "@domain/notifications/toastQueue"
 import { TASK_NOTIFICATION_POLICIES, TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import ActivityCenter from "@renderer/components/ui/ActivityCenter"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
@@ -466,6 +467,19 @@ describe("NotificationsContext history caps", () => {
 
     expect(result.current.history).toHaveLength(3)
     expect(result.current.history.map((record) => record.body)).toEqual(["kept 0", "kept 1", "kept 2"])
+  })
+
+  it("keeps the toast on screen when a burst overflows the toast budget", () => {
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    act(() => result.current.addNotification("being read", "info", { presentation: "toast" }))
+    expect(result.current.activeToast?.body).toBe("being read")
+
+    act(() => {
+      for (let index = 0; index <= MAX_TOAST_BACKLOG; index += 1) result.current.addNotification(`burst ${index}`, "info", { presentation: "toast" })
+    })
+
+    expect(result.current.activeToast?.body).toBe("being read")
   })
 
   it("caps center history at fifty, dropping the oldest", () => {

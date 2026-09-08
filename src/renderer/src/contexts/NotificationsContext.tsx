@@ -111,12 +111,17 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   // that drains while it is up cannot lengthen it back.
   const [activeToastDuration, setActiveToastDuration] = useState<number | null>(null)
   const [toastPaused, setToastPaused] = useState(false)
+  // Read by the record cap so a burst never drops the toast being read. A ref
+  // rather than the state itself: addNotification is handed out through the
+  // context and may run from a closure that predates the current banner.
+  const activeToastIdRef = useRef<string | null>(null)
   const invokedActions = useRef<Set<string>>(new Set())
   const offeredVersion = useRef("")
   const downloadAccepted = useRef(false)
 
   const history = useMemo(() => records.filter((record) => !isToastOnly(record)), [records])
   const activeToast = activeToastId ? records.find((record) => record.id === activeToastId) : undefined
+  activeToastIdRef.current = activeToastId
   const unseenCount = useMemo(() => history.filter((record) => !record.seen).length, [history])
   const unreadCount = useMemo(() => history.filter((record) => !record.read).length, [history])
 
@@ -208,7 +213,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       resolved: false,
       options: { ...options, presentation, duration: resolveToastDuration(type, options) }
     }
-    setRecords((previous) => capNotificationRecords([...previous, record], isToastOnly))
+    setRecords((previous) => capNotificationRecords([...previous, record], isToastOnly, (candidate) => candidate.id === activeToastIdRef.current))
     if (presentation !== "center") setToastQueue((queue) => [...queue, id])
   }
 
