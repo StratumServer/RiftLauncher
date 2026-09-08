@@ -1,7 +1,7 @@
 import fse from "fs-extra"
 import { join } from "node:path"
 
-import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
+import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { logMessage } from "@src/utils/logManager"
 
 /**
