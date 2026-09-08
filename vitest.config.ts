@@ -33,7 +33,12 @@ export default defineConfig({
           name: "renderer-dom",
           environment: "jsdom",
           include: ["tests/renderer-dom/**/*.test.tsx"],
-          setupFiles: ["tests/renderer-dom/setup.ts"]
+          setupFiles: ["tests/renderer-dom/setup.ts"],
+          // A test that types a form through userEvent runs every keystroke through the
+          // event pipeline, and on a loaded Windows runner one of them crossed the 5 s
+          // default while the whole suite ran beside it. Headroom, not slack: a hang
+          // still fails, three times later.
+          testTimeout: 15_000
         }
       }
     ],
