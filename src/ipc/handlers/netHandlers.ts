@@ -2,7 +2,7 @@ import { app, ipcMain } from "electron"
 
 import { IPC_CHANNELS } from "../ipcChannels"
 import { readCatalogCache, writeCatalogCache } from "@src/ipc/catalogCache"
-import { ConcurrencyLimiter } from "@src/ipc/concurrencyLimiter"
+import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { requestBoundedBuffer, requestBoundedText } from "@src/ipc/network"
 import { assertAllowedApiUrl, assertAllowedDownloadUrl, getApiUrlMaxBytes, MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"

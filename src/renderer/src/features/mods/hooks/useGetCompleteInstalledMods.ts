@@ -2,9 +2,21 @@ import { useGetInstalledMods } from "./useGetInstalledMods"
 import { useQueryMod } from "./useQueryMod"
 import semver from "semver"
 
+import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { evaluateModCompatibility } from "@domain/mods/compatibility"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 import { cacheModImage } from "@renderer/features/moddb/adapters/modsManager"
+
+/**
+ * A big Mods folder queries the ModDB once per installed mod with nothing of its own capping how
+ * many of those run at once (#386). Left unbounded, that fan-out could occupy every slot of the
+ * shared QUERY_URL limiter (netHandlers.ts, 6), making a catalog search or filter change on
+ * another page queue behind the whole scan instead of running immediately. 2 is well under that
+ * shared cap, so a scan never takes more than a third of it and the rest of the app stays quick.
+ */
+const INSTALLED_MOD_LOOKUP_LIMIT = 2
+
+const installedModLookups = new ConcurrencyLimiter(INSTALLED_MOD_LOOKUP_LIMIT)
 
 export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number) => void }) => Promise<{
   mods: InstalledModType[]
@@ -46,7 +58,7 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
       // Not-found and lookup-failed both leave this scan with no detail for the mod, which is all
       // it has ever distinguished (a plain compatibility/update pass, not the modpack import
       // table this outcome type exists for).
-      const request = queryMod({ modid }).then((outcome) => (outcome.status === "found" ? outcome.mod : undefined))
+      const request = installedModLookups.run(() => queryMod({ modid })).then((outcome) => (outcome.status === "found" ? outcome.mod : undefined))
       modDetails.set(key, request)
       return request
     }
