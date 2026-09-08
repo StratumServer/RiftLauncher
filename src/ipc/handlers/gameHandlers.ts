@@ -17,7 +17,9 @@ import { detectInstalledGameVersion } from "@domain/versions/detect"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
 import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
 import {
+  appendStderrScan,
   gameProcessOutcomeToResult,
+  hasMissingDotnetSentinel,
   invalidExecutableResult,
   invalidRequestResult,
   launchPlanFailureResult,
@@ -168,6 +170,14 @@ async function adoptRefreshedSession(accountId: string, secrets: AccountSecrets)
  * code is reported without being judged: Vintage Story exits non-zero often
  * enough that reading that as a failed launch would tell a player their session
  * went wrong after they closed it themselves.
+ *
+ * The one thing stderr is read for is the .NET host's fixed missing-runtime
+ * sentence, which is what a player gets instead of a game when the build needs
+ * a runtime major version they have not installed (issue #397). The scan
+ * accumulates a bounded head of stderr so the sentence still matches when it
+ * arrives split across two chunks, and only a boolean leaves this function:
+ * the version the host wanted and the paths it searched stay in the verbose
+ * log they were already written to.
  */
 function realGameProcess(): GameProcess {
   return {
@@ -199,12 +209,16 @@ function realGameProcess(): GameProcess {
 
         externalApp.stdout.resume()
 
+        let stderrScan = ""
+
         externalApp.stderr.on("data", (data) => {
+          const text = data.toString()
+          stderrScan = appendStderrScan(stderrScan, text)
           logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story threw an error! Check verbose logs for more info.`)
-          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${data.toString().slice(0, 2_048)}`)
+          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${text.slice(0, 2_048)}`)
         })
 
-        externalApp.on("close", (code) => settle({ started: true, exitCode: code }))
+        externalApp.on("close", (code) => settle({ started: true, exitCode: code, missingRuntime: hasMissingDotnetSentinel(stderrScan) }))
 
         externalApp.on("error", (error) => {
           logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error running Vintage Story.`)

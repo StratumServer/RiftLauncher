@@ -30,6 +30,8 @@ export function pickPlayOutcomeNotification(result: GameExecutionResult): PlayOu
       return { key: "notifications.body.gameLaunchSessionWriteFailed" }
     case "invalid-request":
       return { key: "notifications.body.gameLaunchInvalidEnvironment" }
+    case "missing-dotnet":
+      return { key: "notifications.body.gameLaunchMissingDotnet" }
     case "launch-failed":
       return { key: "notifications.body.errorExecutingGame" }
   }

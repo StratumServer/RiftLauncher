@@ -34,6 +34,10 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
     assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "invalid-request" }), { key: "notifications.body.gameLaunchInvalidEnvironment" })
   })
 
+  it("keys missing-dotnet to its own sentence", () => {
+    assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "missing-dotnet" }), { key: "notifications.body.gameLaunchMissingDotnet" })
+  })
+
   it("keys launch-failed to the generic executing-game sentence", () => {
     assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "launch-failed" }), { key: "notifications.body.errorExecutingGame" })
   })

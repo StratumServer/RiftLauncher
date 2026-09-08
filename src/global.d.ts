@@ -321,8 +321,12 @@ declare global {
    * - `invalid-request`: the installation's own start environment variables
    *   could not be parsed. Reachable by typing garbage into an installation's
    *   settings, not by an attacker on the IPC channel.
+   * - `missing-dotnet`: the .NET host refused to run the game because no
+   *   installed runtime matched the version the build asks for. The only
+   *   reason drawn from the game's own output, and a fixed token: what the
+   *   host printed (the version, the paths) never leaves the verbose log.
    */
-  type GameExecutionFailureReason = "unsupported-platform" | "no-executable" | "session-write-failed" | "launch-failed" | "invalid-request"
+  type GameExecutionFailureReason = "unsupported-platform" | "no-executable" | "session-write-failed" | "launch-failed" | "invalid-request" | "missing-dotnet"
 
   /**
    * EXECUTE_GAME's verdict.
