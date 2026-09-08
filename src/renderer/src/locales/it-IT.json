@@ -68,7 +68,7 @@
       "backupsAuto": "Abilita per creare un backup automatico prima di giocare",
       "backupsLimit": "Massima quantità di backups",
       "cantDeleteWhileinUse": "Non puoi eliminare questo backup mentre è in uso!",
-      "cmpressTaskName": "Backup di {{name}}",
+      "compressTaskName": "Backup di {{name}}",
       "compressingBackupDescription": "Creando il backup di {{name}}!",
       "deleteBackup": "Elimina backup",
       "deletingNotReversible": "L'eliminazione non è reversibile quindi non potrai più recuperare i tuoi mondi, dati e altre informazioni che utilizzano questo backup.",

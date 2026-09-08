@@ -71,7 +71,7 @@
       "backupsAuto": "Włącz, aby wykonać automatyczną kopię zapasową przed rozpoczęciem gry",
       "backupsLimit": "Maksymalna liczba kopii zapasowych",
       "cantDeleteWhileinUse": "Nie można usunąć tej kopii zapasowej, gdy jest używana!",
-      "cmpressTaskName": "Kopia zapasowa {{name}}",
+      "compressTaskName": "Kopia zapasowa {{name}}",
       "compressingBackupDescription": "Tworzenie kopii zapasowej {{name}}!",
       "deleteBackup": "Usuń kopię zapasową",
       "deletingNotReversible": "Usunięcie kopii zapasowej jest procesem nieodwracalnym! Wszystkie dane świata i informacje z tej kopii przepadną.",

@@ -205,7 +205,7 @@
       "areYouSureRestoreBackup": "Biztosan vissza szeretnéd állítani ezt a biztonsági mentést?",
       "restoringNotReversible": "Egy biztonsági mentés visszaállítása véglegesen törli a jelenlegi játékmentésedet és lecseréli őket a biztonsági mentésben lévőre!",
       "noBackupSelected": "Nem lett biztonsági mentés kiválasztva!",
-      "cmpressTaskName": "{{name}} biztonsági mentés",
+      "compressTaskName": "{{name}} biztonsági mentés",
       "compressingBackupDescription": "{{name}} biztonsági mentése!",
       "extractTaskName": "{{name}} biztonsági mentés kicsomagolása",
       "extractingBackupDescription": "{{name}} biztonsági mentés visszaállítása!",

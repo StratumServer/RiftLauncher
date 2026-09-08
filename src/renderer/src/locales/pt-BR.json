@@ -298,7 +298,7 @@
       "areYouSureRestoreBackup": "Você tem certeza que deseja restaurar este backup?",
       "restoringNotReversible": "Restaurar um backup apagará permanentemente seus dados e os substituirá pelos do backup!",
       "noBackupSelected": "Nenhum backup selecionado!",
-      "cmpressTaskName": "Backup de {{name}}",
+      "compressTaskName": "Backup de {{name}}",
       "compressingBackupDescription": "Fazendo backup de {{name}}!",
       "extractTaskName": "Restauração do backup de {{name}}",
       "extractingBackupDescription": "Restaurando o backup de {{name}}!",

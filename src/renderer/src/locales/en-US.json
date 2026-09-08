@@ -344,7 +344,7 @@
       "areYouSureRestoreBackup": "Are you sure you want to restore this Backup?",
       "restoringNotReversible": "Restoring a Backup will permanently delete your data and replace it with the Backup one!",
       "noBackupSelected": "No Backup selected!",
-      "cmpressTaskName": "{{name}} Backup",
+      "compressTaskName": "{{name}} Backup",
       "compressingBackupDescription": "Backing up {{name}}!",
       "extractTaskName": "{{name}} Backup restoration",
       "extractingBackupDescription": "Restoring {{name}} backup!",

@@ -219,7 +219,7 @@
       "areYouSureRestoreBackup": "Bist du dir sicher, dass du diese Sicherungskopie einspielen möchtest?",
       "restoringNotReversible": "Beim Wiederherstellen einer Sicherungskopie werden alle Daten endgültig gelöscht und durch die, in der Sicherungskopie gespeicherten Daten ersetzt!",
       "noBackupSelected": "Keine Sicherungskopie ausgewählt!",
-      "cmpressTaskName": "{{name}} Sicherungskopie",
+      "compressTaskName": "{{name}} Sicherungskopie",
       "compressingBackupDescription": "Sichere {{name}}!",
       "extractTaskName": "{{name}} Sicherungskopie einspielen",
       "extractingBackupDescription": "Restoring {{name}} backup!",
