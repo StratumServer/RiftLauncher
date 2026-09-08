@@ -229,7 +229,7 @@
       "backupsAuto": "Actívalo para hacer una Copia de Seguridad automática antes de jugar",
       "backupsLimit": "Límite de Copias de Seguridad",
       "areYouSureRestoreBackup": "¿Estás seguro de que quieres restaurar esta copia de seguridad?",
-      "cmpressTaskName": "Copia de Seguridad de {{name}}",
+      "compressTaskName": "Copia de Seguridad de {{name}}",
       "compressingBackupDescription": "¡Haciendo Copia de Seguridad de {{name}}!",
       "extractTaskName": "restaurando Copia de Seguridad de {{name}}",
       "extractingBackupDescription": "¡Restaurando copia de seguridad de {{name}}!",
