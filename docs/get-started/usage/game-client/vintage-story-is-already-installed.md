@@ -50,9 +50,11 @@ Add an already created Installation | VS Launcher Guides
 
 ### Update `modPaths` and `ModPaths`
 
-The `clientsettings.json` and `serverconfig.json` files in a copied installation may still point the game at the mods folder's old location. If the game can't find your mods after the move, update `modPaths` in `clientsettings.json` and `ModPaths` in `serverconfig.json` to the folder's new location.
+The `clientsettings.json` and `serverconfig.json` files in a copied installation may still point the game at the mods folder's old location.
 
-RiftLauncher does not rewrite these two fields for you, so this is a manual edit.
+RiftLauncher handles `modPaths` in `clientsettings.json` for you. Every time you launch the game, it checks that list, and when it is still the pair the game writes by itself (`Mods` plus the full path of a data folder's `Mods` subfolder) and that full path sits outside the installation, it points it at the installation's own `Mods` folder instead. A list you have edited yourself, an extra shared mods folder for instance, is left exactly as you wrote it: the launcher only notes in its log that it found one and changed nothing.
+
+`ModPaths` in `serverconfig.json` is still a manual edit. If a server installation can't find its mods after the move, open that file and update the folder's location yourself.
 
 {% endstep %}
 
