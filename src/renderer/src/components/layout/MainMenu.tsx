@@ -22,6 +22,7 @@ import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
+import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
 import { checkInstallationPathExists, logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
 
 import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
@@ -46,6 +47,7 @@ function MainMenu(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
   const { openOnBrowser: openExternalLink } = useExternalLinks()
+  const { os } = useAppInfo()
 
   const makeInstallationBackup = useMakeInstallationBackup()
 
@@ -161,7 +163,7 @@ function MainMenu(): JSX.Element {
         configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: selectedInstallation.id, updates: { lastTimePlayed: finishedPlaying, totalTimePlayed: ttp } } })
       }
 
-      const outcomeNotification = pickPlayOutcomeNotification(result)
+      const outcomeNotification = pickPlayOutcomeNotification(result, os)
       if (outcomeNotification) {
         const link = outcomeNotification.link
         const options = link ? { actions: [{ id: "open-guide", label: t(link.labelKey), onClick: (): void => openExternalLink(link.url) }] } : undefined
