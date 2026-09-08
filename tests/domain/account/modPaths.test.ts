@@ -236,6 +236,19 @@ describe("writeClientSettingsSession with an installation to check the mod folde
     assert.deepEqual((writes[0]?.document as Record<string, unknown>).stringSettings, gameRefreshed.stringSettings)
   })
 
+  it("reports a repoint the adopted-session write did not land, instead of claiming it", async () => {
+    const gameRefreshed = {
+      ...documentWith(FOREIGN_DEFAULT),
+      stringSettings: { playeruid: "uid-1", sessionkey: "game-session-key", sessionsignature: "game-session-signature", mptoken: "game-mp-token" }
+    }
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: gameRefreshed }, { ok: false })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION, modPaths: TARGET })
+
+    assert.deepEqual(result, { outcome: "adopted", secrets: { sessionKey: "game-session-key", sessionSignature: "game-session-signature", mptoken: "game-mp-token" }, modPaths: "repoint-write-failed" })
+    assert.equal(writes.length, 1, "the write was attempted once")
+  })
+
   it("writes nothing when the game's session wins and the list needs no repointing", async () => {
     const gameRefreshed = {
       ...documentWith(["Mods", "/data/survival/Mods"]),

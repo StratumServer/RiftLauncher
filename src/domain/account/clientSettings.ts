@@ -171,7 +171,12 @@ function sessionToAdopt(existingDocument: unknown, session: AccountSessionFields
  * already or is not there: nothing was done and there is nothing to say. See
  * {@link repointModPaths}.
  */
-export type ModPathsNotice = "repointed" | "left-as-found"
+/**
+ * What the launch has to say about the mod folder list, when it has anything to say.
+ * `repoint-write-failed` is adoption's own case: the list needed repointing, the
+ * game's session was kept, and the write carrying the repointed list did not happen.
+ */
+export type ModPathsNotice = "repointed" | "left-as-found" | "repoint-write-failed"
 
 /**
  * What became of the session.
@@ -222,9 +227,10 @@ export interface WriteClientSettingsSessionInput {
  * was copied out of would survive with it, and the player would launch into
  * the wrong mods for as long as that session lasted, so the repointed document
  * IS written in that branch, session untouched. A write that does not happen
- * there is not reported: the adopted secrets still have to reach the caller,
- * and failing the launch over a mod folder the game will simply not find would
- * be the worse of the two outcomes.
+ * there does not fail the launch: the adopted secrets still have to reach the
+ * caller, and stopping a launch over a mod folder the game will simply not
+ * find would be the worse of the two outcomes. It is reported, though, as
+ * `repoint-write-failed`, so the caller never logs a repoint that did not land.
  *
  * @param ports Host capabilities the work runs on.
  * @param input Where the file is and what to install into it.
@@ -239,8 +245,9 @@ export async function writeClientSettingsSession(ports: WriteClientSettingsSessi
 
   const adoptable = sessionToAdopt(existing.document, input.session)
   if (adoptable) {
-    if (modPaths.outcome === "repointed") await ports.jsonFile.write(input.settingsPath, modPaths.document)
-    return { outcome: "adopted", secrets: adoptable, ...notice }
+    if (modPaths.outcome !== "repointed") return { outcome: "adopted", secrets: adoptable, ...notice }
+    const repointed = await ports.jsonFile.write(input.settingsPath, modPaths.document)
+    return { outcome: "adopted", secrets: adoptable, modPaths: repointed.ok ? "repointed" : "repoint-write-failed" }
   }
 
   const written = await ports.jsonFile.write(input.settingsPath, mergeSessionIntoClientSettings(modPaths.document, input.session))

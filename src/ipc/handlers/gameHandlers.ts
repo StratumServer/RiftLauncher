@@ -330,6 +330,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     // input and stays out of the log. The path we put there is our own and may be named.
     const modPathsNotice = "modPaths" in written ? written.modPaths : undefined
     if (modPathsNotice === "repointed") logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Repointed this installation's mod folder list at ${modsPath}.`)
+    else if (modPathsNotice === "repoint-write-failed")
+      logMessage("warn", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] This installation's mod folder list needed repointing but the settings file could not be written; the game's own session was kept.`)
     else if (modPathsNotice === "left-as-found")
       logMessage("warn", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] This installation's mod folder list is not the game's default one and was left as found.`)
 
