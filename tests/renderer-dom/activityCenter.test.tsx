@@ -496,6 +496,24 @@ describe("NotificationsContext history caps", () => {
     expect(result.current.history).toHaveLength(51)
   })
 
+  it("lets only a full backlog wait behind a both-presentation toast on screen, not one more", () => {
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    act(() => result.current.addNotification("being read", "info"))
+    act(() => {
+      for (let index = 0; index <= MAX_TOAST_BACKLOG; index += 1) result.current.addNotification(`burst ${index}`, "info", { presentation: "toast" })
+    })
+
+    const shown: string[] = []
+    for (let turns = 0; turns < MAX_TOAST_BACKLOG + 3 && result.current.activeToast; turns += 1) {
+      shown.push(result.current.activeToast.body)
+      const id = result.current.activeToast.id
+      act(() => result.current.dismissToast(id))
+    }
+
+    expect(shown).toEqual(["being read", "burst 1", "burst 2", "burst 3", "burst 4"])
+  })
+
   it("caps center history at fifty, dropping the oldest", () => {
     const { result } = renderHook(() => useNotificationsContext(), { wrapper })
 
