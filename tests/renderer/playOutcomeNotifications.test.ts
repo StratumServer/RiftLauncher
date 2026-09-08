@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { pickPlayOutcomeNotification } from "../../src/renderer/src/utils/playOutcomeNotifications"
+import { LINUX_INSTALL_GUIDE_URL, pickPlayOutcomeNotification } from "../../src/renderer/src/utils/playOutcomeNotifications"
 
 describe("pickPlayOutcomeNotification on a successful exit", () => {
   it("shows nothing when the game exited with code 0", () => {
@@ -34,8 +34,16 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
     assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "invalid-request" }), { key: "notifications.body.gameLaunchInvalidEnvironment" })
   })
 
-  it("keys missing-dotnet to its own sentence", () => {
-    assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "missing-dotnet" }), { key: "notifications.body.gameLaunchMissingDotnet" })
+  it("keys missing-dotnet to its own sentence, with the install guide as an action", () => {
+    assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "missing-dotnet" }), {
+      key: "notifications.body.gameLaunchMissingDotnet",
+      link: { url: LINUX_INSTALL_GUIDE_URL, labelKey: "notifications.actions.openLinuxInstallGuide" }
+    })
+  })
+
+  it("gives every other reason a bare message, so only missing-dotnet grows an action", () => {
+    const reasons: GameExecutionFailureReason[] = ["unsupported-platform", "no-executable", "session-write-failed", "invalid-request", "launch-failed"]
+    for (const reason of reasons) assert.equal(pickPlayOutcomeNotification({ ok: false, reason })?.link, undefined)
   })
 
   it("keys launch-failed to the generic executing-game sentence", () => {

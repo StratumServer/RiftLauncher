@@ -7,9 +7,14 @@
  * MainMenu reads from.
  */
 
+/** The Linux dependency guide, the page that tells a player which .NET version their game version needs. */
+export const LINUX_INSTALL_GUIDE_URL = "https://riftlauncher.stratumvs.dev/docs/get-started/installation/linux"
+
 /** The i18n key to show, still unresolved: the caller owns the `t()` call and the notification type. */
 export interface PlayOutcomeNotification {
   key: string
+  /** An optional "read more" the caller turns into a notification action. Both halves are fixed here, never built from anything the game printed. */
+  link?: { url: string; labelKey: string }
 }
 
 /**
@@ -31,7 +36,7 @@ export function pickPlayOutcomeNotification(result: GameExecutionResult): PlayOu
     case "invalid-request":
       return { key: "notifications.body.gameLaunchInvalidEnvironment" }
     case "missing-dotnet":
-      return { key: "notifications.body.gameLaunchMissingDotnet" }
+      return { key: "notifications.body.gameLaunchMissingDotnet", link: { url: LINUX_INSTALL_GUIDE_URL, labelKey: "notifications.actions.openLinuxInstallGuide" } }
     case "launch-failed":
       return { key: "notifications.body.errorExecutingGame" }
   }

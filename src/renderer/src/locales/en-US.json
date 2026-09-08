@@ -493,6 +493,7 @@
       "appClosePrevented": "You can't close RiftLauncher either because you're playing Vintage Story or because there's a task in progress!"
     },
     "actions": {
+      "openLinuxInstallGuide": "Open the Linux install guide",
       "updateNow": "Update now",
       "notNow": "Not now"
     },
