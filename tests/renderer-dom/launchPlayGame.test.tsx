@@ -296,6 +296,38 @@ describe("MainMenu Play button", () => {
     expect(probe.gameVersionPlaying).toBe(false)
   })
 
+  /**
+   * The missing-.NET refusal is the one that carries an action, and the action has to open the
+   * guide for the player's OS through the browser bridge: a URL the main-process allowlist
+   * rejects would leave a button that does nothing, which is what the first cut shipped.
+   */
+  it("offers the install guide for the player's OS on an ok:false/missing-dotnet refusal", async () => {
+    const user = userEvent.setup()
+    const openOnBrowser = vi.fn()
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation()],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      utils: { getOs: vi.fn(async () => "win32" as NodeJS.Platform), openOnBrowser },
+      gameManager: { executeGame: vi.fn(async () => ({ ok: false, reason: "missing-dotnet" }) as GameExecutionResult) }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText(/needs a \.NET runtime that is not installed/)
+    await user.click(await screen.findByRole("button", { name: "Open the install guide" }))
+
+    expect(openOnBrowser).toHaveBeenCalledWith("https://riftlauncher.stratumvs.dev/docs/get-started/installation/windows")
+  })
+
   it("logs and notifies when executeGame itself throws, and still clears _playing (issue #40's finally guard)", async () => {
     const user = userEvent.setup()
     const logMessage = vi.fn()

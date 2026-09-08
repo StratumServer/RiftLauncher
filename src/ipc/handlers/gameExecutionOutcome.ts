@@ -7,6 +7,10 @@
  * imported by a unit test (the gap tracked in issue #27). Nothing in this
  * file touches Electron or Node, so a test can import it directly and pin
  * which reason each refusal gets without standing up the app.
+ *
+ * The stderr sentinel scan below lives here for the same reason: it is a pure
+ * string test, and the code that feeds it in gameHandlers.ts is not reachable
+ * from a test on its own.
  */
 
 import type { GameProcessOutcome } from "@domain/ports"
@@ -49,5 +53,38 @@ export function invalidRequestResult(): GameExecutionResult {
  * anti-pattern that left the renderer unable to clear `_playing` on this path.
  */
 export function gameProcessOutcomeToResult(outcome: GameProcessOutcome): GameExecutionResult {
-  return outcome.started ? { ok: true, exitCode: outcome.exitCode } : { ok: false, reason: "launch-failed" }
+  if (!outcome.started) return { ok: false, reason: "launch-failed" }
+  return outcome.missingRuntime ? { ok: false, reason: "missing-dotnet" } : { ok: true, exitCode: outcome.exitCode }
+}
+
+/**
+ * The fixed line the .NET host prints to stderr when no installed runtime
+ * satisfies the framework a build asks for. It is the host's own wording, not
+ * the game's, so it is the same on every distro and for every game version.
+ */
+const MISSING_DOTNET_SENTINEL = "You must install or update .NET to run this application."
+
+/**
+ * How much of stderr is kept for the sentinel scan.
+ *
+ * The host prints the sentence as its first line, so a few kilobytes is far
+ * more than enough, and the bound is what keeps a chatty game from growing a
+ * string for the length of a play session. A sentence straddling the cut-off
+ * would be missed, which only a game that printed 4 KiB before failing to
+ * start could arrange.
+ */
+const STDERR_SCAN_LIMIT = 4_096
+
+/** Appends a stderr chunk to the scanned head, stopping at {@link STDERR_SCAN_LIMIT}. */
+export function appendStderrScan(head: string, chunk: string): string {
+  return head.length >= STDERR_SCAN_LIMIT ? head : head + chunk.slice(0, STDERR_SCAN_LIMIT - head.length)
+}
+
+/**
+ * Whether the scanned stderr contains the .NET host's missing-runtime
+ * sentinel. Accumulating first is what makes this survive the sentence
+ * arriving split across two `data` events.
+ */
+export function hasMissingDotnetSentinel(head: string): boolean {
+  return head.includes(MISSING_DOTNET_SENTINEL)
 }

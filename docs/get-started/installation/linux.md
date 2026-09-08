@@ -88,6 +88,8 @@ RiftLauncher does not need any dependencies to work, but Vintage Story does. Thi
 
 To help you with this process we've made a few guide explaining how to install every dependency needed on the most popular Linux distros.
 
+The biggest one is .NET, and it belongs to the game rather than to the launcher: RiftLauncher runs fine without it, Vintage Story does not start at all. Which major version you need depends on the game version you play (7, 8 or 10), so installing several side by side is normal, and a version that used to launch can stop launching once you move to a newer game build.
+
 ### Debian, Ubuntu and their derivatives
 
 {% stepper %}

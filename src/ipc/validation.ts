@@ -81,6 +81,8 @@ export const BROWSER_URL_RULES: readonly UrlRule[] = [
   { hostname: "discord.gg", pathPrefixes: ["/vQm6z2urZs"] },
   { hostname: "github.com", pathPrefixes: ["/StratumServer/RiftLauncher"] },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/show"] },
+  // The launcher's own docs, offered from the missing-.NET notification (#397).
+  { hostname: "riftlauncher.stratumvs.dev", pathPrefixes: ["/docs"] },
   { hostname: "wiki.vintagestory.at", pathPrefixes: ["/"] },
   { hostname: "www.youtube.com", pathPrefixes: ["/watch"] }
 ]
