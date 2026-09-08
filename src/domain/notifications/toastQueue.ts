@@ -23,7 +23,7 @@ export const BACKLOG_TOAST_DURATION = 2_000
  */
 export const MAX_TOAST_BACKLOG = 4
 
-/** Most records the Activity Center keeps. Toast-only entries do not count against it. */
+/** Most records the Activity Center keeps. Toast-only entries do not count against it, nor does the toast on screen while it is up. */
 export const MAX_CENTER_HISTORY = 50
 
 /**
@@ -61,7 +61,7 @@ export function capNotificationRecords<T>(records: readonly T[], isToastOnly: (r
   let waitingToasts = 0
   for (const record of records) {
     if (isPinned(record)) {
-      if (isToastOnly(record)) pinnedToasts += 1
+      pinnedToasts += 1
       continue
     }
     if (isToastOnly(record)) waitingToasts += 1
@@ -69,6 +69,7 @@ export function capNotificationRecords<T>(records: readonly T[], isToastOnly: (r
   }
   let centerExcess = centerCount - MAX_CENTER_HISTORY
   // With nothing on screen the next render puts one up, so one more may wait.
+  // A pinned record of any presentation is something on screen.
   let toastExcess = waitingToasts - (MAX_TOAST_BACKLOG + (pinnedToasts === 0 ? 1 : 0))
   if (centerExcess <= 0 && toastExcess <= 0) return records
 
