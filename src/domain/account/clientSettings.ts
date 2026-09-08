@@ -30,6 +30,14 @@
  * is what turned one invalidated session into a login prompt on every single
  * launch, forever (issue #204).
  *
+ * ## One passenger
+ *
+ * That read-modify-write is also where a copied installation's mod folder list
+ * gets pointed back at the folder the game is actually being launched on. It
+ * travels here rather than in a write of its own because it is the same file,
+ * read at the same moment, under the same rule that everything not touched
+ * comes back out unchanged. The decision itself lives in `modPaths.ts`.
+ *
  * ## Shapes nobody expects
  *
  * A document that is not an object at all, and a `stringSettings` that is an
@@ -42,6 +50,8 @@
 
 import { parseStoredSecrets } from "./credentials"
 import type { AccountSecrets } from "./credentials"
+import { repointModPaths } from "./modPaths"
+import type { ModPathsTarget } from "./modPaths"
 import type { JsonFile } from "../ports"
 
 /** Name of the game's settings file, inside an installation's data folder. */
@@ -155,12 +165,24 @@ function sessionToAdopt(existingDocument: unknown, session: AccountSessionFields
 }
 
 /**
+ * What the mod folder list needed, when it needed anything at all.
+ *
+ * Absent for the ordinary file, whose list either points at this installation
+ * already or is not there: nothing was done and there is nothing to say. See
+ * {@link repointModPaths}. `repoint-write-failed` is adoption's own case: the
+ * list needed repointing, the game's session was kept, and the write carrying
+ * the repointed list did not happen.
+ */
+export type ModPathsNotice = "repointed" | "left-as-found" | "repoint-write-failed"
+
+/**
  * What became of the session.
  *
  * `written` is the ordinary outcome: the launcher's session is now in the file.
  * `adopted` means the file already held a newer one for this same account and
- * nothing was written, so the caller has to store the carried secrets as its
- * own or the next launch will stomp them again. `unreadable-settings` means the
+ * the session in it was left alone (only a repointed mod folder list may have
+ * been written), so the caller has to store the carried secrets as its own or
+ * the next launch will stomp them again. `unreadable-settings` means the
  * file is there and holds something that is not JSON. `write-failed` means the
  * merged document could not be put back.
  *
@@ -168,7 +190,11 @@ function sessionToAdopt(existingDocument: unknown, session: AccountSessionFields
  * caller may ignore nor a failure it may report: it carries work. A caller that
  * switches on this cannot quietly skip it.
  */
-export type WriteClientSettingsSessionResult = { outcome: "written" } | { outcome: "adopted"; secrets: AccountSecrets } | { outcome: "unreadable-settings" } | { outcome: "write-failed" }
+export type WriteClientSettingsSessionResult =
+  | { outcome: "written"; modPaths?: ModPathsNotice }
+  | { outcome: "adopted"; secrets: AccountSecrets; modPaths?: ModPathsNotice }
+  | { outcome: "unreadable-settings" }
+  | { outcome: "write-failed" }
 
 export interface WriteClientSettingsSessionPorts {
   jsonFile: JsonFile
@@ -178,26 +204,53 @@ export interface WriteClientSettingsSessionInput {
   /** Full path of the settings file. The caller resolves it, so path policy stays on the host side. */
   settingsPath: string
   session: AccountSessionFields
+  /**
+   * The installation being launched, when the mod folder list is to be checked
+   * along the way. Left out, the list is not looked at at all.
+   */
+  modPaths?: ModPathsTarget
 }
 
 /**
  * Reads the settings file, and either lays the session over it and writes it
  * back, or steps aside for the session the game put there.
  *
+ * ## The mod folder list rides along
+ *
+ * The launch already reads this file and writes it back, so a copied
+ * installation's mod folder list is repointed in that same write rather than
+ * in one of its own (see {@link repointModPaths}). The one place that costs
+ * something is adoption: nothing is written there, on purpose, so that the
+ * game's own session survives. A list pointing at the folder the installation
+ * was copied out of would survive with it, and the player would launch into
+ * the wrong mods for as long as that session lasted, so the repointed document
+ * IS written in that branch, session untouched. A write that does not happen
+ * there does not fail the launch: the adopted secrets still have to reach the
+ * caller, and stopping a launch over a mod folder the game will simply not
+ * find would be the worse of the two outcomes. It is reported, though, as
+ * `repoint-write-failed`, so the caller never logs a repoint that did not land.
+ *
  * @param ports Host capabilities the work runs on.
  * @param input Where the file is and what to install into it.
- * @returns What became of the session, adoption included.
+ * @returns What became of the session, adoption included, and what the mod folder list needed.
  */
 export async function writeClientSettingsSession(ports: WriteClientSettingsSessionPorts, input: WriteClientSettingsSessionInput): Promise<WriteClientSettingsSessionResult> {
   const existing = await ports.jsonFile.read(input.settingsPath)
   if (!existing.ok) return { outcome: "unreadable-settings" }
 
+  const modPaths = input.modPaths ? repointModPaths(existing.document, input.modPaths) : { document: existing.document, outcome: "unchanged" as const }
+  const notice = modPaths.outcome === "unchanged" ? {} : { modPaths: modPaths.outcome }
+
   const adoptable = sessionToAdopt(existing.document, input.session)
-  if (adoptable) return { outcome: "adopted", secrets: adoptable }
+  if (adoptable) {
+    if (modPaths.outcome !== "repointed") return { outcome: "adopted", secrets: adoptable, ...notice }
+    const repointed = await ports.jsonFile.write(input.settingsPath, modPaths.document)
+    return { outcome: "adopted", secrets: adoptable, modPaths: repointed.ok ? "repointed" : "repoint-write-failed" }
+  }
 
-  const written = await ports.jsonFile.write(input.settingsPath, mergeSessionIntoClientSettings(existing.document, input.session))
+  const written = await ports.jsonFile.write(input.settingsPath, mergeSessionIntoClientSettings(modPaths.document, input.session))
 
-  return written.ok ? { outcome: "written" } : { outcome: "write-failed" }
+  return written.ok ? { outcome: "written", ...notice } : { outcome: "write-failed" }
 }
 
 /**

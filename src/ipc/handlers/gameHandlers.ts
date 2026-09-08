@@ -16,6 +16,7 @@ import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
 import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
+import { MODS_FOLDER_NAME } from "@domain/mods/folder"
 import {
   gameProcessOutcomeToResult,
   invalidExecutableResult,
@@ -305,6 +306,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       return sessionWriteFailedResult()
     }
 
+    const modsPath = join(safeInstallation.path, MODS_FOLDER_NAME)
+
     const written = await writeClientSettingsSession(
       { jsonFile: realJsonFile() },
       {
@@ -318,9 +321,22 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
           playerUid: account.playerUid,
           playerName: account.playerName,
           hostGameServer: account.hostGameServer
-        }
+        },
+        modPaths: { installationPath: safeInstallation.path, modsPath }
       }
     )
+
+    // Never logs what the file held: the path this installation was copied out of is untrusted
+    // input and stays out of the log. The path we put there is our own and may be named.
+    const modPathsNotice = "modPaths" in written ? written.modPaths : undefined
+    if (modPathsNotice === "repointed") logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Repointed this installation's mod folder list at ${modsPath}.`)
+    else if (modPathsNotice === "repoint-write-failed")
+      logMessage(
+        "warn",
+        `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] This installation's mod folder list needed repointing but the settings file could not be written; the game's own session was kept.`
+      )
+    else if (modPathsNotice === "left-as-found")
+      logMessage("warn", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] This installation's mod folder list is not the game's default one and was left as found.`)
 
     switch (written.outcome) {
       case "written":
