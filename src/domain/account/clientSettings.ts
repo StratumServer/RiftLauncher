@@ -169,12 +169,9 @@ function sessionToAdopt(existingDocument: unknown, session: AccountSessionFields
  *
  * Absent for the ordinary file, whose list either points at this installation
  * already or is not there: nothing was done and there is nothing to say. See
- * {@link repointModPaths}.
- */
-/**
- * What the launch has to say about the mod folder list, when it has anything to say.
- * `repoint-write-failed` is adoption's own case: the list needed repointing, the
- * game's session was kept, and the write carrying the repointed list did not happen.
+ * {@link repointModPaths}. `repoint-write-failed` is adoption's own case: the
+ * list needed repointing, the game's session was kept, and the write carrying
+ * the repointed list did not happen.
  */
 export type ModPathsNotice = "repointed" | "left-as-found" | "repoint-write-failed"
 
@@ -183,8 +180,9 @@ export type ModPathsNotice = "repointed" | "left-as-found" | "repoint-write-fail
  *
  * `written` is the ordinary outcome: the launcher's session is now in the file.
  * `adopted` means the file already held a newer one for this same account and
- * nothing was written, so the caller has to store the carried secrets as its
- * own or the next launch will stomp them again. `unreadable-settings` means the
+ * the session in it was left alone (only a repointed mod folder list may have
+ * been written), so the caller has to store the carried secrets as its own or
+ * the next launch will stomp them again. `unreadable-settings` means the
  * file is there and holds something that is not JSON. `write-failed` means the
  * merged document could not be put back.
  *
