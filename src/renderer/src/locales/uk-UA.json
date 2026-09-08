@@ -249,7 +249,7 @@
       "areYouSureRestoreBackup": "Ви впевнені, що хочете відновити цю резервну копію?",
       "restoringNotReversible": "Відновлення резервної копії призведе до остаточного видалення ваших даних і заміни їх даними з резервної копії!",
       "noBackupSelected": "Не вибрано резервне копіювання!",
-      "cmpressTaskName": "Резервна копія {{name}}",
+      "compressTaskName": "Резервна копія {{name}}",
       "compressingBackupDescription": "Створення резервної копії {{name}}!",
       "extractTaskName": "Відновлення резервної копії {{name}}",
       "extractingBackupDescription": "Відновлення резервної копії {{name}}!",

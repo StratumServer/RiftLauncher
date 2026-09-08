@@ -35,7 +35,7 @@ describe("ManageMods without an installation", () => {
       { route: "/installations/mods/missing" }
     )
 
-    expect(await screen.findByText("Installation not found!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("Installation not found.", {}, { timeout: 3000 })).toBeTruthy()
 
     const reload = screen.getByTitle("Reload")
     expect(reload.querySelector(".animate-spin")).toBeNull()
@@ -43,7 +43,7 @@ describe("ManageMods without an installation", () => {
 
     await user.click(reload)
 
-    await waitFor(() => expect(screen.getByText("No Installation selected!")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("No Installation selected.")).toBeTruthy())
     expect(screen.getByTitle("Reload").querySelector(".animate-spin")).toBeNull()
     expect(getInstalledMods).not.toHaveBeenCalled()
   })

@@ -1,6 +1,7 @@
 import { ReactNode } from "react"
 
 import { useNotifyOnPreventedAppClose } from "@renderer/features/launch/hooks/useNotifyOnPreventedAppClose"
+import { useBlockTextDragIntoInputs } from "@renderer/hooks/useBlockTextDragIntoInputs"
 
 /**
  * This is a little workaround to execute hooks that need to acces configs, notifications... but need to be execute globally and not
@@ -14,6 +15,7 @@ import { useNotifyOnPreventedAppClose } from "@renderer/features/launch/hooks/us
  */
 function GlobalActionsWrapper({ children }: Readonly<{ children: ReactNode }>): JSX.Element {
   useNotifyOnPreventedAppClose()
+  useBlockTextDragIntoInputs()
 
   return <>{children}</>
 }

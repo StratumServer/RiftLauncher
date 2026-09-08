@@ -49,10 +49,10 @@ describe("AddInstallation, folder creation failure", () => {
 
     await waitFor(() => expect(ensurePathExists).toHaveBeenCalledTimes(1))
 
-    await screen.findByText("Couldn't create the folder for this Installation! Check that RiftLauncher can write to that location, then try again.")
+    await screen.findByText("Couldn't create the folder for this Installation. Check that RiftLauncher can write to that location, then try again.")
 
     // Neither the success path nor the navigation away from the form happened.
-    expect(screen.queryByText("Installation added successfully!")).toBeNull()
+    expect(screen.queryByText("Installation added successfully.")).toBeNull()
     expect(screen.queryByText("installations-list")).toBeNull()
   })
 })

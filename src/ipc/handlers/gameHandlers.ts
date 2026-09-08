@@ -16,8 +16,11 @@ import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
 import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
+import { MODS_FOLDER_NAME } from "@domain/mods/folder"
 import {
+  appendStderrScan,
   gameProcessOutcomeToResult,
+  hasMissingDotnetSentinel,
   invalidExecutableResult,
   invalidRequestResult,
   launchPlanFailureResult,
@@ -168,6 +171,14 @@ async function adoptRefreshedSession(accountId: string, secrets: AccountSecrets)
  * code is reported without being judged: Vintage Story exits non-zero often
  * enough that reading that as a failed launch would tell a player their session
  * went wrong after they closed it themselves.
+ *
+ * The one thing stderr is read for is the .NET host's fixed missing-runtime
+ * sentence, which is what a player gets instead of a game when the build needs
+ * a runtime major version they have not installed (issue #397). The scan
+ * accumulates a bounded head of stderr so the sentence still matches when it
+ * arrives split across two chunks, and only a boolean leaves this function:
+ * the version the host wanted and the paths it searched stay in the verbose
+ * log they were already written to.
  */
 function realGameProcess(): GameProcess {
   return {
@@ -199,12 +210,16 @@ function realGameProcess(): GameProcess {
 
         externalApp.stdout.resume()
 
+        let stderrScan = ""
+
         externalApp.stderr.on("data", (data) => {
+          const text = data.toString()
+          stderrScan = appendStderrScan(stderrScan, text)
           logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story threw an error! Check verbose logs for more info.`)
-          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${data.toString().slice(0, 2_048)}`)
+          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${text.slice(0, 2_048)}`)
         })
 
-        externalApp.on("close", (code) => settle({ started: true, exitCode: code }))
+        externalApp.on("close", (code) => settle({ started: true, exitCode: code, missingRuntime: hasMissingDotnetSentinel(stderrScan) }))
 
         externalApp.on("error", (error) => {
           logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error running Vintage Story.`)
@@ -305,6 +320,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       return sessionWriteFailedResult()
     }
 
+    const modsPath = join(safeInstallation.path, MODS_FOLDER_NAME)
+
     const written = await writeClientSettingsSession(
       { jsonFile: realJsonFile() },
       {
@@ -318,9 +335,22 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
           playerUid: account.playerUid,
           playerName: account.playerName,
           hostGameServer: account.hostGameServer
-        }
+        },
+        modPaths: { installationPath: safeInstallation.path, modsPath }
       }
     )
+
+    // Never logs what the file held: the path this installation was copied out of is untrusted
+    // input and stays out of the log. The path we put there is our own and may be named.
+    const modPathsNotice = "modPaths" in written ? written.modPaths : undefined
+    if (modPathsNotice === "repointed") logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Repointed this installation's mod folder list at ${modsPath}.`)
+    else if (modPathsNotice === "repoint-write-failed")
+      logMessage(
+        "warn",
+        `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] This installation's mod folder list needed repointing but the settings file could not be written; the game's own session was kept.`
+      )
+    else if (modPathsNotice === "left-as-found")
+      logMessage("warn", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] This installation's mod folder list is not the game's default one and was left as found.`)
 
     switch (written.outcome) {
       case "written":

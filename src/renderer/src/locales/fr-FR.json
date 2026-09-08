@@ -249,7 +249,7 @@
       "areYouSureRestoreBackup": "Êtes-vous sûr de vouloir restaurer cette sauvegarde ?",
       "restoringNotReversible": "Restaurer une sauvegarde supprimera définitivement vos données et les remplacera par celles de la sauvegarde !",
       "noBackupSelected": "Aucune sauvegarde sélectionnée !",
-      "cmpressTaskName": "Sauvegarde {{name}}",
+      "compressTaskName": "Sauvegarde {{name}}",
       "compressingBackupDescription": "Sauvegarde de {{name}} en cours !",
       "extractTaskName": "Restauration de la sauvegarde {{name}}",
       "extractingBackupDescription": "Restauration de la sauvegarde {{name}} en cours !",

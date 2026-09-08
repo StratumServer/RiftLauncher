@@ -1,7 +1,16 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, planModpackImport } from "../../../src/domain/mods/importModpack"
+import {
+  clampModpackModName,
+  executeModpackImport,
+  MAX_MODPACK_MOD_NAME_LENGTH,
+  modpackDowngrades,
+  modpackEntriesToResolve,
+  modpackRowLabel,
+  modpackRowStatus,
+  planModpackImport
+} from "../../../src/domain/mods/importModpack"
 import type { InstalledModSnapshot, ModpackEntry, ModpackImportEntryReport, ModpackInstallItem, ModpackModDetail, ModpackPlanItem, ModpackRelease } from "../../../src/domain/mods/importModpack"
 import type { InstallModResult } from "../../../src/domain/mods/install"
 
@@ -19,8 +28,8 @@ function installedCopy(overrides: Partial<InstalledModSnapshot> = {}): Installed
   return { modid: "carryon", name: "Carry On", version: "1.9.0", path: "/installations/main/Mods/carryon-1.9.0.zip", enabled: true, assetid: 4711, ...overrides }
 }
 
-function plan(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>): ModpackPlanItem[] {
-  return planModpackImport({ entries, installed, gameVersion: GAME_VERSION, details: new Map(details) }).items
+function plan(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>, failedModids?: readonly string[]): ModpackPlanItem[] {
+  return planModpackImport({ entries, installed, gameVersion: GAME_VERSION, details: new Map(details), failedModids: failedModids && new Set(failedModids) }).items
 }
 
 function onlyItem(items: ModpackPlanItem[]): ModpackPlanItem {
@@ -167,6 +176,17 @@ describe("planModpackImport decisions", () => {
     const item = onlyItem(plan([{ modid: "ghostmod", version: "1.0.0" }], [], []))
 
     assert.deepEqual(item, { decision: "skip", modid: "ghostmod", requestedVersion: "1.0.0", name: "ghostmod", reason: "not-on-moddb", fromVersion: null })
+  })
+
+  // #384: a modid absent from `details` is not always a clean 404. When the caller has told the
+  // plan that this particular lookup never answered, the row must say the database was
+  // unreachable, not that the mod is a fork or a private build.
+  it("tells a lookup that failed apart from one that genuinely found nothing, for the same absent detail", () => {
+    const failed = onlyItem(plan([{ modid: "ghostmod", version: "1.0.0" }], [], [], ["ghostmod"]))
+    assert.deepEqual(failed, { decision: "skip", modid: "ghostmod", requestedVersion: "1.0.0", name: "ghostmod", reason: "lookup-failed", fromVersion: null })
+
+    const notFound = onlyItem(plan([{ modid: "ghostmod", version: "1.0.0" }], [], []))
+    assert.equal(notFound.decision === "skip" && notFound.reason, "not-on-moddb")
   })
 
   it("reports a page that publishes no release at all", () => {
@@ -333,5 +353,124 @@ describe("executeModpackImport", () => {
     const report = await executeModpackImport({ installer }, { plan: planModpackImport({ entries: [], installed: [], gameVersion: GAME_VERSION, details: new Map() }) })
 
     assert.deepEqual(report, { entries: [], installed: 0, failed: 0 })
+  })
+})
+
+describe("modpackRowLabel", () => {
+  it("prefers the name the ModDB answered with", () => {
+    assert.equal(modpackRowLabel({ modid: "tradie", version: "1.4.0", name: "Traders Expansion (local build)" }, "Traders Expansion"), "Traders Expansion")
+  })
+
+  it("falls back to the name the pack was exported with when nothing resolved (#379)", () => {
+    assert.equal(modpackRowLabel({ modid: "alloycalculatorstuzzichino", version: "1.0.4", name: "Alloy Calculator" }, undefined), "Alloy Calculator")
+  })
+
+  // A skipped plan item names itself after its own modid when no ModDB page answered, so a resolved
+  // name equal to the modid is not a name at all.
+  it("reads a resolved name equal to the modid as no name and takes the local one", () => {
+    assert.equal(modpackRowLabel({ modid: "animationslib", version: "1.2.0", name: "Animations Library" }, "animationslib"), "Animations Library")
+  })
+
+  it("falls back to the modid for a pack exported before names were written", () => {
+    assert.equal(modpackRowLabel({ modid: "waterwheelriverflowfix", version: "1.0.0" }, undefined), "waterwheelriverflowfix")
+  })
+
+  it("treats a blank local name as no name", () => {
+    assert.equal(modpackRowLabel({ modid: "sandwich", version: "2.1.0", name: "   " }, undefined), "sandwich")
+  })
+
+  it("takes the ModDB name over a modid even when the pack carries no local name", () => {
+    assert.equal(modpackRowLabel({ modid: "hqzlights", version: "1.1.0" }, "Braziers"), "Braziers")
+  })
+})
+
+describe("modpackRowStatus", () => {
+  function statusOf(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>, failedModids?: readonly string[]): ReturnType<typeof modpackRowStatus> {
+    return modpackRowStatus(onlyItem(plan(entries, installed, details, failedModids)))
+  }
+
+  it("calls a mod the installation does not have a new install", () => {
+    const status = statusOf([{ modid: "carryon", version: "2.0.1" }], [], [["carryon", detail([release("2.0.1", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "new", fromVersion: null, toVersion: "2.0.1" })
+  })
+
+  it("calls a newer release over an older copy an update, and carries both versions", () => {
+    const status = statusOf([{ modid: "carryon", version: "2.0.1" }], [installedCopy()], [["carryon", detail([release("2.0.1", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "update", fromVersion: "1.9.0", toVersion: "2.0.1" })
+  })
+
+  it("calls an older release over a newer copy a downgrade, and carries both versions", () => {
+    const status = statusOf([{ modid: "carryon", version: "1.5.0" }], [installedCopy()], [["carryon", detail([release("1.5.0", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "downgrade", fromVersion: "1.9.0", toVersion: "1.5.0" })
+  })
+
+  // #287: a pack is a playable set, so a copy the player turned off is reinstalled enabled. The row
+  // has to say the copy on disk is going away rather than call it a fresh install.
+  it("warns that a disabled copy at the very same version is still replaced", () => {
+    const status = statusOf([{ modid: "carryon", version: "1.9.0" }], [installedCopy({ enabled: false })], [["carryon", detail([release("1.9.0", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "replace", fromVersion: "1.9.0", toVersion: "1.9.0" })
+  })
+
+  // The hand-edited copy from the #379 report: its version string was changed locally, so nothing on
+  // the ModDB matches it and the release that is picked lands on the same version it already has.
+  it("warns that a copy whose version the manifest does not match is replaced", () => {
+    const status = statusOf([{ modid: "carryon", version: "1.9.0-mine" }], [installedCopy()], [["carryon", detail([release("1.9.0", ["v1.20.4"])])]])
+
+    assert.deepEqual(status, { kind: "replace", fromVersion: "1.9.0", toVersion: "1.9.0" })
+  })
+
+  it("says a mod already sitting at the requested version stays where it is", () => {
+    const status = statusOf([{ modid: "carryon", version: "1.9.0" }], [installedCopy()], [])
+
+    assert.deepEqual(status, { kind: "already-present", fromVersion: "1.9.0", toVersion: "1.9.0" })
+  })
+
+  it("says nothing will be installed for a modid no listing declares", () => {
+    const status = statusOf([{ modid: "alloycalculatorstuzzichino", version: "1.0.4" }], [], [])
+
+    assert.deepEqual(status, { kind: "not-on-moddb", fromVersion: null, toVersion: null })
+  })
+
+  it("says the lookup could not be checked, for a modid whose query failed rather than answered 404", () => {
+    const status = statusOf([{ modid: "alloycalculatorstuzzichino", version: "1.0.4" }], [], [], ["alloycalculatorstuzzichino"])
+
+    assert.deepEqual(status, { kind: "lookup-failed", fromVersion: null, toVersion: null })
+  })
+
+  it("says nothing will be installed for a page that publishes no release, and still names the copy on disk", () => {
+    const status = statusOf([{ modid: "carryon", version: "2.0.1" }], [installedCopy()], [["carryon", detail([])]])
+
+    assert.deepEqual(status, { kind: "no-release", fromVersion: "1.9.0", toVersion: null })
+  })
+})
+
+describe("clampModpackModName", () => {
+  it("leaves a name at or under the cap untouched", () => {
+    assert.equal(clampModpackModName("Traders Expansion"), "Traders Expansion")
+    const atCap = "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH)
+    assert.equal(clampModpackModName(atCap), atCap)
+  })
+
+  it("cuts a name over the cap down to exactly the cap the manifest reader accepts", () => {
+    const long = "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH + 50)
+    const clamped = clampModpackModName(long)
+
+    assert.equal(clamped.length, MAX_MODPACK_MOD_NAME_LENGTH)
+    assert.equal(clamped, "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH))
+  })
+
+  // A cut that lands mid-surrogate-pair leaves a lone high surrogate at the end of the string,
+  // which is not a character at all. The whole astral character is dropped instead, one code unit
+  // short of the cap, rather than shipping half of it.
+  it("never splits a surrogate pair sitting right on the cut", () => {
+    const straddling = "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH - 1) + "🎮" + "bbbb"
+    const clamped = clampModpackModName(straddling)
+
+    assert.equal(clamped, "a".repeat(MAX_MODPACK_MOD_NAME_LENGTH - 1))
+    assert.equal(clamped.length, MAX_MODPACK_MOD_NAME_LENGTH - 1)
   })
 })

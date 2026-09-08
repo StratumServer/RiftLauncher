@@ -3,6 +3,7 @@ import { ipcMain } from "electron"
 import { interpretFirstPass, interpretSecondPass } from "@domain/account/login"
 import type { LoginVerdict } from "@domain/account/login"
 import { badCredentialsResult, needsTwoFactorResult, sessionStoreUnreadableResult, twoFactorRejectedResult, unexpectedResponseOutcome } from "@src/ipc/handlers/accountLoginOutcome"
+import { AccountStorageFailure, loginFailureReason } from "@src/ipc/handlers/loginFailureReason"
 import { buildLoginRequestBody } from "@src/ipc/handlers/loginRequestBody"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
@@ -66,7 +67,10 @@ async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
         // Only the narrow "could not even copy the unreadable file aside" case gets its own
         // wire status: anything else (no keyring, disk full) is a genuine storage failure and
         // falls through to the caller's catch, same as before this file could rebuild a store.
-        if (!(error instanceof AccountStoreUnreadableError)) throw error
+        // Wrapped on the way out so the outer catch can tell a full disk from a dropped
+        // socket: `ENOSPC` from a keyring write and `ENOSPC` from a socket look identical
+        // by then, and this call site is the only one that knows which it was.
+        if (!(error instanceof AccountStoreUnreadableError)) throw new AccountStorageFailure(error)
         logMessage("error", "[back] [ipc] [accountHandlers.ts] [LOGIN] The account store is unreadable and could not be copied aside, so it was left untouched. The session was not saved.")
         logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] ${getErrorMessage(error)}`)
         return sessionStoreUnreadableResult()
@@ -117,8 +121,15 @@ ipcMain.handle(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, async (event, email: unknown,
 
     return await settle(interpretSecondPass(safeEmail, await requestLoginPass(safeEmail, safePassword, safeTwoFactorCode, firstPass.preLoginToken)))
   } catch (error) {
+    // The reason, never the message. This catch is the only place in the
+    // launcher where a password, a two-factor code and a pre-login token are
+    // all in scope, and `getErrorMessage` used to hand whatever the thrower
+    // put in its message straight to the log file players attach to bug
+    // reports (#352). `loginFailureReason` maps it onto a fixed vocabulary
+    // instead, which still tells a network failure from an HTTP status from a
+    // keyring that is not there from a disk with no room left on it.
     logMessage("error", "[back] [ipc] [accountHandlers.ts] [LOGIN] Login failed.")
-    logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] ${getErrorMessage(error)}`)
+    logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] Login failure reason: ${loginFailureReason(error)}.`)
     throw new Error("Login failed")
   }
 })

@@ -96,7 +96,7 @@ describe("LookForAVersion", () => {
     await user.type(screen.getByPlaceholderText("VS Version found"), "   ")
     await user.click(screen.getByTitle("Add"))
 
-    expect(await screen.findByText("You've no folder selected or there is no VS Version installed on the one you've selected!")).toBeTruthy()
+    expect(await screen.findByText("No folder is selected, or the one you picked has no Vintage Story Version in it.")).toBeTruthy()
     expect(saveConfig).not.toHaveBeenCalled()
   })
 

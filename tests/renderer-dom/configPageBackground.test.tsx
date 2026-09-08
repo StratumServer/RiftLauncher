@@ -10,6 +10,7 @@ import { createMockConfig, installMockWindowApi, type MockedBridgeAPI } from "./
 import { renderWithProviders } from "./helpers/render"
 
 const CATALOG_FAILED = "The background list couldn't be loaded. Check your connection and try again."
+const DOWNLOAD_FAILED = "That background couldn't be downloaded. Check your connection and try again."
 const PICKED_PATH = "/home/player/pictures/sunset.jpg"
 
 const MANIFEST = JSON.stringify([
@@ -62,6 +63,38 @@ function renderConfigPage({
     { route: "/config" }
   )
   return api
+}
+
+/**
+ * An `ensureBackground` the test finishes by hand, one deferred per call in click order, so a
+ * download can be made to land after a later one.
+ */
+function deferredEnsures(): {
+  ensureBackground: () => Promise<EnsureBackgroundResult>
+  started: () => number
+  finish: (call: number, result: EnsureBackgroundResult) => void
+} {
+  const resolvers: ((result: EnsureBackgroundResult) => void)[] = []
+
+  return {
+    ensureBackground: () => new Promise<EnsureBackgroundResult>((resolve) => resolvers.push(resolve)),
+    started: () => resolvers.length,
+    finish: (call: number, result: EnsureBackgroundResult): void => {
+      const resolve = resolvers[call]
+      if (!resolve) throw new Error(`ensureBackground call ${call} has not started yet.`)
+      resolve(result)
+    }
+  }
+}
+
+/** The background in the last config written to disk, which is what the next launch would read. */
+function lastSavedBackground(api: MockedBridgeAPI): string | undefined {
+  return vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0].background
+}
+
+/** Long enough for a late resolution to have dispatched and saved, had it been allowed to. */
+async function letLateWorkLand(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 50))
 }
 
 /** The image inside a tile, found through the tile's own label. */
@@ -308,6 +341,129 @@ describe("ConfigPage background picker", () => {
     await user.click(ownImage)
     await waitFor(() => expect(api.backgroundsManager.copyCustomBackground).toHaveBeenCalledTimes(2))
     expect(tileImage("Your own image")).toBeTruthy()
+  })
+
+  it("keeps the scene picked last when an earlier download lands after it", async () => {
+    const user = userEvent.setup()
+    const { ensureBackground, started, finish } = deferredEnsures()
+    const api = renderConfigPage({ ensureBackground })
+
+    await user.click(await screen.findByRole("button", { name: "Village Lane" }))
+    await user.click(screen.getByRole("button", { name: "River Sailboat" }))
+    await waitFor(() => expect(started()).toBe(2))
+
+    finish(1, "refreshed")
+    await waitFor(() => expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true"))
+
+    finish(0, "refreshed")
+    await letLateWorkLand()
+
+    expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true")
+    expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("false")
+    expect(lastSavedBackground(api)).toBe("river-sailboat")
+  })
+
+  it("drops an earlier download even when the scene picked after it failed to download", async () => {
+    const user = userEvent.setup()
+    const { ensureBackground, started, finish } = deferredEnsures()
+    const api = renderConfigPage({ ensureBackground })
+
+    await user.click(await screen.findByRole("button", { name: "Village Lane" }))
+    await user.click(screen.getByRole("button", { name: "River Sailboat" }))
+    await waitFor(() => expect(started()).toBe(2))
+
+    finish(1, "failed")
+    expect(await screen.findByText(DOWNLOAD_FAILED)).toBeTruthy()
+
+    // The scene the player asked for last is the one that could not be had, so the earlier one
+    // landing now is not a fallback: it is a scene they had already moved off.
+    finish(0, "refreshed")
+    await letLateWorkLand()
+
+    expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("false")
+    expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("false")
+    // Nothing was selected, so nothing was written: the config still holds the bundled default it
+    // was read with, rather than a scene the player moved off.
+    expect(api.configManager.saveConfig).not.toHaveBeenCalled()
+  })
+
+  it("says nothing when a superseded download fails", async () => {
+    const user = userEvent.setup()
+    const { ensureBackground, started, finish } = deferredEnsures()
+    const api = renderConfigPage({ ensureBackground })
+
+    await user.click(await screen.findByRole("button", { name: "Village Lane" }))
+    await user.click(screen.getByRole("button", { name: "River Sailboat" }))
+    await waitFor(() => expect(started()).toBe(2))
+
+    finish(1, "refreshed")
+    await waitFor(() => expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true"))
+
+    finish(0, "failed")
+    await letLateWorkLand()
+
+    expect(screen.queryByText(DOWNLOAD_FAILED)).toBeNull()
+    expect(screen.getByRole("button", { name: "River Sailboat" }).getAttribute("aria-pressed")).toBe("true")
+    expect(lastSavedBackground(api)).toBe("river-sailboat")
+  })
+
+  it("applies one selection when the same scene is clicked twice", async () => {
+    const user = userEvent.setup()
+    const { ensureBackground, started, finish } = deferredEnsures()
+    const api = renderConfigPage({ ensureBackground })
+
+    const villageLane = await screen.findByRole("button", { name: "Village Lane" })
+    await user.click(villageLane)
+    await user.click(villageLane)
+    await waitFor(() => expect(started()).toBe(2))
+
+    finish(0, "refreshed")
+    finish(1, "refreshed")
+    await waitFor(() => expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("true"))
+    await letLateWorkLand()
+
+    // Two dispatches for one scene would take the revision to 2 and repaint an image the player
+    // is already looking at.
+    expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toContain('url("background:village-lane.jpg?r=1")')
+    expect(lastSavedBackground(api)).toBe("village-lane")
+  })
+
+  it("drops a download that lands after the player went back to the bundled scene", async () => {
+    const user = userEvent.setup()
+    const { ensureBackground, started, finish } = deferredEnsures()
+    const api = renderConfigPage({ ensureBackground })
+
+    await user.click(await screen.findByRole("button", { name: "Village Lane" }))
+    await waitFor(() => expect(started()).toBe(1))
+
+    await user.click(screen.getByRole("button", { name: "Default" }))
+    finish(0, "refreshed")
+    await letLateWorkLand()
+
+    expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("false")
+    expect(document.documentElement.style.getPropertyValue("--background-image-image-vs")).toBe("")
+    expect(lastSavedBackground(api)).toBe("default")
+  })
+
+  it("drops a copied image that lands after the player picked a scene", async () => {
+    const user = userEvent.setup()
+    let finishCopy: (copied: boolean) => void = () => undefined
+    const slowCopy = new Promise<boolean>((resolve) => {
+      finishCopy = resolve
+    })
+    const api = renderConfigPage({ copyCustomBackground: () => slowCopy, ensureBackground: async () => "refreshed" })
+
+    await user.click(await screen.findByRole("button", { name: "Your own image" }))
+    await waitFor(() => expect(api.backgroundsManager.copyCustomBackground).toHaveBeenCalledWith(PICKED_PATH))
+
+    await user.click(screen.getByRole("button", { name: "Village Lane" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Village Lane" }).getAttribute("aria-pressed")).toBe("true"))
+
+    finishCopy(true)
+    await letLateWorkLand()
+
+    expect(screen.getByRole("button", { name: "Your own image" }).getAttribute("aria-pressed")).toBe("false")
+    expect(lastSavedBackground(api)).toBe("village-lane")
   })
 
   it("goes back to the bundled scene, which clears the override entirely", async () => {

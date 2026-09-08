@@ -11,6 +11,7 @@ import {
   isArchiveSymlink,
   isPathGranted,
   isPathWithin,
+  isRestoreStagingWorkspaceName,
   isRestoreWorkspaceName,
   isSafeArchiveEntry,
   isSafeTarEntryType,
@@ -25,6 +26,9 @@ describe("IPC boundary validators", () => {
     assert.equal(assertAllowedApiUrl("https://auth3.vintagestory.at/v2/gamelogin").pathname, "/v2/gamelogin")
     assert.equal(assertAllowedBrowserUrl("https://github.com/StratumServer/RiftLauncher/issues").hostname, "github.com")
     assert.equal(assertAllowedBrowserUrl("https://discord.gg/vQm6z2urZs").pathname, "/vQm6z2urZs")
+    // The install guide the missing-.NET notification opens: the page it links must be openable or the button is a no-op.
+    assert.equal(assertAllowedBrowserUrl("https://riftlauncher.stratumvs.dev/docs/get-started/installation/windows").hostname, "riftlauncher.stratumvs.dev")
+    assert.throws(() => assertAllowedBrowserUrl("https://riftlauncher.stratumvs.dev/"), /URL is not allowed/)
 
     assert.throws(() => assertAllowedApiUrl("http://mods.vintagestory.at/api/tags"), /Invalid URL/)
     assert.throws(() => assertAllowedApiUrl("https://example.com/api/tags"), /URL is not allowed/)
@@ -96,6 +100,17 @@ describe("IPC boundary validators", () => {
     assert.equal(isRestoreWorkspaceName("My Install", `My Install-removed-${token}`), false)
     assert.equal(isRestoreWorkspaceName("My Install", `My Install Saves-restoring-${token}`), false)
     assert.equal(isRestoreWorkspaceName("", `-restoring-${token}`), false)
+  })
+
+  it("narrows to the extraction workspace alone when the sweep asks", () => {
+    const token = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+    assert.equal(isRestoreStagingWorkspaceName("My Install", `My Install-restoring-${token}`), true)
+    // The set-aside folder holds the player's own data, so it is never swept.
+    assert.equal(isRestoreStagingWorkspaceName("My Install", `My Install-replaced-${token}`), false)
+    assert.equal(isRestoreStagingWorkspaceName("My Install", "My Install-restoring-notauuid"), false)
+    assert.equal(isRestoreStagingWorkspaceName("My Install", `My Install-restoring-${token}-extra`), false)
+    assert.equal(isRestoreStagingWorkspaceName("My Install", `My Install Saves-restoring-${token}`), false)
   })
 
   it("contains a path to its root, and never to a sibling or a parent", () => {

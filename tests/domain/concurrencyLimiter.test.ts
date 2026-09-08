@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { ConcurrencyLimiter, LIMITER_SHUTDOWN_MESSAGE } from "@src/ipc/concurrencyLimiter"
+import { ConcurrencyLimiter, LIMITER_SHUTDOWN_MESSAGE } from "@domain/concurrencyLimiter"
 
 /** A task that only resolves once `release()` is called, so a test controls exactly when it finishes. */
 function deferredTask(): { promise: Promise<void>; release: () => void } {

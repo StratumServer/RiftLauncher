@@ -67,7 +67,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
 
     const ports = createBackupPorts({
       startCompress,
-      taskName: t("features.backups.cmpressTaskName", { name: installation.name }),
+      taskName: t("features.backups.compressTaskName", { name: installation.name }),
       taskDescription: t("features.backups.compressingBackupDescription", { name: installation.name })
     })
 

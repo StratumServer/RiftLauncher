@@ -320,8 +320,14 @@ export interface GameProcessRequest {
  * is reported for the record and never read as a verdict: Vintage Story exits
  * non-zero often enough that treating that as a failed launch would report an
  * error to a player who just finished playing.
+ *
+ * `missingRuntime` is the one thing read out of the process's stderr, and it is
+ * a flag rather than a value: the .NET host prints a fixed sentence when the
+ * runtime a build needs is not installed, and only whether that sentence was
+ * printed crosses this boundary. Nothing the child wrote (the version it
+ * wanted, the paths it looked in) travels with it.
  */
-export type GameProcessOutcome = { started: true; exitCode: number | null } | { started: false; error?: string }
+export type GameProcessOutcome = { started: true; exitCode: number | null; missingRuntime?: boolean } | { started: false; error?: string }
 
 /**
  * Runs the game and waits for the player to close it.

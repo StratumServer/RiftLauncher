@@ -63,7 +63,7 @@ describe("AddInstallation", () => {
 
     await user.click(screen.getByTitle("Add"))
 
-    await screen.findByText("Installation added successfully!")
+    await screen.findByText("Installation added successfully.")
     await screen.findByText("installations-list")
     await waitFor(() => expect(ensurePathExists).toHaveBeenCalled())
   })

@@ -249,7 +249,7 @@
       "areYouSureRestoreBackup": "Вы ўпэўнены, што хочаце аднавіць гэтую копію?",
       "restoringNotReversible": "Аднаўленне копіі беззваротна выдаліць вашы даныя і заменіць іх данымі з копіі!",
       "noBackupSelected": "Рэзервовая копія не выбрана!",
-      "cmpressTaskName": "Рэзервовая копія {{name}}",
+      "compressTaskName": "Рэзервовая копія {{name}}",
       "compressingBackupDescription": "Рэзервовае капіраванне {{name}}!",
       "extractTaskName": "Аднаўленне рэзервовай копіі {{name}}",
       "extractingBackupDescription": "Аднаўленне рэзервовай копіі {{name}}!",

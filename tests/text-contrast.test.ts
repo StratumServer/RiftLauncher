@@ -142,6 +142,31 @@ function tailwindColor(name: string): Rgb {
   return oklchToSrgb(Number(found[1] as string) / 100, Number(found[2] as string), Number(found[3] as string))
 }
 
+/** The four `text-*` shades of one status/kind map, keyed by the name the component gives them. */
+function colourMap(file: string, anchor: RegExp): Record<string, string> {
+  const entries = [...(match(file, anchor)[1] as string).matchAll(/"?([a-z-]+)"?:\s*"text-([a-z]+-\d+|vsl?d?)"/g)]
+  assert.ok(entries.length >= 4, `${anchor} in ${file} no longer lists four colours`)
+  return Object.fromEntries(entries.map((entry) => [entry[1] as string, entry[2] as string]))
+}
+
+function toastTypeColours(file: string): Record<string, string> {
+  return colourMap(file, /const FONT_COLOR_TYPES = \{([^}]+)\}/)
+}
+
+function taskStatusColours(file: string): Record<string, string> {
+  return colourMap(file, /const STATUS_COLORS = \{([^}]+)\}/)
+}
+
+/** A `text-*` token from either Tailwind's palette or this repo's own `--color-*` theme block. */
+function tailwindOrTheme(token: string): Rgb {
+  return /^vs/.test(token) ? themeColor(token) : tailwindColor(token)
+}
+
+/** One `text-<token>` foreground outside the zinc ramp, read out of the component that ships it. */
+function paletteForeground(file: string, anchor: RegExp): Layer {
+  return [tailwindColor(match(file, anchor)[1] as string), 1]
+}
+
 /** A layer this pass did not touch, kept here so the stacks below are the real ones. */
 function fixed(color: keyof typeof ZINC, alpha: number): Layer {
   return [ZINC[color], alpha]
@@ -210,6 +235,9 @@ const POPUP = [popupShell, popupPanel] as const
 const FORM_INPUT = [shell, section, inputFill] as const
 const MOD_FILTER = [shell, stickyMenu, filterControl] as const
 const POPUP_TABLE_ROW = [popupShell, popupPanel, tableFill, rowTint] as const
+// The same release table also renders on the browse page, which has no popup panel over the shell,
+// so a row there sits on one scrim fewer and is the worse of the two backdrops.
+const PAGE_TABLE_ROW = [shell, tableFill, rowTint] as const
 /** The thinnest stack any of the actionable icons sits on, so the worst of the five. */
 const ICON = [shell, section, dropdownFill, rowTint] as const
 
@@ -225,6 +253,8 @@ const TOAST = [shell, toast] as const
 // ActivityCenter renders inside MainMenu's own header scrim (`<ActivityCenter />` in MainMenu.tsx), so the
 // real stack under a task row carries that scrim too, not just the popover panel's own.
 const TASKS_ROW = [shell, menu, tasksPanel, rowTint] as const
+// The panel's own chrome (headings, summary, empty state) sits on the panel with no row under it.
+const TASKS_PANEL = [shell, menu, tasksPanel] as const
 
 describe("text over the player's background image", () => {
   it("keeps page text readable where the shell scrim is all there is", () => {
@@ -291,6 +321,51 @@ describe("prompts the player is meant to read and act on", () => {
     assert.deepEqual(arrow, alreadyPresent, "the summary arrow should carry the same grey as the row it sits in")
   })
 
+  /**
+   * #384: the downgrade/replace and downloading/update hues joined statusColor's switch as part of
+   * the readable-table pass, but nothing before this measured them the way #366 measures the
+   * release verdicts below, which is exactly how text-red-700 shipped at 2.18:1 unnoticed. Both are
+   * outside the zinc ramp, so they read through paletteForeground/tailwindColor like the verdict
+   * words rather than through the zinc table at the top of this file.
+   */
+  it("keeps the modpack import row's downgrade and update hues readable on the popup table", () => {
+    const file = "features/mods/components/ImportModpackPopup.tsx"
+    const downgradeOrReplace = paletteForeground(file, /case "downgrade":\s*\n\s*case "replace":\s*\n\s*return "text-([a-z]+-\d+)"/)
+    const downloadingOrUpdate = paletteForeground(file, /case "downloading":\s*\n\s*case "update":\s*\n\s*return "text-([a-z]+-\d+)"/)
+
+    assertReadable("downgrade/replace row hue", downgradeOrReplace, POPUP_TABLE_ROW, TEXT_FLOOR)
+    assertReadable("downloading/update row hue", downloadingOrUpdate, POPUP_TABLE_ROW, TEXT_FLOOR)
+  })
+
+  /**
+   * #366: the release table's compatibility verdict. The three hues used to be handed to the
+   * download FormButton through `className`, where the ghost variant's own `text-zinc-200` won the
+   * cascade, so none of them ever painted anything and none of them was ever measured. They paint
+   * now (the icon and the word beside it), which puts them in scope here for the first time.
+   *
+   * That is how `text-red-700` survived: rendered for real it reads 2.18:1 on a table row, below
+   * even the non-text floor. The verdict word takes the text floor. The icon takes the non-text
+   * floor and gets its own stack, because the row the launcher recommends updating to paints a
+   * lime tint behind the icon which lifts the backdrop under it.
+   */
+  it("keeps the release compatibility verdict readable in both flows", () => {
+    const file = "features/mods/components/ModReleaseList.tsx"
+    const updatableTint: Layer = [tailwindColor("lime-600"), Number(match(file, /_updatableTo === release\.modversion && "bg-lime-600\/(\d+)"/)[1]) / 100]
+
+    const verdicts: ReadonlyArray<readonly [string, RegExp]> = [
+      ["declared", /declared: \{ className: "text-([a-z]+-\d+)"/],
+      ["same-minor", /"same-minor": \{ className: "text-([a-z]+-\d+)"/],
+      ["undeclared", /undeclared: \{ className: "text-([a-z]+-\d+)"/]
+    ]
+
+    for (const [verdict, anchor] of verdicts) {
+      const colour = paletteForeground(file, anchor)
+      assertReadable(`${verdict} verdict word on the browse page`, colour, PAGE_TABLE_ROW, TEXT_FLOOR)
+      assertReadable(`${verdict} verdict word in the update popup`, colour, POPUP_TABLE_ROW, TEXT_FLOOR)
+      assertReadable(`${verdict} verdict icon on the recommended row`, colour, [...PAGE_TABLE_ROW, updatableTint], NON_TEXT_FLOOR)
+    }
+  })
+
   it("keeps the icons that stand in for a control above the non-text bar", () => {
     // Each of these is the whole visible content of a button: there is no label beside it, so the
     // icon is the affordance and the 3:1 rule applies. Actions that ship a label are covered by
@@ -300,6 +375,61 @@ describe("prompts the player is meant to read and act on", () => {
       ["choose a custom icon file", foreground("components/ui/AddCustomIconPupup.tsx", /PiPlusCircleDuotone className="text-3xl text-(zinc-\d+)(?:\/(\d+))?/)]
     ]
     for (const [label, icon] of icons) assertReadable(label, icon, ICON, NON_TEXT_FLOOR)
+  })
+
+  /**
+   * Everything the notification area puts on screen, pinned in one place.
+   *
+   * The audit that came with this found two real failures here and a dozen values that happened to
+   * pass with nothing holding them there. red-800 on a failed task row read 1.97:1, which made the
+   * one line a player has to read the least readable thing in the panel, and the error toast's icon
+   * read 2.34:1. Both are read out of the components below rather than written down again, so a
+   * shade that moves fails here instead of shipping.
+   */
+  it("keeps every toast readable on the scrim it ships on", () => {
+    const overlay = "components/layout/NotificationsOverlay.tsx"
+    const body = foreground(overlay, /text-xs text-(zinc-\d+)(?:\/(\d+))? break-words/)
+    const dismiss = foreground(overlay, /p-1 text-(zinc-\d+)(?:\/(\d+))? shrink-0/)
+
+    assertReadable("toast body", body, TOAST, TEXT_FLOOR)
+    assertReadable("toast dismiss icon", dismiss, TOAST, NON_TEXT_FLOOR)
+
+    // The type icon is the only thing that says which kind of message this is, so it carries a
+    // meaning on its own and the non-text bar applies to all four.
+    for (const [kind, token] of Object.entries(toastTypeColours(overlay))) {
+      assertReadable(`${kind} toast icon`, [tailwindOrTheme(token), 1], TOAST, NON_TEXT_FLOOR)
+    }
+  })
+
+  it("keeps every Activity Center task row readable", () => {
+    const panel = "components/ui/ActivityCenter.tsx"
+    const operation = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? break-words/)
+    const description = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? line-clamp-2/)
+    const percentage = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? tabular-nums/)
+    const failure = paletteForeground(panel, /task.status === "failed" && <p className="text-xs text-([a-z]+-\d+)"/)
+    const heading = foreground(panel, /text-xs uppercase tracking-wide text-(zinc-\d+)(?:\/(\d+))?/)
+    const summary = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? leading-tight/)
+    const emptyState = foreground(panel, /p-4 text-center text-sm font-bold text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("task operation and status line", operation, TASKS_ROW, TEXT_FLOOR)
+    assertReadable("task description", description, TASKS_ROW, TEXT_FLOOR)
+    assertReadable("task percentage", percentage, TASKS_ROW, TEXT_FLOOR)
+    assertReadable("failed task explanation", failure, TASKS_ROW, TEXT_FLOOR)
+    assertReadable("section heading", heading, TASKS_PANEL, TEXT_FLOOR)
+    assertReadable("panel summary", summary, TASKS_PANEL, TEXT_FLOOR)
+    assertReadable("empty state", emptyState, TASKS_PANEL, TEXT_FLOOR)
+
+    // Each status icon is the row's only colour cue for how that task ended.
+    for (const [status, token] of Object.entries(taskStatusColours(panel))) {
+      if (token === "vsl") continue // the accent, already covered by the block below
+      assertReadable(`${status} task icon`, [tailwindOrTheme(token), 1], TASKS_ROW, NON_TEXT_FLOOR)
+    }
+  })
+
+  it("keeps the active task badge readable on the accent fill it sits on", () => {
+    const badge = match("components/ui/ActivityCenter.tsx", /rounded-full bg-(vs) text-\[10px\] leading-none text-(white)/)
+    assert.equal(badge[2], "white", "the active task count no longer paints its own label")
+    assertReadable("active task count", [WHITE, 1], [[themeColor(badge[1] as string), 1]], TEXT_FLOOR)
   })
 
   it("keeps Activity Center history text readable on both row tints", () => {

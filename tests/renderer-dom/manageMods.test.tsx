@@ -293,7 +293,7 @@ describe("ManageMods", () => {
     await user.click(within(dialog).getByTitle("Delete"))
 
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(ALPHA_PATH))
-    expect(await screen.findByText("Mod deleted successfully!")).toBeTruthy()
+    expect(await screen.findByText("Mod deleted successfully.")).toBeTruthy()
     await waitFor(() => expect(screen.queryByText("Are you sure you want to delete this Mod?")).toBeNull())
   })
 
@@ -315,7 +315,7 @@ describe("ManageMods", () => {
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
     expect(await screen.findByText("1 Mods updated, 1 left as they were. The summary says which ones.", {}, { timeout: 3000 })).toBeTruthy()
-    expect(screen.queryByText("All the Mods were updated successfully!")).toBeNull()
+    expect(screen.queryByText("All the Mods were updated successfully.")).toBeNull()
     expect(screen.queryByText(/Finished download:/)).toBeNull()
 
     // Both attempts show up in the summary, the failed one without a target version.
@@ -368,7 +368,7 @@ describe("ManageMods: suspended Mod updates", () => {
     await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
 
     // Beta was updated, Alpha was not touched at all.
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
@@ -530,7 +530,7 @@ describe("ManageMods: searching the installed Mods", () => {
 
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
 
     // Beta is updatable too, but it is not what the player is looking at.
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
@@ -557,7 +557,7 @@ describe("ManageMods: searching the installed Mods", () => {
     await user.click(plainExport)
 
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
-    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "quirkid", version: "4.0.0" }])
+    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "quirkid", version: "4.0.0", name: "Delta Mod" }])
   })
 
   it("writes the server modpack from the same visible list that decides the button", async () => {
@@ -579,7 +579,7 @@ describe("ManageMods: searching the installed Mods", () => {
     expect(manifest.name).toBe("Install A (Server)")
     // Beta and nothing else: not Delta, which is on screen but client-only, and not Alpha or Gamma,
     // which a server would load but the search took away.
-    expect(manifest.mods).toEqual([{ modid: "beta", version: "2.0.0" }])
+    expect(manifest.mods).toEqual([{ modid: "beta", version: "2.0.0", name: "Beta Mod" }])
   })
 })
 
@@ -699,7 +699,7 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
     // Alpha only. A Mod that is off does not silently change version.
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
     expect(downloadOnPath.mock.calls[0]?.[1]).toContain("alpha")
@@ -715,12 +715,12 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
-    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0" }])
+    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0", name: "Alpha Mod" }])
 
     // Epsilon declares no side, which the server export otherwise reads as "the server loads it".
     await user.click(screen.getByText("Export Server Modpack").closest("button") as HTMLElement)
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(2))
-    expect(exportModpack.mock.calls[1]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0" }])
+    expect(exportModpack.mock.calls[1]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0", name: "Alpha Mod" }])
   })
 
   it("finds a disabled Mod by search like any other, name or id", async () => {
@@ -747,7 +747,7 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     // The `.disabled` name is the real one on disk, so it is the one the delete has to target.
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(EPSILON_PATH))
-    expect(await screen.findByText("Mod deleted successfully!")).toBeTruthy()
+    expect(await screen.findByText("Mod deleted successfully.")).toBeTruthy()
   })
 })
 
@@ -822,8 +822,8 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
     return Promise.resolve(JSON.stringify({ statuscode: "404" }))
   }
 
-  function renderFilterable(scan: () => { mods: InstalledModType[]; errors: ErrorInstalledModType[] } = aFilterableModScan): ReturnType<typeof renderManageMods> {
-    return renderManageMods({ netManager: { queryURL: vi.fn(filterQueryModDb) }, modsManager: { getInstalledMods: vi.fn(async () => scan()) } })
+  function renderFilterable(scan: () => { mods: InstalledModType[]; errors: ErrorInstalledModType[] } = aFilterableModScan, overrides: WindowApiOverrides = {}): ReturnType<typeof renderManageMods> {
+    return renderManageMods({ ...overrides, netManager: { queryURL: vi.fn(filterQueryModDb) }, modsManager: { getInstalledMods: vi.fn(async () => scan()), ...overrides.modsManager } })
   }
 
   /**
@@ -1014,6 +1014,98 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
     expect(screen.getByRole("button", { name: "Author" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Tags" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "VS Version" })).toBeTruthy()
+  })
+
+  /**
+   * Issue #357, the dropdown half of the #228 rule. The search half is pinned above, under
+   * "searching the installed Mods", and that was enough to keep the suite green while the bulk
+   * update read the text-filtered list instead of the visible one: it agrees with the visible list
+   * on every search-only case. Each of the three axes below leaves a different set of updatable
+   * Mods on screen, and none of them is the whole folder.
+   *
+   * Alpha, Gamma and Delta are the three updatable Mods of this fixture, so any action that touches
+   * all three is acting on the folder rather than on what the player is looking at.
+   */
+  type BulkUpdateSpies = {
+    deletePath: ReturnType<typeof vi.fn<BridgeAPI["pathsManager"]["deletePath"]>>
+    downloadOnPath: ReturnType<typeof vi.fn<(id: string, url: string) => Promise<string>>>
+  }
+
+  function bulkUpdateSpies(): BulkUpdateSpies {
+    return {
+      deletePath: vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true),
+      downloadOnPath: vi.fn(async (_id: string, url: string) => `/games/a/Mods/${url.split("/").pop()}`)
+    }
+  }
+
+  /** Which Mods a finished bulk update actually downloaded, by the file name each release carries. */
+  function downloadedModIds(downloadOnPath: BulkUpdateSpies["downloadOnPath"]): string[] {
+    return downloadOnPath.mock.calls.map((call) => String(call[1]).split("/").pop()?.split("-")[0] ?? "").sort()
+  }
+
+  it("updates only the Mods an author filter left on screen", async () => {
+    const user = userEvent.setup()
+    const { deletePath, downloadOnPath } = bulkUpdateSpies()
+    renderFilterable(aFilterableModScan, { pathsManager: { deletePath, downloadOnPath } })
+
+    await pick(user, "Author", "Ann")
+    await waitFor(() => expect(screen.queryByText("Gamma Mod")).toBeNull())
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
+    // Gamma and Delta are updatable too, and the filter took them off screen.
+    expect(downloadedModIds(downloadOnPath)).toEqual(["alpha"])
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ALPHA_PATH])
+  })
+
+  it("updates only the Mods a tag filter left on screen", async () => {
+    const user = userEvent.setup()
+    const { deletePath, downloadOnPath } = bulkUpdateSpies()
+    renderFilterable(aFilterableModScan, { pathsManager: { deletePath, downloadOnPath } })
+
+    await pick(user, "Tags", "qol")
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByText("Delta Mod")).toBeNull())
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
+    // Delta is updatable and carries no category tag, so the qol pick is the only thing keeping it out.
+    expect(downloadedModIds(downloadOnPath)).toEqual(["alpha", "gamma"])
+  })
+
+  it("updates only the Mods a game version filter left on screen", async () => {
+    const user = userEvent.setup()
+    const { deletePath, downloadOnPath } = bulkUpdateSpies()
+    renderFilterable(aFilterableModScan, { pathsManager: { deletePath, downloadOnPath } })
+
+    await pick(user, "VS Version", "1.19.4")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
+    // 1.19.4 leaves Beta and Gamma. Beta has no compatible release, so Gamma is the whole run.
+    expect(downloadedModIds(downloadOnPath)).toEqual(["gamma"])
+  })
+
+  it("exports the Mods a filter left on screen, not the whole folder", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderFilterable(aFilterableModScan, { modsManager: { exportModpack } })
+
+    // Cal covers Gamma and Delta, and nothing else in the folder.
+    await pick(user, "Author", "Cal")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([
+      { modid: "gamma", version: "3.0.0", name: "Gamma Mod" },
+      { modid: "delta", version: "4.0.0", name: "Delta Mod" }
+    ])
   })
 })
 

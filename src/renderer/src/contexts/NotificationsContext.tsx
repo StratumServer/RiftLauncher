@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
+import { backlogToastDuration, capNotificationRecords } from "@domain/notifications/toastQueue"
+
 export type NotificationTypes = "success" | "error" | "info" | "warning"
 export type NotificationPresentation = "toast" | "center" | "both"
 export type ToastDismissReason = "manual" | "timeout"
@@ -47,6 +49,11 @@ interface NotificationsContextType {
   unseenCount: number
   /** Center records the user has not acknowledged. Drives the panel row marker. */
   unreadCount: number
+  /** The turn the presented toast actually got, which a backlog shortens. Drives the countdown bar. */
+  activeToastDuration: number | null
+  /** True while the pointer is over the toast or focus is inside it, which holds the countdown. */
+  toastPaused: boolean
+  setToastPaused: (paused: boolean) => void
   addNotification: (body: string, type: NotificationTypes, options?: NotificationOptions) => void
   dismissToast: (id: string, reason?: ToastDismissReason) => void
   invokeAction: (notificationId: string, actionId: string) => void
@@ -62,6 +69,9 @@ const defaultValue: NotificationsContextType = {
   history: [],
   unseenCount: 0,
   unreadCount: 0,
+  activeToastDuration: null,
+  toastPaused: false,
+  setToastPaused: () => {},
   addNotification: () => {},
   dismissToast: () => {},
   invokeAction: () => {},
@@ -73,7 +83,6 @@ const defaultValue: NotificationsContextType = {
 }
 
 const NotificationsContext = createContext<NotificationsContextType>(defaultValue)
-const MAX_HISTORY = 50
 const DEFAULT_TOAST_DURATIONS: Record<NotificationTypes, number> = { success: 4500, info: 4500, warning: 8000, error: 8000 }
 
 function resolveToastDuration(type: NotificationTypes, options?: NotificationOptions): number | null {
@@ -83,36 +92,36 @@ function resolveToastDuration(type: NotificationTypes, options?: NotificationOpt
 }
 
 /** True while an actionable record still has an unanswered question on it. */
+/** A transient banner with no place in the Activity Center. */
+function isToastOnly(record: NotificationType): boolean {
+  return record.options?.presentation === "toast"
+}
+
 export function awaitsAnswer(record: NotificationType): boolean {
   return Boolean(record.options?.actions?.length) && !record.resolved
 }
 
-/**
- * Trims to MAX_HISTORY *center* records. Toast-only entries share `records`
- * but are transient and must never push real history out of it: a bulk mod
- * update parks dozens of queued toasts here at once.
- */
-function capHistory(records: NotificationType[]): NotificationType[] {
-  let excess = records.reduce((count, record) => count + (record.options?.presentation === "toast" ? 0 : 1), 0) - MAX_HISTORY
-  if (excess <= 0) return records
-  return records.filter((record) => {
-    if (excess <= 0 || record.options?.presentation === "toast") return true
-    excess -= 1
-    return false
-  })
-}
-
 const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX.Element => {
   const { t } = useTranslation()
-  const [records, setRecords] = useState<NotificationType[]>([])
+  const [records, setRecords] = useState<readonly NotificationType[]>([])
   const [toastQueue, setToastQueue] = useState<string[]>([])
   const [activeToastId, setActiveToastId] = useState<string | null>(null)
+  // The turn the presented toast got, decided once when it took the screen. A
+  // backlog cannot keep shortening a banner that is already up, and a queue
+  // that drains while it is up cannot lengthen it back.
+  const [activeToastDuration, setActiveToastDuration] = useState<number | null>(null)
+  const [toastPaused, setToastPaused] = useState(false)
+  // Read by the record cap so a burst never drops the toast being read. A ref
+  // rather than the state itself: addNotification is handed out through the
+  // context and may run from a closure that predates the current banner.
+  const activeToastIdRef = useRef<string | null>(null)
   const invokedActions = useRef<Set<string>>(new Set())
   const offeredVersion = useRef("")
   const downloadAccepted = useRef(false)
 
-  const history = useMemo(() => records.filter((record) => record.options?.presentation !== "toast"), [records])
+  const history = useMemo(() => records.filter((record) => !isToastOnly(record)), [records])
   const activeToast = activeToastId ? records.find((record) => record.id === activeToastId) : undefined
+  activeToastIdRef.current = activeToastId
   const unseenCount = useMemo(() => history.filter((record) => !record.seen).length, [history])
   const unreadCount = useMemo(() => history.filter((record) => !record.read).length, [history])
 
@@ -126,23 +135,27 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       return
     }
     setActiveToastId(nextId)
+    setActiveToastDuration(backlogToastDuration(records.find((record) => record.id === nextId)?.options?.duration ?? null, toastQueue.length - 1))
     setToastQueue((queue) => queue.slice(1))
   }, [activeToastId, records, toastQueue])
 
-  // Keyed on the toast id alone, deliberately: opening the Activity Center
-  // marks the visible toast's record `seen`, replacing the record object while
-  // its id stays the same. Depending on `activeToast` here would restart the
-  // countdown on every seen/read mutation, so a user who keeps opening the
-  // panel could pin a toast on screen forever. `dismissToast` only ever calls
-  // functional setState updaters, so the captured copy is safe to reuse.
+  // Keyed on the toast id, the turn it was given and the pause flag, and on
+  // nothing else, deliberately: opening the Activity Center marks the visible
+  // toast's record `seen`, replacing the record object while its id stays the
+  // same. Depending on `activeToast` here would restart the countdown on every
+  // seen/read mutation, so a user who keeps opening the panel could pin a toast
+  // on screen forever. `dismissToast` only ever calls functional setState
+  // updaters, so the captured copy is safe to reuse.
   useEffect(() => {
-    if (!activeToast || activeToast.options?.duration == null) return
-    const timeout = window.setTimeout((): void => dismissToast(activeToast.id, "timeout"), activeToast.options.duration)
+    if (!activeToastId || activeToastDuration == null || toastPaused) return
+    const timeout = window.setTimeout((): void => dismissToast(activeToastId, "timeout"), activeToastDuration)
     return (): void => window.clearTimeout(timeout)
-    // The timer follows the toast id. Depending on the whole record would restart it when
-    // Activity Center marks the record seen or read, allowing a toast to remain forever.
+    // The timer follows the toast id, its decided duration and the pause flag. Depending on the
+    // whole record would restart it when Activity Center marks the record seen or read, allowing a
+    // toast to remain forever. Leaving the toast gives it a fresh full turn rather than the
+    // remainder of the old one, which is the reading time the player asked for by hovering.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeToast?.id])
+  }, [activeToastId, activeToastDuration, toastPaused])
 
   useEffect((): (() => void) => {
     const offerDownload = (body: string): void => {
@@ -200,19 +213,20 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       resolved: false,
       options: { ...options, presentation, duration: resolveToastDuration(type, options) }
     }
-    setRecords((previous) => capHistory([...previous, record]))
+    setRecords((previous) => capNotificationRecords([...previous, record], isToastOnly, (candidate) => candidate.id === activeToastIdRef.current))
     if (presentation !== "center") setToastQueue((queue) => [...queue, id])
   }
 
   const dismissToast = (id: string, reason: ToastDismissReason = "manual"): void => {
     setActiveToastId((activeId) => (activeId === id ? null : activeId))
+    setToastPaused(false)
     setToastQueue((queue) => queue.filter((queuedId) => queuedId !== id))
     // A banner closed by hand has been dealt with, so it stops counting as new;
     // one that timed out has not, because the user may have been elsewhere.
     setRecords((previous) =>
       previous.flatMap((record) => {
         if (record.id !== id) return [record]
-        if (record.options?.presentation === "toast") return []
+        if (isToastOnly(record)) return []
         return reason === "manual" && !record.seen ? [{ ...record, seen: true }] : [record]
       })
     )
@@ -234,17 +248,14 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   // dependency array; the identity stays stable and the state bail-out stops
   // that effect from looping.
   const markAllSeen = useCallback((): void => {
-    setRecords((previous) =>
-      previous.some((record) => record.options?.presentation !== "toast" && !record.seen)
-        ? previous.map((record) => (record.options?.presentation === "toast" ? record : { ...record, seen: true }))
-        : previous
-    )
+    setRecords((previous) => (previous.some((record) => !isToastOnly(record) && !record.seen) ? previous.map((record) => (isToastOnly(record) ? record : { ...record, seen: true })) : previous))
   }, [])
 
   const markAllRead = (): void => setRecords((previous) => (previous.some((record) => !record.read || !record.seen) ? previous.map((record) => ({ ...record, seen: true, read: true })) : previous))
   const setNotificationRead = (id: string, read: boolean): void => setRecords((previous) => previous.map((record) => (record.id === id ? { ...record, seen: true, read } : record)))
   const removeNotification = (id: string): void => {
     setActiveToastId((activeId) => (activeId === id ? null : activeId))
+    setToastPaused(false)
     setToastQueue((queue) => queue.filter((queuedId) => queuedId !== id))
     setRecords((previous) => previous.filter((record) => record.id !== id))
   }
@@ -261,6 +272,9 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
         activeToast,
         unseenCount,
         unreadCount,
+        activeToastDuration,
+        toastPaused,
+        setToastPaused,
         addNotification,
         dismissToast,
         invokeAction,
