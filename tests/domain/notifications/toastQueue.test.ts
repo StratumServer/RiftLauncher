@@ -79,6 +79,25 @@ describe("capNotificationRecords", () => {
     )
   })
 
+  /**
+   * Zaldaryon's second catch: the default presentation is `both`, so the toast on screen is
+   * also a center entry, and once history is over capacity it is the oldest one there.
+   */
+  it("never drops a pinned center record either, and drops the oldest unpinned one instead", () => {
+    const isPinned = (entry: { id: string }): boolean => entry.id === "c0"
+    const capped = capNotificationRecords(records(MAX_CENTER_HISTORY + 1, 0), isToastOnly, isPinned)
+    assert.equal(capped.length, MAX_CENTER_HISTORY + 1)
+    assert.equal(capped[0]?.id, "c0")
+    assert.equal(
+      capped.some((entry) => entry.id === "c1"),
+      true
+    )
+    assert.equal(
+      capNotificationRecords(records(MAX_CENTER_HISTORY + 2, 0), isToastOnly, isPinned).some((entry) => entry.id === "c1"),
+      false
+    )
+  })
+
   it("keeps exactly the on screen toast plus a full backlog when one is pinned", () => {
     const isPinned = (entry: { id: string }): boolean => entry.id === "t0"
     const full = records(0, MAX_TOAST_BACKLOG + 1)

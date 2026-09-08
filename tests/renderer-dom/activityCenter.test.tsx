@@ -482,6 +482,20 @@ describe("NotificationsContext history caps", () => {
     expect(result.current.activeToast?.body).toBe("being read")
   })
 
+  it("keeps a both-presentation toast on screen when center history overflows behind it", () => {
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    act(() => result.current.addNotification("being read", "info"))
+    expect(result.current.activeToast?.body).toBe("being read")
+
+    act(() => {
+      for (let index = 0; index < 50; index += 1) result.current.addNotification(`center ${index}`, "info", { presentation: "center" })
+    })
+
+    expect(result.current.activeToast?.body).toBe("being read")
+    expect(result.current.history).toHaveLength(51)
+  })
+
   it("caps center history at fifty, dropping the oldest", () => {
     const { result } = renderHook(() => useNotificationsContext(), { wrapper })
 

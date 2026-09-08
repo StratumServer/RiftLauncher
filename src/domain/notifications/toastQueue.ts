@@ -48,19 +48,24 @@ export function backlogToastDuration(duration: number | null, waiting: number): 
  * out; capping them at the backlog is also what stops a dropped toast from
  * sitting in the record list forever with no way to ever reach the screen.
  *
- * A pinned record is never dropped and does not count against the toast
- * budget. The provider pins the toast on screen: a toast-only record leaves
- * the list the moment it is dismissed, so without the pin the oldest survivor
- * is always the one being read, and a burst would unmount it mid-sentence.
+ * A pinned record is never dropped and counts against neither budget. The
+ * provider pins the toast on screen, whatever its presentation: a toast-only
+ * record leaves the list the moment it is dismissed, so without the pin the
+ * oldest survivor is always the one being read, and a `both` record on screen
+ * is also the oldest center entry once history fills up. Either cap would
+ * unmount it mid-sentence.
  */
 export function capNotificationRecords<T>(records: readonly T[], isToastOnly: (record: T) => boolean, isPinned: (record: T) => boolean = () => false): readonly T[] {
   let centerCount = 0
   let pinnedToasts = 0
   let waitingToasts = 0
   for (const record of records) {
-    if (!isToastOnly(record)) centerCount += 1
-    else if (isPinned(record)) pinnedToasts += 1
-    else waitingToasts += 1
+    if (isPinned(record)) {
+      if (isToastOnly(record)) pinnedToasts += 1
+      continue
+    }
+    if (isToastOnly(record)) waitingToasts += 1
+    else centerCount += 1
   }
   let centerExcess = centerCount - MAX_CENTER_HISTORY
   // With nothing on screen the next render puts one up, so one more may wait.
@@ -68,8 +73,11 @@ export function capNotificationRecords<T>(records: readonly T[], isToastOnly: (r
   if (centerExcess <= 0 && toastExcess <= 0) return records
 
   return records.filter((record) => {
+    // Pinned means on screen, whatever its presentation: a `both` record is
+    // center history too, and the history cap must not unmount it either.
+    if (isPinned(record)) return true
     if (isToastOnly(record)) {
-      if (isPinned(record) || toastExcess <= 0) return true
+      if (toastExcess <= 0) return true
       toastExcess -= 1
       return false
     }
