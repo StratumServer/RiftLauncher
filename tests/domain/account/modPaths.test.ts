@@ -245,7 +245,11 @@ describe("writeClientSettingsSession with an installation to check the mod folde
 
     const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION, modPaths: TARGET })
 
-    assert.deepEqual(result, { outcome: "adopted", secrets: { sessionKey: "game-session-key", sessionSignature: "game-session-signature", mptoken: "game-mp-token" }, modPaths: "repoint-write-failed" })
+    assert.deepEqual(result, {
+      outcome: "adopted",
+      secrets: { sessionKey: "game-session-key", sessionSignature: "game-session-signature", mptoken: "game-mp-token" },
+      modPaths: "repoint-write-failed"
+    })
     assert.equal(writes.length, 1, "the write was attempted once")
   })
 
