@@ -158,7 +158,12 @@ function ImportModpackPopup({
               outName: installation.name,
               modName: item.name,
               release: item.release,
-              existing: item.existing
+              existing: item.existing,
+              // The same aggregate feedback the bulk updater uses, for the same reason. Importing a
+              // thirty mod pack used to fire a completion toast per mod into a queue that shows one
+              // at a time, so the last of them landed minutes after the import had finished, next to
+              // the row table and the summary popup that already said all of it.
+              feedback: "aggregate"
             })
         }
       },

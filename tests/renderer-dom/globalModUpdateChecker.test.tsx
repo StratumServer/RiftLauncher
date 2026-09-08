@@ -80,9 +80,9 @@ describe("GlobalModUpdateChecker", () => {
 
     // The config loads async, the checker's effect then fires and (after its
     // 2s delay) posts the toast.
-    await screen.findByText(/Mods with available updates/i, {}, { timeout: 4_000 })
+    await screen.findByText(/Mods with updates available/i, {}, { timeout: 4_000 })
     expect(getCompleteInstalledMods).toHaveBeenCalledTimes(1)
-    expect(screen.getAllByText(/Mods with available updates/i)).toHaveLength(1)
+    expect(screen.getAllByText(/Mods with updates available/i)).toHaveLength(1)
 
     // Revisit: leave the installation, then come back to it. The checker
     // runs its check again (it always does), but the de-dupe list already
@@ -96,6 +96,6 @@ describe("GlobalModUpdateChecker", () => {
     // Give the (would-be) second toast's 2s delay time to land, if it were
     // going to, then confirm it did not.
     await new Promise((resolve) => setTimeout(resolve, 2_200))
-    expect(screen.getAllByText(/Mods with available updates/i)).toHaveLength(1)
+    expect(screen.getAllByText(/Mods with updates available/i)).toHaveLength(1)
   }, 10_000)
 })

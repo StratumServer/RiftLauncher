@@ -207,7 +207,7 @@ describe("MainMenu Play button", () => {
     expect(probe.totalTimePlayed).toBeGreaterThanOrEqual(100)
     expect(probe.totalTimePlayed).toBeLessThanOrEqual(100 + (afterLaunch - beforeLaunch))
 
-    expect(screen.queryByText("Vintage Story exited with errors!")).toBeNull()
+    expect(screen.queryByText("Vintage Story exited with errors. The log has the details.")).toBeNull()
   })
 
   it("still records playtime on a nonzero exit code, but also shows the exited-with-errors notice", async () => {
@@ -229,7 +229,7 @@ describe("MainMenu Play button", () => {
     renderMainMenu()
     await clickPlay(user)
 
-    await screen.findByText("Vintage Story exited with errors!")
+    await screen.findByText("Vintage Story exited with errors. The log has the details.")
 
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
     // ok: true still means the game ran, so it is still worth crediting the playtime.
@@ -261,11 +261,11 @@ describe("MainMenu Play button", () => {
   })
 
   const REFUSAL_CASES: { reason: GameExecutionFailureReason; message: string }[] = [
-    { reason: "unsupported-platform", message: "Vintage Story can't run on this platform yet. Try it from Windows or Linux!" },
-    { reason: "no-executable", message: "Couldn't find Vintage Story in this version's folder. Try reinstalling it!" },
-    { reason: "session-write-failed", message: "Couldn't save your login to this installation. Try logging in again!" },
-    { reason: "invalid-request", message: "This installation's environment variables can't be used. Check them and try again!" },
-    { reason: "launch-failed", message: "An error has occurred while executing the game!" }
+    { reason: "unsupported-platform", message: "Vintage Story can't run on this platform yet. Try it from Windows or Linux." },
+    { reason: "no-executable", message: "Couldn't find Vintage Story in this version's folder. Try reinstalling it." },
+    { reason: "session-write-failed", message: "Couldn't save your login to this installation. Try logging in again." },
+    { reason: "invalid-request", message: "This installation's environment variables can't be used. Check them and try again." },
+    { reason: "launch-failed", message: "Something went wrong starting the game. The log has the details." }
   ]
 
   it.each(REFUSAL_CASES)("shows the right notice for an ok:false/$reason refusal, records no playtime, and clears _playing", async ({ reason, message }) => {
@@ -353,7 +353,7 @@ describe("MainMenu Play button", () => {
     renderMainMenu()
     await clickPlay(user)
 
-    await screen.findByText("An error has occurred while executing the game!")
+    await screen.findByText("Something went wrong starting the game. The log has the details.")
 
     expect(logMessage).toHaveBeenCalledWith("error", expect.stringContaining("Error executing the game."))
     expect(logMessage).toHaveBeenCalledWith("debug", expect.stringContaining("boom"))
@@ -520,7 +520,7 @@ describe("MainMenu Play button", () => {
     renderMainMenu()
     await clickPlay(user)
 
-    await screen.findByText("There is a backup already in progress!")
+    await screen.findByText("There is a backup already in progress.")
     expect(screen.queryByRole("dialog")).toBeNull()
     expect(executeGame).not.toHaveBeenCalled()
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
@@ -548,7 +548,7 @@ describe("MainMenu Play button", () => {
     renderMainMenu()
     await clickPlay(user)
 
-    await screen.findByText("There's a Backup restoration already in progress!")
+    await screen.findByText("There's a Backup restoration already in progress.")
     expect(screen.queryByRole("dialog")).toBeNull()
     expect(executeGame).not.toHaveBeenCalled()
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
@@ -596,7 +596,7 @@ describe("MainMenu quick-backup button", () => {
     renderMainMenu()
     await user.click(await screen.findByTitle("Backup Installation"))
 
-    await screen.findByText("This Installation has no data, please, play on it at least one time to generate the base data!")
+    await screen.findByText("This Installation has no data yet. Play it once to generate it, then take a Backup.")
 
     expect(checkPathExists).toHaveBeenCalledWith("/games/a")
     expect(compressOnPath).not.toHaveBeenCalled()

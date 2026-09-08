@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
+import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
 
 import { installMockWindowApi } from "./helpers/windowApi"
@@ -337,5 +338,48 @@ describe("ImportModpackPopup, when the mod database cannot be reached", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
 
     expect(within(await rowFor("Unreachable Mod")).getByText("New install")).toBeTruthy()
+  })
+})
+
+/**
+ * A pack's worth of downloads used to raise a completion toast each, into an overlay that presents
+ * one at a time. Thirty of them put the last banner minutes past the end of the import, next to a
+ * row table and a summary popup that had already said all of it. The bulk updater had asked for
+ * aggregate feedback for exactly this reason since it was written; the import had not.
+ */
+describe("ImportModpackPopup, while it downloads", () => {
+  it("raises no per mod toast, because its own table and summary already report each row", async () => {
+    const downloadOnPath = vi.fn(async (_id: string, _url: string, outputPath: string, fileName: string) => `${outputPath}/${fileName}`)
+    installMockWindowApi({
+      netManager: {
+        queryURL: async (url: string) => {
+          const modid = url.split("/mod/")[1] ?? ""
+          const response = MODDB[modid]
+          if (!response) throw new Error(`The popup queried an unexpected mod: ${modid}`)
+          return response
+        }
+      },
+      pathsManager: {
+        checkPathExists: vi.fn(async () => true),
+        deletePath: vi.fn(async () => true),
+        downloadOnPath,
+        formatPath: vi.fn(async (parts: string[]) => parts.join("/"))
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <NotificationsOverlay />
+        <ImportModpackPopup isOpen manifest={MANIFEST} close={(): void => {}} installation={installation()} installedMods={INSTALLED} onFinish={(): void => {}} />
+      </TaskProvider>
+    )
+
+    await screen.findByText("Traders Expansion")
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Import Modpack" })))
+    await waitFor(() => expect(screen.queryByText("Importing...")).toBeNull())
+
+    // Not a vacuous pass: the run really did fetch archives, it just said nothing about each one.
+    expect(downloadOnPath.mock.calls.length).toBeGreaterThan(1)
+    expect(within(screen.getByRole("status")).queryByText(/^Downloaded /)).toBeNull()
   })
 })

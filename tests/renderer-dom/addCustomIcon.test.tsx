@@ -58,7 +58,7 @@ describe("AddCustomIconPupup refusals", () => {
       pathsManager: { copyToIcons: vi.fn(async () => ({ status: false as const, reason: "unsupported-format" as const })) }
     })
 
-    expect(await screen.findByText("That file isn't a PNG! Custom icons have to be .png images, so convert it or pick another file.")).toBeTruthy()
+    expect(await screen.findByText("That file isn't a PNG. Custom icons have to be .png images, so convert it or pick another file.")).toBeTruthy()
   })
 
   it("says the file could not be read when the path policy or the disk refuses the source", async () => {
@@ -67,7 +67,7 @@ describe("AddCustomIconPupup refusals", () => {
       pathsManager: { copyToIcons: vi.fn(async () => ({ status: false as const, reason: "source-unavailable" as const })) }
     })
 
-    expect(await screen.findByText("RiftLauncher couldn't read that file! Move it somewhere RiftLauncher can reach, then pick it again.")).toBeTruthy()
+    expect(await screen.findByText("RiftLauncher couldn't read that file. Move it somewhere RiftLauncher can reach, then pick it again.")).toBeTruthy()
   })
 
   it("logs a failed copy as well as telling the player about it", async () => {
@@ -76,7 +76,7 @@ describe("AddCustomIconPupup refusals", () => {
       pathsManager: { copyToIcons: vi.fn(async () => ({ status: false as const, reason: "copy-failed" as const })) }
     })
 
-    expect(await screen.findByText(/That icon couldn't be copied to the icons folder!/)).toBeTruthy()
+    expect(await screen.findByText(/That icon couldn't be copied to the icons folder\./)).toBeTruthy()
     expect(iconLogLines(api).some((line) => line.startsWith("error:"))).toBe(true)
     expect(iconLogLines(api).some((line) => line.startsWith("debug:") && line.includes("copy-failed"))).toBe(true)
   })
@@ -91,7 +91,7 @@ describe("AddCustomIconPupup refusals", () => {
       }
     })
 
-    expect(await screen.findByText("Something went wrong adding that icon! Restart RiftLauncher, and let us know if it keeps happening.")).toBeTruthy()
+    expect(await screen.findByText("Something went wrong adding that icon. Restart RiftLauncher, and let us know if it keeps happening.")).toBeTruthy()
     expect(iconLogLines(api).some((line) => line.startsWith("debug:") && line.includes("bridge-failed") && line.includes("Unauthorized IPC sender"))).toBe(true)
   })
 
@@ -104,7 +104,7 @@ describe("AddCustomIconPupup refusals", () => {
       }
     })
 
-    expect(await screen.findByText("Something went wrong adding that icon! Restart RiftLauncher, and let us know if it keeps happening.")).toBeTruthy()
+    expect(await screen.findByText("Something went wrong adding that icon. Restart RiftLauncher, and let us know if it keeps happening.")).toBeTruthy()
     expect(iconLogLines(api).some((line) => line.startsWith("debug:") && line.includes("bridge-failed") && line.includes("Invalid dialog extensions"))).toBe(true)
   })
 

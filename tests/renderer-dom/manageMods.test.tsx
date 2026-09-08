@@ -293,7 +293,7 @@ describe("ManageMods", () => {
     await user.click(within(dialog).getByTitle("Delete"))
 
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(ALPHA_PATH))
-    expect(await screen.findByText("Mod deleted successfully!")).toBeTruthy()
+    expect(await screen.findByText("Mod deleted successfully.")).toBeTruthy()
     await waitFor(() => expect(screen.queryByText("Are you sure you want to delete this Mod?")).toBeNull())
   })
 
@@ -315,7 +315,7 @@ describe("ManageMods", () => {
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
     expect(await screen.findByText("1 Mods updated, 1 left as they were. The summary says which ones.", {}, { timeout: 3000 })).toBeTruthy()
-    expect(screen.queryByText("All the Mods were updated successfully!")).toBeNull()
+    expect(screen.queryByText("All the Mods were updated successfully.")).toBeNull()
     expect(screen.queryByText(/Finished download:/)).toBeNull()
 
     // Both attempts show up in the summary, the failed one without a target version.
@@ -368,7 +368,7 @@ describe("ManageMods: suspended Mod updates", () => {
     await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
 
     // Beta was updated, Alpha was not touched at all.
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
@@ -530,7 +530,7 @@ describe("ManageMods: searching the installed Mods", () => {
 
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
 
     // Beta is updatable too, but it is not what the player is looking at.
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
@@ -699,7 +699,7 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
     // Alpha only. A Mod that is off does not silently change version.
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
     expect(downloadOnPath.mock.calls[0]?.[1]).toContain("alpha")
@@ -747,7 +747,7 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     // The `.disabled` name is the real one on disk, so it is the one the delete has to target.
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(EPSILON_PATH))
-    expect(await screen.findByText("Mod deleted successfully!")).toBeTruthy()
+    expect(await screen.findByText("Mod deleted successfully.")).toBeTruthy()
   })
 })
 
@@ -1053,7 +1053,7 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
 
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
     // Gamma and Delta are updatable too, and the filter took them off screen.
     expect(downloadedModIds(downloadOnPath)).toEqual(["alpha"])
     expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ALPHA_PATH])
@@ -1070,7 +1070,7 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
 
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
     // Delta is updatable and carries no category tag, so the qol pick is the only thing keeping it out.
     expect(downloadedModIds(downloadOnPath)).toEqual(["alpha", "gamma"])
   })
@@ -1085,7 +1085,7 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
 
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("All the Mods were updated successfully!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
     // 1.19.4 leaves Beta and Gamma. Beta has no compatible release, so Gamma is the whole run.
     expect(downloadedModIds(downloadOnPath)).toEqual(["gamma"])
   })
