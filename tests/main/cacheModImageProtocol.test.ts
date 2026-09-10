@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
+import fse from "fs-extra"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
@@ -20,6 +21,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   rmSync(userDataPath, { recursive: true, force: true })
 })
 
@@ -93,6 +95,41 @@ describe("cachemodimg protocol handler", () => {
     assert.equal(second.status, 200)
     assert.deepEqual(Buffer.from(await second.arrayBuffer()), replacement)
     assert.equal(fetchFile.mock.calls.length, 2)
+  })
+
+  it("reloads a same-name file when only nanosecond metadata changes", async () => {
+    const filePath = iconPath("aa.png")
+    const original = Buffer.from("old icon")
+    const replacement = Buffer.from("new icon")
+    writeFileSync(filePath, original)
+    const fetchFile = vi.fn<FetchFile>(async () => new Response(readFileSync(filePath)))
+    let statCall = 0n
+    const statOptions: unknown[] = []
+    vi.spyOn(fse, "stat").mockImplementation(((...args: unknown[]) => {
+      statOptions.push(args[1])
+      statCall += 1n
+      return Promise.resolve({
+        isFile: () => true,
+        dev: 1n,
+        ino: 2n,
+        size: 8n,
+        mtimeMs: 100,
+        ctimeMs: 100,
+        mtimeNs: 100n + statCall,
+        ctimeNs: 200n + statCall
+      } as unknown as fse.Stats)
+    }) as typeof fse.stat)
+    const handler = createHandler(fetchFile)
+
+    const first = await handler(request("/aa.png"))
+    writeFileSync(filePath, replacement)
+    const second = await handler(request("/aa.png"))
+
+    assert.equal(first.status, 200)
+    assert.equal(second.status, 200)
+    assert.deepEqual(Buffer.from(await second.arrayBuffer()), replacement)
+    assert.equal(fetchFile.mock.calls.length, 2)
+    assert.deepEqual(statOptions, [{ bigint: true }, { bigint: true }])
   })
 
   it("fetches an evicted icon again", async () => {
