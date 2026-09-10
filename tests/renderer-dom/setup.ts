@@ -3,11 +3,41 @@
 import { afterEach, beforeEach } from "vitest"
 import { cleanup } from "@testing-library/react"
 import { clearQueryCache } from "@renderer/features/mods/hooks/useQueryMods"
+import { resetModsBrowseState } from "@renderer/features/mods/modsBrowseState"
+
+// Node's jsdom runtime can leave localStorage unavailable for the default opaque test origin.
+// OrderFilter uses it for its existing sort preference, so provide the small Storage surface the
+// renderer already expects when the runtime does not expose one.
+if (!window.localStorage) {
+  const values = new Map<string, string>()
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string): string | null => values.get(key) ?? null,
+      setItem: (key: string, value: string): void => {
+        values.set(key, value)
+      },
+      removeItem: (key: string): void => {
+        values.delete(key)
+      },
+      clear: (): void => {
+        values.clear()
+      },
+      key: (index: number): string | null => [...values.keys()][index] ?? null,
+      get length(): number {
+        return values.size
+      }
+    } satisfies Storage
+  })
+}
 
 // useQueryMods keeps its result cache at module scope. Reset it for every
 // renderer-dom test so one file cannot leak a cached response into another.
 beforeEach(() => {
   clearQueryCache()
+  resetModsBrowseState()
+  window.localStorage.removeItem("listModsOrderBy")
+  window.localStorage.removeItem("listModsOrderByOrder")
 })
 
 // jsdom does not implement matchMedia. motion/react (framer-motion) reads it

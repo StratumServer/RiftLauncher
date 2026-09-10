@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen, waitFor } from "@testing-library/react"
+import { fireEvent, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { Route, Routes } from "react-router-dom"
 
 import ListMods from "@renderer/features/mods/pages/ListMods"
+import InstallMod from "@renderer/features/mods/pages/InstallMod"
 import { TASK_NOTIFICATION_POLICIES, TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 
@@ -342,4 +344,161 @@ describe("ListMods", () => {
       expect(card.className).toContain("bg-vsd/50")
     })
   })
+
+  it("preserves every browse control and the scroll position after returning from install", async () => {
+    const user = userEvent.setup()
+    const browseMods = Array.from({ length: 60 }, (_, index) => ({
+      modid: 100 + index,
+      assetid: 100 + index,
+      name: `Mod ${100 + index}`,
+      summary: "A browse regression fixture.",
+      modidstrs: [`mod-${100 + index}`],
+      author: "Author One",
+      downloads: 100 - index,
+      follows: 200 - index,
+      comments: 10,
+      side: "server",
+      logo: "",
+      tags: ["magic"]
+    }))
+    const installedMods = browseMods.map((mod) => ({
+      name: mod.name,
+      modid: mod.modidstrs[0]!,
+      version: "1.20.0",
+      path: `/games/a/Mods/${mod.modidstrs[0]}.zip`,
+      enabled: true
+    }))
+    const queryURL = vi.fn(async (url: string) => {
+      if (url.includes("/api/mods")) return JSON.stringify({ statuscode: "200", mods: browseMods })
+      if (url.includes("/api/authors")) return JSON.stringify({ statuscode: "200", authors: [{ userid: "author-1", name: "Author One" }] })
+      if (url.includes("/api/gameversions")) return JSON.stringify({ statuscode: "200", gameversions: [{ tagid: 1200, name: "1.20.0" }] })
+      if (url.includes("/api/tags")) return JSON.stringify({ statuscode: "200", tags: [{ tagid: "tag-magic", name: "magic" }] })
+      if (url.includes("/api/mod/100"))
+        return JSON.stringify({
+          statuscode: "200",
+          mod: {
+            modid: 100,
+            assetid: 100,
+            name: "Mod 100",
+            releases: [
+              {
+                releaseid: 1,
+                mainfile: "https://mods.example/mod-100.zip",
+                filename: "mod-100.zip",
+                fileid: 1,
+                downloads: 0,
+                tags: ["1.20.0"],
+                modidstr: "mod-100",
+                modversion: "1.0.0",
+                created: "2026-01-02T00:00:00Z",
+                changelog: ""
+              }
+            ]
+          }
+        })
+      return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+    })
+
+    window.localStorage.removeItem("listModsOrderBy")
+    window.localStorage.removeItem("listModsOrderByOrder")
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation()],
+            favMods: browseMods.map((mod) => mod.modid)
+          })
+        )
+      },
+      modsManager: { getInstalledMods: vi.fn(async () => ({ mods: installedMods, errors: [] })) },
+      netManager: { queryURL }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <Routes>
+          <Route path="/mods" element={<ListMods />} />
+          <Route path="/mods/install/:modid" element={<InstallMod />} />
+        </Routes>
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    await screen.findByText("Mod 100", {}, { timeout: 3000 })
+
+    fireEvent.change(screen.getByPlaceholderText("Text"), { target: { value: "needle" } })
+
+    await user.type(screen.getByPlaceholderText("Author"), "Aut")
+    await user.click(await screen.findByRole("option", { name: "Author One" }))
+
+    await user.click(screen.getByRole("button", { name: "Versions" }))
+    await user.click(await screen.findByRole("option", { name: "1.20.0" }))
+    await user.click(screen.getByRole("button", { name: /1\.20\.0/ }))
+
+    await user.click(screen.getByRole("button", { name: "Tags" }))
+    await user.click(await screen.findByRole("option", { name: "magic" }))
+    await user.click(screen.getByRole("button", { name: /magic/ }))
+
+    await user.click(screen.getByRole("button", { name: "Any" }))
+    await user.click(await screen.findByRole("option", { name: "Server" }))
+
+    await user.click(screen.getByRole("button", { name: "All" }))
+    await user.click(await screen.findByRole("option", { name: "Installed" }))
+
+    await user.click(screen.getByTitle("Show favorite Mods only"))
+
+    await user.click(screen.getByTitle("Order"))
+    await user.click(screen.getByRole("button", { name: "Downloads" }))
+    await user.click(screen.getByTitle("Order"))
+    await user.click(screen.getByRole("button", { name: "Downloads" }))
+
+    await waitFor(
+      () => {
+        const latestRequest = queryURL.mock.calls.map(([url]) => url).findLast((url) => url.includes("text=needle"))
+        expect(latestRequest).toContain("author=author-1")
+        expect(latestRequest).toContain("gameversions[]=1200")
+        expect(latestRequest).toContain("tagids[]=tag-magic")
+        expect(latestRequest).toContain("orderby=downloads")
+        expect(latestRequest).toContain("orderdirection=asc")
+      },
+      { timeout: 3000 }
+    )
+
+    expect((screen.getByPlaceholderText("Text") as HTMLInputElement).value).toBe("needle")
+    expect((screen.getByPlaceholderText("Author") as HTMLInputElement).value).toBe("Author One")
+    expect(screen.getByRole("button", { name: /1\.20\.0/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /magic/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Server" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Installed" })).toBeTruthy()
+    expect(screen.getByTitle("Show favorite Mods only").getAttribute("aria-pressed")).toBe("true")
+
+    const scrollContainer = document.querySelector("div.overflow-y-scroll") as HTMLDivElement
+    Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 100 })
+    Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 600 })
+    vi.spyOn(Element.prototype, "scrollTo").mockImplementation(function (this: Element, x: number, y: number): void {
+      const scrollTarget = x as number | ScrollToOptions
+      const top = typeof scrollTarget === "number" ? y : scrollTarget.top
+      if (top !== undefined) this.scrollTop = top
+    })
+    scrollContainer.scrollTop = 500
+    fireEvent.scroll(scrollContainer)
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^Mod \d+, Installed$/ })).toHaveLength(55))
+
+    await user.click(screen.getByRole("button", { name: "Mod 100, Installed" }))
+    await screen.findByText("List of versions of the Mod 100 Mod")
+    await user.click(screen.getByRole("link", { name: "Mods" }))
+
+    await screen.findByText("Mod 100", {}, { timeout: 3000 })
+    const restoredContainer = document.querySelector("div.overflow-y-scroll") as HTMLDivElement
+    expect((screen.getByPlaceholderText("Text") as HTMLInputElement).value).toBe("needle")
+    expect((screen.getByPlaceholderText("Author") as HTMLInputElement).value).toBe("Author One")
+    expect(screen.getByRole("button", { name: /1\.20\.0/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /magic/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Server" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Installed" })).toBeTruthy()
+    expect(screen.getByTitle("Show favorite Mods only").getAttribute("aria-pressed")).toBe("true")
+    expect(screen.getAllByRole("button", { name: /^Mod \d+, Installed$/ })).toHaveLength(55)
+    expect(restoredContainer.scrollTop).toBe(500)
+  }, 180_000)
 })

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, type Dispatch, type SetStateAction } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
@@ -16,6 +16,7 @@ import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, ReloadButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 import ModsFilterBar from "@renderer/features/mods/components/ModsFilterBar"
 import ModsGrid from "@renderer/features/mods/components/ModsGrid"
+import { DEFAULT_LOADED_MODS, getModsBrowseState, updateModsBrowseState, type ModsBrowseState } from "@renderer/features/mods/modsBrowseState"
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
@@ -26,33 +27,37 @@ function ListMods(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
-  const DEFAULT_LOADED_MODS = 45
-
   const queryMods = useQueryMods()
   const getInstalledMods = useGetInstalledMods()
   const syncModsCount = useSyncModsCount()
   const { openModOnModDb } = useExternalLinks()
   const { tasks } = useTaskContext()
 
+  const browseStateRef = useRef<ModsBrowseState | null>(null)
+  if (!browseStateRef.current) browseStateRef.current = getModsBrowseState()
+  const browseState = browseStateRef.current
+  const restoreBrowseRef = useRef(browseState.scrollTop > 0 || browseState.visibleMods > DEFAULT_LOADED_MODS)
+
   const [modsList, setModsList] = useState<DownloadableModOnListType[]>([])
-  const [visibleMods, setVisibleMods] = useState<number>(DEFAULT_LOADED_MODS)
+  const [visibleMods, setVisibleModsState] = useState<number>(browseState.visibleMods)
 
   // Derived (not copied into state) so an EDIT_INSTALLATION on the current
   // installation (e.g. its mods count) shows up immediately, without needing
   // lastUsedInstallation itself to change.
   const installation = useMemo(() => installations.find((i) => i.id === lastUsedInstallation), [installations, lastUsedInstallation])
 
-  const [installationInstalledMods, setInstallationInstalledMods] = useState<InstalledModType[] | undefined>([])
+  const [installationInstalledMods, setInstallationInstalledMods] = useState<InstalledModType[] | undefined>(undefined)
+  const installationModsLoadedRef = useRef(false)
 
-  const [onlyFav, setOnlyFav] = useState<boolean>(false)
-  const [textFilter, setTextFilter] = useState<string>("")
-  const [authorFilter, setAuthorFilter] = useState<DownloadableModAuthorType>({ userid: "", name: "" })
-  const [versionsFilter, setVersionsFilter] = useState<DownloadableModGameVersionType[]>([])
-  const [tagsFilter, setTagsFilter] = useState<DownloadableModTagType[]>([])
-  const [sideFilter, setSideFilter] = useState<string>("any")
-  const [installedFilter, setInstalledFilter] = useState<string>("all")
-  const [orderBy, setOrderBy] = useState<string>("follows")
-  const [orderByOrder, setOrderByOrder] = useState<string>("desc")
+  const [onlyFav, setOnlyFavState] = useState<boolean>(browseState.onlyFav)
+  const [textFilter, setTextFilterState] = useState<string>(browseState.textFilter)
+  const [authorFilter, setAuthorFilterState] = useState<DownloadableModAuthorType>(browseState.authorFilter)
+  const [versionsFilter, setVersionsFilterState] = useState<DownloadableModGameVersionType[]>(browseState.versionsFilter)
+  const [tagsFilter, setTagsFilterState] = useState<DownloadableModTagType[]>(browseState.tagsFilter)
+  const [sideFilter, setSideFilterState] = useState<string>(browseState.sideFilter)
+  const [installedFilter, setInstalledFilterState] = useState<string>(browseState.installedFilter)
+  const [orderBy, setOrderByState] = useState<string>(browseState.orderBy)
+  const [orderByOrder, setOrderByOrderState] = useState<string>(browseState.orderByOrder)
 
   const [searching, setSearching] = useState<boolean>(true)
 
@@ -60,10 +65,41 @@ function ListMods(): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const queryTokenRef = useRef<number>(0)
 
+  function resetBrowsePosition(): void {
+    restoreBrowseRef.current = false
+    updateModsBrowseState({ visibleMods: DEFAULT_LOADED_MODS, scrollTop: 0 })
+    setVisibleModsState(DEFAULT_LOADED_MODS)
+  }
+
+  function updateFilter<T>(setter: Dispatch<SetStateAction<T>>, value: SetStateAction<T>, update: (next: T) => Partial<ModsBrowseState>): void {
+    setter((previous) => {
+      const next = typeof value === "function" ? (value as (previous: T) => T)(previous) : value
+      if (next !== previous) resetBrowsePosition()
+      updateModsBrowseState(update(next))
+      return next
+    })
+  }
+
+  const setTextFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(setTextFilterState, value, (next) => ({ textFilter: next }))
+  const setAuthorFilter: Dispatch<SetStateAction<DownloadableModAuthorType>> = (value) => updateFilter(setAuthorFilterState, value, (next) => ({ authorFilter: next }))
+  const setVersionsFilter: Dispatch<SetStateAction<DownloadableModGameVersionType[]>> = (value) => updateFilter(setVersionsFilterState, value, (next) => ({ versionsFilter: next }))
+  const setTagsFilter: Dispatch<SetStateAction<DownloadableModTagType[]>> = (value) => updateFilter(setTagsFilterState, value, (next) => ({ tagsFilter: next }))
+  const setSideFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(setSideFilterState, value, (next) => ({ sideFilter: next }))
+  const setInstalledFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(setInstalledFilterState, value, (next) => ({ installedFilter: next }))
+  const setOnlyFav: Dispatch<SetStateAction<boolean>> = (value) => updateFilter(setOnlyFavState, value, (next) => ({ onlyFav: next }))
+  const setOrderBy: Dispatch<SetStateAction<string>> = (value) => updateFilter(setOrderByState, value, (next) => ({ orderBy: next }))
+  const setOrderByOrder: Dispatch<SetStateAction<string>> = (value) => updateFilter(setOrderByOrderState, value, (next) => ({ orderByOrder: next }))
+
   const handleScroll = (): void => {
     if (!scrollRef.current) return
     const { scrollTop, clientHeight, scrollHeight } = scrollRef.current
-    if (scrollTop + clientHeight >= scrollHeight - (clientHeight / 2 + 100)) setVisibleMods((prev) => prev + 10)
+    updateModsBrowseState({ scrollTop })
+    if (scrollTop + clientHeight >= scrollHeight - (clientHeight / 2 + 100))
+      setVisibleModsState((prev) => {
+        const next = prev + 10
+        updateModsBrowseState({ visibleMods: next })
+        return next
+      })
   }
 
   useEffect(() => {
@@ -147,7 +183,10 @@ function ListMods(): JSX.Element {
   }, [tasks, installation?.id, installation?.path])
 
   useEffect(() => {
-    if (installedFilter !== "all") triggerQueryMods(false)
+    if (installationInstalledMods === undefined) return
+
+    if (!installationModsLoadedRef.current || installedFilter !== "all") triggerQueryMods()
+    installationModsLoadedRef.current = true
     // installedFilter changing on its own is already covered by the debounced-query effect
     // above (it lists installedFilter in its own deps); this effect exists only to redo an
     // "installed"/"not-installed" filter once a fresh installationInstalledMods scan comes
@@ -156,7 +195,14 @@ function ListMods(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installationInstalledMods])
 
-  async function triggerQueryMods(resetScroll: boolean = true): Promise<void> {
+  useLayoutEffect(() => {
+    if (!restoreBrowseRef.current || modsList.length === 0) return
+
+    restoreBrowseRef.current = false
+    scrollRef.current?.scrollTo({ top: browseState.scrollTop })
+  }, [modsList, browseState.scrollTop])
+
+  async function triggerQueryMods(): Promise<void> {
     // If the installed mods are not loaded yet, skip, it'll be run again when the mods are loaded
     if (!installationInstalledMods) {
       logMods("info", "[front] [mods] [features/mods/pages/ListMods.tsx] [triggerQueryMods] Installed mods not loaded yet, skipping query")
@@ -179,14 +225,7 @@ function ListMods(): JSX.Element {
       versionsFilter,
       tagsFilter,
       orderBy,
-      orderByOrder,
-      onFinish: () => {
-        if (queryToken !== queryTokenRef.current) return
-        if (resetScroll) {
-          scrollRef.current?.scrollTo({ top: 0 })
-          setVisibleMods(DEFAULT_LOADED_MODS)
-        }
-      }
+      orderByOrder
     })
 
     if (queryToken !== queryTokenRef.current) return
@@ -269,7 +308,10 @@ function ListMods(): JSX.Element {
 
               <ReloadButton
                 onClick={() => {
-                  if (!searching) triggerQueryMods()
+                  if (!searching) {
+                    resetBrowsePosition()
+                    void triggerQueryMods()
+                  }
                 }}
                 reloading={searching}
               />
