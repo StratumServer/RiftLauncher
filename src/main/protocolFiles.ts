@@ -49,20 +49,9 @@ export function createCacheModImageProtocolHandler({ cache, getUserDataPath, fet
 /** A path-keyed ModDB logo can be replaced in place, so file metadata forms its memory-cache revision. */
 async function getProtocolFileRevision(filePath: string): Promise<string | undefined> {
   try {
-    const statWithBigInt = fse.stat as unknown as (
-      path: string,
-      options: { bigint: true }
-    ) => Promise<{
-      isFile: () => boolean
-      dev: bigint
-      ino: bigint
-      size: bigint
-      mtimeNs: bigint
-      ctimeNs: bigint
-    }>
-    const stats = await statWithBigInt(filePath, { bigint: true })
+    const stats = await fse.stat(filePath)
     if (!stats.isFile()) return undefined
-    return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}`
+    return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`
   } catch {
     return undefined
   }

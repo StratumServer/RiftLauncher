@@ -67,6 +67,7 @@ function ListMods(): JSX.Element {
 
   function resetBrowsePosition(): void {
     restoreBrowseRef.current = false
+    scrollRef.current?.scrollTo({ top: 0 })
     updateModsBrowseState({ visibleMods: DEFAULT_LOADED_MODS, scrollTop: 0 })
     setVisibleModsState(DEFAULT_LOADED_MODS)
   }

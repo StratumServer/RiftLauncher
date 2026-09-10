@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
 import ListMods from "@renderer/features/mods/pages/ListMods"
 import InstallMod from "@renderer/features/mods/pages/InstallMod"
+import { DEFAULT_LOADED_MODS, getModsBrowseState } from "@renderer/features/mods/modsBrowseState"
 import { TASK_NOTIFICATION_POLICIES, TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 
@@ -91,6 +92,25 @@ function DownloadStatus(): JSX.Element {
   const { tasks } = useTaskContext()
   return <output data-testid="download-status">{tasks[0]?.status}</output>
 }
+
+function installClampedScrollModel(): void {
+  Object.defineProperty(Element.prototype, "clientHeight", { configurable: true, get: () => 100 })
+  Object.defineProperty(Element.prototype, "scrollHeight", {
+    configurable: true,
+    get(this: Element) {
+      return 200 + this.querySelectorAll("li").length * 10
+    }
+  })
+  vi.spyOn(Element.prototype, "scrollTo").mockImplementation(function (this: Element, x: number, y: number): void {
+    const scrollTarget = x as number | ScrollToOptions
+    const top = typeof scrollTarget === "number" ? y : scrollTarget.top
+    if (top !== undefined) this.scrollTop = Math.min(Math.max(top, 0), Math.max(0, this.scrollHeight - this.clientHeight))
+  })
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe("ListMods", () => {
   it("renders results from the mocked ModDB query", async () => {
@@ -425,6 +445,7 @@ describe("ListMods", () => {
       { route: "/mods" }
     )
 
+    installClampedScrollModel()
     await screen.findByText("Mod 100", {}, { timeout: 3000 })
 
     fireEvent.change(screen.getByPlaceholderText("Text"), { target: { value: "needle" } })
@@ -474,13 +495,6 @@ describe("ListMods", () => {
     expect(screen.getByTitle("Show favorite Mods only").getAttribute("aria-pressed")).toBe("true")
 
     const scrollContainer = document.querySelector("div.overflow-y-scroll") as HTMLDivElement
-    Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 100 })
-    Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 600 })
-    vi.spyOn(Element.prototype, "scrollTo").mockImplementation(function (this: Element, x: number, y: number): void {
-      const scrollTarget = x as number | ScrollToOptions
-      const top = typeof scrollTarget === "number" ? y : scrollTarget.top
-      if (top !== undefined) this.scrollTop = top
-    })
     scrollContainer.scrollTop = 500
     fireEvent.scroll(scrollContainer)
     await waitFor(() => expect(screen.getAllByRole("button", { name: /^Mod \d+, Installed$/ })).toHaveLength(55))
@@ -501,4 +515,79 @@ describe("ListMods", () => {
     expect(screen.getAllByRole("button", { name: /^Mod \d+, Installed$/ })).toHaveLength(55)
     expect(restoredContainer.scrollTop).toBe(500)
   }, 180_000)
+
+  it("resets the rendered scroll position and browse snapshot when a filter or reload changes the list", async () => {
+    const user = userEvent.setup()
+    const browseMods = Array.from({ length: 60 }, (_, index) => ({
+      modid: 100 + index,
+      assetid: 100 + index,
+      name: `Mod ${100 + index}`,
+      summary: "A browse regression fixture.",
+      modidstrs: [`mod-${100 + index}`],
+      author: "Someone",
+      downloads: 100 - index,
+      follows: 200 - index,
+      comments: 10,
+      side: "server",
+      logo: "",
+      tags: []
+    }))
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ favMods: browseMods.map((mod) => mod.modid) }))
+      },
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify({ statuscode: "200", mods: browseMods })
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    installClampedScrollModel()
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    await screen.findByText("Mod 100", {}, { timeout: 3000 })
+    const scrollContainer = document.querySelector("div.overflow-y-scroll") as HTMLDivElement
+    Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 100 })
+    Object.defineProperty(scrollContainer, "scrollHeight", {
+      configurable: true,
+      get: () => 200 + scrollContainer.querySelectorAll("li").length * 10
+    })
+    vi.spyOn(Element.prototype, "scrollTo").mockImplementation(function (this: Element, x: number, y: number): void {
+      const scrollTarget = x as number | ScrollToOptions
+      const top = typeof scrollTarget === "number" ? y : scrollTarget.top
+      if (top !== undefined) this.scrollTop = Math.min(Math.max(top, 0), Math.max(0, this.scrollHeight - this.clientHeight))
+    })
+
+    const scrollDown = async (): Promise<void> => {
+      scrollContainer.scrollTop = 500
+      fireEvent.scroll(scrollContainer)
+      await waitFor(() => expect(screen.getAllByRole("button", { name: /^Mod \d+/ })).toHaveLength(55))
+      expect(getModsBrowseState()).toMatchObject({ visibleMods: 55, scrollTop: 500 })
+    }
+
+    await scrollDown()
+    fireEvent.change(screen.getByPlaceholderText("Text"), { target: { value: "needle" } })
+    expect(scrollContainer.scrollTop).toBe(0)
+    expect(getModsBrowseState()).toMatchObject({ visibleMods: DEFAULT_LOADED_MODS, scrollTop: 0 })
+
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^Mod \d+/ })).toHaveLength(DEFAULT_LOADED_MODS))
+    await scrollDown()
+    await user.click(screen.getByTitle("Show favorite Mods only"))
+    expect(scrollContainer.scrollTop).toBe(0)
+    expect(getModsBrowseState()).toMatchObject({ visibleMods: DEFAULT_LOADED_MODS, scrollTop: 0 })
+
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^Mod \d+/ })).toHaveLength(DEFAULT_LOADED_MODS))
+    await scrollDown()
+    await user.click(screen.getByTitle("Reload"))
+    expect(scrollContainer.scrollTop).toBe(0)
+    expect(getModsBrowseState()).toMatchObject({ visibleMods: DEFAULT_LOADED_MODS, scrollTop: 0 })
+  }, 30_000)
 })
