@@ -199,14 +199,14 @@ export interface AddGameVersion {
 
 export interface DeleteGameVersion {
   type: CONFIG_ACTIONS.DELETE_GAME_VERSION
-  payload: { version: string }
+  payload: { id: string }
 }
 
 export interface EditGameVersion {
   type: CONFIG_ACTIONS.EDIT_GAME_VERSION
   payload: {
-    version: string
-    updates: Partial<Omit<GameVersionType, "version">>
+    id: string
+    updates: Partial<Omit<GameVersionType, "id">>
   }
 }
 
@@ -390,12 +390,12 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
     case CONFIG_ACTIONS.DELETE_GAME_VERSION:
       return {
         ...config,
-        gameVersions: config.gameVersions.filter((gameVersion) => gameVersion.version !== action.payload.version)
+        gameVersions: config.gameVersions.filter((gameVersion) => gameVersion.id !== action.payload.id)
       }
     case CONFIG_ACTIONS.EDIT_GAME_VERSION:
       return {
         ...config,
-        gameVersions: config.gameVersions.map((gameVersion) => (gameVersion.version === action.payload.version ? { ...gameVersion, ...action.payload.updates } : gameVersion))
+        gameVersions: config.gameVersions.map((gameVersion) => (gameVersion.id === action.payload.id ? { ...gameVersion, ...action.payload.updates } : gameVersion))
       }
     case CONFIG_ACTIONS.ADD_FAV_MOD:
       return {

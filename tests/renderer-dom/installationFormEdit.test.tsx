@@ -11,12 +11,14 @@ import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 function anInstallation(overrides: Partial<InstallationType> = {}): InstallationType {
+  const version = overrides.version ?? "1.20.0"
   return {
     id: "install-a",
     name: "Install A",
     icon: "granite",
     path: "/games/a",
-    version: "1.20.0",
+    version,
+    gameVersionId: version === "1.20.0" ? "gv-1" : null,
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -31,13 +33,13 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
 }
 
 const GAME_VERSIONS: GameVersionType[] = [
-  { version: "1.20.0", path: "/versions/1.20.0" },
-  { version: "1.19.0", path: "/versions/1.19.0" }
+  { id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" },
+  { id: "gv-2", label: "1.19.0", version: "1.19.0", path: "/versions/1.19.0" }
 ]
 
 // Only 1.22.6 installed; the Installation under test still points at 1.19.8, the way a
 // config looks right after that version was uninstalled (#118).
-const GAME_VERSIONS_WITHOUT_1_19_8: GameVersionType[] = [{ version: "1.22.6", path: "/versions/1.22.6" }]
+const GAME_VERSIONS_WITHOUT_1_19_8: GameVersionType[] = [{ id: "gv-1", label: "1.22.6", version: "1.22.6", path: "/versions/1.22.6" }]
 const ORPHAN_WARNING = "This Installation's VS Version (1.19.8) is not installed anymore. Install it again or pick another one. Saving without picking one keeps it as it is."
 const UNSET_WARNING = "This Installation has no VS Version set. Pick one to set it. Saving without picking one leaves it unset."
 const VERSION_LEFT_UNCHANGED = "Everything else was saved, but this Installation still has no VS Version installed."

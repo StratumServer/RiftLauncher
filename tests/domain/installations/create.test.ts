@@ -101,6 +101,7 @@ describe("createInstallation", () => {
         icon: "icon-1",
         path: "/installations/my-new-installation",
         version: "1.20.4",
+        gameVersionId: null,
         startParams: "",
         backupsLimit: 3,
         backupsAuto: false,

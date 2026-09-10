@@ -76,6 +76,7 @@ function AddInslallation(): JSX.Element {
       icon: fields.icon.id,
       path,
       version: fields.version.version,
+      gameVersionId: fields.version.id,
       startParams: fields.startParams,
       backupsLimit: fields.backupsLimit,
       backupsAuto: fields.backupsAuto,

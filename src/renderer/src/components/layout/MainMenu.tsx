@@ -110,13 +110,13 @@ function MainMenu(): JSX.Element {
     // early "already playing" guard reads someone else's _playing, and must
     // not stomp on it if this call unwinds before ever taking it over).
     let playingInstallationId: string | undefined
-    let playingGameVersion: string | undefined
+    let playingGameVersionId: string | undefined
 
     try {
       if (!selectedInstallation) return addNotification(t("features.installations.noInstallationSelected"), "error")
       if (selectedInstallation._playing) return addNotification(t("features.installations.gameAlreadyRunning"), "error")
 
-      const gameVersionToRun = gameVersions.find((gv) => gv.version === selectedInstallation.version)
+      const gameVersionToRun = selectedInstallation.version ? gameVersions.find((gv) => gv.id === selectedInstallation.gameVersionId) : undefined
       if (!gameVersionToRun) {
         // An Installation with no version at all reaches here too (configManager normalizes a
         // missing version to ""), and interpolating that into versionNotInstalled reads as
@@ -129,10 +129,10 @@ function MainMenu(): JSX.Element {
       if (gameVersionToRun._playing) return addNotification(t("features.versions.versionPlaying", { version: selectedInstallation.version }), "error")
 
       playingInstallationId = selectedInstallation.id
-      playingGameVersion = gameVersionToRun.version
+      playingGameVersionId = gameVersionToRun.id
 
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: selectedInstallation.id, updates: { _playing: true } } })
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: gameVersionToRun.version, updates: { _playing: true } } })
+      configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: gameVersionToRun.id, updates: { _playing: true } } })
 
       if (selectedInstallation.backupsAuto) {
         const backupOutcome = await makeInstallationBackup(selectedInstallation.id)
@@ -178,7 +178,7 @@ function MainMenu(): JSX.Element {
       // included, so a failed launch never leaves the installation and game
       // version stuck at _playing: true until the app restarts (issue #40).
       if (playingInstallationId) configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: playingInstallationId, updates: { _playing: false } } })
-      if (playingGameVersion) configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: playingGameVersion, updates: { _playing: false } } })
+      if (playingGameVersionId) configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: playingGameVersionId, updates: { _playing: false } } })
       preventAppClose("remove", id, "Finished playing vintage Story.")
     }
   }

@@ -71,7 +71,7 @@ function EditInslallation(): JSX.Element {
     // No fallback: an Installation whose VS Version was uninstalled leaves the picker
     // empty rather than silently adopting whatever happens to be first in the config's
     // list, which used to get written to disk on the next save (#118).
-    fields.setVersion(gameVersions.find((gv) => gv.version === installation?.version))
+    fields.setVersion(gameVersions.find((gv) => gv.id === installation?.gameVersionId))
     fields.setStartParams(installation?.startParams ?? "")
     fields.setBackupsLimit(installation?.backupsLimit ?? 0)
     fields.setBackupsAuto(installation?.backupsAuto ?? false)
@@ -87,7 +87,7 @@ function EditInslallation(): JSX.Element {
   // value here, not a bug: configManager normalizes a missing or invalid version to the
   // empty string and keeps the Installation, and gameVersions can never hold an entry with
   // an empty version, so the empty case always falls through to the warning too (#118).
-  const missingGameVersion: string | undefined = installation && !gameVersions.some((gv) => gv.version === installation.version) ? installation.version : undefined
+  const missingGameVersion: string | undefined = installation && !gameVersions.some((gv) => gv.id === installation.gameVersionId) ? installation.version : undefined
 
   const handleEditInstallation = async (): Promise<void> => {
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
@@ -119,7 +119,10 @@ function EditInslallation(): JSX.Element {
         envVars: fields.envVars,
         launchWrapper: fields.launchWrapper.trim()
       }
-      if (fields.version) updates.version = fields.version.version
+      if (fields.version) {
+        updates.version = fields.version.version
+        updates.gameVersionId = fields.version.id
+      }
 
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id, updates } })
       addNotification(t("features.installations.installationSuccessfullyEdited"), "success")

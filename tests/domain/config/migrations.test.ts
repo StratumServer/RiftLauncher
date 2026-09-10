@@ -135,6 +135,33 @@ describe("floatMarkerToIntegerSchema", () => {
 })
 
 describe("migrateConfigDocument on real configs", () => {
+  it("migrates schema 4 installations to stable game-version ids and preserves orphans", () => {
+    const before = {
+      schemaVersion: 4,
+      gameVersions: [{ version: "1.22.7", path: "/versions/1.22.7-vanilla" }],
+      installations: [
+        { id: "install-vanilla", path: "/installations/vanilla", version: "1.22.7" },
+        { id: "install-orphan", path: "/installations/orphan", version: "1.19.8" }
+      ]
+    }
+
+    const result = migrateConfigDocument(before)
+    const repeated = migrateConfigDocument(before)
+    const doc = result.doc as { gameVersions: Array<Record<string, unknown>>; installations: Array<Record<string, unknown>> }
+    const repeatedDoc = repeated.doc as { gameVersions: Array<Record<string, unknown>> }
+
+    assert.equal(result.outcome, "migrated")
+    assert.equal(result.schema, 5)
+    assert.deepEqual(result.applied.at(-1), { fromSchema: 4, toSchema: 5 })
+    assert.equal(doc.gameVersions[0]!.label, "1.22.7")
+    assert.equal(typeof doc.gameVersions[0]!.id, "string")
+    assert.equal(doc.gameVersions[0]!.id, repeatedDoc.gameVersions[0]!.id, "legacy ids are deterministic")
+    assert.equal(doc.installations[0]!.gameVersionId, doc.gameVersions[0]!.id)
+    assert.equal(doc.installations[0]!.version, "1.22.7")
+    assert.equal(doc.installations[1]!.gameVersionId, null)
+    assert.equal(doc.installations[1]!.version, "1.19.8")
+  })
+
   it("brings today's 1.6 config to the current schema", () => {
     const before = floatEraConfig()
     const result = migrateConfigDocument(before)
@@ -145,7 +172,8 @@ describe("migrateConfigDocument on real configs", () => {
     assert.deepEqual(result.applied, [
       { fromSchema: 1, toSchema: 2 },
       { fromSchema: 2, toSchema: 3 },
-      { fromSchema: 3, toSchema: 4 }
+      { fromSchema: 3, toSchema: 4 },
+      { fromSchema: 4, toSchema: 5 }
     ])
 
     const doc = result.doc as Record<string, unknown>
@@ -210,7 +238,8 @@ describe("migrateConfigDocument on real configs", () => {
       [
         [FLOAT_ERA_CONFIG_SCHEMA, FIRST_INTEGER_CONFIG_SCHEMA],
         [2, 3],
-        [3, 4]
+        [3, 4],
+        [4, 5]
       ]
     )
     assert.equal(CONFIG_MIGRATIONS[CONFIG_MIGRATIONS.length - 1]?.toSchema, CURRENT_CONFIG_SCHEMA)

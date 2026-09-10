@@ -33,13 +33,13 @@ export function useUninstallGameVersion(): (version: GameVersionType, options?: 
       createUninstallPorts(),
       { version: toGameVersionSnapshot(version), usedByInstallations, confirmedInUse },
       {
-        onStarted: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: version.version, updates: { _deleting: true } } }),
-        onFinished: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: version.version, updates: { _deleting: false } } })
+        onStarted: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: version.id, updates: { _deleting: true } } }),
+        onFinished: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: version.id, updates: { _deleting: false } } })
       }
     )
 
     if (result.ok) {
-      configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: version.version } })
+      configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: version.id } })
       const messageKey = result.folderRemoved ? "features.versions.versionUninstalledSuccesfully" : "features.versions.versionUnlinkedSuccessfully"
       addNotification(t(messageKey, { version: version.version }), "success")
       return result

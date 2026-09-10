@@ -118,7 +118,8 @@ function ListInslallations(): JSX.Element {
             </ListItem>
 
             {installations.map((installation, index) => {
-              const isVersionMissing = !gameVersions.some((gv) => gv.version === installation.version)
+              const gameVersion = gameVersions.find((gv) => gv.id === installation.gameVersionId)
+              const isVersionMissing = !gameVersion
 
               return (
                 <ListItem key={installation.id}>
@@ -149,7 +150,7 @@ function ListInslallations(): JSX.Element {
                         title={isVersionMissing ? t("features.versions.versionNotInstalled", { version: installation.version }) : undefined}
                       >
                         {isVersionMissing && <PiWarningDuotone className="shrink-0" />}
-                        {installation.version}
+                        {gameVersion?.label ?? installation.version}
                       </p>
                       <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount as number })}</p>
                     </div>

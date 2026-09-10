@@ -26,6 +26,7 @@ const defaultInstallation: InstallationType = {
   icon: "",
   path: "",
   version: "",
+  gameVersionId: null,
   startParams: "",
   backupsLimit: 3,
   backupsAuto: false,
@@ -333,6 +334,7 @@ function normalizeInstallation(value: unknown): InstallationType | null {
     icon: asString(value.icon, "", 256),
     path: asString(value.path, ""),
     version: asString(value.version, "", 128),
+    gameVersionId: typeof value.gameVersionId === "string" && value.gameVersionId.length <= 128 ? value.gameVersionId : null,
     startParams: asString(value.startParams, "", 8_192),
     backupsLimit: asNumber(value.backupsLimit, defaultInstallation.backupsLimit, 0, 100),
     backupsAuto: asBoolean(value.backupsAuto, defaultInstallation.backupsAuto),
@@ -358,7 +360,9 @@ function normalizeInstallation(value: unknown): InstallationType | null {
 function normalizeGameVersion(value: unknown): GameVersionType | null {
   if (!isRecord(value)) return null
   const gameVersion: GameVersionType = {
+    id: asString(value.id, "", 128),
     version: asString(value.version, "", 128),
+    label: asString(value.label, "", 256) || asString(value.version, "", 128),
     path: asString(value.path, "")
   }
   // Only set when true so a plain version, or an unset one, doesn't grow a `linked: false`

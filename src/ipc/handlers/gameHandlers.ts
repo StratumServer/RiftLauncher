@@ -245,6 +245,9 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   assertTrustedIpcSender(event)
   const safeVersion = validateGameVersion(version)
   const safeInstallation = validateGameInstallation(installation)
+  if ((safeVersion.id !== undefined || safeInstallation.gameVersionId !== undefined) && safeVersion.id !== safeInstallation.gameVersionId) {
+    throw new TypeError("Game version and installation gameVersionId do not correlate")
+  }
   safeVersion.path = await assertManagedPath(safeVersion.path, "game version path")
   safeInstallation.path = await assertManagedPath(safeInstallation.path, "installation path")
   const config = await getConfig()

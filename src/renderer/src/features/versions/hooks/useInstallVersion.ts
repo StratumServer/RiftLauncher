@@ -38,6 +38,7 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
       downloadDescription: t("features.versions.gameVersionDownloadDesc", { version: version.version }),
       unpackDescription: t("features.versions.gameVersionExtractDesc", { version: version.version })
     })
+    const gameVersionId = crypto.randomUUID()
 
     const result = await installGameVersion(
       ports,
@@ -45,16 +46,16 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
         platform: await window.api.utils.getOs(),
         version: toDownloadableGameVersion(version),
         targetFolder: folder,
-        installedVersions: installedGameVersions.map((gv) => gv.version),
+        installedVersions: installedGameVersions.map((gv) => ({ version: gv.version, path: gv.path })),
         foldersInUse: [settings.backupsFolder, ...installedGameVersions.map((gv) => gv.path), ...installations.map((i) => i.path)]
       },
       {
         onRegistered: () => {
-          configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: { version: version.version, path: folder, _installing: true } })
+          configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: { id: gameVersionId, label: version.version, version: version.version, path: folder, _installing: true } })
           navigate("/versions")
         },
-        onInstalled: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: version.version, updates: { _installing: undefined } } }),
-        onDiscarded: () => configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: version.version } })
+        onInstalled: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: gameVersionId, updates: { _installing: undefined } } }),
+        onDiscarded: () => configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: gameVersionId } })
       }
     )
 

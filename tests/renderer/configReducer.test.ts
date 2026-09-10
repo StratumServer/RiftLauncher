@@ -48,6 +48,7 @@ function installation(overrides: Partial<InstallationType> = {}): InstallationTy
     icon: "",
     path: "/installs/install-1",
     version: "1.20.0",
+    gameVersionId: null,
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -66,7 +67,8 @@ function backup(overrides: Partial<BackupType> = {}): BackupType {
 }
 
 function gameVersion(overrides: Partial<GameVersionType> = {}): GameVersionType {
-  return { version: "1.20.0", path: "/versions/1.20.0", ...overrides }
+  const version = overrides.version ?? "1.20.0"
+  return { id: `game-version-${version}`, label: version, version, path: "/versions/1.20.0", ...overrides }
 }
 
 function icon(overrides: Partial<IconType> = {}): IconType {
@@ -412,6 +414,17 @@ describe("configReducer: installations", () => {
 })
 
 describe("configReducer: game versions", () => {
+  it("DELETE_GAME_VERSION removes only the selected build when version numbers are shared", () => {
+    const vanilla = { id: "gv-vanilla", label: "Vanilla", version: "1.22.7", path: "/versions/vanilla" } as unknown as GameVersionType
+    const optimum = { id: "gv-optimum", label: "Optimum", version: "1.22.7", path: "/versions/optimum" } as unknown as GameVersionType
+    const config = baseConfig({ gameVersions: [vanilla, optimum] })
+    const action = { type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: "gv-vanilla" } } as unknown as ConfigAction
+
+    const result = configReducer(config, action)
+
+    assert.deepEqual(result.gameVersions, [optimum])
+  })
+
   it("ADD_GAME_VERSION prepends, most recent first", () => {
     const existing = gameVersion({ version: "1.19.0" })
     const config = baseConfig({ gameVersions: [existing] })
@@ -429,13 +442,13 @@ describe("configReducer: game versions", () => {
     const remove = gameVersion({ version: "1.20.0" })
     const config = baseConfig({ gameVersions: [keep, remove] })
 
-    const result = configReducer(config, { type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: "1.20.0" } })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: remove.id } })
     assert.deepEqual(result.gameVersions, [keep])
   })
 
   it("DELETE_GAME_VERSION on a version naming nothing leaves every entry as it was", () => {
     const config = baseConfig({ gameVersions: [gameVersion()] })
-    const result = configReducer(config, { type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: "9.9.9" } })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: "missing" } })
     assert.deepEqual(result.gameVersions, config.gameVersions)
   })
 
@@ -444,7 +457,7 @@ describe("configReducer: game versions", () => {
     const other = gameVersion({ version: "1.19.0", path: "/other" })
     const config = baseConfig({ gameVersions: [target, other] })
 
-    const result = configReducer(config, { type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: "1.20.0", updates: { path: "/new" } } })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: target.id, updates: { path: "/new" } } })
     assert.equal(result.gameVersions.find((g) => g.version === "1.20.0")!.path, "/new")
     assert.equal(
       result.gameVersions.find((g) => g.version === "1.19.0"),
@@ -454,7 +467,7 @@ describe("configReducer: game versions", () => {
 
   it("EDIT_GAME_VERSION on a version naming nothing changes nothing", () => {
     const config = baseConfig({ gameVersions: [gameVersion()] })
-    const result = configReducer(config, { type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: "9.9.9", updates: { path: "/new" } } })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: "missing", updates: { path: "/new" } } })
     assert.deepEqual(result.gameVersions, config.gameVersions)
   })
 })

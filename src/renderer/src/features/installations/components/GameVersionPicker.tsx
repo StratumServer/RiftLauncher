@@ -65,8 +65,8 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
               .slice()
               .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
               .map((gv) => (
-                <TableBodyRow key={gv.version} onClick={() => onSelect(gv)} selected={version?.version === gv.version}>
-                  <TableCell className="w-full">{gv.version}</TableCell>
+                <TableBodyRow key={gv.id} onClick={() => onSelect(gv)} selected={version?.id === gv.id}>
+                  <TableCell className="w-full">{gv.label}</TableCell>
                 </TableBodyRow>
               ))}
           </TableBody>

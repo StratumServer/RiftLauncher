@@ -132,6 +132,23 @@ describe("installGameVersion preconditions", () => {
     assert.deepEqual(trace, [])
   })
 
+  it("allows the same version when the existing build is in another folder", async () => {
+    await installGameVersion(fakePorts(), input({ installedVersions: [{ version: VERSION, path: "/games/vanilla-1.20.4" }] }), recordingEvents())
+
+    assert.equal(trace[0], "registered")
+    assert.equal(
+      trace.some((entry) => entry.startsWith("download:")),
+      true
+    )
+  })
+
+  it("refuses the same version when the existing build uses the same folder", async () => {
+    const result = await installGameVersion(fakePorts(), input({ installedVersions: [{ version: VERSION, path: TARGET }] }), recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "version-already-installed" })
+    assert.deepEqual(trace, [])
+  })
+
   it("refuses a folder the launcher already uses for something else", async () => {
     const result = await installGameVersion(fakePorts(), input({ foldersInUse: ["/backups", TARGET] }), recordingEvents())
 

@@ -243,6 +243,24 @@ describe("normalizeConfig: installations", () => {
 })
 
 describe("normalizeConfig: game versions", () => {
+  it("keeps stable game-version identity and defaults a missing label to the version", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ gameVersions: [{ id: "gv-vanilla", version: "1.22.7", path: "/versions/vanilla" }] })
+    const normalized = result.gameVersions[0] as GameVersionType & { label: string }
+
+    assert.equal(normalized.id, "gv-vanilla")
+    assert.equal(normalized.label, "1.22.7")
+  })
+
+  it("keeps an installation's gameVersionId while retaining its version number", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ installations: [{ id: "install-1", path: "/installations/1", version: "1.22.7", gameVersionId: "gv-optimum" }] })
+    const normalized = result.installations[0] as InstallationType & { gameVersionId: string | null }
+
+    assert.equal(normalized.gameVersionId, "gv-optimum")
+    assert.equal(normalized.version, "1.22.7")
+  })
+
   it("drops entries that are not records, and entries missing a version or a path", async () => {
     const { normalizeConfig } = await freshConfigManager()
     const result = normalizeConfig({

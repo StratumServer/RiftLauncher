@@ -24,6 +24,7 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
     icon: "icon-1",
     path: "/games/a",
     version: "1.20.0",
+    gameVersionId: "game-version-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -39,6 +40,8 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
 
 function aGameVersion(overrides: Partial<GameVersionType> = {}): GameVersionType {
   return {
+    id: "game-version-1",
+    label: "1.20.0",
     version: "1.20.0",
     path: "/versions/1.20.0",
     ...overrides
@@ -150,6 +153,35 @@ afterEach(() => {
 })
 
 describe("MainMenu Play button", () => {
+  it("launches the build selected by gameVersionId when two builds share a version number", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+    const installation = { ...anInstallation({ version: "1.22.7" }), gameVersionId: "gv-optimum" } as unknown as InstallationType
+    const gameVersions = [
+      { id: "gv-vanilla", label: "Vanilla", version: "1.22.7", path: "/versions/vanilla" },
+      { id: "gv-optimum", label: "Optimum", version: "1.22.7", path: "/versions/optimum" }
+    ] as unknown as GameVersionType[]
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            lastUsedInstallation: "install-a",
+            installations: [installation],
+            gameVersions
+          })
+        )
+      },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await waitFor(() => expect(executeGame).toHaveBeenCalled())
+    expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ id: "gv-optimum", path: "/versions/optimum" }), installation)
+  })
+
   it("runs the selected installation and version, flips _playing for the run, and records playtime", async () => {
     const user = userEvent.setup()
 

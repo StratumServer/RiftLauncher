@@ -185,6 +185,20 @@ describe("EXECUTE_GAME", () => {
     await assert.rejects(() => executeGameHandler()(event, { version: "1.0.0", path: versionsFolder }, { path: "/somewhere" /* missing startParams etc */ }), /Invalid start parameters/)
   })
 
+  it("rejects a launch when the version id and installation gameVersionId do not correlate", async () => {
+    const gameVersionFolder = join(versionsFolder, "vanilla")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeConfig({ gameVersions: [{ id: "gv-vanilla", version: "1.22.7", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const version = { id: "gv-vanilla", version: "1.22.7", path: gameVersionFolder }
+    const installation = { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-optimum" }
+
+    await assert.rejects(() => executeGameHandler()(event, version, installation), /same game version|gameVersionId|correlate/i)
+  })
+
   it("rejects a game version path nothing authorizes", async () => {
     writeConfig({})
     const event = await createTrustedEvent()

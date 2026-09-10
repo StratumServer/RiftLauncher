@@ -36,15 +36,15 @@ function ListVersions(): JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  function installationsUsing(version: string): string[] {
-    return installations.filter((installation) => installation.version === version).map((installation) => installation.name)
+  function installationsUsing(version: GameVersionType): string[] {
+    return installations.filter((installation) => installation.gameVersionId === version.id).map((installation) => installation.name)
   }
 
   async function DeleteVersionHandler(): Promise<void> {
     if (versionToDelete === null) return addNotification(t("features.versions.noVersionSelected"), "error")
 
     const target = versionToDelete
-    const usedByInstallations = installationsUsing(target.version)
+    const usedByInstallations = installationsUsing(target)
     setVersionToDelete(null)
 
     const result = await uninstallVersion(target, { usedByInstallations })
@@ -104,10 +104,10 @@ function ListVersions(): JSX.Element {
               .slice()
               .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
               .map((gv) => (
-                <ListItem key={gv.version}>
+                <ListItem key={gv.id}>
                   <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
                     <div className="w-full flex items-center justify-center text-start font-bold pl-1">
-                      <p className="w-full">{gv.version}</p>
+                      <p className="w-full">{gv.label}</p>
                     </div>
 
                     <ThinSeparator />

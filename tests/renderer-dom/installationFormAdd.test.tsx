@@ -16,6 +16,7 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
     icon: "granite",
     path: "/games/a",
     version: "1.20.0",
+    gameVersionId: "gv-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -48,7 +49,9 @@ describe("AddInstallation", () => {
     const user = userEvent.setup()
     const ensurePathExists = vi.fn(async () => true)
     installMockWindowApi({
-      configManager: { getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }] })) },
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }] }))
+      },
       pathsManager: { ensurePathExists }
     })
 
@@ -75,8 +78,8 @@ describe("AddInstallation", () => {
           createMockConfig({
             defaultInstallationsFolder: "/installations",
             gameVersions: [
-              { version: "1.20.0", path: "/versions/1.20.0" },
-              { version: "Vintage Story 1.21.0", path: "/games/vintagestory", linked: true }
+              { id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" },
+              { id: "gv-2", label: "Vintage Story 1.21.0", version: "Vintage Story 1.21.0", path: "/games/vintagestory", linked: true }
             ]
           })
         )

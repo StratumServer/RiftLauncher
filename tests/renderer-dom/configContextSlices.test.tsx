@@ -14,6 +14,7 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
     icon: "icon-1",
     path: "/games/a",
     version: "1.20.0",
+    gameVersionId: "gv-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -37,7 +38,7 @@ function seededConfig(): ConfigType {
   return createMockConfig({
     lastUsedInstallation: "install-a",
     installations: [anInstallation()],
-    gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }]
+    gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }]
   })
 }
 
@@ -80,7 +81,7 @@ function Dispatchers(): JSX.Element {
   const configDispatch = useConfigDispatch()
   return (
     <>
-      <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: "1.20.0", updates: { _installing: true } } })}>edit game version</button>
+      <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: "1.20.0-id", updates: { _installing: true } } })}>edit game version</button>
       <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: "install-a", updates: { _modsCount: 7 } } })}>edit installation</button>
     </>
   )

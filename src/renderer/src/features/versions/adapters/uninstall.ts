@@ -9,6 +9,7 @@ export function createUninstallPorts(): UninstallGameVersionPorts {
 /** Copies the config-owned version into the plain shape the service reads. */
 export function toGameVersionSnapshot(version: GameVersionType): GameVersionSnapshot {
   return {
+    id: version.id,
     version: version.version,
     path: version.path,
     isPlaying: version._playing ?? false,

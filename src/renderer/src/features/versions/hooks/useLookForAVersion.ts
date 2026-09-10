@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
+import { folderIsInUse } from "@domain/paths"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { CONFIG_ACTIONS, useGameVersions, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 
@@ -12,10 +13,14 @@ export interface UseLookForAVersionResult {
   folder: string
   /** Version string, either detected on disk by `detectFolder` or typed in by hand when detection failed. */
   versionFound: string
+  /** Display label for the registered build; defaults to the detected version. */
+  label: string
   /** Opens the OS folder picker and looks for an installed game in what was picked. */
   detectFolder: () => Promise<void>
   /** Overrides `versionFound`, for a build `detectFolder` could not read a version from. */
   setVersionFound: (version: string) => void
+  /** Overrides the display label without changing the technical version number. */
+  setLabel: (label: string) => void
   /** Registers `versionFound` at `folder` as an already-installed game version. */
   addVersion: () => Promise<void>
 }
@@ -30,6 +35,7 @@ export function useLookForAVersion(): UseLookForAVersionResult {
 
   const [folder, setFolder] = useState<string>("")
   const [versionFound, setVersionFound] = useState<string>("")
+  const [label, setLabel] = useState<string>("")
 
   async function detectFolder(): Promise<void> {
     const path = await window.api.utils.selectFolderDialog()
@@ -42,11 +48,13 @@ export function useLookForAVersion(): UseLookForAVersionResult {
 
     if (!res.exists) {
       setVersionFound("")
+      setLabel("")
       addNotification(t("features.versions.noVersionFoundOnThatFolder"), "info")
       return
     }
 
     setVersionFound(res.installedGameVersion)
+    setLabel(res.installedGameVersion)
   }
 
   async function addVersion(): Promise<void> {
@@ -56,13 +64,22 @@ export function useLookForAVersion(): UseLookForAVersionResult {
       // sailed past the guard and got registered whitespace and all, which then failed to
       // match the same version typed cleanly anywhere else.
       const version = versionFound.trim()
+      const displayLabel = label.trim() || version
 
       if (!folder || !version) return addNotification(t("features.versions.missingFolderOrVersion"), "error")
 
-      if (gameVersions.some((gv) => gv.version === version)) return addNotification(t("features.versions.versionAlreadyInstalled", { version }), "error")
+      if (
+        folderIsInUse(
+          folder,
+          gameVersions.map((gv) => gv.path)
+        )
+      )
+        return addNotification(t("features.versions.folderAlreadyInUse", { version }), "error")
 
       const newGameVersion: GameVersionType = {
+        id: crypto.randomUUID(),
         version,
+        label: displayLabel,
         path: folder,
         linked: true
       }
@@ -76,8 +93,9 @@ export function useLookForAVersion(): UseLookForAVersionResult {
     } finally {
       setFolder("")
       setVersionFound("")
+      setLabel("")
     }
   }
 
-  return { folder, versionFound, detectFolder, setVersionFound, addVersion }
+  return { folder, versionFound, label, detectFolder, setVersionFound, setLabel, addVersion }
 }

@@ -18,7 +18,7 @@
  */
 
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 4
+export const CURRENT_CONFIG_SCHEMA = 5
 
 /**
  * First schema expressed as an integer.
@@ -247,8 +247,59 @@ export const singleAccountToAccountList: ConfigMigration = {
   }
 }
 
+/** Stable id for a game version that predates the id field. */
+export function legacyGameVersionId(version: string, path: string): string {
+  const input = `${version}\0${path}`
+  let hash = 0x811c9dc5
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `legacy-${(hash >>> 0).toString(16).padStart(8, "0")}`
+}
+
+/** Adds stable identities to the game-version catalog and links unambiguous old installations. */
+export const addGameVersionIdentity: ConfigMigration = {
+  fromSchema: 4,
+  toSchema: 5,
+  migrate(doc: unknown): unknown {
+    if (!isRecord(doc)) return doc
+
+    const usedIds = new Set<string>()
+    const gameVersions = Array.isArray(doc.gameVersions)
+      ? doc.gameVersions.map((entry: unknown) => {
+          if (!isRecord(entry)) return entry
+
+          const version = typeof entry.version === "string" ? entry.version : ""
+          const path = typeof entry.path === "string" ? entry.path : ""
+          let id = typeof entry.id === "string" && entry.id.length > 0 ? entry.id : legacyGameVersionId(version, path)
+          let suffix = 2
+          while (usedIds.has(id)) id = `${legacyGameVersionId(version, path)}-${suffix++}`
+          usedIds.add(id)
+
+          return {
+            ...entry,
+            id,
+            label: typeof entry.label === "string" && entry.label.length > 0 ? entry.label : version
+          }
+        })
+      : doc.gameVersions
+
+    const validVersions = Array.isArray(gameVersions) ? gameVersions.filter(isRecord) : []
+    const installations = Array.isArray(doc.installations)
+      ? doc.installations.map((entry: unknown) => {
+          if (!isRecord(entry)) return entry
+          const matching = validVersions.filter((gameVersion) => gameVersion.version === entry.version)
+          return { ...entry, gameVersionId: matching.length === 1 ? matching[0]!.id : null }
+        })
+      : doc.installations
+
+    return { ...doc, gameVersions, installations }
+  }
+}
+
 /** Every migration the launcher knows, lowest schema first. */
-export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions, singleAccountToAccountList]
+export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions, singleAccountToAccountList, addGameVersionIdentity]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {
   return new Map(migrations.map((migration) => [migration.fromSchema, migration]))
