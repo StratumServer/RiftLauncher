@@ -56,7 +56,7 @@ export interface InstallGameVersionInput {
   /** Folder the version is installed into. */
   targetFolder: string
   /** Registered builds, used to reject only the same version in the same folder. */
-  installedVersions: readonly (string | { version: string; path: string })[]
+  installedVersions: readonly { version: string; path: string }[]
   /** Folders the launcher already uses for backups, versions or installations. */
   foldersInUse: readonly string[]
 }
@@ -128,13 +128,7 @@ export async function installGameVersion(ports: InstallGameVersionPorts, input: 
   const { version, targetFolder } = input
   const os = toGameOs(input.platform)
 
-  if (
-    input.installedVersions.some((installed) =>
-      typeof installed === "string"
-        ? installed === version.version
-        : installed.version === version.version && folderIsInUse(targetFolder, [installed.path], input.platform === "win32" ? "win32" : "posix")
-    )
-  )
+  if (input.installedVersions.some((installed) => installed.version === version.version && folderIsInUse(targetFolder, [installed.path], input.platform === "win32" ? "win32" : "posix")))
     return refuse("version-already-installed")
   if (folderIsInUse(targetFolder, input.foldersInUse, input.platform === "win32" ? "win32" : "posix")) return refuse("folder-in-use")
 

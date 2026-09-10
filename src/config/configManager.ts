@@ -6,7 +6,7 @@ import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord } from "@src/ipc/validation"
-import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from "@domain/config/migrations"
+import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeBackgroundId } from "@domain/backgrounds"
 import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
@@ -334,7 +334,7 @@ function normalizeInstallation(value: unknown): InstallationType | null {
     icon: asString(value.icon, "", 256),
     path: asString(value.path, ""),
     version: asString(value.version, "", 128),
-    gameVersionId: typeof value.gameVersionId === "string" && value.gameVersionId.length <= 128 ? value.gameVersionId : null,
+    gameVersionId: typeof value.gameVersionId === "string" && value.gameVersionId.length > 0 && value.gameVersionId.length <= 128 ? value.gameVersionId : null,
     startParams: asString(value.startParams, "", 8_192),
     backupsLimit: asNumber(value.backupsLimit, defaultInstallation.backupsLimit, 0, 100),
     backupsAuto: asBoolean(value.backupsAuto, defaultInstallation.backupsAuto),
@@ -401,7 +401,8 @@ function normalizeAccounts(value: unknown): AccountPublicType[] {
 }
 
 export function normalizeConfig(config: unknown): ConfigType {
-  const rawConfig = (isRecord(config) ? config : {}) as Partial<ConfigType>
+  const repairedConfig = repairGameVersionIdentity(config)
+  const rawConfig = (isRecord(repairedConfig) ? repairedConfig : {}) as Partial<ConfigType>
   const rawWindow = (isRecord(rawConfig.window) ? rawConfig.window : {}) as Partial<WindowType>
   const installations = (Array.isArray(rawConfig.installations) ? rawConfig.installations : [])
     .map(normalizeInstallation)

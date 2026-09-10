@@ -228,7 +228,9 @@ export function validateGameInstallation(value: unknown): Pick<InstallationType,
       ? { gameVersionId: null }
       : typeof value.gameVersionId === "string"
         ? { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) }
-        : {})
+        : value.gameVersionId === undefined
+          ? {}
+          : { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) })
   }
 }
 

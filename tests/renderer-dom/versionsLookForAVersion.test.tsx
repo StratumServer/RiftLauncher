@@ -9,6 +9,37 @@ import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 describe("LookForAVersion", () => {
+  it("uses the host platform when rejecting a Windows folder already in use", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      utils: {
+        getOs: vi.fn(async () => "win32" as NodeJS.Platform),
+        selectFolderDialog: vi.fn(async () => ["Games\\VintageStory"])
+      },
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7" })) },
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.22.7", path: "games/vintagestory" }] })),
+        saveConfig
+      }
+    })
+
+    renderWithProviders(
+      <>
+        <LookForAVersion />
+        <NotificationsOverlay />
+      </>,
+      { route: "/versions/look-for-a-version" }
+    )
+
+    await user.click(screen.getByTitle("Browse"))
+    await screen.findByDisplayValue("Games\\VintageStory")
+    await user.click(screen.getByTitle("Add"))
+
+    await waitFor(() => expect(saveConfig).not.toHaveBeenCalled())
+    expect(await screen.findByText("That folder is already in use!")).toBeTruthy()
+  })
+
   it("registers a second build with the same version when its folder is different", async () => {
     const user = userEvent.setup()
     const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)

@@ -68,10 +68,13 @@ export function useLookForAVersion(): UseLookForAVersionResult {
 
       if (!folder || !version) return addNotification(t("features.versions.missingFolderOrVersion"), "error")
 
+      const platform = (await window.api.utils.getOs()) === "win32" ? "win32" : "posix"
+
       if (
         folderIsInUse(
           folder,
-          gameVersions.map((gv) => gv.path)
+          gameVersions.map((gv) => gv.path),
+          platform
         )
       )
         return addNotification(t("features.versions.folderAlreadyInUse", { version }), "error")

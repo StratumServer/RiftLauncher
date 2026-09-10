@@ -8,7 +8,7 @@ import type { GameVersionSnapshot, UninstallGameVersionEvents, UninstallGameVers
 let trace: string[] = []
 
 function version(overrides: Partial<GameVersionSnapshot> = {}): GameVersionSnapshot {
-  return { id: "game-version-1", version: "1.20.4", path: "/games/1.20.4", isPlaying: false, isDeleting: false, linked: false, ...overrides }
+  return { version: "1.20.4", path: "/games/1.20.4", isPlaying: false, isDeleting: false, linked: false, ...overrides }
 }
 
 function input(overrides: Partial<Omit<UninstallGameVersionInput, "version">> & { version?: GameVersionSnapshot } = {}): UninstallGameVersionInput {

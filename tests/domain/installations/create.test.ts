@@ -115,6 +115,12 @@ describe("createInstallation", () => {
     })
   })
 
+  it("carries the selected game-version id into the new installation", () => {
+    const result = createInstallation(ports(), input({ gameVersionId: "gv-optimum" }))
+
+    assert.equal(result.ok && result.installation.gameVersionId, "gv-optimum")
+  })
+
   it("mints a fresh id on every call", () => {
     const p = ports()
 

@@ -28,6 +28,7 @@ export function useUninstallGameVersion(): (version: GameVersionType, options?: 
 
   return async function uninstallVersion(version, options = {}) {
     const { usedByInstallations = [], confirmedInUse = false } = options
+    const displayName = version.label || version.version
 
     const result = await uninstallGameVersion(
       createUninstallPorts(),
@@ -41,7 +42,7 @@ export function useUninstallGameVersion(): (version: GameVersionType, options?: 
     if (result.ok) {
       configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: version.id } })
       const messageKey = result.folderRemoved ? "features.versions.versionUninstalledSuccesfully" : "features.versions.versionUnlinkedSuccessfully"
-      addNotification(t(messageKey, { version: version.version }), "success")
+      addNotification(t(messageKey, { version: displayName }), "success")
       return result
     }
 
@@ -53,10 +54,10 @@ export function useUninstallGameVersion(): (version: GameVersionType, options?: 
 
     if (logged) {
       window.api.utils.logMessage("error", `${LOG_TAG} Error uninstalling a VS Version.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Error uninstalling VS Version ${version.version}: ${result.reason}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Error uninstalling VS Version ${displayName}: ${result.reason}.`)
     }
 
-    addNotification(t(messageKey, { version: version.version }), "error")
+    addNotification(t(messageKey, { version: displayName }), "error")
     return result
   }
 }

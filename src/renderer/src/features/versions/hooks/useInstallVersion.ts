@@ -34,7 +34,7 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
       startDownload,
       startExtract,
       startInstall,
-      taskName: t("features.versions.gameVersionTaskName", { version: version.version }),
+      taskName: `${t("features.versions.gameVersionTaskName", { version: version.version })} (${folder})`,
       downloadDescription: t("features.versions.gameVersionDownloadDesc", { version: version.version }),
       unpackDescription: t("features.versions.gameVersionExtractDesc", { version: version.version })
     })

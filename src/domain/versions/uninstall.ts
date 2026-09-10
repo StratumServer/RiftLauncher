@@ -2,7 +2,6 @@ import type { FileSystem } from "../ports"
 
 /** The game version state an uninstall decision needs, copied out of wherever it lives. */
 export interface GameVersionSnapshot {
-  id: string
   version: string
   path: string
   isPlaying: boolean

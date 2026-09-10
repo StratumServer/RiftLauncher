@@ -126,7 +126,16 @@ beforeEach(() => {
 
 describe("installGameVersion preconditions", () => {
   it("refuses a version the launcher already has", async () => {
-    const result = await installGameVersion(fakePorts(), input({ installedVersions: ["1.20.3", VERSION] }), recordingEvents())
+    const result = await installGameVersion(
+      fakePorts(),
+      input({
+        installedVersions: [
+          { version: "1.20.3", path: "/games/1.20.3" },
+          { version: VERSION, path: TARGET }
+        ]
+      }),
+      recordingEvents()
+    )
 
     assert.deepEqual(result, { ok: false, reason: "version-already-installed" })
     assert.deepEqual(trace, [])
@@ -183,7 +192,7 @@ describe("installGameVersion preconditions", () => {
   })
 
   it("registers nothing when a precondition fails", async () => {
-    await installGameVersion(fakePorts(), input({ installedVersions: [VERSION] }), recordingEvents())
+    await installGameVersion(fakePorts(), input({ installedVersions: [{ version: VERSION, path: TARGET }] }), recordingEvents())
 
     assert.equal(trace.includes("registered"), false)
     assert.equal(

@@ -98,7 +98,7 @@
       "versionUninstalledSuccesfully": "VS Version {{version}} uninstalled successfully!",
       "versionUninstallationFailed": "An error occurred while uninstalling VS Version {{version}}!",
       "versionNotInstalled": "VS Version {{version}} not installed!",
-      "versionNotInstalledPickAnother": "This Installation's VS Version ({{version}}) is not installed anymore. Install it again or pick another one. Saving without picking one keeps it as it is.",
+      "versionNotInstalledPickAnother": "This Installation's VS Version ({{version}}) is not installed anymore. Pick another one. Saving without picking one keeps it as it is.",
       "noVersionSet": "This Installation has no VS Version set!",
       "noVersionSetPickOne": "This Installation has no VS Version set. Pick one to set it. Saving without picking one leaves it unset.",
       "versionLeftUnchanged": "Everything else was saved, but this Installation still has no VS Version installed.",

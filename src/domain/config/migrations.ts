@@ -258,43 +258,63 @@ export function legacyGameVersionId(version: string, path: string): string {
   return `legacy-${(hash >>> 0).toString(16).padStart(8, "0")}`
 }
 
+function usableGameVersionId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128 && !value.includes("\0")
+}
+
+function usableGameVersionLabel(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 256 && !value.includes("\0")
+}
+
+/** Repairs identities and legacy references in a document without changing its schema marker. */
+export function repairGameVersionIdentity(doc: unknown): unknown {
+  if (!isRecord(doc)) return doc
+
+  const usedIds = new Set<string>()
+  const gameVersions = Array.isArray(doc.gameVersions)
+    ? doc.gameVersions.map((entry: unknown) => {
+        if (!isRecord(entry)) return entry
+
+        const version = typeof entry.version === "string" ? entry.version : ""
+        const path = typeof entry.path === "string" ? entry.path : ""
+        const existingId = usableGameVersionId(entry.id) ? entry.id : undefined
+        let baseId = existingId ?? legacyGameVersionId(version, path)
+        let id = baseId
+        let suffix = 2
+        if (usedIds.has(id) && existingId !== undefined) {
+          baseId = legacyGameVersionId(version, path)
+          id = baseId
+        }
+        while (usedIds.has(id)) id = `${baseId}-${suffix++}`
+        usedIds.add(id)
+
+        return {
+          ...entry,
+          id,
+          label: usableGameVersionLabel(entry.label) ? entry.label : version
+        }
+      })
+    : doc.gameVersions
+
+  const validVersions = Array.isArray(gameVersions) ? gameVersions.filter(isRecord) : []
+  const installations = Array.isArray(doc.installations)
+    ? doc.installations.map((entry: unknown) => {
+        if (!isRecord(entry) || "gameVersionId" in entry) return entry
+
+        const matching = validVersions.filter((gameVersion) => gameVersion.version === entry.version)
+        return { ...entry, gameVersionId: matching.length === 1 ? matching[0]!.id : null }
+      })
+    : doc.installations
+
+  return { ...doc, gameVersions, installations }
+}
+
 /** Adds stable identities to the game-version catalog and links unambiguous old installations. */
 export const addGameVersionIdentity: ConfigMigration = {
   fromSchema: 4,
   toSchema: 5,
   migrate(doc: unknown): unknown {
-    if (!isRecord(doc)) return doc
-
-    const usedIds = new Set<string>()
-    const gameVersions = Array.isArray(doc.gameVersions)
-      ? doc.gameVersions.map((entry: unknown) => {
-          if (!isRecord(entry)) return entry
-
-          const version = typeof entry.version === "string" ? entry.version : ""
-          const path = typeof entry.path === "string" ? entry.path : ""
-          let id = typeof entry.id === "string" && entry.id.length > 0 ? entry.id : legacyGameVersionId(version, path)
-          let suffix = 2
-          while (usedIds.has(id)) id = `${legacyGameVersionId(version, path)}-${suffix++}`
-          usedIds.add(id)
-
-          return {
-            ...entry,
-            id,
-            label: typeof entry.label === "string" && entry.label.length > 0 ? entry.label : version
-          }
-        })
-      : doc.gameVersions
-
-    const validVersions = Array.isArray(gameVersions) ? gameVersions.filter(isRecord) : []
-    const installations = Array.isArray(doc.installations)
-      ? doc.installations.map((entry: unknown) => {
-          if (!isRecord(entry)) return entry
-          const matching = validVersions.filter((gameVersion) => gameVersion.version === entry.version)
-          return { ...entry, gameVersionId: matching.length === 1 ? matching[0]!.id : null }
-        })
-      : doc.installations
-
-    return { ...doc, gameVersions, installations }
+    return repairGameVersionIdentity(doc)
   }
 }
 

@@ -312,13 +312,13 @@ describe("EXECUTE_GAME", () => {
     writeFileSync(executablePath, `#!/bin/sh\nprintf '%s\\n' "$@" > '${gameArgvFile}'\n`)
     chmodSync(wrapperPath, 0o755)
     chmodSync(executablePath, 0o755)
-    writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+    writeConfig({ gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
 
     const event = await createTrustedEvent()
     const result = await executeGameHandler()(
       event,
-      { version: "1.20.0", path: gameVersionFolder },
-      baseInstallation({ path: installationFolder, startParams: "--openWorld My World", launchWrapper: wrapperPath })
+      { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder },
+      { ...baseInstallation({ path: installationFolder, startParams: "--openWorld My World", launchWrapper: wrapperPath }), gameVersionId: "gv-1.20.0" }
     )
 
     assert.deepEqual(result, { ok: true, exitCode: 0 })
