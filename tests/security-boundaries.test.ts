@@ -68,6 +68,7 @@ describe("process and navigation boundaries", () => {
       launchWrapper: ""
     })
     assert.throws(() => validateGameVersion({ version: "1.22.6", path: "/" }), /Invalid game version path/)
+    assert.throws(() => validateGameVersion({ id: 42, version: "1.22.6", path: "/tmp/versions/1.22.6" }), /Invalid game version id/)
     assert.throws(() => validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "", gameVersionId: 42 }), /Invalid installation game version id/)
     assert.throws(() => parseSafeEnvironment("PATH=/tmp"), /Invalid environment variable/)
     assert.throws(() => validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "", launchWrapper: "x".repeat(4_097) }), /Invalid launch wrapper/)

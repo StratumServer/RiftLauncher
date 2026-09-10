@@ -199,6 +199,22 @@ describe("EXECUTE_GAME", () => {
     await assert.rejects(() => executeGameHandler()(event, version, installation), /same game version|gameVersionId|correlate/i)
   })
 
+  it("accepts matching version identities and reaches the launch checks", async () => {
+    const gameVersionFolder = join(versionsFolder, "matching")
+    const installationFolder = join(managedFolder, "Matching")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeConfig({ gameVersions: [{ id: "gv-matching", version: "1.22.7", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const version = { id: "gv-matching", version: "1.22.7", path: gameVersionFolder }
+    const installation = { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-matching" }
+
+    const result = await executeGameHandler()(event, version, installation)
+
+    assert.deepEqual(result, { ok: false, reason: "no-executable" })
+  })
+
   it("rejects a game version path nothing authorizes", async () => {
     writeConfig({})
     const event = await createTrustedEvent()
