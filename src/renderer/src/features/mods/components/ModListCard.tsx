@@ -1,6 +1,6 @@
 import { memo } from "react"
 import { useTranslation } from "react-i18next"
-import { PiDownloadDuotone, PiStarDuotone, PiChatCenteredTextDuotone, PiUserCircleDuotone } from "react-icons/pi"
+import { PiDownloadDuotone, PiStarDuotone, PiStarFill, PiChatCenteredTextDuotone, PiUserCircleDuotone } from "react-icons/pi"
 import { FiExternalLink } from "react-icons/fi"
 import clsx from "clsx"
 
@@ -86,6 +86,14 @@ function ModListCard({
       </div>
 
       <div className="absolute w-full top-0 flex items-center justify-between p-1">
+        {/*
+         * The favorite hue goes on the icon: a colour on the ghost FormButton loses the cascade
+         * to the variant's own `text-zinc-200` and never paints (issue #414). The solid star and
+         * the always-on `bg-zinc-950` pill are both load-bearing: the star floats over a mod logo
+         * the launcher does not control, and a yellow icon alone reads about 1.6:1 on a bright
+         * one. The pill is set in the hover state too so the button's own hover fill cannot
+         * replace it. A non-favorite star stays hidden until the card is hovered.
+         */}
         <FormButton
           title={t("generic.favorite")}
           onClick={(e) => {
@@ -94,9 +102,9 @@ function ModListCard({
           }}
           variant="ghost"
           ariaPressed={isFav}
-          className={clsx("p-1 text-lg", isFav && "text-yellow-400", !isFav && "opacity-0 group-hover:opacity-100 duration-200")}
+          className={clsx("p-1 text-lg bg-zinc-950/60 hover:bg-zinc-950/70", !isFav && "opacity-0 group-hover:opacity-100 duration-200")}
         >
-          <PiStarDuotone />
+          {isFav ? <PiStarFill className="text-yellow-400" /> : <PiStarDuotone />}
         </FormButton>
 
         <FormButton

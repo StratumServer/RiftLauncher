@@ -247,28 +247,41 @@ describe("ListMods", () => {
     )
 
     await screen.findByText("Better Ruins", {}, { timeout: 3000 })
-    const favoriteButton = screen.getByTitle("Favorite")
-    expect(favoriteButton.className).not.toContain("text-yellow-400")
+
+    // #414: assert the active state on the icon, not on the button. A hue handed to the
+    // ghost FormButton through `className` loses the cascade to the variant's own
+    // `text-zinc-200`, so `button.className` still carried "text-yellow-400" while the
+    // star rendered grey. The star swaps PiStarDuotone (an interior path at opacity 0.2)
+    // for a solid PiStarFill that carries the hue itself.
+    const star = (): SVGElement => {
+      const svg = screen.getByTitle("Favorite").querySelector("svg")
+      if (!svg) throw new Error("favorite star icon not found")
+      return svg
+    }
+    expect(star().getAttribute("class") ?? "").not.toContain("text-yellow-400")
+    expect(star().querySelector('path[opacity="0.2"]')).not.toBeNull()
 
     // configReducer's ADD_FAV_MOD pushes onto favMods without checking for an existing
     // entry: onToggleFavMod only stays correct because it reads a live favMods off its own
     // useCallback dependency array, not a stale closure from the render that first mounted
     // the button. A regression there would either favorite twice in a row (a duplicate modid
     // sitting in favMods) or never flip back, and this round trip is what would catch it.
-    await user.click(favoriteButton)
+    await user.click(screen.getByTitle("Favorite"))
     await waitFor(() => expect(api.configManager.saveConfig).toHaveBeenCalled())
     await waitFor(() => {
       const lastSavedConfig = vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0]
       expect(lastSavedConfig?.favMods).toEqual([123])
     })
-    expect(screen.getByTitle("Favorite").className).toContain("text-yellow-400")
+    expect(star().getAttribute("class")).toContain("text-yellow-400")
+    expect(star().querySelector('path[opacity="0.2"]')).toBeNull()
 
     await user.click(screen.getByTitle("Favorite"))
     await waitFor(() => {
       const lastSavedConfig = vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0]
       expect(lastSavedConfig?.favMods).toEqual([])
     })
-    expect(screen.getByTitle("Favorite").className).not.toContain("text-yellow-400")
+    expect(star().getAttribute("class") ?? "").not.toContain("text-yellow-400")
+    expect(star().querySelector('path[opacity="0.2"]')).not.toBeNull()
   })
 
   it("re-reads the installed markers when a mod download finishes", async () => {
