@@ -40,7 +40,7 @@ const GAME_VERSIONS: GameVersionType[] = [
 // Only 1.22.6 installed; the Installation under test still points at 1.19.8, the way a
 // config looks right after that version was uninstalled (#118).
 const GAME_VERSIONS_WITHOUT_1_19_8: GameVersionType[] = [{ id: "gv-1", label: "1.22.6", version: "1.22.6", path: "/versions/1.22.6" }]
-const ORPHAN_WARNING = "This Installation's VS Version (1.19.8) is not installed anymore. Install it again or pick another one. Saving without picking one keeps it as it is."
+const ORPHAN_WARNING = "This Installation's VS Version (1.19.8) is not installed anymore. Pick another one. Saving without picking one keeps it as it is."
 const UNSET_WARNING = "This Installation has no VS Version set. Pick one to set it. Saving without picking one leaves it unset."
 const VERSION_LEFT_UNCHANGED = "Everything else was saved, but this Installation still has no VS Version installed."
 
