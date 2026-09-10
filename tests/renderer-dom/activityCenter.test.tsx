@@ -53,8 +53,13 @@ function panel(): HTMLElement {
 
 /** Exposes the presented toast so timer behaviour is read off state, not the DOM. */
 function ActiveToastProbe(): JSX.Element {
-  const { activeToast } = useNotificationsContext()
-  return <span data-testid="active-toast">{activeToast?.body ?? "none"}</span>
+  const { activeToast, toastPaused } = useNotificationsContext()
+  return (
+    <>
+      <span data-testid="active-toast">{activeToast?.body ?? "none"}</span>
+      <span data-testid="toast-paused">{String(toastPaused)}</span>
+    </>
+  )
 }
 
 describe("ActivityCenter", () => {
@@ -872,6 +877,97 @@ describe("toast queue timing", () => {
 
       act(() => vi.advanceTimersByTime(30_000))
       expect(screen.getByTestId("active-toast").textContent).toBe("A successful action")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("resumes the queue when a focused banner is dismissed", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+      const discard = screen.getByRole("button", { name: "Discard notification" })
+      discard.focus()
+      expect(document.activeElement).toBe(discard)
+
+      fireEvent.click(discard)
+      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+      expect(screen.getByTestId("toast-paused").textContent).toBe("false")
+
+      act(() => vi.advanceTimersByTime(5_000))
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("resumes the queue after answering a focused question", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add actionable warning" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      const resolve = screen.getByRole("button", { name: "Resolve" })
+      resolve.focus()
+      expect(document.activeElement).toBe(resolve)
+
+      fireEvent.click(resolve)
+      expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+      expect(screen.getByTestId("toast-paused").textContent).toBe("false")
+
+      act(() => vi.advanceTimersByTime(8_500))
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("shortens an active banner using its remaining time, not a fresh turn", async () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      act(() => vi.advanceTimersByTime(7_000))
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+
+      expect(screen.getByTestId("toast-paused").textContent).toBe("false")
+      await act(async () => {
+        await Promise.resolve()
+      })
+      act(() => vi.advanceTimersByTime(1_100))
+      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
     } finally {
       vi.useRealTimers()
     }

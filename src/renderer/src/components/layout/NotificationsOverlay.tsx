@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { PiInfoDuotone, PiWarningDuotone, PiCheckCircleDuotone, PiProhibitInsetDuotone, PiXCircleDuotone } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
@@ -17,6 +18,63 @@ function NotificationsOverlay(): JSX.Element {
   const { t } = useTranslation()
   const { activeToast, activeToastDuration, dismissToast, invokeAction, setToastPaused, toastPaused } = useNotificationsContext()
   const reduceMotion = useReducedMotion()
+  const regionRef = useRef<HTMLDivElement>(null)
+  const pointerInside = useRef(false)
+
+  const reconcilePause = useCallback((): void => {
+    const region = regionRef.current
+    if (!region) return
+
+    setToastPaused(pointerInside.current || region.contains(document.activeElement))
+  }, [setToastPaused])
+
+  useEffect(() => {
+    let disposed = false
+    let queued = false
+
+    const scheduleReconcile = (): void => {
+      if (queued) return
+      queued = true
+      queueMicrotask(() => {
+        queued = false
+        if (!disposed) reconcilePause()
+      })
+    }
+    const handleMouseOver = (event: MouseEvent): void => {
+      pointerInside.current = regionRef.current?.contains(event.target as Node | null) ?? false
+      scheduleReconcile()
+    }
+    const handleFocusChange = (): void => scheduleReconcile()
+
+    document.addEventListener("mouseover", handleMouseOver, true)
+    document.addEventListener("focusin", handleFocusChange, true)
+    document.addEventListener("focusout", handleFocusChange, true)
+    reconcilePause()
+
+    return (): void => {
+      disposed = true
+      document.removeEventListener("mouseover", handleMouseOver, true)
+      document.removeEventListener("focusin", handleFocusChange, true)
+      document.removeEventListener("focusout", handleFocusChange, true)
+    }
+  }, [activeToast?.id, reconcilePause])
+
+  const handleMouseEnter = (): void => {
+    pointerInside.current = true
+    setToastPaused(true)
+  }
+  const handleMouseLeave = (): void => {
+    pointerInside.current = false
+    reconcilePause()
+  }
+  const handleFocusCapture = (): void => setToastPaused(true)
+  const handleBlurCapture = (): void => queueMicrotask(reconcilePause)
+
+  const releaseFocusAndReconcile = (): void => {
+    const region = regionRef.current
+    if (region?.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+    reconcilePause()
+  }
 
   return (
     // Always-mounted polite live region: a queued toast inserted here minutes
@@ -34,13 +92,14 @@ function NotificationsOverlay(): JSX.Element {
     // full turn rather than resuming what was left of it: the point is to give
     // back the reading time, not to hand back two hundred milliseconds of it.
     <div
+      ref={regionRef}
       role="status"
       aria-live="polite"
       aria-atomic="false"
-      onMouseEnter={() => setToastPaused(true)}
-      onMouseLeave={() => setToastPaused(false)}
-      onFocusCapture={() => setToastPaused(true)}
-      onBlurCapture={() => setToastPaused(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocusCapture={handleFocusCapture}
+      onBlurCapture={handleBlurCapture}
       className="w-[20rem] h-fit absolute flex flex-col items-end top-2 right-2 z-800 gap-2"
     >
       <AnimatePresence>
@@ -66,7 +125,17 @@ function NotificationsOverlay(): JSX.Element {
                     {activeToast.options.actions.map((action, index) => {
                       const actionId = action.id ?? "action-" + index
                       return (
-                        <NormalButton key={actionId} variant="secondary" className="text-xs" title={action.label} ariaLabel={action.label} onClick={() => invokeAction(activeToast.id, actionId)}>
+                        <NormalButton
+                          key={actionId}
+                          variant="secondary"
+                          className="text-xs"
+                          title={action.label}
+                          ariaLabel={action.label}
+                          onClick={() => {
+                            releaseFocusAndReconcile()
+                            invokeAction(activeToast.id, actionId)
+                          }}
+                        >
                           {action.label}
                         </NormalButton>
                       )
@@ -80,12 +149,16 @@ function NotificationsOverlay(): JSX.Element {
               title={t("notifications.discard")}
               ariaLabel={t("notifications.discard")}
               variant="ghost"
-              onClick={() => dismissToast(activeToast.id, "manual")}
+              onClick={() => {
+                releaseFocusAndReconcile()
+                dismissToast(activeToast.id, "manual")
+              }}
             >
               <PiXCircleDuotone />
             </NormalButton>
             {activeToastDuration != null && (
               <motion.div
+                key={activeToastDuration}
                 data-testid="toast-timer"
                 aria-hidden="true"
                 className={clsx("absolute inset-x-0 bottom-0 h-0.5 origin-left", TIMER_COLOR_TYPES[activeToast.type])}
