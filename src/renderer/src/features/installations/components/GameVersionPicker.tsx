@@ -5,21 +5,22 @@ import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { FormBody, FormHead, FormLabel, FromGroup } from "@renderer/components/ui/FormComponents"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import { LinkButton } from "@renderer/components/ui/Buttons"
+import type { InstallationVersionStatus } from "@domain/installations/versionReference"
+
+function folderName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+}
 
 export interface GameVersionPickerProps {
   gameVersions: GameVersionType[]
   version: GameVersionType | undefined
   onSelect: (version: GameVersionType) => void
-  /** The Installation's own VS Version when it is not installed: the version string to name,
-   *  or "" for an Installation that has no version at all (configManager.ts normalizes a
-   *  missing or invalid version to "" and keeps the Installation). `undefined` means nothing
-   *  to warn about, which is why this is checked with `!== undefined` and not for truthiness
-   *  (#118). Unused by AddInstallation. */
-  missingVersion?: string
+  /** The unresolved Installation reference. Undefined means AddInstallation or a linked edit. */
+  unresolvedVersion?: { version: string; status: Exclude<InstallationVersionStatus, "linked"> }
 }
 
 /** The game version table shared by AddInstallation and EditInstallation. */
-export function GameVersionPicker({ gameVersions, version, onSelect, missingVersion }: Readonly<GameVersionPickerProps>): JSX.Element {
+export function GameVersionPicker({ gameVersions, version, onSelect, unresolvedVersion }: Readonly<GameVersionPickerProps>): JSX.Element {
   const { t } = useTranslation()
 
   return (
@@ -29,10 +30,16 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
       </FormHead>
 
       <FormBody>
-        {missingVersion !== undefined && (
+        {unresolvedVersion !== undefined && (
           <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
             <PiWarningDuotone className="text-lg shrink-0" />
-            <span>{missingVersion === "" ? t("features.versions.noVersionSetPickOne") : t("features.versions.versionNotInstalledPickAnother", { version: missingVersion })}</span>
+            <span>
+              {unresolvedVersion.status === "unset"
+                ? t("features.versions.noVersionSetPickOne")
+                : unresolvedVersion.status === "unlinked"
+                  ? t("features.versions.versionUnlinkedPickOne")
+                  : t("features.versions.versionNotInstalledPickAnother", { version: unresolvedVersion.version })}
+            </span>
           </div>
         )}
 
@@ -66,7 +73,12 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
               .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
               .map((gv) => (
                 <TableBodyRow key={gv.id} onClick={() => onSelect(gv)} selected={version?.id === gv.id}>
-                  <TableCell className="w-full">{gv.label}</TableCell>
+                  <TableCell className="w-full">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{gv.label}</span>
+                      {gameVersions.some((other) => other.id !== gv.id && other.version === gv.version) && <span className="text-xs text-zinc-400">{folderName(gv.path)}</span>}
+                    </div>
+                  </TableCell>
                 </TableBodyRow>
               ))}
           </TableBody>

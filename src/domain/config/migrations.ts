@@ -270,22 +270,31 @@ function usableGameVersionLabel(value: unknown): value is string {
 export function repairGameVersionIdentity(doc: unknown): unknown {
   if (!isRecord(doc)) return doc
 
+  // Normalize the catalog's usable shape before allocating identities. Invalid entries are
+  // discarded by normalizeConfig, so letting them reserve an id or participate in legacy
+  // relinking can steal an identity from a real build or make a valid reference ambiguous.
+  const retainedVersions = Array.isArray(doc.gameVersions)
+    ? doc.gameVersions.filter(
+        (entry: unknown): entry is Record<string, unknown> =>
+          isRecord(entry) && typeof entry.version === "string" && entry.version.length > 0 && typeof entry.path === "string" && entry.path.length > 0
+      )
+    : []
+  const reservedIds = new Set(retainedVersions.map((entry) => (usableGameVersionId(entry.id) ? entry.id : undefined)).filter((id): id is string => id !== undefined))
   const usedIds = new Set<string>()
   const gameVersions = Array.isArray(doc.gameVersions)
-    ? doc.gameVersions.map((entry: unknown) => {
-        if (!isRecord(entry)) return entry
-
-        const version = typeof entry.version === "string" ? entry.version : ""
-        const path = typeof entry.path === "string" ? entry.path : ""
+    ? retainedVersions.map((entry) => {
+        const version = entry.version as string
+        const path = entry.path as string
         const existingId = usableGameVersionId(entry.id) ? entry.id : undefined
-        let baseId = existingId ?? legacyGameVersionId(version, path)
+        const legacyId = legacyGameVersionId(version, path)
+        const baseId = existingId ?? legacyId
         let id = baseId
         let suffix = 2
-        if (usedIds.has(id) && existingId !== undefined) {
-          baseId = legacyGameVersionId(version, path)
-          id = baseId
-        }
-        while (usedIds.has(id)) id = `${baseId}-${suffix++}`
+
+        // Keep the first valid stored id. Generated ids must also avoid ids that a later
+        // entry explicitly owns, so migration cannot depend on catalog order.
+        if (existingId && usedIds.has(existingId)) id = legacyId
+        while (usedIds.has(id) || (reservedIds.has(id) && id !== existingId)) id = `${existingId && usedIds.has(existingId) ? legacyId : baseId}-${suffix++}`
         usedIds.add(id)
 
         return {
@@ -296,7 +305,7 @@ export function repairGameVersionIdentity(doc: unknown): unknown {
       })
     : doc.gameVersions
 
-  const validVersions = Array.isArray(gameVersions) ? gameVersions.filter(isRecord) : []
+  const validVersions = Array.isArray(gameVersions) ? gameVersions : []
   const installations = Array.isArray(doc.installations)
     ? doc.installations.map((entry: unknown) => {
         if (!isRecord(entry) || "gameVersionId" in entry) return entry

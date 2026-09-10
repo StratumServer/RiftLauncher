@@ -182,6 +182,29 @@ describe("MainMenu Play button", () => {
     expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ id: "gv-optimum", path: "/versions/optimum" }), installation)
   })
 
+  it("refuses to launch an Installation whose build id is gone even when its version number remains", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+    const installation = anInstallation({ version: "1.22.7", gameVersionId: "deleted-build" })
+    const gameVersions = [
+      { id: "gv-vanilla", label: "Vanilla", version: "1.22.7", path: "/versions/vanilla" },
+      { id: "gv-optimum", label: "Optimum", version: "1.22.7", path: "/versions/optimum" }
+    ] as unknown as GameVersionType[]
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [installation], gameVersions }))
+      },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText("This Installation is no longer linked to a VS Version. Edit it and pick one.")
+    expect(executeGame).not.toHaveBeenCalled()
+  })
+
   it("runs the selected installation and version, flips _playing for the run, and records playtime", async () => {
     const user = userEvent.setup()
 

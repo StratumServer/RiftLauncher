@@ -61,7 +61,7 @@ describe("ListVersions", () => {
     await screen.findByText("1.20.4")
 
     await user.click(screen.getByTitle("Delete Version"))
-    await screen.findByText("Are you sure you want to uninstall this VS Version?")
+    await screen.findByText("Are you sure you want to uninstall VS Version 1.20.4?")
 
     await user.click(screen.getByTitle("Uninstall"))
 
@@ -88,14 +88,14 @@ describe("ListVersions", () => {
     await screen.findByText("1.20.4")
 
     await user.click(screen.getByTitle("Delete Version"))
-    await screen.findByText("Are you sure you want to uninstall this VS Version?")
+    await screen.findByText("Are you sure you want to uninstall VS Version 1.20.4?")
     await user.click(screen.getByTitle("Uninstall"))
 
     await screen.findByText("Survival World, Creative Sandbox still use this VS Version. Deleting it now means they won't launch until you point them at another one.")
     // The first confirm dialog's exit animation can still be mid-flight (and its own
     // "Cancel" button with it) right after the second one mounts; wait it out so only
     // one "Cancel" button is on the page before clicking it.
-    await waitFor(() => expect(screen.queryByText("Are you sure you want to uninstall this VS Version?")).toBeNull())
+    await waitFor(() => expect(screen.queryByText("Are you sure you want to uninstall VS Version 1.20.4?")).toBeNull())
     expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
 
     await user.click(screen.getByTitle("Cancel"))
@@ -103,6 +103,36 @@ describe("ListVersions", () => {
     await waitFor(() => expect(screen.queryByText("VS Version in use")).toBeNull())
     expect(screen.getByText("1.20.4")).toBeTruthy()
     expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+  })
+
+  it("checks installations against the selected build id when version numbers are shared", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [
+              { id: "gv-vanilla", label: "Vanilla", version: "1.22.7", path: "/versions/vanilla" },
+              { id: "gv-optimum", label: "Optimum", version: "1.22.7", path: "/versions/optimum" }
+            ],
+            installations: [
+              anInstallation({ id: "install-vanilla", name: "Vanilla World", gameVersionId: "gv-vanilla" }),
+              anInstallation({ id: "install-optimum", name: "Optimum World", gameVersionId: "gv-optimum" })
+            ]
+          })
+        )
+      }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    const vanillaRow = (await screen.findByText("Vanilla")).closest("li")
+    await user.click(within(vanillaRow as HTMLElement).getByTitle("Delete Version"))
+    await screen.findByText("Are you sure you want to uninstall VS Version Vanilla?")
+    await user.click(screen.getByTitle("Uninstall"))
+
+    await screen.findByText("Vanilla World still use this VS Version. Deleting it now means they won't launch until you point them at another one.")
+    expect(screen.queryByText(/Optimum World still use/)).toBeNull()
   })
 
   it("deletes the version anyway once the in-use warning is confirmed", async () => {
@@ -124,7 +154,7 @@ describe("ListVersions", () => {
     await screen.findByText("1.20.4")
 
     await user.click(screen.getByTitle("Delete Version"))
-    await screen.findByText("Are you sure you want to uninstall this VS Version?")
+    await screen.findByText("Are you sure you want to uninstall VS Version 1.20.4?")
     await user.click(screen.getByTitle("Uninstall"))
 
     await screen.findByText("Survival World, Creative Sandbox still use this VS Version. Deleting it now means they won't launch until you point them at another one.")
@@ -147,7 +177,7 @@ describe("ListVersions", () => {
     await screen.findByText("1.20.4")
 
     await user.click(screen.getByTitle("Remove from List"))
-    await screen.findByText("Are you sure you want to remove this VS Version from the list?")
+    await screen.findByText("Are you sure you want to remove VS Version 1.20.4 from the list?")
 
     await user.click(within(screen.getByRole("dialog")).getByTitle("Remove from List"))
 

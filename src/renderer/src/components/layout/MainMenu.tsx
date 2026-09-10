@@ -24,6 +24,7 @@ import { useMakeInstallationBackup } from "@renderer/features/installations/hook
 import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
 import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
 import { checkInstallationPathExists, logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
+import { getInstallationVersionStatus } from "@domain/installations/versionReference"
 
 import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
 import ActivityCenter from "@renderer/components/ui/ActivityCenter"
@@ -121,7 +122,13 @@ function MainMenu(): JSX.Element {
         // An Installation with no version at all reaches here too (configManager normalizes a
         // missing version to ""), and interpolating that into versionNotInstalled reads as
         // "VS Version  not installed!" with a blank name (#118).
-        const message = selectedInstallation.version ? t("features.versions.versionNotInstalled", { version: selectedInstallation.version }) : t("features.versions.noVersionSet")
+        const status = getInstallationVersionStatus(selectedInstallation, gameVersions)
+        const message =
+          status === "unset"
+            ? t("features.versions.noVersionSet")
+            : status === "unlinked"
+              ? t("features.versions.versionUnlinked")
+              : t("features.versions.versionNotInstalled", { version: selectedInstallation.version })
         return addNotification(message, "error")
       }
       if (gameVersionToRun._installing) return addNotification(t("features.versions.versionInstalling", { version: selectedInstallation.version }), "error")

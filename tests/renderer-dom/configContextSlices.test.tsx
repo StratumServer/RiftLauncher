@@ -81,7 +81,7 @@ function Dispatchers(): JSX.Element {
   const configDispatch = useConfigDispatch()
   return (
     <>
-      <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: "1.20.0-id", updates: { _installing: true } } })}>edit game version</button>
+      <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: "gv-1", updates: { _installing: true } } })}>edit game version</button>
       <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: "install-a", updates: { _modsCount: 7 } } })}>edit installation</button>
     </>
   )

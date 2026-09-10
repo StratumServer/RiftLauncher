@@ -12,6 +12,7 @@ import {
   legacyGameVersionId,
   MAX_CONFIG_SCHEMA,
   migrateConfigDocument,
+  repairGameVersionIdentity,
   singleAccountToAccountList,
   stampLinkedOnExternalVersions
 } from "../../../src/domain/config/migrations"
@@ -190,6 +191,51 @@ describe("migrateConfigDocument on real configs", () => {
     assert.equal(doc.gameVersions[1]!.id, legacyGameVersionId("1.22.7", "/versions/optimum"))
     assert.equal(doc.gameVersions[2]!.id, "same")
     assert.equal(doc.gameVersions[3]!.id, legacyGameVersionId("1.21.0", "/versions/b"))
+  })
+
+  it("ignores invalid catalog entries before relinking and allocating ids", () => {
+    const result = migrateConfigDocument({
+      schemaVersion: 4,
+      gameVersions: [
+        { id: "invalid-id", version: "1.22.7" },
+        { version: "1.22.7", path: "/versions/valid" }
+      ],
+      installations: [{ id: "install", path: "/installations/install", version: "1.22.7" }]
+    })
+    const doc = result.doc as { gameVersions: Array<Record<string, unknown>>; installations: Array<Record<string, unknown>> }
+
+    assert.equal(doc.gameVersions.length, 1)
+    assert.equal(doc.gameVersions[0]!.path, "/versions/valid")
+    assert.equal(doc.installations[0]!.gameVersionId, doc.gameVersions[0]!.id)
+  })
+
+  it("does not let a generated id steal one explicitly owned by a later valid build", () => {
+    const firstId = legacyGameVersionId("1.22.7", "/versions/first")
+    const result = migrateConfigDocument({
+      schemaVersion: 4,
+      gameVersions: [
+        { version: "1.22.7", path: "/versions/first" },
+        { id: firstId, version: "1.22.7", path: "/versions/second" }
+      ]
+    })
+    const doc = result.doc as { gameVersions: Array<Record<string, unknown>> }
+
+    assert.equal(doc.gameVersions[1]!.id, firstId)
+    assert.notEqual(doc.gameVersions[0]!.id, firstId)
+    assert.notEqual(doc.gameVersions[0]!.id, doc.gameVersions[1]!.id)
+  })
+
+  it("is idempotent after repairing a catalog", () => {
+    const before = {
+      schemaVersion: 4,
+      gameVersions: [
+        { version: "1.22.7", path: "/versions/first" },
+        { id: "saved", version: "1.22.7", path: "/versions/second" }
+      ]
+    }
+    const repaired = migrateConfigDocument(before).doc
+
+    assert.deepEqual(repairGameVersionIdentity(repaired), repaired)
   })
 
   it("brings today's 1.6 config to the current schema", () => {

@@ -58,4 +58,20 @@ describe("ListInstallations orphaned VS Version marker (#127)", () => {
     await screen.findByText("Install A")
     expect(screen.getByTitle("VS Version 1.19.8 not installed!")).toBeTruthy()
   })
+
+  it("distinguishes an unlinked build from a version that is no longer installed", async () => {
+    renderList(
+      createMockConfig({
+        gameVersions: [
+          { id: "gv-vanilla", label: "Vanilla", version: "1.22.7", path: "/versions/vanilla" },
+          { id: "gv-optimum", label: "Optimum", version: "1.22.7", path: "/versions/optimum" }
+        ],
+        installations: [anInstallation({ version: "1.22.7", gameVersionId: "deleted-build" })]
+      })
+    )
+
+    await screen.findByText("Install A")
+    expect(screen.getByTitle("This Installation is no longer linked to a VS Version. Edit it and pick one.")).toBeTruthy()
+    expect(screen.queryByTitle("VS Version 1.22.7 not installed!")).toBeNull()
+  })
 })

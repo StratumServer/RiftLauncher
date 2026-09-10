@@ -30,11 +30,12 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
   return async function installVersion(version, folder) {
     if (!version) return addNotification(t("features.versions.noVersionSelected"), "error")
 
+    const folderName = folder.split(/[\\/]/).filter(Boolean).at(-1) ?? folder
     const ports = createInstallPorts({
       startDownload,
       startExtract,
       startInstall,
-      taskName: `${t("features.versions.gameVersionTaskName", { version: version.version })} (${folder})`,
+      taskName: `${t("features.versions.gameVersionTaskName", { version: version.version })} (${folderName})`,
       downloadDescription: t("features.versions.gameVersionDownloadDesc", { version: version.version }),
       unpackDescription: t("features.versions.gameVersionExtractDesc", { version: version.version })
     })
@@ -65,7 +66,7 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
 
     if (logged) {
       window.api.utils.logMessage("error", `${LOG_TAG} Error installing VS Version ${version.version}.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Error installing VS Version ${version.version} on ${folder}: ${result.reason}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Error installing VS Version ${version.version} in target folder ${folderName}: ${result.reason}.`)
     }
 
     addNotification(t(messageKey, { version: version.version, folder }), "error")

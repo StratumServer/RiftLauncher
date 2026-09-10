@@ -54,7 +54,7 @@ export function useUninstallGameVersion(): (version: GameVersionType, options?: 
 
     if (logged) {
       window.api.utils.logMessage("error", `${LOG_TAG} Error uninstalling a VS Version.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Error uninstalling VS Version ${displayName}: ${result.reason}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Error uninstalling VS Version ${version.id}: ${result.reason}.`)
     }
 
     addNotification(t(messageKey, { version: displayName }), "error")

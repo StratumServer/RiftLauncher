@@ -48,9 +48,14 @@ describe("AddInstallation", () => {
   it("submits the default fields, adds the Installation and returns to the list", async () => {
     const user = userEvent.setup()
     const ensurePathExists = vi.fn(async () => true)
+    const savedConfigs: ConfigType[] = []
     installMockWindowApi({
       configManager: {
-        getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }] }))
+        getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }] })),
+        saveConfig: vi.fn(async (config: ConfigType) => {
+          savedConfigs.push(config)
+          return { ok: true } as SaveConfigResult
+        })
       },
       pathsManager: { ensurePathExists }
     })
@@ -69,6 +74,7 @@ describe("AddInstallation", () => {
     await screen.findByText("Installation added successfully.")
     await screen.findByText("installations-list")
     await waitFor(() => expect(ensurePathExists).toHaveBeenCalled())
+    await waitFor(() => expect(savedConfigs.some((config) => config.installations.some((installation) => installation.gameVersionId === "gv-1"))).toBe(true))
   })
 
   it("renders the form when a registered VS Version string is not valid semver", async () => {
