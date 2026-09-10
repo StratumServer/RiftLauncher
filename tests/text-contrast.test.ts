@@ -378,6 +378,31 @@ describe("prompts the player is meant to read and act on", () => {
   })
 
   /**
+   * #414: the favorites-only filter toggle and the per-card favorite star. Both handed
+   * `text-yellow-400` to a ghost FormButton through `className`, where the variant's own
+   * `text-zinc-200` wins the cascade (#366), so the hue never painted and neither was ever
+   * measured here. They paint now, on a solid PiStarFill that carries the hue itself, so the
+   * non-text bar applies: each star is the whole visible content of a button with no label.
+   *
+   * The filter star is a ghost button on the sticky menu, so it takes the shell and the
+   * StickyMenu scrim but not the `filterControl` fill the dropdown triggers carry. The card
+   * star floats on a mod logo the launcher does not control, so a hue alone cannot clear the
+   * bar there whatever the hue: it now carries a `bg-zinc-950` pill in both its resting and
+   * its hover state, and this pins both, since the hover fill would otherwise replace the pill.
+   */
+  it("keeps the favorite star readable in the filter bar and on a mod card", () => {
+    const filterStar = paletteForeground("features/mods/components/ModsFilterBar.tsx", /<PiStarFill className="text-([a-z]+-\d+)"/)
+    assertReadable("favorites filter star", filterStar, [shell, stickyMenu], NON_TEXT_FLOOR)
+
+    const cardFile = "features/mods/components/ModListCard.tsx"
+    const cardStar = paletteForeground(cardFile, /<PiStarFill className="text-([a-z]+-\d+)"/)
+    const pill: Layer = [ZINC["zinc-950"], Number(match(cardFile, /text-lg bg-zinc-950\/(\d+)/)[1]) / 100]
+    const pillHover: Layer = [ZINC["zinc-950"], Number(match(cardFile, /hover:bg-zinc-950\/(\d+)/)[1]) / 100]
+    assertReadable("favorite card star at rest", cardStar, [pill], NON_TEXT_FLOOR)
+    assertReadable("favorite card star on hover", cardStar, [pillHover], NON_TEXT_FLOOR)
+  })
+
+  /**
    * Everything the notification area puts on screen, pinned in one place.
    *
    * The audit that came with this found two real failures here and a dozen values that happened to

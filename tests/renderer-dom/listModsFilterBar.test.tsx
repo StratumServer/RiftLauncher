@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event"
 import ListMods from "@renderer/features/mods/pages/ListMods"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
-import { installMockWindowApi } from "./helpers/windowApi"
+import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 /** Two `/api/mods` entries with different `side` values, so the Side filter has something to narrow. */
@@ -73,5 +73,55 @@ describe("ListMods filter bar", () => {
     // The change is debounced (400ms) before it re-queries and re-filters.
     await waitFor(() => expect(screen.queryByText("Better Ruins")).toBeNull(), { timeout: 3000 })
     expect(screen.getByText("Client Only Tool")).toBeTruthy()
+  })
+
+  // #414: the favorites-only toggle looked identical on and off. Its one state cue, a
+  // "text-yellow-400" on the ghost FormButton's className, lost the cascade to the variant's
+  // own "text-zinc-200", so nothing but aria-pressed ever changed. The fix moves the hue onto
+  // a solid PiStarFill icon and adds a border-vsl box, both of which win where they sit.
+  it("marks the favorites filter as selected once it is on", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      configManager: { getConfig: async () => createMockConfig({ favMods: [123] }) },
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    expect(await screen.findByText("Better Ruins", {}, { timeout: 3000 })).toBeTruthy()
+
+    const favFilter = screen.getByTitle("Show favorite Mods only")
+    const icon = (): SVGElement => {
+      const svg = favFilter.querySelector("svg")
+      if (!svg) throw new Error("favorites filter icon not found")
+      return svg
+    }
+
+    expect(favFilter.getAttribute("aria-pressed")).toBe("false")
+    expect(favFilter.className).not.toContain("border-vsl")
+    expect(icon().getAttribute("class") ?? "").not.toContain("text-yellow-400")
+    expect(icon().querySelector('path[opacity="0.2"]')).not.toBeNull()
+
+    await user.click(favFilter)
+
+    expect(favFilter.getAttribute("aria-pressed")).toBe("true")
+    expect(favFilter.className).toContain("border-vsl")
+    expect(icon().getAttribute("class")).toContain("text-yellow-400")
+    expect(icon().querySelector('path[opacity="0.2"]')).toBeNull()
+
+    // The list narrowing is debounced; the favorited mod stays, the other drops.
+    await waitFor(() => expect(screen.queryByText("Client Only Tool")).toBeNull(), { timeout: 3000 })
+    expect(screen.getByText("Better Ruins")).toBeTruthy()
   })
 })
