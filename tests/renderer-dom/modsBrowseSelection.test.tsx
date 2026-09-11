@@ -6,6 +6,7 @@ import { Link, Route, Routes, useLocation } from "react-router-dom"
 import ListMods from "@renderer/features/mods/pages/ListMods"
 import { getModsBrowseState, updateModsBrowseState } from "@renderer/features/mods/modsBrowseState"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
+import { CONFIG_ACTIONS, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 import { MAX_MOD_SELECTION } from "@domain/mods/modSelection"
 
 import { createMockConfig, installMockWindowApi, type WindowApiOverrides } from "./helpers/windowApi"
@@ -86,18 +87,25 @@ interface MountOptions {
   installation?: InstallationType | null
   /** The `/api/mods` answer, or a function of the request URL for a search that narrows it. */
   catalog?: Record<string, unknown>[] | ((url: string) => Record<string, unknown>[])
-  /** What the Mods folder holds each time it is scanned. */
-  folder?: () => InstalledModType[] | Promise<InstalledModType[]>
+  /** What the Mods folder at `path` holds each time it is scanned. */
+  folder?: (path: string) => InstalledModType[] | Promise<InstalledModType[]>
   pathsManager?: WindowApiOverrides["pathsManager"]
+  /** More Installations, with a button standing in for the sidebar that switches to the first. */
+  others?: InstallationType[]
 }
 
-function mount({ installation = anInstallation(), catalog = [BETTER_RUINS, DEEPER_CAVES], folder = (): InstalledModType[] => [], pathsManager }: MountOptions = {}): {
+function SwitchInstallation({ to }: Readonly<{ to: string }>): JSX.Element {
+  const dispatch = useConfigDispatch()
+  return <button onClick={() => dispatch({ type: CONFIG_ACTIONS.SET_LAST_USED_INSTALLATION, payload: to })}>Switch Installation</button>
+}
+
+function mount({ installation = anInstallation(), catalog = [BETTER_RUINS, DEEPER_CAVES], folder = (): InstalledModType[] => [], pathsManager, others = [] }: MountOptions = {}): {
   getInstalledMods: ReturnType<typeof vi.fn>
   downloadOnPath: ReturnType<typeof vi.fn>
   deletePath: ReturnType<typeof vi.fn>
   lookupsOf: (listingId: number) => number
 } {
-  const getInstalledMods = vi.fn(async () => ({ mods: await folder(), errors: [] }))
+  const getInstalledMods = vi.fn(async (path: string) => ({ mods: await folder(path), errors: [] }))
   const queryURL = vi.fn(async (url: string): Promise<string> => {
     if (url.includes("/api/mods")) return JSON.stringify({ statuscode: "200", mods: typeof catalog === "function" ? catalog(url) : catalog })
     const id = /\/api\/mod\/(\d+)$/.exec(url)?.[1]
@@ -109,7 +117,7 @@ function mount({ installation = anInstallation(), catalog = [BETTER_RUINS, DEEPE
 
   installMockWindowApi({
     configManager: {
-      getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: installation?.id ?? null, installations: installation ? [installation] : [] }))
+      getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: installation?.id ?? null, installations: [...(installation ? [installation] : []), ...others] }))
     },
     modsManager: { getInstalledMods },
     pathsManager: { checkPathExists: vi.fn(async () => true), deletePath, downloadOnPath, ...pathsManager },
@@ -118,6 +126,7 @@ function mount({ installation = anInstallation(), catalog = [BETTER_RUINS, DEEPE
 
   renderWithProviders(
     <TaskProvider>
+      {others[0] && <SwitchInstallation to={others[0].id} />}
       <Routes>
         <Route path="/mods" element={<ListMods />} />
         <Route path="/mods/install/:modid" element={<Where />} />
@@ -315,6 +324,51 @@ describe("ModDB browse selection", () => {
     await screen.findByRole("heading", { name: "Mod Install Summary" }, { timeout: 3000 })
     expect(downloadOnPath).not.toHaveBeenCalled()
   }, 15_000)
+
+  it("switching Installation while Install selected reads the folder drops the run, and the next press installs into the new one only", async () => {
+    const user = userEvent.setup()
+    const other = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b" }
+    let holdA = false
+    let releaseA!: () => void
+    const { getInstalledMods, downloadOnPath, deletePath } = mount({
+      others: [other],
+      folder: async (path) => {
+        if (!path.includes("/games/a")) return []
+        if (holdA) await new Promise<void>((resolve) => (releaseA = resolve))
+        return [aCopy("deepercaves", "Deeper Caves", "1.0.0")]
+      }
+    })
+    const installSelected = (): HTMLButtonElement => screen.getByRole("button", { name: "Install selected" })
+
+    await screen.findByRole("button", { name: "Deeper Caves, Installed" }, { timeout: 3000 })
+    await user.click(toggle())
+    await user.click(card("Deeper Caves"))
+
+    holdA = true
+    await user.click(installSelected())
+    // Busy while the folder is read, so a second press cannot start a second run.
+    expect(installSelected().getAttribute("aria-busy")).toBe("true")
+    expect(installSelected().disabled).toBe(true)
+
+    await user.click(screen.getByRole("button", { name: "Switch Installation" }))
+    await waitFor(() => expect(getInstalledMods.mock.calls.some(([path]) => String(path).includes("/games/b"))).toBe(true), { timeout: 3000 })
+    holdA = false
+    await act(async () => releaseA())
+    await waitFor(() => expect(installSelected().getAttribute("aria-busy")).not.toBe("true"), { timeout: 3000 })
+
+    // A's folder read never becomes a run on B, which would delete A's archive and download into B.
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(selectionStatus()).toBe("1 selected")
+
+    const dialog = await openTable(user)
+    await waitFor(() => expect(within(rowIn(dialog, "Deeper Caves")).getByText("New install")).toBeTruthy(), { timeout: 3000 })
+    await user.click(within(dialog).getByRole("button", { name: "Install" }))
+    await screen.findByRole("heading", { name: "Mod Install Summary" }, { timeout: 3000 })
+
+    expect(deletePath).not.toHaveBeenCalled()
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/deepercaves-1.5.0.zip", "/games/b/Mods", "deepercaves-1.5.0.zip")
+  }, 20_000)
 
   it("two installed picks, two outcomes: a current copy reads Already installed and is not downloaded, an older one reads Update from X to Y", async () => {
     const user = userEvent.setup()

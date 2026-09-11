@@ -37,8 +37,12 @@ import type { ModpackRequest } from "@domain/mods/importModpack"
  * of it on purpose: the page rescans after every download, and a live list would restart the table's
  * lookups mid-run. It is read from the folder at that moment rather than taken off the grid, whose
  * list can still belong to the previous Installation while a scan is on its way.
+ *
+ * The Installation that folder belongs to is part of it too, and the run installs into that one
+ * only: a plan made from one folder and carried out in another deletes an archive the player never
+ * picked.
  */
-type PickRun = { request: ModpackRequest; installedMods: InstalledModType[]; leftOut: number }
+type PickRun = { installationId: string; request: ModpackRequest; installedMods: InstalledModType[]; leftOut: number }
 
 const NO_INSTALLED_MODS: InstalledModType[] = []
 
@@ -373,12 +377,20 @@ function ListMods(): JSX.Element {
     setSelecting(!selecting)
   }
 
+  // Returns its promise so Install selected stays busy, and refuses another press, while the folder is read.
   async function installPicks(): Promise<void> {
     if (!installation) return
     const { mods } = await getInstalledMods({ path: installation.path })
+    // The sidebar stays live during the read. A switch drops the run rather than opening it on the
+    // other Installation; the picks stay, and the next press reads the new folder.
+    if (selectedInstallationId.current !== installation.id) return
     const { entries, leftOut } = modSelectionEntries(picks, mods)
-    setPickRun({ request: { name: "", gameVersion: installation.version, mods: entries }, installedMods: mods, leftOut })
+    setPickRun({ installationId: installation.id, request: { name: "", gameVersion: installation.version, mods: entries }, installedMods: mods, leftOut })
   }
+
+  // Looked up by id rather than kept from the press, so the popup reads this Installation's live
+  // busy flags while it installs into the folder the run was planned from.
+  const runInstallation = pickRun ? installations.find((i) => i.id === pickRun.installationId) : installation
 
   function finishPickRun(): void {
     setPickRun(null)
@@ -393,8 +405,10 @@ function ListMods(): JSX.Element {
   // Read through a ref so onModAction keeps one identity across rescans and lookups: every card
   // holds it, and a new one would re-render them all.
   const actionTargets = useRef({ installedMods: [] as readonly InstalledModType[], details: modDetails, gameVersion: "" })
+  const selectedInstallationId = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
     actionTargets.current = { installedMods: installationInstalledMods ?? [], details: modDetails, gameVersion: installation?.version ?? "" }
+    selectedInstallationId.current = installation?.id
   })
 
   const { installNewest, updateMod, toggleEnabled, toggleSuspended, requestDelete } = actions
@@ -544,12 +558,12 @@ function ListMods(): JSX.Element {
 
         <DeleteModDialog isOpen={actions.modToDelete !== null} close={actions.cancelDelete} onConfirm={actions.confirmDelete} />
 
-        {installation && (
+        {runInstallation && (
           <ImportModpackPopup
             isOpen={pickRun !== null}
             manifest={pickRun?.request ?? null}
             close={() => setPickRun(null)}
-            installation={installation}
+            installation={runInstallation}
             installedMods={pickRun?.installedMods ?? NO_INSTALLED_MODS}
             selection={pickRun ?? undefined}
             onFinish={finishPickRun}
