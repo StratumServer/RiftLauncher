@@ -6,7 +6,11 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { logMods } from "@renderer/features/moddb/adapters/log"
 import { setModEnabled } from "@renderer/features/moddb/adapters/modsManager"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
+import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
+import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
+import { useQueryMod } from "@renderer/features/mods/hooks/useQueryMod"
 
+import { newestCompatibleRelease } from "@domain/mods/compatibility"
 import { modsFolderInUse } from "@domain/mods/install"
 
 const LOG_TAG = "[front] [mods] [features/mods/hooks/useInstalledModActions.ts]"
@@ -23,9 +27,28 @@ export interface InstalledModActions {
   confirmDelete(): Promise<void>
   /** The copy the delete confirmation is open for, or null when it is closed. */
   modToDelete: InstalledModType | ErrorInstalledModType | null
-  /** Archive paths with a call in flight, up to and including the rescan that follows it. */
+  /**
+   * Replaces one copy with another release of it, then rescans. A disabled copy is replaced by a
+   * disabled one: updating a Mod is not a request to turn it back on.
+   */
+  updateMod(copy: InstalledModType, newRelease: DownloadableModReleaseType): Promise<void>
+  /**
+   * Installs the newest release tagged for the Installation's game version, then rescans. Resolves
+   * to "no-tagged-release", having installed nothing, when no release is tagged for it, so the
+   * caller can open the full release list where the player chooses.
+   */
+  installNewest(mod: DownloadableModOnListType): Promise<"done" | "no-tagged-release">
+  /**
+   * Archive paths with a call in flight, up to and including the rescan that follows it, plus
+   * {@link quickInstallKey} for an install that has no archive yet.
+   */
   busyPaths: readonly string[]
   isBusy(path: string): boolean
+}
+
+/** The busy key of a Mod being installed from its ModDB listing, before any archive of it exists. */
+export function quickInstallKey(modid: number): string {
+  return `moddb:${modid}`
 }
 
 /**
@@ -45,6 +68,8 @@ export function useInstalledModActions(installation: InstallationType | undefine
   const { addNotification } = useNotificationsContext()
   const suspendedModUpdates = useSuspendedModUpdates()
   const configDispatch = useConfigDispatch()
+  const installMod = useInstallMod()
+  const queryMod = useQueryMod()
 
   const [modToDelete, setModToDelete] = useState<InstalledModType | ErrorInstalledModType | null>(null)
 
@@ -53,9 +78,9 @@ export function useInstalledModActions(installation: InstallationType | undefine
   const busyRef = useRef(new Set<string>())
   const [busyPaths, setBusyPaths] = useState<readonly string[]>([])
 
-  const latest = useRef({ installation, refresh, t, addNotification, suspendedModUpdates, configDispatch, modToDelete })
+  const latest = useRef({ installation, refresh, t, addNotification, suspendedModUpdates, configDispatch, modToDelete, installMod, queryMod })
   useLayoutEffect(() => {
-    latest.current = { installation, refresh, t, addNotification, suspendedModUpdates, configDispatch, modToDelete }
+    latest.current = { installation, refresh, t, addNotification, suspendedModUpdates, configDispatch, modToDelete, installMod, queryMod }
   })
 
   const actions = useMemo(() => {
@@ -144,7 +169,71 @@ export function useInstalledModActions(installation: InstallationType | undefine
       }
     }
 
-    return { toggleEnabled, toggleSuspended, requestDelete, cancelDelete, confirmDelete }
+    /**
+     * The download task raises the one notification this makes, success or failure alike;
+     * useInstallMod adds one only for the refusals the task never saw.
+     */
+    async function updateMod(copy: InstalledModType, newRelease: DownloadableModReleaseType): Promise<void> {
+      const { installation, refresh, t, addNotification, installMod } = latest.current
+      if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
+      if (modsFolderInUse(installation)) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
+      if (!claim(copy.path)) return
+
+      try {
+        await installMod({
+          installationPath: installation.path,
+          outName: installation.name,
+          modName: copy.name,
+          release: toModReleaseToInstall(newRelease),
+          existing: toInstalledModCopy(copy),
+          disabled: !copy.enabled
+        })
+        await refresh()
+      } finally {
+        release(copy.path)
+      }
+    }
+
+    async function installNewest(mod: DownloadableModOnListType): Promise<"done" | "no-tagged-release"> {
+      const { installation, t, addNotification, queryMod } = latest.current
+      if (!installation) {
+        addNotification(t("features.installations.noInstallationFound"), "error")
+        return "done"
+      }
+      if (modsFolderInUse(installation)) {
+        addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
+        return "done"
+      }
+      const key = quickInstallKey(mod.modid)
+      if (!claim(key)) return "done"
+
+      try {
+        const lookup = await queryMod({ modid: mod.modid })
+        if (lookup.status !== "found") {
+          addNotification(t("features.mods.versionsLoadFailed"), "error")
+          return "done"
+        }
+
+        const newest = newestCompatibleRelease(lookup.mod.releases, installation.version)
+        if (!newest) return "no-tagged-release"
+
+        // The lookup is a network round trip, long enough for a backup or Update all to have started.
+        const { installMod, refresh, installation: current } = latest.current
+        await installMod({
+          installationPath: installation.path,
+          outName: installation.name,
+          modName: mod.name,
+          release: toModReleaseToInstall(newest),
+          installationBusy: current !== undefined && modsFolderInUse(current)
+        })
+        await refresh()
+        return "done"
+      } finally {
+        release(key)
+      }
+    }
+
+    return { toggleEnabled, toggleSuspended, requestDelete, cancelDelete, confirmDelete, updateMod, installNewest }
   }, [])
 
   const isBusy = useCallback((path: string): boolean => busyPaths.includes(path), [busyPaths])

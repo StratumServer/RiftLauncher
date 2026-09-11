@@ -5,6 +5,7 @@ import { act, renderHook, screen, waitFor } from "@testing-library/react"
 import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
 import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
 import { ConfigProvider } from "@renderer/features/config/contexts/ConfigContext"
+import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 
 import { installMockWindowApi, type WindowApiOverrides } from "./helpers/windowApi"
@@ -43,8 +44,10 @@ function wrapper({ children }: { children: ReactNode }): ReactElement {
   return (
     <NotificationsProvider>
       <ConfigProvider>
-        {children}
-        <NotificationsOverlay />
+        <TaskProvider>
+          {children}
+          <NotificationsOverlay />
+        </TaskProvider>
       </ConfigProvider>
     </NotificationsProvider>
   )
