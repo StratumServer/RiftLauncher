@@ -34,6 +34,7 @@ const CREATE = "Save the Mods that are on right now as a new profile, and make i
 const NEW_NAME = "Save the current Mods as a profile"
 const NO_PROFILE_NOTE = "No profile is active. The Mods folder stays as it is until you use one."
 const IN_USE = "You can't switch profiles while this Installation is being played, backed up, restored or having its Mods updated."
+const FOLDER_UNREADABLE = "Couldn't read this Installation's Mods folder, so nothing was recorded or changed."
 const SEARCH_PLACEHOLDER = "Search by name, id or author"
 
 function anInstallation(overrides: Partial<InstallationType> = {}): InstallationType {
@@ -112,6 +113,8 @@ interface Harness {
   /** Paths whose rename the fake host refuses. */
   refused: Set<string>
   stored(): ModProfilesDocument
+  /** From now on every scan finds the Mods folder out of reach, as a linked folder on a disk that is not mounted. */
+  takeFolderOffline(): void
 }
 
 function renderProfiles({
@@ -132,6 +135,7 @@ function renderProfiles({
   const refused = new Set<string>()
   let folder = mods
   let stored = clone(document)
+  let offline = false
 
   const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path, enabled) => {
     events.push(`rename ${path} ${enabled}`)
@@ -152,8 +156,9 @@ function renderProfiles({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [installation] })) },
     netManager: { queryURL: vi.fn(async () => JSON.stringify({ statuscode: "404" })) },
     modsManager: {
-      getInstalledMods: vi.fn(async () => {
+      getInstalledMods: vi.fn(async (): Promise<InstalledModsScan> => {
         events.push("scan")
+        if (offline) return { mods: [], errors: [], unreadable: true }
         return { mods: folder.map((mod) => ({ ...mod })), errors: [{ zipname: "broken.zip", path: `${MODS}/broken.zip` }] }
       }),
       setModEnabled,
@@ -177,7 +182,17 @@ function renderProfiles({
     { route: "/installations/mods/install-a" }
   )
 
-  return { user: userEvent.setup(), events, setModEnabled, saveModProfiles, refused, stored: () => stored }
+  return {
+    user: userEvent.setup(),
+    events,
+    setModEnabled,
+    saveModProfiles,
+    refused,
+    stored: () => stored,
+    takeFolderOffline: (): void => {
+      offline = true
+    }
+  }
 }
 
 function profilesButton(): HTMLButtonElement {
@@ -483,6 +498,35 @@ describe("Mod profiles", { timeout: 20000 }, () => {
 
     expect(await screen.findByText(IN_USE)).toBeTruthy()
     expect(setModEnabled).not.toHaveBeenCalled()
+    expect(saveModProfiles).not.toHaveBeenCalled()
+  })
+
+  it("records and renames nothing when the switch finds the Mods folder out of reach", async () => {
+    const { user, setModEnabled, saveModProfiles, stored, takeFolderOffline } = renderProfiles({ document: aDocument([SERVER, SOLO], "server") })
+    const dialog = await openProfiles(user, "Solo")
+    takeFolderOffline()
+
+    await user.click(useButtonOf(dialog, "Solo"))
+
+    expect(await screen.findByText(FOLDER_UNREADABLE)).toBeTruthy()
+    await waitFor(() => expect(profilesButton().disabled).toBe(false))
+    expect(setModEnabled).not.toHaveBeenCalled()
+    expect(saveModProfiles).not.toHaveBeenCalled()
+    // Server keeps its stored set, and stays the profile in use.
+    expect(stored()).toEqual(aDocument([SERVER, SOLO], "server"))
+    expect(useButtonOf(dialog, "Server").getAttribute("aria-pressed")).toBe("true")
+    expect(screen.queryByText(/^Switched to/)).toBeNull()
+  })
+
+  it.each([["create"], ["duplicate"]] as const)("does not %s a profile from a Mods folder out of reach", async (action) => {
+    const { user, saveModProfiles, takeFolderOffline } = renderProfiles({ document: aDocument([SERVER], "server") })
+    const dialog = await openProfiles(user, "Server")
+    takeFolderOffline()
+
+    if (action === "create") await user.type(within(dialog).getByLabelText(NEW_NAME), "Fresh{Enter}")
+    else await user.click(within(rowOf(dialog, "Server")).getByRole("button", { name: "Duplicate this profile" }))
+
+    expect(await screen.findByText(FOLDER_UNREADABLE)).toBeTruthy()
     expect(saveModProfiles).not.toHaveBeenCalled()
   })
 

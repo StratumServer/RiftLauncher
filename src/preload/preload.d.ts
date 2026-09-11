@@ -38,7 +38,7 @@ declare global {
       saveConfig: (configJson: ConfigType) => Promise<SaveConfigResult>
     }
     modsManager: {
-      getInstalledMods: (path: string) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }>
+      getInstalledMods: (path: string) => Promise<InstalledModsScan>
       setModEnabled: (path: string, enabled: boolean) => Promise<SetModEnabledResult>
       cacheModImage: (url: string) => Promise<string | undefined>
       exportModpack: (manifest: ModpackManifestType) => Promise<{ success: boolean; path?: string }>

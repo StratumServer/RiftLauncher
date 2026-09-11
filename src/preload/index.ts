@@ -38,7 +38,7 @@ const api: BridgeAPI = {
     saveConfig: (configJson: ConfigType): Promise<SaveConfigResult> => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_MANAGER.SAVE_CONFIG, configJson)
   },
   modsManager: {
-    getInstalledMods: (path: string): Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, path),
+    getInstalledMods: (path: string): Promise<InstalledModsScan> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, path),
     setModEnabled: (path: string, enabled: boolean): Promise<SetModEnabledResult> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, path, enabled),
     cacheModImage: (url: string): Promise<string | undefined> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.CACHE_MOD_IMAGE, url),
     exportModpack: (manifest: ModpackManifestType): Promise<{ success: boolean; path?: string }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, manifest),

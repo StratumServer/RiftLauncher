@@ -186,6 +186,12 @@ declare global {
 
   type ErrorInstalledModType = { zipname: string; path: string }
 
+  /**
+   * GET_INSTALLED_MODS' answer. `unreadable` is a Mods folder that is there but could not be listed
+   * (a link whose target is gone, a read error): its empty lists say nothing about what it holds.
+   */
+  type InstalledModsScan = { mods: InstalledModType[]; errors: ErrorInstalledModType[]; unreadable?: true }
+
   type DownloadableModOnListType = {
     modid: number
     assetid: number

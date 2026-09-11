@@ -106,9 +106,13 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
     }
   }, [installationPath])
 
-  /** A raw scan of the whole folder: no ModDB, no search, no filter. */
-  async function scanFolder(path: string): Promise<InstalledModType[]> {
-    return (await fetchInstalledMods(await resolveModsFolder(path))).mods
+  /** A raw scan of the whole folder: no ModDB, no search, no filter. Undefined, after one error, when the folder could not be read. */
+  async function scanFolder(path: string): Promise<InstalledModType[] | undefined> {
+    const scan = await fetchInstalledMods(await resolveModsFolder(path))
+    if (!scan.unreadable) return scan.mods
+    logMods("error", `${LOG_TAG} [scanFolder] The Mods folder could not be read, so nothing was recorded or changed.`)
+    addNotification(t("features.mods.profilesFolderUnreadable"), "error")
+    return undefined
   }
 
   /** Writes `next`. False when it did not land, and a file the host will not overwrite turns profiles off. */
@@ -148,7 +152,10 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   async function create(name: string): Promise<ModProfileNameProblem | null> {
     const check = validateModProfileName(name, document.profiles)
     if (!check.ok) return check.problem
-    await exclusive(async (path) => saveOrSay(path, createModProfile(document, crypto.randomUUID(), check.name, await scanFolder(path))))
+    await exclusive(async (path) => {
+      const mods = await scanFolder(path)
+      if (mods) await saveOrSay(path, createModProfile(document, crypto.randomUUID(), check.name, mods))
+    })
     return null
   }
 
@@ -165,11 +172,15 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
 
   async function duplicate(id: string): Promise<void> {
     // Only the active profile's copy needs the folder: every other profile's stored set is its record.
-    await exclusive(async (path) => saveOrSay(path, duplicateModProfile(document, id, crypto.randomUUID(), id === document.activeProfileId ? await scanFolder(path) : [])))
+    await exclusive(async (path) => {
+      const mods = id === document.activeProfileId ? await scanFolder(path) : []
+      if (mods) await saveOrSay(path, duplicateModProfile(document, id, crypto.randomUUID(), mods))
+    })
   }
 
   async function applyProfile(path: string, target: ModProfile): Promise<void> {
     const mods = await scanFolder(path)
+    if (!mods) return
     const begun = beginModProfileSwitch(document, mods)
     if (!(await save(path, begun))) {
       logMods("error", `${LOG_TAG} [switchTo] Stopped before any rename: the outgoing profile could not be recorded.`)

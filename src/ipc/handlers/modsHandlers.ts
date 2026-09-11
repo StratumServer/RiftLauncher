@@ -82,7 +82,7 @@ function toWireMod(mod: ScannedMod): InstalledModType {
   return image === undefined ? rest : { ...rest, _image: image }
 }
 
-ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path: string): Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> => {
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path: string): Promise<InstalledModsScan> => {
   assertTrustedIpcSender(event)
   // allowSymlinks: listing a Mods folder the user linked in is a read (#237).
   // The scan only ever opens the .zip files it finds, and the directory reader
@@ -94,6 +94,12 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
     logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Looking for mods at ${path}.`)
 
     if (!(await fse.pathExists(path))) {
+      // pathExists follows a link, so a linked Mods folder whose disk is not mounted lands here too.
+      // That folder is not empty, it is out of reach, and a caller that records the folder must know.
+      if (await fse.lstat(path).catch(() => false)) {
+        logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] That path is a link to nothing. Its mods can't be read.`)
+        return { mods: [], errors: [], unreadable: true }
+      }
       logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] That path does not exists. 0 mods detected.`)
       return { mods: [], errors: [] }
     }
@@ -113,7 +119,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
   } catch (err) {
     logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods.`)
     logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods: ${err}`)
-    return { mods: [], errors: [] }
+    return { mods: [], errors: [], unreadable: true }
   }
 })
 

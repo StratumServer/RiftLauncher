@@ -7,7 +7,7 @@
 import type { ModBatchPorts } from "@domain/mods/batch"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 
-export function fetchInstalledMods(path: string): Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> {
+export function fetchInstalledMods(path: string): Promise<InstalledModsScan> {
   return window.api.modsManager.getInstalledMods(path)
 }
 
