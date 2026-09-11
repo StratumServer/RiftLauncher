@@ -208,7 +208,7 @@ describe("ModDB browse selection", () => {
     expect(rowIn(dialog, "Deeper Caves")).toBeTruthy()
   }, 15_000)
 
-  it("Select visible picks the rendered cards only", async () => {
+  it("Select every Mod shown picks the rendered cards only", async () => {
     const user = userEvent.setup()
     const many = Array.from({ length: 60 }, (_, index) => aListing(1000 + index, `Mod ${1000 + index}`, `mod${1000 + index}`))
     mount({ catalog: many })
@@ -216,12 +216,12 @@ describe("ModDB browse selection", () => {
     await screen.findByRole("button", { name: "Mod 1000, Not installed" }, { timeout: 3000 })
     expect(screen.getAllByRole("button", { name: /^Mod \d+, Not installed$/ })).toHaveLength(45)
     await user.click(toggle())
-    await user.click(screen.getByRole("button", { name: "Select visible" }))
+    await user.click(screen.getByRole("button", { name: "Select every Mod shown" }))
 
     expect(selectionStatus()).toBe("45 selected")
     expect(getModsBrowseState().picks.map((pick) => pick.listingId)).toEqual(many.slice(0, 45).map((mod) => mod.modid))
 
-    await user.click(screen.getByRole("button", { name: "Select visible" }))
+    await user.click(screen.getByRole("button", { name: "Select every Mod shown" }))
     expect(selectionStatus()).toBe("45 selected")
   }, 15_000)
 

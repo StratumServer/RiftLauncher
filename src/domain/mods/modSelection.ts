@@ -6,7 +6,7 @@ import { installedCopiesOf } from "./installedFilters"
  *
  * A UX bound, not a technical one: the import pipeline takes 2000 entries. Each pick costs one ModDB
  * lookup and one sequential download in a table the player watches, so this keeps an accidental
- * Select visible on a grid scrolled to hundreds from turning into a run nobody meant.
+ * Select every Mod shown on a grid scrolled to hundreds from turning into a run nobody meant.
  */
 export const MAX_MOD_SELECTION = 100
 
