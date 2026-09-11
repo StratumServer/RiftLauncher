@@ -16,6 +16,8 @@ export interface ModBatchActions {
   setChecked(path: string, checked: boolean): void
   /** Checks every shown Mod, or clears them when every one already is. Checked Mods a filter hides stay as they are. */
   toggleAllShown(): void
+  /** The Mod's name, with its archive's file name added when another listed copy has the same name. */
+  labelOf(iMod: InstalledModType): string
   /** The checked Mods among those shown: exactly what the count says and what every action touches. */
   selected: readonly InstalledModType[]
   /** A rename or delete batch is in flight, up to and including the rescan that follows it. */
@@ -79,6 +81,16 @@ export function useModBatchActions(
       return kept.length === current.size ? current : new Set(kept)
     })
   }, [installedMods])
+
+  // Two copies of one Mod can carry the same name, and then only the file name tells them apart on screen.
+  const seenNames = new Set<string>()
+  const sharedNames = new Set<string>()
+  for (const { name } of installedMods) (seenNames.has(name) ? sharedNames : seenNames).add(name)
+
+  function labelOf(iMod: InstalledModType): string {
+    if (!sharedNames.has(iMod.name)) return iMod.name
+    return t("features.mods.modWithFileName", { mod: iMod.name, file: iMod.path.split(/[\\/]/).pop(), interpolation: { escapeValue: false } })
+  }
 
   const selected = visibleMods.filter((iMod) => checkedPaths.has(iMod.path))
   const toSuspend = modidsOf(selected).filter((modid) => !suspendedModUpdates.includes(modid))
@@ -177,6 +189,7 @@ export function useModBatchActions(
 
   return {
     isChecked: (path) => checkedPaths.has(path),
+    labelOf,
     setChecked,
     toggleAllShown,
     selected,

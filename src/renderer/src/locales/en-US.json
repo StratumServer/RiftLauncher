@@ -297,6 +297,7 @@
       "summaryClose": "Done",
       "cantPlayWhileUpdatingMods": "You can't play this Installation while its Mods are being updated.",
       "selectMod": "Select {{mod}}",
+      "modWithFileName": "{{mod}} ({{file}})",
       "selectAllShown": "Select every Mod shown",
       "selectedCount": "{{count}} selected",
       "selectedCount_zero": "{{count}} selected",

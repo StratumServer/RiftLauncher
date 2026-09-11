@@ -103,7 +103,7 @@ function ManageModsSelectionBar({ batch, shownCount, locked }: Readonly<{ batch:
       <DeleteModDialog
         isOpen={confirmingDelete}
         close={() => setConfirmingDelete(false)}
-        names={batch.selected.map((iMod) => iMod.name)}
+        names={batch.selected.map(batch.labelOf)}
         onClosed={() => {
           if (!deleteConfirmed.current) return
           deleteConfirmed.current = false

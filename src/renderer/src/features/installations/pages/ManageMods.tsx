@@ -100,6 +100,7 @@ function ListMods(): JSX.Element {
         suspended={suspended}
         busy={actions.isBusy(iMod.path) || (batch.running && batch.isChecked(iMod.path))}
         checked={batch.isChecked(iMod.path)}
+        distinctName={batch.labelOf(iMod)}
         onCheckedChange={(checked) => batch.setChecked(iMod.path, checked)}
         onToggleEnabledClick={() => actions.toggleEnabled(iMod)}
         onToggleSuspendClick={() => actions.toggleSuspended(iMod.modid)}

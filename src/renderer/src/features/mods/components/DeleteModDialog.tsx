@@ -45,8 +45,8 @@ function DeleteModDialog({
         <p>{sortedNames ? t("features.mods.areYouSureDeleteSelected", { count: sortedNames.length }) : t("features.mods.areYouSureDelete")}</p>
         {sortedNames && (
           <ul className="max-h-48 overflow-y-auto text-left px-2">
-            {sortedNames.map((name, index) => (
-              <li key={index}>{name}</li>
+            {sortedNames.map((name) => (
+              <li key={name}>{name}</li>
             ))}
           </ul>
         )}

@@ -1405,7 +1405,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     await waitFor(() => expect(document.activeElement).toBe(selectAll))
   })
 
-  it("checks one of two rows with the same name and modid by its file", async () => {
+  it("checks one of two rows with the same name and modid by its file, and names each by its file", async () => {
     const user = userEvent.setup()
     const setModEnabled = renamesAnswering()
     const twinPath = "/games/a/Mods/alpha-1.0.1.zip"
@@ -1420,10 +1420,24 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
 
     const newerRow = (await screen.findByText("v1.0.1", {}, { timeout: 3000 })).closest("li") as HTMLElement
     const olderRow = screen.getByText("v1.0.0").closest("li") as HTMLElement
-    await user.click(within(newerRow).getByRole("checkbox", { name: "Select Alpha Mod" }))
+    // Same name, so each checkbox also goes by its file.
+    await user.click(within(newerRow).getByRole("checkbox", { name: "Select Alpha Mod (alpha-1.0.1.zip)" }))
 
-    expect((within(olderRow).getByRole("checkbox", { name: "Select Alpha Mod" }) as HTMLInputElement).checked).toBe(false)
+    expect((within(olderRow).getByRole("checkbox", { name: "Select Alpha Mod (alpha-1.0.0.zip)" }) as HTMLInputElement).checked).toBe(false)
     expect(screen.getByText("1 selected")).toBeTruthy()
+
+    // The confirmation says which of the two copies it would delete.
+    await user.click(batchButton(DELETE_SELECTED))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Delete 1 Mod")).toBeTruthy()
+    expect(within(dialog).getByText("Are you sure you want to delete this Mod?")).toBeTruthy()
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["Alpha Mod (alpha-1.0.1.zip)"])
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
 
     await user.click(batchButton(DISABLE_SELECTED))
     expect(await screen.findByText("1 Mod disabled.")).toBeTruthy()

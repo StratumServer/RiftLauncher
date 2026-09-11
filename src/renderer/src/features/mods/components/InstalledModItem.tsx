@@ -16,6 +16,7 @@ function InstalledModItem({
   suspended,
   busy,
   checked,
+  distinctName,
   onCheckedChange,
   onToggleEnabledClick,
   onToggleSuspendClick,
@@ -33,6 +34,8 @@ function InstalledModItem({
   busy?: boolean
   /** The row is in the page's selection, which is keyed by this archive's path and nothing else. */
   checked: boolean
+  /** The name the checkbox goes by: the Mod's own, plus the file name when another copy shares it. */
+  distinctName: string
   onCheckedChange: (checked: boolean) => void
   onToggleEnabledClick: () => void
   onToggleSuspendClick: () => void
@@ -54,7 +57,7 @@ function InstalledModItem({
       >
         <Input
           type="checkbox"
-          aria-label={t("features.mods.selectMod", { mod: iMod.name })}
+          aria-label={t("features.mods.selectMod", { mod: distinctName })}
           checked={checked}
           disabled={busy}
           onChange={(e) => onCheckedChange(e.target.checked)}
