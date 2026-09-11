@@ -6,7 +6,7 @@ import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord } from "@src/ipc/validation"
-import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
+import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeBackgroundId } from "@domain/backgrounds"
 import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
@@ -358,18 +358,18 @@ function normalizeInstallation(value: unknown): InstallationType | null {
 }
 
 function normalizeGameVersion(value: unknown): GameVersionType | null {
-  if (!isRecord(value)) return null
+  if (!isUsableGameVersion(value)) return null
   const gameVersion: GameVersionType = {
     id: asString(value.id, "", 128),
-    version: asString(value.version, "", 128),
+    version: value.version,
     label: asString(value.label, "", 256) || asString(value.version, "", 128),
-    path: asString(value.path, "")
+    path: value.path
   }
   // Only set when true so a plain version, or an unset one, doesn't grow a `linked: false`
   // it never had. This flag is what keeps a player's own install off the delete path, so
   // dropping it silently on the next load would turn "remove from list" back into deletion.
   if (asBoolean(value.linked, false)) gameVersion.linked = true
-  return gameVersion.version && gameVersion.path ? gameVersion : null
+  return gameVersion
 }
 
 function normalizeIcon(value: unknown): IconType | null {

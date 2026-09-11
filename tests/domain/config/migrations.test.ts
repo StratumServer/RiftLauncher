@@ -209,6 +209,19 @@ describe("migrateConfigDocument on real configs", () => {
     assert.equal(doc.installations[0]!.gameVersionId, doc.gameVersions[0]!.id)
   })
 
+  it("does not let invalid paths reserve an id from a valid build", () => {
+    const result = migrateConfigDocument({
+      schemaVersion: 4,
+      gameVersions: [
+        { id: "kept", version: "1.22.7", path: "/versions/invalid\0path" },
+        { id: "kept", version: "1.22.7", path: "/versions/valid" }
+      ]
+    })
+    const doc = result.doc as { gameVersions: Array<Record<string, unknown>> }
+
+    assert.deepEqual(doc.gameVersions, [{ id: "kept", version: "1.22.7", path: "/versions/valid", label: "1.22.7" }])
+  })
+
   it("does not let a generated id steal one explicitly owned by a later valid build", () => {
     const firstId = legacyGameVersionId("1.22.7", "/versions/first")
     const result = migrateConfigDocument({

@@ -258,8 +258,25 @@ export function legacyGameVersionId(version: string, path: string): string {
   return `legacy-${(hash >>> 0).toString(16).padStart(8, "0")}`
 }
 
+const MAX_GAME_VERSION_TEXT = 128
+const MAX_GAME_VERSION_PATH = 4_096
+
+export function isUsableGameVersion(value: unknown): value is Record<string, unknown> & { version: string; path: string } {
+  if (!isRecord(value)) return false
+  return (
+    typeof value.version === "string" &&
+    value.version.length > 0 &&
+    value.version.length <= MAX_GAME_VERSION_TEXT &&
+    !value.version.includes("\0") &&
+    typeof value.path === "string" &&
+    value.path.length > 0 &&
+    value.path.length <= MAX_GAME_VERSION_PATH &&
+    !value.path.includes("\0")
+  )
+}
+
 function usableGameVersionId(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= 128 && !value.includes("\0")
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_GAME_VERSION_TEXT && !value.includes("\0")
 }
 
 function usableGameVersionLabel(value: unknown): value is string {
@@ -273,12 +290,7 @@ export function repairGameVersionIdentity(doc: unknown): unknown {
   // Normalize the catalog's usable shape before allocating identities. Invalid entries are
   // discarded by normalizeConfig, so letting them reserve an id or participate in legacy
   // relinking can steal an identity from a real build or make a valid reference ambiguous.
-  const retainedVersions = Array.isArray(doc.gameVersions)
-    ? doc.gameVersions.filter(
-        (entry: unknown): entry is Record<string, unknown> =>
-          isRecord(entry) && typeof entry.version === "string" && entry.version.length > 0 && typeof entry.path === "string" && entry.path.length > 0
-      )
-    : []
+  const retainedVersions = Array.isArray(doc.gameVersions) ? doc.gameVersions.filter(isUsableGameVersion) : []
   const reservedIds = new Set(retainedVersions.map((entry) => (usableGameVersionId(entry.id) ? entry.id : undefined)).filter((id): id is string => id !== undefined))
   const usedIds = new Set<string>()
   const gameVersions = Array.isArray(doc.gameVersions)
