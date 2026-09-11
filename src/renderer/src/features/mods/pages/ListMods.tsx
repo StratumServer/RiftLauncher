@@ -35,7 +35,8 @@ import type { ModpackRequest } from "@domain/mods/importModpack"
 /**
  * One install run over the picks, fixed when Install selected is pressed. The installed list is part
  * of it on purpose: the page rescans after every download, and a live list would restart the table's
- * lookups mid-run.
+ * lookups mid-run. It is read from the folder at that moment rather than taken off the grid, whose
+ * list can still belong to the previous Installation while a scan is on its way.
  */
 type PickRun = { request: ModpackRequest; installedMods: InstalledModType[]; leftOut: number }
 
@@ -372,18 +373,21 @@ function ListMods(): JSX.Element {
     setSelecting(!selecting)
   }
 
-  function installPicks(): void {
-    if (!installation || !installationInstalledMods) return
-    const { entries, leftOut } = modSelectionEntries(picks, installationInstalledMods)
-    setPickRun({ request: { name: "", gameVersion: installation.version, mods: entries }, installedMods: installationInstalledMods, leftOut })
+  async function installPicks(): Promise<void> {
+    if (!installation) return
+    const { mods } = await getInstalledMods({ path: installation.path })
+    const { entries, leftOut } = modSelectionEntries(picks, mods)
+    setPickRun({ request: { name: "", gameVersion: installation.version, mods: entries }, installedMods: mods, leftOut })
   }
 
   function finishPickRun(): void {
     setPickRun(null)
     setPicks([])
     setSelecting(false)
-    // The dialog would hand focus back to Install selected, which leaves with selection mode.
-    pickToggleRef.current?.querySelector("button")?.focus()
+    // The dialog hands focus back, in a microtask once it unmounts, to what had it when it opened:
+    // Install selected, which leaves with selection mode, so it falls to the card picked last. The
+    // move to the toggle is queued behind that restore.
+    setTimeout(() => pickToggleRef.current?.querySelector("button")?.focus())
   }
 
   // Read through a ref so onModAction keeps one identity across rescans and lookups: every card
@@ -492,7 +496,7 @@ function ListMods(): JSX.Element {
           {selecting && (
             <ModSelectionBar
               count={picks.length}
-              canInstall={installation !== undefined && installationInstalledMods !== undefined}
+              canInstall={installation !== undefined}
               onPickVisible={() => setPicks(addPicks(picks, modsList.slice(0, visibleMods).map(toModPick)))}
               onClear={() => setPicks([])}
               onInstall={installPicks}

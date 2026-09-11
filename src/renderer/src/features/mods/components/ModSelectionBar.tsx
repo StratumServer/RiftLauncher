@@ -18,11 +18,11 @@ function ModSelectionBar({
   onInstall
 }: Readonly<{
   count: number
-  /** False with no Installation selected, or before its Mods folder has been read. */
+  /** False with no Installation selected. */
   canInstall: boolean
   onPickVisible: () => void
   onClear: () => void
-  onInstall: () => void
+  onInstall: () => void | Promise<void>
 }>): JSX.Element {
   const { t } = useTranslation()
 
