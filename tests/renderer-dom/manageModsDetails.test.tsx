@@ -431,6 +431,18 @@ describe("ManageMods details panel", () => {
     expect(window.api.utils.openOnBrowser).toHaveBeenCalledWith("https://mods.vintagestory.at/show/mod/101")
   })
 
+  it("offers a row's ModDB page only for a Mod the ModDB knows", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    // The ModDB answered 404 for Delta, so there is no page to open and no /show/mod/undefined.
+    expect(within(rowOf(await detailsButtonFor("Delta Mod"))).queryByTitle("Open on the ModDB!")).toBeNull()
+
+    await user.click(within(rowOf(await detailsButtonFor("Alpha Mod"))).getByTitle("Open on the ModDB!"))
+
+    expect(window.api.utils.openOnBrowser).toHaveBeenCalledWith("https://mods.vintagestory.at/show/mod/101")
+  })
+
   it("renders a detail whose fields came back null instead of taking the page down", async () => {
     const user = userEvent.setup()
     const broken = { ...ALPHA_DETAIL, author: null, text: null, downloads: "12", follows: "x", side: 7 }

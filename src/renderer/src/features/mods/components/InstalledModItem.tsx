@@ -149,17 +149,20 @@ function InstalledModItem({
             <PiArrowClockwiseDuotone />
           </NormalButton>
 
-          <NormalButton
-            className="p-1"
-            title={t("features.mods.openOnTheModDB")}
-            variant="ghost"
-            onClick={(e) => {
-              e.stopPropagation()
-              openExternalLink(`https://mods.vintagestory.at/show/mod/${iMod._mod?.assetid}`)
-            }}
-          >
-            <FiExternalLink />
-          </NormalButton>
+          {/* Only a Mod the ModDB knows has a page there. Without the detail this opened /show/mod/undefined. */}
+          {iMod._mod && (
+            <NormalButton
+              className="p-1"
+              title={t("features.mods.openOnTheModDB")}
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation()
+                openExternalLink(`https://mods.vintagestory.at/show/mod/${iMod._mod?.assetid}`)
+              }}
+            >
+              <FiExternalLink />
+            </NormalButton>
+          )}
 
           <NormalButton
             className="p-1"
