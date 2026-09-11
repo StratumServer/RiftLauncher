@@ -2,12 +2,15 @@ import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, typ
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
-import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, useSuspendedModUpdates, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 
 import { useQueryMods } from "@renderer/features/mods/hooks/useQueryMods"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
+import { installedModLookups } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
+import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { useQueryMod } from "@renderer/features/mods/hooks/useQueryMod"
 import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
@@ -16,20 +19,25 @@ import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, ReloadButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 import ModsFilterBar from "@renderer/features/mods/components/ModsFilterBar"
 import ModsGrid from "@renderer/features/mods/components/ModsGrid"
+import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
+import type { ModCardAction } from "@renderer/features/mods/components/ModListCard"
 import { DEFAULT_LOADED_MODS, getModsBrowseState, updateModsBrowseState, type ModsBrowseState } from "@renderer/features/mods/modsBrowseState"
-import { installedCopiesOf, listingDeclaresModid } from "@domain/mods/installedFilters"
+import { installedCopiesOf } from "@domain/mods/installedFilters"
+import { findModUpdate } from "@domain/mods/compatibility"
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const installations = useInstallations()
   const favMods = useFavMods()
+  const suspendedModUpdates = useSuspendedModUpdates()
   const { lastUsedInstallation } = useSettingsConfig()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
   const queryMods = useQueryMods()
   const getInstalledMods = useGetInstalledMods()
+  const queryMod = useQueryMod()
   const syncModsCount = useSyncModsCount()
   const { openModOnModDb } = useExternalLinks()
   const { tasks } = useTaskContext()
@@ -49,6 +57,13 @@ function ListMods(): JSX.Element {
 
   const [installationInstalledMods, setInstallationInstalledMods] = useState<InstalledModType[] | undefined>(undefined)
   const installationModsLoadedRef = useRef(false)
+
+  // The fast scan is this page's refresh: a folder read, with none of the ModDB lookups the
+  // Manage Mods scan makes for every installed Mod.
+  const actions = useInstalledModActions(installation, triggerGetInstalledMods)
+
+  const [modDetails, setModDetails] = useState<ReadonlyMap<number, DownloadableModType>>(() => new Map())
+  const requestedModDetails = useRef(new Set<number>())
 
   const [onlyFav, setOnlyFavState] = useState<boolean>(browseState.onlyFav)
   const [textFilter, setTextFilterState] = useState<string>(browseState.textFilter)
@@ -204,6 +219,29 @@ function ListMods(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installationInstalledMods])
 
+  /*
+   * A card offers Update only when a newer release is tagged for the build, and the fast scan
+   * knows nothing of releases. So the ModDB details are looked up, but only for the installed Mods
+   * a card is showing, once per id while the page is mounted, and through the limiter the Manage
+   * Mods scan uses so that together they stay inside their share of the ModDB slots (#386). The
+   * details do not depend on the local copy: after a toggle, a delete or an update, the same
+   * details still give the right answer. A failed lookup only leaves Update hidden.
+   */
+  useEffect(() => {
+    if (!installationInstalledMods) return
+
+    for (const mod of modsList.slice(0, visibleMods)) {
+      if (requestedModDetails.current.has(mod.modid) || installedCopiesOf(mod.modidstrs, installationInstalledMods).length !== 1) continue
+      requestedModDetails.current.add(mod.modid)
+
+      void installedModLookups
+        .run(() => queryMod({ modid: mod.modid }))
+        .then((lookup) => {
+          if (lookup.status === "found") setModDetails((previous) => new Map(previous).set(mod.modid, lookup.mod))
+        })
+    }
+  }, [modsList, visibleMods, installationInstalledMods, queryMod])
+
   useLayoutEffect(() => {
     if (!restoreBrowseRef.current || modsList.length === 0) return
 
@@ -295,6 +333,40 @@ function ListMods(): JSX.Element {
 
   const onOpenModDb = useCallback((mod: DownloadableModOnListType): void => openModOnModDb(mod.assetid), [openModOnModDb])
 
+  // Read through a ref so onModAction keeps one identity across rescans and lookups: every card
+  // holds it, and a new one would re-render them all.
+  const actionTargets = useRef({ installedMods: [] as readonly InstalledModType[], details: modDetails, gameVersion: "" })
+  useLayoutEffect(() => {
+    actionTargets.current = { installedMods: installationInstalledMods ?? [], details: modDetails, gameVersion: installation?.version ?? "" }
+  })
+
+  const { installNewest, updateMod, toggleEnabled, toggleSuspended, requestDelete } = actions
+  const onModAction = useCallback(
+    (mod: DownloadableModOnListType, action: ModCardAction): void | Promise<void> => {
+      if (action === "install")
+        return installNewest(mod).then((outcome) => {
+          // Nothing is tagged for this build. The release list labels every release Tagged, Likely
+          // or Untagged, so that is where the player can pick one knowing what it is.
+          if (outcome === "no-tagged-release") navigate(`/mods/install/${mod.modid}`, { state: { modName: mod.name } })
+        })
+
+      const { installedMods, details, gameVersion } = actionTargets.current
+      const copies = installedCopiesOf(mod.modidstrs, installedMods)
+      const copy = copies.length === 1 ? copies[0] : undefined
+      if (!copy) return
+
+      if (action === "toggle-enabled") return toggleEnabled(copy)
+      if (action === "toggle-suspended") return toggleSuspended(copy.modid)
+      if (action === "delete") return requestDelete(copy)
+
+      const releases = details.get(mod.modid)?.releases ?? []
+      const target = findModUpdate(copy.version, releases, gameVersion).updatableTo
+      const newRelease = releases.find((release) => release.modversion === target)
+      if (newRelease) return updateMod(copy, newRelease)
+    },
+    [installNewest, updateMod, toggleEnabled, toggleSuspended, requestDelete, navigate]
+  )
+
   function clearFilters(): void {
     setTextFilter("")
     setAuthorFilter({ userid: "", name: "" })
@@ -354,16 +426,27 @@ function ListMods(): JSX.Element {
           />
         </StickyMenuWrapper>
 
+        {/* Said once for the whole grid, rather than as a row of dead buttons on every card. */}
+        {!installation && <p className="text-sm text-center text-zinc-400">{t("features.installations.noInstallationSelected")}</p>}
+
         <ModsGrid
           mods={modsList}
           visibleCount={visibleMods}
           searching={searching}
-          isModInstalled={(mod) => Boolean(installationInstalledMods?.some((iMod) => listingDeclaresModid(mod.modidstrs, iMod.modid)))}
+          installedMods={installationInstalledMods ?? []}
+          installationId={installation?.id}
+          gameVersion={installation?.version ?? ""}
+          details={modDetails}
+          suspendedModUpdates={suspendedModUpdates}
+          isBusy={actions.isBusy}
           isModFav={(mod) => favMods.includes(mod.modid)}
           onSelectMod={onSelectMod}
           onToggleFavMod={onToggleFavMod}
           onOpenModDb={onOpenModDb}
+          onModAction={onModAction}
         />
+
+        <DeleteModDialog isOpen={actions.modToDelete !== null} close={actions.cancelDelete} onConfirm={actions.confirmDelete} />
       </div>
     </ScrollableContainer>
   )

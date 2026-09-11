@@ -295,7 +295,12 @@
       "summaryFailed": "Failed",
       "summaryAlreadyPresent": "Already installed",
       "summaryClose": "Done",
-      "cantPlayWhileUpdatingMods": "You can't play this Installation while its Mods are being updated."
+      "cantPlayWhileUpdatingMods": "You can't play this Installation while its Mods are being updated.",
+      "quickInstall": "Install the newest release made for this Installation's Vintage Story version",
+      "updateToVersion": "Update to v{{version}}",
+      "enabledToggle": "Enabled: Vintage Story loads this Mod",
+      "updatesSuspendedToggle": "Updates suspended: Update all skips this Mod",
+      "severalCopiesInstalled": "Several copies are installed. Sort them out in Manage Mods."
     },
     "config": {
       "defaultInstallationsFolder": "Installations folder",
