@@ -31,7 +31,11 @@ const MAX_MOD_PROFILE_ID_LENGTH = 64
 const MAX_MODID_LENGTH = 256
 const MAX_FILE_NAME_LENGTH = 255
 
-/** The largest profiles file the host will read. 50 profiles of 2,000 entries each fit well inside it. */
+/**
+ * The largest profiles file the host will read, and so the largest it will write. The caps above do
+ * not keep a document under it (50 full profiles of ordinary names come to about 10 MiB), so a save
+ * that would outgrow it is refused rather than written as a file the next read turns down.
+ */
 export const MAX_MOD_PROFILES_FILE_BYTES = 4 * 1024 * 1024
 
 /** What a duplicate's name ends with, before any number that keeps it unique. */
@@ -199,7 +203,10 @@ export function planModProfileSwitch(profile: ModProfile, mods: readonly Profile
     } else if (copies.length === 1) {
       for (const mod of copies) wanted.set(mod.path, true)
     } else if (copies.some((mod) => files.has(enabledFormOf(mod.path)))) {
-      for (const mod of copies) wanted.set(mod.path, files.has(enabledFormOf(mod.path)))
+      // X.zip and X.zip.disabled can never both be on, and the host refuses a rename onto a taken
+      // name: the copy already holding the recorded name keeps it, and its twin stays off.
+      const names = new Set(copies.map((mod) => lastPathSegment(mod.path)))
+      for (const mod of copies) wanted.set(mod.path, files.has(enabledFormOf(mod.path)) && (mod.enabled || !names.has(enabledFormOf(mod.path))))
     } else {
       unresolved++
     }

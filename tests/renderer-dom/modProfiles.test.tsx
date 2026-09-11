@@ -422,6 +422,35 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(await screen.findByText(/^Switched to Mods & "more" <3: 1 Mods turned on, 3 turned off\./)).toBeTruthy()
   })
 
+  it.each([
+    ["did not finish", GAMMA, [], `Switching to Mods & "more" <3 did not finish: 1 Mods kept their state. No profile is active until you switch again.`],
+    ["was not recorded", null, [{ ok: true }, { ok: false, reason: "refused" }], `The Mods now match Mods & "more" <3, but it couldn't be recorded as the active profile.`]
+  ] as const)("shows a profile name exactly as typed when a switch %s", async (_case, refuse, saveAnswers, verdict) => {
+    const named: ModProfile = { ...SOLO, id: "named", name: `Mods & "more" <3` }
+    const { user, refused } = renderProfiles({ document: aDocument([SERVER, named], "server"), saveAnswers: [...saveAnswers] })
+    if (refuse) refused.add(refuse)
+    const dialog = await openProfiles(user, named.name)
+
+    await user.click(useButtonOf(dialog, named.name))
+
+    expect(await screen.findByText(verdict)).toBeTruthy()
+  })
+
+  it("says a Mod it lists was left alone when two copies share its modid and neither is the one it recorded", async () => {
+    const newer = `${MODS}/alpha-1.1.0.zip.disabled`
+    const mods = [aMod("Alpha Mod", "alpha", ALPHA), aMod("Alpha Mod", "alpha", newer, false), aMod("Beta Mod", "beta", BETA)]
+    const pinned: ModProfile = { id: "pinned", name: "Pinned", mods: [{ modid: "alpha", file: "alpha-0.9.0.zip" }] }
+    const { user, setModEnabled } = renderProfiles({ mods, document: aDocument([SERVER, pinned], "server") })
+    const dialog = await openProfiles(user, "Pinned")
+
+    await user.click(useButtonOf(dialog, "Pinned"))
+
+    expect(
+      await screen.findByText("Switched to Pinned: 0 Mods turned on, 1 turned off. 1 Mods it lists were left alone, because they are no longer installed or more than one copy could match.")
+    ).toBeTruthy()
+    expect(setModEnabled.mock.calls).toEqual([[BETA, false]])
+  })
+
   it("with two archives of one modid, turns on the one the profile recorded and off the other", async () => {
     const newer = `${MODS}/alpha-1.1.0.zip.disabled`
     const mods = [aMod("Alpha Mod", "alpha", ALPHA), aMod("Alpha Mod", "alpha", newer, false), aMod("Beta Mod", "beta", BETA)]

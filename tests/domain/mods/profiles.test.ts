@@ -185,6 +185,13 @@ describe("planModProfileSwitch", () => {
       { path: "/x/Mods/beta.zip", enabled: false }
     ])
     assert.equal(plan.missing, 0)
+
+    // And the other way round: an update that changed the modid's case in modinfo still matches.
+    assert.deepEqual(planModProfileSwitch(aProfile("a", "Server", [{ modid: "alpha", file: "alpha-1.0.0.zip" }]), [off("ALPHA", "/x/Mods/alpha-1.1.0.zip.disabled")]), {
+      changes: [{ path: "/x/Mods/alpha-1.1.0.zip.disabled", enabled: true }],
+      missing: 0,
+      unresolved: 0
+    })
   })
 
   it("turns off what the profile does not list and leaves alone what is already right", () => {
@@ -213,6 +220,15 @@ describe("planModProfileSwitch", () => {
       { path: "C:\\x\\Mods\\alpha-1.0.0.zip", enabled: false },
       { path: "C:\\x\\Mods\\alpha-1.1.0.zip.disabled", enabled: true }
     ])
+  })
+
+  it("with X.zip on and X.zip.disabled beside it, keeps the one under the recorded name and plans no rename onto a taken name", () => {
+    const profile = aProfile("a", "Server", [{ modid: "alpha", file: "alpha-1.0.0.zip" }])
+
+    // The folder already matches the profile: turning the twin on is a rename the host refuses as name-taken, every time.
+    assert.deepEqual(planModProfileSwitch(profile, [on("alpha", "/x/Mods/alpha-1.0.0.zip"), off("alpha", "/x/Mods/alpha-1.0.0.zip.disabled")]), { changes: [], missing: 0, unresolved: 0 })
+    // In the other order, too.
+    assert.deepEqual(planModProfileSwitch(profile, [off("alpha", "/x/Mods/alpha-1.0.0.zip.disabled"), on("alpha", "/x/Mods/alpha-1.0.0.zip")]).changes, [])
   })
 
   it("with two archives of one modid and neither recorded, leaves both and counts one unresolved", () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -11,6 +11,7 @@ import "./helpers/electronMock"
 import { createTrustedEvent, createUntrustedEvent, getIpcHandler, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { normalizeModProfilesDocument } from "@domain/mods/profiles"
 
 /**
  * GET_MOD_PROFILES and SAVE_MOD_PROFILES, the profiles file at an Installation's root (#287).
@@ -72,6 +73,24 @@ function aDocument(overrides: Partial<ModProfilesDocument> = {}): ModProfilesDoc
     ],
     ...overrides
   }
+}
+
+/** A document whose file, indented as the host writes it, is exactly `bytes` long. Every entry keeps to the rules. */
+function aDocumentOfBytes(bytes: number): ModProfilesDocument {
+  const size = (document: ModProfilesDocument): number => Buffer.byteLength(JSON.stringify(document, undefined, 2))
+  const entry = (tag: string, modidLength: number, fileLength: number): ModProfileEntry => ({ modid: tag.padEnd(modidLength, "m"), file: `${tag.padEnd(fileLength - 4, "f")}.zip` })
+  const profiles = Array.from({ length: 50 }, (_, index) => ({ id: `p${index}`, name: `Profile ${index}`, mods: [entry(`p${index}-0-`, 200, 200)] }))
+  const document: ModProfilesDocument = { format: 1, activeProfileId: null, profiles }
+
+  // Past a profile's first entry, each one adds its two names plus a fixed frame, so the rest is arithmetic.
+  const before = size(document)
+  profiles[0]!.mods.push(entry("p0-1-", 200, 200))
+  const frame = size(document) - before - 400
+  let remaining = bytes - size(document)
+  for (let index = 0; remaining - frame - 6 >= 400 + frame; index++, remaining -= 400 + frame) profiles[index % profiles.length]!.mods.push(entry(`e${index}-`, 200, 200))
+  const modidLength = Math.min(256, remaining - frame - 5)
+  profiles[profiles.length - 1]!.mods.push(entry("z", modidLength, remaining - frame - modidLength))
+  return document
 }
 
 function profilesFile(folder = installation): string {
@@ -197,6 +216,22 @@ describe("GET_MOD_PROFILES and SAVE_MOD_PROFILES", () => {
     assert.deepEqual(readdirSync(installation), ["Mods"])
   })
 
+  it("never writes a file bigger than a read accepts, and writes one at exactly 4 MiB", async () => {
+    const event = await createTrustedEvent()
+    const over = aDocumentOfBytes(4 * 1024 * 1024 + 1)
+    const atCap = aDocumentOfBytes(4 * 1024 * 1024)
+
+    // Within every cap the rules set, and still one byte over what a read takes: written, it would
+    // read back as unreadable and could never be replaced.
+    assert.deepEqual(normalizeModProfilesDocument(over), { ok: true, document: over })
+    assert.deepEqual(await saveModProfiles()(event, installation, over), { ok: false, reason: "invalid" })
+    assert.deepEqual(readdirSync(installation), ["Mods"])
+
+    assert.deepEqual(await saveModProfiles()(event, installation, atCap), { ok: true })
+    assert.equal(statSync(profilesFile()).size, 4 * 1024 * 1024)
+    assert.deepEqual(await getModProfiles()(event, installation), { ok: true, document: atCap })
+  })
+
   it("never overwrites a file from a newer format", async () => {
     const event = await createTrustedEvent()
     const newer = JSON.stringify({ format: 2, activeProfileId: null, profiles: [], tags: ["future"] })
@@ -216,6 +251,21 @@ describe("GET_MOD_PROFILES and SAVE_MOD_PROFILES", () => {
       assert.deepEqual(await saveModProfiles()(event, installation, aDocument()), { ok: false, reason: "unreadable" }, contents)
       assert.equal(readFileSync(profilesFile(), "utf-8"), contents)
     }
+  })
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("reads a file it may not look up as unreadable, not as a missing one, and never writes over it", async () => {
+    const event = await createTrustedEvent()
+    const contents = JSON.stringify(aDocument())
+    writeFileSync(profilesFile(), contents, "utf-8")
+    // With no search permission on the folder, looking the file up fails with EACCES, not ENOENT.
+    chmodSync(installation, 0o600)
+    try {
+      assert.deepEqual(await getModProfiles()(event, installation), { ok: false, reason: "unreadable" })
+      assert.deepEqual(await saveModProfiles()(event, installation, aDocument({ activeProfileId: null })), { ok: false, reason: "unreadable" })
+    } finally {
+      chmodSync(installation, 0o755)
+    }
+    assert.equal(readFileSync(profilesFile(), "utf-8"), contents)
   })
 
   it("reads a folder in the file's place as unreadable, and leaves it a folder", async () => {

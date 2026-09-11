@@ -317,6 +317,9 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SAVE_MOD_PROFILES, async (event, instal
   // document is not an empty one here, so it is refused before the normalizer can read it as such.
   const cleaned = isRecord(document) ? normalizeModProfilesDocument(document) : undefined
   if (!cleaned?.ok) return refuse("invalid")
+  // A read refuses a file over the cap, and never overwrites it after that. Writing one would turn
+  // profiles off for good, so a document that would not fit is refused before anything is written.
+  if (Buffer.byteLength(JSON.stringify(cleaned.document, undefined, 2)) > MAX_MOD_PROFILES_FILE_BYTES) return refuse("invalid")
 
   // What is on disk now decides whether it may be replaced at all: a file this build cannot read, or
   // one a newer build wrote, is left exactly as it is.
