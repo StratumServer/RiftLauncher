@@ -388,10 +388,10 @@ describe("modDescriptionParagraphs", () => {
     const started = performance.now()
 
     assert.deepEqual(modDescriptionParagraphs("<".repeat(size)), ["<".repeat(size)])
-    assert.deepEqual(modDescriptionParagraphs("<script ".repeat(size / 8)), [("<script ".repeat(size / 8)).trim()])
+    assert.deepEqual(modDescriptionParagraphs("<script ".repeat(size / 8)), ["<script ".repeat(size / 8).trim()])
     assert.deepEqual(modDescriptionParagraphs("<script>".repeat(size / 8)), [])
     assert.deepEqual(modDescriptionParagraphs("<!--".repeat(size / 4)), [])
-    assert.deepEqual(modDescriptionParagraphs(`<p>${"word ".repeat(size / 5)}</p>`), [("word ".repeat(size / 5)).trim()])
+    assert.deepEqual(modDescriptionParagraphs(`<p>${"word ".repeat(size / 5)}</p>`), ["word ".repeat(size / 5).trim()])
 
     const elapsed = performance.now() - started
     assert.ok(elapsed < 1000, `took ${Math.round(elapsed)} ms`)
