@@ -1367,7 +1367,11 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     let dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText("Delete 3 Mods")).toBeTruthy()
     // Sorted by name, whatever order the sections list them in, and nothing that is not checked.
-    expect(within(dialog).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Alpha Mod", "Delta Mod", "Gamma Mod"])
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["Alpha Mod", "Delta Mod", "Gamma Mod"])
     expect(within(dialog).queryByText("Beta Mod")).toBeNull()
     expect(within(dialog).getByText(/Deletion is not reversible/)).toBeTruthy()
 

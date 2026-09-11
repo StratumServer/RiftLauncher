@@ -156,9 +156,7 @@ function ListMods(): JSX.Element {
               )}
 
               {/* Off while Update all runs: the rows are gone, and a batch would race it on the same archives. */}
-              {installedMods.length > 0 && !installation._updatingMods && (
-                <ManageModsSelectionBar batch={batch} shownCount={visibleMods.length} locked={actions.busyPaths.length > 0} />
-              )}
+              {installedMods.length > 0 && !installation._updatingMods && <ManageModsSelectionBar batch={batch} shownCount={visibleMods.length} locked={actions.busyPaths.length > 0} />}
             </>
           )}
         </StickyMenuWrapper>

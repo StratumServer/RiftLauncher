@@ -10,12 +10,7 @@ import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponen
  * With `names`, it is asking about several Mods at once, and it names every one of them before
  * anything happens, because the player picked them from a list they may have scrolled past.
  */
-function DeleteModDialog({
-  isOpen,
-  close,
-  onConfirm,
-  names
-}: Readonly<{ isOpen: boolean; close: () => void; onConfirm: () => Promise<void>; names?: readonly string[] }>): JSX.Element {
+function DeleteModDialog({ isOpen, close, onConfirm, names }: Readonly<{ isOpen: boolean; close: () => void; onConfirm: () => Promise<void>; names?: readonly string[] }>): JSX.Element {
   const { t } = useTranslation()
   const sortedNames = names && [...names].sort((a, b) => a.localeCompare(b))
 

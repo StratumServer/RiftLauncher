@@ -10,10 +10,10 @@ const C = "/games/a/Mods/gamma-3.0.0.zip"
 
 function ports(overrides: Partial<ModBatchPorts>): ModBatchPorts {
   return {
-    setEnabled: async () => {
+    setEnabled: async (): Promise<never> => {
       throw new Error("This case does not rename anything.")
     },
-    remove: async () => {
+    remove: async (): Promise<never> => {
       throw new Error("This case does not delete anything.")
     },
     ...overrides
