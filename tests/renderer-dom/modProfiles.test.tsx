@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from "vitest"
-import { act, screen, waitFor, within } from "@testing-library/react"
+import type { ReactElement, ReactNode } from "react"
+import { act, renderHook, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
 import ManageMods from "@renderer/features/installations/pages/ManageMods"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
+import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
+import { ConfigProvider } from "@renderer/features/config/contexts/ConfigContext"
+import { useModProfiles } from "@renderer/features/mods/hooks/useModProfiles"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -408,6 +412,16 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(profilesButton().textContent).toContain("No profile")
   })
 
+  it("shows a profile name in the verdict exactly as the player typed it", async () => {
+    const named: ModProfile = { ...SOLO, id: "named", name: `Mods & "more" <3` }
+    const { user } = renderProfiles({ document: aDocument([SERVER, named], "server") })
+    const dialog = await openProfiles(user, named.name)
+
+    await user.click(useButtonOf(dialog, named.name))
+
+    expect(await screen.findByText(/^Switched to Mods & "more" <3: 1 Mods turned on, 3 turned off\./)).toBeTruthy()
+  })
+
   it("with two archives of one modid, turns on the one the profile recorded and off the other", async () => {
     const newer = `${MODS}/alpha-1.1.0.zip.disabled`
     const mods = [aMod("Alpha Mod", "alpha", ALPHA), aMod("Alpha Mod", "alpha", newer, false), aMod("Beta Mod", "beta", BETA)]
@@ -512,6 +526,14 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     await within(dialog).findByText("Solo world", { selector: "span" })
 
     expect(stored()).toEqual(aDocument([SERVER, { ...SOLO, name: "Solo world" }], "server"))
+
+    // Its own name in another case is not "taken".
+    await user.click(within(rowOf(dialog, "Solo world")).getByRole("button", { name: "Rename this profile" }))
+    const again = within(dialog).getByLabelText("Profile name")
+    await user.clear(again)
+    await user.type(again, "SOLO WORLD{Enter}")
+    await within(dialog).findByText("SOLO WORLD", { selector: "span" })
+    expect(stored().profiles[1]?.name).toBe("SOLO WORLD")
     expect(setModEnabled).not.toHaveBeenCalled()
   })
 
@@ -618,5 +640,33 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(profilesButton()))
+  })
+})
+
+describe("useModProfiles", () => {
+  function wrapper({ children }: { children: ReactNode }): ReactElement {
+    return (
+      <NotificationsProvider>
+        <ConfigProvider>{children}</ConfigProvider>
+      </NotificationsProvider>
+    )
+  }
+
+  it.each([
+    ["newer-format", "newer-format"],
+    ["unreadable", "unreadable"],
+    ["refused", "unavailable"]
+  ] as const)("writes nothing after a read of %s, whatever calls it", async (reason, status) => {
+    const saveModProfiles = vi.fn<BridgeAPI["modsManager"]["saveModProfiles"]>(async () => ({ ok: true }))
+    installMockWindowApi({ modsManager: { getModProfiles: vi.fn(async () => ({ ok: false as const, reason })), saveModProfiles } })
+    const { result } = renderHook(() => useModProfiles(anInstallation()), { wrapper })
+
+    await waitFor(() => expect(result.current.status).toBe(status))
+    // The dialog disables everything in this state; the hook does not rely on it.
+    await act(async () => {
+      await result.current.create("Server")
+    })
+
+    expect(saveModProfiles).not.toHaveBeenCalled()
   })
 })
