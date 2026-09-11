@@ -74,8 +74,11 @@ describe("findModUpdate", () => {
     assert.deepEqual(findModUpdate("1.5.0", releases, "1.21.0"), { lastVersion: "2.0.0" })
   })
 
-  it("never offers a release older than the installed copy", () => {
+  it("never offers a release older than the installed copy, tagged for the series or not", () => {
     assert.deepEqual(findModUpdate("2.0.0", [aRelease("1.5.0", "1.21.0")], "1.21.0"), {})
+    // Untagged releases only become lastVersion when they are newer: the installed copy's own
+    // version and an older one both leave the Mod out of "Mods with incompatible updates".
+    assert.deepEqual(findModUpdate("2.0.0", [aRelease("2.0.0", "1.19.0"), aRelease("1.5.0", "1.19.0")], "1.21.0"), {})
   })
 
   it("stops at the first tagged release above the installed one rather than the last", () => {
