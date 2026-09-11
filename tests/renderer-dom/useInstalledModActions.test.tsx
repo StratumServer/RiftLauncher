@@ -2,7 +2,7 @@ import type { ReactElement, ReactNode } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { act, renderHook, screen, waitFor } from "@testing-library/react"
 
-import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { quickInstallKey, useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
 import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
 import { ConfigProvider } from "@renderer/features/config/contexts/ConfigContext"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
@@ -284,5 +284,112 @@ describe("useInstalledModActions: identity", () => {
     expect(result.current.cancelDelete).toBe(first.cancelDelete)
     expect(result.current.confirmDelete).toBe(first.confirmDelete)
     await act(async () => rename.resolve({ ok: true, path: `${ENABLED_PATH}.disabled` }))
+  })
+})
+
+describe("useInstalledModActions: update and quick install", () => {
+  const HOLDERS = [{ _backuping: true }, { _restoringBackup: true }, { _updatingMods: true }]
+
+  const alphaRelease: DownloadableModReleaseType = {
+    releaseid: 1,
+    mainfile: "https://mods.example/alpha-1.5.0.zip",
+    filename: "alpha-1.5.0.zip",
+    fileid: 1,
+    downloads: 0,
+    tags: ["1.20.0"],
+    modidstr: "alpha",
+    modversion: "1.5.0",
+    created: "2026-01-01",
+    changelog: ""
+  }
+  const alphaListing: DownloadableModOnListType = {
+    modid: 7,
+    assetid: 7,
+    downloads: 0,
+    follows: 0,
+    trendingpoints: 0,
+    comments: 0,
+    name: "Alpha Mod",
+    summary: null,
+    modidstrs: ["alpha"],
+    author: "Someone",
+    urlalias: null,
+    side: "both",
+    type: "mod",
+    logo: "",
+    tags: [],
+    lastreleased: ""
+  }
+  const alphaDetail = JSON.stringify({ statuscode: "200", mod: { modid: 7, name: "Alpha Mod", releases: [alphaRelease] } })
+
+  it.each(HOLDERS)("refuses to update while %o and touches nothing", async (holder) => {
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async () => "")
+    const { result } = renderActions(anInstallation(holder), async () => {}, { pathsManager: { deletePath, downloadOnPath } })
+
+    await act(() => result.current.updateMod(disabledCopy, alphaRelease))
+
+    expect(await screen.findByText("You can't update a Mod while it's in use.")).toBeTruthy()
+    expect(deletePath).not.toHaveBeenCalled()
+    expect(downloadOnPath).not.toHaveBeenCalled()
+    expect(result.current.busyPaths).toEqual([])
+  })
+
+  it.each(HOLDERS)("refuses to install while %o, before asking the ModDB anything", async (holder) => {
+    const queryURL = vi.fn<BridgeAPI["netManager"]["queryURL"]>(async () => alphaDetail)
+    const { result } = renderActions(anInstallation(holder), async () => {}, { netManager: { queryURL } })
+
+    let outcome: string | undefined
+    await act(async () => {
+      outcome = await result.current.installNewest(alphaListing)
+    })
+
+    expect(outcome).toBe("done")
+    expect(await screen.findByText("You can't update a Mod while it's in use.")).toBeTruthy()
+    expect(queryURL).not.toHaveBeenCalled()
+  })
+
+  it("refuses to install when the folder is taken while the release list is on its way", async () => {
+    const lookup = deferred<string>()
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async () => "")
+    installMockWindowApi({ netManager: { queryURL: vi.fn(() => lookup.promise) }, pathsManager: { downloadOnPath } })
+    const { result, rerender } = renderHook(({ installation }: { installation: InstallationType }) => useInstalledModActions(installation, async () => {}), {
+      wrapper,
+      initialProps: { installation: anInstallation() }
+    })
+
+    let installing!: Promise<unknown>
+    act(() => {
+      installing = result.current.installNewest(alphaListing)
+    })
+    rerender({ installation: anInstallation({ _backuping: true }) })
+    await act(async () => {
+      lookup.resolve(alphaDetail)
+      await installing
+    })
+
+    expect(downloadOnPath).not.toHaveBeenCalled()
+    expect(await screen.findByText("You can't update a Mod while it's in use.")).toBeTruthy()
+  })
+
+  it("holds the listing busy from the lookup until the rescan after the download lands", async () => {
+    const rescan = deferred<void>()
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => `${outputPath}/${fileName}`)
+    const { result } = renderActions(anInstallation(), () => rescan.promise, { netManager: { queryURL: vi.fn(async () => alphaDetail) }, pathsManager: { downloadOnPath } })
+
+    let installing!: Promise<unknown>
+    act(() => {
+      installing = result.current.installNewest(alphaListing)
+    })
+    expect(result.current.isBusy(quickInstallKey(7))).toBe(true)
+
+    await waitFor(() => expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/alpha-1.5.0.zip", "/games/a/Mods", "alpha-1.5.0.zip"))
+    expect(result.current.isBusy(quickInstallKey(7))).toBe(true)
+
+    await act(async () => {
+      rescan.resolve()
+      await installing
+    })
+    expect(result.current.isBusy(quickInstallKey(7))).toBe(false)
   })
 })
