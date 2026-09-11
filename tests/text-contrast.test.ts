@@ -373,6 +373,9 @@ describe("prompts the player is meant to read and act on", () => {
    */
   it("keeps the detail panel's verdict words readable on its release rows", () => {
     const rowFill: Layer = [ZINC["zinc-950"], Number(match("features/mods/components/InstalledModDetails.tsx", /const RELEASE_ROW_FILL = "bg-zinc-950\/(\d+)"/)[1]) / 100]
+    // The constant alone proves nothing: the two places a verdict sits have to wear it.
+    match("features/mods/components/InstalledModDetails.tsx", /<section aria-label=\{t\("features\.mods\.installedVersion"\)\} className=\{clsx\("[^"]*", RELEASE_ROW_FILL\)\}/)
+    match("features/mods/components/InstalledModDetails.tsx", /<li key=\{index\} className=\{clsx\("[^"]*", RELEASE_ROW_FILL\)\}/)
     const verdicts: ReadonlyArray<readonly [string, RegExp]> = [
       ["declared", /declared: \{ className: "text-([a-z]+-\d+)"/],
       ["same-minor", /"same-minor": \{ className: "text-([a-z]+-\d+)"/],
