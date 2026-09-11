@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, type Dispatch, type SetStateAction } from "react"
-import { useTranslation } from "react-i18next"
+import { Trans, useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
 import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, useSuspendedModUpdates, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
@@ -16,6 +16,7 @@ import { logMods } from "@renderer/features/moddb/adapters/log"
 import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
 
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
+import { LinkButton } from "@renderer/components/ui/Buttons"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, ReloadButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 import ModsFilterBar from "@renderer/features/mods/components/ModsFilterBar"
 import ModsGrid from "@renderer/features/mods/components/ModsGrid"
@@ -432,8 +433,25 @@ function ListMods(): JSX.Element {
           />
         </StickyMenuWrapper>
 
-        {/* Said once for the whole grid, rather than as a row of dead buttons on every card. */}
-        {!installation && <p className="text-sm text-center text-zinc-400">{t("features.installations.noInstallationSelected")}</p>}
+        {/*
+         * Said once for the whole grid, rather than as a row of dead buttons on every card. The config
+         * selects the first Installation whenever there is one, so having none is what this means.
+         */}
+        {!installation && (
+          <p className="text-sm text-center text-zinc-400">
+            {t("features.installations.noInstallationsFound")}{" "}
+            <Trans
+              i18nKey="features.installations.noInstallationsFoundDesc"
+              components={{
+                link: (
+                  <LinkButton title={t("components.mainMenu.installationsTitle")} to="/installations" variant="link">
+                    {t("components.mainMenu.installationsTitle")}
+                  </LinkButton>
+                )
+              }}
+            />
+          </p>
+        )}
 
         <ModsGrid
           mods={modsList}

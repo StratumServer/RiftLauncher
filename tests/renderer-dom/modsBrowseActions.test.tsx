@@ -189,7 +189,9 @@ describe("ModDB card actions: no Installation", () => {
 
     await screen.findByRole("button", { name: "Primitive Survival, Not installed" }, { timeout: 3000 })
 
-    expect(screen.getAllByText("No Installation selected.")).toHaveLength(1)
+    // The config selects the first Installation whenever there is one, so none selected means none at all.
+    expect(screen.getAllByText(/No Installations found!/)).toHaveLength(1)
+    expect(screen.getByRole("link", { name: "Installations" }).getAttribute("href")).toBe("/installations")
     expect(screen.queryAllByRole("group")).toHaveLength(0)
     for (const card of screen.getAllByRole("listitem")) expect(within(card).getAllByRole("button")).toHaveLength(3)
   })
