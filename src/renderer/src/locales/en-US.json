@@ -373,6 +373,7 @@
       "areYouSureDeleteSelected_many": "Are you sure you want to delete these Mods?",
       "areYouSureDeleteSelected_other": "Are you sure you want to delete these Mods?",
       "profilesButtonTitle": "Mod profiles: save the Mods that are on as a named set, and switch between sets",
+      "profilesButtonTitleActive": "Mod profiles, {{profile}} in use: save the Mods that are on as a named set, and switch between sets",
       "noProfile": "No profile",
       "profilesTitle": "Mod profiles",
       "profilesIntro": "A profile is a named set of the Mods that are on. Using one turns Mods on and off until this Installation's Mods folder matches it. Nothing is copied or downloaded. While a profile is in use it follows the folder: turning Mods on or off, installing or deleting them changes that profile.",

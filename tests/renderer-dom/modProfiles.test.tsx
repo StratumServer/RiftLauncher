@@ -28,7 +28,9 @@ const GAMMA = `${MODS}/gamma-3.0.0.zip`
 const DELTA = `${MODS}/delta-4.0.0.zip`
 const EPSILON = `${MODS}/epsilon-5.0.0.zip.disabled`
 
-const PROFILES_BUTTON = "Mod profiles: save the Mods that are on as a named set, and switch between sets"
+const PROFILES_TITLE = "Mod profiles: save the Mods that are on as a named set, and switch between sets"
+/** The button's name carries the active profile, so it is found by what every name starts with. */
+const PROFILES_BUTTON = /^Mod profiles/
 const USE = "Use this profile: turn Mods on and off until the folder matches it"
 const CREATE = "Save the Mods that are on right now as a new profile, and make it the active one"
 const NEW_NAME = "Save the current Mods as a profile"
@@ -248,6 +250,7 @@ describe("Mod profiles", { timeout: 20000 }, () => {
 
     await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
     expect(profilesButton().textContent).toContain("No profile")
+    expect(profilesButton().getAttribute("aria-label")).toBe(PROFILES_TITLE)
     const dialog = await openProfiles(user)
 
     // Says that the profile in use follows the folder, so a hand toggle rewriting it is no surprise.
@@ -362,6 +365,7 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(useButtonOf(dialog, "Solo").getAttribute("aria-pressed")).toBe("true")
     expect(useButtonOf(dialog, "Server").getAttribute("aria-pressed")).toBe("false")
     expect(profilesButton().textContent).toContain("Solo")
+    expect(profilesButton().getAttribute("aria-label")).toBe("Mod profiles, Solo in use: save the Mods that are on as a named set, and switch between sets")
     // One verdict for the whole switch, and the individual renames raise none.
     expect(toasts()).toHaveLength(1)
     expect(screen.queryByText(/is disabled and will not be loaded/)).toBeNull()
@@ -440,6 +444,8 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     await user.click(useButtonOf(dialog, named.name))
 
     expect(await screen.findByText(/^Switched to Mods & "more" <3: 1 turned on, 3 turned off\./)).toBeTruthy()
+    await switchLanded()
+    expect(profilesButton().getAttribute("aria-label")).toBe(`Mod profiles, Mods & "more" <3 in use: save the Mods that are on as a named set, and switch between sets`)
   })
 
   it("counts two Mods that kept their state in the plural", async () => {

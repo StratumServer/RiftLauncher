@@ -56,6 +56,22 @@ function ManageModsActionBar({
           <p>{t("features.mods.updateAllButton")}</p>
         </FormButton>
 
+        {/* Next to Update all rather than at the end: the right end of this bar sits under the toasts at 1280 wide. */}
+        <FormButton
+          title={
+            activeProfileName === undefined
+              ? t("features.mods.profilesButtonTitle")
+              : t("features.mods.profilesButtonTitleActive", { profile: activeProfileName, interpolation: { escapeValue: false } })
+          }
+          variant="secondary"
+          className="p-1 w-fit h-8"
+          onClick={onOpenProfiles}
+          disabled={busy}
+        >
+          <PiStackDuotone className="text-xl" />
+          <p className="max-w-40 truncate">{activeProfileName ?? t("features.mods.noProfile")}</p>
+        </FormButton>
+
         <FormButton
           title={t("features.mods.exportModpack")}
           variant="secondary"
@@ -81,11 +97,6 @@ function ManageModsActionBar({
         <FormButton title={t("features.mods.importModpack")} variant="secondary" className="p-1 w-fit h-8" onClick={onImportModpack} disabled={busy}>
           <PiBoxArrowDownDuotone className="text-xl" />
           <p>{t("features.mods.importModpackButton")}</p>
-        </FormButton>
-
-        <FormButton title={t("features.mods.profilesButtonTitle")} variant="secondary" className="p-1 w-fit h-8" onClick={onOpenProfiles} disabled={busy}>
-          <PiStackDuotone className="text-xl" />
-          <p className="max-w-40 truncate">{activeProfileName ?? t("features.mods.noProfile")}</p>
         </FormButton>
 
         <FormButton
