@@ -26,8 +26,10 @@ import { ReloadButton } from "@renderer/components/ui/StickyMenu"
  * `labelKey` is the part that does not depend on hue. Whether a release fits your installation is a
  * call players make on every row of this table, and a colour plus a hover tooltip left anyone who
  * cannot separate lime from red with nothing to read.
+ *
+ * Exported so the Manage Mods detail panel paints the same hue and word per verdict.
  */
-const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { className: string; titleKey: string; labelKey: string }> = {
+export const COMPATIBILITY_STYLE: Record<ModCompatibilityVerdict, { className: string; titleKey: string; labelKey: string }> = {
   declared: { className: "text-lime-600", titleKey: "features.mods.worksOnTheVersion", labelKey: "features.mods.compatibilityTagged" },
   "same-minor": { className: "text-yellow-400", titleKey: "features.mods.shouldWorkOnTheVersion", labelKey: "features.mods.compatibilityLikely" },
   // Red-700 was the long-standing undeclared colour, but it only ever shipped as a class nothing

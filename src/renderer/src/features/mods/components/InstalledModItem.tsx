@@ -6,6 +6,7 @@ import clsx from "clsx"
 import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 
 import { ListItem } from "@renderer/components/ui/List"
+import { selectableItemProps } from "@renderer/components/ui/selectableItemProps"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 
@@ -17,7 +18,10 @@ function InstalledModItem({
   onToggleEnabledClick,
   onToggleSuspendClick,
   onDeleteClick,
-  onUpdateClick
+  onUpdateClick,
+  detailsOpen = false,
+  onToggleDetails,
+  detailsButtonRef
 }: Readonly<{
   iMod: InstalledModType
   /** Update All skips this Mod. The row still says an update exists, and still offers it. */
@@ -32,6 +36,12 @@ function InstalledModItem({
   onToggleSuspendClick: () => void
   onDeleteClick: () => void
   onUpdateClick: () => void
+  /** The details panel is showing this row's Mod. */
+  detailsOpen?: boolean
+  /** Opens the details panel on this Mod, or closes it when it already shows this one. */
+  onToggleDetails?: () => void
+  /** The details button, so that closing the panel can hand focus back to it. */
+  detailsButtonRef?: (element: HTMLDivElement | null) => void
 }>): JSX.Element {
   const { t } = useTranslation()
   const { openOnBrowser: openExternalLink } = useExternalLinks()
@@ -46,51 +56,62 @@ function InstalledModItem({
           !iMod.enabled ? "bg-zinc-500/25" : suspended ? "bg-sky-500/25" : iMod._updatableTo ? "bg-lime-600/25" : iMod._lastVersion && "bg-yellow-400/25"
         )}
       >
-        {/* Only what describes the Mod is greyed. The buttons keep their contrast, because the one
-            that turns it back on has to stay as readable as every other row's. */}
-        <div className={clsx("shrink-0", !iMod.enabled && "opacity-50 grayscale")}>
-          {iMod._image ? (
-            <img src={`cachemodimg:${iMod._image}`} alt={iMod.name} loading="lazy" className="w-16 h-16 object-cover rounded-sm" />
-          ) : (
-            <div className="w-16 h-16 bg-zinc-900 rounded-sm shadow-sm shadow-zinc-950" />
+        {/* What describes the Mod is the details button. The actions stay outside it, because nothing
+            interactive may sit inside a role=button (#263). */}
+        <div
+          ref={detailsButtonRef}
+          {...selectableItemProps({ onClick: onToggleDetails, pressed: detailsOpen, label: t("features.mods.showModDetails", { mod: iMod.name }) })}
+          className={clsx(
+            "min-w-0 flex-1 h-full flex gap-4 items-center rounded-sm",
+            onToggleDetails && "cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2"
           )}
-        </div>
-
-        <ThinSeparator />
-
-        <div className={clsx("w-full flex flex-col gap-1 justify-center overflow-hidden", !iMod.enabled && "opacity-50")}>
-          <div className="flex gap-2 items-center">
-            <p className="font-bold">{iMod.name}</p>
-            <span>·</span>
-            <p>v{iMod.version}</p>
-            {!iMod.enabled && (
-              <>
-                <span>·</span>
-                <p className="text-sm uppercase tracking-wide text-zinc-300">{t("features.mods.disabledLabel")}</p>
-              </>
+        >
+          {/* Only what describes the Mod is greyed. The buttons keep their contrast, because the one
+            that turns it back on has to stay as readable as every other row's. */}
+          <div className={clsx("shrink-0", !iMod.enabled && "opacity-50 grayscale")}>
+            {iMod._image ? (
+              <img src={`cachemodimg:${iMod._image}`} alt={iMod.name} loading="lazy" className="w-16 h-16 object-cover rounded-sm" />
+            ) : (
+              <div className="w-16 h-16 bg-zinc-900 rounded-sm shadow-sm shadow-zinc-950" />
             )}
           </div>
 
-          {iMod.description && (
-            <div className="overflow-hidden">
-              <p className="text-sm text-zinc-400 overflow-hidden whitespace-nowrap text-ellipsis">{iMod.description}</p>
+          <ThinSeparator />
+
+          <div className={clsx("w-full flex flex-col gap-1 justify-center overflow-hidden", !iMod.enabled && "opacity-50")}>
+            <div className="flex gap-2 items-center">
+              <p className="font-bold">{iMod.name}</p>
+              <span>·</span>
+              <p>v{iMod.version}</p>
+              {!iMod.enabled && (
+                <>
+                  <span>·</span>
+                  <p className="text-sm uppercase tracking-wide text-zinc-300">{t("features.mods.disabledLabel")}</p>
+                </>
+              )}
             </div>
-          )}
 
-          <div className="flex gap-2 items-center text-sm text-zinc-400">
-            {iMod.authors && iMod.authors?.length > 0 && (
-              <p className="shrink-0 overflow-hidden whitespace-nowrap text-ellipsis">
-                {t("generic.authors")}: {iMod.authors?.join(", ")}
-              </p>
+            {iMod.description && (
+              <div className="overflow-hidden">
+                <p className="text-sm text-zinc-400 overflow-hidden whitespace-nowrap text-ellipsis">{iMod.description}</p>
+              </div>
             )}
 
-            {iMod.authors && iMod.contributors && iMod.authors?.length > 0 && iMod.contributors?.length > 0 && <span>·</span>}
+            <div className="flex gap-2 items-center text-sm text-zinc-400">
+              {iMod.authors && iMod.authors?.length > 0 && (
+                <p className="shrink-0 overflow-hidden whitespace-nowrap text-ellipsis">
+                  {t("generic.authors")}: {iMod.authors?.join(", ")}
+                </p>
+              )}
 
-            {iMod.contributors && iMod.contributors?.length > 0 && (
-              <p className="overflow-hidden whitespace-nowrap text-ellipsis">
-                {t("generic.contributors")}: {iMod.contributors?.join(", ")}
-              </p>
-            )}
+              {iMod.authors && iMod.contributors && iMod.authors?.length > 0 && iMod.contributors?.length > 0 && <span>·</span>}
+
+              {iMod.contributors && iMod.contributors?.length > 0 && (
+                <p className="overflow-hidden whitespace-nowrap text-ellipsis">
+                  {t("generic.contributors")}: {iMod.contributors?.join(", ")}
+                </p>
+              )}
+            </div>
           </div>
         </div>
 

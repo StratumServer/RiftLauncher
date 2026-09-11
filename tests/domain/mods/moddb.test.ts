@@ -383,8 +383,8 @@ describe("modDescriptionParagraphs", () => {
 
   it("stays linear on a very long hostile description", () => {
     // The host caps a detail at 4 MB. A pattern that rescans to the end from every `<` would take
-    // minutes on these, and it would freeze the page while it did.
-    const size = 200_000
+    // seconds to minutes on these, and it would freeze the page while it did.
+    const size = 400_000
     const started = performance.now()
 
     assert.deepEqual(modDescriptionParagraphs("<".repeat(size)), ["<".repeat(size)])

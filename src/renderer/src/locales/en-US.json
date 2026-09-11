@@ -295,7 +295,16 @@
       "summaryFailed": "Failed",
       "summaryAlreadyPresent": "Already installed",
       "summaryClose": "Done",
-      "cantPlayWhileUpdatingMods": "You can't play this Installation while its Mods are being updated."
+      "cantPlayWhileUpdatingMods": "You can't play this Installation while its Mods are being updated.",
+      "showModDetails": "Show the details of {{mod}}",
+      "closeModDetails": "Close the details",
+      "sideLabel": "Side",
+      "installedVersion": "Installed version",
+      "installedReleaseNotListed": "This version isn't listed on the ModDB.",
+      "releases": "Releases",
+      "detailsLoading": "Looking this Mod up on the ModDB.",
+      "notOnModDb": "This Mod isn't on the ModDB. It's most likely a local or external build, so only what its own file says is shown.",
+      "detailsLoadFailed": "The ModDB couldn't be reached, so only what the Mod's own file says is shown."
     },
     "config": {
       "defaultInstallationsFolder": "Installations folder",
