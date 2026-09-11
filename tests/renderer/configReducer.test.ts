@@ -465,6 +465,18 @@ describe("configReducer: game versions", () => {
     )
   })
 
+  it("EDIT_GAME_VERSION changes only the selected build when version numbers are shared", () => {
+    const target = gameVersion({ id: "target", version: "1.22.7", path: "/versions/vanilla" })
+    const other = gameVersion({ id: "other", version: "1.22.7", path: "/versions/optimum" })
+    const config = baseConfig({ gameVersions: [target, other] })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: "target", updates: { path: "/versions/updated" } } })
+
+    assert.equal(result.gameVersions[0]?.path, "/versions/updated")
+    assert.equal(result.gameVersions[1], other)
+    assert.equal(result.gameVersions[1]?.path, "/versions/optimum")
+  })
+
   it("EDIT_GAME_VERSION on a version naming nothing changes nothing", () => {
     const config = baseConfig({ gameVersions: [gameVersion()] })
     const result = configReducer(config, { type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: "missing", updates: { path: "/new" } } })

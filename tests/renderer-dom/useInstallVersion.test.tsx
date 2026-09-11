@@ -39,7 +39,14 @@ describe("useInstallVersion", () => {
   it("registers and clears the exact generated build id on success", async () => {
     installMockWindowApi({
       configManager: {
-        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ id: "existing", version: "1.20.4", path: "/versions/existing" }] }))
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [
+              { id: "vanilla", version: "1.22.7", path: "/versions/vanilla" },
+              { id: "optimum", version: "1.22.7", path: "/versions/optimum" }
+            ]
+          })
+        )
       }
     })
     vi.mocked(installGameVersion).mockImplementation(async (_ports, _input, events) => {
@@ -49,16 +56,24 @@ describe("useInstallVersion", () => {
     })
 
     const { result } = renderHook(() => ({ install: useInstallVersion(), versions: useGameVersions() }), { wrapper })
-    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+    await waitFor(() => expect(result.current.versions).toHaveLength(2))
 
     await act(async () => {
       await result.current.install(VERSION, "/versions/1.22.7")
     })
 
+    expect(vi.mocked(installGameVersion).mock.calls[0]?.[1].installedVersions).toEqual([
+      { version: "1.22.7", path: "/versions/vanilla" },
+      { version: "1.22.7", path: "/versions/optimum" }
+    ])
     expect(result.current.versions).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: "existing" }), expect.objectContaining({ version: "1.22.7", path: "/versions/1.22.7", _installing: undefined })])
+      expect.arrayContaining([
+        expect.objectContaining({ id: "vanilla" }),
+        expect.objectContaining({ id: "optimum" }),
+        expect.objectContaining({ version: "1.22.7", path: "/versions/1.22.7", _installing: undefined })
+      ])
     )
-    expect(result.current.versions).toHaveLength(2)
+    expect(result.current.versions).toHaveLength(3)
   })
 
   it("removes only the exact optimistically registered build when installation is discarded", async () => {
