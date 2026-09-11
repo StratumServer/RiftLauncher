@@ -6,7 +6,8 @@ import { FiLoader } from "react-icons/fi"
 import clsx from "clsx"
 
 import { executeModpackImport, modpackDowngrades, modpackEntriesToResolve, modpackRowLabel, modpackRowStatus, planModpackImport } from "@domain/mods/importModpack"
-import type { ModpackEntryStatus, ModpackModDetail, ModpackPlanItem, ModpackRowStatus, ModpackRowStatusKind } from "@domain/mods/importModpack"
+import type { ModpackEntry, ModpackEntryStatus, ModpackModDetail, ModpackPlanItem, ModpackRequest, ModpackRowStatus, ModpackRowStatusKind } from "@domain/mods/importModpack"
+import { modsFolderInUse } from "@domain/mods/install"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { toInstalledModSnapshot, toModChangeSummaryEntry, toModpackModDetail } from "@renderer/features/mods/adapters/importModpack"
 import { useInstallMod } from "../hooks/useInstallMod"
@@ -24,20 +25,31 @@ import ModChangeSummaryPopup from "./ModChangeSummaryPopup"
  */
 type ModStatus = "pending" | "downloading" | ModpackEntryStatus | ModpackRowStatusKind
 
+/**
+ * The modpack import table, which also installs the Mods picked on the browse page.
+ *
+ * Both are one run through one pipeline: the table names every Mod and what will happen to it, the
+ * installs run one at a time with aggregate feedback, and the summary is the one report. A pick
+ * differs from a pack entry only in how its release is chosen, which the planner decides, so
+ * `selection` switches nothing here but the wording and the left-out note.
+ */
 function ImportModpackPopup({
   isOpen,
   manifest,
   close,
   installation,
   installedMods,
-  onFinish
+  onFinish,
+  selection
 }: Readonly<{
   isOpen: boolean
-  manifest: ModpackManifestType | null
+  manifest: ModpackRequest | null
   close: () => void
   installation: InstallationType
   installedMods: InstalledModType[]
   onFinish: () => void
+  /** Set when the entries are browse picks: how many picks were left out for sharing a modid. */
+  selection?: Readonly<{ leftOut: number }>
 }>): JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -79,7 +91,8 @@ function ImportModpackPopup({
 
     void (async (): Promise<void> => {
       const toResolve = modpackEntriesToResolve(manifest.mods, installed)
-      const fetched = await Promise.all(toResolve.map(async (entry) => [entry.modid, await queryMod({ modid: entry.modid })] as const))
+      // A pick is looked up by its listing, since a fork can declare the same modid as the original.
+      const fetched = await Promise.all(toResolve.map(async (entry) => [entry.modid, await queryMod({ modid: entry.listingId ?? entry.modid })] as const))
       if (cancelled) return
 
       const resolved = new Map<string, ModpackModDetail>()
@@ -130,7 +143,7 @@ function ImportModpackPopup({
     setModStatuses((prev) => ({ ...prev, [modid]: status }))
   }
 
-  function getInitialStatuses(mods: ModpackModEntryType[]): Record<string, ModStatus> {
+  function getInitialStatuses(mods: readonly ModpackEntry[]): Record<string, ModStatus> {
     const statuses: Record<string, ModStatus> = {}
     for (const mod of mods) {
       statuses[mod.modid] = "pending"
@@ -143,7 +156,7 @@ function ImportModpackPopup({
 
     // The same precondition every sibling flow has. Importing a pack writes to the Mods folder just
     // as an update does, and it was the one write that ran straight through a backup.
-    if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
+    if (modsFolderInUse(installation)) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
 
     setImporting(true)
 
@@ -159,6 +172,8 @@ function ImportModpackPopup({
               modName: item.name,
               release: item.release,
               existing: item.existing,
+              // A pick updating a copy the player had turned off leaves it off.
+              disabled: item.keepDisabled,
               // The same aggregate feedback the bulk updater uses, for the same reason. Importing a
               // thirty mod pack used to fire a completion toast per mod into a queue that shows one
               // at a time, so the last of them landed minutes after the import had finished, next to
@@ -207,20 +222,20 @@ function ImportModpackPopup({
           handleClose()
           onFinish()
         }}
-        title={t("features.mods.importSummaryTitle")}
+        title={selection ? t("features.mods.installPickedSummaryTitle") : t("features.mods.importSummaryTitle")}
         entries={summaryEntries}
       />
     )
   }
 
   return (
-    <PopupDialogPanel title={t("features.mods.importModpackTitle")} isOpen={isOpen} close={handleClose} fixedWidth={false}>
+    <PopupDialogPanel title={selection ? t("features.mods.installPickedTitle") : t("features.mods.importModpackTitle")} isOpen={isOpen} close={handleClose} fixedWidth={false}>
       <>
         {manifest && (
           <>
-            <p>{t("features.mods.importModpackDesc", { name: manifest.name })}</p>
+            <p>{selection ? t("features.mods.installPickedDesc") : t("features.mods.importModpackDesc", { name: manifest.name })}</p>
 
-            {manifest.gameVersion !== installation.version && (
+            {!selection && manifest.gameVersion !== installation.version && (
               <p className="text-yellow-400 text-sm">{t("features.mods.importModpackVersionWarning", { packVersion: manifest.gameVersion, installVersion: installation.version })}</p>
             )}
 
@@ -270,9 +285,10 @@ function ImportModpackPopup({
                         const live = modStatuses[mod.modid] || "pending"
                         const item = planByModid.get(mod.modid)
                         const label = modpackRowLabel(mod, item?.name)
+                        const intended = item && modpackRowStatus(item)
                         // The plan owns the row until the import starts moving it: once an entry is
                         // downloading or settled, what happened outranks what was going to happen.
-                        const planned = live === "pending" && item ? modpackRowStatus(item) : undefined
+                        const planned = live === "pending" ? intended : undefined
                         const status: ModStatus = planned?.kind ?? live
                         return (
                           <TableBodyRow key={mod.modid}>
@@ -280,7 +296,8 @@ function ImportModpackPopup({
                               <p className="overflow-hidden whitespace-nowrap text-ellipsis">{label}</p>
                               {label !== mod.modid && <p className="overflow-hidden whitespace-nowrap text-ellipsis text-xs text-zinc-400">{mod.modid}</p>}
                             </TableCell>
-                            <TableCell className="w-3/12">{mod.version}</TableCell>
+                            {/* A pick names no version, so its row shows the release the plan settled on. */}
+                            <TableCell className="w-3/12">{mod.version ?? intended?.toVersion}</TableCell>
                             <TableCell className="w-4/12">
                               <span className={clsx("flex items-center gap-1 text-sm", statusColor(status))}>
                                 <StatusIcon status={status} className="shrink-0" />
@@ -292,6 +309,8 @@ function ImportModpackPopup({
                       })}
                   </TableBody>
                 </TableWrapper>
+
+                {selection && selection.leftOut > 0 && <p className="text-sm text-zinc-400">{t("features.mods.installPickedLeftOut", { count: selection.leftOut })}</p>}
 
                 {notOnModDbCount > 0 && <p className="text-sm text-zinc-400">{t("features.mods.importModpackNotOnModDbNote", { count: notOnModDbCount })}</p>}
 
@@ -319,19 +338,25 @@ function ImportModpackPopup({
                 <div className="flex gap-2 justify-center">
                   {!importing ? (
                     <FormButton
-                      title={plan ? t("features.mods.importModpackButton") : t("features.mods.importModpackChecking")}
+                      title={!plan ? t("features.mods.importModpackChecking") : selection ? t("features.mods.installPickedButton") : t("features.mods.importModpackButton")}
                       className="p-1 px-4 h-8"
                       onClick={handleImport}
                       variant="primary"
                       disabled={manifest.mods.length === 0 || !plan}
                     >
                       {plan ? <PiDownloadDuotone className="text-xl" /> : <FiLoader className="animate-spin text-xl" />}
-                      <p>{plan ? t("features.mods.importModpackButton") : t("features.mods.importModpackChecking")}</p>
+                      <p>{!plan ? t("features.mods.importModpackChecking") : selection ? t("features.mods.installPickedButton") : t("features.mods.importModpackButton")}</p>
                     </FormButton>
                   ) : (
-                    <FormButton title={t("features.mods.importModpackImporting")} className="p-1 px-4 h-8" variant="primary" disabled onClick={() => {}}>
+                    <FormButton
+                      title={selection ? t("features.mods.installPickedInstalling") : t("features.mods.importModpackImporting")}
+                      className="p-1 px-4 h-8"
+                      variant="primary"
+                      disabled
+                      onClick={() => {}}
+                    >
                       <FiLoader className="animate-spin text-xl" />
-                      <p>{t("features.mods.importModpackImporting")}</p>
+                      <p>{selection ? t("features.mods.installPickedInstalling") : t("features.mods.importModpackImporting")}</p>
                     </FormButton>
                   )}
                 </div>

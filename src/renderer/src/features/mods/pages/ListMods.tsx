@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, type Dispatch, type SetStateAction } from "react"
 import { Trans, useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
+import { PiCheckSquareDuotone, PiCheckSquareFill } from "react-icons/pi"
 
 import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, useSuspendedModUpdates, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -21,10 +22,28 @@ import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuB
 import ModsFilterBar from "@renderer/features/mods/components/ModsFilterBar"
 import ModsGrid from "@renderer/features/mods/components/ModsGrid"
 import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
+import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
+import ModSelectionBar from "@renderer/features/mods/components/ModSelectionBar"
 import type { ModCardAction } from "@renderer/features/mods/components/ModListCard"
+import { FormButton } from "@renderer/components/ui/FormComponents"
 import { DEFAULT_LOADED_MODS, getModsBrowseState, updateModsBrowseState, type ModsBrowseState } from "@renderer/features/mods/modsBrowseState"
 import { installedCopiesOf } from "@domain/mods/installedFilters"
 import { findModUpdate } from "@domain/mods/compatibility"
+import { addPicks, modSelectionEntries, togglePick, type ModPick } from "@domain/mods/modSelection"
+import type { ModpackRequest } from "@domain/mods/importModpack"
+
+/**
+ * One install run over the picks, fixed when Install selected is pressed. The installed list is part
+ * of it on purpose: the page rescans after every download, and a live list would restart the table's
+ * lookups mid-run.
+ */
+type PickRun = { request: ModpackRequest; installedMods: InstalledModType[]; leftOut: number }
+
+const NO_INSTALLED_MODS: InstalledModType[] = []
+
+function toModPick(mod: DownloadableModOnListType): ModPick {
+  return { listingId: mod.modid, name: mod.name, modidstrs: mod.modidstrs }
+}
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
@@ -77,6 +96,15 @@ function ListMods(): JSX.Element {
   const [orderByOrder, setOrderByOrderState] = useState<string>(browseState.orderByOrder)
 
   const [searching, setSearching] = useState<boolean>(true)
+
+  const [selecting, setSelecting] = useState<boolean>(browseState.selecting)
+  const [picks, setPicks] = useState<readonly ModPick[]>(browseState.picks)
+  const [pickRun, setPickRun] = useState<PickRun | null>(null)
+  const pickToggleRef = useRef<HTMLSpanElement>(null)
+
+  // Kept in the #415 snapshot so a trip to another page does not throw the picks away. Written from
+  // an effect, never from inside a state updater.
+  useEffect(() => updateModsBrowseState({ selecting, picks: [...picks] }), [selecting, picks])
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -334,6 +362,30 @@ function ListMods(): JSX.Element {
 
   const onOpenModDb = useCallback((mod: DownloadableModOnListType): void => openModOnModDb(mod.assetid), [openModOnModDb])
 
+  // Stable, like onSelectMod, so a pick re-renders only the card whose state it changed.
+  const onTogglePick = useCallback((mod: DownloadableModOnListType): void => setPicks((current) => togglePick(current, toModPick(mod))), [])
+  const pickedIds = useMemo(() => (selecting ? new Set(picks.map((pick) => pick.listingId)) : undefined), [selecting, picks])
+
+  function toggleSelecting(): void {
+    // A selection hidden behind a mode that is off would resurface unexpectedly the next time.
+    if (selecting) setPicks([])
+    setSelecting(!selecting)
+  }
+
+  function installPicks(): void {
+    if (!installation || !installationInstalledMods) return
+    const { entries, leftOut } = modSelectionEntries(picks, installationInstalledMods)
+    setPickRun({ request: { name: "", gameVersion: installation.version, mods: entries }, installedMods: installationInstalledMods, leftOut })
+  }
+
+  function finishPickRun(): void {
+    setPickRun(null)
+    setPicks([])
+    setSelecting(false)
+    // The dialog would hand focus back to Install selected, which leaves with selection mode.
+    pickToggleRef.current?.querySelector("button")?.focus()
+  }
+
   // Read through a ref so onModAction keeps one identity across rescans and lookups: every card
   // holds it, and a new one would re-render them all.
   const actionTargets = useRef({ installedMods: [] as readonly InstalledModType[], details: modDetails, gameVersion: "" })
@@ -406,6 +458,11 @@ function ListMods(): JSX.Element {
             <StickyMenuBreadcrumbs breadcrumbs={[{ name: t("breadcrumbs.mods"), to: "/mods" }]} />
 
             <StickyMenuGroup>
+              <span ref={pickToggleRef} className="contents">
+                <FormButton title={t("features.mods.pickMods")} variant="ghost" ariaPressed={selecting} onClick={toggleSelecting} className="w-8 h-8 text-xl">
+                  {selecting ? <PiCheckSquareFill className="text-green-400" /> : <PiCheckSquareDuotone />}
+                </FormButton>
+              </span>
               <GoToTopButton scrollRef={scrollRef} />
             </StickyMenuGroup>
           </StickyMenuGroupWrapper>
@@ -431,6 +488,16 @@ function ListMods(): JSX.Element {
             setOrderByOrder={setOrderByOrder}
             onClearFilters={clearFilters}
           />
+
+          {selecting && (
+            <ModSelectionBar
+              count={picks.length}
+              canInstall={installation !== undefined && installationInstalledMods !== undefined}
+              onPickVisible={() => setPicks(addPicks(picks, modsList.slice(0, visibleMods).map(toModPick)))}
+              onClear={() => setPicks([])}
+              onInstall={installPicks}
+            />
+          )}
         </StickyMenuWrapper>
 
         {/*
@@ -464,13 +531,26 @@ function ListMods(): JSX.Element {
           suspendedModUpdates={suspendedModUpdates}
           isBusy={actions.isBusy}
           isModFav={(mod) => favMods.includes(mod.modid)}
-          onSelectMod={onSelectMod}
+          onSelectMod={selecting ? onTogglePick : onSelectMod}
           onToggleFavMod={onToggleFavMod}
           onOpenModDb={onOpenModDb}
           onModAction={onModAction}
+          pickedIds={pickedIds}
         />
 
         <DeleteModDialog isOpen={actions.modToDelete !== null} close={actions.cancelDelete} onConfirm={actions.confirmDelete} />
+
+        {installation && (
+          <ImportModpackPopup
+            isOpen={pickRun !== null}
+            manifest={pickRun?.request ?? null}
+            close={() => setPickRun(null)}
+            installation={installation}
+            installedMods={pickRun?.installedMods ?? NO_INSTALLED_MODS}
+            selection={pickRun ?? undefined}
+            onFinish={finishPickRun}
+          />
+        )}
       </div>
     </ScrollableContainer>
   )
