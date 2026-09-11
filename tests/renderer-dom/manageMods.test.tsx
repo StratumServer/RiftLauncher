@@ -1549,6 +1549,38 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     expect(selectAll.indeterminate).toBe(false)
   })
 
+  it("leaves select-all unchecked when the search shows nothing", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const selectAll = await selectAllBox()
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "no such mod")
+    await screen.findByText("There are no Mods that match your filters!")
+
+    // Nothing shown is not every shown Mod checked.
+    expect(selectAll.checked).toBe(false)
+    expect(selectAll.indeterminate).toBe(false)
+  })
+
+  it("moves focus to select-all, not back to Delete, once the dialog of a failed batch Delete is gone", async () => {
+    const user = userEvent.setup()
+    renderManageMods({ pathsManager: { deletePath: vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => false) } })
+
+    await check(user, "Alpha Mod", "Gamma Mod")
+    const deleteSelected = batchButton(DELETE_SELECTED)
+    await user.click(deleteSelected)
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }))
+
+    expect(await screen.findByText("None of the selected Mods could be changed. They are still selected, and the log has the details.")).toBeTruthy()
+    await batchLanded()
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    // The dialog hands focus back to the button that opened it as it goes, after the batch has landed.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+    expect(deleteSelected.disabled).toBe(false)
+    expect(document.activeElement).toBe(await selectAllBox())
+  })
+
   it("moves focus to select-all when a batch lands", async () => {
     const user = userEvent.setup()
     renderManageMods({ modsManager: { setModEnabled: renamesAnswering() } })

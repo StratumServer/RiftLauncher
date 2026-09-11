@@ -40,6 +40,10 @@ function ManageModsSelectionBar({ batch, shownCount, locked }: Readonly<{ batch:
     wasRunning.current = batch.running
   }, [batch.running])
 
+  // A confirmed Delete that leaves failures leaves its button live, and the dialog hands focus back to
+  // it as it goes. Once the dialog is gone, the focus is moved on to select-all like after any batch.
+  const deleteConfirmed = useRef(false)
+
   function suspendOrResume(action: () => void): void {
     action()
     selectAllRef.current?.focus()
@@ -100,7 +104,13 @@ function ManageModsSelectionBar({ batch, shownCount, locked }: Readonly<{ batch:
         isOpen={confirmingDelete}
         close={() => setConfirmingDelete(false)}
         names={batch.selected.map((iMod) => iMod.name)}
+        onClosed={() => {
+          if (!deleteConfirmed.current) return
+          deleteConfirmed.current = false
+          selectAllRef.current?.focus()
+        }}
         onConfirm={async () => {
+          deleteConfirmed.current = true
           setConfirmingDelete(false)
           await batch.remove()
         }}
