@@ -1254,7 +1254,14 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
   it("leaves a checked Mod that the Author filter hides out of the count and out of the action", async () => {
     const user = userEvent.setup()
     const setModEnabled = renamesAnswering()
-    renderManageMods({ modsManager: { setModEnabled } })
+    let scans = 0
+    // Every rescan after the first reads Beta at a new version, so the page shows when one is in.
+    const getInstalledMods = vi.fn(async () => {
+      const scan = aModScan()
+      scans++
+      return scans === 1 ? scan : { ...scan, mods: scan.mods.map((iMod) => (iMod.path === BETA_PATH ? { ...iMod, version: "2.0.1" } : iMod)) }
+    })
+    renderManageMods({ modsManager: { setModEnabled, getInstalledMods } })
 
     async function showOnlyBob(): Promise<void> {
       await user.click(screen.getByRole("button", { name: "Author" }))
@@ -1269,6 +1276,10 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     // Alpha is still checked, only hidden, so the count leaves it out.
     expect(screen.getByText("1 selected")).toBeTruthy()
 
+    // A rescan while it is hidden keeps it checked too: the folder still has it.
+    await user.click(screen.getByRole("button", { name: "Reload" }))
+    await screen.findByText("v2.0.1", {}, { timeout: 3000 })
+
     // It comes back checked when the filter goes, because hiding a Mod is not unchecking it.
     await user.click(screen.getByRole("button", { name: "Clear filters" }))
     await screen.findByText("Alpha Mod")
@@ -1280,6 +1291,55 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
 
     expect(await screen.findByText("1 Mod disabled.")).toBeTruthy()
     expect(setModEnabled.mock.calls).toEqual([[BETA_PATH, false]])
+
+    // The batch leaves checked only what failed, so the hidden check it did not touch is gone.
+    await batchLanded()
+    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    await screen.findByText("Alpha Mod")
+    expect(checkboxOf("Alpha Mod").checked).toBe(false)
+  })
+
+  it("deletes only the checked Mods the search left on screen, and leaves a hidden checked one alone", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    renderManageMods({ pathsManager: { deletePath } })
+
+    await check(user, "Alpha Mod")
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "beta")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    await check(user, "Beta Mod")
+
+    await user.click(batchButton(DELETE_SELECTED))
+    const dialog = await screen.findByRole("dialog")
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["Beta Mod"])
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }))
+
+    expect(await screen.findByText("1 Mod deleted.")).toBeTruthy()
+    expect(deletePath.mock.calls).toEqual([[BETA_PATH]])
+  })
+
+  it("deletes a disabled Mod by the file name it actually has, along with the enabled ones", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    renderManageMods({ modsManager: { getInstalledMods: vi.fn(async () => scanWithADisabledMod()) }, pathsManager: { deletePath } })
+
+    await user.click(await selectAllBox())
+    await user.click(batchButton(DELETE_SELECTED))
+    const dialog = await screen.findByRole("dialog")
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["Alpha Mod", "Epsilon Mod"])
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }))
+
+    expect(await screen.findByText("2 Mods deleted.")).toBeTruthy()
+    // Epsilon's archive is epsilon-5.0.0.zip.disabled: that is the file sent, not the enabled name.
+    expect(deletePath.mock.calls.map((call) => call[0]).sort()).toEqual([ALPHA_PATH, EPSILON_PATH].sort())
   })
 
   it("disables the checked Mods with one rename each, one notification and one rescan", async () => {
@@ -1477,7 +1537,13 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(
       (path: string) => new Promise<SetModEnabledResult>((resolve) => landings.push(() => resolve({ ok: true, path: `${path}.disabled` })))
     )
-    renderManageMods({ modsManager: { setModEnabled } })
+    let holdScans = false
+    let releaseScan: () => void = () => {}
+    const getInstalledMods = vi.fn(async () => {
+      if (holdScans) await new Promise<void>((resolve) => (releaseScan = resolve))
+      return aModScan()
+    })
+    renderManageMods({ modsManager: { setModEnabled, getInstalledMods } })
 
     await check(user, "Alpha Mod", "Beta Mod")
     const disable = batchButton(DISABLE_SELECTED)
@@ -1502,11 +1568,20 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     // A row outside the selection is not part of the batch and stays live.
     expect(gammaToggle.disabled).toBe(false)
 
+    const scansBefore = getInstalledMods.mock.calls.length
+    holdScans = true
     await act(async () => {
       for (const land of landings) land()
     })
 
+    // The renames are in but the rescan is not, so the page still lists the names from before them.
     expect(await screen.findByText("2 Mods disabled.")).toBeTruthy()
+    await waitFor(() => expect(getInstalledMods).toHaveBeenCalledTimes(scansBefore + 1))
+    expect(buttonWithText("Update all").disabled).toBe(true)
+    expect(buttonWithText("Import Modpack").disabled).toBe(true)
+    expect((await selectAllBox()).disabled).toBe(true)
+
+    await act(async () => releaseScan())
     await batchLanded()
     expect(buttonWithText("Update all").disabled).toBe(false)
     expect(buttonWithText("Import Modpack").disabled).toBe(false)
