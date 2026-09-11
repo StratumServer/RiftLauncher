@@ -219,6 +219,18 @@ export async function assertManagedModArchivePath(value: unknown): Promise<strin
   return namedPath
 }
 
+/**
+ * The folder of an Installation the config names, and nothing else: not a folder under the
+ * installations root, not a subfolder of an Installation. `assertManagedPath` alone would grant the
+ * whole managed tree, which is wider than a channel acting on one Installation's own files needs.
+ */
+export async function assertConfiguredInstallationPath(value: unknown): Promise<string> {
+  const pathValue = resolve(assertNonRootPath(value, "installation path"))
+  const config = await getConfig()
+  if (!config.installations.some((installation) => comparablePath(installation.path) === comparablePath(pathValue))) throw new TypeError("Unconfigured installation path")
+  return pathValue
+}
+
 export async function assertConfigPathsAuthorized(nextConfig: ConfigType, currentConfig: ConfigType): Promise<boolean> {
   const existingGrants = getConfigDeclarationGrants(currentConfig)
   const candidatePaths = [

@@ -96,7 +96,9 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
       cacheModImage: vi.fn(async () => undefined),
       exportModpack: vi.fn(notMocked("modsManager.exportModpack")),
       importModpack: vi.fn(notMocked("modsManager.importModpack")),
-      clearModIconMemoryCache: vi.fn()
+      clearModIconMemoryCache: vi.fn(),
+      getModProfiles: vi.fn(async () => ({ ok: true as const, document: { format: 1 as const, activeProfileId: null, profiles: [] } })),
+      saveModProfiles: vi.fn(notMocked("modsManager.saveModProfiles"))
     },
     pathsManager: {
       getCurrentUserDataPath: vi.fn(async () => "/mock/userdata"),

@@ -44,6 +44,8 @@ declare global {
       exportModpack: (manifest: ModpackManifestType) => Promise<{ success: boolean; path?: string }>
       importModpack: () => Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }>
       clearModIconMemoryCache: () => void
+      getModProfiles: (installationPath: string) => Promise<ModProfilesReadResult>
+      saveModProfiles: (installationPath: string, document: ModProfilesDocument) => Promise<ModProfilesSaveResult>
     }
     pathsManager: {
       getCurrentUserDataPath: () => Promise<string>

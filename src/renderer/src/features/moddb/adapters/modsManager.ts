@@ -20,6 +20,15 @@ export function createModBatchPorts(): ModBatchPorts {
   return { setEnabled: setModEnabled, remove: (path) => createFileSystemPort().remove(path) }
 }
 
+/** Reads an Installation's profiles file. The host names the file; this only names the Installation. */
+export function fetchModProfiles(installationPath: string): Promise<ModProfilesReadResult> {
+  return window.api.modsManager.getModProfiles(installationPath)
+}
+
+export function saveModProfiles(installationPath: string, document: ModProfilesDocument): Promise<ModProfilesSaveResult> {
+  return window.api.modsManager.saveModProfiles(installationPath, document)
+}
+
 export function cacheModImage(url: string): Promise<string | undefined> {
   return window.api.modsManager.cacheModImage(url)
 }
