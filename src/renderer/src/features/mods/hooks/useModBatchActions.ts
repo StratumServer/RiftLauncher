@@ -148,7 +148,7 @@ export function useModBatchActions(
       } else if (done === 0) {
         addNotification(t("features.mods.modsBatchFailed"), "error")
       } else {
-        addNotification(t("features.mods.modsBatchPartial", { done, total: results.length, failed }), "warning")
+        addNotification(t("features.mods.modsBatchPartial", { done, total: results.length, count: failed }), "warning")
       }
 
       // What went through has a new name or is gone, so the failures are all that is left to hold.

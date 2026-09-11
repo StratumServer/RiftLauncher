@@ -42,7 +42,7 @@ function DeleteModDialog({
   return (
     <PopupDialogPanel title={sortedNames ? t("features.mods.deleteSelectedTitle", { count: sortedNames.length }) : t("features.mods.deleteMod")} isOpen={isOpen} close={close}>
       <>
-        <p>{sortedNames ? t("features.mods.areYouSureDeleteSelected") : t("features.mods.areYouSureDelete")}</p>
+        <p>{sortedNames ? t("features.mods.areYouSureDeleteSelected", { count: sortedNames.length }) : t("features.mods.areYouSureDelete")}</p>
         {sortedNames && (
           <ul className="max-h-48 overflow-y-auto text-left px-2">
             {sortedNames.map((name, index) => (

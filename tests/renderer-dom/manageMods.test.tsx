@@ -1331,7 +1331,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     await check(user, "Alpha Mod", "Beta Mod")
     await user.click(batchButton(DISABLE_SELECTED))
 
-    expect(await screen.findByText("1 of 2 selected Mods went through. The 1 left as they were are still selected.")).toBeTruthy()
+    expect(await screen.findByText("1 of 2 Mods went through. The one left as it was is still selected.")).toBeTruthy()
     expect(screen.queryByText("1 Mod disabled.")).toBeNull()
     expect(screen.queryByText("2 Mods disabled.")).toBeNull()
 
@@ -1342,6 +1342,20 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     expect(screen.getByText("1 selected")).toBeTruthy()
   })
 
+  it("counts the renames it sent, not the Mods checked, when two of them are refused", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering((path) => (path === ALPHA_PATH ? { ok: true, path } : { ok: false, reason: "refused" }))
+    const scan = (): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } => ({ ...aModScan(), mods: [...aModScan().mods, ...scanWithADisabledMod().mods.filter((iMod) => !iMod.enabled)] })
+    renderManageMods({ modsManager: { setModEnabled, getInstalledMods: vi.fn(async () => scan()) } })
+
+    await check(user, "Alpha Mod", "Beta Mod", "Gamma Mod", "Epsilon Mod")
+    await user.click(batchButton(DISABLE_SELECTED))
+
+    // Epsilon is already off, so three renames went out, and two of them were refused.
+    expect(await screen.findByText("1 of 3 Mods went through. The 2 left as they were are still selected.")).toBeTruthy()
+    expect(setModEnabled).toHaveBeenCalledTimes(3)
+  })
+
   it("says nothing went through when every rename is refused, and keeps them all checked", async () => {
     const user = userEvent.setup()
     renderManageMods({ modsManager: { setModEnabled: renamesAnswering(() => ({ ok: false, reason: "refused" })) } })
@@ -1350,7 +1364,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     await user.click(batchButton(DISABLE_SELECTED))
 
     expect(await screen.findByText("None of the selected Mods could be changed. They are still selected, and the log has the details.")).toBeTruthy()
-    expect(screen.queryByText(/selected Mods went through/)).toBeNull()
+    expect(screen.queryByText(/Mods went through/)).toBeNull()
     await batchLanded()
     expect(checkboxOf("Alpha Mod").checked).toBe(true)
     expect(checkboxOf("Beta Mod").checked).toBe(true)
@@ -1373,6 +1387,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
         .map((item) => item.textContent)
     ).toEqual(["Alpha Mod", "Delta Mod", "Gamma Mod"])
     expect(within(dialog).queryByText("Beta Mod")).toBeNull()
+    expect(within(dialog).getByText("Are you sure you want to delete these Mods?")).toBeTruthy()
     expect(within(dialog).getByText(/Deletion is not reversible/)).toBeTruthy()
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
@@ -1673,7 +1688,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     const logMessage = vi.mocked(window.api.utils.logMessage)
     logMessage.mockClear()
     await user.click(batchButton(DISABLE_SELECTED))
-    await screen.findByText(/1 of 2 selected Mods went through/)
+    await screen.findByText(/1 of 2 Mods went through/)
     await batchLanded()
 
     const lines = logMessage.mock.calls.map((call) => call.join(" "))
