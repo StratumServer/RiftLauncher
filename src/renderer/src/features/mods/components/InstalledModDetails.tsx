@@ -92,9 +92,7 @@ function InstalledModDetails({
   function onKeyDown(event: KeyboardEvent<HTMLElement>): void {
     // Every dialog this page opens renders outside the aside's React tree. One rendered inside would
     // bubble its own Escape up to here and close the panel along with itself.
-    if (event.key !== "Escape") return
-    event.stopPropagation()
-    onClose()
+    if (event.key === "Escape") onClose()
   }
 
   return (

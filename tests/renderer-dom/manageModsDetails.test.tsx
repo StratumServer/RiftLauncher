@@ -48,7 +48,8 @@ function aModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[]
     mods: [
       { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, description: "The first one.", authors: ["Ann"], contributors: ["Cora"], _image: "alpha.png" },
       { name: "Beta Mod", modid: "beta", version: "2.0.0", path: BETA_PATH, enabled: true, description: "The second one.", side: "Server", authors: ["Bob"], contributors: [] },
-      { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: GAMMA_PATH, enabled: true, authors: ["Cal"], contributors: [] },
+      // The game's own spelling of the everywhere side, which the panel names in its own words.
+      { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: GAMMA_PATH, enabled: true, side: "Universal", authors: ["Cal"], contributors: [] },
       // Its id shares nothing with its name, and the ModDB answers 404 for it.
       { name: "Delta Mod", modid: "quirkid", version: "4.0.0", path: DELTA_PATH, enabled: true, description: "Delta's own words.", side: "Client", authors: ["Dee"], contributors: [] }
     ],
@@ -277,6 +278,28 @@ describe("ManageMods details panel", () => {
     expect(await within(aside).findByText("Cal of the ModDB")).toBeTruthy()
     expect(within(aside).queryByText(LOAD_FAILED)).toBeNull()
     expect(within(aside).queryByText(LOADING)).toBeNull()
+  })
+
+  it("starts each lookup afresh when the panel moves on to another Mod", async () => {
+    const user = userEvent.setup()
+    let gammaCalls = 0
+    const queryURL = vi.fn((url: string): Promise<string> => {
+      if (!url.endsWith("/mod/gamma")) return moddbWith(DETAILS)(url)
+      gammaCalls++
+      // The scan's lookup fails, so the panel runs its own, which is still out when this test ends.
+      return gammaCalls === 1 ? Promise.reject(new Error("offline")) : new Promise<string>(() => {})
+    })
+    renderManageMods({ netManager: { queryURL } })
+
+    await user.click(await detailsButtonFor("Delta Mod"))
+    expect(await within(await screen.findByRole("complementary", { name: "Delta Mod" })).findByText(NOT_ON_MODDB)).toBeTruthy()
+
+    await user.click(await detailsButtonFor("Gamma Mod"))
+
+    const aside = await screen.findByRole("complementary", { name: "Gamma Mod" })
+    expect(await within(aside).findByText(LOADING)).toBeTruthy()
+    expect(within(aside).queryByText(NOT_ON_MODDB)).toBeNull()
+    expect(within(aside).getByText("Both")).toBeTruthy()
   })
 
   it("makes no ModDB request when the scan already has the detail", async () => {
