@@ -13,7 +13,7 @@ import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
 import { MAX_MODPACK_MOD_NAME_LENGTH } from "@domain/mods/importModpack"
-import { emptyModProfilesDocument, MAX_MOD_PROFILES_FILE_BYTES, MOD_PROFILES_FILE_NAME, MOD_PROFILES_FORMAT, normalizeModProfilesDocument } from "@domain/mods/profiles"
+import { emptyModProfilesDocument, MAX_MOD_PROFILES_FILE_BYTES, MOD_PROFILES_FILE_NAME, normalizeModProfilesDocument } from "@domain/mods/profiles"
 
 const MAX_MODPACK_ENTRIES = 2_000
 
@@ -312,9 +312,10 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SAVE_MOD_PROFILES, async (event, instal
   const location = await locateModProfiles(installationPath)
   if (!location.ok) return refuse(location.reason)
 
-  // Only a format-1 document is accepted. Inside it, the same tolerant rules a read applies decide
-  // what is written, so a malformed profile or entry is dropped rather than stored.
-  const cleaned = isRecord(document) && document.format === MOD_PROFILES_FORMAT ? normalizeModProfilesDocument(document) : undefined
+  // The same rules a read applies decide what is written: anything but a format-1 document is
+  // refused, and inside one a malformed profile or entry is dropped rather than stored. A missing
+  // document is not an empty one here, so it is refused before the normalizer can read it as such.
+  const cleaned = isRecord(document) ? normalizeModProfilesDocument(document) : undefined
   if (!cleaned?.ok) return refuse("invalid")
 
   // What is on disk now decides whether it may be replaced at all: a file this build cannot read, or

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -226,6 +227,17 @@ describe("GET_MOD_PROFILES and SAVE_MOD_PROFILES", () => {
     assert.equal(statSync(profilesFile()).isDirectory(), true)
   })
 
+  it.skipIf(process.platform === "win32")("reads a named pipe in the file's place as unreadable, without waiting on it", async () => {
+    const event = await createTrustedEvent()
+    // Opening a pipe for reading blocks until something writes to it, so a read that did not check
+    // for a regular file first would hang the channel for good.
+    execFileSync("mkfifo", [profilesFile()])
+
+    assert.deepEqual(await getModProfiles()(event, installation), { ok: false, reason: "unreadable" })
+    assert.deepEqual(await saveModProfiles()(event, installation, aDocument()), { ok: false, reason: "unreadable" })
+    assert.equal(statSync(profilesFile()).isFIFO(), true)
+  })
+
   it("reads a file over 4 MiB as unreadable, and never overwrites it", async () => {
     const event = await createTrustedEvent()
     // Valid JSON, so only the size can be what refuses it.
@@ -283,9 +295,10 @@ describe("GET_MOD_PROFILES and SAVE_MOD_PROFILES", () => {
     assert.deepEqual(await saveModProfiles()(event, installation, secret), { ok: false, reason: "unreadable" })
     await getModProfiles()(event, unconfigured)
 
-    // The config loader logs where it found the config, which is its own line and not these channels'.
-    const lines = logMessage.mock.calls.map((call) => call.join(" ")).filter((line) => line.includes("modsHandlers.ts"))
-    assert.ok(lines.length >= 5, "the channels stopped logging, so this proves nothing")
+    // Every line but the config loader's own, which names where it found the config and is not these
+    // channels'. A line with no tag at all still counts, so nothing can leak by leaving the tag off.
+    const lines = logMessage.mock.calls.map((call) => call.join(" ")).filter((line) => !line.includes("[config/configManager.ts]"))
+    assert.ok(lines.filter((line) => line.includes("modsHandlers.ts")).length >= 5, "the channels stopped logging, so this proves nothing")
     assert.deepEqual(
       lines.filter((line) => line.includes("SECRET") || line.includes(temporaryRoot)),
       []
