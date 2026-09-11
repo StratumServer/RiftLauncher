@@ -137,6 +137,13 @@ describe("ListMods installed filters", () => {
     return getInstalledMods
   }
 
+  it("marks only the listing the folder holds as installed under All", async () => {
+    renderWithOneInstalledMod("all")
+
+    expect(await screen.findByRole("button", { name: "Better Ruins, Installed" }, { timeout: 3000 })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Primitive Survival, Not installed" })).toBeTruthy()
+  })
+
   it("keeps only the listings the folder holds under Installed", async () => {
     renderWithOneInstalledMod("installed")
 
