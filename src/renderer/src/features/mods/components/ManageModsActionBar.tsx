@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next"
-import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBoxArrowDownDuotone, PiDesktopTowerDuotone } from "react-icons/pi"
+import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBoxArrowDownDuotone, PiDesktopTowerDuotone, PiStackDuotone } from "react-icons/pi"
 
 import { useExportModpack } from "@renderer/features/mods/hooks/useExportModpack"
 import { resolveModsFolder } from "@renderer/features/mods/adapters/folder"
@@ -20,13 +20,18 @@ function ManageModsActionBar({
   installedMods,
   onUpdateAll,
   onImportModpack,
+  activeProfileName,
+  onOpenProfiles,
   busy = false
 }: Readonly<{
   installation: InstallationType
   installedMods: InstalledModType[]
   onUpdateAll: () => void
   onImportModpack: () => void
-  /** A batch is renaming or deleting archives. Update all and an import would race it on the same files. */
+  /** The profile the Mods folder is in, or undefined when none is active. */
+  activeProfileName: string | undefined
+  onOpenProfiles: () => void
+  /** A batch or a profile switch is renaming archives. Update all, an import or a switch would race it on the same files. */
   busy?: boolean
 }>): JSX.Element {
   const { t } = useTranslation()
@@ -76,6 +81,11 @@ function ManageModsActionBar({
         <FormButton title={t("features.mods.importModpack")} variant="secondary" className="p-1 w-fit h-8" onClick={onImportModpack} disabled={busy}>
           <PiBoxArrowDownDuotone className="text-xl" />
           <p>{t("features.mods.importModpackButton")}</p>
+        </FormButton>
+
+        <FormButton title={t("features.mods.profilesButtonTitle")} variant="secondary" className="p-1 w-fit h-8" onClick={onOpenProfiles} disabled={busy}>
+          <PiStackDuotone className="text-xl" />
+          <p className="max-w-40 truncate">{activeProfileName ?? t("features.mods.noProfile")}</p>
         </FormButton>
 
         <FormButton
