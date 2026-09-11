@@ -209,16 +209,17 @@ declare global {
     modid: number
     assetid: number
     name: string
-    text: string
-    author: string
+    /** Optional, like the four below: readModDetail drops each one that arrives with the wrong type. */
+    text?: string
+    author?: string
     urlalias: string | null
     homepageurl: string | null
     sourcecodeurl: string | null
-    downloads: number
-    follows: number
+    downloads?: number
+    follows?: number
     trendingpoints: number
     comments: number
-    side: string
+    side?: string
     logofile?: string
     createdat: string
     tags: string[]

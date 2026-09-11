@@ -144,3 +144,28 @@ export function parseModInfo(text: string): ModInfoResult {
     }
   }
 }
+
+/** The sides a Mod can declare, in the launcher's own words. */
+export type ModSide = "client" | "server" | "both"
+
+/**
+ * The side a Mod declared, as one of the launcher's own words, or undefined for anything else.
+ *
+ * The game spells the everywhere side "Universal" and the ModDB spells it "both", in any casing. A
+ * value outside those four is not shown at all, so the field never reaches the screen as a label.
+ */
+export function readModSide(side: unknown): ModSide | undefined {
+  if (typeof side !== "string") return undefined
+
+  switch (side.toLowerCase()) {
+    case "client":
+      return "client"
+    case "server":
+      return "server"
+    case "both":
+    case "universal":
+      return "both"
+    default:
+      return undefined
+  }
+}

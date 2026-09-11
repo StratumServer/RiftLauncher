@@ -141,7 +141,8 @@ export type ModArchiveRename =
  * a caller can name which file to act on but never what it becomes. The rest of
  * the name is carried through byte for byte, case included.
  *
- * @param fileName The archive's name on disk, without its folder.
+ * @param fileName The archive's name on disk, or its full path: only the tail is touched, so the
+ *   folder comes back as it went in.
  * @param enabled The state being asked for, not the one it is in.
  */
 export function renameModArchiveTo(fileName: string, enabled: boolean): ModArchiveRename {
@@ -151,6 +152,22 @@ export function renameModArchiveTo(fileName: string, enabled: boolean): ModArchi
   if (currentlyEnabled === enabled) return { ok: false, reason: "already-in-state" }
 
   return { ok: true, fileName: enabled ? fileName.slice(0, -MOD_DISABLED_SUFFIX.length) : `${fileName}${MOD_DISABLED_SUFFIX}` }
+}
+
+/**
+ * The Mod held at `path`, or, when that exact file is gone, the same archive under its other name.
+ *
+ * Turning a Mod on or off renames it, so a caller holding a path would lose the Mod on the next
+ * scan, whoever did the renaming: the row's own button, a batch, or the player's file manager. An
+ * exact match always wins, which keeps the X.zip and X.zip.disabled pair the scan lists as two
+ * files (#292) apart.
+ */
+export function modByArchivePath<T extends { path: string }>(mods: readonly T[], path: string): T | undefined {
+  const exact = mods.find((mod) => mod.path === path)
+  if (exact) return exact
+
+  const other = renameModArchiveTo(path, isDisabledModArchive(path))
+  return other.ok ? mods.find((mod) => mod.path === other.fileName) : undefined
 }
 
 /**
