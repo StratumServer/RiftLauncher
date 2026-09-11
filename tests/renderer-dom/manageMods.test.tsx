@@ -1226,17 +1226,25 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     return vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => answer(path))
   }
 
-  it("selects every Mod the search left on screen and acts on nothing else", async () => {
+  it("checks only the Mods the search left on screen when selecting all, and acts on nothing else", async () => {
     const user = userEvent.setup()
     const setModEnabled = renamesAnswering()
     renderManageMods({ modsManager: { setModEnabled } })
 
     await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
-    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "beta")
+    const search = screen.getByPlaceholderText(SEARCH_PLACEHOLDER)
+    await user.type(search, "beta")
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
-
     await user.click(await selectAllBox())
+
+    // Nothing the search hid was checked along with Beta.
+    await user.clear(search)
+    await screen.findByText("Alpha Mod")
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([false, true, false, false])
     expect(screen.getByText("1 selected")).toBeTruthy()
+    // Beta is already on, so there is nothing to enable.
+    expect(batchButton(ENABLE_SELECTED).disabled).toBe(true)
+
     await user.click(batchButton(DISABLE_SELECTED))
 
     expect(await screen.findByText("1 Mod disabled.")).toBeTruthy()
@@ -1301,6 +1309,11 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     const user = userEvent.setup()
     const setModEnabled = renamesAnswering()
     renderManageMods({ modsManager: { setModEnabled, getInstalledMods: vi.fn(async () => scanWithADisabledMod()) } })
+
+    // Epsilon alone is off, so there is nothing to disable.
+    await check(user, "Epsilon Mod")
+    expect(batchButton(DISABLE_SELECTED).disabled).toBe(true)
+    expect(batchButton(ENABLE_SELECTED).disabled).toBe(false)
 
     await user.click(await selectAllBox())
     await user.click(batchButton(ENABLE_SELECTED))
@@ -1404,6 +1417,8 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     const lastSaved = (): string[] | undefined => vi.mocked(window.api.configManager.saveConfig).mock.calls.at(-1)?.[0].suspendedModUpdates
 
     await user.click(await selectAllBox())
+    // Nothing is suspended yet, so there is nothing to resume.
+    expect(batchButton(RESUME_SELECTED).disabled).toBe(true)
     await user.click(batchButton(SUSPEND_SELECTED))
 
     // Two rows, one modid: suspension is recorded per modid, once.
@@ -1564,6 +1579,26 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     await screen.findByText("Alpha Mod")
     expect(checkboxOf("Alpha Mod").checked).toBe(false)
     expect(screen.getByText("0 selected")).toBeTruthy()
+    expect(batchButton(DELETE_SELECTED).disabled).toBe(true)
+  })
+
+  it("waits for a single row's rename before letting any batch start", async () => {
+    const user = userEvent.setup()
+    let land: (result: SetModEnabledResult) => void = () => {}
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(() => new Promise<SetModEnabledResult>((resolve) => (land = resolve)))
+    renderManageMods({ modsManager: { setModEnabled } })
+
+    await check(user, "Beta Mod")
+    await user.click(within(screen.getByText("Alpha Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE))
+
+    const selectAll = await selectAllBox()
+    await waitFor(() => expect(selectAll.disabled).toBe(true))
+    expect(batchButton(DISABLE_SELECTED).disabled).toBe(true)
+
+    await act(async () => land({ ok: true, path: `${ALPHA_PATH}.disabled` }))
+    await waitFor(() => expect(selectAll.disabled).toBe(false))
+    expect(batchButton(DISABLE_SELECTED).disabled).toBe(false)
+    expect(setModEnabled).toHaveBeenCalledTimes(1)
   })
 
   it("refuses to rename or delete while the Installation is backing up, and still suspends updates", async () => {

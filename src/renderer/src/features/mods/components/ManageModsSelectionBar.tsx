@@ -50,7 +50,7 @@ function ManageModsSelectionBar({ batch, shownCount, locked }: Readonly<{ batch:
       <StickyMenuGroupWrapper type="centered">
         <StickyMenuGroup>
           <label className="flex items-center gap-2 cursor-pointer">
-            <Input ref={selectAllRef} type="checkbox" checked={allShownChecked} disabled={disabled || shownCount === 0} onChange={batch.toggleAllShown} className="cursor-pointer" />
+            <Input ref={selectAllRef} type="checkbox" checked={allShownChecked} disabled={disabled} onChange={batch.toggleAllShown} className="cursor-pointer" />
             <span>{t("features.mods.selectAllShown")}</span>
           </label>
           <p role="status">{t("features.mods.selectedCount", { count })}</p>
