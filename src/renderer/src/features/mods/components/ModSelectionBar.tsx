@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next"
 
 import { MAX_MOD_SELECTION } from "@domain/mods/modSelection"
 import { FormButton } from "@renderer/components/ui/FormComponents"
+import { StickyMenuGroupWrapper } from "@renderer/components/ui/StickyMenu"
 
 /**
  * The browse page's selection bar: how many Mods are picked, and what to do with them.
@@ -27,7 +28,9 @@ function ModSelectionBar({
   const { t } = useTranslation()
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
+    // In the group wrapper like the sticky menu's other bars: it is positioned, so it paints above the
+    // menu's blurred backdrop layer instead of under it, where the count and the cap note were a smear.
+    <StickyMenuGroupWrapper type="centered" className="text-sm">
       <div role="status" className="flex flex-col items-center">
         <span>{t("features.mods.pickedCount", { count })}</span>
         {count >= MAX_MOD_SELECTION && <span className="text-zinc-400">{t("features.mods.pickLimit", { max: MAX_MOD_SELECTION })}</span>}
@@ -41,7 +44,7 @@ function ModSelectionBar({
       <FormButton title={t("features.mods.installPicked")} variant="primary" className="px-2" disabled={count < 1 || !canInstall} onClick={onInstall}>
         {t("features.mods.installPicked")}
       </FormButton>
-    </div>
+    </StickyMenuGroupWrapper>
   )
 }
 
