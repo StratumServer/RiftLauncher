@@ -500,5 +500,7 @@ describe("useInstalledModActions: update and quick install", () => {
     expect(installLines).not.toContain("Alpha Mod")
     expect(installLines).not.toContain("Install A")
     expect(installLines).not.toContain("/games/a")
+    // The download task says it failed; that is the update's one notification.
+    expect(await screen.findByText(/Couldn't download Alpha Mod/)).toBeTruthy()
   })
 })

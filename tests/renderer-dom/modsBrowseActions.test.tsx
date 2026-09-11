@@ -114,7 +114,10 @@ interface MountOptions {
   catalog?: Record<string, unknown>[]
   /** What the Mods folder holds each time it is scanned. */
   folder?: () => InstalledModType[] | Promise<InstalledModType[]>
-  /** `/api/mod/{id}` answers by id. An Error is a lookup that never got an answer, a missing id a 404. */
+  /**
+   * `/api/mod/{id}` answers by id. An Error is a lookup that never got an answer, a missing id a 404,
+   * and a promise an answer still on its way.
+   */
   details?: Record<number, object | Error>
   modsManager?: WindowApiOverrides["modsManager"]
   pathsManager?: WindowApiOverrides["pathsManager"]
@@ -131,7 +134,7 @@ function mount({ installation = anInstallation(), catalog = [BETTER_RUINS], fold
     if (url.includes("/api/mods")) return JSON.stringify({ statuscode: "200", mods: catalog })
     const id = /\/api\/mod\/(\d+)$/.exec(url)?.[1]
     if (id === undefined) return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
-    const answer = details[Number(id)]
+    const answer = await details[Number(id)]
     if (answer instanceof Error) throw answer
     return JSON.stringify(answer ?? { statuscode: "404" })
   })
@@ -206,9 +209,10 @@ describe("ModDB card actions: quick install", () => {
       return `${outputPath}/${fileName}`
     })
     const releases = [aRelease("betterruins", "3.0.0", ["1.22.0"]), aRelease("betterruins", "2.0.0", ["1.21.0"]), aRelease("betterruins", "1.0.0", ["1.20.0"])]
-    mount({ folder: () => folder, details: { 123: aDetail(123, "Better Ruins", releases) }, pathsManager: { downloadOnPath } })
+    mount({ folder: () => folder, details: { 123: aDetail(123, "Better Ruins", releases) }, pathsManager: { downloadOnPath }, routes: true })
 
     await screen.findByRole("button", { name: "Better Ruins, Not installed" }, { timeout: 3000 })
+    expect(screen.queryByText(/No Installations found!/)).toBeNull()
     await user.click(within(strip("Better Ruins")).getByRole("button", { name: QUICK_INSTALL }))
 
     await waitFor(() => expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/betterruins-2.0.0.zip", "/games/a/Mods", "betterruins-2.0.0.zip"))
@@ -218,6 +222,9 @@ describe("ModDB card actions: quick install", () => {
     await waitFor(() => expect(screen.getByTestId("toast").textContent).toMatch(/Better Ruins/))
     expect(historyBodies()).toEqual([])
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    // Installed from the card, the player stays where they were browsing.
+    await act(async () => {})
+    expect(screen.queryByTestId("where")).toBeNull()
   }, 15_000)
 
   it("falls through to the release list when no release is tagged for the build", async () => {
@@ -241,13 +248,15 @@ describe("ModDB card actions: quick install", () => {
     async (_case, answer) => {
       const user = userEvent.setup()
       const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async () => "")
-      mount({ details: answer ? { 123: answer } : {}, pathsManager: { downloadOnPath } })
+      mount({ details: answer ? { 123: answer } : {}, pathsManager: { downloadOnPath }, routes: true })
 
       await screen.findByRole("button", { name: "Better Ruins, Not installed" }, { timeout: 3000 })
       await user.click(within(strip("Better Ruins")).getByRole("button", { name: QUICK_INSTALL }))
 
       await waitFor(() => expect(historyBodies()).toEqual(["This Mod's version list couldn't be loaded. Check your connection and try again."]))
       expect(downloadOnPath).not.toHaveBeenCalled()
+      await act(async () => {})
+      expect(screen.queryByTestId("where")).toBeNull()
     },
     15_000
   )
@@ -358,11 +367,13 @@ describe("ModDB card actions: one installed copy", () => {
     expect(logged).not.toContain("Better Ruins")
   }, 15_000)
 
-  it("suspends updates for one Mod without suspending the other", async () => {
+  it("suspends updates for one Mod by its installed modid, without suspending the other", async () => {
     const user = userEvent.setup()
+    // The listing says betterruins and the archive BetterRuins. Update all skips by the archive's
+    // modid, exact case, so that is the one written.
     const { api } = mount({
       catalog: [BETTER_RUINS, PRIMITIVE_SURVIVAL],
-      folder: () => [aCopy("betterruins", "Better Ruins", "1.0.0"), aCopy("primitivesurvival", "Primitive Survival", "3.0.0")]
+      folder: () => [aCopy("BetterRuins", "Better Ruins", "1.0.0"), aCopy("primitivesurvival", "Primitive Survival", "3.0.0")]
     })
 
     await screen.findByRole("button", { name: "Primitive Survival, Installed" }, { timeout: 3000 })
@@ -370,7 +381,7 @@ describe("ModDB card actions: one installed copy", () => {
 
     await waitFor(() => expect(within(strip("Better Ruins")).getByRole("button", { name: SUSPENDED }).getAttribute("aria-pressed")).toBe("true"))
     expect(within(strip("Primitive Survival")).getByRole("button", { name: SUSPENDED }).getAttribute("aria-pressed")).toBe("false")
-    await waitFor(() => expect(vi.mocked(api.configManager.saveConfig).mock.lastCall?.[0]).toMatchObject({ suspendedModUpdates: ["betterruins"] }))
+    await waitFor(() => expect(vi.mocked(api.configManager.saveConfig).mock.lastCall?.[0]).toMatchObject({ suspendedModUpdates: ["BetterRuins"] }))
     expect(historyBodies()).toEqual([])
   }, 15_000)
 
@@ -413,7 +424,8 @@ describe("ModDB card actions: one installed copy", () => {
       catalog: [BETTER_RUINS, PRIMITIVE_SURVIVAL],
       folder: () => folder,
       details: {
-        123: aDetail(123, "Better Ruins", [aRelease("betterruins", "1.5.0", ["1.21.0"]), aRelease("betterruins", "1.0.0", ["1.20.0"])]),
+        // 2.0.0 is newer but not tagged for 1.21.0, so it is not the release Update writes.
+        123: aDetail(123, "Better Ruins", [aRelease("betterruins", "2.0.0", ["1.19.0"]), aRelease("betterruins", "1.5.0", ["1.21.0"]), aRelease("betterruins", "1.0.0", ["1.20.0"])]),
         456: aDetail(456, "Primitive Survival", [aRelease("primitivesurvival", "2.0.0", ["1.21.0"])])
       },
       pathsManager: { deletePath, downloadOnPath }
@@ -528,5 +540,25 @@ describe("ModDB card actions: several copies and details", () => {
 
     expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scans)
     expect(detailLookups()).toEqual(["https://mods.vintagestory.at/api/mod/123"])
+  }, 15_000)
+
+  it("looks up at most two Mods' details at once, within the limit the Manage Mods scan shares", async () => {
+    const answers = [deferred<object>(), deferred<object>(), deferred<object>()] as const
+    const { detailLookups } = mount({
+      catalog: [BETTER_RUINS, PRIMITIVE_SURVIVAL, DEEPER_CAVES],
+      folder: () => [aCopy("betterruins", "Better Ruins", "1.0.0"), aCopy("primitivesurvival", "Primitive Survival", "1.0.0"), aCopy("deepercaves", "Deeper Caves", "1.0.0")],
+      details: { 123: answers[0].promise, 456: answers[1].promise, 789: answers[2].promise }
+    })
+
+    await screen.findByRole("button", { name: "Deeper Caves, Installed" }, { timeout: 3000 })
+    await waitFor(() => expect(detailLookups()).toHaveLength(2))
+    await act(async () => {})
+    expect(detailLookups()).toHaveLength(2)
+
+    // The limiter is shared by every test in this file, so every answer lands before the next one.
+    await act(async () => {
+      for (const answer of answers) answer.resolve({ statuscode: "404" })
+    })
+    await waitFor(() => expect(detailLookups()).toHaveLength(3))
   }, 15_000)
 })
