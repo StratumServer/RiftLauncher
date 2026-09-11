@@ -344,9 +344,7 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     events.length = 0
     await user.click(useButtonOf(dialog, "Solo"))
 
-    expect(
-      await screen.findByText("Switched to Solo: 1 Mods turned on, 3 turned off. 1 Mods it lists were left alone, because they are no longer installed or more than one copy could match.")
-    ).toBeTruthy()
+    expect(await screen.findByText("Switched to Solo: 1 turned on, 3 turned off. 1 Mod it lists was left alone, because it is no longer installed or more than one copy could match.")).toBeTruthy()
     await switchLanded()
 
     // A fresh scan, the first write, only the four renames that differ, the second write, and the
@@ -372,7 +370,7 @@ describe("Mod profiles", { timeout: 20000 }, () => {
 
     await user.click(useButtonOf(dialog, "Solo"))
 
-    expect(await screen.findByText("Switching to Solo did not finish: 1 Mods kept their state. No profile is active until you switch again.")).toBeTruthy()
+    expect(await screen.findByText("Switching to Solo did not finish: 1 Mod kept its state. No profile is active until you switch again.")).toBeTruthy()
     await switchLanded()
     expect(screen.queryByText(/^Switched to/)).toBeNull()
     // Only the first write happened, and both stored sets are intact.
@@ -395,7 +393,7 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(within(reopened).getByText(NO_PROFILE_NOTE)).toBeTruthy()
     await user.click(useButtonOf(reopened, "Solo"))
 
-    expect(await screen.findByText(/^Switched to Solo: 0 Mods turned on, 1 turned off\./)).toBeTruthy()
+    expect(await screen.findByText(/^Switched to Solo: 0 turned on, 1 turned off\./)).toBeTruthy()
     expect(setModEnabled.mock.calls).toEqual([[GAMMA, false]])
     // No profile was active, so nothing was recorded over Server with the mixed folder.
     expect(stored()).toEqual(aDocument([{ ...SERVER, mods: LIVE }, SOLO], "solo"))
@@ -435,11 +433,21 @@ describe("Mod profiles", { timeout: 20000 }, () => {
 
     await user.click(useButtonOf(dialog, named.name))
 
-    expect(await screen.findByText(/^Switched to Mods & "more" <3: 1 Mods turned on, 3 turned off\./)).toBeTruthy()
+    expect(await screen.findByText(/^Switched to Mods & "more" <3: 1 turned on, 3 turned off\./)).toBeTruthy()
+  })
+
+  it("counts two Mods that kept their state in the plural", async () => {
+    const { user, refused } = renderProfiles({ document: aDocument([SERVER, SOLO], "server") })
+    refused.add(GAMMA).add(DELTA)
+    const dialog = await openProfiles(user, "Solo")
+
+    await user.click(useButtonOf(dialog, "Solo"))
+
+    expect(await screen.findByText("Switching to Solo did not finish: 2 Mods kept their state. No profile is active until you switch again.")).toBeTruthy()
   })
 
   it.each([
-    ["did not finish", GAMMA, [], `Switching to Mods & "more" <3 did not finish: 1 Mods kept their state. No profile is active until you switch again.`],
+    ["did not finish", GAMMA, [], `Switching to Mods & "more" <3 did not finish: 1 Mod kept its state. No profile is active until you switch again.`],
     ["was not recorded", null, [{ ok: true }, { ok: false, reason: "refused" }], `The Mods now match Mods & "more" <3, but it couldn't be recorded as the active profile.`]
   ] as const)("shows a profile name exactly as typed when a switch %s", async (_case, refuse, saveAnswers, verdict) => {
     const named: ModProfile = { ...SOLO, id: "named", name: `Mods & "more" <3` }
@@ -452,17 +460,25 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(await screen.findByText(verdict)).toBeTruthy()
   })
 
-  it("says a Mod it lists was left alone when two copies share its modid and neither is the one it recorded", async () => {
+  it("counts a Mod whose two copies are neither the one it recorded among those left alone", async () => {
     const newer = `${MODS}/alpha-1.1.0.zip.disabled`
     const mods = [aMod("Alpha Mod", "alpha", ALPHA), aMod("Alpha Mod", "alpha", newer, false), aMod("Beta Mod", "beta", BETA)]
-    const pinned: ModProfile = { id: "pinned", name: "Pinned", mods: [{ modid: "alpha", file: "alpha-0.9.0.zip" }] }
+    // Alpha is unresolved and Zeta is gone: two left alone, one of each kind.
+    const pinned: ModProfile = {
+      id: "pinned",
+      name: "Pinned",
+      mods: [
+        { modid: "alpha", file: "alpha-0.9.0.zip" },
+        { modid: "zeta", file: "zeta-1.0.0.zip" }
+      ]
+    }
     const { user, setModEnabled } = renderProfiles({ mods, document: aDocument([SERVER, pinned], "server") })
     const dialog = await openProfiles(user, "Pinned")
 
     await user.click(useButtonOf(dialog, "Pinned"))
 
     expect(
-      await screen.findByText("Switched to Pinned: 0 Mods turned on, 1 turned off. 1 Mods it lists were left alone, because they are no longer installed or more than one copy could match.")
+      await screen.findByText("Switched to Pinned: 0 turned on, 1 turned off. 2 Mods it lists were left alone, because they are no longer installed or more than one copy could match.")
     ).toBeTruthy()
     expect(setModEnabled.mock.calls).toEqual([[BETA, false]])
   })
@@ -476,7 +492,7 @@ describe("Mod profiles", { timeout: 20000 }, () => {
 
     await user.click(useButtonOf(dialog, "Updated"))
 
-    expect(await screen.findByText("Switched to Updated: 1 Mods turned on, 2 turned off.")).toBeTruthy()
+    expect(await screen.findByText("Switched to Updated: 1 turned on, 2 turned off.")).toBeTruthy()
     expect(setModEnabled.mock.calls).toEqual([
       [ALPHA, false],
       [newer, true],

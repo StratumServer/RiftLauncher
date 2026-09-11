@@ -206,7 +206,7 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
 
     // Nothing is rolled back. Every rename is atomic, so the folder is valid, and with no profile
     // active the next switch cannot record this mix into either profile.
-    if (failed > 0) return addNotification(t("features.mods.profileSwitchPartial", { profile: target.name, failed, ...RAW_NAME }), "warning")
+    if (failed > 0) return addNotification(t("features.mods.profileSwitchPartial", { profile: target.name, count: failed, ...RAW_NAME }), "warning")
 
     if (!(await save(path, finishModProfileSwitch(begun, target.id)))) {
       return addNotification(t("features.mods.profileSwitchNotRecorded", { profile: target.name, ...RAW_NAME }), "warning")
@@ -214,7 +214,7 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
 
     const skipped = plan.missing + plan.unresolved
     const counts = { profile: target.name, on: turnedOn, off: turnedOff, ...RAW_NAME }
-    addNotification(skipped > 0 ? t("features.mods.profileSwitchedWithSkipped", { ...counts, skipped }) : t("features.mods.profileSwitched", counts), "success")
+    addNotification(skipped > 0 ? t("features.mods.profileSwitchedWithSkipped", { ...counts, count: skipped }) : t("features.mods.profileSwitched", counts), "success")
   }
 
   async function switchTo(id: string): Promise<void> {
