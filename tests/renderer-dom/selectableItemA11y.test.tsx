@@ -342,6 +342,22 @@ describe("ModListCard accessibility", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Better Ruins, Installed" }))
   })
 
+  it("leaves focus where the player put it when the card re-renders for anything else", () => {
+    const props = installedCard()
+    const { rerender } = render(<ModListCard {...props} />)
+
+    // A click on empty page space: focus goes nowhere, and the button it left is still there.
+    const suspended = screen.getByRole("button", { name: "Updates suspended: Update all skips this Mod" })
+    suspended.focus()
+    suspended.blur()
+    expect(document.activeElement).toBe(document.body)
+
+    // Every toast hands each card a new onSelect.
+    rerender(<ModListCard {...props} onSelect={vi.fn()} />)
+
+    expect(document.activeElement).toBe(document.body)
+  })
+
   it("moves focus to the card before asking to delete, so the confirmation hands it back there", async () => {
     const user = userEvent.setup()
     const props = installedCard()

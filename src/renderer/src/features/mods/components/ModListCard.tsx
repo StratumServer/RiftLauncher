@@ -84,15 +84,17 @@ function ModListCard({
   const disabled = copyState === "disabled"
 
   const cardRef = useRef<HTMLDivElement>(null)
-  const actionsHadFocus = useRef(false)
+  const focusedAction = useRef<Element | null>(null)
 
   // An action can take away the very button that has focus: Update once the new release is in,
   // Install once the Mod is. Focus then falls to the page body and a keyboard player has to start
-  // over from the top, so it is put back on this card instead.
+  // over from the top, so it is put back on this card instead. Only then: while that button is still
+  // on the page, focus is wherever the player sent it, and a re-render for a toast leaves it there.
   useLayoutEffect(() => {
-    if (!actionsHadFocus.current || (document.activeElement !== null && document.activeElement !== document.body)) return
-    actionsHadFocus.current = false
-    cardRef.current?.focus()
+    const focused = focusedAction.current
+    if (!focused || focused.isConnected) return
+    focusedAction.current = null
+    if (document.activeElement === null || document.activeElement === document.body) cardRef.current?.focus()
   })
 
   const action = (kind: ModCardAction) => (): void | Promise<unknown> => onAction?.(mod, kind)
@@ -195,10 +197,10 @@ function ModListCard({
         <div
           role="group"
           aria-label={mod.name}
-          onFocus={() => (actionsHadFocus.current = true)}
+          onFocus={(event) => (focusedAction.current = event.target)}
           // A null relatedTarget is focus going nowhere, which is what a button being taken away
           // looks like; anywhere else is the player moving on.
-          onBlur={(event) => event.relatedTarget && (actionsHadFocus.current = false)}
+          onBlur={(event) => event.relatedTarget && (focusedAction.current = null)}
           className="flex items-center justify-end gap-1 px-2 pb-1 text-lg"
         >
           {!installed ? (
