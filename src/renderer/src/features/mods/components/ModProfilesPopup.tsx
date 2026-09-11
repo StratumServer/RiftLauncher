@@ -61,6 +61,16 @@ function ModProfilesPopup({ isOpen, close, profiles, locked }: Readonly<{ isOpen
     ;(listRef.current?.querySelector("button") ?? newNameRef.current?.querySelector("input"))?.focus()
   }, [deleted])
 
+  // Closing drops a half-typed rename, a pending delete question and an unsaved name, so the next
+  // open starts from the plain list. Escape and a click outside close through here too.
+  function closeDialog(): void {
+    setRenaming(null)
+    setConfirmingDelete(null)
+    setNewName("")
+    setNewNameProblem(null)
+    close()
+  }
+
   function nameProblemMessage(problem: ModProfileNameProblem): string {
     return t(NAME_PROBLEM_KEYS[problem], { max: MAX_MOD_PROFILE_NAME_LENGTH })
   }
@@ -174,7 +184,7 @@ function ModProfilesPopup({ isOpen, close, profiles, locked }: Readonly<{ isOpen
   }
 
   return (
-    <PopupDialogPanel title={t("features.mods.profilesTitle")} isOpen={isOpen} close={close}>
+    <PopupDialogPanel title={t("features.mods.profilesTitle")} isOpen={isOpen} close={closeDialog}>
       <>
         <p>{t("features.mods.profilesIntro")}</p>
 
@@ -217,7 +227,7 @@ function ModProfilesPopup({ isOpen, close, profiles, locked }: Readonly<{ isOpen
         </form>
 
         <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-          <FormButton title={t("features.mods.profilesClose")} variant="secondary" size="md" onClick={close}>
+          <FormButton title={t("features.mods.profilesClose")} variant="secondary" size="md" onClick={closeDialog}>
             <PiXCircleDuotone className="text-xl" />
             <p>{t("features.mods.profilesClose")}</p>
           </FormButton>

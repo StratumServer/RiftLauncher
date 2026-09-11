@@ -571,6 +571,27 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(saveModProfiles).not.toHaveBeenCalled()
   })
 
+  it.each([["the Close button"], ["Escape"]] as const)("closing by %s drops a half-typed rename, a pending delete question and an unsaved name", async (how) => {
+    const { user, saveModProfiles } = renderProfiles({ document: aDocument([SERVER, SOLO], "server") })
+    const first = await openProfiles(user, "Solo")
+
+    await user.click(within(rowOf(first, "Solo")).getByRole("button", { name: "Rename this profile" }))
+    await user.type(within(first).getByLabelText("Profile name"), " draft")
+    await user.click(within(rowOf(first, "Server")).getByRole("button", { name: "Delete this profile" }))
+    await user.type(within(first).getByLabelText(NEW_NAME), "   {Enter}")
+    expect((await within(first).findByRole("alert")).textContent).toBe("Give the profile a name.")
+    if (how === "Escape") await user.keyboard("{Escape}")
+    else await user.click(within(first).getByRole("button", { name: "Close" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+
+    const reopened = await openProfiles(user, "Solo")
+    expect(within(reopened).queryByLabelText("Profile name")).toBeNull()
+    expect(within(reopened).queryByText(/Only the profile is removed/)).toBeNull()
+    expect((within(reopened).getByLabelText(NEW_NAME) as HTMLInputElement).value).toBe("")
+    expect(within(reopened).queryByRole("alert")).toBeNull()
+    expect(saveModProfiles).not.toHaveBeenCalled()
+  })
+
   it("one quick double press on Use starts one switch, and holds Update all and Import while it runs", async () => {
     const { user, setModEnabled, saveModProfiles } = renderProfiles({ document: aDocument([SERVER, SOLO], "server") })
     const landings: (() => void)[] = []
