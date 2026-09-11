@@ -381,6 +381,15 @@ describe("modDescriptionParagraphs", () => {
     for (const value of [undefined, null, 42, ["<p>x</p>"]]) assert.deepEqual(modDescriptionParagraphs(value), [])
   })
 
+  it("ends a tag at a stray < inside it, which is what keeps every tag pattern linear", () => {
+    // A pattern whose attributes may hold a `<` rescans to the end of the text from every opening,
+    // which is quadratic on a hostile description. Stopping there leaves the broken tag as text.
+    assert.deepEqual(modDescriptionParagraphs("<p <b>x"), ["<p x"])
+    assert.deepEqual(modDescriptionParagraphs("</li <b>x"), ["</li x"])
+    assert.deepEqual(modDescriptionParagraphs("<a <b>x"), ["<a x"])
+    assert.deepEqual(modDescriptionParagraphs("<script <b>x"), ["<script x"])
+  })
+
   it("stays linear on a very long hostile description", () => {
     // The host caps a detail at 4 MB. A pattern that rescans to the end from every `<` would take
     // seconds to minutes on these, and it would freeze the page while it did.
