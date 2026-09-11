@@ -231,11 +231,15 @@ function toasts(): HTMLElement[] {
   return screen.queryAllByRole("button", { name: "Discard notification", hidden: true })
 }
 
-/** One toast shows at a time, so the next one only appears once this one is gone. */
+/**
+ * One toast shows at a time, so the next one only appears once this one is gone. The banner leaves
+ * through an exit animation, which takes longer than waitFor's default second on a loaded runner,
+ * so both waits get room rather than the suite gaining a flake.
+ */
 async function discardToast(user: Harness["user"]): Promise<void> {
-  await waitFor(() => expect(toasts()).toHaveLength(1))
+  await waitFor(() => expect(toasts()).toHaveLength(1), { timeout: 5_000 })
   await user.click(toasts()[0] as HTMLElement)
-  await waitFor(() => expect(toasts()).toHaveLength(0))
+  await waitFor(() => expect(toasts()).toHaveLength(0), { timeout: 5_000 })
 }
 
 /** A switch is over once the page has rescanned, which is when the Profiles button comes back. */
