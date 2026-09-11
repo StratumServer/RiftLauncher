@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
 import { FiLoader } from "react-icons/fi"
 
-import { CONFIG_ACTIONS, useConfigDispatch, useInstallations, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
-import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useInstallations, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
 
 import { useManageInstalledMods } from "@renderer/features/mods/hooks/useManageInstalledMods"
 import { useBulkUpdateMods } from "@renderer/features/mods/hooks/useBulkUpdateMods"
 import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpackImportPicker"
-import { clearModIconMemoryCache, setModEnabled } from "@renderer/features/moddb/adapters/modsManager"
-
-import { createFileSystemPort } from "@renderer/adapters/fileSystem"
+import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
 
 import { filterInstalledMods, hasActiveInstalledModFilters, installedModAuthors, installedModGameVersions, installedModTags, NO_INSTALLED_MOD_FILTERS } from "@domain/mods/installedFilters"
 import type { InstalledModFilters } from "@domain/mods/installedFilters"
@@ -20,19 +17,17 @@ import type { InstalledModFilters } from "@domain/mods/installedFilters"
 import { ListGroup, ListWrapper } from "@renderer/components/ui/List"
 import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeSummaryPopup"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
+import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
 import InstalledModItem from "@renderer/features/mods/components/InstalledModItem"
 import ErrorInstalledModItem from "@renderer/features/mods/components/ErrorInstalledModItem"
 import InstalledModsSectionHeader from "@renderer/features/mods/components/InstalledModsSectionHeader"
 import ManageModsActionBar from "@renderer/features/mods/components/ManageModsActionBar"
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
-import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
+import { FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
-
-const LOG_TAG = "[front] [mods] [features/installations/pages/ManageMods.tsx]"
 
 function byName(a: InstalledModType, b: InstalledModType): number {
   return a.name.localeCompare(b.name)
@@ -47,8 +42,6 @@ function ListMods(): JSX.Element {
   const { t } = useTranslation()
   const installations = useInstallations()
   const suspendedModUpdates = useSuspendedModUpdates()
-  const configDispatch = useConfigDispatch()
-  const { addNotification } = useNotificationsContext()
 
   const { id } = useParams()
 
@@ -79,15 +72,10 @@ function ListMods(): JSX.Element {
   const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, visibleMods)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
-  const [modToDelete, setModToDelete] = useState<InstalledModType | ErrorInstalledModType | null>(null)
+  const actions = useInstalledModActions(installation, refresh)
   const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
-
-  // The ref is the guard and the state is only what paints it. A second click lands before React has
-  // rendered anything, so the thing it has to be tested against is written synchronously.
-  const togglingPathsRef = useRef(new Set<string>())
-  const [togglingPaths, setTogglingPaths] = useState<string[]>([])
 
   useEffect(() => {
     return (): void => clearModIconMemoryCache()
@@ -107,74 +95,13 @@ function ListMods(): JSX.Element {
         key={iMod.modid + iMod.path}
         iMod={iMod}
         suspended={suspended}
-        busy={togglingPaths.includes(iMod.path)}
-        onToggleEnabledClick={() => ToggleModEnabledHandler(iMod)}
-        onToggleSuspendClick={() => configDispatch({ type: suspended ? CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE : CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE, payload: { modid: iMod.modid } })}
-        onDeleteClick={() => setModToDelete(iMod)}
+        busy={actions.isBusy(iMod.path)}
+        onToggleEnabledClick={() => actions.toggleEnabled(iMod)}
+        onToggleSuspendClick={() => actions.toggleSuspended(iMod.modid)}
+        onDeleteClick={() => actions.requestDelete(iMod)}
         onUpdateClick={() => setModToUpdate(iMod)}
       />
     )
-  }
-
-  /**
-   * Turns one Mod on or off, then rescans.
-   *
-   * The rescan is not optional and it is not a nicety: the archive's name is its path, so a Mod that
-   * just changed state is a different file from the one this row is holding, and every button on
-   * that row would still be pointing at a name that no longer exists.
-   *
-   * Which is also why the second of two quick clicks has to be dropped rather than sent: it would
-   * carry the name the first one just renamed away, and the player would be told the same action
-   * both succeeded and failed. The row's own buttons stay disabled until the rescan is in.
-   */
-  async function ToggleModEnabledHandler(iMod: InstalledModType): Promise<void> {
-    if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
-
-    if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantToggleWhileinUse"), "error")
-
-    if (togglingPathsRef.current.has(iMod.path)) return
-    togglingPathsRef.current.add(iMod.path)
-    setTogglingPaths([...togglingPathsRef.current])
-
-    try {
-      const result = await setModEnabled(iMod.path, !iMod.enabled)
-
-      if (result.ok) {
-        addNotification(t(iMod.enabled ? "features.mods.modDisabled" : "features.mods.modEnabled", { mod: iMod.name }), "success")
-      } else {
-        window.api.utils.logMessage("error", `${LOG_TAG} [ToggleModEnabledHandler] Could not turn the ${iMod.name} Mod ${iMod.enabled ? "off" : "on"}.`)
-        window.api.utils.logMessage("debug", `${LOG_TAG} [ToggleModEnabledHandler] Renaming ${iMod.path} was refused: ${result.reason}.`)
-        addNotification(t(result.reason === "name-taken" ? "features.mods.modNameTaken" : "features.mods.errorTogglingMod", { mod: iMod.name }), "error")
-      }
-
-      await refresh()
-    } finally {
-      togglingPathsRef.current.delete(iMod.path)
-      setTogglingPaths([...togglingPathsRef.current])
-    }
-  }
-
-  async function DeleteModHandler(): Promise<void> {
-    if (!modToDelete) return addNotification(t("features.mods.noModSelected"), "error")
-
-    if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
-
-    if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantDeleteWhileinUse"), "error")
-
-    try {
-      const deleted = await createFileSystemPort().remove(modToDelete.path)
-      if (!deleted) throw new Error(`The host refused to delete ${modToDelete.path}.`)
-
-      refresh()
-
-      addNotification(t("features.mods.modSuccessfullyDeleted"), "success")
-    } catch (err) {
-      window.api.utils.logMessage("error", `${LOG_TAG} [DeleteModHandler] Error deleting a mod.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} [DeleteModHandler] Error deleting the mod file ${modToDelete.path}: ${err}.`)
-      addNotification(t("features.mods.errorDeletingMod"), "error")
-    } finally {
-      setModToDelete(null)
-    }
   }
 
   return (
@@ -270,7 +197,7 @@ function ListMods(): JSX.Element {
                           reportKey="features.mods.modsWithErrorsDescriptionReport"
                         />
                         {visibleModsWithErrors.map((iModE) => (
-                          <ErrorInstalledModItem key={iModE.zipname + iModE.zipname} iModE={iModE} onDeleteClick={() => setModToDelete(iModE)} />
+                          <ErrorInstalledModItem key={iModE.zipname + iModE.zipname} iModE={iModE} onDeleteClick={() => actions.requestDelete(iModE)} />
                         ))}
                       </ListGroup>
                     </ListWrapper>
@@ -343,16 +270,7 @@ function ListMods(): JSX.Element {
                     entries={summaryEntries}
                   />
 
-                  <PopupDialogPanel title={t("features.mods.deleteMod")} isOpen={modToDelete !== null} close={() => setModToDelete(null)}>
-                    <>
-                      <p>{t("features.mods.areYouSureDelete")}</p>
-                      <p className="text-zinc-400">{t("features.mods.deletingNotReversible")}</p>
-                      <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-                        <FormButton title={t("generic.cancel")} onClick={() => setModToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-                        <FormButton title={t("generic.delete")} onClick={DeleteModHandler} variant="destructive" size="md" icon={<PiTrashDuotone />} />
-                      </ButtonsWrapper>
-                    </>
-                  </PopupDialogPanel>
+                  <DeleteModDialog isOpen={actions.modToDelete !== null} close={actions.cancelDelete} onConfirm={actions.confirmDelete} />
                 </>
               )}
             </>
