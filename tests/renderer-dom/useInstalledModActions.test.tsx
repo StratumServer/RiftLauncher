@@ -140,6 +140,18 @@ describe("useInstalledModActions: a folder something else is writing", () => {
     expect(await screen.findByText("Installation not found.")).toBeTruthy()
     expect(setModEnabled).not.toHaveBeenCalled()
   })
+
+  it("refuses to delete without an Installation and deletes nothing", async () => {
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const { result } = renderActions(undefined, async () => {}, { pathsManager: { deletePath } })
+
+    act(() => result.current.requestDelete(enabledCopy))
+    await act(() => result.current.confirmDelete())
+
+    expect(await screen.findByText("Installation not found.")).toBeTruthy()
+    expect(deletePath).not.toHaveBeenCalled()
+    expect(result.current.busyPaths).toEqual([])
+  })
 })
 
 describe("useInstalledModActions: the busy paths", () => {
@@ -174,6 +186,19 @@ describe("useInstalledModActions: the busy paths", () => {
       rescan.resolve()
       await toggled
     })
+    expect(result.current.isBusy(ENABLED_PATH)).toBe(false)
+  })
+
+  it("releases the path when the rename call itself fails, so the row does not stay disabled", async () => {
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async () => {
+      throw new Error("IPC channel closed")
+    })
+    const { result } = renderActions(anInstallation(), async () => {}, { modsManager: { setModEnabled } })
+
+    await act(() => result.current.toggleEnabled(enabledCopy).catch(() => {}))
+
+    expect(setModEnabled).toHaveBeenCalledTimes(1)
+    expect(result.current.busyPaths).toEqual([])
     expect(result.current.isBusy(ENABLED_PATH)).toBe(false)
   })
 
