@@ -24,6 +24,13 @@ const SIDE_LABEL_KEYS: Readonly<Record<ModSide, string>> = { client: "generic.cl
  */
 const RELEASE_ROW_FILL = "bg-zinc-950/50"
 
+/**
+ * Each paragraph is an element of its own, and the host lets a detail run to 4 MiB: one of `a<br>`
+ * would mount some 200,000 of them. ponytail: the rest is cut without a word, the ModDB button opens
+ * the whole page; add a "read the rest on the ModDB" line if a real Mod ever runs this long.
+ */
+const MAX_DESCRIPTION_PARAGRAPHS = 200
+
 /** A release's date in the player's language, or nothing when the ModDB sent none that parses. */
 function releaseDate(created: unknown, language: string | undefined): string | undefined {
   if (typeof created !== "string") return undefined
@@ -82,7 +89,7 @@ function InstalledModDetails({
   const lookup = useModReleaseCatalog(iMod._mod ? null : iMod.modid)
   const detail = iMod._mod ?? lookup.mod ?? undefined
 
-  const moddbParagraphs = useMemo(() => modDescriptionParagraphs(detail?.text), [detail?.text])
+  const moddbParagraphs = useMemo(() => modDescriptionParagraphs(detail?.text).slice(0, MAX_DESCRIPTION_PARAGRAPHS), [detail?.text])
   const description = moddbParagraphs.length > 0 ? moddbParagraphs : iMod.description ? [iMod.description] : []
 
   const side = readModSide(iMod.side)

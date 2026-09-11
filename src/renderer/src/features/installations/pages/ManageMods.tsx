@@ -86,10 +86,17 @@ function ListMods(): JSX.Element {
   const detailsButtons = useRef(new Map<string, HTMLDivElement>())
 
   // Derived against what the player can see, so the panel always describes a row on screen and
-  // closing it always has a row to hand focus back to. The path outlives a filter that hides the row,
-  // so the panel comes back with it. Following the path's other suffix form keeps the panel on a Mod
-  // through an enable or disable, whoever renamed the archive.
-  const detailsMod = detailsPath === null ? undefined : modByArchivePath(visibleMods, detailsPath)
+  // closing it always has a row to hand focus back to. Update all swaps every row for its spinner, so
+  // the panel goes with them. The path outlives a filter that hides the row, so the panel comes back
+  // with it. Following the path's other suffix form keeps the panel on a Mod through an enable or
+  // disable, whoever renamed the archive.
+  const detailsMod = detailsPath === null || installation?._updatingMods ? undefined : modByArchivePath(visibleMods, detailsPath)
+
+  // A Mod that has left the folder is gone for good: a file of the same name coming back later is not
+  // the player asking to see it again. Only the whole scan decides this, never what a filter hides.
+  useEffect(() => {
+    if (detailsPath !== null && !modByArchivePath(installedMods, detailsPath)) setDetailsPath(null)
+  }, [installedMods, detailsPath])
 
   // Keyed on a counter, never on the path or the panel mounting: a rename after an enable or disable,
   // or the panel coming back when a filter clears, must not pull focus away from where the player has it.
@@ -307,7 +314,16 @@ function ListMods(): JSX.Element {
                     entries={summaryEntries}
                   />
 
-                  <DeleteModDialog isOpen={actions.modToDelete !== null} close={actions.cancelDelete} onConfirm={actions.confirmDelete} />
+                  <DeleteModDialog
+                    isOpen={actions.modToDelete !== null}
+                    close={actions.cancelDelete}
+                    onConfirm={() => {
+                      // Closed here, not left to the rescan: the path would follow a disabled twin of
+                      // the deleted archive (#292) and move the panel onto a file the player never opened.
+                      if (actions.modToDelete?.path === detailsMod?.path) setDetailsPath(null)
+                      return actions.confirmDelete()
+                    }}
+                  />
                 </>
               )}
             </>

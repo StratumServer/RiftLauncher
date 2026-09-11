@@ -17,6 +17,8 @@ const DELTA_PATH = "/games/a/Mods/delta-4.0.0.zip"
 const ALPHA_COPY_PATH = "/games/a/Mods/alpha-copy-1.0.1.zip"
 const SEARCH_PLACEHOLDER = "Search by name, id or author"
 const DISABLE_TITLE = "Disable this Mod: it stays installed, Vintage Story just won't load it"
+const ENABLE_TITLE = "Enable this Mod: Vintage Story will load it again"
+const CLOSE_DETAILS = "Close the details"
 const NOT_ON_MODDB = "This Mod isn't on the ModDB. It's most likely a local or external build, so only what its own file says is shown."
 const LOAD_FAILED = "The ModDB couldn't be reached, so only what the Mod's own file says is shown."
 const LOADING = "Looking this Mod up on the ModDB."
@@ -369,7 +371,7 @@ describe("ManageMods details panel", () => {
     expect(alpha.getAttribute("aria-pressed")).toBe("false")
   })
 
-  it("stays on the Mod through a disable and shows it disabled without taking focus", async () => {
+  it("stays on the Mod through a disable and an enable, and still closes from its renamed row", async () => {
     const user = userEvent.setup()
     let disabled = false
     const getInstalledMods = vi.fn(async () => {
@@ -377,9 +379,9 @@ describe("ManageMods details panel", () => {
       if (disabled) scan.mods[0] = { ...(scan.mods[0] as InstalledModType), path: `${ALPHA_PATH}.disabled`, enabled: false }
       return scan
     })
-    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => {
-      disabled = true
-      return { ok: true, path: `${path}.disabled` }
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string, enabled: boolean) => {
+      disabled = !enabled
+      return { ok: true, path: enabled ? path.slice(0, -".disabled".length) : `${path}.disabled` }
     })
     renderManageMods({ modsManager: { getInstalledMods, setModEnabled } })
 
@@ -394,7 +396,29 @@ describe("ManageMods details panel", () => {
     await waitFor(() => expect(within(screen.getByRole("complementary", { name: "Alpha Mod" })).getByText("Disabled")).toBeTruthy())
     expect(document.activeElement).not.toBe(screen.getByRole("heading", { name: "Alpha Mod" }))
     // The row describing the renamed file is the pressed one now.
-    expect((await detailsButtonFor("Alpha Mod")).getAttribute("aria-pressed")).toBe("true")
+    const disabledRow = await detailsButtonFor("Alpha Mod")
+    expect(disabledRow.getAttribute("aria-pressed")).toBe("true")
+
+    // The panel was opened on the old name, and closing it hands focus to the row holding the new one.
+    await user.click(within(screen.getByRole("complementary", { name: "Alpha Mod" })).getByRole("button", { name: CLOSE_DETAILS }))
+    expect(detailsPanel()).toBeNull()
+    expect(document.activeElement).toBe(disabledRow)
+
+    // Opened on the disabled name this time, then renamed back by an enable.
+    await user.click(disabledRow)
+    expect(await screen.findByRole("complementary", { name: "Alpha Mod" })).toBeTruthy()
+    await user.click(within(rowOf(disabledRow)).getByTitle(ENABLE_TITLE))
+
+    await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(`${ALPHA_PATH}.disabled`, true))
+    await waitFor(() => expect(within(screen.getByRole("complementary", { name: "Alpha Mod" })).queryByText("Disabled")).toBeNull())
+
+    // The pressed row closes the panel, whatever name the panel was opened on.
+    const enabledRow = await detailsButtonFor("Alpha Mod")
+    expect(enabledRow.getAttribute("aria-pressed")).toBe("true")
+    await user.click(enabledRow)
+
+    expect(detailsPanel()).toBeNull()
+    expect(enabledRow.getAttribute("aria-pressed")).toBe("false")
   })
 
   it("closes the panel when the Mod it shows is deleted", async () => {
@@ -421,6 +445,87 @@ describe("ManageMods details panel", () => {
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(ALPHA_PATH))
     await waitFor(() => expect(screen.queryByText("The first one.")).toBeNull())
     expect(detailsPanel()).toBeNull()
+  })
+
+  // Both halves of a #292 pair are listed, each as its own file, and deleting one leaves the other.
+  it.each([
+    { shown: "the enabled file", deletedPath: ALPHA_PATH },
+    { shown: "the disabled file", deletedPath: `${ALPHA_PATH}.disabled` }
+  ])("closes the panel when $shown is deleted instead of moving onto its twin", async ({ deletedPath }) => {
+    const user = userEvent.setup()
+    let deleted = false
+    const getInstalledMods = vi.fn(async () => {
+      const scan = aModScan()
+      const alpha = scan.mods[0] as InstalledModType
+      const pair = [alpha, { ...alpha, path: `${ALPHA_PATH}.disabled`, enabled: false }]
+      scan.mods.splice(0, 1, ...pair.filter((mod) => !deleted || mod.path !== deletedPath))
+      return scan
+    })
+    const deletePath = vi.fn(async () => {
+      deleted = true
+      return true
+    })
+    renderManageMods({ modsManager: { getInstalledMods }, pathsManager: { deletePath } })
+
+    const rows = await screen.findAllByRole("button", { name: "Show the details of Alpha Mod" }, { timeout: 3000 })
+    expect(rows).toHaveLength(2)
+    const shown = rows.find((row) => (within(rowOf(row)).queryByText("Disabled") !== null) === deletedPath.endsWith(".disabled")) as HTMLElement
+    await user.click(shown)
+    expect(await screen.findByRole("complementary", { name: "Alpha Mod" })).toBeTruthy()
+
+    await user.click(within(rowOf(shown)).getByTitle("Delete"))
+    await user.click(within(await screen.findByRole("dialog")).getByTitle("Delete"))
+
+    await waitFor(() => expect(deletePath).toHaveBeenCalledWith(deletedPath))
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Show the details of Alpha Mod" })).toHaveLength(1))
+    expect(detailsPanel()).toBeNull()
+    expect((await detailsButtonFor("Alpha Mod")).getAttribute("aria-pressed")).toBe("false")
+  })
+
+  it("forgets a Mod that left the folder, so a file of the same name coming back stays closed", async () => {
+    const user = userEvent.setup()
+    let present = true
+    const getInstalledMods = vi.fn(async () => {
+      const scan = aModScan()
+      if (!present) scan.mods.shift()
+      return scan
+    })
+    renderManageMods({ modsManager: { getInstalledMods } })
+
+    await user.click(await detailsButtonFor("Alpha Mod"))
+    expect(await screen.findByRole("complementary", { name: "Alpha Mod" })).toBeTruthy()
+
+    // Removed behind the page's back, by the player's file manager, and found by a Reload.
+    present = false
+    await user.click(screen.getByRole("button", { name: "Reload" }))
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Show the details of Alpha Mod" })).toBeNull())
+    expect(detailsPanel()).toBeNull()
+
+    present = true
+    await user.click(screen.getByRole("button", { name: "Reload" }))
+
+    const alpha = await detailsButtonFor("Alpha Mod")
+    await act(async () => {})
+    expect(detailsPanel()).toBeNull()
+    expect(alpha.getAttribute("aria-pressed")).toBe("false")
+  })
+
+  it("takes the panel away with the rows while Update all runs, leaving focus where the player is", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn(async () => true)
+    const downloadOnPath = vi.fn(() => new Promise<string>(() => {}))
+    renderManageMods({ pathsManager: { deletePath, downloadOnPath } })
+
+    await user.click(await detailsButtonFor("Beta Mod"))
+    expect(await screen.findByRole("complementary", { name: "Beta Mod" })).toBeTruthy()
+
+    const updateAll = screen.getByText("Update all").closest("button") as HTMLElement
+    await user.click(updateAll)
+
+    expect(await screen.findByText("Updating installed Mods!")).toBeTruthy()
+    await waitFor(() => expect(downloadOnPath).toHaveBeenCalled())
+    expect(detailsPanel()).toBeNull()
+    expect(document.activeElement).toBe(updateAll)
   })
 
   it("hides the panel while the search hides its Mod and brings it back", async () => {
@@ -468,7 +573,7 @@ describe("ManageMods details panel", () => {
 
   it("renders a detail whose fields came back null instead of taking the page down", async () => {
     const user = userEvent.setup()
-    const broken = { ...ALPHA_DETAIL, author: null, text: null, downloads: "12", follows: "x", side: 7 }
+    const broken = { ...ALPHA_DETAIL, author: null, text: null, downloads: "12", follows: "x" }
     renderManageMods({ netManager: { queryURL: vi.fn(moddbWith({ ...DETAILS, alpha: broken })) } })
 
     await user.click(await detailsButtonFor("Alpha Mod"))
@@ -478,8 +583,29 @@ describe("ManageMods details panel", () => {
     expect(within(aside).queryByText("Author")).toBeNull()
     expect(within(aside).queryByText("Downloads")).toBeNull()
     expect(within(aside).queryByText("Follows")).toBeNull()
-    expect(aside.textContent).not.toMatch(/12|NaN|7/)
+    expect(aside.textContent).not.toMatch(/12|NaN/)
     // With no ModDB description left, the file's own one stands in.
     expect(within(aside).getByText("The first one.")).toBeTruthy()
+  })
+
+  it("falls back to the file's own description when the ModDB's has no words left once stripped", async () => {
+    const user = userEvent.setup()
+    renderManageMods({ netManager: { queryURL: vi.fn(moddbWith({ ...DETAILS, alpha: { ...ALPHA_DETAIL, text: '<p><img src="banner.png"></p>' } })) } })
+
+    await user.click(await detailsButtonFor("Alpha Mod"))
+
+    expect(within(await screen.findByRole("complementary", { name: "Alpha Mod" })).getByText("The first one.")).toBeTruthy()
+  })
+
+  it("shows the first 200 paragraphs of a description and leaves the rest to the ModDB page", async () => {
+    const user = userEvent.setup()
+    const text = Array.from({ length: 250 }, (_, index) => `<p>Paragraph ${index + 1}</p>`).join("")
+    renderManageMods({ netManager: { queryURL: vi.fn(moddbWith({ ...DETAILS, alpha: { ...ALPHA_DETAIL, text } })) } })
+
+    await user.click(await detailsButtonFor("Alpha Mod"))
+
+    const aside = await screen.findByRole("complementary", { name: "Alpha Mod" })
+    expect(within(aside).getByText("Paragraph 200")).toBeTruthy()
+    expect(within(aside).queryByText("Paragraph 201")).toBeNull()
   })
 })
