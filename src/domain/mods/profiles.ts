@@ -123,7 +123,7 @@ function normalizeEntry(value: unknown): ModProfileEntry | undefined {
   const { modid, file } = value
   if (typeof modid !== "string" || modid.length === 0 || modid.length > MAX_MODID_LENGTH || modid.includes("\0")) return undefined
   if (typeof file !== "string" || file.length === 0 || file.length > MAX_FILE_NAME_LENGTH || file.includes("\0")) return undefined
-  if (file === "." || file === ".." || file.includes("/") || file.includes("\\") || !file.toLowerCase().endsWith(".zip")) return undefined
+  if (file.includes("/") || file.includes("\\") || !file.toLowerCase().endsWith(".zip")) return undefined
   return { modid, file }
 }
 
