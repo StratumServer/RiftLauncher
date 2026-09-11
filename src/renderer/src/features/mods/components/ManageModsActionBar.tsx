@@ -19,12 +19,15 @@ function ManageModsActionBar({
   installation,
   installedMods,
   onUpdateAll,
-  onImportModpack
+  onImportModpack,
+  busy = false
 }: Readonly<{
   installation: InstallationType
   installedMods: InstalledModType[]
   onUpdateAll: () => void
   onImportModpack: () => void
+  /** A batch is renaming or deleting archives. Update all and an import would race it on the same files. */
+  busy?: boolean
 }>): JSX.Element {
   const { t } = useTranslation()
 
@@ -43,7 +46,7 @@ function ManageModsActionBar({
   return (
     <StickyMenuGroupWrapper type="centered">
       <StickyMenuGroup>
-        <FormButton title={t("features.mods.updateAll")} variant="primary" className="p-1 w-fit h-8" onClick={onUpdateAll}>
+        <FormButton title={t("features.mods.updateAll")} variant="primary" className="p-1 w-fit h-8" onClick={onUpdateAll} disabled={busy}>
           <PiArrowClockwiseDuotone className="text-xl" />
           <p>{t("features.mods.updateAllButton")}</p>
         </FormButton>
@@ -70,7 +73,7 @@ function ManageModsActionBar({
           <p>{t("features.mods.exportServerModpackButton")}</p>
         </FormButton>
 
-        <FormButton title={t("features.mods.importModpack")} variant="secondary" className="p-1 w-fit h-8" onClick={onImportModpack}>
+        <FormButton title={t("features.mods.importModpack")} variant="secondary" className="p-1 w-fit h-8" onClick={onImportModpack} disabled={busy}>
           <PiBoxArrowDownDuotone className="text-xl" />
           <p>{t("features.mods.importModpackButton")}</p>
         </FormButton>

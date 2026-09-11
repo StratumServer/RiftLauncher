@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next"
+import { Input } from "@headlessui/react"
 import { PiArrowClockwiseDuotone, PiMoonDuotone, PiPowerDuotone, PiTrashDuotone } from "react-icons/pi"
 import { FiExternalLink } from "react-icons/fi"
 import clsx from "clsx"
@@ -14,6 +15,8 @@ function InstalledModItem({
   iMod,
   suspended,
   busy,
+  checked,
+  onCheckedChange,
   onToggleEnabledClick,
   onToggleSuspendClick,
   onDeleteClick,
@@ -28,6 +31,9 @@ function InstalledModItem({
    * two that only read it, ModDB and suspension, stay live.
    */
   busy?: boolean
+  /** The row is in the page's selection, which is keyed by this archive's path and nothing else. */
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
   onToggleEnabledClick: () => void
   onToggleSuspendClick: () => void
   onDeleteClick: () => void
@@ -46,6 +52,15 @@ function InstalledModItem({
           !iMod.enabled ? "bg-zinc-500/25" : suspended ? "bg-sky-500/25" : iMod._updatableTo ? "bg-lime-600/25" : iMod._lastVersion && "bg-yellow-400/25"
         )}
       >
+        <Input
+          type="checkbox"
+          aria-label={t("features.mods.selectMod", { mod: iMod.name })}
+          checked={checked}
+          disabled={busy}
+          onChange={(e) => onCheckedChange(e.target.checked)}
+          className="shrink-0 cursor-pointer"
+        />
+
         {/* Only what describes the Mod is greyed. The buttons keep their contrast, because the one
             that turns it back on has to stay as readable as every other row's. */}
         <div className={clsx("shrink-0", !iMod.enabled && "opacity-50 grayscale")}>
