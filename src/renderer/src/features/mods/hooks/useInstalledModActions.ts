@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { useTranslation } from "react-i18next"
 
 import { CONFIG_ACTIONS, useConfigDispatch, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
@@ -40,7 +40,8 @@ export interface InstalledModActions {
   installNewest(mod: DownloadableModOnListType): Promise<"done" | "no-tagged-release">
   /**
    * Archive paths with a call in flight, up to and including the rescan that follows it, plus
-   * {@link quickInstallKey} for an install that has no archive yet.
+   * {@link quickInstallKey} for an install that has no archive yet. {@link isBusy} also answers for
+   * the {@link modWriteKey} of every download in flight, whichever page started it.
    */
   busyPaths: readonly string[]
   isBusy(path: string): boolean
@@ -49,6 +50,44 @@ export interface InstalledModActions {
 /** The busy key of a Mod being installed from its ModDB listing, before any archive of it exists. */
 export function quickInstallKey(modid: number): string {
   return `moddb:${modid}`
+}
+
+/** The busy key of a download on its way into one Installation's Mods folder, by the modid it writes. */
+export function modWriteKey(installationId: string, modid: string): string {
+  return `write:${installationId}:${modid.toLowerCase()}`
+}
+
+/*
+ * Downloads in flight, by modWriteKey. Kept outside any one page because a download outlives the page
+ * that started it. An update deletes the old archive before the new one has its name, so a page
+ * opened meanwhile scans no copy of the Mod and would offer Install next to the archive on its way:
+ * two archives declaring one modid. A fresh page has an empty busy set; this is what it asks instead.
+ */
+const modWrites = new Set<string>()
+const modWriteListeners = new Set<() => void>()
+let modWritesSnapshot: readonly string[] = []
+
+function subscribeModWrites(listener: () => void): () => void {
+  modWriteListeners.add(listener)
+  return () => modWriteListeners.delete(listener)
+}
+
+function publishModWrites(): void {
+  modWritesSnapshot = [...modWrites]
+  for (const listener of modWriteListeners) listener()
+}
+
+/** Claims every key or none, so two writes of one Mod into one folder never overlap. */
+function claimModWrites(keys: readonly string[]): boolean {
+  if (keys.some((key) => modWrites.has(key))) return false
+  for (const key of keys) modWrites.add(key)
+  publishModWrites()
+  return true
+}
+
+function releaseModWrites(keys: readonly string[]): void {
+  for (const key of keys) modWrites.delete(key)
+  publishModWrites()
 }
 
 /**
@@ -77,6 +116,7 @@ export function useInstalledModActions(installation: InstallationType | undefine
   // rendered anything, so the thing it has to be tested against is written synchronously.
   const busyRef = useRef(new Set<string>())
   const [busyPaths, setBusyPaths] = useState<readonly string[]>([])
+  const writes = useSyncExternalStore(subscribeModWrites, () => modWritesSnapshot)
 
   const latest = useRef({ installation, refresh, t, addNotification, suspendedModUpdates, configDispatch, modToDelete, installMod, queryMod })
   useLayoutEffect(() => {
@@ -178,6 +218,8 @@ export function useInstalledModActions(installation: InstallationType | undefine
       if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
       if (modsFolderInUse(installation)) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
       if (!claim(copy.path)) return
+      const writeKeys = [modWriteKey(installation.id, copy.modid)]
+      if (!claimModWrites(writeKeys)) return release(copy.path)
 
       try {
         await installMod({
@@ -190,6 +232,7 @@ export function useInstalledModActions(installation: InstallationType | undefine
         })
         await refresh()
       } finally {
+        releaseModWrites(writeKeys)
         release(copy.path)
       }
     }
@@ -206,6 +249,13 @@ export function useInstalledModActions(installation: InstallationType | undefine
       }
       const key = quickInstallKey(mod.modid)
       if (!claim(key)) return "done"
+      // Refused, not queued, while any download of this Mod is on its way into this folder: the last
+      // scan cannot see an archive that has no name yet.
+      const writeKeys = mod.modidstrs.map((modid) => modWriteKey(installation.id, modid))
+      if (!claimModWrites(writeKeys)) {
+        release(key)
+        return "done"
+      }
 
       try {
         const lookup = await queryMod({ modid: mod.modid })
@@ -218,17 +268,20 @@ export function useInstalledModActions(installation: InstallationType | undefine
         if (!newest) return "no-tagged-release"
 
         // The lookup is a network round trip, long enough for a backup or Update all to have started.
+        // Only the selected Installation is in view here, so one the player switched away from
+        // meanwhile cannot be checked and counts as taken.
         const { installMod, refresh, installation: current } = latest.current
         await installMod({
           installationPath: installation.path,
           outName: installation.name,
           modName: mod.name,
           release: toModReleaseToInstall(newest),
-          installationBusy: current !== undefined && modsFolderInUse(current)
+          installationBusy: current?.id !== installation.id || modsFolderInUse(current)
         })
         await refresh()
         return "done"
       } finally {
+        releaseModWrites(writeKeys)
         release(key)
       }
     }
@@ -236,7 +289,7 @@ export function useInstalledModActions(installation: InstallationType | undefine
     return { toggleEnabled, toggleSuspended, requestDelete, cancelDelete, confirmDelete, updateMod, installNewest }
   }, [])
 
-  const isBusy = useCallback((path: string): boolean => busyPaths.includes(path), [busyPaths])
+  const isBusy = useCallback((key: string): boolean => busyPaths.includes(key) || writes.includes(key), [busyPaths, writes])
 
   return { ...actions, modToDelete, busyPaths, isBusy }
 }

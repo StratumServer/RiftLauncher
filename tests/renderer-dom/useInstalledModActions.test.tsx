@@ -2,7 +2,7 @@ import type { ReactElement, ReactNode } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { act, renderHook, screen, waitFor } from "@testing-library/react"
 
-import { quickInstallKey, useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { modWriteKey, quickInstallKey, useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
 import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
 import { ConfigProvider } from "@renderer/features/config/contexts/ConfigContext"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
@@ -370,6 +370,72 @@ describe("useInstalledModActions: update and quick install", () => {
 
     expect(downloadOnPath).not.toHaveBeenCalled()
     expect(await screen.findByText("You can't update a Mod while it's in use.")).toBeTruthy()
+  })
+
+  it("refuses to install into an Installation the player switched away from while the release list was on its way", async () => {
+    const lookup = deferred<string>()
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async () => "")
+    installMockWindowApi({ netManager: { queryURL: vi.fn(() => lookup.promise) }, pathsManager: { downloadOnPath } })
+    const { result, rerender } = renderHook(({ installation }: { installation: InstallationType }) => useInstalledModActions(installation, async () => {}), {
+      wrapper,
+      initialProps: { installation: anInstallation() }
+    })
+
+    let installing!: Promise<unknown>
+    act(() => {
+      installing = result.current.installNewest(alphaListing)
+    })
+    // The one now selected is free, but it is not where this install writes.
+    rerender({ installation: anInstallation({ id: "install-b", name: "Install B", path: "/games/b" }) })
+    await act(async () => {
+      lookup.resolve(alphaDetail)
+      await installing
+    })
+
+    expect(downloadOnPath).not.toHaveBeenCalled()
+    expect(await screen.findByText("You can't update a Mod while it's in use.")).toBeTruthy()
+  })
+
+  it("refuses to install a Mod a page since left is still updating, and installs another", async () => {
+    const betaListing: DownloadableModOnListType = { ...alphaListing, modid: 8, name: "Beta Mod", modidstrs: ["beta"] }
+    const betaDetail = JSON.stringify({
+      statuscode: "200",
+      mod: { modid: 8, name: "Beta Mod", releases: [{ ...alphaRelease, mainfile: "https://mods.example/beta-1.0.0.zip", modidstr: "beta", modversion: "1.0.0" }] }
+    })
+    const queryURL = vi.fn<BridgeAPI["netManager"]["queryURL"]>(async (url) => (url.endsWith("/8") ? betaDetail : alphaDetail))
+    const alphaDownload = deferred<string>()
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) =>
+      fileName.startsWith("alpha") ? alphaDownload.promise : `${outputPath}/${fileName}`
+    )
+    installMockWindowApi({ netManager: { queryURL }, pathsManager: { deletePath: vi.fn(async () => true), downloadOnPath } })
+
+    const leftPage = renderHook(() => useInstalledModActions(anInstallation(), async () => {}), { wrapper })
+    let updating!: Promise<void>
+    act(() => {
+      updating = leftPage.result.current.updateMod(disabledCopy, alphaRelease)
+    })
+    await waitFor(() => expect(downloadOnPath).toHaveBeenCalledTimes(1))
+    leftPage.unmount()
+
+    // A fresh page has an empty busy set of its own, and its scan finds no copy of Alpha.
+    const freshPage = renderHook(() => useInstalledModActions(anInstallation(), async () => {}), { wrapper })
+    expect(freshPage.result.current.isBusy(modWriteKey("install-a", "alpha"))).toBe(true)
+    let outcome: string | undefined
+    await act(async () => {
+      outcome = await freshPage.result.current.installNewest(alphaListing)
+    })
+    expect(outcome).toBe("done")
+    expect(queryURL).not.toHaveBeenCalled()
+
+    await act(() => freshPage.result.current.installNewest(betaListing))
+    expect(downloadOnPath).toHaveBeenCalledTimes(2)
+    expect(downloadOnPath).toHaveBeenLastCalledWith(expect.any(String), "https://mods.example/beta-1.0.0.zip", "/games/a/Mods", "beta-1.0.0.zip")
+
+    await act(async () => {
+      alphaDownload.resolve("/games/a/Mods/alpha-1.5.0.zip.disabled")
+      await updating
+    })
+    expect(freshPage.result.current.isBusy(modWriteKey("install-a", "alpha"))).toBe(false)
   })
 
   it("holds the listing busy from the lookup until the rescan after the download lands", async () => {
