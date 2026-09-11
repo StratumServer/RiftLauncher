@@ -67,7 +67,6 @@ export function useModReleaseCatalog(modid: number | string | null): ModReleaseC
   const retry = useCallback((): void => {
     setLoading(true)
     setFailed(false)
-    setNotFound(false)
     setAttempt((n) => n + 1)
   }, [])
 

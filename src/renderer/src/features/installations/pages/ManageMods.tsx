@@ -141,184 +141,187 @@ function ListMods(): JSX.Element {
     )
   }
 
-  return (
-    // The row is there with or without the panel: mounting it only for the panel would remount the
-    // list below it and lose its scroll position on every open and close.
-    <div className="w-full h-full flex">
-      <ScrollableContainer ref={scrollRef} className="flex-1 min-w-0">
-        <div className="min-h-full flex flex-col items-center justify-center gap-2">
-          <StickyMenuWrapper scrollRef={scrollRef}>
-            <StickyMenuGroupWrapper>
-              <StickyMenuGroup>
-                <GoBackButton to="/installations" />
-                <ReloadButton reloading={gettingMods} onClick={() => refresh()} />
-              </StickyMenuGroup>
+  const list = (
+    <ScrollableContainer ref={scrollRef} className="flex-1 min-w-0">
+      <div className="min-h-full flex flex-col items-center justify-center gap-2">
+        <StickyMenuWrapper scrollRef={scrollRef}>
+          <StickyMenuGroupWrapper>
+            <StickyMenuGroup>
+              <GoBackButton to="/installations" />
+              <ReloadButton reloading={gettingMods} onClick={() => refresh()} />
+            </StickyMenuGroup>
 
-              <StickyMenuBreadcrumbs
-                breadcrumbs={[
-                  { name: t("breadcrumbs.installations"), to: "/installations" },
-                  { name: t("breadcrumbs.manageMods"), to: installation ? `/installations/mods/${installation.id}` : "/installations" }
-                ]}
-              />
+            <StickyMenuBreadcrumbs
+              breadcrumbs={[
+                { name: t("breadcrumbs.installations"), to: "/installations" },
+                { name: t("breadcrumbs.manageMods"), to: installation ? `/installations/mods/${installation.id}` : "/installations" }
+              ]}
+            />
 
-              <StickyMenuGroup>
-                <GoToTopButton scrollRef={scrollRef} />
-              </StickyMenuGroup>
-            </StickyMenuGroupWrapper>
+            <StickyMenuGroup>
+              <GoToTopButton scrollRef={scrollRef} />
+            </StickyMenuGroup>
+          </StickyMenuGroupWrapper>
 
-            {installation && (
-              <>
-                <ManageModsActionBar installation={installation} installedMods={visibleMods} onUpdateAll={updateAllMods} onImportModpack={pickModpack} />
+          {installation && (
+            <>
+              <ManageModsActionBar installation={installation} installedMods={visibleMods} onUpdateAll={updateAllMods} onImportModpack={pickModpack} />
 
-                {installedMods.length + modsWithErrors.length > 0 && (
-                  <StickyMenuGroupWrapper type="centered">
-                    <StickyMenuGroup>
-                      <FormInputText placeholder={t("features.mods.searchInstalledMods")} value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 h-8" />
-                    </StickyMenuGroup>
+              {installedMods.length + modsWithErrors.length > 0 && (
+                <StickyMenuGroupWrapper type="centered">
+                  <StickyMenuGroup>
+                    <FormInputText placeholder={t("features.mods.searchInstalledMods")} value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 h-8" />
+                  </StickyMenuGroup>
 
-                    {/* One mod is nothing to narrow, so the bar stays off until there are two. */}
-                    {installedMods.length > 1 && (
-                      <InstalledModsFilterBar
-                        filters={filters}
-                        setFilters={setFilters}
-                        authors={allAuthors}
-                        tags={allTags}
-                        gameVersions={allGameVersions}
-                        onClearFilters={() => setFilters(NO_INSTALLED_MOD_FILTERS)}
-                      />
-                    )}
-                  </StickyMenuGroupWrapper>
-                )}
-              </>
-            )}
-          </StickyMenuWrapper>
-
-          <div className="max-w-[50rem] w-full flex flex-col items-center justify-center gap-2 m-auto">
-            {!installation ? (
-              <ListWrapper className="w-full">
-                <ListGroup>
-                  <div className="w-full flex flex-col items-center justify-center gap-2 rounded-sm p-4">
-                    <p className="text-2xl">{t("features.installations.noInstallationFound")}</p>
-                    <p className="w-full flex gap-1 items-center justify-center">{t("features.installations.noInstallationFoundDesc")}</p>
-                  </div>
-                </ListGroup>
-              </ListWrapper>
-            ) : (
-              <>
-                {installation._updatingMods ? (
-                  <ListWrapper className="w-full">
-                    <ListGroup>
-                      <div className="w-full flex flex-col items-center justify-center gap-2 rounded-sm p-4">
-                        <p className="text-2xl">{t("features.mods.updatingInstalledMods")}</p>
-                        <FiLoader className="animate-spin text-4xl text-zinc-400" />
-                      </div>
-                    </ListGroup>
-                  </ListWrapper>
-                ) : (
-                  <>
-                    {installedMods.length < 1 && modsWithErrors.length < 1 && <NoInstalledModsNotice gettingMods={gettingMods} />}
-
-                    {nothingMatches && (
-                      <ListWrapper className="w-full">
-                        <ListGroup>
-                          <div className="w-full flex flex-col items-center justify-center gap-2 rounded-sm p-4">
-                            <p className="text-2xl">{t("features.mods.noMatchingFilters")}</p>
-                          </div>
-                        </ListGroup>
-                      </ListWrapper>
-                    )}
-
-                    {visibleModsWithErrors.length > 0 && (
-                      <ListWrapper className="w-full">
-                        <ListGroup>
-                          <InstalledModsSectionHeader
-                            titleKey="features.mods.listWithErrorsTitle"
-                            descriptionKey="features.mods.modsWithErrorsDescription"
-                            reportKey="features.mods.modsWithErrorsDescriptionReport"
-                          />
-                          {visibleModsWithErrors.map((iModE) => (
-                            <ErrorInstalledModItem key={iModE.zipname + iModE.zipname} iModE={iModE} onDeleteClick={() => actions.requestDelete(iModE)} />
-                          ))}
-                        </ListGroup>
-                      </ListWrapper>
-                    )}
-
-                    {updatableMods.length > 0 && (
-                      <ListWrapper className="w-full">
-                        <ListGroup>
-                          <InstalledModsSectionHeader
-                            titleKey="features.mods.listWithUpdatesTitle"
-                            descriptionKey="features.mods.modsWithUpdatesDescription"
-                            reportKey="features.mods.modsWithUpdatesDescriptionReport"
-                          />
-                          {updatableMods.map(modRow)}
-                        </ListGroup>
-                      </ListWrapper>
-                    )}
-
-                    {incompatibleMods.length > 0 && (
-                      <ListWrapper className="w-full">
-                        <ListGroup>
-                          <InstalledModsSectionHeader
-                            titleKey="features.mods.listWithIncompatibleUpdatesTitle"
-                            descriptionKey="features.mods.modsWithIncompatibleUpdatesDescription"
-                            reportKey="features.mods.modsWithUpdatesDescriptionReport"
-                          />
-                          {incompatibleMods.map(modRow)}
-                        </ListGroup>
-                      </ListWrapper>
-                    )}
-
-                    {upToDateMods.length > 0 && (
-                      <ListWrapper className="w-full">
-                        <ListGroup>{upToDateMods.map(modRow)}</ListGroup>
-                      </ListWrapper>
-                    )}
-
-                    <InstallModPopup
-                      modToInstall={modToUpdate?.modid || null}
-                      setModToInstall={() => setModToUpdate(null)}
-                      modName={modToUpdate?.name}
-                      installation={{
-                        installation: installation,
-                        oldMod: installedMods.find((iMod) => iMod.modid === modToUpdate?.modid)
-                      }}
-                      onFinishInstallation={() => {
-                        refresh()
-                      }}
+                  {/* One mod is nothing to narrow, so the bar stays off until there are two. */}
+                  {installedMods.length > 1 && (
+                    <InstalledModsFilterBar
+                      filters={filters}
+                      setFilters={setFilters}
+                      authors={allAuthors}
+                      tags={allTags}
+                      gameVersions={allGameVersions}
+                      onClearFilters={() => setFilters(NO_INSTALLED_MOD_FILTERS)}
                     />
+                  )}
+                </StickyMenuGroupWrapper>
+              )}
+            </>
+          )}
+        </StickyMenuWrapper>
 
-                    <ImportModpackPopup
-                      isOpen={importManifest !== null}
-                      manifest={importManifest}
-                      close={clearModpack}
-                      installation={installation}
-                      installedMods={installedMods}
-                      onFinish={() => {
-                        clearModpack()
-                        refresh()
-                      }}
-                    />
+        <div className="max-w-[50rem] w-full flex flex-col items-center justify-center gap-2 m-auto">
+          {!installation ? (
+            <ListWrapper className="w-full">
+              <ListGroup>
+                <div className="w-full flex flex-col items-center justify-center gap-2 rounded-sm p-4">
+                  <p className="text-2xl">{t("features.installations.noInstallationFound")}</p>
+                  <p className="w-full flex gap-1 items-center justify-center">{t("features.installations.noInstallationFoundDesc")}</p>
+                </div>
+              </ListGroup>
+            </ListWrapper>
+          ) : (
+            <>
+              {installation._updatingMods ? (
+                <ListWrapper className="w-full">
+                  <ListGroup>
+                    <div className="w-full flex flex-col items-center justify-center gap-2 rounded-sm p-4">
+                      <p className="text-2xl">{t("features.mods.updatingInstalledMods")}</p>
+                      <FiLoader className="animate-spin text-4xl text-zinc-400" />
+                    </div>
+                  </ListGroup>
+                </ListWrapper>
+              ) : (
+                <>
+                  {installedMods.length < 1 && modsWithErrors.length < 1 && <NoInstalledModsNotice gettingMods={gettingMods} />}
 
-                    <ModChangeSummaryPopup
-                      isOpen={showSummary}
-                      close={() => {
-                        closeSummary()
-                        refresh()
-                      }}
-                      title={t("features.mods.updateSummaryTitle")}
-                      entries={summaryEntries}
-                    />
+                  {nothingMatches && (
+                    <ListWrapper className="w-full">
+                      <ListGroup>
+                        <div className="w-full flex flex-col items-center justify-center gap-2 rounded-sm p-4">
+                          <p className="text-2xl">{t("features.mods.noMatchingFilters")}</p>
+                        </div>
+                      </ListGroup>
+                    </ListWrapper>
+                  )}
 
-                    <DeleteModDialog isOpen={actions.modToDelete !== null} close={actions.cancelDelete} onConfirm={actions.confirmDelete} />
-                  </>
-                )}
-              </>
-            )}
-          </div>
+                  {visibleModsWithErrors.length > 0 && (
+                    <ListWrapper className="w-full">
+                      <ListGroup>
+                        <InstalledModsSectionHeader
+                          titleKey="features.mods.listWithErrorsTitle"
+                          descriptionKey="features.mods.modsWithErrorsDescription"
+                          reportKey="features.mods.modsWithErrorsDescriptionReport"
+                        />
+                        {visibleModsWithErrors.map((iModE) => (
+                          <ErrorInstalledModItem key={iModE.zipname + iModE.zipname} iModE={iModE} onDeleteClick={() => actions.requestDelete(iModE)} />
+                        ))}
+                      </ListGroup>
+                    </ListWrapper>
+                  )}
+
+                  {updatableMods.length > 0 && (
+                    <ListWrapper className="w-full">
+                      <ListGroup>
+                        <InstalledModsSectionHeader
+                          titleKey="features.mods.listWithUpdatesTitle"
+                          descriptionKey="features.mods.modsWithUpdatesDescription"
+                          reportKey="features.mods.modsWithUpdatesDescriptionReport"
+                        />
+                        {updatableMods.map(modRow)}
+                      </ListGroup>
+                    </ListWrapper>
+                  )}
+
+                  {incompatibleMods.length > 0 && (
+                    <ListWrapper className="w-full">
+                      <ListGroup>
+                        <InstalledModsSectionHeader
+                          titleKey="features.mods.listWithIncompatibleUpdatesTitle"
+                          descriptionKey="features.mods.modsWithIncompatibleUpdatesDescription"
+                          reportKey="features.mods.modsWithUpdatesDescriptionReport"
+                        />
+                        {incompatibleMods.map(modRow)}
+                      </ListGroup>
+                    </ListWrapper>
+                  )}
+
+                  {upToDateMods.length > 0 && (
+                    <ListWrapper className="w-full">
+                      <ListGroup>{upToDateMods.map(modRow)}</ListGroup>
+                    </ListWrapper>
+                  )}
+
+                  <InstallModPopup
+                    modToInstall={modToUpdate?.modid || null}
+                    setModToInstall={() => setModToUpdate(null)}
+                    modName={modToUpdate?.name}
+                    installation={{
+                      installation: installation,
+                      oldMod: installedMods.find((iMod) => iMod.modid === modToUpdate?.modid)
+                    }}
+                    onFinishInstallation={() => {
+                      refresh()
+                    }}
+                  />
+
+                  <ImportModpackPopup
+                    isOpen={importManifest !== null}
+                    manifest={importManifest}
+                    close={clearModpack}
+                    installation={installation}
+                    installedMods={installedMods}
+                    onFinish={() => {
+                      clearModpack()
+                      refresh()
+                    }}
+                  />
+
+                  <ModChangeSummaryPopup
+                    isOpen={showSummary}
+                    close={() => {
+                      closeSummary()
+                      refresh()
+                    }}
+                    title={t("features.mods.updateSummaryTitle")}
+                    entries={summaryEntries}
+                  />
+
+                  <DeleteModDialog isOpen={actions.modToDelete !== null} close={actions.cancelDelete} onConfirm={actions.confirmDelete} />
+                </>
+              )}
+            </>
+          )}
         </div>
-      </ScrollableContainer>
+      </div>
+    </ScrollableContainer>
+  )
 
+  // The row is there with or without the panel, with the list always first in it: mounting the row
+  // only for the panel would remount the list and lose its scroll position on every open and close.
+  return (
+    <div className="w-full h-full flex">
+      {list}
       {installation && detailsMod && <InstalledModDetails iMod={detailsMod} gameVersion={installation.version} headingRef={detailsHeadingRef} onClose={closeDetails} />}
     </div>
   )
