@@ -798,6 +798,41 @@ describe("toast queue timing", () => {
     }
   })
 
+  it("lets the next toast finish after the pointer leaves a dismissed banner through the document listener", async () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+          <button data-testid="outside-toast-region">Outside toast region</button>
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+      fireEvent.mouseOver(toast())
+      fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
+
+      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+
+      screen.getByTestId("outside-toast-region").dispatchEvent(new MouseEvent("mouseover", { bubbles: true }))
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(screen.getByTestId("toast-paused").textContent).toBe("false")
+      act(() => vi.advanceTimersByTime(4_500))
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("keeps the countdown held when the next banner takes the screen under the same pointer", () => {
     vi.useFakeTimers()
     try {
