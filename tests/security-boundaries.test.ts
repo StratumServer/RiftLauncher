@@ -59,7 +59,7 @@ describe("process and navigation boundaries", () => {
   })
 
   it("validates game launch objects instead of trusting TypeScript casts", () => {
-    assert.deepEqual(validateGameVersion({ version: "1.22.6", path: "/tmp/versions/1.22.6" }), { version: "1.22.6", path: "/tmp/versions/1.22.6" })
+    assert.deepEqual(validateGameVersion({ id: "gv-1", version: "1.22.6", path: "/tmp/versions/1.22.6" }), { id: "gv-1", version: "1.22.6", path: "/tmp/versions/1.22.6" })
     assert.deepEqual(validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "" }), {
       path: "/tmp/installations/main",
       startParams: "",
@@ -68,6 +68,8 @@ describe("process and navigation boundaries", () => {
       launchWrapper: ""
     })
     assert.throws(() => validateGameVersion({ version: "1.22.6", path: "/" }), /Invalid game version path/)
+    assert.throws(() => validateGameVersion({ id: 42, version: "1.22.6", path: "/tmp/versions/1.22.6" }), /Invalid game version id/)
+    assert.throws(() => validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "", gameVersionId: 42 }), /Invalid installation game version id/)
     assert.throws(() => parseSafeEnvironment("PATH=/tmp"), /Invalid environment variable/)
     assert.throws(() => validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "", launchWrapper: "x".repeat(4_097) }), /Invalid launch wrapper/)
   })

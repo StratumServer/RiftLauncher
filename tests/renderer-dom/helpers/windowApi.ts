@@ -28,7 +28,16 @@ function noopUnsubscribe(): Unsubscribe {
 }
 
 /** A ConfigType with every field present and empty/zeroed, ready to spread overrides onto. */
-export function createMockConfig(overrides: Partial<ConfigType> = {}): ConfigType {
+type MockGameVersion = Pick<GameVersionType, "version" | "path"> & Partial<GameVersionType>
+type MockConfigOverrides = Omit<Partial<ConfigType>, "gameVersions"> & { gameVersions?: MockGameVersion[] }
+
+export function createMockConfig(overrides: MockConfigOverrides = {}): ConfigType {
+  const gameVersions = overrides.gameVersions?.map((gameVersion, index) => ({
+    id: gameVersion.id ?? `gv-${index + 1}`,
+    label: gameVersion.label ?? gameVersion.version,
+    ...gameVersion
+  }))
+
   return {
     schemaVersion: 1,
     lastUsedInstallation: null,
@@ -39,14 +48,14 @@ export function createMockConfig(overrides: Partial<ConfigType> = {}): ConfigTyp
     accounts: [],
     activeAccountId: null,
     installations: [],
-    gameVersions: [],
     favMods: [],
     suspendedModUpdates: [],
     background: "default",
     moddbVisibilityAnswer: "unasked",
     receiveBetaUpdates: null,
     customIcons: [],
-    ...overrides
+    ...overrides,
+    gameVersions: gameVersions ?? []
   }
 }
 

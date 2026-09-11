@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next"
 import clsx from "clsx"
 
 import { deleteInstallation } from "@domain/installations/delete"
+import { getInstallationVersionStatus } from "@domain/installations/versionReference"
 import { installationIconSrc } from "@renderer/utils/installationIcons"
 
 import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
@@ -118,7 +119,15 @@ function ListInslallations(): JSX.Element {
             </ListItem>
 
             {installations.map((installation, index) => {
-              const isVersionMissing = !gameVersions.some((gv) => gv.version === installation.version)
+              const gameVersion = gameVersions.find((gv) => gv.id === installation.gameVersionId)
+              const versionStatus = getInstallationVersionStatus(installation, gameVersions)
+              const isVersionMissing = versionStatus !== "linked"
+              const versionWarning =
+                versionStatus === "unset"
+                  ? t("features.versions.noVersionSet")
+                  : versionStatus === "unlinked"
+                    ? t("features.versions.versionUnlinked")
+                    : t("features.versions.versionNotInstalled", { version: installation.version })
 
               return (
                 <ListItem key={installation.id}>
@@ -144,12 +153,9 @@ function ListInslallations(): JSX.Element {
                     <ThinSeparator />
 
                     <div className="shrink-0 w-22 flex flex-col items-center justify-center gap-1">
-                      <p
-                        className={clsx("font-bold flex items-center gap-1", isVersionMissing && "text-orange-300")}
-                        title={isVersionMissing ? t("features.versions.versionNotInstalled", { version: installation.version }) : undefined}
-                      >
+                      <p className={clsx("font-bold flex items-center gap-1", isVersionMissing && "text-orange-300")} title={isVersionMissing ? versionWarning : undefined}>
                         {isVersionMissing && <PiWarningDuotone className="shrink-0" />}
-                        {installation.version}
+                        {gameVersion?.label ?? installation.version}
                       </p>
                       <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount as number })}</p>
                     </div>

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH, validateInstallationFields } from "@domain/installations/create"
+import { getInstallationVersionStatus } from "@domain/installations/versionReference"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
@@ -71,7 +72,7 @@ function EditInslallation(): JSX.Element {
     // No fallback: an Installation whose VS Version was uninstalled leaves the picker
     // empty rather than silently adopting whatever happens to be first in the config's
     // list, which used to get written to disk on the next save (#118).
-    fields.setVersion(gameVersions.find((gv) => gv.version === installation?.version))
+    fields.setVersion(gameVersions.find((gv) => gv.id === installation?.gameVersionId))
     fields.setStartParams(installation?.startParams ?? "")
     fields.setBackupsLimit(installation?.backupsLimit ?? 0)
     fields.setBackupsAuto(installation?.backupsAuto ?? false)
@@ -81,13 +82,10 @@ function EditInslallation(): JSX.Element {
     fields.setLaunchWrapper(installation?.launchWrapper ?? "")
   }, [installation])
 
-  // The Installation's own version when the launcher no longer has it installed. Read
-  // from the Installation, not from the picker: it stays true (and worth showing) after
-  // the player has picked a replacement, until the edit is actually saved. "" is a real
-  // value here, not a bug: configManager normalizes a missing or invalid version to the
-  // empty string and keeps the Installation, and gameVersions can never hold an entry with
-  // an empty version, so the empty case always falls through to the warning too (#118).
-  const missingGameVersion: string | undefined = installation && !gameVersions.some((gv) => gv.version === installation.version) ? installation.version : undefined
+  // Read from the Installation, not from the picker: the warning remains visible after a
+  // replacement is picked, until the edit is actually saved (#118).
+  const installationVersionStatus = installation ? getInstallationVersionStatus(installation, gameVersions) : undefined
+  const unresolvedVersion = installation && installationVersionStatus && installationVersionStatus !== "linked" ? { version: installation.version, status: installationVersionStatus } : undefined
 
   const handleEditInstallation = async (): Promise<void> => {
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
@@ -119,13 +117,24 @@ function EditInslallation(): JSX.Element {
         envVars: fields.envVars,
         launchWrapper: fields.launchWrapper.trim()
       }
-      if (fields.version) updates.version = fields.version.version
+      if (fields.version) {
+        updates.version = fields.version.version
+        updates.gameVersionId = fields.version.id
+      }
 
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id, updates } })
       addNotification(t("features.installations.installationSuccessfullyEdited"), "success")
       // The banner is gone once the page unmounts, so the toast is the only thing left telling
       // the player the version is still unresolved after an otherwise successful save.
-      if (!fields.version) addNotification(t("features.versions.versionLeftUnchanged"), "warning")
+      if (!fields.version) {
+        const messageKey =
+          unresolvedVersion?.status === "unset"
+            ? "features.versions.versionUnsetLeftUnchanged"
+            : unresolvedVersion?.status === "unlinked"
+              ? "features.versions.versionUnlinkedLeftUnchanged"
+              : "features.versions.versionLeftUnchanged"
+        addNotification(t(messageKey), "warning")
+      }
       navigate("/installations")
     } catch (error) {
       window.api.utils.logMessage("error", `${LOG_TAG} [handleEditInstallation] Error editing an Installation.`)
@@ -174,7 +183,7 @@ function EditInslallation(): JSX.Element {
                   iconButtonClassName="w-1/3 h-13 p-1 pr-2 text-sm text-start"
                 />
 
-                <GameVersionPicker gameVersions={gameVersions} version={fields.version} onSelect={fields.setVersion} missingVersion={missingGameVersion} />
+                <GameVersionPicker gameVersions={gameVersions} version={fields.version} onSelect={fields.setVersion} unresolvedVersion={unresolvedVersion} />
               </FormGroupWrapper>
 
               <BackupsSettingsSection

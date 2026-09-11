@@ -6,7 +6,7 @@ import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord } from "@src/ipc/validation"
-import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, migrateConfigDocument } from "@domain/config/migrations"
+import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeBackgroundId } from "@domain/backgrounds"
 import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
@@ -26,6 +26,7 @@ const defaultInstallation: InstallationType = {
   icon: "",
   path: "",
   version: "",
+  gameVersionId: null,
   startParams: "",
   backupsLimit: 3,
   backupsAuto: false,
@@ -333,6 +334,7 @@ function normalizeInstallation(value: unknown): InstallationType | null {
     icon: asString(value.icon, "", 256),
     path: asString(value.path, ""),
     version: asString(value.version, "", 128),
+    gameVersionId: typeof value.gameVersionId === "string" && value.gameVersionId.length > 0 && value.gameVersionId.length <= 128 ? value.gameVersionId : null,
     startParams: asString(value.startParams, "", 8_192),
     backupsLimit: asNumber(value.backupsLimit, defaultInstallation.backupsLimit, 0, 100),
     backupsAuto: asBoolean(value.backupsAuto, defaultInstallation.backupsAuto),
@@ -356,16 +358,18 @@ function normalizeInstallation(value: unknown): InstallationType | null {
 }
 
 function normalizeGameVersion(value: unknown): GameVersionType | null {
-  if (!isRecord(value)) return null
+  if (!isUsableGameVersion(value)) return null
   const gameVersion: GameVersionType = {
-    version: asString(value.version, "", 128),
-    path: asString(value.path, "")
+    id: asString(value.id, "", 128),
+    version: value.version,
+    label: asString(value.label, "", 256) || asString(value.version, "", 128),
+    path: value.path
   }
   // Only set when true so a plain version, or an unset one, doesn't grow a `linked: false`
   // it never had. This flag is what keeps a player's own install off the delete path, so
   // dropping it silently on the next load would turn "remove from list" back into deletion.
   if (asBoolean(value.linked, false)) gameVersion.linked = true
-  return gameVersion.version && gameVersion.path ? gameVersion : null
+  return gameVersion
 }
 
 function normalizeIcon(value: unknown): IconType | null {
@@ -397,7 +401,8 @@ function normalizeAccounts(value: unknown): AccountPublicType[] {
 }
 
 export function normalizeConfig(config: unknown): ConfigType {
-  const rawConfig = (isRecord(config) ? config : {}) as Partial<ConfigType>
+  const repairedConfig = repairGameVersionIdentity(config)
+  const rawConfig = (isRecord(repairedConfig) ? repairedConfig : {}) as Partial<ConfigType>
   const rawWindow = (isRecord(rawConfig.window) ? rawConfig.window : {}) as Partial<WindowType>
   const installations = (Array.isArray(rawConfig.installations) ? rawConfig.installations : [])
     .map(normalizeInstallation)

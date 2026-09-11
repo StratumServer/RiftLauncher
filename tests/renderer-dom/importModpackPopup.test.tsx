@@ -56,6 +56,7 @@ function installation(): InstallationType {
     icon: "",
     path: "/installations/main",
     version: GAME_VERSION,
+    gameVersionId: "gv-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,

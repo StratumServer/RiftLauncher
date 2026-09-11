@@ -1,14 +1,94 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen } from "@testing-library/react"
+import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import LookForAVersion from "@renderer/features/versions/pages/LookForAVersion"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 
-import { installMockWindowApi } from "./helpers/windowApi"
+import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 describe("LookForAVersion", () => {
+  it("uses the host platform when rejecting a Windows folder already in use", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      utils: {
+        getOs: vi.fn(async () => "win32" as NodeJS.Platform),
+        selectFolderDialog: vi.fn(async () => ["Games\\VintageStory"])
+      },
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7" })) },
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.22.7", path: "games/vintagestory" }] })),
+        saveConfig
+      }
+    })
+
+    renderWithProviders(
+      <>
+        <LookForAVersion />
+        <NotificationsOverlay />
+      </>,
+      { route: "/versions/look-for-a-version" }
+    )
+
+    await user.click(screen.getByTitle("Browse"))
+    await screen.findByDisplayValue("Games\\VintageStory")
+    await user.click(screen.getByTitle("Add"))
+
+    await waitFor(() => expect(saveConfig).not.toHaveBeenCalled())
+    expect(await screen.findByText("That folder is already in use!")).toBeTruthy()
+  })
+
+  it("registers a second build with the same version when its folder is different", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      utils: { selectFolderDialog: vi.fn(async () => ["/games/optimum-1.22.7"]) },
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7" })) },
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.22.7", path: "/games/vanilla-1.22.7" }] })),
+        saveConfig
+      }
+    })
+
+    renderWithProviders(<LookForAVersion />, { route: "/versions/look-for-a-version" })
+
+    await user.click(screen.getByTitle("Browse"))
+    await screen.findByDisplayValue("/games/optimum-1.22.7")
+    await user.click(screen.getByTitle("Add"))
+
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled())
+    const savedConfig = (saveConfig.mock.calls.at(-1) as unknown as [ConfigType])[0]
+    expect(savedConfig.gameVersions).toHaveLength(2)
+    const addedVersion = savedConfig.gameVersions.find((gameVersion) => gameVersion.path === "/games/optimum-1.22.7") as GameVersionType & { id: string; label: string }
+    expect(addedVersion).toMatchObject({ version: "1.22.7", label: "1.22.7", id: expect.any(String) })
+  })
+
+  it("registers the build with the edited display label while keeping its version number", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      utils: { selectFolderDialog: vi.fn(async () => ["/games/optimum-1.22.7"]) },
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7" })) },
+      configManager: { saveConfig }
+    })
+
+    renderWithProviders(<LookForAVersion />, { route: "/versions/look-for-a-version" })
+
+    await user.click(screen.getByTitle("Browse"))
+    await screen.findByDisplayValue("/games/optimum-1.22.7")
+    const label = await screen.findByPlaceholderText("Name")
+    await user.clear(label)
+    await user.type(label, "Optimum 1.22.7")
+    await user.click(screen.getByTitle("Add"))
+
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled())
+    const savedConfig = (saveConfig.mock.calls.at(-1) as unknown as [ConfigType])[0]
+    const addedVersion = savedConfig.gameVersions.find((gameVersion) => gameVersion.path === "/games/optimum-1.22.7")
+    expect(addedVersion).toMatchObject({ version: "1.22.7", label: "Optimum 1.22.7" })
+  })
+
   it("fills the folder and version fields once a version is detected", async () => {
     const user = userEvent.setup()
     installMockWindowApi({
@@ -21,7 +101,7 @@ describe("LookForAVersion", () => {
     await user.click(screen.getByTitle("Browse"))
 
     expect(await screen.findByDisplayValue("/games/1.20.4")).toBeTruthy()
-    expect(screen.getByDisplayValue("1.20.4")).toBeTruthy()
+    expect((screen.getByPlaceholderText("VS Version found") as HTMLInputElement).value).toBe("1.20.4")
   })
 
   it("notifies and keeps the folder set but the version empty when detection finds nothing", async () => {

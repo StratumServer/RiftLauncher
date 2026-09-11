@@ -30,14 +30,16 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
   return async function installVersion(version, folder) {
     if (!version) return addNotification(t("features.versions.noVersionSelected"), "error")
 
+    const folderName = folder.split(/[\\/]/).filter(Boolean).at(-1) ?? folder
     const ports = createInstallPorts({
       startDownload,
       startExtract,
       startInstall,
-      taskName: t("features.versions.gameVersionTaskName", { version: version.version }),
+      taskName: `${t("features.versions.gameVersionTaskName", { version: version.version })} (${folderName})`,
       downloadDescription: t("features.versions.gameVersionDownloadDesc", { version: version.version }),
       unpackDescription: t("features.versions.gameVersionExtractDesc", { version: version.version })
     })
+    const gameVersionId = crypto.randomUUID()
 
     const result = await installGameVersion(
       ports,
@@ -45,16 +47,16 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
         platform: await window.api.utils.getOs(),
         version: toDownloadableGameVersion(version),
         targetFolder: folder,
-        installedVersions: installedGameVersions.map((gv) => gv.version),
+        installedVersions: installedGameVersions.map((gv) => ({ version: gv.version, path: gv.path })),
         foldersInUse: [settings.backupsFolder, ...installedGameVersions.map((gv) => gv.path), ...installations.map((i) => i.path)]
       },
       {
         onRegistered: () => {
-          configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: { version: version.version, path: folder, _installing: true } })
+          configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: { id: gameVersionId, label: version.version, version: version.version, path: folder, _installing: true } })
           navigate("/versions")
         },
-        onInstalled: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { version: version.version, updates: { _installing: undefined } } }),
-        onDiscarded: () => configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { version: version.version } })
+        onInstalled: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: gameVersionId, updates: { _installing: undefined } } }),
+        onDiscarded: () => configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: gameVersionId } })
       }
     )
 
@@ -64,7 +66,7 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
 
     if (logged) {
       window.api.utils.logMessage("error", `${LOG_TAG} Error installing VS Version ${version.version}.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Error installing VS Version ${version.version} on ${folder}: ${result.reason}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Error installing VS Version ${version.version} in target folder ${folderName}: ${result.reason}.`)
     }
 
     addNotification(t(messageKey, { version: version.version, folder }), "error")

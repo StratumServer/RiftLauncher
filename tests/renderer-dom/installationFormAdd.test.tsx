@@ -16,6 +16,7 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
     icon: "granite",
     path: "/games/a",
     version: "1.20.0",
+    gameVersionId: "gv-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -47,8 +48,15 @@ describe("AddInstallation", () => {
   it("submits the default fields, adds the Installation and returns to the list", async () => {
     const user = userEvent.setup()
     const ensurePathExists = vi.fn(async () => true)
+    const savedConfigs: ConfigType[] = []
     installMockWindowApi({
-      configManager: { getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }] })) },
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }] })),
+        saveConfig: vi.fn(async (config: ConfigType) => {
+          savedConfigs.push(config)
+          return { ok: true } as SaveConfigResult
+        })
+      },
       pathsManager: { ensurePathExists }
     })
 
@@ -66,6 +74,7 @@ describe("AddInstallation", () => {
     await screen.findByText("Installation added successfully.")
     await screen.findByText("installations-list")
     await waitFor(() => expect(ensurePathExists).toHaveBeenCalled())
+    await waitFor(() => expect(savedConfigs.some((config) => config.installations.some((installation) => installation.gameVersionId === "gv-1"))).toBe(true))
   })
 
   it("renders the form when a registered VS Version string is not valid semver", async () => {
@@ -75,8 +84,8 @@ describe("AddInstallation", () => {
           createMockConfig({
             defaultInstallationsFolder: "/installations",
             gameVersions: [
-              { version: "1.20.0", path: "/versions/1.20.0" },
-              { version: "Vintage Story 1.21.0", path: "/games/vintagestory", linked: true }
+              { id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" },
+              { id: "gv-2", label: "Vintage Story 1.21.0", version: "Vintage Story 1.21.0", path: "/games/vintagestory", linked: true }
             ]
           })
         )

@@ -37,7 +37,7 @@ import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/ac
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
-import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
+import { CURRENT_CONFIG_SCHEMA, legacyGameVersionId } from "@domain/config/migrations"
 
 let temporaryRoot: string
 let userDataFolder: string
@@ -243,6 +243,69 @@ describe("normalizeConfig: installations", () => {
 })
 
 describe("normalizeConfig: game versions", () => {
+  it("keeps stable game-version identity and defaults a missing label to the version", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ gameVersions: [{ id: "gv-vanilla", version: "1.22.7", path: "/versions/vanilla" }] })
+    const normalized = result.gameVersions[0] as GameVersionType & { label: string }
+
+    assert.equal(normalized.id, "gv-vanilla")
+    assert.equal(normalized.label, "1.22.7")
+  })
+
+  it("keeps an installation's gameVersionId while retaining its version number", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ installations: [{ id: "install-1", path: "/installations/1", version: "1.22.7", gameVersionId: "gv-optimum" }] })
+    const normalized = result.installations[0] as InstallationType & { gameVersionId: string | null }
+
+    assert.equal(normalized.gameVersionId, "gv-optimum")
+    assert.equal(normalized.version, "1.22.7")
+  })
+
+  it("repairs damaged current-schema identities on every normalization and preserves labels", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({
+      schemaVersion: CURRENT_CONFIG_SCHEMA,
+      gameVersions: [
+        { version: "1.22.7", label: "Vanilla", path: "/versions/vanilla" },
+        { id: "", version: "1.22.7", label: "Optimum", path: "/versions/optimum" },
+        { id: "duplicate", version: "1.21.0", label: "Keep this", path: "/versions/a" },
+        { id: "duplicate", version: "1.21.0", label: "Second", path: "/versions/b" },
+        { id: "valid", version: "1.20.0", path: "/versions/valid" }
+      ]
+    })
+
+    assert.deepEqual(
+      result.gameVersions.map((version) => ({ path: version.path, id: version.id, label: version.label })),
+      [
+        { path: "/versions/vanilla", id: legacyGameVersionId("1.22.7", "/versions/vanilla"), label: "Vanilla" },
+        { path: "/versions/optimum", id: legacyGameVersionId("1.22.7", "/versions/optimum"), label: "Optimum" },
+        { path: "/versions/a", id: "duplicate", label: "Keep this" },
+        { path: "/versions/b", id: legacyGameVersionId("1.21.0", "/versions/b"), label: "Second" },
+        { path: "/versions/valid", id: "valid", label: "1.20.0" }
+      ]
+    )
+  })
+
+  it("relinks only absent installation ids, leaves explicit null alone, and leaves ambiguous versions null", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({
+      schemaVersion: CURRENT_CONFIG_SCHEMA,
+      gameVersions: [
+        { id: "one", version: "1.22.7", label: "One", path: "/versions/one" },
+        { id: "two", version: "1.22.7", label: "Two", path: "/versions/two" }
+      ],
+      installations: [
+        { id: "absent", path: "/installs/absent", version: "1.21.0" },
+        { id: "null", path: "/installs/null", version: "1.22.7", gameVersionId: null },
+        { id: "ambiguous", path: "/installs/ambiguous", version: "1.22.7" }
+      ]
+    })
+
+    assert.equal(result.installations.find((installation) => installation.id === "absent")?.gameVersionId, null)
+    assert.equal(result.installations.find((installation) => installation.id === "null")?.gameVersionId, null)
+    assert.equal(result.installations.find((installation) => installation.id === "ambiguous")?.gameVersionId, null)
+  })
+
   it("drops entries that are not records, and entries missing a version or a path", async () => {
     const { normalizeConfig } = await freshConfigManager()
     const result = normalizeConfig({

@@ -39,6 +39,10 @@ describe("normalizeFolderForComparison", () => {
   it("unifies mixed separators on Windows", () => {
     assert.equal(normalizeFolderForComparison("C:/Games\\VS/1.20", "win32"), "c:/games/vs/1.20")
   })
+
+  it("detects UNC folders as Windows paths when the platform is not passed", () => {
+    assert.equal(folderIsInUse("\\\\SERVER\\Share\\Versions", ["//server/share/versions"]), true)
+  })
 })
 
 describe("folderIsInUse", () => {

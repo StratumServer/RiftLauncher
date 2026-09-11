@@ -207,22 +207,30 @@ export function assertInteger(value: unknown, name: string, min: number, max: nu
   return numberValue
 }
 
-export function validateGameVersion(value: unknown): GameVersionType {
+export function validateGameVersion(value: unknown): Pick<GameVersionType, "version" | "path"> & { id?: string } {
   if (!isRecord(value)) throw new TypeError("Invalid game version")
   return {
+    ...(value.id === undefined ? {} : { id: assertString(value.id, "game version id", 128) }),
     version: assertString(value.version, "game version", 128),
     path: assertNonRootPath(value.path, "game version path")
   }
 }
 
-export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper: string } {
+export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper: string; gameVersionId?: string | null } {
   if (!isRecord(value)) throw new TypeError("Invalid installation")
   return {
     path: assertNonRootPath(value.path, "installation path"),
     startParams: assertBoundedString(value.startParams, "start parameters", 8_192),
     mesaGlThread: assertBoolean(value.mesaGlThread, "MESA GL thread flag"),
     envVars: assertBoundedString(value.envVars, "environment variables", 8_192),
-    launchWrapper: assertBoundedString(value.launchWrapper ?? "", "launch wrapper", 4_096).trim()
+    launchWrapper: assertBoundedString(value.launchWrapper ?? "", "launch wrapper", 4_096).trim(),
+    ...(value.gameVersionId === null
+      ? { gameVersionId: null }
+      : typeof value.gameVersionId === "string"
+        ? { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) }
+        : value.gameVersionId === undefined
+          ? {}
+          : { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) })
   }
 }
 

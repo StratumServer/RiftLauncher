@@ -11,12 +11,14 @@ import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 function anInstallation(overrides: Partial<InstallationType> = {}): InstallationType {
+  const version = overrides.version ?? "1.20.0"
   return {
     id: "install-a",
     name: "Install A",
     icon: "granite",
     path: "/games/a",
-    version: "1.20.0",
+    version,
+    gameVersionId: version === "1.20.0" ? "gv-1" : null,
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -31,16 +33,19 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
 }
 
 const GAME_VERSIONS: GameVersionType[] = [
-  { version: "1.20.0", path: "/versions/1.20.0" },
-  { version: "1.19.0", path: "/versions/1.19.0" }
+  { id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" },
+  { id: "gv-2", label: "1.19.0", version: "1.19.0", path: "/versions/1.19.0" }
 ]
 
 // Only 1.22.6 installed; the Installation under test still points at 1.19.8, the way a
 // config looks right after that version was uninstalled (#118).
-const GAME_VERSIONS_WITHOUT_1_19_8: GameVersionType[] = [{ version: "1.22.6", path: "/versions/1.22.6" }]
-const ORPHAN_WARNING = "This Installation's VS Version (1.19.8) is not installed anymore. Install it again or pick another one. Saving without picking one keeps it as it is."
+const GAME_VERSIONS_WITHOUT_1_19_8: GameVersionType[] = [{ id: "gv-1", label: "1.22.6", version: "1.22.6", path: "/versions/1.22.6" }]
+const ORPHAN_WARNING = "This Installation's VS Version (1.19.8) is not installed anymore. Pick another one. Saving without picking one keeps it as it is."
+const UNLINKED_WARNING = "This Installation is no longer linked to a VS Version. Edit it and pick one. Saving without picking one keeps it as it is."
 const UNSET_WARNING = "This Installation has no VS Version set. Pick one to set it. Saving without picking one leaves it unset."
 const VERSION_LEFT_UNCHANGED = "Everything else was saved, but this Installation still has no VS Version installed."
+const UNLINKED_LEFT_UNCHANGED = "Everything else was saved, but this Installation is still not linked to a VS Version. Edit it and pick one."
+const UNSET_LEFT_UNCHANGED = "Everything else was saved, but this Installation still has no VS Version set. Edit it and pick one."
 
 /**
  * Stands in for ListInstallations: EditInstallation's post-submit navigation target.
@@ -233,6 +238,31 @@ describe("EditInstallation", () => {
     expect(unselectedVersionRow?.className).not.toContain("border-vs")
   })
 
+  it("leaves an unlinked same-number build unselected and explains how to relink it", async () => {
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [
+              { id: "gv-vanilla", label: "Vanilla", version: "1.22.7", path: "/versions/vanilla" },
+              { id: "gv-optimum", label: "Optimum", version: "1.22.7", path: "/versions/optimum" }
+            ],
+            installations: [anInstallation({ version: "1.22.7", gameVersionId: "deleted-build" })]
+          })
+        )
+      }
+    })
+
+    await openEditInstallation("install-a")
+
+    await screen.findByDisplayValue("Install A")
+    await screen.findByText(UNLINKED_WARNING)
+    expect(screen.getByText("Vanilla").closest("li")?.className).not.toContain("border-vs")
+    expect(screen.getByText("Optimum").closest("li")?.className).not.toContain("border-vs")
+    expect(screen.getByText("vanilla")).toBeTruthy()
+    expect(screen.getByText("optimum")).toBeTruthy()
+  })
+
   it("warns without naming a version when the Installation has no VS Version set at all", async () => {
     installMockWindowApi({
       configManager: {
@@ -282,6 +312,37 @@ describe("EditInstallation", () => {
     expect(savedConfigs.every((config) => config.installations.every((installation) => installation.version === "1.19.8"))).toBe(true)
   })
 
+  it("saves other fields without silently attaching an unlinked same-number build", async () => {
+    const user = userEvent.setup()
+    const savedConfigs: ConfigType[] = []
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: GAME_VERSIONS,
+            installations: [anInstallation({ version: "1.20.0", gameVersionId: "deleted-build" })]
+          })
+        ),
+        saveConfig: vi.fn(async (config: ConfigType) => {
+          savedConfigs.push(config)
+          return { ok: true } as SaveConfigResult
+        })
+      }
+    })
+
+    await openEditInstallation("install-a")
+    const nameInput = await screen.findByDisplayValue("Install A")
+    await user.clear(nameInput)
+    await user.type(nameInput, "Renamed Install")
+    await user.click(screen.getByTitle("Save"))
+
+    await screen.findByText("Installation edited successfully.")
+    await user.click(screen.getByRole("button", { name: "Discard notification" }))
+    await screen.findByText(UNLINKED_LEFT_UNCHANGED)
+    await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.name === "Renamed Install")).toBe(true))
+    expect(savedConfigs.every((config) => config.installations.every((installation) => installation.gameVersionId === "deleted-build"))).toBe(true)
+  })
+
   it("saves the rest of the form for an Installation with no VS Version set and never writes one", async () => {
     const user = userEvent.setup()
     const savedConfigs: ConfigType[] = []
@@ -304,7 +365,7 @@ describe("EditInstallation", () => {
 
     await screen.findByText("Installation edited successfully.")
     await user.click(screen.getByRole("button", { name: "Discard notification" }))
-    await screen.findByText(VERSION_LEFT_UNCHANGED)
+    await screen.findByText(UNSET_LEFT_UNCHANGED)
     await screen.findByText("installations-list")
 
     await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.name === "Renamed Install")).toBe(true))
@@ -332,7 +393,7 @@ describe("EditInstallation", () => {
 
     await screen.findByText("Installation edited successfully.")
     await screen.findByText("installations-list")
-    await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.version === "1.22.6")).toBe(true))
+    await waitFor(() => expect(savedConfigs.some((config) => config.installations.some((installation) => installation.version === "1.22.6" && installation.gameVersionId === "gv-1"))).toBe(true))
     expect(screen.queryByText(VERSION_LEFT_UNCHANGED)).toBeNull()
   })
 })

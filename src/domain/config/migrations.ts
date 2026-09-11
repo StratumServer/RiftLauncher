@@ -18,7 +18,7 @@
  */
 
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 4
+export const CURRENT_CONFIG_SCHEMA = 5
 
 /**
  * First schema expressed as an integer.
@@ -247,8 +247,100 @@ export const singleAccountToAccountList: ConfigMigration = {
   }
 }
 
+/** Stable id for a game version that predates the id field. */
+export function legacyGameVersionId(version: string, path: string): string {
+  const input = `${version}\0${path}`
+  let hash = 0x811c9dc5
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `legacy-${(hash >>> 0).toString(16).padStart(8, "0")}`
+}
+
+const MAX_GAME_VERSION_TEXT = 128
+const MAX_GAME_VERSION_PATH = 4_096
+
+export function isUsableGameVersion(value: unknown): value is Record<string, unknown> & { version: string; path: string } {
+  if (!isRecord(value)) return false
+  return (
+    typeof value.version === "string" &&
+    value.version.length > 0 &&
+    value.version.length <= MAX_GAME_VERSION_TEXT &&
+    !value.version.includes("\0") &&
+    typeof value.path === "string" &&
+    value.path.length > 0 &&
+    value.path.length <= MAX_GAME_VERSION_PATH &&
+    !value.path.includes("\0")
+  )
+}
+
+function usableGameVersionId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_GAME_VERSION_TEXT && !value.includes("\0")
+}
+
+function usableGameVersionLabel(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 256 && !value.includes("\0")
+}
+
+/** Repairs identities and legacy references in a document without changing its schema marker. */
+export function repairGameVersionIdentity(doc: unknown): unknown {
+  if (!isRecord(doc)) return doc
+
+  // Normalize the catalog's usable shape before allocating identities. Invalid entries are
+  // discarded by normalizeConfig, so letting them reserve an id or participate in legacy
+  // relinking can steal an identity from a real build or make a valid reference ambiguous.
+  const retainedVersions = Array.isArray(doc.gameVersions) ? doc.gameVersions.filter(isUsableGameVersion) : []
+  const reservedIds = new Set(retainedVersions.map((entry) => (usableGameVersionId(entry.id) ? entry.id : undefined)).filter((id): id is string => id !== undefined))
+  const usedIds = new Set<string>()
+  const gameVersions = Array.isArray(doc.gameVersions)
+    ? retainedVersions.map((entry) => {
+        const version = entry.version as string
+        const path = entry.path as string
+        const existingId = usableGameVersionId(entry.id) ? entry.id : undefined
+        const legacyId = legacyGameVersionId(version, path)
+        const baseId = existingId ?? legacyId
+        let id = baseId
+        let suffix = 2
+
+        // Keep the first valid stored id. Generated ids must also avoid ids that a later
+        // entry explicitly owns, so migration cannot depend on catalog order.
+        if (existingId && usedIds.has(existingId)) id = legacyId
+        while (usedIds.has(id) || (reservedIds.has(id) && id !== existingId)) id = `${existingId && usedIds.has(existingId) ? legacyId : baseId}-${suffix++}`
+        usedIds.add(id)
+
+        return {
+          ...entry,
+          id,
+          label: usableGameVersionLabel(entry.label) ? entry.label : version
+        }
+      })
+    : doc.gameVersions
+
+  const validVersions = Array.isArray(gameVersions) ? gameVersions : []
+  const installations = Array.isArray(doc.installations)
+    ? doc.installations.map((entry: unknown) => {
+        if (!isRecord(entry) || "gameVersionId" in entry) return entry
+
+        const matching = validVersions.filter((gameVersion) => gameVersion.version === entry.version)
+        return { ...entry, gameVersionId: matching.length === 1 ? matching[0]!.id : null }
+      })
+    : doc.installations
+
+  return { ...doc, gameVersions, installations }
+}
+
+/** Adds stable identities to the game-version catalog and links unambiguous old installations. */
+export const addGameVersionIdentity: ConfigMigration = {
+  fromSchema: 4,
+  toSchema: 5,
+  migrate(doc: unknown): unknown {
+    return repairGameVersionIdentity(doc)
+  }
+}
+
 /** Every migration the launcher knows, lowest schema first. */
-export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions, singleAccountToAccountList]
+export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions, singleAccountToAccountList, addGameVersionIdentity]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {
   return new Map(migrations.map((migration) => [migration.fromSchema, migration]))

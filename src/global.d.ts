@@ -94,7 +94,10 @@ declare global {
     | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response" | "session-store-unreadable"; account?: undefined }
 
   type GameVersionType = {
+    /** Stable technical identity; independent from the displayed label and version number. */
+    id: string
     version: string
+    label: string
     path: string
     /** Registered from a folder the launcher did not install, so removing it must only unregister it. */
     linked?: boolean
@@ -117,6 +120,8 @@ declare global {
     icon: string
     path: string
     version: string
+    /** Stable id of the selected game version, or null when the catalog entry is gone. */
+    gameVersionId: string | null
     startParams: string
     backupsLimit: number
     backupsAuto: boolean
