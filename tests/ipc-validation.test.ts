@@ -144,10 +144,17 @@ describe("IPC boundary validators", () => {
 
   it("redacts credentials and absolute paths from diagnostics", () => {
     const redacted = redactSensitiveText("password=secret token=abc123 /home/user/private/config.json")
+    const spacedPaths = redactSensitiveText(
+      "Looking for mods at /home/Jane Doe/.config/RiftLauncherInstallations/Browse Seed/Mods. and C:\\Users\\Jane Doe\\AppData\\Roaming\\RiftLauncherInstallations\\My World\\Mods."
+    )
     assert.equal(redacted.includes("secret"), false)
     assert.equal(redacted.includes("abc123"), false)
     assert.equal(redacted.includes("/home/user"), false)
     assert.equal(redacted.includes("[REDACTED]"), true)
     assert.equal(redacted.includes("[PATH]"), true)
+    assert.equal(spacedPaths.includes("Jane Doe"), false)
+    assert.equal(spacedPaths.includes("Seed/Mods"), false)
+    assert.equal(spacedPaths.includes("Doe\\AppData"), false)
+    assert.equal(spacedPaths.match(/\[PATH\]/g)?.length, 2)
   })
 })

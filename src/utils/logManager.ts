@@ -2,7 +2,9 @@ import Logger from "electron-log"
 
 const sensitiveValuePattern = /(\b(?:password|pass|sessionkey|sessionsignature|mptoken|prelogintoken|token|signature|authorization|cookie|secret)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}\]]+)/gi
 const sensitiveQueryPattern = /([?&](?:password|pass|sessionkey|sessionsignature|mptoken|prelogintoken|token|signature|authorization|cookie|secret)=)[^&#\s]+/gi
-const absolutePathPattern = /(?:[A-Za-z]:[\\/]|\/(?:home|Users|mnt|tmp|var|opt|root)\/)[^\s\]]+/g
+// Keep path components that contain spaces, but only when another separator proves the space is
+// still inside the path; otherwise a sentence after a path would be swallowed as part of it.
+const absolutePathPattern = /(?:[A-Za-z]:[\\/]|\/(?:home|Users|mnt|tmp|var|opt|root)\/)(?:[^\s\]]+|[ \t]+(?=[^\s\]]*[\\/]))+/g
 
 export function redactSensitiveText(message: string): string {
   return message.slice(0, 16_384).replace(sensitiveValuePattern, "$1[REDACTED]").replace(sensitiveQueryPattern, "$1[REDACTED]").replace(absolutePathPattern, "[PATH]")

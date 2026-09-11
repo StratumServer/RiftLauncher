@@ -136,23 +136,12 @@ function InstalledModItem({
         <ThinSeparator />
 
         <div className="flex gap-1 justify-end text-lg">
-          <NormalButton
-            title={iMod.enabled ? t("features.mods.disableMod") : t("features.mods.enableMod")}
-            variant="ghost"
-            className={clsx("p-1", !iMod.enabled && "text-yellow-400")}
-            disabled={busy}
-            onClick={onToggleEnabledClick}
-          >
-            <PiPowerDuotone />
+          <NormalButton title={iMod.enabled ? t("features.mods.disableMod") : t("features.mods.enableMod")} variant="ghost" className="p-1" disabled={busy} onClick={onToggleEnabledClick}>
+            {iMod.enabled ? <PiPowerDuotone /> : <PiPowerFill className="text-yellow-400" />}
           </NormalButton>
 
-          <NormalButton
-            className={clsx("p-1", suspended && "text-yellow-400")}
-            title={suspended ? t("features.mods.resumeUpdates") : t("features.mods.suspendUpdates")}
-            variant="ghost"
-            onClick={onToggleSuspendClick}
-          >
-            <PiMoonDuotone />
+          <NormalButton className="p-1" title={suspended ? t("features.mods.resumeUpdates") : t("features.mods.suspendUpdates")} variant="ghost" onClick={onToggleSuspendClick}>
+            {suspended ? <PiMoonFill className="text-yellow-400" /> : <PiMoonDuotone />}
           </NormalButton>
 
           <NormalButton
