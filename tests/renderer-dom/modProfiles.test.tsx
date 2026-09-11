@@ -34,6 +34,7 @@ const CREATE = "Save the Mods that are on right now as a new profile, and make i
 const NEW_NAME = "Save the current Mods as a profile"
 const NO_PROFILE_NOTE = "No profile is active. The Mods folder stays as it is until you use one."
 const IN_USE = "You can't switch profiles while this Installation is being played, backed up, restored or having its Mods updated."
+const CHANGE_IN_USE = "You can't change profiles while this Installation is being backed up, restored or having its Mods updated."
 const FOLDER_UNREADABLE = "Couldn't read this Installation's Mods folder, so nothing was recorded or changed."
 const SEARCH_PLACEHOLDER = "Search by name, id or author"
 
@@ -498,6 +499,24 @@ describe("Mod profiles", { timeout: 20000 }, () => {
 
     expect(await screen.findByText(IN_USE)).toBeTruthy()
     expect(setModEnabled).not.toHaveBeenCalled()
+    expect(saveModProfiles).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["_backuping", "create"],
+    ["_restoringBackup", "create"],
+    ["_updatingMods", "create"],
+    ["_updatingMods", "duplicate"]
+  ] as const)("while %s is set, refuses to %s a profile from a folder that is changing", async (flag, action) => {
+    const { user, saveModProfiles } = renderProfiles({ document: aDocument([SERVER, SOLO], "server"), installation: anInstallation({ [flag]: true }) })
+
+    await user.click(await screen.findByRole("button", { name: PROFILES_BUTTON }, { timeout: 3000 }))
+    const dialog = await screen.findByRole("dialog")
+    await within(dialog).findByText("Server", { selector: "span" })
+    if (action === "create") await user.type(within(dialog).getByLabelText(NEW_NAME), "Mid update{Enter}")
+    else await user.click(within(rowOf(dialog, "Server")).getByRole("button", { name: "Duplicate this profile" }))
+
+    expect(await screen.findByText(CHANGE_IN_USE)).toBeTruthy()
     expect(saveModProfiles).not.toHaveBeenCalled()
   })
 

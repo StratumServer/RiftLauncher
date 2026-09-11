@@ -61,9 +61,14 @@ export interface ModProfiles {
  * that stops half way leaves a valid folder that belongs to nobody, both stored sets intact, and a
  * retry that renames only what is still wrong.
  *
- * Known limit: a download already in flight when a switch starts still lands enabled, and so becomes
- * part of the profile being switched to. Everything that starts during a switch is refused, because
- * the switch holds `_updatingMods`.
+ * No write starts while a backup, a restore or Update all has the folder, and a scan that could not
+ * read the folder records and applies nothing: its empty list is not what the folder holds.
+ *
+ * Known limits: a download already in flight when a switch starts still lands enabled, and so becomes
+ * part of the profile being switched to. Updating one Mod from its row removes the old archive before
+ * the new one lands without marking the folder busy, so a profile created or duplicated in that window
+ * leaves that Mod out. Everything that starts during a switch is refused, because the switch holds
+ * `_updatingMods`.
  */
 export function useModProfiles(installation: InstallationType | undefined): ModProfiles {
   const { t } = useTranslation()
@@ -131,6 +136,9 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   /** One write at a time, and none unless the file is one this build may write. */
   async function exclusive(task: (path: string) => Promise<void>): Promise<void> {
     if (!installationPath || status !== "ready" || workingRef.current) return
+    // A capture now would miss a Mod Update all has removed and not yet replaced, and a write during a
+    // restore lands in a folder about to be swapped out.
+    if (installation && modsFolderInUse(installation)) return addNotification(t("features.mods.cantChangeProfilesWhileInUse"), "error")
     workingRef.current = true
     setWorking(true)
 
