@@ -343,15 +343,21 @@ function ListMods(): JSX.Element {
   const { installNewest, updateMod, toggleEnabled, toggleSuspended, requestDelete } = actions
   const onModAction = useCallback(
     (mod: DownloadableModOnListType, action: ModCardAction): void | Promise<void> => {
-      if (action === "install")
+      // Resolved against the last scan, never against what the card showed: a card can be painted
+      // from an older render (GridGroup's AnimatePresence replays one once an exit ends), and an
+      // install next to a copy already there leaves two archives declaring one modid.
+      const { installedMods, details, gameVersion } = actionTargets.current
+      const copies = installedCopiesOf(mod.modidstrs, installedMods)
+
+      if (action === "install") {
+        if (copies.length > 0) return
         return installNewest(mod).then((outcome) => {
           // Nothing is tagged for this build. The release list labels every release Tagged, Likely
           // or Untagged, so that is where the player can pick one knowing what it is.
           if (outcome === "no-tagged-release") navigate(`/mods/install/${mod.modid}`, { state: { modName: mod.name } })
         })
+      }
 
-      const { installedMods, details, gameVersion } = actionTargets.current
-      const copies = installedCopiesOf(mod.modidstrs, installedMods)
       const copy = copies.length === 1 ? copies[0] : undefined
       if (!copy) return
 
