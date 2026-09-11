@@ -62,7 +62,9 @@ function App(): JSX.Element {
 
                   <MainMenu />
 
-                  <main className="relative w-full h-full flex-1">
+                  {/* min-w-0: a flex item never shrinks below its content otherwise, and a page with
+                      long unwrapped rows would push past the window's edge, where #root clips it. */}
+                  <main className="relative w-full h-full flex-1 min-w-0">
                     <Suspense fallback={<RouteLoader />}>
                       <AnimatedRoutes />
                     </Suspense>

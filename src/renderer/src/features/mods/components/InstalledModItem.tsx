@@ -80,7 +80,7 @@ function InstalledModItem({
 
           <div className={clsx("w-full flex flex-col gap-1 justify-center overflow-hidden", !iMod.enabled && "opacity-50")}>
             <div className="flex gap-2 items-center">
-              <p className="font-bold">{iMod.name}</p>
+              <p className="min-w-0 truncate font-bold">{iMod.name}</p>
               <span>·</span>
               <p>v{iMod.version}</p>
               {!iMod.enabled && (
