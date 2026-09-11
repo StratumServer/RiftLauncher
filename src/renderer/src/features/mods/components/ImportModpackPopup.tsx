@@ -435,6 +435,8 @@ function statusLabel(status: ModStatus, t: (key: string, options?: Record<string
       return t("features.mods.importModpackLookupFailed")
     case "no-release":
       return t("features.mods.importModpackNoRelease")
+    case "several-copies":
+      return t("features.mods.severalCopiesInstalled")
     case "old-version-delete-failed":
       return t("features.mods.importModpackOldVersionStuck")
     case "pending":

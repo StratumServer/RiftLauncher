@@ -103,6 +103,15 @@ describe("modSelectionEntries", () => {
     assert.equal(leftOut, 1)
   })
 
+  it("marks a pick whose listing matches two installed copies, and only that one", () => {
+    const { entries } = modSelectionEntries([pick(10, "Carry On", ["carryon"]), pick(11, "Better Ruins", ["betterruins"])], [{ modid: "carryon" }, { modid: "BetterRuins" }, { modid: "CarryOn" }])
+
+    assert.deepEqual(entries, [
+      { modid: "carryon", listingId: 10, name: "Carry On", severalCopies: true },
+      { modid: "BetterRuins", listingId: 11, name: "Better Ruins" }
+    ])
+  })
+
   it("still yields an entry keyed by its listing id for a listing with no modidstrs", () => {
     const { entries } = modSelectionEntries([pick(789, "Mystery", [])], [])
 

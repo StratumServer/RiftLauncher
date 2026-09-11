@@ -46,7 +46,9 @@ export function addPicks(picks: readonly ModPick[], candidates: readonly ModPick
  *
  * A pick matching an installed copy (the grid's own Installed rule) takes that copy's modid, casing
  * and all: the planner matches modids exactly, and a modinfo.json may spell "BetterRuins" where the
- * listing says "betterruins", which would plan a second archive next to the first. Two picks landing
+ * listing says "betterruins", which would plan a second archive next to the first. A pick matching
+ * several copies is marked so the planner skips it, as the card does: acting on one of them would be
+ * picking a file for the player, chosen by the order the folder happens to list them in. Two picks landing
  * on one modid keep the first one picked, since a folder cannot hold two archives declaring one
  * modid and the table's rows are keyed by it.
  *
@@ -58,10 +60,12 @@ export function modSelectionEntries(picks: readonly ModPick[], installed: readon
   const seen = new Set<string>()
 
   for (const pick of picks) {
-    const modid = installedCopiesOf(pick.modidstrs, installed)[0]?.modid ?? pick.modidstrs[0] ?? String(pick.listingId)
+    const copies = installedCopiesOf(pick.modidstrs, installed)
+    const modid = copies[0]?.modid ?? pick.modidstrs[0] ?? String(pick.listingId)
     if (seen.has(modid)) continue
     seen.add(modid)
-    entries.push({ modid, listingId: pick.listingId, name: pick.name })
+    const entry: ModpackEntry = { modid, listingId: pick.listingId, name: pick.name }
+    entries.push(copies.length > 1 ? { ...entry, severalCopies: true } : entry)
   }
 
   return { entries, leftOut: picks.length - entries.length }

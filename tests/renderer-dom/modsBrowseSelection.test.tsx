@@ -414,6 +414,30 @@ describe("ModDB browse selection", () => {
     expect(deletePath).toHaveBeenCalledWith("/games/a/Mods/deepercaves-1.0.0.zip")
   }, 15_000)
 
+  it("a pick whose Mod is installed twice reads the card's several-copies notice and touches neither copy", async () => {
+    const user = userEvent.setup()
+    const spare = { ...aCopy("deepercaves", "Deeper Caves", "1.0.0"), enabled: false, path: "/games/a/Mods/deepercaves-1.0.0.zip.disabled" }
+    const { downloadOnPath, deletePath, lookupsOf } = mount({ folder: () => [spare, aCopy("deepercaves", "Deeper Caves", "1.4.0"), aCopy("betterruins", "Better Ruins", "1.0.0")] })
+
+    await screen.findByRole("button", { name: "Better Ruins, Installed" }, { timeout: 3000 })
+    await user.click(toggle())
+    await user.click(card("Deeper Caves"))
+    await user.click(card("Better Ruins"))
+
+    const dialog = await openTable(user)
+    await waitFor(() => expect(within(rowIn(dialog, "Better Ruins")).getByText("Update from 1.0.0 to 2.0.0")).toBeTruthy(), { timeout: 3000 })
+    expect(within(rowIn(dialog, "Deeper Caves")).getByText("Several copies are installed. Sort them out in Manage Mods.")).toBeTruthy()
+
+    await user.click(within(dialog).getByRole("button", { name: "Install" }))
+    await screen.findByRole("heading", { name: "Mod Install Summary" }, { timeout: 3000 })
+
+    expect(deletePath).toHaveBeenCalledTimes(1)
+    expect(deletePath).toHaveBeenCalledWith("/games/a/Mods/betterruins-1.0.0.zip")
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/betterruins-2.0.0.zip", "/games/a/Mods", "betterruins-2.0.0.zip")
+    expect(lookupsOf(789)).toBe(0)
+  }, 20_000)
+
   it("a download finishing mid-run does not re-send the lookups", async () => {
     const user = userEvent.setup()
     const { getInstalledMods, lookupsOf } = mount()

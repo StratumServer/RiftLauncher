@@ -35,6 +35,11 @@ export interface ModpackEntry {
    * modid, because a fork can declare the same modid as the original and resolve to the wrong page.
    */
   listingId?: number
+  /**
+   * Set on a browse pick whose listing matches more than one installed copy. The run skips it without
+   * a lookup rather than choose one of the copies, the same refusal the browse card makes.
+   */
+  severalCopies?: boolean
 }
 
 /**
@@ -105,6 +110,8 @@ export type ModpackSkipReason =
    * "not-on-moddb", nothing here says the mod does not exist, so the row must not say so either.
    */
   | "lookup-failed"
+  /** A browse pick whose Mod is installed more than once: which copy to act on is the player's call. */
+  | "several-copies"
 
 /** An entry the import will install, with the release it settled on. */
 export interface ModpackInstallItem {
@@ -189,7 +196,7 @@ function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | un
  * interleaved loop achieved by checking the folder before querying.
  */
 export function modpackEntriesToResolve(entries: readonly ModpackEntry[], installed: readonly InstalledModSnapshot[]): ModpackEntry[] {
-  return entries.filter((entry) => satisfyingCopy(entry, installedFor(installed, entry.modid)) === undefined)
+  return entries.filter((entry) => !entry.severalCopies && satisfyingCopy(entry, installedFor(installed, entry.modid)) === undefined)
 }
 
 /**
@@ -329,6 +336,9 @@ function planEntry(entry: ModpackEntry, input: ModpackPlanInput): ModpackPlanIte
   const existing = installedFor(input.installed, entry.modid)
   const fromVersion = existing?.version ?? null
   const requestedVersion = entry.version ?? null
+
+  // No version is named for it either: naming one would be picking one of the copies.
+  if (entry.severalCopies) return { decision: "skip", modid: entry.modid, requestedVersion, name: entry.name ?? entry.modid, reason: "several-copies", fromVersion: null }
 
   const satisfied = satisfyingCopy(entry, existing)
   if (satisfied) {

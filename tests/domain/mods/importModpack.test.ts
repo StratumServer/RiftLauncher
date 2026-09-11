@@ -572,6 +572,22 @@ describe("planModpackImport, browse picks", () => {
     )
   })
 
+  it("a browse pick whose Mod is installed twice is skipped, whichever copy the folder lists first", () => {
+    const spare = installedCopy({ version: "1.0.0", enabled: false, path: "/installations/main/Mods/carryon-1.0.0.zip.disabled" })
+    const loaded = installedCopy({ version: "2.0.0", path: "/installations/main/Mods/carryon-2.0.0.zip" })
+    const twice = { ...pickEntry, severalCopies: true }
+
+    for (const installed of [
+      [spare, loaded],
+      [loaded, spare]
+    ]) {
+      assert.deepEqual(modpackEntriesToResolve([twice], installed), [], "no lookup is spent on it")
+      const item = onlyItem(plan([twice], installed, [["carryon", detail([tagged])]]))
+      assert.deepEqual(item, { decision: "skip", modid: "carryon", requestedVersion: null, name: "Carry On", reason: "several-copies", fromVersion: null })
+      assert.deepEqual(modpackRowStatus(item), { kind: "several-copies", fromVersion: null, toVersion: null })
+    }
+  })
+
   it("modpackEntriesToResolve always asks about a browse pick, even with an enabled copy installed", () => {
     assert.deepEqual(modpackEntriesToResolve([pickEntry], [installedCopy()]), [pickEntry])
   })
