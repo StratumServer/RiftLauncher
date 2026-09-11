@@ -875,3 +875,23 @@ describe("renderer preload bridge boundaries", () => {
     assert.deepEqual(filesReachingTheBridge("src/renderer/src/components"), [], "a file under src/renderer/src/components calls window.api instead of going through a feature")
   })
 })
+
+/**
+ * The renderer shows network and file content only as React text, which React escapes. The ModDB
+ * sends Mod descriptions as HTML and the detail panel reads them through modDescriptionParagraphs
+ * for exactly that reason. A switch to rendering markup from a string would bypass that, so it has
+ * to come with a sanitizer decision rather than slip in.
+ */
+describe("renderer HTML sinks", () => {
+  it("renders no HTML from a string anywhere in the renderer", () => {
+    const root = resolve(__dirname, "..", "src/renderer/src")
+    const sinks = ["dangerouslySetInnerHTML", "innerHTML", "outerHTML", "insertAdjacentHTML"]
+    const offenders = readdirSync(root, { recursive: true, encoding: "utf8" })
+      .filter((entry) => entry.endsWith(".ts") || entry.endsWith(".tsx"))
+      .flatMap((entry) => {
+        const source = readFileSync(resolve(root, entry), "utf8")
+        return sinks.filter((sink) => source.includes(sink)).map((sink) => `${entry}: ${sink}`)
+      })
+    assert.deepEqual(offenders, [], "a renderer file renders HTML from a string")
+  })
+})

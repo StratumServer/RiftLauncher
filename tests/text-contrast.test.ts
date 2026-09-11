@@ -366,6 +366,24 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /**
+   * The Manage Mods detail panel repeats the verdict word on each release, on the list panel rather
+   * than on a table, so every verdict there sits on a fill of its own. Without it lime-600 reads
+   * 3.98:1 and red-400 4.22:1 on the bare panel.
+   */
+  it("keeps the detail panel's verdict words readable on its release rows", () => {
+    const rowFill: Layer = [ZINC["zinc-950"], Number(match("features/mods/components/InstalledModDetails.tsx", /const RELEASE_ROW_FILL = "bg-zinc-950\/(\d+)"/)[1]) / 100]
+    const verdicts: ReadonlyArray<readonly [string, RegExp]> = [
+      ["declared", /declared: \{ className: "text-([a-z]+-\d+)"/],
+      ["same-minor", /"same-minor": \{ className: "text-([a-z]+-\d+)"/],
+      ["undeclared", /undeclared: \{ className: "text-([a-z]+-\d+)"/]
+    ]
+
+    for (const [verdict, anchor] of verdicts) {
+      assertReadable(`${verdict} verdict word on a detail panel release`, paletteForeground("features/mods/components/ModReleaseList.tsx", anchor), [shell, listPanel, rowFill], TEXT_FLOOR)
+    }
+  })
+
   it("keeps the icons that stand in for a control above the non-text bar", () => {
     // Each of these is the whole visible content of a button: there is no label beside it, so the
     // icon is the affordance and the 3:1 rule applies. Actions that ship a label are covered by
