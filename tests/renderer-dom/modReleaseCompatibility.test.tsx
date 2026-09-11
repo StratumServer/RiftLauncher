@@ -157,7 +157,7 @@ describe("the release table's compatibility verdict", () => {
 
 describe("the release table's game versions", () => {
   it("shows every supported version, not a clipped prefix", async () => {
-    // No catalog served here, which is the state the table starts in and stays in if that query
+    // An empty catalog, the same branch the table takes before that query lands and after it
     // fails: with nothing to say which versions sit between two tags, the cell lists them all.
     await renderTable([{ modversion: "1.0.0", tags: EIGHT_VERSIONS }])
 

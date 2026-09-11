@@ -46,7 +46,10 @@ function releaseNumber(tag: string): string {
  * @param tags The release's tags, in whatever order the ModDB returned them.
  * @param catalog Every game version the ModDB knows, newest first, as `useGameVersionsLookup`
  *   returns it. Empty when the lookup has not landed or failed, which falls back to one entry per
- *   tag: without the catalog nothing says which versions sit between two tags.
+ *   tag: without the catalog nothing says which versions sit between two tags. The order is the
+ *   caller's to keep: coverage is read off the catalog's own sequence, never off the numbers.
+ * @returns The summary, oldest first, with any tag the catalog does not know trailing the rest.
+ *   Nothing places such a tag in the sequence, so it goes after everything that was placed.
  */
 export function summarizeGameVersionTags(tags: readonly string[], catalog: readonly string[]): GameVersionRange[] {
   if (catalog.length === 0) return tags.map((tag) => ({ from: tag }))
@@ -89,9 +92,11 @@ export function summarizeGameVersionTags(tags: readonly string[], catalog: reado
   closeRun()
 
   // A tag the catalog has never heard of cannot be placed between two versions, so it is printed as
-  // it came. The ModDB keeps old tags long after it stops offering them, and mod authors mistype.
+  // it came, after everything that could be placed. The ModDB keeps old tags long after it stops
+  // offering them, and mod authors mistype. Walking the tag set rather than the tags is what keeps
+  // a repeat to one entry, which is what the catalog walk above already does with the tags it knows.
   const known = new Set(catalog)
-  for (const tag of tags) if (!known.has(tag)) ranges.push({ from: tag })
+  for (const tag of tagged) if (!known.has(tag)) ranges.push({ from: tag })
 
   return ranges
 }

@@ -46,14 +46,26 @@ describe("summarizeGameVersionTags", () => {
     assert.equal(summarize(["1.22.0-pre.1", "1.22.0-rc.1"]), "1.22.0-pre.1, 1.22.0-rc.1")
   })
 
-  it("counts a folded pre-release towards the run it sits in without printing it", () => {
-    // Four catalog entries in a row, two of them folded away: what is left reads as two versions,
-    // so it is written out rather than collapsed.
+  it("does not let the pre-releases it folds swell the run they sit in", () => {
+    // Four catalog entries in a row, two of them folded away. A run is measured in what it will
+    // print, so this one is two versions long and gets written out rather than collapsed.
     assert.equal(summarize(["1.22.0-pre.1", "1.22.0-rc.1", "1.22.0", "1.22.1"]), "1.22.0, 1.22.1")
   })
 
   it("prints a tag the catalog does not know as it came", () => {
     assert.equal(summarize(["1.22.2", "1.22.3", "1.23.0"]), "1.22.2, 1.22.3, 1.23.0")
+  })
+
+  it("prints a tag the catalog does not know once, however often the release carries it", () => {
+    // The tags the catalog knows dedupe through the set the walk reads, so a repeat of one it does
+    // not know cannot be the half of the same cell that prints twice.
+    assert.equal(summarize(["1.22.2", "1.23.0", "1.23.0"]), "1.22.2, 1.23.0")
+  })
+
+  it("puts a tag the catalog does not know after the versions it placed, old as that tag may be", () => {
+    // Nothing says where 1.19.0 belongs, so it cannot join the climb: it trails what was placed
+    // rather than being guessed into the middle of it.
+    assert.equal(summarize(["1.19.0", "1.22.1", "1.22.2", "1.22.3"]), "1.22.1 to 1.22.3, 1.19.0")
   })
 
   it("summarises nothing for a release with no tags", () => {

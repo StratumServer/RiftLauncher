@@ -82,6 +82,10 @@ function ModReleaseList({
   // The ModDB's own list of every game version there is, newest first. It is what separates a run of
   // tags with nothing missing from one with a hole in it, so the cell below can shorten the first
   // without inventing support in the second. Empty until the query lands, or if it fails.
+  //
+  // Newest first is this hook's doing, not the ModDB's: `useGameVersionsLookup` reverses the
+  // oldest-first payload. `summarizeGameVersionTags` reads coverage off that order alone and never
+  // compares version numbers, so keeping the reverse here is what keeps its ranges the right way up.
   const gameVersionCatalog = useGameVersionsLookup().map((gameVersion) => gameVersion.name)
 
   return (
