@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { act, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Link, Route, Routes, useLocation } from "react-router-dom"
 
@@ -368,6 +368,27 @@ describe("ModDB browse selection", () => {
     expect(deletePath).not.toHaveBeenCalled()
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
     expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/deepercaves-1.5.0.zip", "/games/b/Mods", "deepercaves-1.5.0.zip")
+  }, 20_000)
+
+  it("a run installs into the Installation whose folder it read, even if the selection moves while the table is open", async () => {
+    const user = userEvent.setup()
+    const other = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b" }
+    const { downloadOnPath, deletePath } = mount({ others: [other], folder: (path) => (path.includes("/games/a") ? [aCopy("deepercaves", "Deeper Caves", "1.0.0")] : []) })
+
+    await screen.findByRole("button", { name: "Deeper Caves, Installed" }, { timeout: 3000 })
+    await user.click(toggle())
+    await user.click(card("Deeper Caves"))
+    const dialog = await openTable(user)
+    await waitFor(() => expect(within(rowIn(dialog, "Deeper Caves")).getByText("Update from 1.0.0 to 1.5.0")).toBeTruthy(), { timeout: 3000 })
+
+    // The dialog keeps the sidebar out of reach; this stands in for anything else that moves it.
+    fireEvent.click(screen.getByRole("button", { name: "Switch Installation", hidden: true }))
+    await user.click(within(dialog).getByRole("button", { name: "Install" }))
+    await screen.findByRole("heading", { name: "Mod Install Summary" }, { timeout: 3000 })
+
+    expect(deletePath).toHaveBeenCalledWith("/games/a/Mods/deepercaves-1.0.0.zip")
+    expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/deepercaves-1.5.0.zip", "/games/a/Mods", "deepercaves-1.5.0.zip")
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
   }, 20_000)
 
   it("two installed picks, two outcomes: a current copy reads Already installed and is not downloaded, an older one reads Update from X to Y", async () => {
