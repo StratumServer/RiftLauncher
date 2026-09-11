@@ -375,7 +375,7 @@
       "profilesButtonTitle": "Mod profiles: save the Mods that are on as a named set, and switch between sets",
       "noProfile": "No profile",
       "profilesTitle": "Mod profiles",
-      "profilesIntro": "A profile is a named set of the Mods that are on. Using one turns Mods on and off until this Installation's Mods folder matches it. Nothing is copied or downloaded.",
+      "profilesIntro": "A profile is a named set of the Mods that are on. Using one turns Mods on and off until this Installation's Mods folder matches it. Nothing is copied or downloaded. While a profile is in use it follows the folder: turning Mods on or off, installing or deleting them changes that profile.",
       "profilesFirstHint": "Your first profile saves the Mods that are on right now.",
       "noProfileActive": "No profile is active. The Mods folder stays as it is until you use one.",
       "useProfile": "Use",

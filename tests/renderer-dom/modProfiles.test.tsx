@@ -250,6 +250,12 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(profilesButton().textContent).toContain("No profile")
     const dialog = await openProfiles(user)
 
+    // Says that the profile in use follows the folder, so a hand toggle rewriting it is no surprise.
+    expect(
+      within(dialog).getByText(
+        "A profile is a named set of the Mods that are on. Using one turns Mods on and off until this Installation's Mods folder matches it. Nothing is copied or downloaded. While a profile is in use it follows the folder: turning Mods on or off, installing or deleting them changes that profile."
+      )
+    ).toBeTruthy()
     expect(within(dialog).getByText("Your first profile saves the Mods that are on right now.")).toBeTruthy()
     expect(within(dialog).queryAllByRole("listitem")).toHaveLength(0)
     // No profile at all is not "none of them active".
