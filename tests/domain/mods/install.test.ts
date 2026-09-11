@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { beforeEach, describe, it } from "vitest"
 
-import { installMod, modArchiveFileName } from "../../../src/domain/mods/install"
+import { installMod, modArchiveFileName, modsFolderInUse } from "../../../src/domain/mods/install"
 import type { InstallModEvents, InstallModInput, InstallModPorts, ModReleaseToInstall } from "../../../src/domain/mods/install"
 import type { DownloadOutcome, DownloadRequest, Downloader, FileSystem, PathBuilder } from "../../../src/domain/ports"
 
@@ -163,5 +163,18 @@ describe("installMod", () => {
     assert.deepEqual(requests, [{ url: RELEASE.mainfile, outputFolder: MODS_FOLDER, fileName: "carryon-2.0.1.zip.disabled" }])
     assert.deepEqual(result, { ok: true, fileName: "carryon-2.0.1.zip.disabled", path: `${MODS_FOLDER}/carryon-2.0.1.zip.disabled` })
     assert.deepEqual(trace, [`remove:${MODS_FOLDER}/carryon-1.9.0.zip.disabled`, `download:${RELEASE.mainfile}->${MODS_FOLDER}/carryon-2.0.1.zip.disabled`])
+  })
+})
+
+describe("modsFolderInUse", () => {
+  it("holds the folder during a backup, a restore or Update all, each on its own", () => {
+    assert.equal(modsFolderInUse({ _backuping: true }), true)
+    assert.equal(modsFolderInUse({ _restoringBackup: true }), true)
+    assert.equal(modsFolderInUse({ _updatingMods: true }), true)
+  })
+
+  it("leaves the folder free when none of the three is set", () => {
+    assert.equal(modsFolderInUse({}), false)
+    assert.equal(modsFolderInUse({ _backuping: false, _restoringBackup: false, _updatingMods: false }), false)
   })
 })

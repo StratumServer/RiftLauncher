@@ -1,9 +1,8 @@
 import { useGetInstalledMods } from "./useGetInstalledMods"
 import { useQueryMod } from "./useQueryMod"
-import semver from "semver"
 
 import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
-import { evaluateModCompatibility } from "@domain/mods/compatibility"
+import { findModUpdate } from "@domain/mods/compatibility"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 import { cacheModImage } from "@renderer/features/moddb/adapters/modsManager"
 
@@ -16,7 +15,8 @@ import { cacheModImage } from "@renderer/features/moddb/adapters/modsManager"
  */
 const INSTALLED_MOD_LOOKUP_LIMIT = 2
 
-const installedModLookups = new ConcurrencyLimiter(INSTALLED_MOD_LOOKUP_LIMIT)
+/** Shared by every installed-Mod lookup, so that together they stay inside the share described above. */
+export const installedModLookups = new ConcurrencyLimiter(INSTALLED_MOD_LOOKUP_LIMIT)
 
 export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number) => void }) => Promise<{
   mods: InstalledModType[]
@@ -83,27 +83,12 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
         if (!mod._image && dmod?.logofile) mod._image = await cacheModImageOnce(dmod.logofile)
 
         if (dmod) {
-          for (const release of dmod.releases) {
-            if (!mod.version || !release.modversion || !semver.valid(release.modversion) || !semver.valid(mod.version)) continue
-
-            // Declared or same-minor both count as "worth offering": the tag compat check historically
-            // treated "1.19.X" tags on a "1.19.6" install the same as an exact "1.19.6" tag, so only
-            // "undeclared" is excluded here to keep this identical to that behaviour.
-            const compatibleWithVersion = evaluateModCompatibility(release.tags, version) !== "undeclared"
-
-            // 0 if it's the same version
-            // 1 if the downloadable version < than the installed one
-            // -1 if the downloadable version > than the isntalled one
-            const newRelease = semver.compare(mod.version, release.modversion)
-
-            if (compatibleWithVersion && newRelease === -1) {
-              availableModUpdates++
-              mod._updatableTo = release.modversion
-              break
-            } else if (!compatibleWithVersion && newRelease === -1 && !mod._lastVersion) {
-              mod._lastVersion = release.modversion
-            }
+          const update = findModUpdate(mod.version, dmod.releases, version)
+          if (update.updatableTo) {
+            availableModUpdates++
+            mod._updatableTo = update.updatableTo
           }
+          if (update.lastVersion) mod._lastVersion = update.lastVersion
         }
       })
     )

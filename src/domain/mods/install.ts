@@ -67,6 +67,15 @@ export interface InstallModInput {
 }
 
 /**
+ * True while something else is writing the Installation's Mods folder as a whole: a backup, a restore
+ * or Update all. Every flow that renames, deletes or downloads a Mod refuses while this holds, so two
+ * of them never race on the same archives.
+ */
+export function modsFolderInUse(installation: Pick<InstallationType, "_backuping" | "_restoringBackup" | "_updatingMods">): boolean {
+  return Boolean(installation._backuping || installation._restoringBackup || installation._updatingMods)
+}
+
+/**
  * Side effects the caller owns: notifications, table rows, logging. The service only says when they
  * happen.
  */

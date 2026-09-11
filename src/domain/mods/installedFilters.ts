@@ -133,3 +133,24 @@ export function filterInstalledMods(mods: readonly InstalledModType[], filters: 
 export function hasActiveInstalledModFilters(filters: InstalledModFilters): boolean {
   return filters.author !== "" || filters.tags.length > 0 || filters.gameVersion !== ""
 }
+
+/**
+ * True when a ModDB listing's `modidstrs` name an installed modid.
+ *
+ * The listing spells its ids in lowercase while a `modinfo.json` may use any casing, so an installed
+ * id matches spelled as it is or lowercased. Nothing looser: a prefix or substring match would call
+ * "betterruinsplus" installed because "betterruins" is.
+ */
+export function listingDeclaresModid(modidstrs: readonly string[], installedModid: string): boolean {
+  return modidstrs.some((modidstr) => modidstr === installedModid.toLocaleLowerCase() || modidstr === installedModid)
+}
+
+/**
+ * Every installed copy a ModDB listing names, not only the first.
+ *
+ * Two archives can declare one modid (X.zip next to X.zip.disabled, or two versions side by side),
+ * and a caller that acted on one of them would be picking a file for the player.
+ */
+export function installedCopiesOf<T extends { modid: string }>(modidstrs: readonly string[], installed: readonly T[]): T[] {
+  return installed.filter((copy) => listingDeclaresModid(modidstrs, copy.modid))
+}
