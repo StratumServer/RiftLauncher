@@ -392,4 +392,47 @@ describe("useInstalledModActions: update and quick install", () => {
     })
     expect(result.current.isBusy(quickInstallKey(7))).toBe(false)
   })
+
+  it("holds an updated path busy until the rescan after the download lands", async () => {
+    const rescan = deferred<void>()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => `${outputPath}/${fileName}`)
+    const { result } = renderActions(anInstallation(), () => rescan.promise, { pathsManager: { deletePath, downloadOnPath } })
+
+    let updating!: Promise<void>
+    act(() => {
+      updating = result.current.updateMod(disabledCopy, alphaRelease)
+    })
+    expect(result.current.isBusy(DISABLED_PATH)).toBe(true)
+
+    await waitFor(() => expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/alpha-1.5.0.zip", "/games/a/Mods", "alpha-1.5.0.zip.disabled"))
+    expect(deletePath).toHaveBeenCalledWith(DISABLED_PATH)
+    expect(result.current.isBusy(DISABLED_PATH)).toBe(true)
+
+    await act(async () => {
+      rescan.resolve()
+      await updating
+    })
+    expect(result.current.isBusy(DISABLED_PATH)).toBe(false)
+  })
+
+  it("logs a refused install by its reason only, never the Mod or the Installation", async () => {
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async () => {
+      throw new Error("ECONNRESET")
+    })
+    const { result } = renderActions(anInstallation(), async () => {}, { pathsManager: { deletePath: vi.fn(async () => true), downloadOnPath } })
+
+    await act(() => result.current.updateMod(enabledCopy, alphaRelease))
+
+    // The download task logs its own transfer; these are the install hook's lines.
+    const installLines = vi
+      .mocked(window.api.utils.logMessage)
+      .mock.calls.map((call) => call.join(" "))
+      .filter((line) => line.includes("useInstallMod.ts"))
+      .join("\n")
+    expect(installLines).toContain("download-failed")
+    expect(installLines).not.toContain("Alpha Mod")
+    expect(installLines).not.toContain("Install A")
+    expect(installLines).not.toContain("/games/a")
+  })
 })

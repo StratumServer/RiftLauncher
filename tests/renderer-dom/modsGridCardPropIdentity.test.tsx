@@ -165,6 +165,19 @@ describe("ModsGrid card prop identity", () => {
     expect(downloadOnPath).not.toHaveBeenCalled()
     expect(detailLookups()).toEqual(lookups)
   })
+
+  it("acts on neither copy of a Mod the last scan holds twice, whatever its card is handed", async () => {
+    const { rendersOf, setModEnabled } = mountWithOneInstalledMod([ENABLED_COPY, { ...ENABLED_COPY, path: "/games/a/Mods/betterruins-1.0.0.zip.disabled", enabled: false }])
+
+    await waitFor(() => expect(rendersOf(123).some((props) => props.copyState === "several")).toBe(true), { timeout: 3000 })
+    // Which of two files the player meant is theirs to say, in Manage Mods; a card never picks one.
+    const card = rendersOf(123).at(-1) as CardProps
+    await act(async () => {
+      await card.onAction(card.mod, "toggle-enabled")
+    })
+
+    expect(setModEnabled).not.toHaveBeenCalled()
+  })
 })
 
 type CardProps = {
@@ -187,8 +200,10 @@ function BumpStartParamsButton(): JSX.Element {
   )
 }
 
-/** Better Ruins installed once, with a newer release tagged for the build; Primitive Survival not installed. */
-function mountWithOneInstalledMod(): {
+const ENABLED_COPY: InstalledModType = { name: "Better Ruins", modid: "betterruins", version: "1.0.0", path: "/games/a/Mods/betterruins-1.0.0.zip", enabled: true }
+
+/** Better Ruins installed, by default once, with a newer release tagged for the build; Primitive Survival not installed. */
+function mountWithOneInstalledMod(initialFolder: InstalledModType[] = [ENABLED_COPY]): {
   rendersOf: (modid: number) => CardProps[]
   setModEnabled: ReturnType<typeof vi.fn>
   downloadOnPath: ReturnType<typeof vi.fn>
@@ -196,10 +211,9 @@ function mountWithOneInstalledMod(): {
 } {
   cardRenderSpy.mockClear()
 
-  const enabledCopy: InstalledModType = { name: "Better Ruins", modid: "betterruins", version: "1.0.0", path: "/games/a/Mods/betterruins-1.0.0.zip", enabled: true }
-  let folder = [enabledCopy]
+  let folder = initialFolder
   const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => {
-    folder = [{ ...enabledCopy, path: `${path}.disabled`, enabled: false }]
+    folder = [{ ...ENABLED_COPY, path: `${path}.disabled`, enabled: false }]
     return { ok: true, path: `${path}.disabled` }
   })
   const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => `${outputPath}/${fileName}`)
