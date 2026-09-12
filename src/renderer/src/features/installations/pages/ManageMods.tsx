@@ -218,7 +218,7 @@ function ListMods(): JSX.Element {
                         variant="secondary"
                         className="p-1 w-fit h-8"
                         onClick={() => setFiltersOpen((current) => !current)}
-                        ariaPressed={filtersOpen}
+                        ariaExpanded={filtersOpen}
                       >
                         <PiFunnelDuotone className="text-xl" />
                         <p>{t("features.mods.filtersToggleButton", { count: activeFilterCount })}</p>

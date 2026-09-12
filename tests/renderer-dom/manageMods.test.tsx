@@ -437,10 +437,14 @@ describe("ManageMods: the action bar after #431", () => {
     renderManageMods()
 
     expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
-    expect(screen.getByText("Filters")).toBeTruthy()
+    const filtersToggle = screen.getByText("Filters").closest("button") as HTMLElement
+    expect(filtersToggle).toBeTruthy()
+    // It reveals a panel, it is not a stateful toggle: aria-expanded, not aria-pressed.
+    expect(filtersToggle.getAttribute("aria-expanded")).toBe("false")
     expect(screen.queryByRole("button", { name: "Author" })).toBeNull()
 
-    await user.click(screen.getByText("Filters").closest("button") as HTMLElement)
+    await user.click(filtersToggle)
+    expect(filtersToggle.getAttribute("aria-expanded")).toBe("true")
     await user.click(screen.getByRole("button", { name: "Author" }))
     await user.click(await screen.findByRole("option", { name: "Ann" }))
 

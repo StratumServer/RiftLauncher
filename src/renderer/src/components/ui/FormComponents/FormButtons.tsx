@@ -81,11 +81,13 @@ type FormButtonProps = Readonly<{
   size?: ButtonSize
   ariaLabel?: string
   ariaPressed?: boolean
+  /** For a disclosure control (a toggle that shows or hides another element), not a stateful one. */
+  ariaExpanded?: boolean
 }> &
   Readonly<FormButtonAction>
 
 export const FormButton = forwardRef<HTMLButtonElement, FormButtonProps>(function FormButton(
-  { children, icon, className, onClick, title, disabled, busy, variant = "secondary", size = "sm", nativeType = "button", ariaLabel, ariaPressed },
+  { children, icon, className, onClick, title, disabled, busy, variant = "secondary", size = "sm", nativeType = "button", ariaLabel, ariaPressed, ariaExpanded },
   ref
 ) {
   const action = useActionBusy(onClick, busy, disabled)
@@ -100,6 +102,7 @@ export const FormButton = forwardRef<HTMLButtonElement, FormButtonProps>(functio
       aria-label={ariaLabel ?? title}
       aria-busy={action.busy}
       aria-pressed={ariaPressed}
+      aria-expanded={ariaExpanded}
       className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}
     >
       {renderActionContent(children, icon, title, action.busy)}
