@@ -102,6 +102,7 @@ describe("process and navigation boundaries", () => {
  */
 const MAIN_SOURCE = readFileSync(resolve(__dirname, "../src/main/index.ts"), "utf8")
 const PRELOAD_SOURCE = readFileSync(resolve(__dirname, "../src/preload/index.ts"), "utf8")
+const MODS_HANDLERS_SOURCE = readFileSync(resolve(__dirname, "../src/ipc/handlers/modsHandlers.ts"), "utf8")
 const RENDERER_HTML = readFileSync(resolve(__dirname, "../src/renderer/index.html"), "utf8")
 const MAIN_AST = ts.createSourceFile("src/main/index.ts", MAIN_SOURCE, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 
@@ -126,6 +127,24 @@ describe("startup network boundaries", () => {
   it("leaves the startup update check to the module that catches its rejection", () => {
     assert.equal(MAIN_SOURCE.includes("scheduleUpdateCheck("), true, "src/main/index.ts stopped arming the startup update check")
     assert.equal(MAIN_SOURCE.includes("autoUpdater.checkForUpdates("), false, "src/main/index.ts calls checkForUpdates itself again, where nothing catches its rejection")
+  })
+
+  // The two profile channels are the only ones that read and write a file the renderer does not
+  // name: tests/ipc/modProfiles.test.ts proves the refusals, and this keeps the order they run in.
+  it("holds both mod profile channels to a trusted sender, a configured Installation and the no-link grade", () => {
+    for (const channel of ["GET_MOD_PROFILES", "SAVE_MOD_PROFILES"]) {
+      const start = MODS_HANDLERS_SOURCE.indexOf(`ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.${channel},`)
+      assert.notEqual(start, -1, `modsHandlers.ts stopped registering ${channel}`)
+      const body = MODS_HANDLERS_SOURCE.slice(start, MODS_HANDLERS_SOURCE.indexOf("\n})", start))
+      assert.match(body, /^[^\n]*\n {2}assertTrustedIpcSender\(event\)\n/, `${channel} no longer checks its sender before anything else`)
+      assert.equal(body.includes("await locateModProfiles(installationPath)"), true, `${channel} stopped deriving the file from a configured Installation`)
+      assert.equal(PRELOAD_SOURCE.includes(`ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.${channel},`), true, `the preload stopped exposing ${channel}`)
+    }
+
+    const locate = MODS_HANDLERS_SOURCE.slice(MODS_HANDLERS_SOURCE.indexOf("async function locateModProfiles("), MODS_HANDLERS_SOURCE.indexOf("async function readModProfilesFile("))
+    assert.equal(locate.includes("await assertConfiguredInstallationPath(installationPath)"), true, "the profiles file is no longer tied to a configured Installation")
+    assert.equal(locate.includes('join(installation, MOD_PROFILES_FILE_NAME), "mod profiles path", { allowMissing: true })'), true, "the profiles file left the strict grade")
+    assert.equal(locate.includes("allowSymlinks"), false, "the profiles file may now be read or written through a symbolic link")
   })
 
   it("keeps the local app protocol CORS-aware and records non-renderer child exits", () => {

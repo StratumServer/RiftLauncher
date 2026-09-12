@@ -62,8 +62,8 @@ function App(): JSX.Element {
 
                   <MainMenu />
 
-                  {/* min-w-0: a flex item never shrinks below its content otherwise, and a page with
-                      long unwrapped rows would push past the window's edge, where #root clips it. */}
+                  {/* min-w-0: a flex item will not shrink below its content by default, so one row that cannot
+                      wrap would widen the page past the window and cut off the controls on its right. */}
                   <main className="relative w-full h-full flex-1 min-w-0">
                     <Suspense fallback={<RouteLoader />}>
                       <AnimatedRoutes />

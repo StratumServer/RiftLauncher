@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next"
+import { Input } from "@headlessui/react"
 import { PiArrowClockwiseDuotone, PiMoonDuotone, PiPowerDuotone, PiTrashDuotone } from "react-icons/pi"
 import { FiExternalLink } from "react-icons/fi"
 import clsx from "clsx"
@@ -15,6 +16,9 @@ function InstalledModItem({
   iMod,
   suspended,
   busy,
+  checked,
+  distinctName,
+  onCheckedChange,
   onToggleEnabledClick,
   onToggleSuspendClick,
   onDeleteClick,
@@ -32,6 +36,11 @@ function InstalledModItem({
    * two that only read it, ModDB and suspension, stay live.
    */
   busy?: boolean
+  /** The row is in the page's selection, which is keyed by this archive's path and nothing else. */
+  checked: boolean
+  /** The name the checkbox goes by: the Mod's own, plus the file name when another copy shares it. */
+  distinctName: string
+  onCheckedChange: (checked: boolean) => void
   onToggleEnabledClick: () => void
   onToggleSuspendClick: () => void
   onDeleteClick: () => void
@@ -56,6 +65,15 @@ function InstalledModItem({
           !iMod.enabled ? "bg-zinc-500/25" : suspended ? "bg-sky-500/25" : iMod._updatableTo ? "bg-lime-600/25" : iMod._lastVersion && "bg-yellow-400/25"
         )}
       >
+        <Input
+          type="checkbox"
+          aria-label={t("features.mods.selectMod", { mod: distinctName })}
+          checked={checked}
+          disabled={busy}
+          onChange={(e) => onCheckedChange(e.target.checked)}
+          className="shrink-0 cursor-pointer"
+        />
+
         {/* What describes the Mod is the details button. The actions stay outside it, because nothing
             interactive may sit inside a role=button (#263). */}
         <div

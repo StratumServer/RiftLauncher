@@ -5,7 +5,7 @@ import { IPC_CHANNELS } from "../ipcChannels"
 import { createModImageStorePort, createScanInstalledModsPorts, MAX_MOD_IMAGE_BYTES, pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
+import { assertConfiguredInstallationPath, assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
 import { assertAllowedDownloadUrl, assertBoolean, assertSafeFileName, assertString, isRecord } from "@src/ipc/validation"
 import { requestBoundedBuffer } from "@src/ipc/network"
 import { isJpegBytes, isPngBytes } from "@domain/backgrounds"
@@ -13,6 +13,7 @@ import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
 import { MAX_MODPACK_MOD_NAME_LENGTH } from "@domain/mods/importModpack"
+import { emptyModProfilesDocument, MAX_MOD_PROFILES_FILE_BYTES, MOD_PROFILES_FILE_NAME, normalizeModProfilesDocument } from "@domain/mods/profiles"
 
 const MAX_MODPACK_ENTRIES = 2_000
 
@@ -81,7 +82,7 @@ function toWireMod(mod: ScannedMod): InstalledModType {
   return image === undefined ? rest : { ...rest, _image: image }
 }
 
-ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path: string): Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }> => {
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path: string): Promise<InstalledModsScan> => {
   assertTrustedIpcSender(event)
   // allowSymlinks: listing a Mods folder the user linked in is a read (#237).
   // The scan only ever opens the .zip files it finds, and the directory reader
@@ -93,6 +94,12 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
     logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Looking for mods at ${path}.`)
 
     if (!(await fse.pathExists(path))) {
+      // pathExists follows a link, so a linked Mods folder whose disk is not mounted lands here too.
+      // That folder is not empty, it is out of reach, and a caller that records the folder must know.
+      if (await fse.lstat(path).catch(() => false)) {
+        logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] That path is a link to nothing. Its mods can't be read.`)
+        return { mods: [], errors: [], unreadable: true }
+      }
       logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] That path does not exists. 0 mods detected.`)
       return { mods: [], errors: [] }
     }
@@ -112,7 +119,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
   } catch (err) {
     logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods.`)
     logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods: ${err}`)
-    return { mods: [], errors: [] }
+    return { mods: [], errors: [], unreadable: true }
   }
 })
 
@@ -238,4 +245,100 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<
     logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Error importing modpack: ${err}`)
     return { success: false, error: "Error reading modpack file." }
   }
+})
+
+/** Where one Installation's profiles file is, or the typed reason there is none to touch. */
+type ModProfilesLocation = { ok: true; path: string } | { ok: false; reason: "refused" | "unreadable" }
+
+/** The profiles file as it stands on disk. The two refusals name a file that must never be overwritten. */
+type ModProfilesOnDisk = { ok: true; document: ModProfilesDocument } | { ok: false; reason: "newer-format" | "unreadable" }
+
+/**
+ * Derives the profiles file from an Installation the config names. The renderer names the
+ * Installation and never the file, so neither channel can be pointed at any other file.
+ *
+ * The file then meets the strict grade, with no symbolic link anywhere on the way, so nothing is read
+ * or written through a link (#275, #295). The Installation is granted by then, so a link is the only
+ * thing that can fail that check, and it reads as a file this build cannot use.
+ */
+async function locateModProfiles(installationPath: unknown): Promise<ModProfilesLocation> {
+  let installation: string
+  try {
+    installation = await assertConfiguredInstallationPath(installationPath)
+  } catch {
+    return { ok: false, reason: "refused" }
+  }
+
+  try {
+    return { ok: true, path: await assertManagedPath(join(installation, MOD_PROFILES_FILE_NAME), "mod profiles path", { allowMissing: true }) }
+  } catch {
+    return { ok: false, reason: "unreadable" }
+  }
+}
+
+/** Reads the file, bounded. A missing file is no profiles; anything but a regular format-1 file under the cap is refused. */
+async function readModProfilesFile(filePath: string): Promise<ModProfilesOnDisk> {
+  const stats = await fse.lstat(filePath).catch((err: NodeJS.ErrnoException) => err)
+  if (stats instanceof Error) return stats.code === "ENOENT" ? { ok: true, document: emptyModProfilesDocument() } : { ok: false, reason: "unreadable" }
+  if (!stats.isFile() || stats.size > MAX_MOD_PROFILES_FILE_BYTES) return { ok: false, reason: "unreadable" }
+
+  try {
+    const read = normalizeModProfilesDocument(JSON.parse(await fse.readFile(filePath, "utf-8")))
+    return read.ok ? read : { ok: false, reason: read.problem }
+  } catch {
+    return { ok: false, reason: "unreadable" }
+  }
+}
+
+// The log lines below carry fixed tokens and counts only. Profile names are the player's own text,
+// read back off disk, and a parse error quotes the file it failed on, so neither is ever logged.
+
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_MOD_PROFILES, async (event, installationPath: unknown): Promise<ModProfilesReadResult> => {
+  assertTrustedIpcSender(event)
+
+  const location = await locateModProfiles(installationPath)
+  const read = location.ok ? await readModProfilesFile(location.path) : location
+  if (!read.ok) {
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_MOD_PROFILES] Refused: ${read.reason}.`)
+    return read
+  }
+
+  logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_MOD_PROFILES] Read ${read.document.profiles.length} profiles.`)
+  return read
+})
+
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SAVE_MOD_PROFILES, async (event, installationPath: unknown, document: unknown): Promise<ModProfilesSaveResult> => {
+  assertTrustedIpcSender(event)
+
+  function refuse(reason: "newer-format" | "unreadable" | "invalid" | "refused"): ModProfilesSaveResult {
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SAVE_MOD_PROFILES] Refused: ${reason}.`)
+    return { ok: false, reason }
+  }
+
+  const location = await locateModProfiles(installationPath)
+  if (!location.ok) return refuse(location.reason)
+
+  // The same rules a read applies decide what is written: anything but a format-1 document is
+  // refused, and inside one a malformed profile or entry is dropped rather than stored. A missing
+  // document is not an empty one here, so it is refused before the normalizer can read it as such.
+  const cleaned = isRecord(document) ? normalizeModProfilesDocument(document) : undefined
+  if (!cleaned?.ok) return refuse("invalid")
+  // A read refuses a file over the cap, and never overwrites it after that. Writing one would turn
+  // profiles off for good, so a document that would not fit is refused before anything is written.
+  if (Buffer.byteLength(JSON.stringify(cleaned.document, undefined, 2)) > MAX_MOD_PROFILES_FILE_BYTES) return refuse("invalid")
+
+  // What is on disk now decides whether it may be replaced at all: a file this build cannot read, or
+  // one a newer build wrote, is left exactly as it is.
+  const onDisk = await readModProfilesFile(location.path)
+  if (!onDisk.ok) return refuse(onDisk.reason)
+
+  try {
+    await writeJsonAtomic(location.path, cleaned.document, { spaces: 2 })
+  } catch {
+    logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SAVE_MOD_PROFILES] Could not write the profiles file.`)
+    return { ok: false, reason: "refused" }
+  }
+
+  logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SAVE_MOD_PROFILES] Saved ${cleaned.document.profiles.length} profiles.`)
+  return { ok: true }
 })

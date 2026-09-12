@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -54,7 +54,7 @@ let temporaryRoot: string
 let userDataFolder: string
 let modsFolder: string
 
-type GetInstalledModsHandler = (event: IpcMainInvokeEvent, path: string) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }>
+type GetInstalledModsHandler = (event: IpcMainInvokeEvent, path: string) => Promise<InstalledModsScan>
 type ExportModpackHandler = (event: IpcMainInvokeEvent, manifest: unknown) => Promise<{ success: boolean; path?: string }>
 type ImportModpackHandler = (event: IpcMainInvokeEvent) => Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }>
 
@@ -140,6 +140,27 @@ describe("GET_INSTALLED_MODS", () => {
 
     assert.deepEqual(result, { mods: [], errors: [] })
     assert.equal(vi.mocked(pruneModIconCache).mock.calls.length, 0)
+  })
+
+  // A caller that records the folder (a Mod profile) must not take a folder out of reach for an
+  // empty one, so these two say so, while a folder that is simply not there stays empty (above).
+  it.skipIf(process.platform === "win32")("says a linked Mods folder whose target is gone could not be read, rather than empty", async () => {
+    const linked = join(temporaryRoot, "linked-mods")
+    symlinkSync(join(temporaryRoot, "unmounted-disk", "Mods"), linked, "dir")
+    const event = await createTrustedEvent()
+
+    assert.deepEqual(await getInstalledModsHandler()(event, linked), { mods: [], errors: [], unreadable: true })
+  })
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("says a Mods folder it may not list could not be read, rather than empty", async () => {
+    writeFileSync(join(modsFolder, "alpha-1.0.0.zip"), "not a zip")
+    chmodSync(modsFolder, 0o000)
+    const event = await createTrustedEvent()
+    try {
+      assert.deepEqual(await getInstalledModsHandler()(event, modsFolder), { mods: [], errors: [], unreadable: true })
+    } finally {
+      chmodSync(modsFolder, 0o755)
+    }
   })
 
   // Listing is a read, so it asks the policy for the grade that tolerates a

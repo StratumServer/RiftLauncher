@@ -217,10 +217,21 @@ const listPanel = scrim("components/ui/List.tsx", /before:backdrop-blur-sm befor
 const gridPanel = scrim("components/ui/Grid.tsx", /before:backdrop-blur-sm before:bg-zinc-950\/(\d+)/)
 const popupShell = scrim("components/ui/PopupDialogPanel.tsx", /before:backdrop-blur-\[2px\] before:bg-zinc-950\/(\d+)/)
 const popupPanel = scrim("components/ui/PopupDialogPanel.tsx", /before:backdrop-blur-sm before:bg-zinc-950\/(\d+)/)
+/**
+ * The bar pinned to the top of every route except home, in both of its scroll states. #430: past
+ * the scroll threshold the scrolled one was an opaque bg-zinc-800, so the bar's own backdrop-blur
+ * had nothing left to show and the list vanished behind a grey slab. Both states are scrims now,
+ * and both are read out of the component rather than written down here.
+ *
+ * Neither anchor carries the threshold that picks between them. The pair of fills is what this
+ * file measures, so how far a page has to travel before it flips is free to change without
+ * failing a test about colour.
+ */
+const stickyMenu = scrim("components/ui/StickyMenu.tsx", /"bg-zinc-950\/\d+" : "bg-zinc-950\/(\d+)"/)
+const stickyMenuScrolled = scrim("components/ui/StickyMenu.tsx", /"bg-zinc-950\/(\d+)" : "bg-zinc-950\/\d+"/)
 
 // Layers this pass left alone, but which sit between the scrims above and the text below.
 const inputFill = fixed("zinc-950", 0.5) // FormInputs INPUT_BASE_STYLES
-const stickyMenu = fixed("zinc-950", 0.15) // StickyMenu before it is scrolled
 const filterControl = fixed("zinc-950", 0.5) // the ListboxButton and Combobox shell of each filter
 const tableFill = fixed("zinc-950", 0.5) // Table TableWrapper
 const rowTint = fixed("zinc-800", 0.3) // the lighter of the two striped rows, so the worse one
@@ -233,6 +244,7 @@ const FORM_SECTION = [shell, section] as const
 const MAIN_MENU = [shell, menu] as const
 const POPUP = [popupShell, popupPanel] as const
 const FORM_INPUT = [shell, section, inputFill] as const
+const STICKY_BAR = [shell, stickyMenu] as const
 const MOD_FILTER = [shell, stickyMenu, filterControl] as const
 const POPUP_TABLE_ROW = [popupShell, popupPanel, tableFill, rowTint] as const
 // The same release table also renders on the browse page, which has no popup panel over the shell,
@@ -288,6 +300,43 @@ describe("text over the player's background image", () => {
     assertReadable("grid card text", [ZINC["zinc-400"], 1], [shell, gridPanel], TEXT_FLOOR)
     assert.equal(listPanel[1], section[1], "the list panel and the form section should carry the same scrim")
     assert.equal(gridPanel[1], section[1], "the grid panel and the form section should carry the same scrim")
+  })
+
+  /**
+   * #430: the sticky bar is the one surface that changes fill as the player scrolls. Its labels
+   * come from the ghost button variant and its breadcrumbs set no colour at all, taking the one
+   * `body` carries, so both are read where they ship.
+   *
+   * Contrast is measured on the resting fill only, and that is the whole check rather than half of
+   * one. Both states are the same zinc-950 over the same shell and the scrolled fill is the
+   * heavier, so a darker backdrop under light text can only raise the ratio: the resting state is
+   * the worse case, and a scrolled assertion could not fail unless this one failed first.
+   *
+   * The scrolled state is guarded by the three assertions under them instead, and they are what the
+   * reported bug would fail. The blur layer has to still be there. The fill has to stay below full
+   * alpha, or that blur has nothing to show. And it has to stay far enough above the resting fill
+   * that the bar keeps separating from the rows sliding under it.
+   */
+  it("keeps the sticky bar readable and still see-through once the page is scrolled", () => {
+    const label = foreground("components/ui/buttonStyles.ts", /ghost: "[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
+    // Nothing in the breadcrumbs sets a colour, so what they paint with is the body's own.
+    const breadcrumb = foreground("../index.html", /<body class="[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("sticky bar button label", label, STICKY_BAR, TEXT_FLOOR)
+    assertReadable("sticky bar breadcrumb", breadcrumb, STICKY_BAR, TEXT_FLOOR)
+
+    // The fill is only half the treatment. Drop this layer and the bar is a flat tint with nothing
+    // showing through it, which is the other half of what the issue reports.
+    match("components/ui/StickyMenu.tsx", /before:backdrop-blur-xs/)
+
+    assert.ok(stickyMenuScrolled[1] < 1, `the scrolled sticky bar paints at ${stickyMenuScrolled[1]}, which leaves its backdrop-blur nothing to show`)
+    // A distance, not just an ordering. The pair ships at 0.70 against 0.15, the weight the app
+    // shell and the dialog scrim already paint at, and a scrolled fill a few points heavier than
+    // the resting one would read as the same bar: the reported symptom arriving by the other road.
+    assert.ok(
+      stickyMenuScrolled[1] - stickyMenu[1] >= 0.4,
+      `the scrolled sticky bar paints at ${stickyMenuScrolled[1]} against a resting ${stickyMenu[1]}, too close together to separate the bar from the rows sliding under it`
+    )
   })
 })
 
@@ -413,7 +462,7 @@ describe("prompts the player is meant to read and act on", () => {
    */
   it("keeps the favorite star readable in the filter bar and on a mod card", () => {
     const filterStar = paletteForeground("features/mods/components/ModsFilterBar.tsx", /<PiStarFill className="text-([a-z]+-\d+)"/)
-    assertReadable("favorites filter star", filterStar, [shell, stickyMenu], NON_TEXT_FLOOR)
+    assertReadable("favorites filter star", filterStar, STICKY_BAR, NON_TEXT_FLOOR)
 
     const cardFile = "features/mods/components/ModListCard.tsx"
     const cardStar = paletteForeground(cardFile, /<PiStarFill className="text-([a-z]+-\d+)"/)
