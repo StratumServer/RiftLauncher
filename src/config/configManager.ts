@@ -7,6 +7,7 @@ import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
+import { normalizeAccentColorId } from "@domain/accentColors"
 import { normalizeBackgroundId } from "@domain/backgrounds"
 import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
@@ -453,6 +454,9 @@ export function normalizeConfig(config: unknown): ConfigType {
     // reset a player's choice. Anything that is not a usable id falls back to the bundled scene,
     // which is also what the renderer paints when the cached file for an id has gone missing.
     background: normalizeBackgroundId(rawConfig.background),
+    // Anything that does not name a listed preset, missing included, becomes the shipped default:
+    // a config written before this field existed paints exactly as it always has.
+    accentColor: normalizeAccentColorId(rawConfig.accentColor),
     // Anything unreadable becomes "not asked yet", which costs one question and never invents a
     // consent. The prompt is the only thing that ever writes a real answer here.
     moddbVisibilityAnswer: normalizeModDbVisibilityAnswer(rawConfig.moddbVisibilityAnswer),

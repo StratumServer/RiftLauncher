@@ -13,6 +13,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
+import { DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
@@ -34,6 +35,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     favMods: [],
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
+    accentColor: DEFAULT_ACCENT_ID,
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     customIcons: [],
@@ -147,6 +149,15 @@ describe("configReducer: scalar setters", () => {
     assert.equal(first._backgroundRevision, 1)
     assert.equal(second._backgroundRevision, 2)
     assert.equal(second.background, CUSTOM_BACKGROUND_ID)
+  })
+
+  it("SET_ACCENT_COLOR overwrites accentColor only", () => {
+    const config = baseConfig()
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_ACCENT_COLOR, payload: "teal" })
+
+    assert.equal(result.accentColor, "teal")
+    assert.equal(result.background, config.background)
+    assert.equal(result.installations, config.installations)
   })
 
   it("SET_MODDB_VISIBILITY_ANSWER records the answer and touches nothing else", () => {

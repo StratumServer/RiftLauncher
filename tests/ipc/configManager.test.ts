@@ -34,6 +34,7 @@ vi.mock("@src/ipc/accountStore", () => ({
 }))
 
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
+import { ACCENT_PRESETS, DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
@@ -85,6 +86,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     favMods: [],
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
+    accentColor: DEFAULT_ACCENT_ID,
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     customIcons: [],
@@ -399,6 +401,54 @@ describe("normalizeConfig: background", () => {
   it("never writes the session-only revision counter back out", async () => {
     const { normalizeConfig } = await freshConfigManager()
     assert.equal(normalizeConfig({ background: "village-lane", _backgroundRevision: 4 })._backgroundRevision, undefined)
+  })
+})
+
+describe("normalizeConfig: accentColor", () => {
+  it("defaults to the current brand preset when the field is missing, so an upgrade looks like it always did", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).accentColor, DEFAULT_ACCENT_ID)
+  })
+
+  it("keeps every preset id the palette lists", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    for (const preset of ACCENT_PRESETS) assert.equal(normalizeConfig({ accentColor: preset.id }).accentColor, preset.id)
+  })
+
+  it("falls back to the default for anything that does not name a listed preset", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const value of ["#d49754", "AMBER", "", 7, null, {}, ["amber"]]) {
+      assert.equal(normalizeConfig({ accentColor: value }).accentColor, DEFAULT_ACCENT_ID, String(value))
+    }
+  })
+
+  /**
+   * The field's whole point: adding it must not need a schema bump. A beta.9 (schema 4) document
+   * never heard of accentColor, and an older build reading a schema 5 document this launcher wrote
+   * drops the field it does not recognize and saves without it. Both land back here with no field
+   * at all, and both must read as the shipped default rather than fail to migrate or start.
+   */
+  it("keeps a beta.9 (schema 4) document with no accentColor field readable, defaulting the accent", async () => {
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }) }
+    delete legacyDoc.accentColor
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.equal(config.accentColor, DEFAULT_ACCENT_ID)
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+
+  it("keeps a schema 5 document an older build re-saved without accentColor readable, defaulting the accent", async () => {
+    const doc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accentColor: "teal" }) }
+    delete doc.accentColor
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(doc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.equal(config.accentColor, DEFAULT_ACCENT_ID)
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
   })
 })
 

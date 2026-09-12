@@ -6,6 +6,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { configSaveFailureMessageKey, initialConfigSaveHealthState, updateConfigSaveHealth } from "@renderer/features/config/utils/saveHealth"
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "@renderer/features/config/contexts/configReducer"
 import { applyBackground } from "@renderer/utils/backgroundStyle"
+import { applyAccentColor } from "@renderer/utils/accentStyle"
 import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
 
 // Re-exported so a consumer needs one import to read a slice and dispatch onto it.
@@ -23,6 +24,8 @@ export interface ConfigSettingsType {
   background: string
   /** Changes on every background selection, so a replaced custom picture still repaints. */
   backgroundRevision: number
+  /** The chosen accent preset id. See src/domain/accentColors.ts. */
+  accentColor: string
   /** The stored answer to the one-time ModDB listing question. See src/domain/moddbVisibility.ts. */
   moddbVisibilityAnswer: string
   /** Whether update checks may offer betas, or null while nobody has said. See src/domain/appUpdate/betaUpdates.ts. */
@@ -138,6 +141,11 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
     applyBackground(config.background, config._backgroundRevision ?? 0)
   }, [config.background, config._backgroundRevision])
 
+  // Paints the stored accent the same way, at startup and on every change.
+  useEffect(() => {
+    applyAccentColor(config.accentColor)
+  }, [config.accentColor])
+
   useEffect(() => {
     const firstInstallation = config.installations[0]
     if ((!config.lastUsedInstallation || !config.installations.some((i) => i.id === config.lastUsedInstallation)) && firstInstallation)
@@ -159,6 +167,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       window: config.window,
       background: config.background,
       backgroundRevision: config._backgroundRevision ?? 0,
+      accentColor: config.accentColor,
       moddbVisibilityAnswer: config.moddbVisibilityAnswer,
       receiveBetaUpdates: config.receiveBetaUpdates
     }),
@@ -171,6 +180,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config.window,
       config.background,
       config._backgroundRevision,
+      config.accentColor,
       config.moddbVisibilityAnswer,
       config.receiveBetaUpdates
     ]

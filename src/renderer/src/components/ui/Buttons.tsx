@@ -26,6 +26,7 @@ export function NormalButton({
   children,
   icon,
   className,
+  style,
   onClick,
   title,
   ariaLabel,
@@ -39,6 +40,8 @@ export function NormalButton({
   children?: React.ReactNode
   icon?: React.ReactNode
   className?: string
+  /** Escape hatch for the rare control whose colour is data, not variant: an accent swatch, a progress fill. */
+  style?: React.CSSProperties
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<unknown>
   title: string
   ariaLabel?: string
@@ -60,6 +63,7 @@ export function NormalButton({
       aria-label={ariaLabel ?? title}
       aria-busy={action.busy}
       aria-pressed={ariaPressed}
+      style={style}
       className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], BUTTON_VARIANT_STYLES[variant], className)}
     >
       {renderActionContent(children, icon, title, action.busy)}
