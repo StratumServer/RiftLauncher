@@ -5,10 +5,12 @@ import clsx from "clsx"
 
 import { evaluateModCompatibility } from "@domain/mods/compatibility"
 import type { ModCompatibilityVerdict } from "@domain/mods/compatibility"
+import { summarizeGameVersionTags } from "@domain/mods/gameVersionRanges"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
 
 import { useInstallMod } from "../hooks/useInstallMod"
+import { useGameVersionsLookup } from "../hooks/useModDbLookups"
 
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import { FormButton } from "@renderer/components/ui/FormComponents"
@@ -77,6 +79,15 @@ function ModReleaseList({
 
   const installMod = useInstallMod()
 
+  // The ModDB's own list of every game version there is, newest first. It is what separates a run of
+  // tags with nothing missing from one with a hole in it, so the cell below can shorten the first
+  // without inventing support in the second. Empty until the query lands, or if it fails.
+  //
+  // Newest first is this hook's doing, not the ModDB's: `useGameVersionsLookup` reverses the
+  // oldest-first payload. `summarizeGameVersionTags` reads coverage off that order alone and never
+  // compares version numbers, so keeping the reverse here is what keeps its ranges the right way up.
+  const gameVersionCatalog = useGameVersionsLookup().map((gameVersion) => gameVersion.name)
+
   return (
     <TableWrapper className={clsx("w-full max-w-[50rem]", className)}>
       <TableHead>
@@ -118,8 +129,17 @@ function ModReleaseList({
                  * eight game versions and the input clipped the list mid-item with no tooltip and no
                  * way to read the rest, which is the one thing this column exists for. Nobody edits
                  * it either, so as an input it was also a focus stop announcing itself as a textbox.
+                 *
+                 * Wrapping alone was not enough once a release tagged a whole series: thirty-odd
+                 * versions wrap into a row taller than the window (#429). Runs the catalog says are
+                 * unbroken collapse to their ends, everything else is printed as it came, and the
+                 * title keeps the untouched list for whoever wants to read every tag.
                  */}
-                <TableCell className="w-5/12 text-center break-words">{release.tags.join(", ")}</TableCell>
+                <TableCell className="w-5/12 text-center break-words" title={release.tags.join(", ")}>
+                  {summarizeGameVersionTags(release.tags, gameVersionCatalog)
+                    .map((range) => (range.to === undefined ? range.from : t("features.mods.gameVersionRange", { from: range.from, to: range.to })))
+                    .join(", ")}
+                </TableCell>
                 <TableCell className="w-2/12 flex flex-col gap-1 items-center justify-center">
                   {installation && compatibility && (
                     <FormButton

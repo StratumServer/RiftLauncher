@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next"
-import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBoxArrowDownDuotone, PiDesktopTowerDuotone } from "react-icons/pi"
+import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBoxArrowDownDuotone, PiDesktopTowerDuotone, PiStackDuotone } from "react-icons/pi"
 
 import { useExportModpack } from "@renderer/features/mods/hooks/useExportModpack"
 import { resolveModsFolder } from "@renderer/features/mods/adapters/folder"
@@ -19,12 +19,20 @@ function ManageModsActionBar({
   installation,
   installedMods,
   onUpdateAll,
-  onImportModpack
+  onImportModpack,
+  activeProfileName,
+  onOpenProfiles,
+  busy = false
 }: Readonly<{
   installation: InstallationType
   installedMods: InstalledModType[]
   onUpdateAll: () => void
   onImportModpack: () => void
+  /** The profile the Mods folder is in, or undefined when none is active. */
+  activeProfileName: string | undefined
+  onOpenProfiles: () => void
+  /** A batch or a profile switch is renaming archives. Update all, an import or a switch would race it on the same files. */
+  busy?: boolean
 }>): JSX.Element {
   const { t } = useTranslation()
 
@@ -43,9 +51,25 @@ function ManageModsActionBar({
   return (
     <StickyMenuGroupWrapper type="centered">
       <StickyMenuGroup>
-        <FormButton title={t("features.mods.updateAll")} variant="primary" className="p-1 w-fit h-8" onClick={onUpdateAll}>
+        <FormButton title={t("features.mods.updateAll")} variant="primary" className="p-1 w-fit h-8" onClick={onUpdateAll} disabled={busy}>
           <PiArrowClockwiseDuotone className="text-xl" />
           <p>{t("features.mods.updateAllButton")}</p>
+        </FormButton>
+
+        {/* Next to Update all rather than at the end: the right end of this bar sits under the toasts at 1280 wide. */}
+        <FormButton
+          title={
+            activeProfileName === undefined
+              ? t("features.mods.profilesButtonTitle")
+              : t("features.mods.profilesButtonTitleActive", { profile: activeProfileName, interpolation: { escapeValue: false } })
+          }
+          variant="secondary"
+          className="p-1 w-fit h-8"
+          onClick={onOpenProfiles}
+          disabled={busy}
+        >
+          <PiStackDuotone className="text-xl" />
+          <p className="max-w-40 truncate">{activeProfileName ?? t("features.mods.noProfile")}</p>
         </FormButton>
 
         <FormButton
@@ -70,7 +94,7 @@ function ManageModsActionBar({
           <p>{t("features.mods.exportServerModpackButton")}</p>
         </FormButton>
 
-        <FormButton title={t("features.mods.importModpack")} variant="secondary" className="p-1 w-fit h-8" onClick={onImportModpack}>
+        <FormButton title={t("features.mods.importModpack")} variant="secondary" className="p-1 w-fit h-8" onClick={onImportModpack} disabled={busy}>
           <PiBoxArrowDownDuotone className="text-xl" />
           <p>{t("features.mods.importModpackButton")}</p>
         </FormButton>

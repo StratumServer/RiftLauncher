@@ -62,7 +62,9 @@ function App(): JSX.Element {
 
                   <MainMenu />
 
-                  <main className="relative w-full h-full flex-1">
+                  {/* min-w-0: a flex item will not shrink below its content by default, so one row that cannot
+                      wrap would widen the page past the window and cut off the controls on its right. */}
+                  <main className="relative w-full h-full flex-1 min-w-0">
                     <Suspense fallback={<RouteLoader />}>
                       <AnimatedRoutes />
                     </Suspense>

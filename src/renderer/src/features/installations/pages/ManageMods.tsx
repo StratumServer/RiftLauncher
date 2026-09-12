@@ -9,6 +9,8 @@ import { useManageInstalledMods } from "@renderer/features/mods/hooks/useManageI
 import { useBulkUpdateMods } from "@renderer/features/mods/hooks/useBulkUpdateMods"
 import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpackImportPicker"
 import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { useModBatchActions } from "@renderer/features/mods/hooks/useModBatchActions"
+import { useModProfiles } from "@renderer/features/mods/hooks/useModProfiles"
 import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
 
 import { filterInstalledMods, hasActiveInstalledModFilters, installedModAuthors, installedModGameVersions, installedModTags, NO_INSTALLED_MOD_FILTERS } from "@domain/mods/installedFilters"
@@ -24,6 +26,8 @@ import InstalledModItem from "@renderer/features/mods/components/InstalledModIte
 import ErrorInstalledModItem from "@renderer/features/mods/components/ErrorInstalledModItem"
 import InstalledModsSectionHeader from "@renderer/features/mods/components/InstalledModsSectionHeader"
 import ManageModsActionBar from "@renderer/features/mods/components/ManageModsActionBar"
+import ManageModsSelectionBar from "@renderer/features/mods/components/ManageModsSelectionBar"
+import ModProfilesPopup from "@renderer/features/mods/components/ModProfilesPopup"
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
 import { FormInputText } from "@renderer/components/ui/FormComponents"
@@ -73,6 +77,10 @@ function ListMods(): JSX.Element {
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
   const actions = useInstalledModActions(installation, refresh)
+  const batch = useModBatchActions(installation, installedMods, visibleMods, refresh)
+  // Handed the Installation only, never the filtered list: a profile records and applies the whole folder.
+  const profiles = useModProfiles(installation)
+  const [profilesOpen, setProfilesOpen] = useState(false)
   const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -95,7 +103,10 @@ function ListMods(): JSX.Element {
         key={iMod.modid + iMod.path}
         iMod={iMod}
         suspended={suspended}
-        busy={actions.isBusy(iMod.path)}
+        busy={actions.isBusy(iMod.path) || (batch.running && batch.isChecked(iMod.path))}
+        checked={batch.isChecked(iMod.path)}
+        distinctName={batch.labelOf(iMod)}
+        onCheckedChange={(checked) => batch.setChecked(iMod.path, checked)}
         onToggleEnabledClick={() => actions.toggleEnabled(iMod)}
         onToggleSuspendClick={() => actions.toggleSuspended(iMod.modid)}
         onDeleteClick={() => actions.requestDelete(iMod)}
@@ -128,7 +139,15 @@ function ListMods(): JSX.Element {
 
           {installation && (
             <>
-              <ManageModsActionBar installation={installation} installedMods={visibleMods} onUpdateAll={updateAllMods} onImportModpack={pickModpack} />
+              <ManageModsActionBar
+                installation={installation}
+                installedMods={visibleMods}
+                onUpdateAll={updateAllMods}
+                onImportModpack={pickModpack}
+                activeProfileName={profiles.activeProfile?.name}
+                onOpenProfiles={() => setProfilesOpen(true)}
+                busy={batch.running || profiles.switchingTo !== null}
+              />
 
               {installedMods.length + modsWithErrors.length > 0 && (
                 <StickyMenuGroupWrapper type="centered">
@@ -149,6 +168,9 @@ function ListMods(): JSX.Element {
                   )}
                 </StickyMenuGroupWrapper>
               )}
+
+              {/* Off while Update all runs: the rows are gone, and a batch would race it on the same archives. */}
+              {installedMods.length > 0 && !installation._updatingMods && <ManageModsSelectionBar batch={batch} shownCount={visibleMods.length} locked={actions.busyPaths.length > 0} />}
             </>
           )}
         </StickyMenuWrapper>
@@ -165,6 +187,15 @@ function ListMods(): JSX.Element {
             </ListWrapper>
           ) : (
             <>
+              {/* Mounted outside the busy branch: a switch sets _updatingMods, and the dialog that started it stays open. */}
+              <ModProfilesPopup isOpen={profilesOpen} close={() => setProfilesOpen(false)} profiles={profiles} locked={batch.running || actions.busyPaths.length > 0} />
+
+              {profiles.status === "ready" && profiles.profiles.length > 0 && !profiles.activeProfile && (
+                <p role="status" className="w-full text-center">
+                  {t("features.mods.noProfileActive")}
+                </p>
+              )}
+
               {installation._updatingMods ? (
                 <ListWrapper className="w-full">
                   <ListGroup>

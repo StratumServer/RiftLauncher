@@ -42,7 +42,7 @@ export function StickyMenuWrapper({ children, scrollRef, className }: Readonly<{
         className={clsx(
           "relative w-full flex flex-col gap-2 rounded-sm border border-zinc-400/5 shadow-sm shadow-zinc-950/50 p-1 duration-200",
           "before:absolute before:left-0 before:top-0 before:w-full before:h-full before:backdrop-blur-xs",
-          scrTop > 20 ? "bg-zinc-800" : "bg-zinc-950/15",
+          scrTop > 20 ? "bg-zinc-950/70" : "bg-zinc-950/15",
           className
         )}
       >

@@ -348,16 +348,15 @@ async function doPruneModIconCache(maxBytes: number): Promise<void> {
  * an entry that is itself a link is dropped, dangling ones included, which is
  * what keeps the set of archives that get opened inside the folder the user
  * pointed at.
+ *
+ * A folder that cannot be listed at all throws rather than reading as empty:
+ * an empty list is a claim about what the folder holds, and a caller that
+ * records the folder (a Mod profile) would store it.
  */
 export function createModsDirectoryReaderPort(): DirectoryReader {
   return {
     listFileNames: async (path: string): Promise<string[]> => {
-      let entries: string[]
-      try {
-        entries = await fse.readdir(path)
-      } catch {
-        return []
-      }
+      const entries = await fse.readdir(path)
 
       const names: string[] = []
       for (const entry of entries) {

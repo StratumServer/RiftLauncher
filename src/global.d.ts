@@ -186,6 +186,12 @@ declare global {
 
   type ErrorInstalledModType = { zipname: string; path: string }
 
+  /**
+   * GET_INSTALLED_MODS' answer. `unreadable` is a Mods folder that is there but could not be listed
+   * (a link whose target is gone, a read error): its empty lists say nothing about what it holds.
+   */
+  type InstalledModsScan = { mods: InstalledModType[]; errors: ErrorInstalledModType[]; unreadable?: true }
+
   type DownloadableModOnListType = {
     modid: number
     assetid: number
@@ -437,6 +443,27 @@ declare global {
 
   /** SET_MOD_ENABLED's verdict, carrying the archive's new path when it moved. */
   type SetModEnabledResult = { ok: true; path: string } | { ok: false; reason: SetModEnabledFailureReason }
+
+  /** One Mod a profile turns on: its modid, and the archive's name when it is on (it ends in .zip). */
+  type ModProfileEntry = { modid: string; file: string }
+
+  /** A named set of the Mods that are on in one Installation (#287). */
+  type ModProfile = { id: string; name: string; mods: ModProfileEntry[] }
+
+  /**
+   * The profiles file at an Installation's root (src/domain/mods/profiles.ts). The active profile is
+   * whatever the Mods folder holds, so its stored set is only refreshed when the player leaves it.
+   */
+  type ModProfilesDocument = { format: 1; activeProfileId: string | null; profiles: ModProfile[] }
+
+  /**
+   * GET_MOD_PROFILES' verdict. `newer-format` and `unreadable` name a file this build must never
+   * overwrite; `refused` is a path that is not a configured Installation.
+   */
+  type ModProfilesReadResult = { ok: true; document: ModProfilesDocument } | { ok: false; reason: "newer-format" | "unreadable" | "refused" }
+
+  /** SAVE_MOD_PROFILES' verdict. `invalid` is a document that is not a format-1 profiles document. */
+  type ModProfilesSaveResult = { ok: true } | { ok: false; reason: "newer-format" | "unreadable" | "invalid" | "refused" }
 
   /**
    * ENSURE_BACKGROUND's verdict for one catalog scene.
