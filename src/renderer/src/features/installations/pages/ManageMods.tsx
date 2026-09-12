@@ -9,6 +9,7 @@ import { useManageInstalledMods } from "@renderer/features/mods/hooks/useManageI
 import { useBulkUpdateMods } from "@renderer/features/mods/hooks/useBulkUpdateMods"
 import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpackImportPicker"
 import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { useModBatchActions } from "@renderer/features/mods/hooks/useModBatchActions"
 import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
 
 import { filterInstalledMods, hasActiveInstalledModFilters, installedModAuthors, installedModGameVersions, installedModTags, NO_INSTALLED_MOD_FILTERS } from "@domain/mods/installedFilters"
@@ -24,6 +25,7 @@ import InstalledModItem from "@renderer/features/mods/components/InstalledModIte
 import ErrorInstalledModItem from "@renderer/features/mods/components/ErrorInstalledModItem"
 import InstalledModsSectionHeader from "@renderer/features/mods/components/InstalledModsSectionHeader"
 import ManageModsActionBar from "@renderer/features/mods/components/ManageModsActionBar"
+import ManageModsSelectionBar from "@renderer/features/mods/components/ManageModsSelectionBar"
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
 import { FormInputText } from "@renderer/components/ui/FormComponents"
@@ -73,6 +75,7 @@ function ListMods(): JSX.Element {
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
   const actions = useInstalledModActions(installation, refresh)
+  const batch = useModBatchActions(installation, installedMods, visibleMods, refresh)
   const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -95,7 +98,10 @@ function ListMods(): JSX.Element {
         key={iMod.modid + iMod.path}
         iMod={iMod}
         suspended={suspended}
-        busy={actions.isBusy(iMod.path)}
+        busy={actions.isBusy(iMod.path) || (batch.running && batch.isChecked(iMod.path))}
+        checked={batch.isChecked(iMod.path)}
+        distinctName={batch.labelOf(iMod)}
+        onCheckedChange={(checked) => batch.setChecked(iMod.path, checked)}
         onToggleEnabledClick={() => actions.toggleEnabled(iMod)}
         onToggleSuspendClick={() => actions.toggleSuspended(iMod.modid)}
         onDeleteClick={() => actions.requestDelete(iMod)}
@@ -128,7 +134,7 @@ function ListMods(): JSX.Element {
 
           {installation && (
             <>
-              <ManageModsActionBar installation={installation} installedMods={visibleMods} onUpdateAll={updateAllMods} onImportModpack={pickModpack} />
+              <ManageModsActionBar installation={installation} installedMods={visibleMods} onUpdateAll={updateAllMods} onImportModpack={pickModpack} busy={batch.running} />
 
               {installedMods.length + modsWithErrors.length > 0 && (
                 <StickyMenuGroupWrapper type="centered">
@@ -149,6 +155,9 @@ function ListMods(): JSX.Element {
                   )}
                 </StickyMenuGroupWrapper>
               )}
+
+              {/* Off while Update all runs: the rows are gone, and a batch would race it on the same archives. */}
+              {installedMods.length > 0 && !installation._updatingMods && <ManageModsSelectionBar batch={batch} shownCount={visibleMods.length} locked={actions.busyPaths.length > 0} />}
             </>
           )}
         </StickyMenuWrapper>
