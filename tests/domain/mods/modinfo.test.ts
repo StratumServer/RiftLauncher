@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { parseModInfo } from "../../../src/domain/mods/modinfo"
+import { parseModInfo, readModSide } from "../../../src/domain/mods/modinfo"
 import type { ModInfo } from "../../../src/domain/mods/modinfo"
 
 /** The three fields without which nothing downstream works, spelled the documented way. */
@@ -129,5 +129,17 @@ describe("parseModInfo optional fields", () => {
 
   it("ignores an authors field that is not a list at all", () => {
     assert.equal(parsed(JSON.stringify({ ...MINIMAL, authors: { first: "Alice" } })).authors, undefined)
+  })
+})
+
+describe("readModSide", () => {
+  it("reads the game's and the ModDB's spellings of each side, in any casing", () => {
+    for (const side of ["client", "Client", "CLIENT"]) assert.equal(readModSide(side), "client")
+    for (const side of ["server", "Server"]) assert.equal(readModSide(side), "server")
+    for (const side of ["Universal", "universal", "both", "Both"]) assert.equal(readModSide(side), "both")
+  })
+
+  it("names nothing for any other value, prototype keys included", () => {
+    for (const side of ["constructor", "__proto__", "toString", "", "clientside", 7, null, undefined]) assert.equal(readModSide(side), undefined)
   })
 })

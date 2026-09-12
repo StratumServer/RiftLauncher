@@ -13,6 +13,7 @@ import { useModBatchActions } from "@renderer/features/mods/hooks/useModBatchAct
 import { useModProfiles } from "@renderer/features/mods/hooks/useModProfiles"
 import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
 
+import { modByArchivePath } from "@domain/mods/scanInstalled"
 import { filterInstalledMods, hasActiveInstalledModFilters, installedModAuthors, installedModGameVersions, installedModTags, NO_INSTALLED_MOD_FILTERS } from "@domain/mods/installedFilters"
 import type { InstalledModFilters } from "@domain/mods/installedFilters"
 
@@ -23,6 +24,7 @@ import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
 import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
 import InstalledModItem from "@renderer/features/mods/components/InstalledModItem"
+import InstalledModDetails from "@renderer/features/mods/components/InstalledModDetails"
 import ErrorInstalledModItem from "@renderer/features/mods/components/ErrorInstalledModItem"
 import InstalledModsSectionHeader from "@renderer/features/mods/components/InstalledModsSectionHeader"
 import ManageModsActionBar from "@renderer/features/mods/components/ManageModsActionBar"
@@ -85,9 +87,45 @@ function ListMods(): JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
+  // The details panel remembers a path, not a Mod: every scan hands back fresh objects.
+  const [detailsPath, setDetailsPath] = useState<string | null>(null)
+  const [detailsFocusRequest, setDetailsFocusRequest] = useState(0)
+  const detailsHeadingRef = useRef<HTMLHeadingElement>(null)
+  const detailsButtons = useRef(new Map<string, HTMLDivElement>())
+
+  // Derived against what the player can see, so the panel always describes a row on screen and
+  // closing it always has a row to hand focus back to. Update all swaps every row for its spinner, so
+  // the panel goes with them. The path outlives a filter that hides the row, so the panel comes back
+  // with it. Following the path's other suffix form keeps the panel on a Mod through an enable or
+  // disable, whoever renamed the archive.
+  const detailsMod = detailsPath === null || installation?._updatingMods ? undefined : modByArchivePath(visibleMods, detailsPath)
+
+  // A Mod that has left the folder is gone for good: a file of the same name coming back later is not
+  // the player asking to see it again. Only the whole scan decides this, never what a filter hides.
+  useEffect(() => {
+    if (detailsPath !== null && !modByArchivePath(installedMods, detailsPath)) setDetailsPath(null)
+  }, [installedMods, detailsPath])
+
+  // Keyed on a counter, never on the path or the panel mounting: a rename after an enable or disable,
+  // or the panel coming back when a filter clears, must not pull focus away from where the player has it.
+  useEffect(() => {
+    if (detailsFocusRequest > 0) detailsHeadingRef.current?.focus()
+  }, [detailsFocusRequest])
+
   useEffect(() => {
     return (): void => clearModIconMemoryCache()
   }, [])
+
+  function closeDetails(): void {
+    if (detailsMod) detailsButtons.current.get(detailsMod.path)?.focus()
+    setDetailsPath(null)
+  }
+
+  function toggleDetails(iMod: InstalledModType): void {
+    if (detailsMod?.path === iMod.path) return closeDetails()
+    setDetailsPath(iMod.path)
+    setDetailsFocusRequest((request) => request + 1)
+  }
 
   // Deliberately blind to suspension: a held-back Mod still belongs under "Mods with updates",
   // because watching for the new version is exactly why the player suspended it (#194).
@@ -111,12 +149,18 @@ function ListMods(): JSX.Element {
         onToggleSuspendClick={() => actions.toggleSuspended(iMod.modid)}
         onDeleteClick={() => actions.requestDelete(iMod)}
         onUpdateClick={() => setModToUpdate(iMod)}
+        detailsOpen={iMod.path === detailsMod?.path}
+        onToggleDetails={() => toggleDetails(iMod)}
+        detailsButtonRef={(element) => {
+          if (element) detailsButtons.current.set(iMod.path, element)
+          else detailsButtons.current.delete(iMod.path)
+        }}
       />
     )
   }
 
-  return (
-    <ScrollableContainer ref={scrollRef}>
+  const list = (
+    <ScrollableContainer ref={scrollRef} className="flex-1 min-w-0">
       <div className="min-h-full flex flex-col items-center justify-center gap-2">
         <StickyMenuWrapper scrollRef={scrollRef}>
           <StickyMenuGroupWrapper>
@@ -301,7 +345,16 @@ function ListMods(): JSX.Element {
                     entries={summaryEntries}
                   />
 
-                  <DeleteModDialog isOpen={actions.modToDelete !== null} close={actions.cancelDelete} onConfirm={actions.confirmDelete} />
+                  <DeleteModDialog
+                    isOpen={actions.modToDelete !== null}
+                    close={actions.cancelDelete}
+                    onConfirm={() => {
+                      // Closed here, not left to the rescan: the path would follow a disabled twin of
+                      // the deleted archive (#292) and move the panel onto a file the player never opened.
+                      if (actions.modToDelete?.path === detailsMod?.path) setDetailsPath(null)
+                      return actions.confirmDelete()
+                    }}
+                  />
                 </>
               )}
             </>
@@ -309,6 +362,15 @@ function ListMods(): JSX.Element {
         </div>
       </div>
     </ScrollableContainer>
+  )
+
+  // The row is there with or without the panel, with the list always first in it: mounting the row
+  // only for the panel would remount the list and lose its scroll position on every open and close.
+  return (
+    <div className="w-full h-full flex">
+      {list}
+      {installation && detailsMod && <InstalledModDetails iMod={detailsMod} gameVersion={installation.version} headingRef={detailsHeadingRef} onClose={closeDetails} />}
+    </div>
   )
 }
 
