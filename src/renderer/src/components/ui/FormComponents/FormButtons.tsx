@@ -1,5 +1,6 @@
 import { Button as HButton } from "@headlessui/react"
 import clsx from "clsx"
+import { forwardRef } from "react"
 import { Link } from "react-router-dom"
 
 import {
@@ -83,24 +84,15 @@ type FormButtonProps = Readonly<{
 }> &
   Readonly<FormButtonAction>
 
-export function FormButton({
-  children,
-  icon,
-  className,
-  onClick,
-  title,
-  disabled,
-  busy,
-  variant = "secondary",
-  size = "sm",
-  nativeType = "button",
-  ariaLabel,
-  ariaPressed
-}: FormButtonProps): JSX.Element {
+export const FormButton = forwardRef<HTMLButtonElement, FormButtonProps>(function FormButton(
+  { children, icon, className, onClick, title, disabled, busy, variant = "secondary", size = "sm", nativeType = "button", ariaLabel, ariaPressed },
+  ref
+) {
   const action = useActionBusy(onClick, busy, disabled)
 
   return (
     <HButton
+      ref={ref}
       type={nativeType}
       disabled={disabled || action.busy}
       onClick={action.onClick}
@@ -113,7 +105,7 @@ export function FormButton({
       {renderActionContent(children, icon, title, action.busy)}
     </HButton>
   )
-}
+})
 
 /**
  * Link to a page with the same styles as the FormButton.

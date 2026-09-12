@@ -381,18 +381,40 @@ describe("ManageMods: the action bar after #431", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("false")
   })
 
-  it("opens the Modpack menu from a focused trigger with the keyboard, and keeps its actions as real, tabbable buttons", async () => {
+  it("opens the Modpack menu from a focused trigger with the keyboard and runs an action reached by the arrow keys", async () => {
     const user = userEvent.setup()
-    renderManageMods()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
 
     expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
     const trigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
     trigger.focus()
     await user.keyboard("{Enter}")
+    expect(await screen.findByText("Export Modpack")).toBeTruthy()
 
-    const exportItem = (await screen.findByText("Export Modpack")).closest("button") as HTMLButtonElement
-    // A tool button never opts itself out of Tab: it is what makes the earlier keyboard press find it.
-    expect(exportItem.tabIndex).not.toBe(-1)
+    // Arrow down onto the first action, Enter to run it: the same path a mouse click takes, just
+    // from the keyboard. Before the Fragment fix, the outer <li> ate this Enter and closed the
+    // menu without ever reaching the FormButton's own onClick.
+    await user.keyboard("{ArrowDown}{Enter}")
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    // The action closes the menu behind it, same as a mouse click does; the fade-out is cosmetic.
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("closes the Modpack menu on Escape without running any action", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    const trigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
+    await user.click(trigger)
+    expect(await screen.findByText("Export Modpack")).toBeTruthy()
+
+    await user.keyboard("{Escape}")
+    // The menu reports itself collapsed straight away; the fade-out on the panel itself is cosmetic.
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    expect(exportModpack).not.toHaveBeenCalled()
   })
 
   it("hides the count and the five batch actions until a Mod is checked, but keeps select-all reachable throughout", async () => {

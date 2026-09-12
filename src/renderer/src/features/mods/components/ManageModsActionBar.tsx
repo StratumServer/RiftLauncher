@@ -1,3 +1,4 @@
+import { Fragment } from "react"
 import { useTranslation } from "react-i18next"
 import { AnimatePresence, motion } from "motion/react"
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react"
@@ -11,7 +12,7 @@ import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/us
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { StickyMenuGroupWrapper, StickyMenuGroup } from "@renderer/components/ui/StickyMenu"
 import { BUTTON_BASE_STYLES, BUTTON_SIZE_STYLES, BUTTON_VARIANT_STYLES, MENU_OPTION_STYLES } from "@renderer/components/ui/buttonStyles"
-import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
+import { DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
 /** A Mod the game loads on a server: everything that does not declare itself client-only. */
 function isServerMod(side: string | undefined): boolean {
@@ -99,18 +100,27 @@ function ManageModsActionBar({
                   // inert to assistive tech for as long as it stayed open, which a menu this size
                   // never earns.
                   <MenuItems static anchor="bottom start" modal={false} className="w-64 z-600 mt-1 select-none rounded-sm overflow-hidden">
-                    <motion.ul
+                    {/*
+                     * as={Fragment} on every item below: Headless UI moves keyboard focus (both
+                     * Tab and the arrow keys) by calling .click() on an item's own DOM node, not
+                     * by dispatching into its descendants. A MenuItem that renders its own wrapper
+                     * element (a <li>, a <div>) around a nested FormButton puts that click on the
+                     * wrapper, never on the button inside it, so Enter/Space silently do nothing.
+                     * Fragment mode makes the FormButton itself the item Headless UI tracks, so
+                     * the exact click it fires lands on the element with the real handler.
+                     */}
+                    <motion.div
                       variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
                       initial="initial"
                       animate="animate"
                       exit="exit"
                       className="w-full flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
                     >
-                      <MenuItem as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
+                      <MenuItem as={Fragment}>
                         <FormButton
                           title={t("features.mods.exportModpack")}
                           variant="ghost"
-                          className="w-full"
+                          className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
                           onClick={() => exportModpack({ installedMods: enabledMods, installation })}
                           disabled={enabledMods.length === 0}
                         >
@@ -121,11 +131,11 @@ function ManageModsActionBar({
                         </FormButton>
                       </MenuItem>
 
-                      <MenuItem as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
+                      <MenuItem as={Fragment}>
                         <FormButton
                           title={t("features.mods.exportServerModpack")}
                           variant="ghost"
-                          className="w-full"
+                          className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
                           onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` } })}
                           disabled={serverMods.length === 0}
                         >
@@ -136,15 +146,21 @@ function ManageModsActionBar({
                         </FormButton>
                       </MenuItem>
 
-                      <MenuItem as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
-                        <FormButton title={t("features.mods.importModpack")} variant="ghost" className="w-full" onClick={onImportModpack} disabled={busy}>
+                      <MenuItem as={Fragment}>
+                        <FormButton
+                          title={t("features.mods.importModpack")}
+                          variant="ghost"
+                          className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
+                          onClick={onImportModpack}
+                          disabled={busy}
+                        >
                           <div className="w-full flex items-center gap-2">
                             <PiBoxArrowDownDuotone className="text-xl shrink-0" />
                             <p className="truncate">{t("features.mods.importModpackButton")}</p>
                           </div>
                         </FormButton>
                       </MenuItem>
-                    </motion.ul>
+                    </motion.div>
                   </MenuItems>
                 )}
               </AnimatePresence>
