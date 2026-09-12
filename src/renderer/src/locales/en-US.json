@@ -199,6 +199,7 @@
       "modTaskName": "{{name}} Mod {{version}} on {{out}}",
       "modDownloadDesc": "Downloading {{name}} Mod {{version}} on {{out}}!",
       "installationPopupDesc": "List of versions of the {{modName}} Mod",
+      "gameVersionRange": "{{from}} to {{to}}",
       "versionsLoadFailed": "This Mod's version list couldn't be loaded. Check your connection and try again.",
       "manageMods": "Manage Mods",
       "searchInstalledMods": "Search by name, id or author",
