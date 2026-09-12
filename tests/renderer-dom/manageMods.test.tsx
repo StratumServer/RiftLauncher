@@ -425,6 +425,11 @@ describe("ManageMods: the action bar after #431", () => {
     expect(selectAll).toBeTruthy()
     expect(screen.queryByText(/^\d+ selected$/)).toBeNull()
     expect(screen.queryByRole("button", { name: /Delete the selected Mods/ })).toBeNull()
+    // The live region is already in the DOM, just empty: a screen reader is far more reliably told
+    // about a change to an announced node's text than about a brand new node appearing with text
+    // already in it. Scoped to select-all's own group: the page carries other status regions too.
+    const selectionGroup = selectAll.closest("div") as HTMLElement
+    expect(within(selectionGroup).getByRole("status").textContent).toBe("")
 
     await user.click(screen.getByRole("checkbox", { name: "Select Alpha Mod" }))
 

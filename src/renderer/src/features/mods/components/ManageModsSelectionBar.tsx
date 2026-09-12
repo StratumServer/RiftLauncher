@@ -71,7 +71,12 @@ function ManageModsSelectionBar({ batch, shownCount, locked }: Readonly<{ batch:
             <Input ref={selectAllRef} type="checkbox" checked={allShownChecked} disabled={disabled} onChange={batch.toggleAllShown} className="cursor-pointer" />
             <span>{t("features.mods.selectAllShown")}</span>
           </label>
-          {revealed && <p role="status">{t("features.mods.selectedCount", { count })}</p>}
+          {/*
+           * Always mounted, even before anything is checked: a live region only its text content
+           * changing is the reliable case for assistive tech to announce it. Mounting the node
+           * itself later, once revealed, is a strictly weaker guarantee.
+           */}
+          <p role="status">{revealed ? t("features.mods.selectedCount", { count }) : ""}</p>
         </StickyMenuGroup>
 
         {revealed && (
