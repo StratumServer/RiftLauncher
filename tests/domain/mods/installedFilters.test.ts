@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
 import {
+  countActiveInstalledModFilters,
   filterInstalledMods,
   hasActiveInstalledModFilters,
   installedCopiesOf,
@@ -167,6 +168,15 @@ describe("matching one installed mod against the filters", () => {
     assert.equal(hasActiveInstalledModFilters(filters({ author: "Ann" })), true)
     assert.equal(hasActiveInstalledModFilters(filters({ tags: ["storage"] })), true)
     assert.equal(hasActiveInstalledModFilters(filters({ gameVersion: "1.20.0" })), true)
+  })
+
+  it("counts the axes that are set, not the values inside them", () => {
+    assert.equal(countActiveInstalledModFilters(NO_INSTALLED_MOD_FILTERS), 0)
+    assert.equal(countActiveInstalledModFilters(filters({ author: "Ann" })), 1)
+    // Two tags picked is still one axis touched.
+    assert.equal(countActiveInstalledModFilters(filters({ tags: ["storage", "qol"] })), 1)
+    assert.equal(countActiveInstalledModFilters(filters({ author: "Ann", gameVersion: "1.20.0" })), 2)
+    assert.equal(countActiveInstalledModFilters(filters({ author: "Ann", tags: ["storage"], gameVersion: "1.20.0" })), 3)
   })
 })
 

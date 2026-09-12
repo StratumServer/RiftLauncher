@@ -451,7 +451,17 @@
       "profilesFolderUnreadable": "Couldn't read this Installation's Mods folder, so nothing was recorded or changed.",
       "cantSwitchProfileWhileInUse": "You can't switch profiles while this Installation is being played, backed up, restored or having its Mods updated.",
       "profilesSaveFailed": "Couldn't save the profiles. Nothing was changed.",
-      "profilesClose": "Close"
+      "profilesClose": "Close",
+      "modpackMenu": "Modpack: import one, or export the installed Mods as one",
+      "modpackMenuButton": "Modpack",
+      "filtersToggle": "Filters: narrow the installed Mods by author, tag or game version",
+      "filtersToggleButton": "Filters ({{count}})",
+      "filtersToggleButton_zero": "Filters",
+      "filtersToggleButton_one": "Filters ({{count}})",
+      "filtersToggleButton_two": "Filters ({{count}})",
+      "filtersToggleButton_few": "Filters ({{count}})",
+      "filtersToggleButton_many": "Filters ({{count}})",
+      "filtersToggleButton_other": "Filters ({{count}})"
     },
     "config": {
       "defaultInstallationsFolder": "Installations folder",

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { FiLoader } from "react-icons/fi"
+import { PiFunnelDuotone } from "react-icons/pi"
 
 import { useInstallations, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
 
@@ -14,7 +15,15 @@ import { useModProfiles } from "@renderer/features/mods/hooks/useModProfiles"
 import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
 
 import { modByArchivePath } from "@domain/mods/scanInstalled"
-import { filterInstalledMods, hasActiveInstalledModFilters, installedModAuthors, installedModGameVersions, installedModTags, NO_INSTALLED_MOD_FILTERS } from "@domain/mods/installedFilters"
+import {
+  countActiveInstalledModFilters,
+  filterInstalledMods,
+  hasActiveInstalledModFilters,
+  installedModAuthors,
+  installedModGameVersions,
+  installedModTags,
+  NO_INSTALLED_MOD_FILTERS
+} from "@domain/mods/installedFilters"
 import type { InstalledModFilters } from "@domain/mods/installedFilters"
 
 import { ListGroup, ListWrapper } from "@renderer/components/ui/List"
@@ -32,7 +41,7 @@ import ManageModsSelectionBar from "@renderer/features/mods/components/ManageMod
 import ModProfilesPopup from "@renderer/features/mods/components/ModProfilesPopup"
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
-import { FormInputText } from "@renderer/components/ui/FormComponents"
+import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 function byName(a: InstalledModType, b: InstalledModType): number {
@@ -57,6 +66,10 @@ function ListMods(): JSX.Element {
 
   const [search, setSearch] = useState("")
   const [filters, setFilters] = useState<InstalledModFilters>(NO_INSTALLED_MOD_FILTERS)
+  // Collapsed on every fresh visit: the three dropdowns are what pushed the Mod list off the first
+  // screen (#431). Search stays out of this, so narrowing by name never needs the extra click.
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const activeFilterCount = countActiveInstalledModFilters(filters)
 
   // Rebuilt only when the scan changes, not on every keystroke in the search field: each is a fresh
   // array identity, and the dropdowns below sit next to rows this page already memoizes.
@@ -197,10 +210,23 @@ function ListMods(): JSX.Element {
                 <StickyMenuGroupWrapper type="centered">
                   <StickyMenuGroup>
                     <FormInputText placeholder={t("features.mods.searchInstalledMods")} value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 h-8" />
+
+                    {/* One mod is nothing to narrow, so the toggle stays off until there are two. */}
+                    {installedMods.length > 1 && (
+                      <FormButton
+                        title={t("features.mods.filtersToggle")}
+                        variant="secondary"
+                        className="p-1 w-fit h-8"
+                        onClick={() => setFiltersOpen((current) => !current)}
+                        ariaPressed={filtersOpen}
+                      >
+                        <PiFunnelDuotone className="text-xl" />
+                        <p>{t("features.mods.filtersToggleButton", { count: activeFilterCount })}</p>
+                      </FormButton>
+                    )}
                   </StickyMenuGroup>
 
-                  {/* One mod is nothing to narrow, so the bar stays off until there are two. */}
-                  {installedMods.length > 1 && (
+                  {installedMods.length > 1 && filtersOpen && (
                     <InstalledModsFilterBar
                       filters={filters}
                       setFilters={setFilters}

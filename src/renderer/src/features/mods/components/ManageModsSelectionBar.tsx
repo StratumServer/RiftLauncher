@@ -26,6 +26,20 @@ function ManageModsSelectionBar({ batch, shownCount, locked }: Readonly<{ batch:
   const allShownChecked = shownCount > 0 && count === shownCount
   const disabled = locked || batch.running
 
+  // The count and the five actions stay off the page until a Mod is actually checked, rather than
+  // sitting there reading "0 selected" before anyone has touched anything. Once shown they stay
+  // shown for the rest of the visit: a batch that clears every check back to zero (or a rescan that
+  // drops the one checked Mod) is not the same as never having selected one, and the count text and
+  // select-all both need to stay put for the focus a landed batch hands back to them (#424).
+  // `everChecked` alone would lag a render behind, since it only flips inside an effect: the
+  // `count > 0` half of the condition below is what makes the very first check show its row with no
+  // extra render in between.
+  const [everChecked, setEverChecked] = useState(false)
+  useEffect(() => {
+    if (count > 0) setEverChecked(true)
+  }, [count])
+  const revealed = everChecked || count > 0
+
   // "Some but not all" has no attribute, only a DOM property, so it is set once the render is in.
   useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = count > 0 && !allShownChecked
@@ -57,47 +71,49 @@ function ManageModsSelectionBar({ batch, shownCount, locked }: Readonly<{ batch:
             <Input ref={selectAllRef} type="checkbox" checked={allShownChecked} disabled={disabled} onChange={batch.toggleAllShown} className="cursor-pointer" />
             <span>{t("features.mods.selectAllShown")}</span>
           </label>
-          <p role="status">{t("features.mods.selectedCount", { count })}</p>
+          {revealed && <p role="status">{t("features.mods.selectedCount", { count })}</p>}
         </StickyMenuGroup>
 
-        <StickyMenuGroup>
-          <FormButton title={t("features.mods.batchEnableTitle")} variant="secondary" className="p-1 w-fit h-8" disabled={disabled || !batch.canEnable} onClick={batch.enable}>
-            <PiToggleRightDuotone className="text-xl" />
-            <p>{t("features.mods.batchEnable")}</p>
-          </FormButton>
+        {revealed && (
+          <StickyMenuGroup>
+            <FormButton title={t("features.mods.batchEnableTitle")} variant="secondary" className="p-1 w-fit h-8" disabled={disabled || !batch.canEnable} onClick={batch.enable}>
+              <PiToggleRightDuotone className="text-xl" />
+              <p>{t("features.mods.batchEnable")}</p>
+            </FormButton>
 
-          <FormButton title={t("features.mods.batchDisableTitle")} variant="secondary" className="p-1 w-fit h-8" disabled={disabled || !batch.canDisable} onClick={batch.disable}>
-            <PiToggleLeftDuotone className="text-xl" />
-            <p>{t("features.mods.batchDisable")}</p>
-          </FormButton>
+            <FormButton title={t("features.mods.batchDisableTitle")} variant="secondary" className="p-1 w-fit h-8" disabled={disabled || !batch.canDisable} onClick={batch.disable}>
+              <PiToggleLeftDuotone className="text-xl" />
+              <p>{t("features.mods.batchDisable")}</p>
+            </FormButton>
 
-          <FormButton
-            title={t("features.mods.batchSuspendUpdatesTitle")}
-            variant="secondary"
-            className="p-1 w-fit h-8"
-            disabled={disabled || !batch.canSuspend}
-            onClick={() => suspendOrResume(batch.suspendUpdates)}
-          >
-            <PiMoonDuotone className="text-xl" />
-            <p>{t("features.mods.batchSuspendUpdates")}</p>
-          </FormButton>
+            <FormButton
+              title={t("features.mods.batchSuspendUpdatesTitle")}
+              variant="secondary"
+              className="p-1 w-fit h-8"
+              disabled={disabled || !batch.canSuspend}
+              onClick={() => suspendOrResume(batch.suspendUpdates)}
+            >
+              <PiMoonDuotone className="text-xl" />
+              <p>{t("features.mods.batchSuspendUpdates")}</p>
+            </FormButton>
 
-          <FormButton
-            title={t("features.mods.batchResumeUpdatesTitle")}
-            variant="secondary"
-            className="p-1 w-fit h-8"
-            disabled={disabled || !batch.canResume}
-            onClick={() => suspendOrResume(batch.resumeUpdates)}
-          >
-            <PiSunDuotone className="text-xl" />
-            <p>{t("features.mods.batchResumeUpdates")}</p>
-          </FormButton>
+            <FormButton
+              title={t("features.mods.batchResumeUpdatesTitle")}
+              variant="secondary"
+              className="p-1 w-fit h-8"
+              disabled={disabled || !batch.canResume}
+              onClick={() => suspendOrResume(batch.resumeUpdates)}
+            >
+              <PiSunDuotone className="text-xl" />
+              <p>{t("features.mods.batchResumeUpdates")}</p>
+            </FormButton>
 
-          <FormButton title={t("features.mods.batchDeleteTitle")} variant="destructive" className="p-1 w-fit h-8" disabled={disabled || count === 0} onClick={() => setConfirmingDelete(true)}>
-            <PiTrashDuotone className="text-xl" />
-            <p>{t("generic.delete")}</p>
-          </FormButton>
-        </StickyMenuGroup>
+            <FormButton title={t("features.mods.batchDeleteTitle")} variant="destructive" className="p-1 w-fit h-8" disabled={disabled || count === 0} onClick={() => setConfirmingDelete(true)}>
+              <PiTrashDuotone className="text-xl" />
+              <p>{t("generic.delete")}</p>
+            </FormButton>
+          </StickyMenuGroup>
+        )}
       </StickyMenuGroupWrapper>
 
       <DeleteModDialog

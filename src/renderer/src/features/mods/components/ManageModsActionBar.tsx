@@ -1,5 +1,8 @@
 import { useTranslation } from "react-i18next"
-import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBoxArrowDownDuotone, PiDesktopTowerDuotone, PiStackDuotone } from "react-icons/pi"
+import { AnimatePresence, motion } from "motion/react"
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react"
+import clsx from "clsx"
+import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBoxArrowDownDuotone, PiDesktopTowerDuotone, PiStackDuotone, PiPackageDuotone } from "react-icons/pi"
 
 import { useExportModpack } from "@renderer/features/mods/hooks/useExportModpack"
 import { resolveModsFolder } from "@renderer/features/mods/adapters/folder"
@@ -7,6 +10,8 @@ import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/us
 
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { StickyMenuGroupWrapper, StickyMenuGroup } from "@renderer/components/ui/StickyMenu"
+import { BUTTON_BASE_STYLES, BUTTON_SIZE_STYLES, BUTTON_VARIANT_STYLES, MENU_OPTION_STYLES } from "@renderer/components/ui/buttonStyles"
+import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
 /** A Mod the game loads on a server: everything that does not declare itself client-only. */
 function isServerMod(side: string | undefined): boolean {
@@ -72,32 +77,80 @@ function ManageModsActionBar({
           <p className="max-w-40 truncate">{activeProfileName ?? t("features.mods.noProfile")}</p>
         </FormButton>
 
-        <FormButton
-          title={t("features.mods.exportModpack")}
-          variant="secondary"
-          className="p-1 w-fit h-8"
-          onClick={() => exportModpack({ installedMods: enabledMods, installation })}
-          disabled={enabledMods.length === 0}
-        >
-          <PiBoxArrowUpDuotone className="text-xl" />
-          <p>{t("features.mods.exportModpackButton")}</p>
-        </FormButton>
+        {/*
+         * Import, Export and Export for a server used to be three buttons here on their own: rarely
+         * used, and the longest labels on the bar. One menu keeps them one Tab stop away instead of
+         * three, without dropping any of them. The trigger keeps the same secondary look they had.
+         */}
+        <Menu>
+          {({ open }) => (
+            <>
+              <MenuButton title={t("features.mods.modpackMenu")} className={clsx(BUTTON_BASE_STYLES, BUTTON_SIZE_STYLES.sm, "overflow-hidden", BUTTON_VARIANT_STYLES.secondary, "p-1 w-fit h-8")}>
+                <span aria-hidden="true" className="flex shrink-0 items-center">
+                  <PiPackageDuotone className="text-xl" />
+                </span>
+                <span>{t("features.mods.modpackMenuButton")}</span>
+              </MenuButton>
 
-        <FormButton
-          title={t("features.mods.exportServerModpack")}
-          variant="secondary"
-          className="p-1 w-fit h-8"
-          onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` } })}
-          disabled={serverMods.length === 0}
-        >
-          <PiDesktopTowerDuotone className="text-xl" />
-          <p>{t("features.mods.exportServerModpackButton")}</p>
-        </FormButton>
+              <AnimatePresence>
+                {open && (
+                  // modal=false: this is a small action menu, not a dialog. The default would mark
+                  // the rest of the page (the Mod list, its checkboxes, the other bar controls)
+                  // inert to assistive tech for as long as it stayed open, which a menu this size
+                  // never earns.
+                  <MenuItems static anchor="bottom start" modal={false} className="w-64 z-600 mt-1 select-none rounded-sm overflow-hidden">
+                    <motion.ul
+                      variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      className="w-full flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
+                    >
+                      <MenuItem as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
+                        <FormButton
+                          title={t("features.mods.exportModpack")}
+                          variant="ghost"
+                          className="w-full"
+                          onClick={() => exportModpack({ installedMods: enabledMods, installation })}
+                          disabled={enabledMods.length === 0}
+                        >
+                          <div className="w-full flex items-center gap-2">
+                            <PiBoxArrowUpDuotone className="text-xl shrink-0" />
+                            <p className="truncate">{t("features.mods.exportModpackButton")}</p>
+                          </div>
+                        </FormButton>
+                      </MenuItem>
 
-        <FormButton title={t("features.mods.importModpack")} variant="secondary" className="p-1 w-fit h-8" onClick={onImportModpack} disabled={busy}>
-          <PiBoxArrowDownDuotone className="text-xl" />
-          <p>{t("features.mods.importModpackButton")}</p>
-        </FormButton>
+                      <MenuItem as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
+                        <FormButton
+                          title={t("features.mods.exportServerModpack")}
+                          variant="ghost"
+                          className="w-full"
+                          onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` } })}
+                          disabled={serverMods.length === 0}
+                        >
+                          <div className="w-full flex items-center gap-2">
+                            <PiDesktopTowerDuotone className="text-xl shrink-0" />
+                            <p className="truncate">{t("features.mods.exportServerModpackButton")}</p>
+                          </div>
+                        </FormButton>
+                      </MenuItem>
+
+                      <MenuItem as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
+                        <FormButton title={t("features.mods.importModpack")} variant="ghost" className="w-full" onClick={onImportModpack} disabled={busy}>
+                          <div className="w-full flex items-center gap-2">
+                            <PiBoxArrowDownDuotone className="text-xl shrink-0" />
+                            <p className="truncate">{t("features.mods.importModpackButton")}</p>
+                          </div>
+                        </FormButton>
+                      </MenuItem>
+                    </motion.ul>
+                  </MenuItems>
+                )}
+              </AnimatePresence>
+            </>
+          )}
+        </Menu>
 
         <FormButton
           title={t("features.mods.openModsFolder")}
