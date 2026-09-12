@@ -127,4 +127,35 @@ describe("ListMods filter bar", () => {
     await waitFor(() => expect(screen.queryByText("Client Only Tool")).toBeNull(), { timeout: 3000 })
     expect(screen.getByText("Better Ruins")).toBeTruthy()
   })
+
+  // @headlessui/react's MenuItems defaults to modal=true, which marks the rest of the page
+  // inert (aria-hidden + focus-trapped) while it is open. OrderFilter opts out: it is a small
+  // sort menu in a filter bar, not a dialog, and the rest of the bar has to stay usable.
+  it("keeps the rest of the filter bar reachable while the sort menu is open", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    expect(await screen.findByText("Better Ruins", {}, { timeout: 3000 })).toBeTruthy()
+
+    await user.click(screen.getByTitle("Order"))
+    await screen.findByText("Trending")
+
+    const searchInput = screen.getByRole("textbox")
+    expect(searchInput.closest('[aria-hidden="true"]')).toBeNull()
+  })
 })

@@ -61,7 +61,11 @@ function OrderFilter({
           </MenuButton>
           <AnimatePresence>
             {open && (
-              <MenuItems static anchor="bottom" className="w-40 z-600 mt-1 select-none rounded-sm overflow-hidden">
+              // modal=false: this is a small sort menu, not a dialog. The default would mark
+              // the rest of the page (the search field, the other filter bar controls, the Mod
+              // list) inert to assistive tech for as long as it stayed open, which a menu this
+              // size never earns.
+              <MenuItems static anchor="bottom" modal={false} className="w-40 z-600 mt-1 select-none rounded-sm overflow-hidden">
                 <motion.ul
                   variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
                   initial="initial"
