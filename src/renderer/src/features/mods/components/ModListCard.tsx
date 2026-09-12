@@ -4,12 +4,14 @@ import { Link } from "react-router-dom"
 import {
   PiArrowCircleUpDuotone,
   PiChatCenteredTextDuotone,
+  PiCheckSquareFill,
   PiDownloadDuotone,
   PiDownloadSimpleDuotone,
   PiMoonDuotone,
   PiMoonFill,
   PiPowerDuotone,
   PiPowerFill,
+  PiSquareDuotone,
   PiStarDuotone,
   PiStarFill,
   PiTrashDuotone,
@@ -47,6 +49,9 @@ export type ModCopyState = "enabled" | "disabled" | "several"
  * by whatever caused the grid to re-render. The same goes for the action props: primitives and
  * one onAction, so a rescan that hands the page new copy objects re-renders only the cards whose
  * state actually moved.
+ *
+ * In selection mode (`picked` set) the card body picks the Mod instead of opening it, and the action
+ * strip is not rendered: a card never offers two ways to act on its Mod at once.
  */
 function ModListCard({
   mod,
@@ -60,7 +65,9 @@ function ModListCard({
   suspended = false,
   busy = false,
   updateTo,
-  onAction
+  onAction,
+  picked,
+  pickDisabled = false
 }: Readonly<{
   mod: DownloadableModOnListType
   installed: boolean
@@ -79,6 +86,10 @@ function ModListCard({
   /** A newer release tagged for the Installation's game version, once the ModDB details are in. */
   updateTo?: string
   onAction?: (mod: DownloadableModOnListType, action: ModCardAction) => void | Promise<unknown>
+  /** Set only in selection mode: whether this Mod is picked. */
+  picked?: boolean
+  /** The selection is full and this Mod is not in it, so it cannot be picked. */
+  pickDisabled?: boolean
 }>): JSX.Element {
   const { t } = useTranslation()
   const disabled = copyState === "disabled"
@@ -105,6 +116,8 @@ function ModListCard({
         ref={cardRef}
         {...selectableItemProps({
           onClick: () => onSelect(mod),
+          pressed: picked,
+          disabled: pickDisabled,
           label: [mod.name, t(installed ? "generic.installed" : "generic.notInstalled"), ...(disabled ? [t("features.mods.disabledLabel")] : [])].join(", ")
         })}
         className="w-full cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2"
@@ -117,6 +130,12 @@ function ModListCard({
             className={clsx("w-full h-full object-cover object-top", disabled && "opacity-50 grayscale")}
           />
           {disabled && <span className="absolute bottom-1 left-1 rounded-sm px-1 bg-zinc-950/80 text-xs uppercase tracking-wide text-zinc-200">{t("features.mods.disabledLabel")}</span>}
+          {/* aria-pressed on the card says the same to assistive tech; the hue sits on the icon. */}
+          {picked !== undefined && (
+            <span aria-hidden className="absolute bottom-1 right-1 rounded-sm p-0.5 bg-zinc-950/80 text-xl">
+              {picked ? <PiCheckSquareFill className="text-green-400" /> : <PiSquareDuotone className="text-zinc-200" />}
+            </span>
+          )}
         </div>
 
         <div className="w-full aspect-[3/1] flex text-sm skip-offscreen-render">
@@ -193,7 +212,7 @@ function ModListCard({
        * titles are tooltips and accessible names rather than visible labels. Both toggles keep one
        * title and let aria-pressed carry the state, like the favorite star.
        */}
-      {installationId !== undefined && (
+      {installationId !== undefined && picked === undefined && (
         <div
           role="group"
           aria-label={mod.name}

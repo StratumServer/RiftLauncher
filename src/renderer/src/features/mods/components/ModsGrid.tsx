@@ -3,6 +3,7 @@ import { FiLoader } from "react-icons/fi"
 
 import { findModUpdate } from "@domain/mods/compatibility"
 import { installedCopiesOf } from "@domain/mods/installedFilters"
+import { MAX_MOD_SELECTION } from "@domain/mods/modSelection"
 import { GridGroup, GridWrapper } from "@renderer/components/ui/Grid"
 import ModListCard, { type ModCardAction } from "@renderer/features/mods/components/ModListCard"
 import { modWriteKey, quickInstallKey } from "@renderer/features/mods/hooks/useInstalledModActions"
@@ -27,7 +28,8 @@ function ModsGrid({
   onSelectMod,
   onToggleFavMod,
   onOpenModDb,
-  onModAction
+  onModAction,
+  pickedIds
 }: Readonly<{
   mods: DownloadableModOnListType[]
   visibleCount: number
@@ -47,8 +49,11 @@ function ModsGrid({
   onToggleFavMod: (mod: DownloadableModOnListType) => void
   onOpenModDb: (mod: DownloadableModOnListType) => void
   onModAction: (mod: DownloadableModOnListType, action: ModCardAction) => void | Promise<unknown>
+  /** The listing ids picked, set only in selection mode. */
+  pickedIds?: ReadonlySet<number>
 }>): JSX.Element {
   const { t } = useTranslation()
+  const selectionFull = pickedIds !== undefined && pickedIds.size >= MAX_MOD_SELECTION
 
   return (
     <GridWrapper className="my-auto">
@@ -81,6 +86,8 @@ function ModsGrid({
                 busy={copy ? isBusy(copy.path) : installing || isBusy(quickInstallKey(mod.modid))}
                 updateTo={copy && releases ? findModUpdate(copy.version, releases, gameVersion).updatableTo : undefined}
                 onAction={onModAction}
+                picked={pickedIds?.has(mod.modid)}
+                pickDisabled={selectionFull && !pickedIds?.has(mod.modid)}
               />
             )
           })

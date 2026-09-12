@@ -5,6 +5,8 @@ import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
 
+import type { ModpackEntry, ModpackRequest } from "@domain/mods/importModpack"
+
 import { installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
@@ -382,5 +384,176 @@ describe("ImportModpackPopup, while it downloads", () => {
     // Not a vacuous pass: the run really did fetch archives, it just said nothing about each one.
     expect(downloadOnPath.mock.calls.length).toBeGreaterThan(1)
     expect(within(screen.getByRole("status")).queryByText(/^Downloaded /)).toBeNull()
+  })
+})
+
+/**
+ * The same table opened on Mods picked on the browse page (#287). A pick names no version: it is
+ * looked up by its ModDB listing, planned against the newest release tagged for the installation's
+ * series, keeps an installed copy's on or off state, and is worded as an install, not an import.
+ */
+describe("ImportModpackPopup, on Mods picked on the browse page", () => {
+  function pickDetail(name: string, modidstr: string, releases: Array<[string, string[]]>): string {
+    return JSON.stringify({
+      statuscode: "200",
+      mod: {
+        modid: 1,
+        assetid: 4711,
+        name,
+        tags: [],
+        releases: releases.map(([modversion, tags], index) => ({
+          releaseid: index,
+          mainfile: `https://mods.example/${modidstr}-${modversion}.zip`,
+          filename: `${modidstr}-${modversion}.zip`,
+          fileid: index + 1,
+          modidstr,
+          modversion,
+          tags
+        }))
+      }
+    })
+  }
+
+  // A continuation of Primitive Survival that kept the original's modid, listed under its own page.
+  const FORK_PICK: ModpackEntry = { modid: "primitivesurvival", listingId: 4711, name: "Primitive Survival" }
+  const CARRY_ON_PICK: ModpackEntry = { modid: "carryon", listingId: 42, name: "Carry On" }
+  const ANSWERS: Record<string, string> = {
+    "4711": pickDetail("Primitive Survival Continued", "primitivesurvival", [
+      ["3.0.0", ["1.21.0"]],
+      ["2.1.0", [GAME_VERSION]]
+    ]),
+    "42": pickDetail("Carry On", "carryon", [["2.0.0", [GAME_VERSION]]])
+  }
+
+  interface PickMount {
+    mods?: ModpackEntry[]
+    gameVersion?: string
+    installedMods?: InstalledModType[]
+    leftOut?: number
+    installationOverrides?: Partial<InstallationType>
+    downloadOnPath?: BridgeAPI["pathsManager"]["downloadOnPath"]
+  }
+
+  function mountPicks({ mods = [FORK_PICK], gameVersion = GAME_VERSION, installedMods = [], leftOut = 0, installationOverrides = {}, downloadOnPath }: PickMount = {}): {
+    queryURL: ReturnType<typeof vi.fn>
+    downloadOnPath: ReturnType<typeof vi.fn>
+    deletePath: ReturnType<typeof vi.fn>
+    unmount: () => void
+  } {
+    const queryURL = vi.fn(async (url: string) => {
+      const key = url.split("/mod/")[1] ?? ""
+      const answer = ANSWERS[key]
+      if (!answer) throw new Error(`The popup queried an unexpected mod: ${key}`)
+      return answer
+    })
+    const download = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(downloadOnPath ?? (async (_id, _url, outputPath, fileName): Promise<string> => `${outputPath}/${fileName}`))
+    const deletePath = vi.fn(async () => true)
+    installMockWindowApi({
+      netManager: { queryURL },
+      pathsManager: { checkPathExists: vi.fn(async () => true), deletePath, downloadOnPath: download, formatPath: vi.fn(async (parts: string[]) => parts.join("/")) }
+    })
+
+    const request: ModpackRequest = { name: "", gameVersion, mods }
+    const { unmount } = renderWithProviders(
+      <TaskProvider>
+        <NotificationsOverlay />
+        <ImportModpackPopup
+          isOpen
+          manifest={request}
+          close={(): void => {}}
+          installation={{ ...installation(), ...installationOverrides }}
+          installedMods={installedMods}
+          onFinish={(): void => {}}
+          selection={{ leftOut }}
+        />
+      </TaskProvider>
+    )
+    return { queryURL, downloadOnPath: download, deletePath, unmount }
+  }
+
+  async function install(): Promise<void> {
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Install" })))
+  }
+
+  it("looks each browse pick up by its listing id, not its mod id", async () => {
+    const { queryURL } = mountPicks()
+
+    expect(await screen.findByText("Primitive Survival Continued")).toBeTruthy()
+    expect(queryURL).toHaveBeenCalledWith("https://mods.vintagestory.at/api/mod/4711")
+  })
+
+  it("shows the release a pick would install in the version column", async () => {
+    mountPicks()
+
+    const row = await rowFor("Primitive Survival Continued")
+    expect(within(row).getByText("2.1.0")).toBeTruthy()
+    expect(within(row).getByText("New install")).toBeTruthy()
+  })
+
+  it("names a selection run as an install, with no pack version warning and no downgrade banner", async () => {
+    mountPicks({ gameVersion: "1.19.0", installedMods: [installedMod("Primitive Survival", "primitivesurvival", "9.0.0")] })
+
+    expect(within(await rowFor("Primitive Survival Continued")).getByText("Already installed")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Install Selected Mods" })).toBeTruthy()
+    expect(screen.getByText("What installing the Mods you picked will do:")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Install" })).toBeTruthy()
+    expect(screen.queryByText(/Import Modpack/)).toBeNull()
+    expect(screen.queryByText(/made for game version/)).toBeNull()
+    expect(screen.queryByText(/will be downgraded/)).toBeNull()
+  })
+
+  it("says how many picks were left out, and says nothing when none were", async () => {
+    const { unmount } = mountPicks({ leftOut: 1 })
+    expect(await screen.findByText("1 picked Mod(s) left out: they declare the same mod id as another pick.")).toBeTruthy()
+    unmount()
+
+    mountPicks({ leftOut: 0 })
+    await rowFor("Primitive Survival Continued")
+    expect(screen.queryByText(/left out/)).toBeNull()
+  })
+
+  it("installs the planned picks with no per-mod toast and opens the install summary", async () => {
+    let land!: () => void
+    const landed = new Promise<void>((resolve) => (land = resolve))
+    const { downloadOnPath } = mountPicks({
+      mods: [FORK_PICK, CARRY_ON_PICK],
+      installedMods: [installedMod("Carry On", "carryon", "2.0.0")],
+      downloadOnPath: async (_id, _url, outputPath, fileName) => {
+        await landed
+        return `${outputPath}/${fileName}`
+      }
+    })
+
+    expect(within(await rowFor("Carry On")).getByText("Already installed")).toBeTruthy()
+    await install()
+    expect(await screen.findByRole("button", { name: "Installing..." })).toBeTruthy()
+
+    await act(async () => land())
+    expect(await screen.findByRole("heading", { name: "Mod Install Summary" })).toBeTruthy()
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/primitivesurvival-2.1.0.zip", "/installations/main/Mods", "primitivesurvival-2.1.0.zip")
+    expect(within(screen.getByRole("status")).queryByText(/^Downloaded /)).toBeNull()
+  })
+
+  it("updates an older disabled pick and leaves it disabled", async () => {
+    const disabled = { ...installedMod("Primitive Survival", "primitivesurvival", "1.0.0", false), path: "/installations/main/Mods/primitivesurvival-1.0.0.zip.disabled" }
+    const { downloadOnPath, deletePath } = mountPicks({ installedMods: [disabled] })
+
+    expect(within(await rowFor("Primitive Survival Continued")).getByText("Update from 1.0.0 to 2.1.0")).toBeTruthy()
+    await install()
+
+    expect(await screen.findByRole("heading", { name: "Mod Install Summary" })).toBeTruthy()
+    expect(deletePath).toHaveBeenCalledWith("/installations/main/Mods/primitivesurvival-1.0.0.zip.disabled")
+    expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/primitivesurvival-2.1.0.zip", "/installations/main/Mods", "primitivesurvival-2.1.0.zip.disabled")
+  })
+
+  it("refuses to run while Update all holds the Installation's Mods folder", async () => {
+    const { downloadOnPath } = mountPicks({ installationOverrides: { _updatingMods: true } })
+
+    await rowFor("Primitive Survival Continued")
+    await install()
+
+    expect(await screen.findByText("You can't update a Mod while it's in use.")).toBeTruthy()
+    expect(downloadOnPath).not.toHaveBeenCalled()
   })
 })

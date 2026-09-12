@@ -178,12 +178,30 @@ describe("ModsGrid card prop identity", () => {
 
     expect(setModEnabled).not.toHaveBeenCalled()
   })
+
+  it("toggling one pick re-renders only that card", async () => {
+    const user = userEvent.setup()
+    const { rendersOf } = mountWithOneInstalledMod()
+
+    await settle(user)
+    await user.click(screen.getByRole("button", { name: "Select Mods to install together" }))
+    await waitFor(() => expect(rendersOf(456).at(-1)?.picked).toBe(false))
+    const neighbourRenders = rendersOf(456).length
+
+    const picked = rendersOf(123).at(-1) as CardProps
+    act(() => picked.onSelect(picked.mod))
+
+    await waitFor(() => expect(rendersOf(123).at(-1)?.picked).toBe(true))
+    expect(rendersOf(456)).toHaveLength(neighbourRenders)
+  })
 })
 
 type CardProps = {
   mod: DownloadableModOnListType
   copyState?: string
   updateTo?: string
+  picked?: boolean
+  onSelect: (mod: DownloadableModOnListType) => void
   onAction: (mod: DownloadableModOnListType, action: "toggle-enabled" | "install") => Promise<unknown>
 }
 

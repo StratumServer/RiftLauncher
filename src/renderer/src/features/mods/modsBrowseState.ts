@@ -1,3 +1,5 @@
+import type { ModPick } from "@domain/mods/modSelection"
+
 export const DEFAULT_LOADED_MODS = 45
 
 export type ModsBrowseState = {
@@ -12,6 +14,9 @@ export type ModsBrowseState = {
   orderByOrder: string
   visibleMods: number
   scrollTop: number
+  /** Selection mode on the browse grid, and the Mods picked in it. Renderer memory only, never config. */
+  selecting: boolean
+  picks: ModPick[]
 }
 
 function createInitialState(): ModsBrowseState {
@@ -26,7 +31,9 @@ function createInitialState(): ModsBrowseState {
     orderBy: "follows",
     orderByOrder: "desc",
     visibleMods: DEFAULT_LOADED_MODS,
-    scrollTop: 0
+    scrollTop: 0,
+    selecting: false,
+    picks: []
   }
 }
 
@@ -37,7 +44,8 @@ export function getModsBrowseState(): ModsBrowseState {
     ...browseState,
     authorFilter: { ...browseState.authorFilter },
     versionsFilter: [...browseState.versionsFilter],
-    tagsFilter: [...browseState.tagsFilter]
+    tagsFilter: [...browseState.tagsFilter],
+    picks: [...browseState.picks]
   }
 }
 
