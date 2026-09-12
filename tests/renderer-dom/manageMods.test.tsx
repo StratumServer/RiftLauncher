@@ -390,7 +390,15 @@ describe("ManageMods: the action bar after #431", () => {
     const trigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
     trigger.focus()
     await user.keyboard("{Enter}")
-    expect(await screen.findByText("Export Modpack")).toBeTruthy()
+    const exportItem = (await screen.findByText("Export Modpack")).closest("button") as HTMLButtonElement
+
+    // Headless UI clones its own role, id and roving tabIndex onto a MenuItem rendered as={Fragment}
+    // by merging them onto the single child's props; a FormButton with no rest slot to catch them
+    // would silently drop every one, and a separate DOM pass then stamps the orphaned button
+    // role="none" for hiding nothing else claimed. This is what a mouse-only check cannot catch,
+    // since none of it affects a click.
+    expect(exportItem.getAttribute("role")).toBe("menuitem")
+    expect(exportItem.tabIndex).toBe(-1)
 
     // Arrow down onto the first action, Enter to run it: the same path a mouse click takes, just
     // from the keyboard. Before the Fragment fix, the outer <li> ate this Enter and closed the

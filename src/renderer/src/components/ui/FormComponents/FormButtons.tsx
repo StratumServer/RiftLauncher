@@ -84,16 +84,25 @@ type FormButtonProps = Readonly<{
   /** For a disclosure control (a toggle that shows or hides another element), not a stateful one. */
   ariaExpanded?: boolean
 }> &
-  Readonly<FormButtonAction>
+  Readonly<FormButtonAction> &
+  /*
+   * Everything else (role, id, tabIndex, aria-labelledby, the hover/focus tracking handlers, the
+   * data-* state attributes) passed straight to the underlying button. A MenuItem rendered
+   * `as={Fragment}` clones its single child and merges exactly these onto it, expecting them to
+   * land on the real DOM node; a component with no rest slot to catch them would silently drop
+   * every one, leaving the button with none of the roving-focus wiring Headless UI thinks it set.
+   */
+  Readonly<Omit<React.ComponentPropsWithoutRef<"button">, "onClick" | "disabled" | "title" | "className" | "children" | "type">>
 
 export const FormButton = forwardRef<HTMLButtonElement, FormButtonProps>(function FormButton(
-  { children, icon, className, onClick, title, disabled, busy, variant = "secondary", size = "sm", nativeType = "button", ariaLabel, ariaPressed, ariaExpanded },
+  { children, icon, className, onClick, title, disabled, busy, variant = "secondary", size = "sm", nativeType = "button", ariaLabel, ariaPressed, ariaExpanded, ...rest },
   ref
 ) {
   const action = useActionBusy(onClick, busy, disabled)
 
   return (
     <HButton
+      {...rest}
       ref={ref}
       type={nativeType}
       disabled={disabled || action.busy}
