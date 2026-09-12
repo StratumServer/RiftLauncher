@@ -1,35 +1,68 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, type Dispatch, type SetStateAction } from "react"
-import { useTranslation } from "react-i18next"
+import { Trans, useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
+import { PiCheckSquareDuotone, PiCheckSquareFill } from "react-icons/pi"
 
-import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useFavMods, useSettingsConfig, useConfigDispatch, useSuspendedModUpdates, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 
 import { useQueryMods } from "@renderer/features/mods/hooks/useQueryMods"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
+import { installedModLookups } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
+import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { useQueryMod } from "@renderer/features/mods/hooks/useQueryMod"
 import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
 
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
+import { LinkButton } from "@renderer/components/ui/Buttons"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, ReloadButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 import ModsFilterBar from "@renderer/features/mods/components/ModsFilterBar"
 import ModsGrid from "@renderer/features/mods/components/ModsGrid"
+import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
+import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
+import ModSelectionBar from "@renderer/features/mods/components/ModSelectionBar"
+import type { ModCardAction } from "@renderer/features/mods/components/ModListCard"
+import { FormButton } from "@renderer/components/ui/FormComponents"
 import { DEFAULT_LOADED_MODS, getModsBrowseState, updateModsBrowseState, type ModsBrowseState } from "@renderer/features/mods/modsBrowseState"
-import { installedCopiesOf, listingDeclaresModid } from "@domain/mods/installedFilters"
+import { installedCopiesOf } from "@domain/mods/installedFilters"
+import { findModUpdate } from "@domain/mods/compatibility"
+import { addPicks, modSelectionEntries, togglePick, type ModPick } from "@domain/mods/modSelection"
+import type { ModpackRequest } from "@domain/mods/importModpack"
+
+/**
+ * One install run over the picks, fixed when Install selected is pressed. The installed list is part
+ * of it on purpose: the page rescans after every download, and a live list would restart the table's
+ * lookups mid-run. It is read from the folder at that moment rather than taken off the grid, whose
+ * list can still belong to the previous Installation while a scan is on its way.
+ *
+ * The Installation that folder belongs to is part of it too, and the run installs into that one
+ * only: a plan made from one folder and carried out in another deletes an archive the player never
+ * picked.
+ */
+type PickRun = { installationId: string; request: ModpackRequest; installedMods: InstalledModType[]; leftOut: number }
+
+const NO_INSTALLED_MODS: InstalledModType[] = []
+
+function toModPick(mod: DownloadableModOnListType): ModPick {
+  return { listingId: mod.modid, name: mod.name, modidstrs: mod.modidstrs }
+}
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const installations = useInstallations()
   const favMods = useFavMods()
+  const suspendedModUpdates = useSuspendedModUpdates()
   const { lastUsedInstallation } = useSettingsConfig()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
   const queryMods = useQueryMods()
   const getInstalledMods = useGetInstalledMods()
+  const queryMod = useQueryMod()
   const syncModsCount = useSyncModsCount()
   const { openModOnModDb } = useExternalLinks()
   const { tasks } = useTaskContext()
@@ -50,6 +83,13 @@ function ListMods(): JSX.Element {
   const [installationInstalledMods, setInstallationInstalledMods] = useState<InstalledModType[] | undefined>(undefined)
   const installationModsLoadedRef = useRef(false)
 
+  // The fast scan is this page's refresh: a folder read, with none of the ModDB lookups the
+  // Manage Mods scan makes for every installed Mod.
+  const actions = useInstalledModActions(installation, triggerGetInstalledMods)
+
+  const [modDetails, setModDetails] = useState<ReadonlyMap<number, DownloadableModType>>(() => new Map())
+  const requestedModDetails = useRef(new Set<number>())
+
   const [onlyFav, setOnlyFavState] = useState<boolean>(browseState.onlyFav)
   const [textFilter, setTextFilterState] = useState<string>(browseState.textFilter)
   const [authorFilter, setAuthorFilterState] = useState<DownloadableModAuthorType>(browseState.authorFilter)
@@ -61,6 +101,15 @@ function ListMods(): JSX.Element {
   const [orderByOrder, setOrderByOrderState] = useState<string>(browseState.orderByOrder)
 
   const [searching, setSearching] = useState<boolean>(true)
+
+  const [selecting, setSelecting] = useState<boolean>(browseState.selecting)
+  const [picks, setPicks] = useState<readonly ModPick[]>(browseState.picks)
+  const [pickRun, setPickRun] = useState<PickRun | null>(null)
+  const pickToggleRef = useRef<HTMLSpanElement>(null)
+
+  // Kept in the #415 snapshot so a trip to another page does not throw the picks away. Written from
+  // an effect, never from inside a state updater.
+  useEffect(() => updateModsBrowseState({ selecting, picks: [...picks] }), [selecting, picks])
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -204,6 +253,29 @@ function ListMods(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installationInstalledMods])
 
+  /*
+   * A card offers Update only when a newer release is tagged for the build, and the fast scan
+   * knows nothing of releases. So the ModDB details are looked up, but only for the installed Mods
+   * a card is showing, once per id while the page is mounted, and through the limiter the Manage
+   * Mods scan uses so that together they stay inside their share of the ModDB slots (#386). The
+   * details do not depend on the local copy: after a toggle, a delete or an update, the same
+   * details still give the right answer. A failed lookup only leaves Update hidden.
+   */
+  useEffect(() => {
+    if (!installationInstalledMods) return
+
+    for (const mod of modsList.slice(0, visibleMods)) {
+      if (requestedModDetails.current.has(mod.modid) || installedCopiesOf(mod.modidstrs, installationInstalledMods).length !== 1) continue
+      requestedModDetails.current.add(mod.modid)
+
+      void installedModLookups
+        .run(() => queryMod({ modid: mod.modid }))
+        .then((lookup) => {
+          if (lookup.status === "found") setModDetails((previous) => new Map(previous).set(mod.modid, lookup.mod))
+        })
+    }
+  }, [modsList, visibleMods, installationInstalledMods, queryMod])
+
   useLayoutEffect(() => {
     if (!restoreBrowseRef.current || modsList.length === 0) return
 
@@ -295,6 +367,83 @@ function ListMods(): JSX.Element {
 
   const onOpenModDb = useCallback((mod: DownloadableModOnListType): void => openModOnModDb(mod.assetid), [openModOnModDb])
 
+  // Stable, like onSelectMod, so a pick re-renders only the card whose state it changed.
+  const onTogglePick = useCallback((mod: DownloadableModOnListType): void => setPicks((current) => togglePick(current, toModPick(mod))), [])
+  const pickedIds = useMemo(() => (selecting ? new Set(picks.map((pick) => pick.listingId)) : undefined), [selecting, picks])
+
+  function toggleSelecting(): void {
+    // A selection hidden behind a mode that is off would resurface unexpectedly the next time.
+    if (selecting) setPicks([])
+    setSelecting(!selecting)
+  }
+
+  // Returns its promise so Install selected stays busy, and refuses another press, while the folder is read.
+  async function installPicks(): Promise<void> {
+    if (!installation) return
+    const { mods } = await getInstalledMods({ path: installation.path })
+    // The sidebar stays live during the read. A switch drops the run rather than opening it on the
+    // other Installation; the picks stay, and the next press reads the new folder.
+    if (selectedInstallationId.current !== installation.id) return
+    const { entries, leftOut } = modSelectionEntries(picks, mods)
+    setPickRun({ installationId: installation.id, request: { name: "", gameVersion: installation.version, mods: entries }, installedMods: mods, leftOut })
+  }
+
+  // Looked up by id rather than kept from the press, so the popup reads this Installation's live
+  // busy flags while it installs into the folder the run was planned from.
+  const runInstallation = pickRun ? installations.find((i) => i.id === pickRun.installationId) : installation
+
+  function finishPickRun(): void {
+    setPickRun(null)
+    setPicks([])
+    setSelecting(false)
+    // The dialog hands focus back, in a microtask once it unmounts, to what had it when it opened:
+    // Install selected, which leaves with selection mode, so it falls to the card picked last. The
+    // move to the toggle is queued behind that restore.
+    setTimeout(() => pickToggleRef.current?.querySelector("button")?.focus())
+  }
+
+  // Read through a ref so onModAction keeps one identity across rescans and lookups: every card
+  // holds it, and a new one would re-render them all.
+  const actionTargets = useRef({ installedMods: [] as readonly InstalledModType[], details: modDetails, gameVersion: "" })
+  const selectedInstallationId = useRef<string | undefined>(undefined)
+  useLayoutEffect(() => {
+    actionTargets.current = { installedMods: installationInstalledMods ?? [], details: modDetails, gameVersion: installation?.version ?? "" }
+    selectedInstallationId.current = installation?.id
+  })
+
+  const { installNewest, updateMod, toggleEnabled, toggleSuspended, requestDelete } = actions
+  const onModAction = useCallback(
+    (mod: DownloadableModOnListType, action: ModCardAction): void | Promise<void> => {
+      // Resolved against the last scan, never against what the card showed: a card can be painted
+      // from an older render (GridGroup's AnimatePresence replays one once an exit ends), and an
+      // install next to a copy already there leaves two archives declaring one modid.
+      const { installedMods, details, gameVersion } = actionTargets.current
+      const copies = installedCopiesOf(mod.modidstrs, installedMods)
+
+      if (action === "install") {
+        if (copies.length > 0) return
+        return installNewest(mod).then((outcome) => {
+          // Nothing is tagged for this build. The release list labels every release Tagged, Likely
+          // or Untagged, so that is where the player can pick one knowing what it is.
+          if (outcome === "no-tagged-release") navigate(`/mods/install/${mod.modid}`, { state: { modName: mod.name } })
+        })
+      }
+
+      const copy = copies.length === 1 ? copies[0] : undefined
+      if (!copy) return
+
+      if (action === "toggle-enabled") return toggleEnabled(copy)
+      if (action === "toggle-suspended") return toggleSuspended(copy.modid)
+      if (action === "delete") return requestDelete(copy)
+
+      const releases = details.get(mod.modid)?.releases ?? []
+      const target = findModUpdate(copy.version, releases, gameVersion).updatableTo
+      const newRelease = releases.find((release) => release.modversion === target)
+      if (newRelease) return updateMod(copy, newRelease)
+    },
+    [installNewest, updateMod, toggleEnabled, toggleSuspended, requestDelete, navigate]
+  )
+
   function clearFilters(): void {
     setTextFilter("")
     setAuthorFilter({ userid: "", name: "" })
@@ -327,6 +476,11 @@ function ListMods(): JSX.Element {
             <StickyMenuBreadcrumbs breadcrumbs={[{ name: t("breadcrumbs.mods"), to: "/mods" }]} />
 
             <StickyMenuGroup>
+              <span ref={pickToggleRef} className="contents">
+                <FormButton title={t("features.mods.pickMods")} variant="ghost" ariaPressed={selecting} onClick={toggleSelecting} className="w-8 h-8 text-xl">
+                  {selecting ? <PiCheckSquareFill className="text-green-400" /> : <PiCheckSquareDuotone />}
+                </FormButton>
+              </span>
               <GoToTopButton scrollRef={scrollRef} />
             </StickyMenuGroup>
           </StickyMenuGroupWrapper>
@@ -352,18 +506,69 @@ function ListMods(): JSX.Element {
             setOrderByOrder={setOrderByOrder}
             onClearFilters={clearFilters}
           />
+
+          {selecting && (
+            <ModSelectionBar
+              count={picks.length}
+              canInstall={installation !== undefined}
+              onPickVisible={() => setPicks(addPicks(picks, modsList.slice(0, visibleMods).map(toModPick)))}
+              onClear={() => setPicks([])}
+              onInstall={installPicks}
+            />
+          )}
         </StickyMenuWrapper>
+
+        {/*
+         * Said once for the whole grid, rather than as a row of dead buttons on every card. The config
+         * selects the first Installation whenever there is one, so having none is what this means.
+         */}
+        {!installation && (
+          <p className="text-sm text-center text-zinc-400">
+            {t("features.installations.noInstallationsFound")}{" "}
+            <Trans
+              i18nKey="features.installations.noInstallationsFoundDesc"
+              components={{
+                link: (
+                  <LinkButton title={t("components.mainMenu.installationsTitle")} to="/installations" variant="link">
+                    {t("components.mainMenu.installationsTitle")}
+                  </LinkButton>
+                )
+              }}
+            />
+          </p>
+        )}
 
         <ModsGrid
           mods={modsList}
           visibleCount={visibleMods}
           searching={searching}
-          isModInstalled={(mod) => Boolean(installationInstalledMods?.some((iMod) => listingDeclaresModid(mod.modidstrs, iMod.modid)))}
+          installedMods={installationInstalledMods ?? []}
+          installationId={installation?.id}
+          gameVersion={installation?.version ?? ""}
+          details={modDetails}
+          suspendedModUpdates={suspendedModUpdates}
+          isBusy={actions.isBusy}
           isModFav={(mod) => favMods.includes(mod.modid)}
-          onSelectMod={onSelectMod}
+          onSelectMod={selecting ? onTogglePick : onSelectMod}
           onToggleFavMod={onToggleFavMod}
           onOpenModDb={onOpenModDb}
+          onModAction={onModAction}
+          pickedIds={pickedIds}
         />
+
+        <DeleteModDialog isOpen={actions.modToDelete !== null} close={actions.cancelDelete} onConfirm={actions.confirmDelete} />
+
+        {runInstallation && (
+          <ImportModpackPopup
+            isOpen={pickRun !== null}
+            manifest={pickRun?.request ?? null}
+            close={() => setPickRun(null)}
+            installation={runInstallation}
+            installedMods={pickRun?.installedMods ?? NO_INSTALLED_MODS}
+            selection={pickRun ?? undefined}
+            onFinish={finishPickRun}
+          />
+        )}
       </div>
     </ScrollableContainer>
   )

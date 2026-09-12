@@ -275,4 +275,97 @@ describe("ModListCard accessibility", () => {
     expect(card.contains(modDb)).toBe(false)
     expect(within(listItem).getAllByRole("button")).toHaveLength(3)
   })
+
+  function installedCard(overrides: Partial<React.ComponentProps<typeof ModListCard>> = {}): React.ComponentProps<typeof ModListCard> {
+    return {
+      mod: makeMod(),
+      installed: true,
+      isFav: false,
+      onSelect: vi.fn(),
+      onToggleFav: vi.fn(),
+      onOpenModDb: vi.fn(),
+      installationId: "install-a",
+      copyState: "enabled",
+      suspended: false,
+      onAction: vi.fn(),
+      ...overrides
+    }
+  }
+
+  it("keeps an installed card's actions outside its role=button and exposes their state", async () => {
+    const user = userEvent.setup()
+    const props = installedCard()
+
+    render(<ModListCard {...props} />)
+
+    const listItem = screen.getByRole("listitem")
+    const card = within(listItem).getByRole("button", { name: "Better Ruins, Installed" })
+    const actions = within(listItem).getByRole("group", { name: "Better Ruins" })
+    const enabled = within(actions).getByRole("button", { name: "Enabled: Vintage Story loads this Mod" })
+    const suspended = within(actions).getByRole("button", { name: "Updates suspended: Update all skips this Mod" })
+    const remove = within(actions).getByRole("button", { name: "Delete" })
+
+    for (const action of [actions, enabled, suspended, remove]) expect(card.contains(action)).toBe(false)
+    expect(enabled.getAttribute("aria-pressed")).toBe("true")
+    expect(suspended.getAttribute("aria-pressed")).toBe("false")
+
+    within(listItem).getByTitle("Open on the ModDB!").focus()
+    await user.tab()
+    expect(document.activeElement).toBe(enabled)
+
+    await user.keyboard("{Enter}")
+    expect(props.onAction).toHaveBeenCalledTimes(1)
+    expect(props.onAction).toHaveBeenCalledWith(props.mod, "toggle-enabled")
+    expect(props.onSelect).not.toHaveBeenCalled()
+  })
+
+  it("announces a disabled copy on the card and on its toggle", () => {
+    render(<ModListCard {...installedCard({ copyState: "disabled", suspended: true })} />)
+
+    const listItem = screen.getByRole("listitem")
+    expect(within(listItem).getByRole("button", { name: "Better Ruins, Installed, Disabled" })).toBeTruthy()
+    expect(within(listItem).getByText("Disabled")).toBeTruthy()
+    expect(within(listItem).getByRole("button", { name: "Enabled: Vintage Story loads this Mod" }).getAttribute("aria-pressed")).toBe("false")
+    expect(within(listItem).getByRole("button", { name: "Updates suspended: Update all skips this Mod" }).getAttribute("aria-pressed")).toBe("true")
+  })
+
+  it("puts focus back on the card when the focused action goes away, and takes it from nowhere else", () => {
+    const props = installedCard({ updateTo: "1.5.0" })
+    const { rerender } = render(<ModListCard {...props} />)
+
+    // Mounting with focus on the page body is not an action going away.
+    expect(document.activeElement).toBe(document.body)
+
+    screen.getByRole("button", { name: "Update to v1.5.0" }).focus()
+    rerender(<ModListCard {...props} updateTo={undefined} />)
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Better Ruins, Installed" }))
+  })
+
+  it("leaves focus where the player put it when the card re-renders for anything else", () => {
+    const props = installedCard()
+    const { rerender } = render(<ModListCard {...props} />)
+
+    // A click on empty page space: focus goes nowhere, and the button it left is still there.
+    const suspended = screen.getByRole("button", { name: "Updates suspended: Update all skips this Mod" })
+    suspended.focus()
+    suspended.blur()
+    expect(document.activeElement).toBe(document.body)
+
+    // Every toast hands each card a new onSelect.
+    rerender(<ModListCard {...props} onSelect={vi.fn()} />)
+
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it("moves focus to the card before asking to delete, so the confirmation hands it back there", async () => {
+    const user = userEvent.setup()
+    const props = installedCard()
+    render(<ModListCard {...props} />)
+
+    await user.click(screen.getByRole("button", { name: "Delete" }))
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Better Ruins, Installed" }))
+    expect(props.onAction).toHaveBeenCalledWith(props.mod, "delete")
+  })
 })

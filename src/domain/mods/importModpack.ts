@@ -17,15 +17,39 @@ import type { InstalledModCopy, InstallModFailure, InstallModResult, ModReleaseT
  * to hang them from if that ever changes.
  */
 
-/** One line of a modpack manifest. */
+/** One line of a modpack manifest, or one Mod picked on the browse page. */
 export interface ModpackEntry {
   modid: string
-  version: string
+  /**
+   * The version the manifest asks for. Absent for a browse pick, which names no version and takes the
+   * newest release tagged for the installation's series instead (see {@link planModpackImport}).
+   */
+  version?: string
   /**
    * Display name of the copy the pack was exported from, when the manifest carries one. Older packs
    * do not, and nothing here may depend on it: it is a label of last resort, never an identifier.
    */
   name?: string
+  /**
+   * The ModDB listing a browse pick came from. The lookup asks for this listing rather than for the
+   * modid, because a fork can declare the same modid as the original and resolve to the wrong page.
+   */
+  listingId?: number
+  /**
+   * Set on a browse pick whose listing matches more than one installed copy. The run skips it without
+   * a lookup rather than choose one of the copies, the same refusal the browse card makes.
+   */
+  severalCopies?: boolean
+}
+
+/**
+ * What the import table is opened on: a modpack manifest, or the Mods picked on the browse page. A
+ * manifest read from disk is one as it stands, with a version on every entry.
+ */
+export interface ModpackRequest {
+  name: string
+  gameVersion: string
+  mods: readonly ModpackEntry[]
 }
 
 /**
@@ -86,13 +110,15 @@ export type ModpackSkipReason =
    * "not-on-moddb", nothing here says the mod does not exist, so the row must not say so either.
    */
   | "lookup-failed"
+  /** A browse pick whose Mod is installed more than once: which copy to act on is the player's call. */
+  | "several-copies"
 
 /** An entry the import will install, with the release it settled on. */
 export interface ModpackInstallItem {
   decision: "install"
   modid: string
-  /** Version the manifest asked for, which the picked release does not always match. */
-  requestedVersion: string
+  /** Version the manifest asked for, which the picked release does not always match. Null for a browse pick. */
+  requestedVersion: string | null
   /** Mod name as the ModDB publishes it. */
   name: string
   assetid?: number
@@ -105,13 +131,15 @@ export interface ModpackInstallItem {
   existing?: InstalledModCopy
   /** Version currently installed, or null when the mod is new. */
   fromVersion: string | null
+  /** True to write the new archive turned off, because the copy it replaces was. Browse picks only. */
+  keepDisabled?: boolean
 }
 
 /** An entry the import will not install, and why. */
 export interface ModpackSkippedItem {
   decision: "skip"
   modid: string
-  requestedVersion: string
+  requestedVersion: string | null
   /** The ModDB name when the page was found, the raw modid when it was not. */
   name: string
   assetid?: number
@@ -153,7 +181,8 @@ function installedFor(installed: readonly InstalledModSnapshot[], modid: string)
  *
  * A disabled copy never answers it. A pack is a playable set, so importing one over a mod the player
  * had turned off reinstalls it enabled rather than reporting it as already there and leaving the
- * game unable to load a mod the pack asks for.
+ * game unable to load a mod the pack asks for. A browse pick names no version, so no copy answers it
+ * here: its lookup always runs, because only the releases can say whether the copy is current.
  */
 function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | undefined): InstalledModSnapshot | undefined {
   return existing?.enabled === true && existing.version === entry.version ? existing : undefined
@@ -167,7 +196,7 @@ function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | un
  * interleaved loop achieved by checking the folder before querying.
  */
 export function modpackEntriesToResolve(entries: readonly ModpackEntry[], installed: readonly InstalledModSnapshot[]): ModpackEntry[] {
-  return entries.filter((entry) => satisfyingCopy(entry, installedFor(installed, entry.modid)) === undefined)
+  return entries.filter((entry) => !entry.severalCopies && satisfyingCopy(entry, installedFor(installed, entry.modid)) === undefined)
 }
 
 /**
@@ -179,7 +208,8 @@ export function modpackEntriesToResolve(entries: readonly ModpackEntry[], instal
 export function modpackDowngrades(entries: readonly ModpackEntry[], installed: readonly InstalledModSnapshot[]): ModpackEntry[] {
   return entries.filter((entry) => {
     const existing = installedFor(installed, entry.modid)
-    return existing !== undefined && compareVersions(entry.version, existing.version) < 0
+    // A browse pick names no version, and its plan never goes below the copy installed.
+    return entry.version !== undefined && existing !== undefined && compareVersions(entry.version, existing.version) < 0
   })
 }
 
@@ -273,31 +303,66 @@ function pickRelease(releases: readonly ModpackRelease[], requestedVersion: stri
   return releases[0]
 }
 
+/**
+ * Plans a Mod picked on the browse page, which names no version.
+ *
+ * It takes the newest release tagged for the installation's series and nothing untagged: a bulk pick
+ * has no per-row compatibility warning, and the single Mod page already offers every release with its
+ * label. An installed copy is never walked backwards and never loses the player's on or off state, so
+ * a copy at or past that release, or any copy when nothing is tagged, is left where it is, and an
+ * older one is updated and written back turned off if it was. A pick is not a pack: it is not a
+ * playable set the game has to load in full, so the #292 rule that re-enables a pack's Mods does not
+ * apply.
+ */
+function planPick(entry: ModpackEntry, existing: InstalledModSnapshot | undefined, detail: ModpackModDetail, gameVersion: string): ModpackPlanItem {
+  const planned = { modid: entry.modid, requestedVersion: null, name: detail.name, assetid: detail.assetid, fromVersion: existing?.version ?? null }
+  const target = newestCompatibleRelease(detail.releases, gameVersion)
+
+  if (existing && (!target || compareVersions(existing.version, target.modversion) >= 0)) return { ...planned, decision: "skip", reason: "already-present" }
+  if (!target) return { ...planned, decision: "skip", reason: "no-release" }
+
+  return {
+    ...planned,
+    decision: "install",
+    release: target,
+    compatibility: evaluateModCompatibility(target.tags, gameVersion),
+    downgrade: false,
+    existing: existing && { path: existing.path, version: existing.version },
+    keepDisabled: existing?.enabled === false
+  }
+}
+
 function planEntry(entry: ModpackEntry, input: ModpackPlanInput): ModpackPlanItem {
   const existing = installedFor(input.installed, entry.modid)
   const fromVersion = existing?.version ?? null
+  const requestedVersion = entry.version ?? null
+
+  // No version is named for it either: naming one would be picking one of the copies.
+  if (entry.severalCopies) return { decision: "skip", modid: entry.modid, requestedVersion, name: entry.name ?? entry.modid, reason: "several-copies", fromVersion: null }
 
   const satisfied = satisfyingCopy(entry, existing)
   if (satisfied) {
     // Named off the installed copy: the ModDB was never asked about this one.
-    return { decision: "skip", modid: entry.modid, requestedVersion: entry.version, name: satisfied.name, assetid: satisfied.assetid, reason: "already-present", fromVersion }
+    return { decision: "skip", modid: entry.modid, requestedVersion, name: satisfied.name, assetid: satisfied.assetid, reason: "already-present", fromVersion }
   }
 
   const detail = input.details.get(entry.modid)
   if (!detail) {
     const reason = input.failedModids?.has(entry.modid) ? "lookup-failed" : "not-on-moddb"
-    return { decision: "skip", modid: entry.modid, requestedVersion: entry.version, name: entry.modid, reason, fromVersion }
+    return { decision: "skip", modid: entry.modid, requestedVersion, name: entry.modid, reason, fromVersion }
   }
+
+  if (entry.version === undefined) return planPick(entry, existing, detail, input.gameVersion)
 
   const release = pickRelease(detail.releases, entry.version, input.gameVersion)
   if (!release) {
-    return { decision: "skip", modid: entry.modid, requestedVersion: entry.version, name: detail.name, assetid: detail.assetid, reason: "no-release", fromVersion }
+    return { decision: "skip", modid: entry.modid, requestedVersion, name: detail.name, assetid: detail.assetid, reason: "no-release", fromVersion }
   }
 
   return {
     decision: "install",
     modid: entry.modid,
-    requestedVersion: entry.version,
+    requestedVersion,
     name: detail.name,
     assetid: detail.assetid,
     release,
