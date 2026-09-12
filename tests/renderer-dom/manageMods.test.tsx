@@ -819,6 +819,17 @@ describe("ManageMods: enabling and disabling a Mod", () => {
     expect(exportModpack.mock.calls[1]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0", name: "Alpha Mod" }])
   })
 
+  it("greys the plain export out too once a search leaves only a disabled Mod on screen", async () => {
+    const user = userEvent.setup()
+    renderWithADisabledMod()
+
+    await rowFor("Epsilon Mod")
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "epsilon")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    expect((await modpackMenuItem(user, "Export Modpack")).disabled).toBe(true)
+  })
+
   it("finds a disabled Mod by search like any other, name or id", async () => {
     const user = userEvent.setup()
     renderWithADisabledMod()
