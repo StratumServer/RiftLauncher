@@ -3,6 +3,7 @@ import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import ListMods from "@renderer/features/mods/pages/ListMods"
+import { getModsBrowseState } from "@renderer/features/mods/modsBrowseState"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
@@ -116,6 +117,8 @@ describe("ListMods filter bar", () => {
     await user.click(favFilter)
 
     expect(favFilter.getAttribute("aria-pressed")).toBe("true")
+    // The toggle hands a function to the setter; the browse snapshot must hold the value it gave.
+    expect(getModsBrowseState().onlyFav).toBe(true)
     expect(favFilter.className).toContain("border-vsl")
     expect(icon().getAttribute("class")).toContain("text-yellow-400")
     expect(icon().querySelector('path[opacity="0.2"]')).toBeNull()

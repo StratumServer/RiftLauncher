@@ -294,7 +294,8 @@
       "summaryNew": "New",
       "summaryFailed": "Failed",
       "summaryAlreadyPresent": "Already installed",
-      "summaryClose": "Done"
+      "summaryClose": "Done",
+      "cantPlayWhileUpdatingMods": "You can't play this Installation while its Mods are being updated."
     },
     "config": {
       "defaultInstallationsFolder": "Installations folder",

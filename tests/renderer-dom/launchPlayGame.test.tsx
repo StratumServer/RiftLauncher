@@ -315,6 +315,31 @@ describe("MainMenu Play button", () => {
     expect(executeGame).not.toHaveBeenCalled()
   })
 
+  it("refuses to play while Update all is rewriting the Installation's Mods folder", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation({ _updatingMods: true })],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText("You can't play this Installation while its Mods are being updated.")
+    expect(executeGame).not.toHaveBeenCalled()
+    expect(readProbe().installationPlaying).toBe(false)
+  })
+
   const REFUSAL_CASES: { reason: GameExecutionFailureReason; message: string }[] = [
     { reason: "unsupported-platform", message: "Vintage Story can't run on this platform yet. Try it from Windows or Linux." },
     { reason: "no-executable", message: "Couldn't find Vintage Story in this version's folder. Try reinstalling it." },

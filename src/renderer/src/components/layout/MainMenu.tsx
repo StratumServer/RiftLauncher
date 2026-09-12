@@ -116,6 +116,9 @@ function MainMenu(): JSX.Element {
     try {
       if (!selectedInstallation) return addNotification(t("features.installations.noInstallationSelected"), "error")
       if (selectedInstallation._playing) return addNotification(t("features.installations.gameAlreadyRunning"), "error")
+      // Update all deletes each old archive before downloading its replacement, so a game started
+      // mid-run would load a Mods folder with some of its Mods missing.
+      if (selectedInstallation._updatingMods) return addNotification(t("features.mods.cantPlayWhileUpdatingMods"), "error")
 
       const gameVersionToRun = selectedInstallation.version ? gameVersions.find((gv) => gv.id === selectedInstallation.gameVersionId) : undefined
       if (!gameVersionToRun) {

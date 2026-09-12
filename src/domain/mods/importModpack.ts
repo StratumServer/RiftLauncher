@@ -1,5 +1,5 @@
 import { compareVersions } from "../versionNumbers"
-import { evaluateModCompatibility } from "./compatibility"
+import { evaluateModCompatibility, newestCompatibleRelease } from "./compatibility"
 import type { ModCompatibilityVerdict } from "./compatibility"
 import type { InstalledModCopy, InstallModFailure, InstallModResult, ModReleaseToInstall } from "./install"
 
@@ -259,15 +259,15 @@ export function modpackRowStatus(item: ModpackPlanItem): ModpackRowStatus {
  * 3. failing that, the newest release there is, because an author who never tags anything should not
  *    make the pack unimportable.
  *
- * Step 2 reads {@link evaluateModCompatibility} rather than matching tag prefixes by hand, which is
- * the same test the rest of the launcher applies: an exact tag or any tag in the same Major.Minor
- * series counts, nothing else does.
+ * Step 2 is {@link newestCompatibleRelease}, the same rule the rest of the launcher applies rather
+ * than tag prefixes matched by hand: an exact tag or any tag in the same Major.Minor series counts,
+ * nothing else does.
  */
 function pickRelease(releases: readonly ModpackRelease[], requestedVersion: string, gameVersion: string): ModpackRelease | undefined {
   const exact = releases.find((release) => release.modversion === requestedVersion)
   if (exact) return exact
 
-  const compatible = releases.find((release) => evaluateModCompatibility(release.tags, gameVersion) !== "undeclared")
+  const compatible = newestCompatibleRelease(releases, gameVersion)
   if (compatible) return compatible
 
   return releases[0]

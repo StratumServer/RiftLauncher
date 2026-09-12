@@ -17,6 +17,7 @@ import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuB
 import ModsFilterBar from "@renderer/features/mods/components/ModsFilterBar"
 import ModsGrid from "@renderer/features/mods/components/ModsGrid"
 import { DEFAULT_LOADED_MODS, getModsBrowseState, updateModsBrowseState, type ModsBrowseState } from "@renderer/features/mods/modsBrowseState"
+import { installedCopiesOf, listingDeclaresModid } from "@domain/mods/installedFilters"
 
 function ListMods(): JSX.Element {
   const { t } = useTranslation()
@@ -72,24 +73,31 @@ function ListMods(): JSX.Element {
     setVisibleModsState(DEFAULT_LOADED_MODS)
   }
 
-  function updateFilter<T>(setter: Dispatch<SetStateAction<T>>, value: SetStateAction<T>, update: (next: T) => Partial<ModsBrowseState>): void {
-    setter((previous) => {
-      const next = typeof value === "function" ? (value as (previous: T) => T)(previous) : value
-      if (next !== previous) resetBrowsePosition()
-      updateModsBrowseState(update(next))
-      return next
-    })
+  /**
+   * Sets one filter, and resets the browse position when it actually changes.
+   *
+   * The next value is resolved against the rendered one here, in the event, rather than inside a
+   * state updater: an updater runs during render (twice under StrictMode) and is no place for a
+   * scroll or a store write. Every caller sets a given filter at most once per event, so the
+   * rendered value is the one the change applies to.
+   */
+  function updateFilter<T>(current: T, setter: Dispatch<SetStateAction<T>>, value: SetStateAction<T>, update: (next: T) => Partial<ModsBrowseState>): void {
+    const next = typeof value === "function" ? (value as (previous: T) => T)(current) : value
+    if (next === current) return
+    resetBrowsePosition()
+    updateModsBrowseState(update(next))
+    setter(next)
   }
 
-  const setTextFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(setTextFilterState, value, (next) => ({ textFilter: next }))
-  const setAuthorFilter: Dispatch<SetStateAction<DownloadableModAuthorType>> = (value) => updateFilter(setAuthorFilterState, value, (next) => ({ authorFilter: next }))
-  const setVersionsFilter: Dispatch<SetStateAction<DownloadableModGameVersionType[]>> = (value) => updateFilter(setVersionsFilterState, value, (next) => ({ versionsFilter: next }))
-  const setTagsFilter: Dispatch<SetStateAction<DownloadableModTagType[]>> = (value) => updateFilter(setTagsFilterState, value, (next) => ({ tagsFilter: next }))
-  const setSideFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(setSideFilterState, value, (next) => ({ sideFilter: next }))
-  const setInstalledFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(setInstalledFilterState, value, (next) => ({ installedFilter: next }))
-  const setOnlyFav: Dispatch<SetStateAction<boolean>> = (value) => updateFilter(setOnlyFavState, value, (next) => ({ onlyFav: next }))
-  const setOrderBy: Dispatch<SetStateAction<string>> = (value) => updateFilter(setOrderByState, value, (next) => ({ orderBy: next }))
-  const setOrderByOrder: Dispatch<SetStateAction<string>> = (value) => updateFilter(setOrderByOrderState, value, (next) => ({ orderByOrder: next }))
+  const setTextFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(textFilter, setTextFilterState, value, (next) => ({ textFilter: next }))
+  const setAuthorFilter: Dispatch<SetStateAction<DownloadableModAuthorType>> = (value) => updateFilter(authorFilter, setAuthorFilterState, value, (next) => ({ authorFilter: next }))
+  const setVersionsFilter: Dispatch<SetStateAction<DownloadableModGameVersionType[]>> = (value) => updateFilter(versionsFilter, setVersionsFilterState, value, (next) => ({ versionsFilter: next }))
+  const setTagsFilter: Dispatch<SetStateAction<DownloadableModTagType[]>> = (value) => updateFilter(tagsFilter, setTagsFilterState, value, (next) => ({ tagsFilter: next }))
+  const setSideFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(sideFilter, setSideFilterState, value, (next) => ({ sideFilter: next }))
+  const setInstalledFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(installedFilter, setInstalledFilterState, value, (next) => ({ installedFilter: next }))
+  const setOnlyFav: Dispatch<SetStateAction<boolean>> = (value) => updateFilter(onlyFav, setOnlyFavState, value, (next) => ({ onlyFav: next }))
+  const setOrderBy: Dispatch<SetStateAction<string>> = (value) => updateFilter(orderBy, setOrderByState, value, (next) => ({ orderBy: next }))
+  const setOrderByOrder: Dispatch<SetStateAction<string>> = (value) => updateFilter(orderByOrder, setOrderByOrderState, value, (next) => ({ orderByOrder: next }))
 
   const handleScroll = (): void => {
     if (!scrollRef.current) return
@@ -233,10 +241,8 @@ function ListMods(): JSX.Element {
 
     if (sideFilter !== "any") mods = mods.filter((mod) => mod.side === sideFilter)
 
-    if (installedFilter === "installed")
-      mods = mods.filter((mod) => installationInstalledMods.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid)))
-    if (installedFilter === "not-installed")
-      mods = mods.filter((mod) => !installationInstalledMods.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid)))
+    if (installedFilter === "installed") mods = mods.filter((mod) => installedCopiesOf(mod.modidstrs, installationInstalledMods).length > 0)
+    if (installedFilter === "not-installed") mods = mods.filter((mod) => installedCopiesOf(mod.modidstrs, installationInstalledMods).length < 1)
 
     if (onlyFav) mods = mods.filter((mod) => favMods.includes(mod.modid))
 
@@ -352,7 +358,7 @@ function ListMods(): JSX.Element {
           mods={modsList}
           visibleCount={visibleMods}
           searching={searching}
-          isModInstalled={(mod) => Boolean(installationInstalledMods?.some((iMod) => mod.modidstrs.some((modidstr) => modidstr === iMod.modid.toLocaleLowerCase() || modidstr === iMod.modid)))}
+          isModInstalled={(mod) => Boolean(installationInstalledMods?.some((iMod) => listingDeclaresModid(mod.modidstrs, iMod.modid)))}
           isModFav={(mod) => favMods.includes(mod.modid)}
           onSelectMod={onSelectMod}
           onToggleFavMod={onToggleFavMod}

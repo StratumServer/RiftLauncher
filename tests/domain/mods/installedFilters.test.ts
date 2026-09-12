@@ -4,9 +4,11 @@ import { describe, it } from "vitest"
 import {
   filterInstalledMods,
   hasActiveInstalledModFilters,
+  installedCopiesOf,
   installedModAuthors,
   installedModGameVersions,
   installedModTags,
+  listingDeclaresModid,
   matchesInstalledModFilters,
   NO_INSTALLED_MOD_FILTERS
 } from "../../../src/domain/mods/installedFilters"
@@ -214,5 +216,37 @@ describe("real mod database shapes (#370)", () => {
     assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, tags: ["cosmetics"] }), false)
     assert.equal(matchesInstalledModFilters(mod, { ...NO_INSTALLED_MOD_FILTERS, gameVersion: "1.21.0" }), false)
     assert.equal(filterInstalledMods([mod], NO_INSTALLED_MOD_FILTERS).length, 1)
+  })
+})
+
+describe("matching a ModDB listing to the installed Mods", () => {
+  it("matches an installed modid spelled as the listing spells it, or by its lowercase, and nothing else", () => {
+    assert.equal(listingDeclaresModid(["betterruins"], "BetterRuins"), true)
+    assert.equal(listingDeclaresModid(["betterruins"], "betterruins"), true)
+    // The other arm: a listing that kept the modinfo's own casing.
+    assert.equal(listingDeclaresModid(["BetterRuins"], "BetterRuins"), true)
+    assert.equal(listingDeclaresModid(["betterruins"], "betterruinsplus"), false)
+    assert.equal(listingDeclaresModid(["betterruinsplus"], "betterruins"), false)
+    assert.equal(listingDeclaresModid([], "betterruins"), false)
+  })
+
+  it("checks every modidstr a listing declares, not only the first", () => {
+    assert.equal(listingDeclaresModid(["ruinsaddon", "betterruins"], "betterruins"), true)
+  })
+
+  it("returns every copy that shares the modid, so a clash is never settled by picking one", () => {
+    const enabled = aMod("Alpha", { modid: "alpha", path: "/mods/alpha-1.0.0.zip" })
+    const disabled = aMod("Alpha", { modid: "alpha", path: "/mods/alpha-1.0.0.zip.disabled", enabled: false })
+    const other = aMod("Beta", { modid: "beta" })
+
+    assert.deepEqual(installedCopiesOf(["alpha"], [enabled, other, disabled]), [enabled, disabled])
+  })
+
+  it("finds a mixed-case installed modid and leaves a longer id alone", () => {
+    const betterRuins = aMod("Better Ruins", { modid: "BetterRuins" })
+    const plus = aMod("Better Ruins Plus", { modid: "betterruinsplus" })
+
+    assert.deepEqual(installedCopiesOf(["betterruins"], [betterRuins, plus]), [betterRuins])
+    assert.deepEqual(installedCopiesOf(["primitivesurvival"], [betterRuins, plus]), [])
   })
 })
