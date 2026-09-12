@@ -45,7 +45,7 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
   return new Promise<ModArchiveResult>((resolve) => {
     yauzl.open(archivePath, { lazyEntries: true }, (openErr, zip) => {
       if (openErr || !zip) {
-        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not open ${archivePath}: ${openErr}`)
+        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not open a mod archive.`)
         return resolve({ ok: false, problem: "unreadable-archive" })
       }
 
@@ -79,7 +79,7 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
       const collect = (entry: yauzl.Entry, limit: number, onDone: (bytes: Buffer) => void, onOversize: () => void, onUnreadable: () => void): void => {
         zip.openReadStream(entry, (streamErr, stream) => {
           if (streamErr || !stream) {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not read ${entry.fileName} of ${archivePath}: ${streamErr}`)
+            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not read a mod archive entry.`)
             return onUnreadable()
           }
 

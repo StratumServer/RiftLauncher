@@ -392,7 +392,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
 
     try {
       window.api.utils.setPreventAppClose("add", id, "Started compression.")
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Adding compression of ${inputPath} to ${outputPath}.`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Adding compression of [PATH] to [PATH].`)
       tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "compress", progress: 0, status: "pending" } })
 
       window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Compressing...`)
@@ -407,7 +407,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       onFinish(true, null)
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Error compressing.`)
-      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Error compressing: ${err}`)
+      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Error compressing.`)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
       if (notifications.failure === "generic") addNotification(t("notifications.body.compressError", { compressName: name }), "error")
       onFinish(false, new Error(`Error compressing ${inputPath}: ${err}`))

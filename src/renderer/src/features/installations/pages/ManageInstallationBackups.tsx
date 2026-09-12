@@ -66,7 +66,7 @@ function ManageInstallationBackups(): JSX.Element {
           configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _restoringBackup: true } } })
           configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: backup.id, updates: { _restoring: true } } })
         },
-        onTemporaryFolderLeft: (path) => window.api.utils.logMessage("error", `${LOG_TAG} [RestoreBackupHandler] Could not remove the temporary folder ${path}.`)
+        onTemporaryFolderLeft: () => window.api.utils.logMessage("error", `${LOG_TAG} [RestoreBackupHandler] Could not remove the temporary folder [PATH].`)
       }
     )
 
