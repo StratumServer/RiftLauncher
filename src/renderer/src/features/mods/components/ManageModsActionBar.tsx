@@ -62,7 +62,7 @@ function ManageModsActionBar({
           <p>{t("features.mods.updateAllButton")}</p>
         </FormButton>
 
-        {/* Next to Update all rather than at the end: the right end of this bar sits under the toasts at 1280 wide. */}
+        {/* Next to Update all rather than at the end of the bar, where the longer labels push it out of reach. */}
         <FormButton
           title={
             activeProfileName === undefined

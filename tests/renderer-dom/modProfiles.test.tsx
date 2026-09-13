@@ -36,7 +36,6 @@ const CREATE = "Save the Mods that are on right now as a new profile, and make i
 const NEW_NAME = "Save the current Mods as a profile"
 const NO_PROFILE_NOTE = "No profile is active. The Mods folder stays as it is until you use one."
 const IN_USE = "You can't switch profiles while this Installation is being played, backed up, restored or having its Mods updated."
-const CHANGE_IN_USE = "You can't change profiles while this Installation is being backed up, restored or having its Mods updated."
 const FOLDER_UNREADABLE = "Couldn't read this Installation's Mods folder, so nothing was recorded or changed."
 const SEARCH_PLACEHOLDER = "Search by name, id or author"
 
@@ -527,7 +526,10 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     ])
   })
 
-  it.each([["_playing"], ["_backuping"], ["_restoringBackup"], ["_updatingMods"]] as const)("refuses to switch while %s is set, touching neither archives nor the file", async (flag) => {
+  // Only _playing here now. The three folder flags take the Profiles button itself off, so the
+  // dialog cannot be reached from a fresh page at all: see the case below. A switch already in
+  // flight is the live way the flag rises under an open dialog, and that is covered on its own.
+  it.each([["_playing"]] as const)("refuses to switch while %s is set, touching neither archives nor the file", async (flag) => {
     const { user, setModEnabled, saveModProfiles } = renderProfiles({ document: aDocument([SERVER, SOLO], "server"), installation: anInstallation({ [flag]: true }) })
 
     await user.click(await screen.findByRole("button", { name: PROFILES_BUTTON }, { timeout: 3000 }))
@@ -540,21 +542,24 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(saveModProfiles).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ["_backuping", "create"],
-    ["_restoringBackup", "create"],
-    ["_updatingMods", "create"],
-    ["_updatingMods", "duplicate"]
-  ] as const)("while %s is set, refuses to %s a profile from a folder that is changing", async (flag, action) => {
+  /**
+   * Every surface that writes the whole Mods folder reads one predicate, `modsFolderInUse`, which is
+   * the same one the write paths refuse on. Before that, Import Modpack and the Profiles button
+   * stayed live through Update all: the refusal landed only after the player had been through a
+   * native file dialog, or after a profiles dialog opened onto a folder nothing could be done to.
+   */
+  it.each([["_backuping"], ["_restoringBackup"], ["_updatingMods"]] as const)("takes the folder-wide controls off while %s holds the Mods folder", async (flag) => {
     const { user, saveModProfiles } = renderProfiles({ document: aDocument([SERVER, SOLO], "server"), installation: anInstallation({ [flag]: true }) })
 
-    await user.click(await screen.findByRole("button", { name: PROFILES_BUTTON }, { timeout: 3000 }))
-    const dialog = await screen.findByRole("dialog")
-    await within(dialog).findByText("Server", { selector: "span" })
-    if (action === "create") await user.type(within(dialog).getByLabelText(NEW_NAME), "Mid update{Enter}")
-    else await user.click(within(rowOf(dialog, "Server")).getByRole("button", { name: "Duplicate this profile" }))
+    await screen.findByRole("button", { name: PROFILES_BUTTON }, { timeout: 3000 })
 
-    expect(await screen.findByText(CHANGE_IN_USE)).toBeTruthy()
+    expect(profilesButton().disabled).toBe(true)
+    expect(buttonWithText("Update all").disabled).toBe(true)
+    expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(true)
+
+    await user.click(profilesButton())
+
+    expect(screen.queryByRole("dialog")).toBeNull()
     expect(saveModProfiles).not.toHaveBeenCalled()
   })
 

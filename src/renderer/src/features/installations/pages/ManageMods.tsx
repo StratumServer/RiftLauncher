@@ -15,6 +15,7 @@ import { useModProfiles } from "@renderer/features/mods/hooks/useModProfiles"
 import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
 
 import { modByArchivePath } from "@domain/mods/scanInstalled"
+import { modsFolderInUse } from "@domain/mods/install"
 import {
   countActiveInstalledModFilters,
   filterInstalledMods,
@@ -95,6 +96,11 @@ function ListMods(): JSX.Element {
   const batch = useModBatchActions(installation, installedMods, visibleMods, refresh)
   // Handed the Installation only, never the filtered list: a profile records and applies the whole folder.
   const profiles = useModProfiles(installation)
+  // One predicate for every surface that writes the whole Mods folder. Each of those write paths
+  // already refuses on modsFolderInUse, so a control that would be refused has to read as off:
+  // Import Modpack used to stay live through Update all and only refuse after the player had been
+  // through the native file dialog.
+  const folderInUse = installation ? modsFolderInUse(installation) : false
   const [profilesOpen, setProfilesOpen] = useState(false)
   const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
 
@@ -203,7 +209,7 @@ function ListMods(): JSX.Element {
                 onImportModpack={pickModpack}
                 activeProfileName={profiles.activeProfile?.name}
                 onOpenProfiles={() => setProfilesOpen(true)}
-                busy={batch.running || profiles.switchingTo !== null}
+                busy={folderInUse || batch.running || profiles.switchingTo !== null}
               />
 
               {installedMods.length + modsWithErrors.length > 0 && (
@@ -239,7 +245,12 @@ function ListMods(): JSX.Element {
                 </StickyMenuGroupWrapper>
               )}
 
-              {/* Off while Update all runs: the rows are gone, and a batch would race it on the same archives. */}
+              {/*
+               * Still gated on _updatingMods alone, not on folderInUse: this bar is hidden because
+               * Update all swaps every row for a spinner, so there is nothing left to select. A
+               * backup or a restore leaves the rows there, and Suspend, which writes config rather
+               * than the folder, has to stay reachable through one (manageMods.test.tsx:1946).
+               */}
               {installedMods.length > 0 && !installation._updatingMods && <ManageModsSelectionBar batch={batch} shownCount={visibleMods.length} locked={actions.busyPaths.length > 0} />}
             </>
           )}
