@@ -491,7 +491,18 @@
       "areYouSureRemoveAccount": "Are you sure you want to remove {{user}}?",
       "removeAccountNotReversible": "Removing an account is not reversible but you can add it back again by logging in with the same Vintage Story account again!",
       "accountRemoved": "Removed {{user}}.",
-      "removeAccountFailed": "Couldn't remove that account. Try again."
+      "removeAccountFailed": "Couldn't remove that account. Try again.",
+      "accentColor": "Accent color",
+      "accentColors": {
+        "amber": "Amber",
+        "gold": "Gold",
+        "copper": "Copper",
+        "sage": "Sage",
+        "teal": "Teal",
+        "sky": "Sky",
+        "lavender": "Lavender",
+        "rose": "Rose"
+      }
     },
     "backups": {
       "backupInProgress": "There is a backup already in progress.",

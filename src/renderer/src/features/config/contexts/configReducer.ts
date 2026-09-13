@@ -12,6 +12,7 @@ export enum CONFIG_ACTIONS {
   REMOVE_ACCOUNT = "REMOVE_ACCOUNT",
   SET_ACTIVE_ACCOUNT = "SET_ACTIVE_ACCOUNT",
   SET_BACKGROUND = "SET_BACKGROUND",
+  SET_ACCENT_COLOR = "SET_ACCENT_COLOR",
   SET_MODDB_VISIBILITY_ANSWER = "SET_MODDB_VISIBILITY_ANSWER",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
 
@@ -100,6 +101,12 @@ export interface SetActiveAccount {
  */
 export interface SetBackground {
   type: CONFIG_ACTIONS.SET_BACKGROUND
+  payload: string
+}
+
+/** Picks one of the named accent presets. See src/domain/accentColors.ts. */
+export interface SetAccentColor {
+  type: CONFIG_ACTIONS.SET_ACCENT_COLOR
   payload: string
 }
 
@@ -264,6 +271,7 @@ export type ConfigAction =
   | RemoveAccount
   | SetActiveAccount
   | SetBackground
+  | SetAccentColor
   | SetModDbVisibilityAnswer
   | SetReceiveBetaUpdates
   | AddInstallation
@@ -318,6 +326,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, activeAccountId: action.payload }
     case CONFIG_ACTIONS.SET_BACKGROUND:
       return { ...config, background: action.payload, _backgroundRevision: (config._backgroundRevision ?? 0) + 1 }
+    case CONFIG_ACTIONS.SET_ACCENT_COLOR:
+      return { ...config, accentColor: action.payload }
     case CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER:
       return { ...config, moddbVisibilityAnswer: action.payload }
     case CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES:

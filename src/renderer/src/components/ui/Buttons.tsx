@@ -27,6 +27,8 @@ type NormalButtonProps = Readonly<{
   children?: React.ReactNode
   icon?: React.ReactNode
   className?: string
+  /** Escape hatch for the rare control whose colour is data, not variant: an accent swatch, a progress fill. */
+  style?: React.CSSProperties
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<unknown>
   title: string
   ariaLabel?: string
@@ -47,7 +49,7 @@ type NormalButtonProps = Readonly<{
   Readonly<Omit<React.ComponentPropsWithoutRef<"button">, "onClick" | "disabled" | "title" | "className" | "children" | "type">>
 
 export const NormalButton = forwardRef<HTMLButtonElement, NormalButtonProps>(function NormalButton(
-  { children, icon, className, onClick, title, ariaLabel, disabled, busy, nativeType = "button", variant = "ghost", size = "sm", ariaPressed, ...rest },
+  { children, icon, className, style, onClick, title, ariaLabel, disabled, busy, nativeType = "button", variant = "ghost", size = "sm", ariaPressed, ...rest },
   ref
 ) {
   const action = useActionBusy(onClick, busy, disabled)
@@ -63,6 +65,7 @@ export const NormalButton = forwardRef<HTMLButtonElement, NormalButtonProps>(fun
       aria-label={ariaLabel ?? title}
       aria-busy={action.busy}
       aria-pressed={ariaPressed}
+      style={style}
       className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], BUTTON_VARIANT_STYLES[variant], className)}
     >
       {renderActionContent(children, icon, title, action.busy)}

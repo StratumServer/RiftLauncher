@@ -1,3 +1,4 @@
+import { DEFAULT_ACCENT_ID } from "../accentColors"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "../appUpdate/betaUpdates"
 import { DEFAULT_BACKGROUND_ID } from "../backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER } from "../moddbVisibility"
@@ -26,6 +27,7 @@ export const DEFAULT_CONFIG_BASE: Omit<ConfigType, "schemaVersion" | "defaultIns
   favMods: [],
   suspendedModUpdates: [],
   background: DEFAULT_BACKGROUND_ID,
+  accentColor: DEFAULT_ACCENT_ID,
   moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
   receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
   customIcons: []

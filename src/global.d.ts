@@ -23,6 +23,12 @@ declare global {
      */
     background: string
     /**
+     * Which preset paints `--color-vsl`, the brand accent read through `text-vsl`, `bg-vsl`,
+     * `border-vsl` and `outline-vsl`: a listed preset id, or the shipped default for anything
+     * else, missing included. See src/domain/accentColors.ts.
+     */
+    accentColor: string
+    /**
      * What the player answered when asked, once, whether the launcher could fetch its own ModDB
      * listing archive so that listing's download counter registers it: `unasked` until they answer,
      * then `accepted`, `declined` or `already-done` forever. See src/domain/moddbVisibility.ts.

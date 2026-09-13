@@ -51,6 +51,7 @@ export function createMockConfig(overrides: MockConfigOverrides = {}): ConfigTyp
     favMods: [],
     suspendedModUpdates: [],
     background: "default",
+    accentColor: "amber",
     moddbVisibilityAnswer: "unasked",
     receiveBetaUpdates: null,
     customIcons: [],

@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "motion/react"
 import clsx from "clsx"
 
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
+import { ACCENT_PRESETS } from "@domain/accentColors"
 import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
@@ -97,6 +98,16 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <BackgroundPicker />
+              </FormBody>
+            </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.accentColor")} />
+              </FormHead>
+
+              <FormBody>
+                <AccentColorPicker />
               </FormBody>
             </FromGroup>
 
@@ -338,6 +349,45 @@ function BackgroundTile({
       {source && !imageFailed && <img src={source} alt="" loading={loading} decoding="async" onError={() => setImageFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
       <span className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-xs text-center bg-zinc-950/70 overflow-hidden whitespace-nowrap text-ellipsis">{name}</span>
     </NormalButton>
+  )
+}
+
+/**
+ * The accent swatch row: a closed palette rather than a free colour field, so every choice keeps
+ * the contrast floor tests/text-contrast.test.ts holds the accent to (see src/domain/accentColors.ts).
+ *
+ * The selected swatch takes the same boundary BackgroundTile does: --color-vsl already equals that
+ * swatch's own fill once picked, so `border-2 border-vsl` only ever shows on the outside edge,
+ * against this panel over the shell. That edge is what the accent link assertions in
+ * text-contrast.test.ts already hold to the text floor for every preset, which is a stricter bar
+ * than a border needs.
+ */
+function AccentColorPicker(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { accentColor } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+
+  return (
+    <div className="flex flex-wrap gap-2" role="group" aria-label={t("features.config.accentColor")}>
+      {ACCENT_PRESETS.map((preset) => {
+        const name = t(`features.config.accentColors.${preset.id}`)
+        const selected = accentColor === preset.id
+
+        return (
+          <NormalButton
+            key={preset.id}
+            variant="secondary"
+            size="sm"
+            ariaPressed={selected}
+            title={name}
+            style={{ backgroundColor: preset.light }}
+            onClick={() => configDispatch({ type: CONFIG_ACTIONS.SET_ACCENT_COLOR, payload: preset.id })}
+            className={clsx("w-8 h-8 rounded-full p-0", selected ? "border-2 border-vsl" : "border border-zinc-400/5")}
+          />
+        )
+      })}
+    </div>
   )
 }
 
