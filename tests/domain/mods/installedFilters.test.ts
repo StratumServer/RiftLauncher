@@ -244,6 +244,16 @@ describe("matching a ModDB listing to the installed Mods", () => {
     assert.equal(listingDeclaresModid(["ruinsaddon", "betterruins"], "betterruins"), true)
   })
 
+  it("folds case on both sides, not just the installed one (#454, Cut the Fat)", () => {
+    // The ModDB documents modidstrs as lowercase, but an old release left this listing's modidstrs
+    // mixed case (["CutTheFat"]) while the archive's own modinfo.json says "cutthefat".
+    assert.equal(listingDeclaresModid(["CutTheFat"], "cutthefat"), true)
+    // The modinfo side can carry mixed case too, not only the plain-lowercase Cut the Fat archive.
+    assert.equal(listingDeclaresModid(["CutTheFat"], "Cutthefat"), true)
+    // Several declared ids, only one of which needs the fold.
+    assert.equal(listingDeclaresModid(["SomeOtherMod", "CutTheFat"], "cutthefat"), true)
+  })
+
   it("returns every copy that shares the modid, so a clash is never settled by picking one", () => {
     const enabled = aMod("Alpha", { modid: "alpha", path: "/mods/alpha-1.0.0.zip" })
     const disabled = aMod("Alpha", { modid: "alpha", path: "/mods/alpha-1.0.0.zip.disabled", enabled: false })
