@@ -105,9 +105,9 @@ function AddInslallation(): JSX.Element {
       configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION, payload: toInstallationType(result.installation) })
       addNotification(t("features.installations.installationSuccessfullyAdded"), "success")
       navigate("/installations")
-    } catch (error) {
+    } catch {
       window.api.utils.logMessage("error", `${LOG_TAG} [handleAddInstallation] Error adding an Installation.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} [handleAddInstallation] Error adding the Installation at ${path}: ${error}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [handleAddInstallation] Error adding the Installation at [PATH].`)
       addNotification(t("features.installations.errorAddingInstallation"), "error")
     }
   }
