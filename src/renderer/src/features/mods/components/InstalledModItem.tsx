@@ -59,7 +59,7 @@ function InstalledModItem({
     <ListItem key={iMod.modid + iMod.path}>
       <div
         className={clsx(
-          "h-20 flex gap-4 p-2 justify-between items-center whitespace-nowrap skip-offscreen-render",
+          "@container h-20 flex gap-4 p-2 justify-between items-center whitespace-nowrap skip-offscreen-render",
           // Being off wins the tint outright: whatever else the row has to say about updates or
           // suspension, the game is not loading this Mod at all, and that is the headline.
           !iMod.enabled ? "bg-zinc-500/25" : suspended ? "bg-sky-500/25" : iMod._updatableTo ? "bg-lime-600/25" : iMod._lastVersion && "bg-yellow-400/25"
@@ -88,38 +88,46 @@ function InstalledModItem({
             that turns it back on has to stay as readable as every other row's. */}
           <div className={clsx("shrink-0", !iMod.enabled && "opacity-50 grayscale")}>
             {iMod._image ? (
-              <img src={`cachemodimg:${iMod._image}`} alt={iMod.name} loading="lazy" className="w-16 h-16 object-cover rounded-sm" />
+              <img src={`cachemodimg:${iMod._image}`} alt={iMod.name} loading="lazy" className="size-16 @max-md:size-10 object-cover rounded-sm" />
             ) : (
-              <div className="w-16 h-16 bg-zinc-900 rounded-sm shadow-sm shadow-zinc-950" />
+              <div className="size-16 @max-md:size-10 bg-zinc-900 rounded-sm shadow-sm shadow-zinc-950" />
             )}
           </div>
 
           <ThinSeparator />
 
           <div className={clsx("min-w-0 w-full flex flex-col gap-1 justify-center overflow-hidden", !iMod.enabled && "opacity-50")}>
-            <div className="flex gap-2 items-center">
-              {/* A floor above zero: at the 1024px minimum window, the detail panel (#426) leaves this
-                  row so little width that a bare min-w-0 let the version and buttons win every last
-                  pixel and the name disappear outright (#438). This keeps a few characters and the
-                  ellipsis on screen; the version is what gives way first when space runs out. */}
-              <p className="min-w-9 truncate font-bold">{iMod.name}</p>
-              <span>·</span>
-              <p>v{iMod.version}</p>
-              {!iMod.enabled && (
-                <>
-                  <span>·</span>
-                  <p className="text-sm uppercase tracking-wide text-zinc-300">{t("features.mods.disabledLabel")}</p>
-                </>
-              )}
+            {/* The row's own width, not a floor on the name, is the actual budget (#438): with the
+                detail panel (#426) open at the 1024px minimum window this row has no space to spare,
+                so below the threshold the thumbnail and the action buttons shrink first, and this
+                line wraps so the version drops under the name instead of squeezing it to nothing. */}
+            <div className="flex gap-2 items-center @max-md:flex-wrap">
+              <p className="min-w-0 truncate font-bold @max-md:grow">{iMod.name}</p>
+              {/* The version (and the disabled label) travel together as one flex item, so wrapping
+                    always moves the whole group below the name instead of splitting the "·" from
+                    what it separates (#438). */}
+              <div className="shrink-0 flex gap-2 items-center">
+                <span>·</span>
+                <p>v{iMod.version}</p>
+                {!iMod.enabled && (
+                  <>
+                    <span>·</span>
+                    <p className="text-sm uppercase tracking-wide text-zinc-300">{t("features.mods.disabledLabel")}</p>
+                  </>
+                )}
+              </div>
             </div>
 
+            {/* Wrapping the name/version line to two rows already spends the height this row has
+                  to give (#438); the description and the credits are the lowest-priority lines in
+                  this column, so they are what goes rather than clipping the name or the version. */}
             {iMod.description && (
-              <div className="overflow-hidden">
+              <div className="overflow-hidden @max-md:hidden">
                 <p className="text-sm text-zinc-400 overflow-hidden whitespace-nowrap text-ellipsis">{iMod.description}</p>
               </div>
             )}
 
-            <div className="flex gap-2 items-center text-sm text-zinc-400">
+            <div className="flex gap-2 items-center text-sm text-zinc-400 @max-md:hidden">
               {iMod.authors && iMod.authors?.length > 0 && (
                 <p className="shrink-0 overflow-hidden whitespace-nowrap text-ellipsis">
                   {t("generic.authors")}: {iMod.authors?.join(", ")}
@@ -139,7 +147,7 @@ function InstalledModItem({
 
         <ThinSeparator />
 
-        <div className="flex gap-1 justify-end text-lg">
+        <div className="flex gap-1 justify-end text-lg @max-md:grid @max-md:grid-cols-2">
           <NormalButton title={iMod.enabled ? t("features.mods.disableMod") : t("features.mods.enableMod")} variant="ghost" className="p-1" disabled={busy} onClick={onToggleEnabledClick}>
             {iMod.enabled ? <PiPowerDuotone /> : <PiPowerFill className="text-yellow-400" />}
           </NormalButton>
