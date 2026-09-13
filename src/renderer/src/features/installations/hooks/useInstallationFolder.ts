@@ -20,8 +20,6 @@ async function suggestInstallationFolder(baseFolder: string, name: string): Prom
 export interface UseInstallationFolderResult {
   /** The folder the Installation's data lives in, either suggested or the user's own. */
   folder: string
-  /** Free text edit of the folder, e.g. typing directly in the input. Takes the field over. */
-  setFolder: (folder: string) => void
   /** Opens the OS folder picker and, once one is picked, takes the field over with it. */
   browseFolder: () => Promise<void>
 }
@@ -32,12 +30,12 @@ export interface UseInstallationFolderResult {
  * something the path layer accepts, kept in sync with both until the user
  * takes the field over.
  *
- * Same shape as useVersionInstallFolder, with one deliberate difference.
- * There, typing in the folder input does not count as a pick, because the
- * other half of the suggestion is a version chosen from a list and settles
- * early. Here it is a name the user keeps editing, so a folder they typed
- * themselves would be thrown away on the next keystroke in the name field.
- * Typing counts here, and so does the browse button.
+ * Browsing is the only way to take the field over (#411). The input used to
+ * be editable, and a typed folder outside the managed roots was refused by
+ * assertManagedPath with a message about permissions that had nothing to do
+ * with the real reason. The picker is what grants the path, so the field is
+ * read-only and the Browse button next to it is the way in, which is the shape
+ * "Add an already installed VS Version" has always had.
  *
  * The base folder is part of the suggestion too: it arrives empty on the first
  * render and only fills in once the config has loaded, so a suggestion built
@@ -76,5 +74,5 @@ export function useInstallationFolder(name: string, defaultInstallationsFolder: 
     if (selectedPath) takeFolderOver(selectedPath)
   }
 
-  return { folder: suggestedFolder, setFolder: takeFolderOver, browseFolder }
+  return { folder: suggestedFolder, browseFolder }
 }

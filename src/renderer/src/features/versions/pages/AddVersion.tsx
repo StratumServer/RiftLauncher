@@ -33,7 +33,7 @@ function AddVersion(): JSX.Element {
   const { gameVersions, loading, failed, retry } = useGameVersionCatalog()
   const [version, setVersion] = useState<DownloadableGameVersionTypeType | undefined>()
   const [versionFilters, setVersionFilters] = useState({ stable: true, rc: false, pre: false })
-  const { folder, setFolder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder)
+  const { folder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder)
   const installVersion = useInstallVersion()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -145,7 +145,7 @@ function AddVersion(): JSX.Element {
                   <FormButton onClick={browseFolder} title={t("generic.browse")} variant="secondary" className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
-                  <FormInputText placeholder={t("features.versions.versionFolder")} value={folder} onChange={(e) => setFolder(e.target.value)} className="w-full" />
+                  <FormInputText placeholder={t("features.versions.versionFolder")} value={folder} readOnly className="w-full" />
                 </FormFieldGroup>
               </FormBody>
             </FromGroup>
