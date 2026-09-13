@@ -40,6 +40,13 @@ declare global {
      * does on its own. See src/domain/appUpdate/betaUpdates.ts.
      */
     receiveBetaUpdates: boolean | null
+    /**
+     * The version the "what's new" dialog last showed notes up to, empty for a fresh install or
+     * a config written before this field existed. Compared against the running version by
+     * useWhatsNew.ts to decide whether there is anything left to show. See
+     * src/domain/appUpdate/whatsNew.ts.
+     */
+    lastSeenChangelogVersion: string
     _notifiedModUpdatesInstallations?: string[]
     /**
      * Bumped by every background selection so a re-pick of the same id still repaints. The custom

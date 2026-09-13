@@ -30,6 +30,7 @@ export const DEFAULT_CONFIG_BASE: Omit<ConfigType, "schemaVersion" | "defaultIns
   accentColor: DEFAULT_ACCENT_ID,
   moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
   receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
+  lastSeenChangelogVersion: "",
   customIcons: []
 }
 

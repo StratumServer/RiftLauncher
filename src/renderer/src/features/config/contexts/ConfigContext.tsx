@@ -30,6 +30,8 @@ export interface ConfigSettingsType {
   moddbVisibilityAnswer: string
   /** Whether update checks may offer betas, or null while nobody has said. See src/domain/appUpdate/betaUpdates.ts. */
   receiveBetaUpdates: boolean | null
+  /** The version the "what's new" dialog last showed notes up to, or empty. See src/domain/appUpdate/whatsNew.ts. */
+  lastSeenChangelogVersion: string
 }
 
 // Stable identity for the "nobody has been notified yet" case, so a consumer
@@ -169,7 +171,8 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       backgroundRevision: config._backgroundRevision ?? 0,
       accentColor: config.accentColor,
       moddbVisibilityAnswer: config.moddbVisibilityAnswer,
-      receiveBetaUpdates: config.receiveBetaUpdates
+      receiveBetaUpdates: config.receiveBetaUpdates,
+      lastSeenChangelogVersion: config.lastSeenChangelogVersion
     }),
     [
       config.schemaVersion,
@@ -182,7 +185,8 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config._backgroundRevision,
       config.accentColor,
       config.moddbVisibilityAnswer,
-      config.receiveBetaUpdates
+      config.receiveBetaUpdates,
+      config.lastSeenChangelogVersion
     ]
   )
 

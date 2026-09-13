@@ -38,6 +38,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     accentColor: DEFAULT_ACCENT_ID,
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
+    lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides
   }
@@ -178,6 +179,17 @@ describe("configReducer: scalar setters", () => {
     const optedOut = configReducer(config, { type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: false })
     assert.equal(optedOut.receiveBetaUpdates, false)
     assert.equal(optedOut.installations, config.installations)
+  })
+
+  it("SET_LAST_SEEN_CHANGELOG_VERSION records the running version and touches nothing else", () => {
+    const config = baseConfig()
+    assert.equal(config.lastSeenChangelogVersion, "")
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION, payload: "1.7.0-beta.10" })
+
+    assert.equal(result.lastSeenChangelogVersion, "1.7.0-beta.10")
+    assert.equal(result.background, config.background)
+    assert.equal(result.installations, config.installations)
   })
 })
 
