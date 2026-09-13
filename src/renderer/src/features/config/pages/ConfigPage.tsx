@@ -347,7 +347,18 @@ function BackgroundTile({
       )}
     >
       {source && !imageFailed && <img src={source} alt="" loading={loading} decoding="async" onError={() => setImageFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
-      <span className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-xs text-center bg-zinc-950/70 overflow-hidden whitespace-nowrap text-ellipsis">{name}</span>
+      {/*
+       * `!mb-0` is load-bearing (#411). This caption is a direct child of a button, so it takes
+       * the `.text-trim-children` rule from styles.css: padding-block 0.3em with a matching
+       * negative margin-block, which cancels the padding for an element in normal flow. This one
+       * is not in normal flow. It is absolutely positioned against `bottom-0`, which places its
+       * *margin* box, so the negative bottom margin pushed its border box 0.3em past the tile's
+       * own `overflow-hidden` and the descenders on "Valley Ruins", "Village Lane" and the rest
+       * were cut off there. Cancelling that margin puts the whole caption back inside the tile.
+       * `mb-0` on its own loses the cascade: the trim rule is `.text-trim-children > :not(svg)`,
+       * a class plus a type selector, which outranks a bare utility class.
+       */}
+      <span className="absolute inset-x-0 bottom-0 !mb-0 px-1 py-0.5 text-xs text-center bg-zinc-950/70 overflow-hidden whitespace-nowrap text-ellipsis">{name}</span>
     </NormalButton>
   )
 }
