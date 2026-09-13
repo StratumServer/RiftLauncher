@@ -100,9 +100,17 @@ function InstalledModItem({
             {/* The row's own width, not a floor on the name, is the actual budget (#438): with the
                 detail panel (#426) open at the 1024px minimum window this row has no space to spare,
                 so below the threshold the thumbnail and the action buttons shrink first, and this
-                line wraps so the version drops under the name instead of squeezing it to nothing. */}
-            <div className="flex gap-2 items-center @max-md:flex-wrap">
-              <p className="min-w-0 truncate font-bold @max-md:grow">{iMod.name}</p>
+                line wraps so the version drops under the name instead of squeezing it to nothing.
+
+                Two tiers, not one. The panel open at 1280 leaves a 568px row, above @max-md's 448px,
+                so none of that fired and a disabled Mod's name was down to 83px with the version and
+                the DISABLED badge still beside it. @max-xl (576px) catches that width, and the same
+                one at 1024 with the panel closed. Only the name line and the credits answer it: the
+                thumbnail, the buttons and the description stay as they are, because at 568px there
+                is room for them. gap-y-0 on the wrap keeps the column at the 72px it already is, so
+                a row that folds is no taller than one that does not. */}
+            <div className="flex gap-2 items-center @max-xl:flex-wrap @max-xl:gap-y-0">
+              <p className="min-w-0 truncate font-bold @max-xl:grow">{iMod.name}</p>
               {/* The version (and the disabled label) travel together as one flex item, so wrapping
                     always moves the whole group below the name instead of splitting the "·" from
                     what it separates (#438). */}
@@ -127,7 +135,9 @@ function InstalledModItem({
               </div>
             )}
 
-            <div className="flex gap-2 items-center text-sm text-zinc-400 @max-md:hidden">
+            {/* The credits go one tier before the description: of the three lines under the name they
+                  are the one a player reads least, and the folded name line needs their height. */}
+            <div className="flex gap-2 items-center text-sm text-zinc-400 @max-xl:hidden">
               {iMod.authors && iMod.authors?.length > 0 && (
                 <p className="shrink-0 overflow-hidden whitespace-nowrap text-ellipsis">
                   {t("features.mods.authorsLabel")} {iMod.authors?.join(", ")}
