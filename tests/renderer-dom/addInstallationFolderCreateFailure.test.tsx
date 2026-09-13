@@ -35,7 +35,9 @@ describe("AddInstallation, folder creation failure", () => {
     const user = userEvent.setup()
     const ensurePathExists = vi.fn(async () => false)
     installMockWindowApi({
-      configManager: { getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ version: "1.20.0", path: "/versions/1.20.0" }] })) },
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }] }))
+      },
       pathsManager: { ensurePathExists }
     })
 

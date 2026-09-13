@@ -245,6 +245,9 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   assertTrustedIpcSender(event)
   const safeVersion = validateGameVersion(version)
   const safeInstallation = validateGameInstallation(installation)
+  if ((safeVersion.id !== undefined || safeInstallation.gameVersionId !== undefined) && safeVersion.id !== safeInstallation.gameVersionId) {
+    throw new TypeError("Game version and installation gameVersionId do not correlate")
+  }
   safeVersion.path = await assertManagedPath(safeVersion.path, "game version path")
   safeInstallation.path = await assertManagedPath(safeInstallation.path, "installation path")
   const config = await getConfig()
@@ -343,7 +346,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     // Never logs what the file held: the path this installation was copied out of is untrusted
     // input and stays out of the log. The path we put there is our own and may be named.
     const modPathsNotice = "modPaths" in written ? written.modPaths : undefined
-    if (modPathsNotice === "repointed") logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Repointed this installation's mod folder list at ${modsPath}.`)
+    if (modPathsNotice === "repointed") logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Repointed this installation's mod folder list at [PATH].`)
     else if (modPathsNotice === "repoint-write-failed")
       logMessage(
         "warn",
@@ -508,7 +511,7 @@ function realProcessProbe(): ProcessProbe {
 ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, path: unknown): Promise<LookForAGameVersionResult> => {
   assertTrustedIpcSender(event)
   const safePath = await assertManagedPath(path, "game version path", { allowMissing: true })
-  logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Looking for the game at ${safePath}`)
+  logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Looking for the game at [PATH]`)
 
   let fileNames: string[]
   try {

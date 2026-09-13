@@ -125,6 +125,12 @@ export interface ModDbModDetail extends Record<string, unknown> {
   /** Always a list of objects, each with string `modversion` and string-only `tags`: see {@link readRelease}. */
   releases: Record<string, unknown>[]
   logofile?: string
+  /** The description as the HTML its author wrote. Shown only through {@link modDescriptionParagraphs}, never as markup. */
+  text?: string
+  author?: string
+  side?: string
+  downloads?: number
+  follows?: number
 }
 
 /**
@@ -158,8 +164,12 @@ function readModDetail(value: unknown): ModDbModDetail | undefined {
   const releases = value["releases"]
   if (!Array.isArray(releases)) return undefined
 
+  // Kept only when they have the type every reader assumes. #370 took the page down on a null
+  // where a list was expected, and these five are rendered as text and counts.
+  const { text, author, side, downloads, follows, ...rest } = value
+
   return {
-    ...value,
+    ...rest,
     modid,
     name,
     // Mod-level tags carry the same `null` the Vanilla Variants listing shipped in beta.7. The
@@ -167,8 +177,58 @@ function readModDetail(value: unknown): ModDbModDetail | undefined {
     // a second line rather than the only one.
     tags: cleanStrings(value["tags"]),
     releases: releases.map(readRelease).filter((release): release is Record<string, unknown> => release !== undefined),
-    ...(typeof value["logofile"] === "string" ? { logofile: value["logofile"] } : {})
+    ...(typeof value["logofile"] === "string" ? { logofile: value["logofile"] } : {}),
+    ...(typeof text === "string" ? { text } : {}),
+    ...(typeof author === "string" ? { author } : {}),
+    ...(typeof side === "string" ? { side } : {}),
+    ...(Number.isFinite(downloads) ? { downloads: downloads as number } : {}),
+    ...(Number.isFinite(follows) ? { follows: follows as number } : {})
   }
+}
+
+/** Code, not prose: comments, scripts and styles go whole, body included. An unclosed one runs to the end, as it would in a browser. */
+const NON_PROSE = /<!--[\s\S]*?(?:-->|$)|<(script|style)\b[^<>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi
+
+/** Tags that end a paragraph. */
+const BLOCK_BOUNDARY = /<\/?(?:p|br|li|h[1-6]|div|tr|blockquote)\b[^<>]*>/gi
+
+/** Any other tag. `[^<>]` rather than `[^>]`: a stray `<` ends the attempt at the next one instead of rescanning to the end, which keeps a hostile description linear. */
+const ANY_TAG = /<[^<>]*>/g
+
+const ENTITY = /&(?:#(\d{1,7})|#x([\da-f]{1,6})|(amp|lt|gt|quot|apos|nbsp));/gi
+
+const NAMED_ENTITIES: Readonly<Record<string, string>> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " }
+
+function decodeEntity(entity: string, decimal: string | undefined, hex: string | undefined, name: string | undefined): string {
+  if (name !== undefined) return NAMED_ENTITIES[name.toLowerCase()] ?? entity
+  const code = decimal !== undefined ? Number(decimal) : parseInt(hex ?? "", 16)
+  // String.fromCodePoint throws past U+10FFFF, and a lone surrogate or a NUL is not text worth showing.
+  if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return entity
+  return String.fromCodePoint(code)
+}
+
+/**
+ * A ModDB description (`/api/mod/{id}` `text`, HTML) as plain-text paragraphs.
+ *
+ * Block tags cut paragraphs, script and style bodies are dropped, every other tag is stripped and
+ * entities are decoded in a single pass, so `&amp;lt;` reads `&lt;` and not `<`. The result is
+ * meant for React text children: safety rests on React escaping it, not on this function, and the
+ * worst a mistake here can do is show a stray `<`.
+ *
+ * ponytail: formatting, links and images are lost. The panel's ModDB button opens the full page;
+ * a sanitizer and rich rendering are the upgrade if players ask for them.
+ */
+export function modDescriptionParagraphs(html: unknown): string[] {
+  if (typeof html !== "string") return []
+
+  return html
+    .replace(/\s+/g, " ")
+    .replace(NON_PROSE, "")
+    .replace(BLOCK_BOUNDARY, "\n")
+    .replace(ANY_TAG, "")
+    .split("\n")
+    .map((paragraph) => paragraph.replace(ENTITY, decodeEntity).trim())
+    .filter((paragraph) => paragraph.length > 0)
 }
 
 /**

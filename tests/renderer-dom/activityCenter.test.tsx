@@ -53,8 +53,13 @@ function panel(): HTMLElement {
 
 /** Exposes the presented toast so timer behaviour is read off state, not the DOM. */
 function ActiveToastProbe(): JSX.Element {
-  const { activeToast } = useNotificationsContext()
-  return <span data-testid="active-toast">{activeToast?.body ?? "none"}</span>
+  const { activeToast, toastPaused } = useNotificationsContext()
+  return (
+    <>
+      <span data-testid="active-toast">{activeToast?.body ?? "none"}</span>
+      <span data-testid="toast-paused">{String(toastPaused)}</span>
+    </>
+  )
 }
 
 describe("ActivityCenter", () => {
@@ -557,6 +562,61 @@ describe("NotificationsContext history caps", () => {
   })
 })
 
+describe("toast hand-off when the banner's record disappears", () => {
+  it("hands the screen to the next toast when the banner's record is cleared from the center", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <ActiveToastProbe />
+        <NotificationsOverlay />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+    expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+
+    openCenter()
+    const bannerRow = within(panel()).getByText("A notification worth keeping").closest("li") as HTMLElement
+    fireEvent.click(within(bannerRow).getByRole("button", { name: "Mark as read" }))
+    fireEvent.click(within(panel()).getByRole("button", { name: "Clear read" }))
+
+    // The banner's record is gone but activeToastId still named it. The queue must not
+    // stall on the dead id: the error waiting behind it takes the screen at once.
+    expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+  })
+
+  it("leaves the overlay cleanly empty, not stuck, when the last record behind the banner goes", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <ActiveToastProbe />
+        <NotificationsOverlay />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    openCenter()
+    fireEvent.click(within(panel()).getByRole("button", { name: "Mark as read" }))
+    fireEvent.click(within(panel()).getByRole("button", { name: "Clear read" }))
+
+    // activeToastId no longer names anything, so the overlay has no live banner.
+    expect(screen.getByTestId("active-toast").textContent).toBe("none")
+
+    // And the hand-off is not blocked on the dead id: the next notification still reaches the screen.
+    fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+    expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+  })
+})
+
 /** Fires five errors with bodies that can be told apart, so the burst's order is readable. */
 function BurstControls(): JSX.Element {
   const { addNotification } = useNotificationsContext()
@@ -656,6 +716,61 @@ describe("toast queue timing", () => {
     }
   })
 
+  it("shortens the banner on screen when something arrives behind it, instead of leaving its full turn", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      // An 8s error takes the screen with nothing behind it, so it gets its whole turn.
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      act(() => vi.advanceTimersByTime(400))
+      // Now something lands behind it. Its turn drops to the backlog turn from this moment
+      // (2s), not the 8s it was handed. Before this change it kept the full eight, so this
+      // assertion would still read "Something went wrong" at 7s.
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+
+      act(() => vi.advanceTimersByTime(1_600))
+      expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+      act(() => vi.advanceTimersByTime(600))
+      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("leaves a question on screen when something arrives behind it", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add actionable warning" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+
+      tick(30_000)
+      expect(screen.getByTestId("active-toast").textContent).toBe("A decision is required")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("holds the countdown while the pointer is over the toast", () => {
     vi.useFakeTimers()
     try {
@@ -683,6 +798,66 @@ describe("toast queue timing", () => {
     }
   })
 
+  it("keeps the countdown held when the next banner takes the screen under the same pointer", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+      // Pointer settles over the region and never moves again.
+      fireEvent.mouseEnter(screen.getByRole("status"))
+      // The first banner is dismissed and the second takes its place. The pointer is still
+      // there, so the new banner mounts paused rather than running its timer unseen (#398).
+      fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
+      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+
+      act(() => vi.advanceTimersByTime(30_000))
+      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+
+      fireEvent.mouseLeave(screen.getByRole("status"))
+      act(() => vi.advanceTimersByTime(5_000))
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not shorten a banner the pointer is holding when something arrives behind it", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      fireEvent.mouseEnter(screen.getByRole("status"))
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+
+      // The shortening effect is gated on the pause flag, so a held banner keeps its turn.
+      act(() => vi.advanceTimersByTime(30_000))
+      expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("holds the countdown while focus is inside the toast, for a player who tabbed to its buttons", () => {
     vi.useFakeTimers()
     try {
@@ -702,6 +877,97 @@ describe("toast queue timing", () => {
 
       act(() => vi.advanceTimersByTime(30_000))
       expect(screen.getByTestId("active-toast").textContent).toBe("A successful action")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("resumes the queue when a focused banner is dismissed", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+      const discard = screen.getByRole("button", { name: "Discard notification" })
+      discard.focus()
+      expect(document.activeElement).toBe(discard)
+
+      fireEvent.click(discard)
+      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+      expect(screen.getByTestId("toast-paused").textContent).toBe("false")
+
+      act(() => vi.advanceTimersByTime(5_000))
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("resumes the queue after answering a focused question", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add actionable warning" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      const resolve = screen.getByRole("button", { name: "Resolve" })
+      resolve.focus()
+      expect(document.activeElement).toBe(resolve)
+
+      fireEvent.click(resolve)
+      expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+      expect(screen.getByTestId("toast-paused").textContent).toBe("false")
+
+      act(() => vi.advanceTimersByTime(8_500))
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("shortens an active banner using its remaining time, not a fresh turn", async () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      act(() => vi.advanceTimersByTime(7_000))
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+
+      expect(screen.getByTestId("toast-paused").textContent).toBe("false")
+      await act(async () => {
+        await Promise.resolve()
+      })
+      act(() => vi.advanceTimersByTime(1_100))
+      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
     } finally {
       vi.useRealTimers()
     }
@@ -764,6 +1030,44 @@ describe("Activity Center section order", () => {
       .getAllByRole("heading", { level: 3 })
       .map((heading) => heading.textContent)
     expect(headings).toEqual(["Needs attention", "In progress", "Notifications"])
+  })
+})
+
+describe("toast queue pointer handoff", () => {
+  it("lets the next toast finish after the pointer leaves a dismissed banner through the document listener", async () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+          <button data-testid="outside-toast-region">Outside toast region</button>
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+      fireEvent.mouseOver(toast())
+      fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
+
+      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+
+      fireEvent.mouseOver(screen.getByTestId("outside-toast-region"))
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(screen.getByTestId("toast-paused").textContent).toBe("false")
+      act(() => vi.advanceTimersByTime(4_500))
+      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
   })
 })
 

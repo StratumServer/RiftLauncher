@@ -35,7 +35,7 @@ describe("ModChangeSummaryPopup actions cell", () => {
     renderWithProviders(<ModChangeSummaryPopup isOpen close={(): void => {}} title="Summary" entries={[anEntry({ name: "Zero Asset", modid: "zero", assetid: 0 })]} />)
 
     const row = rowFor("Zero Asset")
-    expect(within(row).queryByRole("button", { name: "Open on the ModDB!" })).toBeNull()
+    expect(within(row).queryByRole("button", { name: "Open on the ModDB." })).toBeNull()
     expect(within(row).queryByText("0")).toBeNull()
   })
 
@@ -44,7 +44,7 @@ describe("ModChangeSummaryPopup actions cell", () => {
 
     renderWithProviders(<ModChangeSummaryPopup isOpen close={(): void => {}} title="Summary" entries={[anEntry({ name: "No Asset", modid: "none" })]} />)
 
-    expect(within(rowFor("No Asset")).queryByRole("button", { name: "Open on the ModDB!" })).toBeNull()
+    expect(within(rowFor("No Asset")).queryByRole("button", { name: "Open on the ModDB." })).toBeNull()
   })
 
   it("still renders the ModDB button for an entry with a real assetid", () => {
@@ -52,6 +52,6 @@ describe("ModChangeSummaryPopup actions cell", () => {
 
     renderWithProviders(<ModChangeSummaryPopup isOpen close={(): void => {}} title="Summary" entries={[anEntry({ name: "Real Asset", modid: "real", assetid: 42 })]} />)
 
-    expect(within(rowFor("Real Asset")).getByRole("button", { name: "Open on the ModDB!" })).toBeTruthy()
+    expect(within(rowFor("Real Asset")).getByRole("button", { name: "Open on the ModDB." })).toBeTruthy()
   })
 })

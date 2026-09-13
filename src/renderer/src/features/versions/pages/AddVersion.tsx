@@ -4,7 +4,7 @@ import { Input } from "@headlessui/react"
 import { FiLoader } from "react-icons/fi"
 import { PiDownloadDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
 
-import { useGameVersions, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
+import { useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useGameVersionCatalog } from "@renderer/features/versions/hooks/useGameVersionCatalog"
 import { useVersionInstallFolder } from "@renderer/features/versions/hooks/useVersionInstallFolder"
 import { useInstallVersion } from "@renderer/features/versions/hooks/useInstallVersion"
@@ -28,19 +28,18 @@ import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuB
 
 function AddVersion(): JSX.Element {
   const { t } = useTranslation()
-  const installedGameVersions = useGameVersions()
   const settings = useSettingsConfig()
 
   const { gameVersions, loading, failed, retry } = useGameVersionCatalog()
   const [version, setVersion] = useState<DownloadableGameVersionTypeType | undefined>()
   const [versionFilters, setVersionFilters] = useState({ stable: true, rc: false, pre: false })
-  const { folder, setFolder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder)
+  const { folder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder)
   const installVersion = useInstallVersion()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    setVersion(gameVersions.find((gv) => versionFilters[gv.type] && !installedGameVersions.some((igv) => igv.version === gv.version)))
+    setVersion(gameVersions.find((gv) => versionFilters[gv.type]))
   }, [gameVersions, versionFilters])
 
   const handleInstallVersion = (): Promise<void> => installVersion(version, folder)
@@ -124,12 +123,7 @@ function AddVersion(): JSX.Element {
                       {gameVersions.map(
                         (gv) =>
                           versionFilters[gv.type] && (
-                            <TableBodyRow
-                              key={gv.version}
-                              selected={version?.version === gv.version}
-                              disabled={installedGameVersions.some((igv) => igv.version === gv.version)}
-                              onClick={() => !installedGameVersions.some((igv) => igv.version === gv.version) && setVersion(gv)}
-                            >
+                            <TableBodyRow key={`${gv.version}-${gv.type}`} selected={version?.version === gv.version} onClick={() => setVersion(gv)}>
                               <TableCell className="w-1/2">{gv.version}</TableCell>
                               <TableCell className="w-1/2">{gv.type}</TableCell>
                             </TableBodyRow>
@@ -151,7 +145,7 @@ function AddVersion(): JSX.Element {
                   <FormButton onClick={browseFolder} title={t("generic.browse")} variant="secondary" className="px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
-                  <FormInputText placeholder={t("features.versions.versionFolder")} value={folder} onChange={(e) => setFolder(e.target.value)} className="w-full" />
+                  <FormInputText placeholder={t("features.versions.versionFolder")} value={folder} readOnly className="w-full" />
                 </FormFieldGroup>
               </FormBody>
             </FromGroup>

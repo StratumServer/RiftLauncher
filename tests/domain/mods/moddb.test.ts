@@ -3,6 +3,7 @@ import { describe, it } from "vitest"
 
 import {
   type ModDbModDetail,
+  modDescriptionParagraphs,
   newestReleaseFileId,
   parseAuthorsResponse,
   parseGameVersionsResponse,
@@ -194,6 +195,25 @@ describe("parseModDetailResponse: shapes the ModDB actually sends", () => {
     assert.equal(newestReleaseFileId(detail), 42)
   })
 
+  it("keeps author, text and side only as strings and counts only as finite numbers", () => {
+    const odd = detailOf({ modid: 1, name: "Odd", author: null, text: null, side: 7, downloads: "12", follows: "x", releases: [] })
+    for (const field of ["author", "text", "side", "downloads", "follows"]) assert.equal(field in odd, false, `${field} survived with the wrong type`)
+
+    const clean = detailOf({ modid: 1, name: "Clean", author: "Ann", text: "<p>x</p>", side: "both", downloads: 12, follows: 3, releases: [] })
+    assert.equal(clean.author, "Ann")
+    assert.equal(clean.text, "<p>x</p>")
+    assert.equal(clean.side, "both")
+    assert.equal(clean.downloads, 12)
+    assert.equal(clean.follows, 3)
+  })
+
+  it("drops a count that JSON.parse read as Infinity", () => {
+    const result = parseModDetailResponse('{"statuscode":"200","mod":{"modid":1,"name":"Huge","downloads":1e400,"follows":-1e400,"releases":[]}}')
+    if (!result.ok) throw new Error("unreachable")
+    assert.equal(result.payload.downloads, undefined)
+    assert.equal(result.payload.follows, undefined)
+  })
+
   it("carries every other release field through untouched", () => {
     const detail = detailOf({ modid: 1, name: "Whole", releases: [{ releaseid: 9, fileid: 42, mainfile: "https://mods.example/a.zip", modidstr: "a", changelog: "<p>hi</p>" }] })
     assert.deepEqual(detail.releases[0], {
@@ -305,5 +325,84 @@ describe("parseTagsResponse", () => {
     assert.equal(result.ok, true)
     if (!result.ok) throw new Error("unreachable")
     assert.equal(result.payload[0]?.name, "Absolute Cinema")
+  })
+})
+
+describe("modDescriptionParagraphs", () => {
+  it("splits paragraphs, line breaks and list items into separate paragraphs", () => {
+    assert.deepEqual(modDescriptionParagraphs("<p>One</p><p>Two<br>Three</p><ul><li>Four</li></ul><h2>Five</h2><div>Six</div><blockquote>Seven</blockquote>"), [
+      "One",
+      "Two",
+      "Three",
+      "Four",
+      "Five",
+      "Six",
+      "Seven"
+    ])
+  })
+
+  it("drops script and style bodies, not only their tags", () => {
+    assert.deepEqual(modDescriptionParagraphs("<p>Hi</p><script>alert(1)</script><style>p{}</style><SCRIPT type='text/javascript'>x()</SCRIPT >"), ["Hi"])
+  })
+
+  it("drops a script, style or comment that never closes, through to the end", () => {
+    assert.deepEqual(modDescriptionParagraphs("<p>Hi</p><script>alert(1)"), ["Hi"])
+    assert.deepEqual(modDescriptionParagraphs("<p>Hi</p><style>p{}"), ["Hi"])
+    assert.deepEqual(modDescriptionParagraphs("<p>Hi</p><!-- hidden <p>still hidden</p>"), ["Hi"])
+    assert.deepEqual(modDescriptionParagraphs("<p>a</p><!-- note --><p>b</p>"), ["a", "b"])
+  })
+
+  it("strips nested and attribute-carrying tags down to their text", () => {
+    const html = '<div class="x"><p><b><i>deep</i></b> <a href="https://evil.example" onclick="x()">link</a></p></div><img src="x" onerror="y()"><iframe src="https://evil.example"></iframe>'
+    assert.deepEqual(modDescriptionParagraphs(html), ["deep link"])
+  })
+
+  it("leaves a tag that never closes as text, which React then shows literally", () => {
+    assert.deepEqual(modDescriptionParagraphs("<p>Left <img src=x onerror=alert(1)"), ["Left <img src=x onerror=alert(1)"])
+  })
+
+  it("decodes each entity exactly once", () => {
+    assert.deepEqual(modDescriptionParagraphs("&amp;lt;b&amp;gt; &lt;i&gt; &#65;&#x42; &quot;q&quot; &apos;s&apos;"), ["&lt;b&gt; <i> AB \"q\" 's'"])
+  })
+
+  it("reads entity names and hex digits in any case", () => {
+    assert.deepEqual(modDescriptionParagraphs("&AMP; &#X4a;"), ["& J"])
+  })
+
+  it("leaves an impossible numeric entity as text instead of throwing", () => {
+    assert.deepEqual(modDescriptionParagraphs("&#x110000; &#xD800; &#0; &#1114112;"), ["&#x110000; &#xD800; &#0; &#1114112;"])
+  })
+
+  it("collapses whitespace and drops empty paragraphs", () => {
+    assert.deepEqual(modDescriptionParagraphs("<p>  a \n b </p><p>&nbsp;</p>"), ["a b"])
+  })
+
+  it("answers no paragraphs for a missing or non-string description", () => {
+    for (const value of [undefined, null, 42, ["<p>x</p>"]]) assert.deepEqual(modDescriptionParagraphs(value), [])
+  })
+
+  it("ends a tag at a stray < inside it, which is what keeps every tag pattern linear", () => {
+    // A pattern whose attributes may hold a `<` rescans to the end of the text from every opening,
+    // which is quadratic on a hostile description. Stopping there leaves the broken tag as text.
+    assert.deepEqual(modDescriptionParagraphs("<p <b>x"), ["<p x"])
+    assert.deepEqual(modDescriptionParagraphs("</li <b>x"), ["</li x"])
+    assert.deepEqual(modDescriptionParagraphs("<a <b>x"), ["<a x"])
+    assert.deepEqual(modDescriptionParagraphs("<script <b>x"), ["<script x"])
+  })
+
+  it("stays linear on a very long hostile description", () => {
+    // The host caps a detail at 4 MB. A pattern that rescans to the end from every `<` would take
+    // seconds to minutes on these, and it would freeze the page while it did.
+    const size = 400_000
+    const started = performance.now()
+
+    assert.deepEqual(modDescriptionParagraphs("<".repeat(size)), ["<".repeat(size)])
+    assert.deepEqual(modDescriptionParagraphs("<script ".repeat(size / 8)), ["<script ".repeat(size / 8).trim()])
+    assert.deepEqual(modDescriptionParagraphs("<script>".repeat(size / 8)), [])
+    assert.deepEqual(modDescriptionParagraphs("<!--".repeat(size / 4)), [])
+    assert.deepEqual(modDescriptionParagraphs(`<p>${"word ".repeat(size / 5)}</p>`), ["word ".repeat(size / 5).trim()])
+
+    const elapsed = performance.now() - started
+    assert.ok(elapsed < 1000, `took ${Math.round(elapsed)} ms`)
   })
 })

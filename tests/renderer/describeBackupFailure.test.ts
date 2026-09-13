@@ -49,8 +49,8 @@ describe("describeBackupFailure error-log line", () => {
     assert.ok(logLine?.includes("Compression source is too large"), `expected the cause in the log line, got: ${logLine}`)
   })
 
-  it("names the archive it could not remove for a prune failure", () => {
-    assert.equal(describeBackupFailure("prune-failed", "b2").logLine, "Error creating backup: prune-failed. Could not remove backup b2")
+  it("logs only the reason for a prune failure, never the backup path it could not remove", () => {
+    assert.equal(describeBackupFailure("prune-failed", "b2").logLine, "Error creating backup: prune-failed")
   })
 
   it("logs the reason with no cause when there is none", () => {

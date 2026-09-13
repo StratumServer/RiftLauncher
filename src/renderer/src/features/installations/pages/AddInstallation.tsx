@@ -64,7 +64,7 @@ function AddInslallation(): JSX.Element {
     launchWrapper: ""
   })
 
-  const { folder: path, setFolder: setPath, browseFolder } = useInstallationFolder(fields.name, settings.defaultInstallationsFolder)
+  const { folder: path, browseFolder } = useInstallationFolder(fields.name, settings.defaultInstallationsFolder)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -76,6 +76,7 @@ function AddInslallation(): JSX.Element {
       icon: fields.icon.id,
       path,
       version: fields.version.version,
+      gameVersionId: fields.version.id,
       startParams: fields.startParams,
       backupsLimit: fields.backupsLimit,
       backupsAuto: fields.backupsAuto,
@@ -104,9 +105,9 @@ function AddInslallation(): JSX.Element {
       configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION, payload: toInstallationType(result.installation) })
       addNotification(t("features.installations.installationSuccessfullyAdded"), "success")
       navigate("/installations")
-    } catch (error) {
+    } catch {
       window.api.utils.logMessage("error", `${LOG_TAG} [handleAddInstallation] Error adding an Installation.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} [handleAddInstallation] Error adding the Installation at ${path}: ${error}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [handleAddInstallation] Error adding the Installation at [PATH].`)
       addNotification(t("features.installations.errorAddingInstallation"), "error")
     }
   }
@@ -156,7 +157,7 @@ function AddInslallation(): JSX.Element {
                   <FormButton onClick={browseFolder} title={t("generic.browse")} variant="secondary" className="h-8 px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
-                  <FormInputText placeholder={t("features.installations.installationFolder")} value={path} onChange={(e) => setPath(e.target.value)} minLength={1} className="w-full" />
+                  <FormInputText placeholder={t("features.installations.installationFolder")} value={path} readOnly className="w-full" />
                 </FormFieldGroup>
               </FormBody>
             </FromGroup>

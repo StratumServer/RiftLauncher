@@ -101,6 +101,7 @@ describe("createInstallation", () => {
         icon: "icon-1",
         path: "/installations/my-new-installation",
         version: "1.20.4",
+        gameVersionId: null,
         startParams: "",
         backupsLimit: 3,
         backupsAuto: false,
@@ -112,6 +113,12 @@ describe("createInstallation", () => {
         totalTimePlayed: 0
       }
     })
+  })
+
+  it("carries the selected game-version id into the new installation", () => {
+    const result = createInstallation(ports(), input({ gameVersionId: "gv-optimum" }))
+
+    assert.equal(result.ok && result.installation.gameVersionId, "gv-optimum")
   })
 
   it("mints a fresh id on every call", () => {

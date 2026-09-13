@@ -26,6 +26,7 @@ function anInstallationWithBackup(): InstallationType {
     icon: "icon-1",
     path: "/games/a",
     version: "1.20.0",
+    gameVersionId: "gv-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,

@@ -9,8 +9,10 @@ import {
   FIRST_INTEGER_CONFIG_SCHEMA,
   FLOAT_ERA_CONFIG_SCHEMA,
   floatMarkerToIntegerSchema,
+  legacyGameVersionId,
   MAX_CONFIG_SCHEMA,
   migrateConfigDocument,
+  repairGameVersionIdentity,
   singleAccountToAccountList,
   stampLinkedOnExternalVersions
 } from "../../../src/domain/config/migrations"
@@ -135,6 +137,120 @@ describe("floatMarkerToIntegerSchema", () => {
 })
 
 describe("migrateConfigDocument on real configs", () => {
+  it("migrates schema 4 installations to stable game-version ids and preserves orphans", () => {
+    const before = {
+      schemaVersion: 4,
+      gameVersions: [{ version: "1.22.7", path: "/versions/1.22.7-vanilla" }],
+      installations: [
+        { id: "install-vanilla", path: "/installations/vanilla", version: "1.22.7" },
+        { id: "install-orphan", path: "/installations/orphan", version: "1.19.8" }
+      ]
+    }
+
+    const result = migrateConfigDocument(before)
+    const repeated = migrateConfigDocument(before)
+    const doc = result.doc as { gameVersions: Array<Record<string, unknown>>; installations: Array<Record<string, unknown>> }
+    const repeatedDoc = repeated.doc as { gameVersions: Array<Record<string, unknown>> }
+
+    assert.equal(result.outcome, "migrated")
+    assert.equal(result.schema, 5)
+    assert.deepEqual(result.applied.at(-1), { fromSchema: 4, toSchema: 5 })
+    assert.equal(doc.gameVersions[0]!.label, "1.22.7")
+    assert.equal(typeof doc.gameVersions[0]!.id, "string")
+    assert.equal(doc.gameVersions[0]!.id, repeatedDoc.gameVersions[0]!.id, "legacy ids are deterministic")
+    assert.equal(doc.installations[0]!.gameVersionId, doc.gameVersions[0]!.id)
+    assert.equal(doc.installations[0]!.version, "1.22.7")
+    assert.equal(doc.installations[1]!.gameVersionId, null)
+    assert.equal(doc.installations[1]!.version, "1.19.8")
+  })
+
+  it("does not relink an installation whose null gameVersionId was explicit", () => {
+    const result = migrateConfigDocument({
+      schemaVersion: 4,
+      gameVersions: [{ version: "1.22.7", path: "/versions/1.22.7" }],
+      installations: [{ id: "install-orphan", path: "/installations/orphan", version: "1.22.7", gameVersionId: null }]
+    })
+    const doc = result.doc as { installations: Array<Record<string, unknown>> }
+
+    assert.equal(doc.installations[0]!.gameVersionId, null)
+  })
+
+  it("keeps legacy ids tied to each path and resolves duplicate ids deterministically", () => {
+    const result = migrateConfigDocument({
+      schemaVersion: 4,
+      gameVersions: [
+        { version: "1.22.7", path: "/versions/vanilla" },
+        { version: "1.22.7", path: "/versions/optimum" },
+        { id: "same", version: "1.21.0", path: "/versions/a" },
+        { id: "same", version: "1.21.0", path: "/versions/b" }
+      ]
+    })
+    const doc = result.doc as { gameVersions: Array<Record<string, unknown>> }
+
+    assert.equal(doc.gameVersions[0]!.id, legacyGameVersionId("1.22.7", "/versions/vanilla"))
+    assert.equal(doc.gameVersions[1]!.id, legacyGameVersionId("1.22.7", "/versions/optimum"))
+    assert.equal(doc.gameVersions[2]!.id, "same")
+    assert.equal(doc.gameVersions[3]!.id, legacyGameVersionId("1.21.0", "/versions/b"))
+  })
+
+  it("ignores invalid catalog entries before relinking and allocating ids", () => {
+    const result = migrateConfigDocument({
+      schemaVersion: 4,
+      gameVersions: [
+        { id: "invalid-id", version: "1.22.7" },
+        { version: "1.22.7", path: "/versions/valid" }
+      ],
+      installations: [{ id: "install", path: "/installations/install", version: "1.22.7" }]
+    })
+    const doc = result.doc as { gameVersions: Array<Record<string, unknown>>; installations: Array<Record<string, unknown>> }
+
+    assert.equal(doc.gameVersions.length, 1)
+    assert.equal(doc.gameVersions[0]!.path, "/versions/valid")
+    assert.equal(doc.installations[0]!.gameVersionId, doc.gameVersions[0]!.id)
+  })
+
+  it("does not let invalid paths reserve an id from a valid build", () => {
+    const result = migrateConfigDocument({
+      schemaVersion: 4,
+      gameVersions: [
+        { id: "kept", version: "1.22.7", path: "/versions/invalid\0path" },
+        { id: "kept", version: "1.22.7", path: "/versions/valid" }
+      ]
+    })
+    const doc = result.doc as { gameVersions: Array<Record<string, unknown>> }
+
+    assert.deepEqual(doc.gameVersions, [{ id: "kept", version: "1.22.7", path: "/versions/valid", label: "1.22.7" }])
+  })
+
+  it("does not let a generated id steal one explicitly owned by a later valid build", () => {
+    const firstId = legacyGameVersionId("1.22.7", "/versions/first")
+    const result = migrateConfigDocument({
+      schemaVersion: 4,
+      gameVersions: [
+        { version: "1.22.7", path: "/versions/first" },
+        { id: firstId, version: "1.22.7", path: "/versions/second" }
+      ]
+    })
+    const doc = result.doc as { gameVersions: Array<Record<string, unknown>> }
+
+    assert.equal(doc.gameVersions[1]!.id, firstId)
+    assert.notEqual(doc.gameVersions[0]!.id, firstId)
+    assert.notEqual(doc.gameVersions[0]!.id, doc.gameVersions[1]!.id)
+  })
+
+  it("is idempotent after repairing a catalog", () => {
+    const before = {
+      schemaVersion: 4,
+      gameVersions: [
+        { version: "1.22.7", path: "/versions/first" },
+        { id: "saved", version: "1.22.7", path: "/versions/second" }
+      ]
+    }
+    const repaired = migrateConfigDocument(before).doc
+
+    assert.deepEqual(repairGameVersionIdentity(repaired), repaired)
+  })
+
   it("brings today's 1.6 config to the current schema", () => {
     const before = floatEraConfig()
     const result = migrateConfigDocument(before)
@@ -145,7 +261,8 @@ describe("migrateConfigDocument on real configs", () => {
     assert.deepEqual(result.applied, [
       { fromSchema: 1, toSchema: 2 },
       { fromSchema: 2, toSchema: 3 },
-      { fromSchema: 3, toSchema: 4 }
+      { fromSchema: 3, toSchema: 4 },
+      { fromSchema: 4, toSchema: 5 }
     ])
 
     const doc = result.doc as Record<string, unknown>
@@ -210,7 +327,8 @@ describe("migrateConfigDocument on real configs", () => {
       [
         [FLOAT_ERA_CONFIG_SCHEMA, FIRST_INTEGER_CONFIG_SCHEMA],
         [2, 3],
-        [3, 4]
+        [3, 4],
+        [4, 5]
       ]
     )
     assert.equal(CONFIG_MIGRATIONS[CONFIG_MIGRATIONS.length - 1]?.toSchema, CURRENT_CONFIG_SCHEMA)

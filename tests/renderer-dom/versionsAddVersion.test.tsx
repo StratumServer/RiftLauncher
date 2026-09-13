@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event"
 import AddVersion from "@renderer/features/versions/pages/AddVersion"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
-import { installMockWindowApi } from "./helpers/windowApi"
+import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 const STABLE = {
@@ -35,6 +35,26 @@ describe("AddVersion", () => {
     expect(await screen.findByText("1.20.4")).toBeTruthy()
     expect(queryURL).toHaveBeenCalledWith("https://api.vintagestory.at/stable.json")
     expect(queryURL).toHaveBeenCalledWith("https://api.vintagestory.at/unstable.json")
+  })
+
+  /** #411, the same refusal the Add Installation folder field carried: Browse grants the path, typing does not. */
+  it("takes its install folder from Browse only", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ defaultVersionsFolder: "/versions" })) },
+      netManager: { queryURL: vi.fn(async (url: string) => (url.endsWith("stable.json") ? JSON.stringify(STABLE) : JSON.stringify({}))) }
+    })
+
+    renderAddVersion()
+
+    await user.click(await screen.findByText("1.20.4"))
+
+    const folder = (await screen.findByPlaceholderText("VS Version folder")) as HTMLInputElement
+    await waitFor(() => expect(folder.value).toBe("/versions/1.20.4"))
+
+    expect(folder.readOnly).toBe(true)
+    await user.type(folder, "/somewhere/else")
+    expect(folder.value).toBe("/versions/1.20.4")
   })
 
   it("renders the failure sentence with no spinner when the catalog fetch fails", async () => {

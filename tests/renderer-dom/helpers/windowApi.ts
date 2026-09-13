@@ -28,7 +28,16 @@ function noopUnsubscribe(): Unsubscribe {
 }
 
 /** A ConfigType with every field present and empty/zeroed, ready to spread overrides onto. */
-export function createMockConfig(overrides: Partial<ConfigType> = {}): ConfigType {
+type MockGameVersion = Pick<GameVersionType, "version" | "path"> & Partial<GameVersionType>
+type MockConfigOverrides = Omit<Partial<ConfigType>, "gameVersions"> & { gameVersions?: MockGameVersion[] }
+
+export function createMockConfig(overrides: MockConfigOverrides = {}): ConfigType {
+  const gameVersions = overrides.gameVersions?.map((gameVersion, index) => ({
+    id: gameVersion.id ?? `gv-${index + 1}`,
+    label: gameVersion.label ?? gameVersion.version,
+    ...gameVersion
+  }))
+
   return {
     schemaVersion: 1,
     lastUsedInstallation: null,
@@ -39,14 +48,16 @@ export function createMockConfig(overrides: Partial<ConfigType> = {}): ConfigTyp
     accounts: [],
     activeAccountId: null,
     installations: [],
-    gameVersions: [],
     favMods: [],
     suspendedModUpdates: [],
     background: "default",
+    accentColor: "amber",
     moddbVisibilityAnswer: "unasked",
     receiveBetaUpdates: null,
+    lastSeenChangelogVersion: "",
     customIcons: [],
-    ...overrides
+    ...overrides,
+    gameVersions: gameVersions ?? []
   }
 }
 
@@ -87,7 +98,9 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
       cacheModImage: vi.fn(async () => undefined),
       exportModpack: vi.fn(notMocked("modsManager.exportModpack")),
       importModpack: vi.fn(notMocked("modsManager.importModpack")),
-      clearModIconMemoryCache: vi.fn()
+      clearModIconMemoryCache: vi.fn(),
+      getModProfiles: vi.fn(async () => ({ ok: true as const, document: { format: 1 as const, activeProfileId: null, profiles: [] } })),
+      saveModProfiles: vi.fn(notMocked("modsManager.saveModProfiles"))
     },
     pathsManager: {
       getCurrentUserDataPath: vi.fn(async () => "/mock/userdata"),
@@ -115,7 +128,8 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     netManager: {
       queryURL: vi.fn(notMocked("netManager.queryURL")),
-      acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility"))
+      acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility")),
+      fetchReleaseNotes: vi.fn(async () => ({ ok: true, releases: [] }) as FetchReleaseNotesResult)
     },
     backgroundsManager: {
       ensureBackground: vi.fn(notMocked("backgroundsManager.ensureBackground")),

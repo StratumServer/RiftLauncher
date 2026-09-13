@@ -114,8 +114,13 @@ export function TableBodyRow({
  * @param {object} props - The component props.
  * @param {React.ReactNode} props.children - Anything, but text is the ideal.
  * @param {string} props.className - Additional class names for styling.
+ * @param {string} props.title - Tooltip, for a cell that shows a shortened form of what it holds.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function TableCell({ children, className }: Readonly<{ children: React.ReactNode; className?: string }>): JSX.Element {
-  return <div className={clsx("shrink-0 p-1 overflow-hidden", className)}>{children}</div>
+export function TableCell({ children, className, title }: Readonly<{ children: React.ReactNode; className?: string; title?: string }>): JSX.Element {
+  return (
+    <div className={clsx("shrink-0 p-1 overflow-hidden", className)} title={title}>
+      {children}
+    </div>
+  )
 }

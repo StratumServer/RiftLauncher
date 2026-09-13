@@ -51,6 +51,10 @@ export const MAX_CUSTOM_ICON_BYTES = 512 * 1024
 // The rule it applies to (mods.vintagestory.at/download) is shared with the mod downloader, which
 // streams to disk under its own limits, so this ceiling is passed per call rather than per rule.
 export const MAX_MODDB_LISTING_RESPONSE_BYTES = 256 * 1024
+// GitHub's own releases API answer for ten releases: each entry's `body` is a release's full
+// markdown notes, so this is sized like the mods catalog exception above rather than the generic
+// ceiling, while still refusing anything that could not plausibly be ten releases of notes.
+export const MAX_RELEASE_NOTES_RESPONSE_BYTES = 256 * 1024
 
 export type UrlRule = Readonly<{
   hostname: string
@@ -64,6 +68,9 @@ export const API_URL_RULES: readonly UrlRule[] = [
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api"] },
   { hostname: "auth3.vintagestory.at", pathPrefixes: ["/v2/gamelogin"] },
+  // The release list FETCH_RELEASE_NOTES reads for the "what's new" dialog and the Info & Help
+  // page, the same repository BROWSER_URL_RULES already lets the releases page itself open from.
+  { hostname: "api.github.com", pathPrefixes: ["/repos/StratumServer/RiftLauncher/releases"], maxBytes: MAX_RELEASE_NOTES_RESPONSE_BYTES },
   // The launcher's own background catalog, on this repository's `backgrounds` branch and nothing
   // else raw.githubusercontent.com serves. The manifest rule sits first so its much smaller
   // ceiling wins the match; findMatchingRule takes the first rule that covers the path.
@@ -207,22 +214,30 @@ export function assertInteger(value: unknown, name: string, min: number, max: nu
   return numberValue
 }
 
-export function validateGameVersion(value: unknown): GameVersionType {
+export function validateGameVersion(value: unknown): Pick<GameVersionType, "version" | "path"> & { id?: string } {
   if (!isRecord(value)) throw new TypeError("Invalid game version")
   return {
+    ...(value.id === undefined ? {} : { id: assertString(value.id, "game version id", 128) }),
     version: assertString(value.version, "game version", 128),
     path: assertNonRootPath(value.path, "game version path")
   }
 }
 
-export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper: string } {
+export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper: string; gameVersionId?: string | null } {
   if (!isRecord(value)) throw new TypeError("Invalid installation")
   return {
     path: assertNonRootPath(value.path, "installation path"),
     startParams: assertBoundedString(value.startParams, "start parameters", 8_192),
     mesaGlThread: assertBoolean(value.mesaGlThread, "MESA GL thread flag"),
     envVars: assertBoundedString(value.envVars, "environment variables", 8_192),
-    launchWrapper: assertBoundedString(value.launchWrapper ?? "", "launch wrapper", 4_096).trim()
+    launchWrapper: assertBoundedString(value.launchWrapper ?? "", "launch wrapper", 4_096).trim(),
+    ...(value.gameVersionId === null
+      ? { gameVersionId: null }
+      : typeof value.gameVersionId === "string"
+        ? { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) }
+        : value.gameVersionId === undefined
+          ? {}
+          : { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) })
   }
 }
 

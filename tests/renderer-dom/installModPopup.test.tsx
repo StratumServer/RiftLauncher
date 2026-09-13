@@ -17,6 +17,7 @@ function anInstallation(): InstallationType {
     icon: "icon-1",
     path: "/games/a",
     version: "1.20.0",
+    gameVersionId: "gv-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -57,7 +58,12 @@ function aModDetail(): string {
 }
 
 function renderPopup({ queryURL, modName }: { queryURL: () => Promise<string>; modName?: string }): void {
-  installMockWindowApi({ netManager: { queryURL: vi.fn(queryURL) } })
+  // The release table asks for the ModDB's game-version list as well, to shorten the versions
+  // column (#429). None of these tests are about that list, so it is answered empty here and left
+  // out of whatever the test's own `queryURL` counts or rejects.
+  installMockWindowApi({
+    netManager: { queryURL: vi.fn(async (url: string) => (url.includes("/gameversions") ? JSON.stringify({ statuscode: "200", gameversions: [] }) : queryURL())) }
+  })
 
   renderWithProviders(
     <TaskProvider>

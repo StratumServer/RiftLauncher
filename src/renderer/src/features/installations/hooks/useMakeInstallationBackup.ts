@@ -79,7 +79,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
         onFinished: () => setBackuping(false),
         onBackupDeleted: (deleted) => {
           configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: deleted.id } })
-          window.api.utils.logMessage("info", `${LOG_TAG} Deleted old backup ${deleted.path}.`)
+          window.api.utils.logMessage("info", `${LOG_TAG} Deleted an old backup.`)
         }
       }
     )

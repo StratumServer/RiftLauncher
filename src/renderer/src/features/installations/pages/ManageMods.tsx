@@ -1,38 +1,49 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
 import { FiLoader } from "react-icons/fi"
+import { PiFunnelDuotone } from "react-icons/pi"
 
-import { CONFIG_ACTIONS, useConfigDispatch, useInstallations, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
-import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useInstallations, useSuspendedModUpdates } from "@renderer/features/config/contexts/ConfigContext"
 
 import { useManageInstalledMods } from "@renderer/features/mods/hooks/useManageInstalledMods"
 import { useBulkUpdateMods } from "@renderer/features/mods/hooks/useBulkUpdateMods"
 import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpackImportPicker"
-import { clearModIconMemoryCache, setModEnabled } from "@renderer/features/moddb/adapters/modsManager"
+import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { useModBatchActions } from "@renderer/features/mods/hooks/useModBatchActions"
+import { useModProfiles } from "@renderer/features/mods/hooks/useModProfiles"
+import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
 
-import { createFileSystemPort } from "@renderer/adapters/fileSystem"
-
-import { filterInstalledMods, hasActiveInstalledModFilters, installedModAuthors, installedModGameVersions, installedModTags, NO_INSTALLED_MOD_FILTERS } from "@domain/mods/installedFilters"
+import { modByArchivePath } from "@domain/mods/scanInstalled"
+import { modsFolderInUse } from "@domain/mods/install"
+import {
+  countActiveInstalledModFilters,
+  filterInstalledMods,
+  hasActiveInstalledModFilters,
+  installedModAuthors,
+  installedModGameVersions,
+  installedModTags,
+  NO_INSTALLED_MOD_FILTERS
+} from "@domain/mods/installedFilters"
 import type { InstalledModFilters } from "@domain/mods/installedFilters"
 
 import { ListGroup, ListWrapper } from "@renderer/components/ui/List"
 import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeSummaryPopup"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
+import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
 import InstalledModItem from "@renderer/features/mods/components/InstalledModItem"
+import InstalledModDetails from "@renderer/features/mods/components/InstalledModDetails"
 import ErrorInstalledModItem from "@renderer/features/mods/components/ErrorInstalledModItem"
 import InstalledModsSectionHeader from "@renderer/features/mods/components/InstalledModsSectionHeader"
 import ManageModsActionBar from "@renderer/features/mods/components/ManageModsActionBar"
+import ManageModsSelectionBar from "@renderer/features/mods/components/ManageModsSelectionBar"
+import ModProfilesPopup from "@renderer/features/mods/components/ModProfilesPopup"
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
-import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
+import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
-
-const LOG_TAG = "[front] [mods] [features/installations/pages/ManageMods.tsx]"
 
 function byName(a: InstalledModType, b: InstalledModType): number {
   return a.name.localeCompare(b.name)
@@ -47,8 +58,6 @@ function ListMods(): JSX.Element {
   const { t } = useTranslation()
   const installations = useInstallations()
   const suspendedModUpdates = useSuspendedModUpdates()
-  const configDispatch = useConfigDispatch()
-  const { addNotification } = useNotificationsContext()
 
   const { id } = useParams()
 
@@ -58,6 +67,10 @@ function ListMods(): JSX.Element {
 
   const [search, setSearch] = useState("")
   const [filters, setFilters] = useState<InstalledModFilters>(NO_INSTALLED_MOD_FILTERS)
+  // Collapsed on every fresh visit: the three dropdowns are what pushed the Mod list off the first
+  // screen (#431). Search stays out of this, so narrowing by name never needs the extra click.
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const activeFilterCount = countActiveInstalledModFilters(filters)
 
   // Rebuilt only when the scan changes, not on every keystroke in the search field: each is a fresh
   // array identity, and the dropdowns below sit next to rows this page already memoizes.
@@ -79,19 +92,59 @@ function ListMods(): JSX.Element {
   const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, visibleMods)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
-  const [modToDelete, setModToDelete] = useState<InstalledModType | ErrorInstalledModType | null>(null)
+  const actions = useInstalledModActions(installation, refresh)
+  const batch = useModBatchActions(installation, installedMods, visibleMods, refresh)
+  // Handed the Installation only, never the filtered list: a profile records and applies the whole folder.
+  const profiles = useModProfiles(installation)
+  // One predicate for every surface that writes the whole Mods folder. Each of those write paths
+  // already refuses on modsFolderInUse, so a control that would be refused has to read as off:
+  // Import Modpack used to stay live through Update all and only refuse after the player had been
+  // through the native file dialog.
+  const folderInUse = installation ? modsFolderInUse(installation) : false
+  const [profilesOpen, setProfilesOpen] = useState(false)
   const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  // The ref is the guard and the state is only what paints it. A second click lands before React has
-  // rendered anything, so the thing it has to be tested against is written synchronously.
-  const togglingPathsRef = useRef(new Set<string>())
-  const [togglingPaths, setTogglingPaths] = useState<string[]>([])
+  // The details panel remembers a path, not a Mod: every scan hands back fresh objects.
+  const [detailsPath, setDetailsPath] = useState<string | null>(null)
+  const [detailsFocusRequest, setDetailsFocusRequest] = useState(0)
+  const detailsHeadingRef = useRef<HTMLHeadingElement>(null)
+  const detailsButtons = useRef(new Map<string, HTMLDivElement>())
+
+  // Derived against what the player can see, so the panel always describes a row on screen and
+  // closing it always has a row to hand focus back to. Update all swaps every row for its spinner, so
+  // the panel goes with them. The path outlives a filter that hides the row, so the panel comes back
+  // with it. Following the path's other suffix form keeps the panel on a Mod through an enable or
+  // disable, whoever renamed the archive.
+  const detailsMod = detailsPath === null || installation?._updatingMods ? undefined : modByArchivePath(visibleMods, detailsPath)
+
+  // A Mod that has left the folder is gone for good: a file of the same name coming back later is not
+  // the player asking to see it again. Only the whole scan decides this, never what a filter hides.
+  useEffect(() => {
+    if (detailsPath !== null && !modByArchivePath(installedMods, detailsPath)) setDetailsPath(null)
+  }, [installedMods, detailsPath])
+
+  // Keyed on a counter, never on the path or the panel mounting: a rename after an enable or disable,
+  // or the panel coming back when a filter clears, must not pull focus away from where the player has it.
+  useEffect(() => {
+    if (detailsFocusRequest > 0) detailsHeadingRef.current?.focus()
+  }, [detailsFocusRequest])
 
   useEffect(() => {
     return (): void => clearModIconMemoryCache()
   }, [])
+
+  function closeDetails(): void {
+    if (detailsMod) detailsButtons.current.get(detailsMod.path)?.focus()
+    setDetailsPath(null)
+  }
+
+  function toggleDetails(iMod: InstalledModType): void {
+    if (detailsMod?.path === iMod.path) return closeDetails()
+    setDetailsPath(iMod.path)
+    setDetailsFocusRequest((request) => request + 1)
+  }
 
   // Deliberately blind to suspension: a held-back Mod still belongs under "Mods with updates",
   // because watching for the new version is exactly why the player suspended it (#194).
@@ -107,78 +160,26 @@ function ListMods(): JSX.Element {
         key={iMod.modid + iMod.path}
         iMod={iMod}
         suspended={suspended}
-        busy={togglingPaths.includes(iMod.path)}
-        onToggleEnabledClick={() => ToggleModEnabledHandler(iMod)}
-        onToggleSuspendClick={() => configDispatch({ type: suspended ? CONFIG_ACTIONS.REMOVE_SUSPENDED_MOD_UPDATE : CONFIG_ACTIONS.ADD_SUSPENDED_MOD_UPDATE, payload: { modid: iMod.modid } })}
-        onDeleteClick={() => setModToDelete(iMod)}
+        busy={actions.isBusy(iMod.path) || (batch.running && batch.isChecked(iMod.path))}
+        checked={batch.isChecked(iMod.path)}
+        distinctName={batch.labelOf(iMod)}
+        onCheckedChange={(checked) => batch.setChecked(iMod.path, checked)}
+        onToggleEnabledClick={() => actions.toggleEnabled(iMod)}
+        onToggleSuspendClick={() => actions.toggleSuspended(iMod.modid)}
+        onDeleteClick={() => actions.requestDelete(iMod)}
         onUpdateClick={() => setModToUpdate(iMod)}
+        detailsOpen={iMod.path === detailsMod?.path}
+        onToggleDetails={() => toggleDetails(iMod)}
+        detailsButtonRef={(element) => {
+          if (element) detailsButtons.current.set(iMod.path, element)
+          else detailsButtons.current.delete(iMod.path)
+        }}
       />
     )
   }
 
-  /**
-   * Turns one Mod on or off, then rescans.
-   *
-   * The rescan is not optional and it is not a nicety: the archive's name is its path, so a Mod that
-   * just changed state is a different file from the one this row is holding, and every button on
-   * that row would still be pointing at a name that no longer exists.
-   *
-   * Which is also why the second of two quick clicks has to be dropped rather than sent: it would
-   * carry the name the first one just renamed away, and the player would be told the same action
-   * both succeeded and failed. The row's own buttons stay disabled until the rescan is in.
-   */
-  async function ToggleModEnabledHandler(iMod: InstalledModType): Promise<void> {
-    if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
-
-    if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantToggleWhileinUse"), "error")
-
-    if (togglingPathsRef.current.has(iMod.path)) return
-    togglingPathsRef.current.add(iMod.path)
-    setTogglingPaths([...togglingPathsRef.current])
-
-    try {
-      const result = await setModEnabled(iMod.path, !iMod.enabled)
-
-      if (result.ok) {
-        addNotification(t(iMod.enabled ? "features.mods.modDisabled" : "features.mods.modEnabled", { mod: iMod.name }), "success")
-      } else {
-        window.api.utils.logMessage("error", `${LOG_TAG} [ToggleModEnabledHandler] Could not turn the ${iMod.name} Mod ${iMod.enabled ? "off" : "on"}.`)
-        window.api.utils.logMessage("debug", `${LOG_TAG} [ToggleModEnabledHandler] Renaming ${iMod.path} was refused: ${result.reason}.`)
-        addNotification(t(result.reason === "name-taken" ? "features.mods.modNameTaken" : "features.mods.errorTogglingMod", { mod: iMod.name }), "error")
-      }
-
-      await refresh()
-    } finally {
-      togglingPathsRef.current.delete(iMod.path)
-      setTogglingPaths([...togglingPathsRef.current])
-    }
-  }
-
-  async function DeleteModHandler(): Promise<void> {
-    if (!modToDelete) return addNotification(t("features.mods.noModSelected"), "error")
-
-    if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
-
-    if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantDeleteWhileinUse"), "error")
-
-    try {
-      const deleted = await createFileSystemPort().remove(modToDelete.path)
-      if (!deleted) throw new Error(`The host refused to delete ${modToDelete.path}.`)
-
-      refresh()
-
-      addNotification(t("features.mods.modSuccessfullyDeleted"), "success")
-    } catch (err) {
-      window.api.utils.logMessage("error", `${LOG_TAG} [DeleteModHandler] Error deleting a mod.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} [DeleteModHandler] Error deleting the mod file ${modToDelete.path}: ${err}.`)
-      addNotification(t("features.mods.errorDeletingMod"), "error")
-    } finally {
-      setModToDelete(null)
-    }
-  }
-
-  return (
-    <ScrollableContainer ref={scrollRef}>
+  const list = (
+    <ScrollableContainer ref={scrollRef} className="flex-1 min-w-0">
       <div className="min-h-full flex flex-col items-center justify-center gap-2">
         <StickyMenuWrapper scrollRef={scrollRef}>
           <StickyMenuGroupWrapper>
@@ -201,16 +202,37 @@ function ListMods(): JSX.Element {
 
           {installation && (
             <>
-              <ManageModsActionBar installation={installation} installedMods={visibleMods} onUpdateAll={updateAllMods} onImportModpack={pickModpack} />
+              <ManageModsActionBar
+                installation={installation}
+                installedMods={visibleMods}
+                onUpdateAll={updateAllMods}
+                onImportModpack={pickModpack}
+                activeProfileName={profiles.activeProfile?.name}
+                onOpenProfiles={() => setProfilesOpen(true)}
+                busy={folderInUse || batch.running || profiles.switchingTo !== null}
+              />
 
               {installedMods.length + modsWithErrors.length > 0 && (
                 <StickyMenuGroupWrapper type="centered">
                   <StickyMenuGroup>
                     <FormInputText placeholder={t("features.mods.searchInstalledMods")} value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 h-8" />
+
+                    {/* One mod is nothing to narrow, so the toggle stays off until there are two. */}
+                    {installedMods.length > 1 && (
+                      <FormButton
+                        title={t("features.mods.filtersToggle")}
+                        variant="secondary"
+                        className="p-1 w-fit h-8"
+                        onClick={() => setFiltersOpen((current) => !current)}
+                        ariaExpanded={filtersOpen}
+                      >
+                        <PiFunnelDuotone className="text-xl" />
+                        <p>{t("features.mods.filtersToggleButton", { count: activeFilterCount })}</p>
+                      </FormButton>
+                    )}
                   </StickyMenuGroup>
 
-                  {/* One mod is nothing to narrow, so the bar stays off until there are two. */}
-                  {installedMods.length > 1 && (
+                  {installedMods.length > 1 && filtersOpen && (
                     <InstalledModsFilterBar
                       filters={filters}
                       setFilters={setFilters}
@@ -222,6 +244,14 @@ function ListMods(): JSX.Element {
                   )}
                 </StickyMenuGroupWrapper>
               )}
+
+              {/*
+               * Still gated on _updatingMods alone, not on folderInUse: this bar is hidden because
+               * Update all swaps every row for a spinner, so there is nothing left to select. A
+               * backup or a restore leaves the rows there, and Suspend, which writes config rather
+               * than the folder, has to stay reachable through one (manageMods.test.tsx:1946).
+               */}
+              {installedMods.length > 0 && !installation._updatingMods && <ManageModsSelectionBar batch={batch} shownCount={visibleMods.length} locked={actions.busyPaths.length > 0} />}
             </>
           )}
         </StickyMenuWrapper>
@@ -238,6 +268,15 @@ function ListMods(): JSX.Element {
             </ListWrapper>
           ) : (
             <>
+              {/* Mounted outside the busy branch: a switch sets _updatingMods, and the dialog that started it stays open. */}
+              <ModProfilesPopup isOpen={profilesOpen} close={() => setProfilesOpen(false)} profiles={profiles} locked={batch.running || actions.busyPaths.length > 0} />
+
+              {profiles.status === "ready" && profiles.profiles.length > 0 && !profiles.activeProfile && (
+                <p role="status" className="w-full text-center">
+                  {t("features.mods.noProfileActive")}
+                </p>
+              )}
+
               {installation._updatingMods ? (
                 <ListWrapper className="w-full">
                   <ListGroup>
@@ -270,7 +309,7 @@ function ListMods(): JSX.Element {
                           reportKey="features.mods.modsWithErrorsDescriptionReport"
                         />
                         {visibleModsWithErrors.map((iModE) => (
-                          <ErrorInstalledModItem key={iModE.zipname + iModE.zipname} iModE={iModE} onDeleteClick={() => setModToDelete(iModE)} />
+                          <ErrorInstalledModItem key={iModE.zipname + iModE.zipname} iModE={iModE} onDeleteClick={() => actions.requestDelete(iModE)} />
                         ))}
                       </ListGroup>
                     </ListWrapper>
@@ -343,16 +382,16 @@ function ListMods(): JSX.Element {
                     entries={summaryEntries}
                   />
 
-                  <PopupDialogPanel title={t("features.mods.deleteMod")} isOpen={modToDelete !== null} close={() => setModToDelete(null)}>
-                    <>
-                      <p>{t("features.mods.areYouSureDelete")}</p>
-                      <p className="text-zinc-400">{t("features.mods.deletingNotReversible")}</p>
-                      <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-                        <FormButton title={t("generic.cancel")} onClick={() => setModToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-                        <FormButton title={t("generic.delete")} onClick={DeleteModHandler} variant="destructive" size="md" icon={<PiTrashDuotone />} />
-                      </ButtonsWrapper>
-                    </>
-                  </PopupDialogPanel>
+                  <DeleteModDialog
+                    isOpen={actions.modToDelete !== null}
+                    close={actions.cancelDelete}
+                    onConfirm={() => {
+                      // Closed here, not left to the rescan: the path would follow a disabled twin of
+                      // the deleted archive (#292) and move the panel onto a file the player never opened.
+                      if (actions.modToDelete?.path === detailsMod?.path) setDetailsPath(null)
+                      return actions.confirmDelete()
+                    }}
+                  />
                 </>
               )}
             </>
@@ -360,6 +399,15 @@ function ListMods(): JSX.Element {
         </div>
       </div>
     </ScrollableContainer>
+  )
+
+  // The row is there with or without the panel, with the list always first in it: mounting the row
+  // only for the panel would remount the list and lose its scroll position on every open and close.
+  return (
+    <div className="w-full h-full flex">
+      {list}
+      {installation && detailsMod && <InstalledModDetails iMod={detailsMod} gameVersion={installation.version} headingRef={detailsHeadingRef} onClose={closeDetails} />}
+    </div>
   )
 }
 

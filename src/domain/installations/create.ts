@@ -53,6 +53,7 @@ export interface CreateInstallationInput {
   icon: string
   path: string
   version: string
+  gameVersionId?: string | null
   startParams: string
   backupsLimit: number
   backupsAuto: boolean
@@ -73,6 +74,7 @@ export interface CreatedInstallation {
   icon: string
   path: string
   version: string
+  gameVersionId: string | null
   startParams: string
   backupsLimit: number
   backupsAuto: boolean
@@ -113,6 +115,7 @@ export function createInstallation(ports: CreateInstallationPorts, input: Create
       icon: input.icon,
       path: input.path,
       version: input.version,
+      gameVersionId: input.gameVersionId ?? null,
       startParams: input.startParams,
       backupsLimit: input.backupsLimit,
       backupsAuto: input.backupsAuto,

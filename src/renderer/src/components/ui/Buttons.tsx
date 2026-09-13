@@ -1,5 +1,6 @@
 import { Button as HButton } from "@headlessui/react"
 import clsx from "clsx"
+import { forwardRef } from "react"
 import { Link } from "react-router-dom"
 
 import { BUTTON_BASE_STYLES, BUTTON_LINK_SIZE_STYLES, BUTTON_SIZE_STYLES, BUTTON_VARIANT_STYLES, type ButtonSize, type ButtonVariant } from "@renderer/components/ui/buttonStyles"
@@ -22,23 +23,12 @@ import { renderActionContent, useActionBusy } from "@renderer/components/ui/acti
  * @param {boolean} [props.ariaPressed] - Toggle state for toggle buttons.
  * @returns {JSX.Element} A JSX element wrapping the children with specified styles.
  */
-export function NormalButton({
-  children,
-  icon,
-  className,
-  onClick,
-  title,
-  ariaLabel,
-  disabled,
-  busy,
-  nativeType = "button",
-  variant = "ghost",
-  size = "sm",
-  ariaPressed
-}: Readonly<{
+type NormalButtonProps = Readonly<{
   children?: React.ReactNode
   icon?: React.ReactNode
   className?: string
+  /** Escape hatch for the rare control whose colour is data, not variant: an accent swatch, a progress fill. */
+  style?: React.CSSProperties
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<unknown>
   title: string
   ariaLabel?: string
@@ -48,11 +38,26 @@ export function NormalButton({
   variant?: ButtonVariant
   size?: ButtonSize
   ariaPressed?: boolean
-}>): JSX.Element {
+}> &
+  /*
+   * Everything else (role, id, tabIndex, aria-labelledby, the hover/focus tracking handlers, the
+   * data-* state attributes) passed straight to the underlying button. A MenuItem rendered
+   * `as={Fragment}` clones its single child and merges exactly these onto it, expecting them to
+   * land on the real DOM node; a component with no rest slot to catch them would silently drop
+   * every one, leaving the button with none of the roving-focus wiring Headless UI thinks it set.
+   */
+  Readonly<Omit<React.ComponentPropsWithoutRef<"button">, "onClick" | "disabled" | "title" | "className" | "children" | "type">>
+
+export const NormalButton = forwardRef<HTMLButtonElement, NormalButtonProps>(function NormalButton(
+  { children, icon, className, style, onClick, title, ariaLabel, disabled, busy, nativeType = "button", variant = "ghost", size = "sm", ariaPressed, ...rest },
+  ref
+) {
   const action = useActionBusy(onClick, busy, disabled)
 
   return (
     <HButton
+      {...rest}
+      ref={ref}
       type={nativeType}
       disabled={disabled || action.busy}
       onClick={action.onClick}
@@ -60,12 +65,13 @@ export function NormalButton({
       aria-label={ariaLabel ?? title}
       aria-busy={action.busy}
       aria-pressed={ariaPressed}
+      style={style}
       className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], BUTTON_VARIANT_STYLES[variant], className)}
     >
       {renderActionContent(children, icon, title, action.busy)}
     </HButton>
   )
-}
+})
 
 /**
  * Link to a page with the same styles as the Button.

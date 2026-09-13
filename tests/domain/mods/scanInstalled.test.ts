@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { beforeEach, describe, it } from "vitest"
 
-import { MAX_MOD_ARCHIVES, MOD_SCAN_BATCH_SIZE, installedModsTotal, isDisabledModArchive, renameModArchiveTo, scanInstalledMods } from "../../../src/domain/mods/scanInstalled"
+import { MAX_MOD_ARCHIVES, MOD_SCAN_BATCH_SIZE, installedModsTotal, isDisabledModArchive, modByArchivePath, renameModArchiveTo, scanInstalledMods } from "../../../src/domain/mods/scanInstalled"
 import type { ScanInstalledModsEvents, ScanInstalledModsPorts } from "../../../src/domain/mods/scanInstalled"
 import type { DirectoryReader, IconStore, ModArchiveResult, PathBuilder } from "../../../src/domain/ports"
 
@@ -486,5 +486,35 @@ describe("renameModArchiveTo", () => {
     assert.deepEqual(renameModArchiveTo("notes.txt", false), { ok: false, reason: "not-a-mod-archive" })
     assert.deepEqual(renameModArchiveTo("amod.disabled", true), { ok: false, reason: "not-a-mod-archive" })
     assert.deepEqual(renameModArchiveTo("amod.zip.disabled.bak", true), { ok: false, reason: "not-a-mod-archive" })
+  })
+
+  it("derives the other name from a full path, touching only the tail", () => {
+    assert.deepEqual(renameModArchiveTo("/games/a/Mods/alpha-1.0.0.zip", false), { ok: true, fileName: "/games/a/Mods/alpha-1.0.0.zip.disabled" })
+    assert.deepEqual(renameModArchiveTo("/games/a/Mods/alpha-1.0.0.zip.disabled", true), { ok: true, fileName: "/games/a/Mods/alpha-1.0.0.zip" })
+  })
+})
+
+describe("modByArchivePath", () => {
+  const on = { path: "/games/a/Mods/alpha-1.0.0.zip", label: "on" }
+  const off = { path: "/games/a/Mods/alpha-1.0.0.zip.disabled", label: "off" }
+
+  it("finds the Mod at the exact path", () => {
+    assert.equal(modByArchivePath([on], on.path), on)
+    assert.equal(modByArchivePath([off], off.path), off)
+  })
+
+  it("follows a Mod through a disable and through an enable", () => {
+    assert.equal(modByArchivePath([off], on.path), off)
+    assert.equal(modByArchivePath([on], off.path), on)
+  })
+
+  it("keeps the exact file when both names are in the folder", () => {
+    assert.equal(modByArchivePath([on, off], off.path), off)
+    assert.equal(modByArchivePath([off, on], on.path), on)
+  })
+
+  it("answers undefined when neither name is there, or the path is no Mod archive", () => {
+    assert.equal(modByArchivePath([on], "/games/a/Mods/beta-1.0.0.zip"), undefined)
+    assert.equal(modByArchivePath([{ path: "/games/a/Mods/notes.txt" }], "/games/a/Mods/notes.txt.disabled"), undefined)
   })
 })

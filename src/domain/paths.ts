@@ -17,7 +17,7 @@ export function normalizeFolderForComparison(folder: string, platform: "win32" |
 
 /** Detects platform from path shape when not explicitly provided. */
 function detectPlatform(path: string): "win32" | "posix" {
-  return /^[a-zA-Z]:/.test(path) ? "win32" : "posix"
+  return /^(?:[a-zA-Z]:|\\\\|\/\/)/.test(path) ? "win32" : "posix"
 }
 
 /** Checks whether a folder is already spoken for, with path normalization. */

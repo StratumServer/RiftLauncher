@@ -27,15 +27,22 @@ export const MAX_TOAST_BACKLOG = 4
 export const MAX_CENTER_HISTORY = 50
 
 /**
- * The turn a toast gets, given how many are waiting behind it.
+ * The turn a toast gets, given how many are waiting behind it and how much of
+ * its turn has already gone.
  *
  * `null` means the toast has no timer at all, which is how a question that
  * needs an answer is kept on screen. A backlog never overrides that: the
  * player still has to answer it.
+ *
+ * `elapsed` is 0 at hand-off, where `duration` is the whole turn. It is used
+ * when something lands behind a banner that is already up: the turn is then
+ * whatever is left, capped at `BACKLOG_TOAST_DURATION`, and never negative.
+ * The cap can only shorten, never lengthen: a banner already inside the
+ * backlog turn keeps what it has.
  */
-export function backlogToastDuration(duration: number | null, waiting: number): number | null {
+export function backlogToastDuration(duration: number | null, waiting: number, elapsed = 0): number | null {
   if (duration === null || waiting <= 0) return duration
-  return Math.min(duration, BACKLOG_TOAST_DURATION)
+  return Math.max(0, Math.min(duration - elapsed, BACKLOG_TOAST_DURATION))
 }
 
 /**

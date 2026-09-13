@@ -60,8 +60,7 @@ export function useInstallMod(): (options: InstallModOptions) => Promise<Install
     const { messageKey, logged } = describeModInstallFailure(result.reason)
 
     if (logged) {
-      logMods("error", `${LOG_TAG} [runInstallMod] Could not install the ${modName} Mod on ${outName}.`)
-      logMods("debug", `${LOG_TAG} [runInstallMod] Could not install ${release.modidstr} v${release.modversion} on ${installationPath}: ${result.reason}.`)
+      logMods("error", `${LOG_TAG} [runInstallMod] Could not install a Mod: ${result.reason}.`)
     }
 
     if (messageKey && feedback === "individual") addNotification(t(messageKey, { mod: modName }), "error")

@@ -4,8 +4,8 @@ import { IPC_CHANNELS } from "../ipcChannels"
 import { readCatalogCache, writeCatalogCache } from "@src/ipc/catalogCache"
 import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { requestBoundedBuffer, requestBoundedText } from "@src/ipc/network"
-import { assertAllowedApiUrl, assertAllowedDownloadUrl, getApiUrlMaxBytes, MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"
+import { BoundedResponseError, requestBoundedBuffer, requestBoundedText } from "@src/ipc/network"
+import { assertAllowedApiUrl, assertAllowedDownloadUrl, getApiUrlMaxBytes, isRecord, MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"
 import { newestReleaseFileId, parseModDetailResponse } from "@domain/mods/moddb"
 import { MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_UNASKED } from "@domain/moddbVisibility"
 import { getConfig, saveConfig } from "@src/config/configManager"
@@ -190,4 +190,137 @@ ipcMain.handle(IPC_CHANNELS.NET_MANAGER.QUERY_URL, async (event, url: unknown): 
     logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] ${getErrorMessage(err)}`)
     throw err
   }
+})
+
+const RELEASE_NOTES_URL = "https://api.github.com/repos/StratumServer/RiftLauncher/releases?per_page=10"
+
+// 5 seconds, not the transport's usual 15: this only ever feeds a dialog the player is not
+// blocked on (see useWhatsNew.ts), so it has no reason to hold a launch's network activity open
+// as long as an ordinary API call does.
+const RELEASE_NOTES_TIMEOUT_MS = 5_000
+
+const GITHUB_ACCEPT_HEADER = "application/vnd.github+json"
+
+// GitHub's API refuses an empty User-Agent outright; naming the launcher is also what a
+// maintainer would want to see in GitHub's own request logs if this endpoint ever misbehaves.
+const GITHUB_USER_AGENT = "RiftLauncher"
+
+/** Chromium's redirect refusals, the shape a `redirect: "error"` request fails with: ERR_UNEXPECTED_REDIRECT, ERR_UNSAFE_REDIRECT, ERR_TOO_MANY_REDIRECTS. */
+const REDIRECT_ERROR = /\bERR_[A-Z_]*REDIRECT/
+
+/**
+ * Per-field ceilings, applied here so no single release can push the renderer a field larger than
+ * the whole list is supposed to be. The 256 KiB response cap bounds all ten releases together;
+ * without these a response could spend all of it on one body. 128 for a tag (a semver string with
+ * room to spare), 256 for a name (one line), 64 KiB for a body (the longest this project has
+ * published is under 7 KB, and it is what releaseNotesToBlocks slices to anyway), 64 for an ISO
+ * timestamp.
+ */
+const MAX_RELEASE_TAG_LENGTH = 128
+const MAX_RELEASE_NAME_LENGTH = 256
+const MAX_RELEASE_BODY_LENGTH = 64 * 1024
+const MAX_RELEASE_PUBLISHED_AT_LENGTH = 64
+
+/** A string field of a release, capped, or the given fallback when the API sent something that is not a string. */
+function releaseText(value: unknown, maxLength: number, fallback: string): string {
+  return typeof value === "string" ? value.slice(0, maxLength) : fallback
+}
+
+/** One release entry off the raw API response, kept only when it carries a usable tag. Everything else about it defaults rather than rejects the whole release, and every field is capped before it crosses IPC. */
+function validateReleaseEntry(value: unknown): WhatsNewReleaseInfo | undefined {
+  if (!isRecord(value)) return undefined
+  const tag = value["tag_name"]
+  if (typeof tag !== "string" || tag.length === 0 || tag.length > MAX_RELEASE_TAG_LENGTH) return undefined
+
+  return {
+    tag,
+    name: releaseText(value["name"], MAX_RELEASE_NAME_LENGTH, tag),
+    body: releaseText(value["body"], MAX_RELEASE_BODY_LENGTH, ""),
+    prerelease: value["prerelease"] === true,
+    draft: value["draft"] === true,
+    publishedAt: releaseText(value["published_at"], MAX_RELEASE_PUBLISHED_AT_LENGTH, "")
+  }
+}
+
+/** The response body as a release list, or undefined for anything that is not JSON, or not a JSON array. */
+function parseReleaseNotesResponse(rawText: string): WhatsNewReleaseInfo[] | undefined {
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(rawText)
+  } catch {
+    return undefined
+  }
+
+  if (!Array.isArray(parsed)) return undefined
+  return parsed.map(validateReleaseEntry).filter((release): release is WhatsNewReleaseInfo => release !== undefined)
+}
+
+/** One HTTP header's value as a single string, Node's `string | string[]` folded down to its first entry the same way the content-length check above already does. */
+function headerValue(headers: Record<string, string | string[] | undefined>, name: string): string | undefined {
+  const value = headers[name] ?? headers[name.toLowerCase()]
+  return Array.isArray(value) ? value[0] : value
+}
+
+/**
+ * Maps whatever the fetch or the parse threw onto the closed vocabulary FETCH_RELEASE_NOTES is
+ * allowed to log: never the error's own message, which could carry a header value or a URL this
+ * process does not control the content of.
+ */
+function releaseNotesFailureReason(error: unknown): FetchReleaseNotesFailureReason {
+  if (error instanceof BoundedResponseError) {
+    // 403 with the remaining count at zero is the primary rate limit; 429 is the secondary one,
+    // which GitHub sends for a burst even while the hourly budget still has room.
+    if (error.statusCode === 429) return "rate-limited"
+    if (error.statusCode === 403 && headerValue(error.headers, "x-ratelimit-remaining") === "0") return "rate-limited"
+    return "bad-response"
+  }
+
+  if (error instanceof Error && error.message === "Network response is too large") return "too-large"
+
+  // The transport refuses to follow a redirect (network.ts, `redirect: "error"`), which surfaces
+  // as a transport error rather than a status. That is the repository having been renamed or
+  // moved, not a machine that is offline: calling it offline would have the launcher retry it on
+  // every launch forever, when the answer will never change until this file's URL does.
+  if (error instanceof Error && REDIRECT_ERROR.test(error.message)) return "bad-response"
+
+  return "offline"
+}
+
+/**
+ * Fetches this repository's GitHub releases for the "what's new" dialog and the Info & Help
+ * page's own section (#439).
+ *
+ * The same source the auto-updater already reads from, rather than the update-available event: a
+ * player who updated through a package manager or a manual download never sees that event at all,
+ * and the notes have to reach them too.
+ */
+export async function fetchReleaseNotes(): Promise<FetchReleaseNotesResult> {
+  const url = assertAllowedApiUrl(RELEASE_NOTES_URL)
+
+  try {
+    const text = await requestBoundedText(url, {
+      maxBytes: getApiUrlMaxBytes(url),
+      timeoutMs: RELEASE_NOTES_TIMEOUT_MS,
+      accept: GITHUB_ACCEPT_HEADER,
+      headers: { "User-Agent": GITHUB_USER_AGENT }
+    })
+
+    const releases = parseReleaseNotesResponse(text)
+    if (!releases) return { ok: false, reason: "bad-response" }
+    return { ok: true, releases }
+  } catch (err) {
+    return { ok: false, reason: releaseNotesFailureReason(err) }
+  }
+}
+
+ipcMain.handle(IPC_CHANNELS.NET_MANAGER.FETCH_RELEASE_NOTES, async (event): Promise<FetchReleaseNotesResult> => {
+  assertTrustedIpcSender(event)
+  const result = await fetchReleaseNotes()
+
+  // Fixed text and the failure's own reason token only: never the response body, a release name
+  // or the URL, the same provenance rule every other network log in this file already follows.
+  if (!result.ok) logMessage("info", `[back] [ipc] [ipc/handlers/netHandlers.ts] [FETCH_RELEASE_NOTES] Release notes fetch failed: ${result.reason}.`)
+
+  return result
 })

@@ -95,3 +95,51 @@ describe("useGetCompleteInstalledMods: bounding its own ModDB fan-out (#386)", (
     expect(settled?.mods.map((mod) => mod.modid)).toEqual(anInstalledModsScan().mods.map((mod) => mod.modid))
   })
 })
+
+/** A ModDB detail for one Mod, releases newest first, each tagged with the game versions it names. */
+function aModDetail(modid: number, releases: { modversion: string; tags: string[] }[]): string {
+  return JSON.stringify({
+    statuscode: "200",
+    mod: {
+      modid,
+      assetid: modid,
+      name: `Mod ${modid}`,
+      releases: releases.map((release, index) => ({
+        releaseid: modid * 100 + index,
+        mainfile: `https://mods.example/mod-${modid}-${release.modversion}.zip`,
+        filename: `mod-${modid}-${release.modversion}.zip`,
+        fileid: modid * 100 + index,
+        downloads: 0,
+        tags: release.tags,
+        modidstr: `mod${modid}`,
+        modversion: release.modversion,
+        created: "",
+        changelog: ""
+      }))
+    }
+  })
+}
+
+describe("useGetCompleteInstalledMods: the update count", () => {
+  it("counts only the Mods with a newer release tagged for the game version", async () => {
+    const installed = (modid: number): InstalledModType => ({ name: `Mod ${modid}`, modid: String(modid), version: "1.0.0", path: `/games/a/Mods/mod-${modid}.zip`, enabled: true })
+    // 1 has a tagged update, 2 only a newer release for another series, 3 is already current.
+    const details: Record<string, string> = {
+      "1": aModDetail(1, [{ modversion: "1.1.0", tags: ["1.21.0"] }]),
+      "2": aModDetail(2, [{ modversion: "2.0.0", tags: ["1.19.0"] }]),
+      "3": aModDetail(3, [{ modversion: "1.0.0", tags: ["1.21.0"] }])
+    }
+    installMockWindowApi({
+      netManager: { queryURL: vi.fn(async (url: string) => details[url.match(/\/mod\/(\d+)/)?.[1] ?? ""] ?? JSON.stringify({ statuscode: "404" })) },
+      modsManager: { getInstalledMods: vi.fn(async () => ({ mods: [installed(1), installed(2), installed(3)], errors: [] })) }
+    })
+    const onFinish = vi.fn()
+
+    const { result } = renderHook(() => useGetCompleteInstalledMods())
+    const { mods } = await result.current({ path: "/games/a", version: "1.21.0", onFinish })
+
+    expect(mods.map((mod) => mod._updatableTo)).toEqual(["1.1.0", undefined, undefined])
+    expect(onFinish).toHaveBeenCalledTimes(1)
+    expect(onFinish).toHaveBeenCalledWith(1)
+  })
+})

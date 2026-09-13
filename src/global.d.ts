@@ -23,6 +23,12 @@ declare global {
      */
     background: string
     /**
+     * Which preset paints `--color-vsl`, the brand accent read through `text-vsl`, `bg-vsl`,
+     * `border-vsl` and `outline-vsl`: a listed preset id, or the shipped default for anything
+     * else, missing included. See src/domain/accentColors.ts.
+     */
+    accentColor: string
+    /**
      * What the player answered when asked, once, whether the launcher could fetch its own ModDB
      * listing archive so that listing's download counter registers it: `unasked` until they answer,
      * then `accepted`, `declined` or `already-done` forever. See src/domain/moddbVisibility.ts.
@@ -34,6 +40,13 @@ declare global {
      * does on its own. See src/domain/appUpdate/betaUpdates.ts.
      */
     receiveBetaUpdates: boolean | null
+    /**
+     * The version the "what's new" dialog last showed notes up to, empty for a fresh install or
+     * a config written before this field existed. Compared against the running version by
+     * useWhatsNew.ts to decide whether there is anything left to show. See
+     * src/domain/appUpdate/whatsNew.ts.
+     */
+    lastSeenChangelogVersion: string
     _notifiedModUpdatesInstallations?: string[]
     /**
      * Bumped by every background selection so a re-pick of the same id still repaints. The custom
@@ -94,7 +107,10 @@ declare global {
     | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response" | "session-store-unreadable"; account?: undefined }
 
   type GameVersionType = {
+    /** Stable technical identity; independent from the displayed label and version number. */
+    id: string
     version: string
+    label: string
     path: string
     /** Registered from a folder the launcher did not install, so removing it must only unregister it. */
     linked?: boolean
@@ -117,6 +133,8 @@ declare global {
     icon: string
     path: string
     version: string
+    /** Stable id of the selected game version, or null when the catalog entry is gone. */
+    gameVersionId: string | null
     startParams: string
     backupsLimit: number
     backupsAuto: boolean
@@ -181,6 +199,12 @@ declare global {
 
   type ErrorInstalledModType = { zipname: string; path: string }
 
+  /**
+   * GET_INSTALLED_MODS' answer. `unreadable` is a Mods folder that is there but could not be listed
+   * (a link whose target is gone, a read error): its empty lists say nothing about what it holds.
+   */
+  type InstalledModsScan = { mods: InstalledModType[]; errors: ErrorInstalledModType[]; unreadable?: true }
+
   type DownloadableModOnListType = {
     modid: number
     assetid: number
@@ -204,16 +228,17 @@ declare global {
     modid: number
     assetid: number
     name: string
-    text: string
-    author: string
+    /** Optional, like the four below: readModDetail drops each one that arrives with the wrong type. */
+    text?: string
+    author?: string
     urlalias: string | null
     homepageurl: string | null
     sourcecodeurl: string | null
-    downloads: number
-    follows: number
+    downloads?: number
+    follows?: number
     trendingpoints: number
     comments: number
-    side: string
+    side?: string
     logofile?: string
     createdat: string
     tags: string[]
@@ -433,6 +458,27 @@ declare global {
   /** SET_MOD_ENABLED's verdict, carrying the archive's new path when it moved. */
   type SetModEnabledResult = { ok: true; path: string } | { ok: false; reason: SetModEnabledFailureReason }
 
+  /** One Mod a profile turns on: its modid, and the archive's name when it is on (it ends in .zip). */
+  type ModProfileEntry = { modid: string; file: string }
+
+  /** A named set of the Mods that are on in one Installation (#287). */
+  type ModProfile = { id: string; name: string; mods: ModProfileEntry[] }
+
+  /**
+   * The profiles file at an Installation's root (src/domain/mods/profiles.ts). The active profile is
+   * whatever the Mods folder holds, so its stored set is only refreshed when the player leaves it.
+   */
+  type ModProfilesDocument = { format: 1; activeProfileId: string | null; profiles: ModProfile[] }
+
+  /**
+   * GET_MOD_PROFILES' verdict. `newer-format` and `unreadable` name a file this build must never
+   * overwrite; `refused` is a path that is not a configured Installation.
+   */
+  type ModProfilesReadResult = { ok: true; document: ModProfilesDocument } | { ok: false; reason: "newer-format" | "unreadable" | "refused" }
+
+  /** SAVE_MOD_PROFILES' verdict. `invalid` is a document that is not a format-1 profiles document. */
+  type ModProfilesSaveResult = { ok: true } | { ok: false; reason: "newer-format" | "unreadable" | "invalid" | "refused" }
+
   /**
    * ENSURE_BACKGROUND's verdict for one catalog scene.
    *
@@ -450,6 +496,32 @@ declare global {
    *   the handler does not vouch for it.
    */
   type EnsureBackgroundResult = "refreshed" | "current" | "failed"
+
+  /**
+   * One GitHub release, trimmed to the fields FETCH_RELEASE_NOTES validates out of the API
+   * response. See src/domain/appUpdate/whatsNew.ts, which is the only place `body` is ever turned
+   * into anything shown on screen.
+   */
+  type WhatsNewReleaseInfo = {
+    tag: string
+    name: string
+    body: string
+    prerelease: boolean
+    draft: boolean
+    publishedAt: string
+  }
+
+  /**
+   * Why FETCH_RELEASE_NOTES could not answer with releases: `offline` for anything that never got
+   * a response (no connection, a timeout, a connection reset), `bad-response` for a response that
+   * came back but was not a usable release list (a non-2xx status other than the rate limit
+   * below, or a body that failed to parse), `too-large` for a response over the byte cap, and
+   * `rate-limited` for GitHub's own 403 with `x-ratelimit-remaining: 0`. See
+   * src/ipc/handlers/netHandlers.ts.
+   */
+  type FetchReleaseNotesFailureReason = "offline" | "bad-response" | "too-large" | "rate-limited"
+
+  type FetchReleaseNotesResult = { ok: true; releases: WhatsNewReleaseInfo[] } | { ok: false; reason: FetchReleaseNotesFailureReason }
 
   declare module "*.png" {
     const value: string

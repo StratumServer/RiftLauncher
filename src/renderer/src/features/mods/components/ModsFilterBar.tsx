@@ -1,6 +1,6 @@
 import { Dispatch, SetStateAction } from "react"
 import { useTranslation } from "react-i18next"
-import { PiStarDuotone, PiEraserDuotone } from "react-icons/pi"
+import { PiStarDuotone, PiStarFill, PiEraserDuotone } from "react-icons/pi"
 import clsx from "clsx"
 
 import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
@@ -71,14 +71,21 @@ function ModsFilterBar({
 
         <InstalledFilter installedFilter={installedFilter} setInstalledFilter={setInstalledFilter} size="w-40 h-8" />
 
+        {/*
+         * The active hue goes on the icon, never on the FormButton: the ghost variant carries
+         * `text-zinc-200` and Tailwind emits it after a class handed through `className`, so a
+         * colour on the button loses the cascade and paints nothing (issue #414, same as #366,
+         * see ModReleaseList.tsx). The border does win from `className`, and the fill icon makes
+         * the on state a shape change, not a hue change (WCAG 1.4.1).
+         */}
         <FormButton
           title={t("features.mods.onlyFavMods")}
           onClick={() => setOnlyFav((prev) => !prev)}
-          className={clsx("w-8 h-8 text-lg", onlyFav && "text-yellow-400")}
+          className={clsx("w-8 h-8 text-lg", onlyFav && "border-vsl")}
           variant="ghost"
           ariaPressed={onlyFav}
         >
-          <PiStarDuotone />
+          {onlyFav ? <PiStarFill className="text-yellow-400" /> : <PiStarDuotone />}
         </FormButton>
 
         <OrderFilter orderBy={orderBy} setOrderBy={setOrderBy} orderByOrder={orderByOrder} setOrderByOrder={setOrderByOrder} />

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen } from "@testing-library/react"
+import { screen, waitFor } from "@testing-library/react"
 
 import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
@@ -24,18 +24,18 @@ import { renderWithProviders } from "./helpers/render"
 const PALETTE_UTILITY = /^text-[a-z]+-\d+$/
 
 const VERDICTS = [
-  { tags: ["1.20.0"], modversion: "3.0.0", label: "Tagged", sentence: "Author tagged it as compatible with your selected Vintage Story Version!" },
+  { tags: ["1.20.0"], modversion: "3.0.0", label: "Tagged", sentence: "Author tagged it as compatible with your selected Vintage Story Version." },
   {
     tags: ["1.20.4"],
     modversion: "2.0.0",
     label: "Likely",
-    sentence: "Author didn't tag it as compatible but there is a 95% chance that it will work on the selected Vintage Story Version!"
+    sentence: "Author didn't tag it as compatible but there is a 95% chance that it will work on the selected Vintage Story Version."
   },
   {
     tags: ["1.19.8"],
     modversion: "1.0.0",
     label: "Untagged",
-    sentence: "Author didn't tag it as compatible and there is a 90% chance that it will not work on the selected Vintage Story Version!"
+    sentence: "Author didn't tag it as compatible and there is a 90% chance that it will not work on the selected Vintage Story Version."
   }
 ] as const
 
@@ -49,6 +49,7 @@ function anInstallation(): InstallationType {
     icon: "icon-1",
     path: "/games/a",
     version: "1.20.0",
+    gameVersionId: "gv-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -84,8 +85,16 @@ function aModDetail(releases: readonly { modversion: string; tags: readonly stri
   })
 }
 
-async function renderTable(releases: readonly { modversion: string; tags: readonly string[] }[], { withInstallation = true } = {}): Promise<void> {
-  installMockWindowApi({ netManager: { queryURL: vi.fn(async () => aModDetail(releases)) } })
+/** `GET /api/gameversions` as the ModDB answers it: every game version there is, oldest first. */
+function aGameVersionCatalog(names: readonly string[]): string {
+  return JSON.stringify({ statuscode: "200", gameversions: names.map((name, index) => ({ tagid: index + 1, name })) })
+}
+
+async function renderTable(
+  releases: readonly { modversion: string; tags: readonly string[] }[],
+  { withInstallation = true, gameVersions = [] }: { withInstallation?: boolean; gameVersions?: readonly string[] } = {}
+): Promise<void> {
+  installMockWindowApi({ netManager: { queryURL: vi.fn(async (url: string) => (url.includes("/gameversions") ? aGameVersionCatalog(gameVersions) : aModDetail(releases))) } })
 
   renderWithProviders(
     <TaskProvider>
@@ -148,6 +157,8 @@ describe("the release table's compatibility verdict", () => {
 
 describe("the release table's game versions", () => {
   it("shows every supported version, not a clipped prefix", async () => {
+    // An empty catalog, the same branch the table takes before that query lands and after it
+    // fails: with nothing to say which versions sit between two tags, the cell lists them all.
     await renderTable([{ modversion: "1.0.0", tags: EIGHT_VERSIONS }])
 
     const cell = screen.getByText(EIGHT_VERSIONS.join(", "))
@@ -162,6 +173,30 @@ describe("the release table's game versions", () => {
     // An input here is a focus stop that announces itself as a textbox for text nobody edits.
     expect(screen.queryAllByRole("textbox")).toHaveLength(0)
     expect(document.querySelector("input")).toBeNull()
+  })
+})
+
+describe("the release table's game versions once the ModDB catalog is known", () => {
+  /** Shaped like the live catalog: a couple of older versions, then a series with its candidates. */
+  const CATALOG = ["1.21.0", "1.21.1", "1.22.0-pre.1", "1.22.0-rc.1", "1.22.0", "1.22.1", "1.22.2", "1.22.3"]
+
+  /** The reported case in miniature: a whole series ticked box by box, in the ModDB's own order. */
+  const SERIES = ["1.22.1", "1.21.0", "1.22.0", "1.22.0-pre.1", "1.22.3", "1.22.2", "1.22.0-rc.1"]
+
+  it("collapses a run the catalog says is unbroken and leaves a skipped version out of it", async () => {
+    await renderTable([{ modversion: "1.0.0", tags: SERIES }], { gameVersions: CATALOG })
+
+    const cell = await screen.findByTitle(SERIES.join(", "))
+
+    // 1.21.1 is in the catalog and not in the tags, so 1.21.0 stays on its own rather than being
+    // swept into the range beside it. The candidates fold into the 1.22.0 this release also carries.
+    await waitFor(() => expect(cell.textContent).toBe("1.21.0, 1.22.0 to 1.22.3"))
+
+    // The tooltip still carries every tag, so the short form loses nothing.
+    expect(cell.getAttribute("title")).toBe(SERIES.join(", "))
+
+    // Shorter, but still the wrapping text #369 made it rather than a clipped line.
+    expect(cell.className).not.toMatch(/whitespace-nowrap|text-ellipsis/)
   })
 })
 

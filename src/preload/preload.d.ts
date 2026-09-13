@@ -38,12 +38,14 @@ declare global {
       saveConfig: (configJson: ConfigType) => Promise<SaveConfigResult>
     }
     modsManager: {
-      getInstalledMods: (path: string) => Promise<{ mods: InstalledModType[]; errors: ErrorInstalledModType[] }>
+      getInstalledMods: (path: string) => Promise<InstalledModsScan>
       setModEnabled: (path: string, enabled: boolean) => Promise<SetModEnabledResult>
       cacheModImage: (url: string) => Promise<string | undefined>
       exportModpack: (manifest: ModpackManifestType) => Promise<{ success: boolean; path?: string }>
       importModpack: () => Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }>
       clearModIconMemoryCache: () => void
+      getModProfiles: (installationPath: string) => Promise<ModProfilesReadResult>
+      saveModProfiles: (installationPath: string, document: ModProfilesDocument) => Promise<ModProfilesSaveResult>
     }
     pathsManager: {
       getCurrentUserDataPath: () => Promise<string>
@@ -79,6 +81,8 @@ declare global {
        * player's courtesy going unnoticed, not their problem.
        */
       acceptModDbVisibility: () => Promise<boolean>
+      /** Fetches this repository's GitHub releases, for the "what's new" dialog and the Info & Help page. See src/domain/appUpdate/whatsNew.ts. */
+      fetchReleaseNotes: () => Promise<FetchReleaseNotesResult>
     }
     backgroundsManager: {
       /** Downloads one catalog scene into the cache when it is missing or its manifest hash changed, and reports what it did. */

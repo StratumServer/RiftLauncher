@@ -7,7 +7,7 @@ import { useGameVersions, useInstallations } from "@renderer/features/config/con
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUninstallGameVersion"
 import { useOpenVersionFolder } from "@renderer/features/versions/hooks/useOpenVersionFolder"
-import { formatUsedByInstallations } from "@renderer/features/versions/adapters/uninstall"
+import { summarizeUsedByInstallations } from "@renderer/features/versions/adapters/uninstall"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -36,15 +36,21 @@ function ListVersions(): JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  function installationsUsing(version: string): string[] {
-    return installations.filter((installation) => installation.version === version).map((installation) => installation.name)
+  function installationsUsing(version: GameVersionType): string[] {
+    return installations.filter((installation) => installation.gameVersionId === version.id).map((installation) => installation.name)
+  }
+
+  /** Composes the in-use warning's installation list, folding anything past the cap into a translated "N more" through t() instead of hardcoding it. */
+  function installationsInUseLabel(names: string[]): string {
+    const { shown, remaining } = summarizeUsedByInstallations(names)
+    return remaining > 0 ? `${shown.join(", ")} ${t("features.versions.installationsAndMore", { count: remaining })}` : shown.join(", ")
   }
 
   async function DeleteVersionHandler(): Promise<void> {
     if (versionToDelete === null) return addNotification(t("features.versions.noVersionSelected"), "error")
 
     const target = versionToDelete
-    const usedByInstallations = installationsUsing(target.version)
+    const usedByInstallations = installationsUsing(target)
     setVersionToDelete(null)
 
     const result = await uninstallVersion(target, { usedByInstallations })
@@ -104,10 +110,10 @@ function ListVersions(): JSX.Element {
               .slice()
               .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
               .map((gv) => (
-                <ListItem key={gv.version}>
+                <ListItem key={gv.id}>
                   <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
                     <div className="w-full flex items-center justify-center text-start font-bold pl-1">
-                      <p className="w-full">{gv.version}</p>
+                      <p className="w-full">{gv.label}</p>
                     </div>
 
                     <ThinSeparator />
@@ -140,7 +146,7 @@ function ListVersions(): JSX.Element {
           close={() => setVersionToDelete(null)}
         >
           <>
-            <p>{t(versionToDelete?.linked ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall")}</p>
+            <p>{t(versionToDelete?.linked ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall", { version: versionToDelete?.label ?? versionToDelete?.version })}</p>
             <p className="text-zinc-400">{t(versionToDelete?.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
             <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
               <FormButton title={t("generic.cancel")} onClick={() => setVersionToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
@@ -159,7 +165,7 @@ function ListVersions(): JSX.Element {
           <>
             <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
               <PiWarningDuotone className="text-lg shrink-0" />
-              <span>{t("features.versions.versionInUseByInstallations", { installations: formatUsedByInstallations(versionInUseWarning?.usedByInstallations ?? []) })}</span>
+              <span>{t("features.versions.versionInUseByInstallations", { installations: installationsInUseLabel(versionInUseWarning?.usedByInstallations ?? []) })}</span>
             </div>
             <p className="text-zinc-400">{t(versionInUseWarning?.version.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
             <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>

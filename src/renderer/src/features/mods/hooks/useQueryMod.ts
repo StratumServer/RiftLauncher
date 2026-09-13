@@ -42,8 +42,8 @@ export function useQueryMod(): ({ modid, onFinish }: { modid: number | string; o
 
       return { status: "found", mod: parsed.payload as unknown as DownloadableModType }
     } catch (err) {
-      logMods("error", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching ${modid} mod versions.`)
-      logMods("debug", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching ${modid} mod versions: ${err}`)
+      logMods("error", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching a Mod's versions.`)
+      logMods("debug", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching a Mod's versions: ${err}`)
       return { status: "failed" }
     }
   }, [])

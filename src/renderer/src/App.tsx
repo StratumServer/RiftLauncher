@@ -16,6 +16,7 @@ import MainMenu from "@renderer/components/layout/MainMenu"
 import GlobalActionsWrapper from "@renderer/components/layout/GlobalActionsWrapper"
 import DeferredGlobalModUpdateChecker from "@renderer/components/layout/DeferredGlobalModUpdateChecker"
 import ModDbVisibilityPrompt from "@renderer/components/layout/ModDbVisibilityPrompt"
+import WhatsNewDialog from "@renderer/components/layout/WhatsNewDialog"
 import PageErrorBoundary from "@renderer/components/layout/PageErrorBoundary"
 
 const HomePage = lazy(() => import("@renderer/features/home/pages/HomePage"))
@@ -62,7 +63,9 @@ function App(): JSX.Element {
 
                   <MainMenu />
 
-                  <main className="relative w-full h-full flex-1">
+                  {/* min-w-0: a flex item will not shrink below its content by default, so one row that cannot
+                      wrap would widen the page past the window and cut off the controls on its right. */}
+                  <main className="relative w-full h-full flex-1 min-w-0">
                     <Suspense fallback={<RouteLoader />}>
                       <AnimatedRoutes />
                     </Suspense>
@@ -71,6 +74,7 @@ function App(): JSX.Element {
                   <NotificationsOverlay />
 
                   <ModDbVisibilityPrompt />
+                  <WhatsNewDialog />
                 </div>
               </div>
             </GlobalActionsWrapper>

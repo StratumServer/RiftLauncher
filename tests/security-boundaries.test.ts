@@ -59,7 +59,7 @@ describe("process and navigation boundaries", () => {
   })
 
   it("validates game launch objects instead of trusting TypeScript casts", () => {
-    assert.deepEqual(validateGameVersion({ version: "1.22.6", path: "/tmp/versions/1.22.6" }), { version: "1.22.6", path: "/tmp/versions/1.22.6" })
+    assert.deepEqual(validateGameVersion({ id: "gv-1", version: "1.22.6", path: "/tmp/versions/1.22.6" }), { id: "gv-1", version: "1.22.6", path: "/tmp/versions/1.22.6" })
     assert.deepEqual(validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "" }), {
       path: "/tmp/installations/main",
       startParams: "",
@@ -68,6 +68,8 @@ describe("process and navigation boundaries", () => {
       launchWrapper: ""
     })
     assert.throws(() => validateGameVersion({ version: "1.22.6", path: "/" }), /Invalid game version path/)
+    assert.throws(() => validateGameVersion({ id: 42, version: "1.22.6", path: "/tmp/versions/1.22.6" }), /Invalid game version id/)
+    assert.throws(() => validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "", gameVersionId: 42 }), /Invalid installation game version id/)
     assert.throws(() => parseSafeEnvironment("PATH=/tmp"), /Invalid environment variable/)
     assert.throws(() => validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "", launchWrapper: "x".repeat(4_097) }), /Invalid launch wrapper/)
   })
@@ -100,6 +102,7 @@ describe("process and navigation boundaries", () => {
  */
 const MAIN_SOURCE = readFileSync(resolve(__dirname, "../src/main/index.ts"), "utf8")
 const PRELOAD_SOURCE = readFileSync(resolve(__dirname, "../src/preload/index.ts"), "utf8")
+const MODS_HANDLERS_SOURCE = readFileSync(resolve(__dirname, "../src/ipc/handlers/modsHandlers.ts"), "utf8")
 const RENDERER_HTML = readFileSync(resolve(__dirname, "../src/renderer/index.html"), "utf8")
 const MAIN_AST = ts.createSourceFile("src/main/index.ts", MAIN_SOURCE, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 
@@ -124,6 +127,24 @@ describe("startup network boundaries", () => {
   it("leaves the startup update check to the module that catches its rejection", () => {
     assert.equal(MAIN_SOURCE.includes("scheduleUpdateCheck("), true, "src/main/index.ts stopped arming the startup update check")
     assert.equal(MAIN_SOURCE.includes("autoUpdater.checkForUpdates("), false, "src/main/index.ts calls checkForUpdates itself again, where nothing catches its rejection")
+  })
+
+  // The two profile channels are the only ones that read and write a file the renderer does not
+  // name: tests/ipc/modProfiles.test.ts proves the refusals, and this keeps the order they run in.
+  it("holds both mod profile channels to a trusted sender, a configured Installation and the no-link grade", () => {
+    for (const channel of ["GET_MOD_PROFILES", "SAVE_MOD_PROFILES"]) {
+      const start = MODS_HANDLERS_SOURCE.indexOf(`ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.${channel},`)
+      assert.notEqual(start, -1, `modsHandlers.ts stopped registering ${channel}`)
+      const body = MODS_HANDLERS_SOURCE.slice(start, MODS_HANDLERS_SOURCE.indexOf("\n})", start))
+      assert.match(body, /^[^\n]*\n {2}assertTrustedIpcSender\(event\)\n/, `${channel} no longer checks its sender before anything else`)
+      assert.equal(body.includes("await locateModProfiles(installationPath)"), true, `${channel} stopped deriving the file from a configured Installation`)
+      assert.equal(PRELOAD_SOURCE.includes(`ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.${channel},`), true, `the preload stopped exposing ${channel}`)
+    }
+
+    const locate = MODS_HANDLERS_SOURCE.slice(MODS_HANDLERS_SOURCE.indexOf("async function locateModProfiles("), MODS_HANDLERS_SOURCE.indexOf("async function readModProfilesFile("))
+    assert.equal(locate.includes("await assertConfiguredInstallationPath(installationPath)"), true, "the profiles file is no longer tied to a configured Installation")
+    assert.equal(locate.includes('join(installation, MOD_PROFILES_FILE_NAME), "mod profiles path", { allowMissing: true })'), true, "the profiles file left the strict grade")
+    assert.equal(locate.includes("allowSymlinks"), false, "the profiles file may now be read or written through a symbolic link")
   })
 
   it("keeps the local app protocol CORS-aware and records non-renderer child exits", () => {
@@ -871,5 +892,25 @@ describe("renderer preload bridge boundaries", () => {
 
   it("keeps the shared components behind the features they are handed", () => {
     assert.deepEqual(filesReachingTheBridge("src/renderer/src/components"), [], "a file under src/renderer/src/components calls window.api instead of going through a feature")
+  })
+})
+
+/**
+ * The renderer shows network and file content only as React text, which React escapes. The ModDB
+ * sends Mod descriptions as HTML and the detail panel reads them through modDescriptionParagraphs
+ * for exactly that reason. A switch to rendering markup from a string would bypass that, so it has
+ * to come with a sanitizer decision rather than slip in.
+ */
+describe("renderer HTML sinks", () => {
+  it("renders no HTML from a string anywhere in the renderer", () => {
+    const root = resolve(__dirname, "..", "src/renderer/src")
+    const sinks = ["dangerouslySetInnerHTML", "innerHTML", "outerHTML", "insertAdjacentHTML", "srcDoc", "srcdoc", "document.write", "createContextualFragment", "setHTMLUnsafe"]
+    const offenders = readdirSync(root, { recursive: true, encoding: "utf8" })
+      .filter((entry) => entry.endsWith(".ts") || entry.endsWith(".tsx"))
+      .flatMap((entry) => {
+        const source = readFileSync(resolve(root, entry), "utf8")
+        return sinks.filter((sink) => source.includes(sink)).map((sink) => `${entry}: ${sink}`)
+      })
+    assert.deepEqual(offenders, [], "a renderer file renders HTML from a string")
   })
 })

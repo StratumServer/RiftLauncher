@@ -3,9 +3,10 @@ import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import ListMods from "@renderer/features/mods/pages/ListMods"
+import { getModsBrowseState } from "@renderer/features/mods/modsBrowseState"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
-import { installMockWindowApi } from "./helpers/windowApi"
+import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 /** Two `/api/mods` entries with different `side` values, so the Side filter has something to narrow. */
@@ -73,5 +74,133 @@ describe("ListMods filter bar", () => {
     // The change is debounced (400ms) before it re-queries and re-filters.
     await waitFor(() => expect(screen.queryByText("Better Ruins")).toBeNull(), { timeout: 3000 })
     expect(screen.getByText("Client Only Tool")).toBeTruthy()
+  })
+
+  // #414: the favorites-only toggle looked identical on and off. Its one state cue, a
+  // "text-yellow-400" on the ghost FormButton's className, lost the cascade to the variant's
+  // own "text-zinc-200", so nothing but aria-pressed ever changed. The fix moves the hue onto
+  // a solid PiStarFill icon and adds a border-vsl box, both of which win where they sit.
+  it("marks the favorites filter as selected once it is on", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      configManager: { getConfig: async () => createMockConfig({ favMods: [123] }) },
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    expect(await screen.findByText("Better Ruins", {}, { timeout: 3000 })).toBeTruthy()
+
+    const favFilter = screen.getByTitle("Show favorite Mods only")
+    const icon = (): SVGElement => {
+      const svg = favFilter.querySelector("svg")
+      if (!svg) throw new Error("favorites filter icon not found")
+      return svg
+    }
+
+    expect(favFilter.getAttribute("aria-pressed")).toBe("false")
+    expect(favFilter.className).not.toContain("border-vsl")
+    expect(icon().getAttribute("class") ?? "").not.toContain("text-yellow-400")
+    expect(icon().querySelector('path[opacity="0.2"]')).not.toBeNull()
+
+    await user.click(favFilter)
+
+    expect(favFilter.getAttribute("aria-pressed")).toBe("true")
+    // The toggle hands a function to the setter; the browse snapshot must hold the value it gave.
+    expect(getModsBrowseState().onlyFav).toBe(true)
+    expect(favFilter.className).toContain("border-vsl")
+    expect(icon().getAttribute("class")).toContain("text-yellow-400")
+    expect(icon().querySelector('path[opacity="0.2"]')).toBeNull()
+
+    // The list narrowing is debounced; the favorited mod stays, the other drops.
+    await waitFor(() => expect(screen.queryByText("Client Only Tool")).toBeNull(), { timeout: 3000 })
+    expect(screen.getByText("Better Ruins")).toBeTruthy()
+  })
+
+  // @headlessui/react's MenuItems defaults to modal=true, which marks the rest of the page
+  // inert (aria-hidden + focus-trapped) while it is open. OrderFilter opts out: it is a small
+  // sort menu in a filter bar, not a dialog, and the rest of the bar has to stay usable.
+  it("keeps the rest of the filter bar reachable while the sort menu is open", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    expect(await screen.findByText("Better Ruins", {}, { timeout: 3000 })).toBeTruthy()
+
+    await user.click(screen.getByTitle("Order"))
+    await screen.findByText("Trending")
+
+    const searchInput = screen.getByRole("textbox")
+    expect(searchInput.closest('[aria-hidden="true"]')).toBeNull()
+  })
+
+  // Headless UI v2's Menu keeps DOM focus on the menu itself (an activedescendant pattern) and,
+  // on Enter or Space, calls .click() on the active item's own node -- the decorative MenuItem
+  // wrapper, never a button nested inside it. A click on an ancestor does not fire a descendant's
+  // onClick, so the keyboard used to close the menu without ever running changeOrder; only a
+  // mouse, which lands straight on the button, worked.
+  it("changes the sort order from the keyboard, not just a mouse click", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    expect(await screen.findByText("Better Ruins", {}, { timeout: 3000 })).toBeTruthy()
+
+    const trigger = screen.getByTitle("Order")
+    trigger.focus()
+    await user.keyboard("{Enter}")
+    await screen.findByText("Trending")
+
+    // Every option must be the real, clickable node itself: a decorative wrapper around a nested
+    // button would still report role="menuitem" on itself, just not on a <button> tag.
+    const options = screen.getAllByRole("menuitem")
+    expect(options).toHaveLength(6)
+    for (const option of options) expect(option.tagName).toBe("BUTTON")
+
+    await user.keyboard("{ArrowDown}{Enter}")
+
+    await waitFor(() => expect(window.localStorage.getItem("listModsOrderBy")).not.toBeNull())
+    // Whichever option the arrow key landed on, the store has to have followed it off the
+    // default "trendingpoints" -- that move is exactly what a swallowed Enter would prevent.
+    expect(window.localStorage.getItem("listModsOrderBy")).not.toBe("trendingpoints")
   })
 })

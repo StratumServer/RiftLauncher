@@ -34,10 +34,11 @@ vi.mock("@src/ipc/accountStore", () => ({
 }))
 
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
+import { ACCENT_PRESETS, DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
-import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
+import { CURRENT_CONFIG_SCHEMA, legacyGameVersionId } from "@domain/config/migrations"
 
 let temporaryRoot: string
 let userDataFolder: string
@@ -85,8 +86,10 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     favMods: [],
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
+    accentColor: DEFAULT_ACCENT_ID,
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
+    lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides
   }
@@ -243,6 +246,69 @@ describe("normalizeConfig: installations", () => {
 })
 
 describe("normalizeConfig: game versions", () => {
+  it("keeps stable game-version identity and defaults a missing label to the version", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ gameVersions: [{ id: "gv-vanilla", version: "1.22.7", path: "/versions/vanilla" }] })
+    const normalized = result.gameVersions[0] as GameVersionType & { label: string }
+
+    assert.equal(normalized.id, "gv-vanilla")
+    assert.equal(normalized.label, "1.22.7")
+  })
+
+  it("keeps an installation's gameVersionId while retaining its version number", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ installations: [{ id: "install-1", path: "/installations/1", version: "1.22.7", gameVersionId: "gv-optimum" }] })
+    const normalized = result.installations[0] as InstallationType & { gameVersionId: string | null }
+
+    assert.equal(normalized.gameVersionId, "gv-optimum")
+    assert.equal(normalized.version, "1.22.7")
+  })
+
+  it("repairs damaged current-schema identities on every normalization and preserves labels", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({
+      schemaVersion: CURRENT_CONFIG_SCHEMA,
+      gameVersions: [
+        { version: "1.22.7", label: "Vanilla", path: "/versions/vanilla" },
+        { id: "", version: "1.22.7", label: "Optimum", path: "/versions/optimum" },
+        { id: "duplicate", version: "1.21.0", label: "Keep this", path: "/versions/a" },
+        { id: "duplicate", version: "1.21.0", label: "Second", path: "/versions/b" },
+        { id: "valid", version: "1.20.0", path: "/versions/valid" }
+      ]
+    })
+
+    assert.deepEqual(
+      result.gameVersions.map((version) => ({ path: version.path, id: version.id, label: version.label })),
+      [
+        { path: "/versions/vanilla", id: legacyGameVersionId("1.22.7", "/versions/vanilla"), label: "Vanilla" },
+        { path: "/versions/optimum", id: legacyGameVersionId("1.22.7", "/versions/optimum"), label: "Optimum" },
+        { path: "/versions/a", id: "duplicate", label: "Keep this" },
+        { path: "/versions/b", id: legacyGameVersionId("1.21.0", "/versions/b"), label: "Second" },
+        { path: "/versions/valid", id: "valid", label: "1.20.0" }
+      ]
+    )
+  })
+
+  it("relinks only absent installation ids, leaves explicit null alone, and leaves ambiguous versions null", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({
+      schemaVersion: CURRENT_CONFIG_SCHEMA,
+      gameVersions: [
+        { id: "one", version: "1.22.7", label: "One", path: "/versions/one" },
+        { id: "two", version: "1.22.7", label: "Two", path: "/versions/two" }
+      ],
+      installations: [
+        { id: "absent", path: "/installs/absent", version: "1.21.0" },
+        { id: "null", path: "/installs/null", version: "1.22.7", gameVersionId: null },
+        { id: "ambiguous", path: "/installs/ambiguous", version: "1.22.7" }
+      ]
+    })
+
+    assert.equal(result.installations.find((installation) => installation.id === "absent")?.gameVersionId, null)
+    assert.equal(result.installations.find((installation) => installation.id === "null")?.gameVersionId, null)
+    assert.equal(result.installations.find((installation) => installation.id === "ambiguous")?.gameVersionId, null)
+  })
+
   it("drops entries that are not records, and entries missing a version or a path", async () => {
     const { normalizeConfig } = await freshConfigManager()
     const result = normalizeConfig({
@@ -336,6 +402,101 @@ describe("normalizeConfig: background", () => {
   it("never writes the session-only revision counter back out", async () => {
     const { normalizeConfig } = await freshConfigManager()
     assert.equal(normalizeConfig({ background: "village-lane", _backgroundRevision: 4 })._backgroundRevision, undefined)
+  })
+})
+
+describe("normalizeConfig: accentColor", () => {
+  it("defaults to the current brand preset when the field is missing, so an upgrade looks like it always did", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).accentColor, DEFAULT_ACCENT_ID)
+  })
+
+  it("keeps every preset id the palette lists", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    for (const preset of ACCENT_PRESETS) assert.equal(normalizeConfig({ accentColor: preset.id }).accentColor, preset.id)
+  })
+
+  it("falls back to the default for anything that does not name a listed preset", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const value of ["#d49754", "AMBER", "", 7, null, {}, ["amber"]]) {
+      assert.equal(normalizeConfig({ accentColor: value }).accentColor, DEFAULT_ACCENT_ID, String(value))
+    }
+  })
+
+  /**
+   * The field's whole point: adding it must not need a schema bump. A beta.9 (schema 4) document
+   * never heard of accentColor, and an older build reading a schema 5 document this launcher wrote
+   * drops the field it does not recognize and saves without it. Both land back here with no field
+   * at all, and both must read as the shipped default rather than fail to migrate or start.
+   */
+  it("keeps a beta.9 (schema 4) document with no accentColor field readable, defaulting the accent", async () => {
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }) }
+    delete legacyDoc.accentColor
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.equal(config.accentColor, DEFAULT_ACCENT_ID)
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+
+  it("keeps a schema 5 document an older build re-saved without accentColor readable, defaulting the accent", async () => {
+    const doc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accentColor: "teal" }) }
+    delete doc.accentColor
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(doc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.equal(config.accentColor, DEFAULT_ACCENT_ID)
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+})
+
+describe("normalizeConfig: lastSeenChangelogVersion", () => {
+  it("defaults to empty when the field is missing, which the what's new dialog reads as a fresh install", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).lastSeenChangelogVersion, "")
+  })
+
+  it("keeps a stored version string as is", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({ lastSeenChangelogVersion: "1.7.0-beta.9" }).lastSeenChangelogVersion, "1.7.0-beta.9")
+  })
+
+  it("falls back to empty for anything that is not a bounded string", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    for (const value of [7, null, {}, ["1.0.0"], "x".repeat(200)]) {
+      assert.equal(normalizeConfig({ lastSeenChangelogVersion: value }).lastSeenChangelogVersion, "", String(value))
+    }
+  })
+
+  /**
+   * The field's whole point, same as accentColor's: adding it must not need a schema bump. A
+   * beta.9 (schema 4) document never heard of it, and an older build reading a schema this
+   * launcher wrote drops the field it does not recognize and saves without it. Both land back
+   * here with no field at all, and both must read as empty rather than fail to migrate or start.
+   */
+  it("keeps a beta.9 (schema 4) document with no lastSeenChangelogVersion field readable, defaulting to empty", async () => {
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }) }
+    delete legacyDoc.lastSeenChangelogVersion
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.equal(config.lastSeenChangelogVersion, "")
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+
+  it("keeps a schema-current document an older build re-saved without lastSeenChangelogVersion readable, defaulting to empty", async () => {
+    const doc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, lastSeenChangelogVersion: "1.7.0" }) }
+    delete doc.lastSeenChangelogVersion
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(doc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.equal(config.lastSeenChangelogVersion, "")
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
   })
 })
 

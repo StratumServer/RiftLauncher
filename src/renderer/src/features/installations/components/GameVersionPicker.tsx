@@ -5,21 +5,22 @@ import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { FormBody, FormHead, FormLabel, FromGroup } from "@renderer/components/ui/FormComponents"
 import { TableBody, TableBodyRow, TableCell, TableHead, TableHeadRow, TableWrapper } from "@renderer/components/ui/Table"
 import { LinkButton } from "@renderer/components/ui/Buttons"
+import type { InstallationVersionStatus } from "@domain/installations/versionReference"
+
+function folderName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+}
 
 export interface GameVersionPickerProps {
   gameVersions: GameVersionType[]
   version: GameVersionType | undefined
   onSelect: (version: GameVersionType) => void
-  /** The Installation's own VS Version when it is not installed: the version string to name,
-   *  or "" for an Installation that has no version at all (configManager.ts normalizes a
-   *  missing or invalid version to "" and keeps the Installation). `undefined` means nothing
-   *  to warn about, which is why this is checked with `!== undefined` and not for truthiness
-   *  (#118). Unused by AddInstallation. */
-  missingVersion?: string
+  /** The unresolved Installation reference. Undefined means AddInstallation or a linked edit. */
+  unresolvedVersion?: { version: string; status: Exclude<InstallationVersionStatus, "linked"> }
 }
 
 /** The game version table shared by AddInstallation and EditInstallation. */
-export function GameVersionPicker({ gameVersions, version, onSelect, missingVersion }: Readonly<GameVersionPickerProps>): JSX.Element {
+export function GameVersionPicker({ gameVersions, version, onSelect, unresolvedVersion }: Readonly<GameVersionPickerProps>): JSX.Element {
   const { t } = useTranslation()
 
   return (
@@ -29,10 +30,16 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
       </FormHead>
 
       <FormBody>
-        {missingVersion !== undefined && (
+        {unresolvedVersion !== undefined && (
           <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
             <PiWarningDuotone className="text-lg shrink-0" />
-            <span>{missingVersion === "" ? t("features.versions.noVersionSetPickOne") : t("features.versions.versionNotInstalledPickAnother", { version: missingVersion })}</span>
+            <span>
+              {unresolvedVersion.status === "unset"
+                ? t("features.versions.noVersionSetPickOne")
+                : unresolvedVersion.status === "unlinked"
+                  ? t("features.versions.versionUnlinkedPickOne")
+                  : t("features.versions.versionNotInstalledPickAnother", { version: unresolvedVersion.version })}
+            </span>
           </div>
         )}
 
@@ -44,9 +51,21 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
           </TableHead>
 
           <TableBody className="max-h-[14rem]">
+            {/*
+             * The error treatment every other field on this form gets, not the neutral notice this
+             * used to be (#411). With no game version installed, saving is refused with "Fill in
+             * every field before saving." and this is the field that is missing, so it wears the
+             * same red-800 border and fill FormInputText paints on a `user-invalid` input. The
+             * headline takes the red-400 an error already speaks in elsewhere (notifications, the
+             * Activity Center); the line under it keeps zinc-400 so the link inside it still reads
+             * as a link rather than as part of the error.
+             */}
             {gameVersions.length < 1 && (
-              <div className="w-full p-1 flex flex-col items-center justify-center">
-                <p>{t("features.versions.noVersionsFound")}</p>
+              <div className="w-full p-2 flex flex-col gap-1 items-center justify-center border border-red-800 bg-red-800/20">
+                <p className="flex gap-2 items-center text-red-400">
+                  <PiWarningDuotone className="text-lg shrink-0" />
+                  {t("features.versions.noVersionsFound")}
+                </p>
                 <p className="text-zinc-400 text-sm flex gap-1 items-center flex-wrap justify-center">
                   <Trans
                     i18nKey="features.versions.noVersionsFoundDesc"
@@ -65,8 +84,13 @@ export function GameVersionPicker({ gameVersions, version, onSelect, missingVers
               .slice()
               .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
               .map((gv) => (
-                <TableBodyRow key={gv.version} onClick={() => onSelect(gv)} selected={version?.version === gv.version}>
-                  <TableCell className="w-full">{gv.version}</TableCell>
+                <TableBodyRow key={gv.id} onClick={() => onSelect(gv)} selected={version?.id === gv.id}>
+                  <TableCell className="w-full">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{gv.label}</span>
+                      {gameVersions.some((other) => other.id !== gv.id && other.version === gv.version) && <span className="text-xs text-zinc-400">{folderName(gv.path)}</span>}
+                    </div>
+                  </TableCell>
                 </TableBodyRow>
               ))}
           </TableBody>

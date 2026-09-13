@@ -13,6 +13,30 @@ type BoundedRequestOptions = {
   maxBytes?: number
   /** Overrides the JSON/text default for a caller that is not asking for text. */
   accept?: string
+  /** Extra headers beyond Accept and Content-Type, applied as given. For a target that needs one the shared defaults don't cover, a User-Agent GitHub's API requires among them. */
+  headers?: Record<string, string>
+  /** Overrides REQUEST_TIMEOUT_MS for a caller that needs a tighter wall clock than every other request on this transport gets. */
+  timeoutMs?: number
+}
+
+/**
+ * A response {@link requestBoundedBuffer} refused for its status, carrying enough of the response
+ * to classify why without ever logging it. `statusCode` and `headers` are Node's own shapes,
+ * unread by every caller except one that asks for them on purpose (see
+ * src/ipc/handlers/netHandlers.ts's releaseNotesFailureReason, which reads a single header off a
+ * 403 to tell GitHub's rate limit apart from any other refusal); every existing caller keeps
+ * matching on `.message`, unaffected.
+ */
+export class BoundedResponseError extends Error {
+  readonly statusCode: number | undefined
+  readonly headers: Record<string, string | string[] | undefined>
+
+  constructor(message: string, statusCode: number | undefined, headers: Record<string, string | string[] | undefined>) {
+    super(message)
+    this.name = "BoundedResponseError"
+    this.statusCode = statusCode
+    this.headers = headers
+  }
 }
 
 export function requestBoundedText(url: URL, options: BoundedRequestOptions = {}): Promise<string> {
@@ -27,6 +51,7 @@ export function requestBoundedText(url: URL, options: BoundedRequestOptions = {}
 export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = {}): Promise<Buffer> {
   const method = options.method ?? "GET"
   const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
 
   return new Promise((resolve, reject) => {
     let settled = false
@@ -42,7 +67,7 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
     const timeout = setTimeout(() => {
       request.abort()
       finish(new Error("Network request timed out"))
-    }, REQUEST_TIMEOUT_MS)
+    }, timeoutMs)
 
     const finish = (error?: Error): void => {
       if (settled) return
@@ -69,7 +94,7 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
 
       if (response.statusCode === undefined || response.statusCode < 200 || response.statusCode >= 300) {
         request.abort()
-        finish(new Error(`Network request failed with status ${response.statusCode ?? "unknown"}`))
+        finish(new BoundedResponseError(`Network request failed with status ${response.statusCode ?? "unknown"}`, response.statusCode, response.headers))
         return
       }
 
@@ -94,6 +119,7 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
     request.on("login", (_authInfo, callback) => callback())
 
     request.setHeader("Accept", options.accept ?? DEFAULT_ACCEPT_HEADER)
+    for (const [name, value] of Object.entries(options.headers ?? {})) request.setHeader(name, value)
     if (options.body !== undefined) {
       request.setHeader("Content-Type", "application/x-www-form-urlencoded")
       request.end(options.body)

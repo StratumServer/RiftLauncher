@@ -22,7 +22,7 @@ import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuB
 
 function LookForAVersion(): JSX.Element {
   const { t } = useTranslation()
-  const { folder, versionFound, detectFolder, setVersionFound, addVersion } = useLookForAVersion()
+  const { folder, versionFound, label, detectFolder, setVersionFound, setLabel, addVersion } = useLookForAVersion()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -72,6 +72,16 @@ function LookForAVersion(): JSX.Element {
 
               <FormBody>
                 <FormInputText value={versionFound} onChange={(e) => setVersionFound(e.target.value)} placeholder={t("features.versions.versionFound")} />
+              </FormBody>
+            </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("generic.name")} />
+              </FormHead>
+
+              <FormBody>
+                <FormInputText value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("generic.name")} />
               </FormBody>
             </FromGroup>
           </FormGroupWrapper>

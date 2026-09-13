@@ -185,6 +185,36 @@ describe("EXECUTE_GAME", () => {
     await assert.rejects(() => executeGameHandler()(event, { version: "1.0.0", path: versionsFolder }, { path: "/somewhere" /* missing startParams etc */ }), /Invalid start parameters/)
   })
 
+  it("rejects a launch when the version id and installation gameVersionId do not correlate", async () => {
+    const gameVersionFolder = join(versionsFolder, "vanilla")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeConfig({ gameVersions: [{ id: "gv-vanilla", version: "1.22.7", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const version = { id: "gv-vanilla", version: "1.22.7", path: gameVersionFolder }
+    const installation = { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-optimum" }
+
+    await assert.rejects(() => executeGameHandler()(event, version, installation), /same game version|gameVersionId|correlate/i)
+  })
+
+  it("accepts matching version identities and reaches the launch checks", async () => {
+    const gameVersionFolder = join(versionsFolder, "matching")
+    const installationFolder = join(managedFolder, "Matching")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeConfig({ gameVersions: [{ id: "gv-matching", version: "1.22.7", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const version = { id: "gv-matching", version: "1.22.7", path: gameVersionFolder }
+    const installation = { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-matching" }
+
+    const result = await executeGameHandler()(event, version, installation)
+
+    assert.deepEqual(result, { ok: false, reason: "no-executable" })
+  })
+
   it("rejects a game version path nothing authorizes", async () => {
     writeConfig({})
     const event = await createTrustedEvent()
@@ -298,13 +328,13 @@ describe("EXECUTE_GAME", () => {
     writeFileSync(executablePath, `#!/bin/sh\nprintf '%s\\n' "$@" > '${gameArgvFile}'\n`)
     chmodSync(wrapperPath, 0o755)
     chmodSync(executablePath, 0o755)
-    writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+    writeConfig({ gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
 
     const event = await createTrustedEvent()
     const result = await executeGameHandler()(
       event,
-      { version: "1.20.0", path: gameVersionFolder },
-      baseInstallation({ path: installationFolder, startParams: "--openWorld My World", launchWrapper: wrapperPath })
+      { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder },
+      { ...baseInstallation({ path: installationFolder, startParams: "--openWorld My World", launchWrapper: wrapperPath }), gameVersionId: "gv-1.20.0" }
     )
 
     assert.deepEqual(result, { ok: true, exitCode: 0 })

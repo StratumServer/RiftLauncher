@@ -115,6 +115,10 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   // rather than the state itself: addNotification is handed out through the
   // context and may run from a closure that predates the current banner.
   const activeToastIdRef = useRef<string | null>(null)
+  // When the turn the current banner is running started, refreshed by every
+  // (re)start of the timer effect below, so the shortening effect can read how
+  // much of the turn is already gone.
+  const toastTurnStartedAt = useRef(0)
   const invokedActions = useRef<Set<string>>(new Set())
   const offeredVersion = useRef("")
   const downloadAccepted = useRef(false)
@@ -124,6 +128,20 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   activeToastIdRef.current = activeToastId
   const unseenCount = useMemo(() => history.filter((record) => !record.seen).length, [history])
   const unreadCount = useMemo(() => history.filter((record) => !record.read).length, [history])
+
+  // activeToastId names a record, not the record itself, and something can take
+  // that record away without going through dismissToast: clearReadNotifications
+  // drops the banner on screen the moment its row is marked read, and the record
+  // cap can drop a hand-off whose id activeToastIdRef has not caught up with yet.
+  // Left as is, activeToast goes undefined, the overlay draws nothing, and the
+  // hand-off effect below stays blocked on the truthy id, so the whole queue
+  // waits out a timer for a toast nobody can see. This runs before the hand-off
+  // in the same flush so the freed screen is handed on immediately.
+  useEffect(() => {
+    if (!activeToastId || records.some((record) => record.id === activeToastId)) return
+    setActiveToastId(null)
+    setActiveToastDuration(null)
+  }, [activeToastId, records])
 
   // Only the presented toast owns a timer. Queued messages cannot expire unseen.
   useEffect(() => {
@@ -148,6 +166,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   // updaters, so the captured copy is safe to reuse.
   useEffect(() => {
     if (!activeToastId || activeToastDuration == null || toastPaused) return
+    toastTurnStartedAt.current = Date.now()
     const timeout = window.setTimeout((): void => dismissToast(activeToastId, "timeout"), activeToastDuration)
     return (): void => window.clearTimeout(timeout)
     // The timer follows the toast id, its decided duration and the pause flag. Depending on the
@@ -156,6 +175,23 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     // remainder of the old one, which is the reading time the player asked for by hovering.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeToastId, activeToastDuration, toastPaused])
+
+  // The turn is decided at hand-off, when nothing may have been waiting yet, and
+  // was then left untouched: a burst that starts behind a fresh 8s error sat out
+  // the full eight before the first of the burst got the screen. This gives the
+  // banner already up BACKLOG_TOAST_DURATION from the moment the queue grew, and
+  // never more than it already had (`shortened < remaining` only holds when
+  // there was more than the backlog turn left, so it converges in one step and
+  // cannot drip milliseconds off under a real clock). A paused banner is left
+  // alone: its clock is not running, and leaving it hands back a whole turn
+  // anyway. A question (`duration == null`) keeps its screen. Declared after the
+  // timer effect so `toastTurnStartedAt` is already fresh this flush.
+  useEffect(() => {
+    if (!activeToastId || activeToastDuration == null || toastPaused || toastQueue.length === 0) return
+    const remaining = activeToastDuration - (Date.now() - toastTurnStartedAt.current)
+    const shortened = backlogToastDuration(remaining, toastQueue.length)
+    if (shortened !== null && shortened < remaining) setActiveToastDuration(shortened)
+  }, [activeToastId, activeToastDuration, toastPaused, toastQueue])
 
   useEffect((): (() => void) => {
     const offerDownload = (body: string): void => {
@@ -219,7 +255,9 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
 
   const dismissToast = (id: string, reason: ToastDismissReason = "manual"): void => {
     setActiveToastId((activeId) => (activeId === id ? null : activeId))
-    setToastPaused(false)
+    // toastPaused is not cleared here: the overlay region owns it now, and a
+    // hand-off to a banner still under the pointer must stay paused (#398). The
+    // region's own mouseleave clears it when the pointer actually goes.
     setToastQueue((queue) => queue.filter((queuedId) => queuedId !== id))
     // A banner closed by hand has been dealt with, so it stops counting as new;
     // one that timed out has not, because the user may have been elsewhere.
@@ -255,7 +293,6 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   const setNotificationRead = (id: string, read: boolean): void => setRecords((previous) => previous.map((record) => (record.id === id ? { ...record, seen: true, read } : record)))
   const removeNotification = (id: string): void => {
     setActiveToastId((activeId) => (activeId === id ? null : activeId))
-    setToastPaused(false)
     setToastQueue((queue) => queue.filter((queuedId) => queuedId !== id))
     setRecords((previous) => previous.filter((record) => record.id !== id))
   }

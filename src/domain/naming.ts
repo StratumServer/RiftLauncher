@@ -31,28 +31,36 @@ export function cleanFolderName(folderName: string): string {
 }
 
 /**
- * Formats an epoch-millisecond timestamp as a deterministic, filesystem-safe
- * stamp: `YYYY-MM-DD_HH-mm-ss`, always in UTC.
+ * Formats an epoch-millisecond timestamp as a filesystem-safe stamp:
+ * `YYYY-MM-DD_HH-mm-ss`, in the host's own time zone.
  *
- * UTC keeps the stamp reproducible regardless of the host's locale or time
- * zone (unlike a `toLocaleString` call, which used to hand out grouping dots
- * for some locales and colons for others). The field order also keeps stamps
- * sortable byte-for-byte the same way they sort chronologically, which a
- * plain locale string does not.
+ * The fixed field order and the separators are what make this safe on every
+ * filesystem, unlike a `toLocaleString` call, which used to hand out grouping
+ * dots for some locales and colons for others. That part has not changed.
+ *
+ * The time zone has. This stamp only ever names a backup archive, and the
+ * backups list next to it renders the same instant with `toLocaleString`, so a
+ * UTC stamp put the two two hours apart on screen for one file (#411). Nothing
+ * reads the stamp back: pruning walks the records newest first and restoring
+ * opens the path recorded with the backup, both off the epoch millis kept in
+ * the config, so no ordering in the launcher depends on how the name sorts.
+ * The one thing local time costs is a file manager sorting a folder by name
+ * across the hour a daylight-saving change repeats, which the launcher itself
+ * never does.
  *
  * @param epochMillis Milliseconds since the Unix epoch, typically ports.clock.now().
- * @returns A stamp like "2026-08-16_09-41-07".
+ * @returns A stamp like "2026-08-16_09-41-07", read the way a clock on the wall would.
  */
 export function formatTimestampForFilename(epochMillis: number): string {
   const date = new Date(epochMillis)
   const pad = (value: number): string => value.toString().padStart(2, "0")
 
-  const year = date.getUTCFullYear()
-  const month = pad(date.getUTCMonth() + 1)
-  const day = pad(date.getUTCDate())
-  const hours = pad(date.getUTCHours())
-  const minutes = pad(date.getUTCMinutes())
-  const seconds = pad(date.getUTCSeconds())
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  const seconds = pad(date.getSeconds())
 
   return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`
 }

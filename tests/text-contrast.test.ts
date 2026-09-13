@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, it } from "vitest"
 
+import { ACCENT_PRESETS, DEFAULT_ACCENT_ID } from "@domain/accentColors"
+
 /**
  * The launcher paints every page over a background image the player chooses, and since #207 that
  * image can be anything they own, a white photograph included. Nothing behind the text is opaque:
@@ -82,11 +84,16 @@ function foreground(file: string, anchor: RegExp): Layer {
   return [zinc(name, `${file} ${anchor}`), found[2] === undefined ? 1 : Number(found[2]) / 100]
 }
 
+/** A `#rrggbb` hex string as the sRGB triplet it actually paints. */
+function hexRgb(hex: string): Rgb {
+  const digits = hex.replace("#", "")
+  return [parseInt(digits.slice(0, 2), 16), parseInt(digits.slice(2, 4), 16), parseInt(digits.slice(4, 6), 16)]
+}
+
 /** One `--color-*` token from the `@theme` block, read as the hex that actually ships. */
 function themeColor(name: string): Rgb {
   const found = match("styles.css", new RegExp(`--color-${name}:\\s*#([0-9a-fA-F]{6})`))
-  const hex = found[1] as string
-  return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)]
+  return hexRgb(found[1] as string)
 }
 
 type ButtonVariant = "primary" | "destructive"
@@ -217,10 +224,21 @@ const listPanel = scrim("components/ui/List.tsx", /before:backdrop-blur-sm befor
 const gridPanel = scrim("components/ui/Grid.tsx", /before:backdrop-blur-sm before:bg-zinc-950\/(\d+)/)
 const popupShell = scrim("components/ui/PopupDialogPanel.tsx", /before:backdrop-blur-\[2px\] before:bg-zinc-950\/(\d+)/)
 const popupPanel = scrim("components/ui/PopupDialogPanel.tsx", /before:backdrop-blur-sm before:bg-zinc-950\/(\d+)/)
+/**
+ * The bar pinned to the top of every route except home, in both of its scroll states. #430: past
+ * the scroll threshold the scrolled one was an opaque bg-zinc-800, so the bar's own backdrop-blur
+ * had nothing left to show and the list vanished behind a grey slab. Both states are scrims now,
+ * and both are read out of the component rather than written down here.
+ *
+ * Neither anchor carries the threshold that picks between them. The pair of fills is what this
+ * file measures, so how far a page has to travel before it flips is free to change without
+ * failing a test about colour.
+ */
+const stickyMenu = scrim("components/ui/StickyMenu.tsx", /"bg-zinc-950\/\d+" : "bg-zinc-950\/(\d+)"/)
+const stickyMenuScrolled = scrim("components/ui/StickyMenu.tsx", /"bg-zinc-950\/(\d+)" : "bg-zinc-950\/\d+"/)
 
 // Layers this pass left alone, but which sit between the scrims above and the text below.
 const inputFill = fixed("zinc-950", 0.5) // FormInputs INPUT_BASE_STYLES
-const stickyMenu = fixed("zinc-950", 0.15) // StickyMenu before it is scrolled
 const filterControl = fixed("zinc-950", 0.5) // the ListboxButton and Combobox shell of each filter
 const tableFill = fixed("zinc-950", 0.5) // Table TableWrapper
 const rowTint = fixed("zinc-800", 0.3) // the lighter of the two striped rows, so the worse one
@@ -233,6 +251,7 @@ const FORM_SECTION = [shell, section] as const
 const MAIN_MENU = [shell, menu] as const
 const POPUP = [popupShell, popupPanel] as const
 const FORM_INPUT = [shell, section, inputFill] as const
+const STICKY_BAR = [shell, stickyMenu] as const
 const MOD_FILTER = [shell, stickyMenu, filterControl] as const
 const POPUP_TABLE_ROW = [popupShell, popupPanel, tableFill, rowTint] as const
 // The same release table also renders on the browse page, which has no popup panel over the shell,
@@ -288,6 +307,43 @@ describe("text over the player's background image", () => {
     assertReadable("grid card text", [ZINC["zinc-400"], 1], [shell, gridPanel], TEXT_FLOOR)
     assert.equal(listPanel[1], section[1], "the list panel and the form section should carry the same scrim")
     assert.equal(gridPanel[1], section[1], "the grid panel and the form section should carry the same scrim")
+  })
+
+  /**
+   * #430: the sticky bar is the one surface that changes fill as the player scrolls. Its labels
+   * come from the ghost button variant and its breadcrumbs set no colour at all, taking the one
+   * `body` carries, so both are read where they ship.
+   *
+   * Contrast is measured on the resting fill only, and that is the whole check rather than half of
+   * one. Both states are the same zinc-950 over the same shell and the scrolled fill is the
+   * heavier, so a darker backdrop under light text can only raise the ratio: the resting state is
+   * the worse case, and a scrolled assertion could not fail unless this one failed first.
+   *
+   * The scrolled state is guarded by the three assertions under them instead, and they are what the
+   * reported bug would fail. The blur layer has to still be there. The fill has to stay below full
+   * alpha, or that blur has nothing to show. And it has to stay far enough above the resting fill
+   * that the bar keeps separating from the rows sliding under it.
+   */
+  it("keeps the sticky bar readable and still see-through once the page is scrolled", () => {
+    const label = foreground("components/ui/buttonStyles.ts", /ghost: "[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
+    // Nothing in the breadcrumbs sets a colour, so what they paint with is the body's own.
+    const breadcrumb = foreground("../index.html", /<body class="[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("sticky bar button label", label, STICKY_BAR, TEXT_FLOOR)
+    assertReadable("sticky bar breadcrumb", breadcrumb, STICKY_BAR, TEXT_FLOOR)
+
+    // The fill is only half the treatment. Drop this layer and the bar is a flat tint with nothing
+    // showing through it, which is the other half of what the issue reports.
+    match("components/ui/StickyMenu.tsx", /before:backdrop-blur-xs/)
+
+    assert.ok(stickyMenuScrolled[1] < 1, `the scrolled sticky bar paints at ${stickyMenuScrolled[1]}, which leaves its backdrop-blur nothing to show`)
+    // A distance, not just an ordering. The pair ships at 0.70 against 0.15, the weight the app
+    // shell and the dialog scrim already paint at, and a scrolled fill a few points heavier than
+    // the resting one would read as the same bar: the reported symptom arriving by the other road.
+    assert.ok(
+      stickyMenuScrolled[1] - stickyMenu[1] >= 0.4,
+      `the scrolled sticky bar paints at ${stickyMenuScrolled[1]} against a resting ${stickyMenu[1]}, too close together to separate the bar from the rows sliding under it`
+    )
   })
 })
 
@@ -366,6 +422,27 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /**
+   * The Manage Mods detail panel repeats the verdict word on each release, on the list panel rather
+   * than on a table, so every verdict there sits on a fill of its own. Without it lime-600 reads
+   * 3.98:1 and red-400 4.22:1 on the bare panel.
+   */
+  it("keeps the detail panel's verdict words readable on its release rows", () => {
+    const rowFill: Layer = [ZINC["zinc-950"], Number(match("features/mods/components/InstalledModDetails.tsx", /const RELEASE_ROW_FILL = "bg-zinc-950\/(\d+)"/)[1]) / 100]
+    // The constant alone proves nothing: the two places a verdict sits have to wear it.
+    match("features/mods/components/InstalledModDetails.tsx", /<section aria-label=\{t\("features\.mods\.installedVersion"\)\} className=\{clsx\("[^"]*", RELEASE_ROW_FILL\)\}/)
+    match("features/mods/components/InstalledModDetails.tsx", /<li key=\{index\} className=\{clsx\("[^"]*", RELEASE_ROW_FILL\)\}/)
+    const verdicts: ReadonlyArray<readonly [string, RegExp]> = [
+      ["declared", /declared: \{ className: "text-([a-z]+-\d+)"/],
+      ["same-minor", /"same-minor": \{ className: "text-([a-z]+-\d+)"/],
+      ["undeclared", /undeclared: \{ className: "text-([a-z]+-\d+)"/]
+    ]
+
+    for (const [verdict, anchor] of verdicts) {
+      assertReadable(`${verdict} verdict word on a detail panel release`, paletteForeground("features/mods/components/ModReleaseList.tsx", anchor), [shell, listPanel, rowFill], TEXT_FLOOR)
+    }
+  })
+
   it("keeps the icons that stand in for a control above the non-text bar", () => {
     // Each of these is the whole visible content of a button: there is no label beside it, so the
     // icon is the affordance and the 3:1 rule applies. Actions that ship a label are covered by
@@ -375,6 +452,31 @@ describe("prompts the player is meant to read and act on", () => {
       ["choose a custom icon file", foreground("components/ui/AddCustomIconPupup.tsx", /PiPlusCircleDuotone className="text-3xl text-(zinc-\d+)(?:\/(\d+))?/)]
     ]
     for (const [label, icon] of icons) assertReadable(label, icon, ICON, NON_TEXT_FLOOR)
+  })
+
+  /**
+   * #414: the favorites-only filter toggle and the per-card favorite star. Both handed
+   * `text-yellow-400` to a ghost FormButton through `className`, where the variant's own
+   * `text-zinc-200` wins the cascade (#366), so the hue never painted and neither was ever
+   * measured here. They paint now, on a solid PiStarFill that carries the hue itself, so the
+   * non-text bar applies: each star is the whole visible content of a button with no label.
+   *
+   * The filter star is a ghost button on the sticky menu, so it takes the shell and the
+   * StickyMenu scrim but not the `filterControl` fill the dropdown triggers carry. The card
+   * star floats on a mod logo the launcher does not control, so a hue alone cannot clear the
+   * bar there whatever the hue: it now carries a `bg-zinc-950` pill in both its resting and
+   * its hover state, and this pins both, since the hover fill would otherwise replace the pill.
+   */
+  it("keeps the favorite star readable in the filter bar and on a mod card", () => {
+    const filterStar = paletteForeground("features/mods/components/ModsFilterBar.tsx", /<PiStarFill className="text-([a-z]+-\d+)"/)
+    assertReadable("favorites filter star", filterStar, STICKY_BAR, NON_TEXT_FLOOR)
+
+    const cardFile = "features/mods/components/ModListCard.tsx"
+    const cardStar = paletteForeground(cardFile, /<PiStarFill className="text-([a-z]+-\d+)"/)
+    const pill: Layer = [ZINC["zinc-950"], Number(match(cardFile, /text-lg bg-zinc-950\/(\d+)/)[1]) / 100]
+    const pillHover: Layer = [ZINC["zinc-950"], Number(match(cardFile, /hover:bg-zinc-950\/(\d+)/)[1]) / 100]
+    assertReadable("favorite card star at rest", cardStar, [pill], NON_TEXT_FLOOR)
+    assertReadable("favorite card star on hover", cardStar, [pillHover], NON_TEXT_FLOOR)
   })
 
   /**
@@ -470,11 +572,22 @@ describe("prompts the player is meant to read and act on", () => {
  * this file measures, never on a real white surface: the worst case is that stack over a white
  * image, not white itself. --color-vs and --color-vsd are separate tokens that style the active
  * menu marker and the enabled toggle; they carry light text on top rather than being text
- * themselves, so they are untouched here.
+ * themselves, so they get their own floor further down instead of the one this block checks.
+ *
+ * #432: the player can now repaint the whole ramp at runtime, from a closed palette rather than a
+ * free field (see src/domain/accentColors.ts). Every assertion below that used to read the
+ * shipped token once now loops over the whole palette, so a preset added to that list without
+ * clearing these floors fails here instead of shipping.
  */
 describe("the brand accent where it carries text", () => {
-  it("keeps every accent link readable on the panel it ships on", () => {
-    const accent: Layer = [themeColor("vsl"), 1]
+  it("ships the same default the config falls back to, so picking nothing looks like picking the first preset", () => {
+    assert.equal(ACCENT_PRESETS[0]?.id, DEFAULT_ACCENT_ID)
+    assert.deepEqual(hexRgb(ACCENT_PRESETS[0]?.light ?? ""), themeColor("vsl"))
+    assert.deepEqual(hexRgb(ACCENT_PRESETS[0]?.mid ?? ""), themeColor("vs"))
+    assert.deepEqual(hexRgb(ACCENT_PRESETS[0]?.dark ?? ""), themeColor("vsd"))
+  })
+
+  it("keeps every accent link readable on the panel it ships on, for every preset", () => {
     // The shared variant owns both the accent colour and underline. Each call site must opt into
     // that semantic variant so the visual treatment cannot drift between button implementations.
     match("components/ui/buttonStyles.ts", /link: "[^"]*text-vsl[^"]*underline/)
@@ -488,45 +601,57 @@ describe("the brand accent where it carries text", () => {
       ["no game versions link", /link:\s*\([\s\S]*?<LinkButton[\s\S]*?variant="link"/, "features/installations/components/GameVersionPicker.tsx", SECTION_TABLE],
       ["no installations link", /link:\s*\([\s\S]*?<LinkButton[\s\S]*?variant="link"/, "features/installations/components/InstallationsDropdownMenu.tsx", MENU_CARD]
     ]
-    for (const [label, anchor, file, stack] of links) {
-      match(file, anchor) // fails loudly, naming the file, if the link class or its underline has moved
-      assertReadable(label, accent, stack, TEXT_FLOOR)
+    for (const [, anchor, file] of links) match(file, anchor) // fails loudly, naming the file, if the link class or its underline has moved
+
+    for (const preset of ACCENT_PRESETS) {
+      const accent: Layer = [hexRgb(preset.light), 1]
+      for (const [label, , , stack] of links) assertReadable(`${label} (${preset.id})`, accent, stack, TEXT_FLOOR)
     }
   })
 
-  it("keeps the accent status icons above the non-text bar", () => {
-    const accent: Layer = [themeColor("vsl"), 1]
+  it("keeps the accent status icons above the non-text bar, for every preset", () => {
     match("components/layout/NotificationsOverlay.tsx", /info: "text-vsl"/)
-    assertReadable("info toast icon", accent, TOAST, NON_TEXT_FLOOR)
     match("components/ui/ActivityCenter.tsx", /pending: "text-vsl"/)
-    assertReadable("pending task icon", accent, TASKS_ROW, NON_TEXT_FLOOR)
+
+    for (const preset of ACCENT_PRESETS) {
+      const accent: Layer = [hexRgb(preset.light), 1]
+      assertReadable(`info toast icon (${preset.id})`, accent, TOAST, NON_TEXT_FLOOR)
+      assertReadable(`pending task icon (${preset.id})`, accent, TASKS_ROW, NON_TEXT_FLOOR)
+    }
   })
 
-  it("keeps the Grid selected-card border above the non-text bar", () => {
+  it("keeps the Grid selected-card border above the non-text bar, for every preset", () => {
     // #258: the border used to sit at partial alpha, which barely separated from the panel behind
     // it (1.53:1 worst case, below the 3:1 floor for a boundary that is the sole selected-state
     // cue: see ModListCard.tsx's `selected={installed}`). It is opaque now, but the backdrop it
     // reads against is still the card's own bg-vsd/NN fill composited over the grid panel, not the
     // panel alone: a border painted at the default border-box clip shows through the fill wherever
-    // the fill itself has any transparency, which bg-vsd/NN always does here.
+    // the fill itself has any transparency, which bg-vsd/NN always does here. #432: --color-vsd
+    // moves with the accent too now, so both the fill and the border move together per preset below.
     const fillAlpha = Number(match("components/ui/Grid.tsx", /selected \? "bg-vsd\/(\d+) border-vsl"/)[1]) / 100
-    const fill: Layer = [themeColor("vsd"), fillAlpha]
-    const border: Layer = [themeColor("vsl"), 1]
-    assertReadable("Grid selected-card border", border, [shell, gridPanel, fill], NON_TEXT_FLOOR)
+
+    for (const preset of ACCENT_PRESETS) {
+      const fill: Layer = [hexRgb(preset.dark), fillAlpha]
+      const border: Layer = [hexRgb(preset.light), 1]
+      assertReadable(`Grid selected-card border (${preset.id})`, border, [shell, gridPanel, fill], NON_TEXT_FLOOR)
+    }
   })
 
-  it("keeps the accent ramp and its selected borders coherent", () => {
-    const dark = luminance(themeColor("vsd"))
-    const base = luminance(themeColor("vs"))
-    const light = luminance(themeColor("vsl"))
-    assert.ok(dark < base && base < light, "the vs/vsl/vsd ramp should stay dark-to-light in that order")
+  it("keeps each preset's own ramp dark-to-light in that order", () => {
+    for (const preset of ACCENT_PRESETS) {
+      const dark = luminance(hexRgb(preset.dark))
+      const mid = luminance(hexRgb(preset.mid))
+      const light = luminance(hexRgb(preset.light))
+      assert.ok(dark < mid && mid < light, `the ${preset.id} ramp should stay dark-to-light in that order`)
+    }
 
-    // The ConfigPage tile border has a different backdrop on each of its two edges, so there is no
-    // single ratio to assert here. Inside is the player's own thumbnail. Outside is the section panel
-    // over the shell, which is FORM_SECTION above, so the accent's ratio on that edge is already
-    // pinned by the link assertions against a stricter floor than a border needs. What is left is the
-    // width, which is what keeps hue from being the only mark of the selected state, so this checks
-    // the border is still 2px and still --color-vsl.
+    // The ConfigPage tile border and the accent swatch itself have a different backdrop on each of
+    // their two edges, so there is no single ratio to assert here. Inside is the player's own
+    // thumbnail, or the swatch's own fill once selected. Outside is the section panel over the
+    // shell, which is FORM_SECTION above, so the accent's ratio on that edge is already pinned by
+    // the link assertions against a stricter floor than a border needs, for every preset. What is
+    // left is the width, which is what keeps hue from being the only mark of the selected state, so
+    // this checks the border is still 2px and still --color-vsl wherever the accent marks a choice.
     match("features/config/pages/ConfigPage.tsx", /selected \? "border-2 border-vsl" : "border border-zinc-400\/5"/)
   })
 })
@@ -555,6 +680,25 @@ describe("button labels on the fill they ship on", () => {
       ["active", "vsd", themeColor("vsd")]
     ]
     for (const [state, token, color] of fills) assertReadable(`primary button label in ${state}`, label, [buttonFill("primary", state, token, color)], TEXT_FLOOR)
+  })
+
+  /**
+   * #432: --color-vs and --color-vsd now move with the chosen accent, the Play button among their
+   * fills. The assertion above only ever sees the shipped default (Amber); this one holds every
+   * preset's own mid and dark stop to the same label floor, so a preset that repaints the Play
+   * button unreadable cannot ship either.
+   */
+  it("keeps the primary action's label readable on every preset's own mid and dark stop", () => {
+    const label = foreground("components/ui/buttonStyles.ts", /primary: "[^"]*\bbg-vs\b[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
+
+    for (const preset of ACCENT_PRESETS) {
+      const fills: ReadonlyArray<readonly [ButtonState, string, Rgb]> = [
+        ["default", "vs", hexRgb(preset.mid)],
+        ["hover", "vs", hexRgb(preset.mid)],
+        ["active", "vsd", hexRgb(preset.dark)]
+      ]
+      for (const [state, token, color] of fills) assertReadable(`primary button label on ${preset.id} in ${state}`, label, [buttonFill("primary", state, token, color)], TEXT_FLOOR)
+    }
   })
 
   it("keeps the destructive action's label readable on the red fill", () => {

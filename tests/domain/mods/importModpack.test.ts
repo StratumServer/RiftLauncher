@@ -474,3 +474,131 @@ describe("clampModpackModName", () => {
     assert.equal(clamped.length, MAX_MODPACK_MOD_NAME_LENGTH - 1)
   })
 })
+
+/**
+ * A Mod picked on the browse page names no version. It takes the newest release tagged for the
+ * installation's series, never an untagged one, never goes below the copy installed, and keeps that
+ * copy's on or off state.
+ */
+describe("planModpackImport, browse picks", () => {
+  const pickEntry: ModpackEntry = { modid: "carryon", listingId: 4711, name: "Carry On" }
+  const untagged = release("3.0.0", ["1.21.0"])
+  const tagged = release("2.1.0", ["1.20.4"])
+  const olderTagged = release("2.0.0", ["1.20.3"])
+
+  function planPicks(entries: ModpackEntry[], installed: InstalledModSnapshot[], details: Array<[string, ModpackModDetail]>): ReturnType<typeof planModpackImport> {
+    return planModpackImport({ entries, installed, gameVersion: GAME_VERSION, details: new Map(details) })
+  }
+
+  it("a browse pick installs the newest release tagged for the installation's series, over a newer untagged one", () => {
+    const item = installItem(plan([pickEntry], [], [["carryon", detail([untagged, tagged, olderTagged])]]))
+
+    assert.equal(item.release.modversion, "2.1.0")
+    assert.equal(item.compatibility, "declared")
+    assert.equal(item.requestedVersion, null)
+    assert.equal(item.keepDisabled, false)
+    assert.equal(modpackRowStatus(item).kind, "new")
+  })
+
+  it("a browse pick with nothing tagged for this series is skipped as no-release, not installed untagged", () => {
+    const item = onlyItem(plan([pickEntry], [], [["carryon", detail([untagged])]]))
+
+    assert.equal(item.decision, "skip")
+    assert.equal(item.decision === "skip" && item.reason, "no-release")
+    assert.equal("release" in item, false)
+  })
+
+  it("a browse pick updates an enabled copy older than the newest tagged release", () => {
+    const item = installItem(plan([pickEntry], [installedCopy()], [["carryon", detail([untagged, tagged])]]))
+
+    assert.equal(item.fromVersion, "1.9.0")
+    assert.deepEqual(item.existing, { path: "/installations/main/Mods/carryon-1.9.0.zip", version: "1.9.0" })
+    assert.equal(item.keepDisabled, false)
+    assert.deepEqual(modpackRowStatus(item), { kind: "update", fromVersion: "1.9.0", toVersion: "2.1.0" })
+  })
+
+  it("a browse pick leaves an enabled copy at the newest tagged release alone", () => {
+    const item = onlyItem(plan([pickEntry], [installedCopy({ version: "2.1.0" })], [["carryon", detail([untagged, tagged])]]))
+
+    assert.equal(item.decision === "skip" && item.reason, "already-present")
+    assert.deepEqual(modpackRowStatus(item), { kind: "already-present", fromVersion: "2.1.0", toVersion: "2.1.0" })
+  })
+
+  it("a browse pick never walks a copy backwards", () => {
+    const result = planPicks([pickEntry], [installedCopy({ version: "2.5.0" })], [["carryon", detail([untagged, tagged])]])
+
+    assert.equal(onlyItem(result.items).decision === "skip" && (onlyItem(result.items) as { reason: string }).reason, "already-present")
+    assert.deepEqual(result.downgrades, [])
+  })
+
+  it("a browse pick keeps an installed copy, on or off, when nothing is tagged for this series", () => {
+    for (const enabled of [true, false]) {
+      const item = onlyItem(plan([pickEntry], [installedCopy({ enabled })], [["carryon", detail([untagged])]]))
+      assert.equal(item.decision === "skip" && item.reason, "already-present", `enabled: ${enabled}`)
+    }
+  })
+
+  it("a browse pick leaves a disabled copy at the newest tagged release alone, still disabled", () => {
+    const item = onlyItem(plan([pickEntry], [installedCopy({ version: "2.1.0", enabled: false, path: "/installations/main/Mods/carryon-2.1.0.zip.disabled" })], [["carryon", detail([tagged])]]))
+
+    assert.equal(item.decision === "skip" && item.reason, "already-present")
+  })
+
+  it("a browse pick updates an older disabled copy and keeps it disabled", () => {
+    const disabled = installedCopy({ enabled: false, path: "/installations/main/Mods/carryon-1.9.0.zip.disabled" })
+    const item = installItem(plan([pickEntry], [disabled], [["carryon", detail([tagged])]]))
+
+    assert.equal(item.keepDisabled, true)
+    assert.deepEqual(item.existing, { path: "/installations/main/Mods/carryon-1.9.0.zip.disabled", version: "1.9.0" })
+    assert.equal(modpackRowStatus(item).kind, "update")
+  })
+
+  it("two picks, two installed copies: each pick is planned against its own copy", () => {
+    const items = planPicks(
+      [pickEntry, { modid: "primitivesurvival", listingId: 42, name: "Primitive Survival" }],
+      [installedCopy(), installedCopy({ modid: "primitivesurvival", name: "Primitive Survival", version: "3.0.0", path: "/installations/main/Mods/primitivesurvival-3.0.0.zip" })],
+      [
+        ["carryon", detail([tagged])],
+        ["primitivesurvival", detail([{ ...release("3.0.0", ["1.20.4"]), modidstr: "primitivesurvival" }], { name: "Primitive Survival" })]
+      ]
+    ).items
+
+    assert.deepEqual(
+      items.map((item) => [item.modid, modpackRowStatus(item).kind, item.fromVersion]),
+      [
+        ["carryon", "update", "1.9.0"],
+        ["primitivesurvival", "already-present", "3.0.0"]
+      ]
+    )
+  })
+
+  it("a browse pick whose Mod is installed twice is skipped, whichever copy the folder lists first", () => {
+    const spare = installedCopy({ version: "1.0.0", enabled: false, path: "/installations/main/Mods/carryon-1.0.0.zip.disabled" })
+    const loaded = installedCopy({ version: "2.0.0", path: "/installations/main/Mods/carryon-2.0.0.zip" })
+    const twice = { ...pickEntry, severalCopies: true }
+
+    for (const installed of [
+      [spare, loaded],
+      [loaded, spare]
+    ]) {
+      assert.deepEqual(modpackEntriesToResolve([twice], installed), [], "no lookup is spent on it")
+      const item = onlyItem(plan([twice], installed, [["carryon", detail([tagged])]]))
+      assert.deepEqual(item, { decision: "skip", modid: "carryon", requestedVersion: null, name: "Carry On", reason: "several-copies", fromVersion: null })
+      assert.deepEqual(modpackRowStatus(item), { kind: "several-copies", fromVersion: null, toVersion: null })
+    }
+  })
+
+  it("modpackEntriesToResolve always asks about a browse pick, even with an enabled copy installed", () => {
+    assert.deepEqual(modpackEntriesToResolve([pickEntry], [installedCopy()]), [pickEntry])
+  })
+
+  it("modpackDowngrades never counts a browse pick", () => {
+    assert.deepEqual(modpackDowngrades([pickEntry], [installedCopy({ version: "9.0.0" })]), [])
+  })
+
+  it("says a browse pick's lookup failed, with no requested version", () => {
+    const item = onlyItem(plan([pickEntry], [], [], ["carryon"]))
+
+    assert.deepEqual(item, { decision: "skip", modid: "carryon", requestedVersion: null, name: "carryon", reason: "lookup-failed", fromVersion: null })
+  })
+})

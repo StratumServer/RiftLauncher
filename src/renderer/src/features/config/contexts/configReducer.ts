@@ -12,8 +12,10 @@ export enum CONFIG_ACTIONS {
   REMOVE_ACCOUNT = "REMOVE_ACCOUNT",
   SET_ACTIVE_ACCOUNT = "SET_ACTIVE_ACCOUNT",
   SET_BACKGROUND = "SET_BACKGROUND",
+  SET_ACCENT_COLOR = "SET_ACCENT_COLOR",
   SET_MODDB_VISIBILITY_ANSWER = "SET_MODDB_VISIBILITY_ANSWER",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
+  SET_LAST_SEEN_CHANGELOG_VERSION = "SET_LAST_SEEN_CHANGELOG_VERSION",
 
   ADD_INSTALLATION = "ADD_INSTALLATION",
   DELETE_INSTALLATION = "DELETE_INSTALLATION",
@@ -103,6 +105,12 @@ export interface SetBackground {
   payload: string
 }
 
+/** Picks one of the named accent presets. See src/domain/accentColors.ts. */
+export interface SetAccentColor {
+  type: CONFIG_ACTIONS.SET_ACCENT_COLOR
+  payload: string
+}
+
 /**
  * Records the answer to the one-time ModDB listing question, which is what stops it being asked
  * again. Dispatched from the three buttons on the prompt and from nowhere else: closing it without
@@ -122,6 +130,16 @@ export interface SetModDbVisibilityAnswer {
 export interface SetReceiveBetaUpdates {
   type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES
   payload: boolean
+}
+
+/**
+ * Marks the "what's new" dialog's notes seen up to `payload` (the running version), which is what
+ * stops it reappearing for that version. Dispatched from the dialog's "Got it" and from nowhere
+ * else. See src/domain/appUpdate/whatsNew.ts.
+ */
+export interface SetLastSeenChangelogVersion {
+  type: CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION
+  payload: string
 }
 
 export interface AddInstallation {
@@ -199,14 +217,14 @@ export interface AddGameVersion {
 
 export interface DeleteGameVersion {
   type: CONFIG_ACTIONS.DELETE_GAME_VERSION
-  payload: { version: string }
+  payload: { id: string }
 }
 
 export interface EditGameVersion {
   type: CONFIG_ACTIONS.EDIT_GAME_VERSION
   payload: {
-    version: string
-    updates: Partial<Omit<GameVersionType, "version">>
+    id: string
+    updates: Partial<Omit<GameVersionType, "id">>
   }
 }
 
@@ -264,8 +282,10 @@ export type ConfigAction =
   | RemoveAccount
   | SetActiveAccount
   | SetBackground
+  | SetAccentColor
   | SetModDbVisibilityAnswer
   | SetReceiveBetaUpdates
+  | SetLastSeenChangelogVersion
   | AddInstallation
   | DeleteInstallation
   | EditInstallation
@@ -318,17 +338,27 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, activeAccountId: action.payload }
     case CONFIG_ACTIONS.SET_BACKGROUND:
       return { ...config, background: action.payload, _backgroundRevision: (config._backgroundRevision ?? 0) + 1 }
+    case CONFIG_ACTIONS.SET_ACCENT_COLOR:
+      return { ...config, accentColor: action.payload }
     case CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER:
       return { ...config, moddbVisibilityAnswer: action.payload }
     case CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES:
       return { ...config, receiveBetaUpdates: action.payload }
+    case CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION:
+      return { ...config, lastSeenChangelogVersion: action.payload }
     case CONFIG_ACTIONS.ADD_INSTALLATION:
       return { ...config, installations: [action.payload, ...config.installations] }
-    case CONFIG_ACTIONS.DELETE_INSTALLATION:
-      return {
-        ...config,
-        installations: config.installations.filter((installation) => installation.id !== action.payload.id)
-      }
+    case CONFIG_ACTIONS.DELETE_INSTALLATION: {
+      const installations = config.installations.filter((installation) => installation.id !== action.payload.id)
+      // Deleting the selected Installation left `lastUsedInstallation` naming an id that is no
+      // longer in the list, and that dangling reference reached config.json (#411). It moves to
+      // whatever the sidebar would select instead, which is the first row, and to null when the
+      // last Installation is the one going: the same shape REMOVE_ACCOUNT already uses for
+      // `activeAccountId`. ConfigContext's repair effect only covers the first of those two,
+      // and only after a render, so the reducer is where it belongs.
+      const lastUsedInstallation = config.lastUsedInstallation === action.payload.id ? (installations[0]?.id ?? null) : config.lastUsedInstallation
+      return { ...config, installations, lastUsedInstallation }
+    }
     case CONFIG_ACTIONS.EDIT_INSTALLATION:
       return {
         ...config,
@@ -390,12 +420,12 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
     case CONFIG_ACTIONS.DELETE_GAME_VERSION:
       return {
         ...config,
-        gameVersions: config.gameVersions.filter((gameVersion) => gameVersion.version !== action.payload.version)
+        gameVersions: config.gameVersions.filter((gameVersion) => gameVersion.id !== action.payload.id)
       }
     case CONFIG_ACTIONS.EDIT_GAME_VERSION:
       return {
         ...config,
-        gameVersions: config.gameVersions.map((gameVersion) => (gameVersion.version === action.payload.version ? { ...gameVersion, ...action.payload.updates } : gameVersion))
+        gameVersions: config.gameVersions.map((gameVersion) => (gameVersion.id === action.payload.id ? { ...gameVersion, ...action.payload.updates } : gameVersion))
       }
     case CONFIG_ACTIONS.ADD_FAV_MOD:
       return {

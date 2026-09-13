@@ -45,7 +45,7 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
   return new Promise<ModArchiveResult>((resolve) => {
     yauzl.open(archivePath, { lazyEntries: true }, (openErr, zip) => {
       if (openErr || !zip) {
-        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not open ${archivePath}: ${openErr}`)
+        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not open a mod archive.`)
         return resolve({ ok: false, problem: "unreadable-archive" })
       }
 
@@ -79,7 +79,7 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
       const collect = (entry: yauzl.Entry, limit: number, onDone: (bytes: Buffer) => void, onOversize: () => void, onUnreadable: () => void): void => {
         zip.openReadStream(entry, (streamErr, stream) => {
           if (streamErr || !stream) {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not read ${entry.fileName} of ${archivePath}: ${streamErr}`)
+            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not read a mod archive entry.`)
             return onUnreadable()
           }
 
@@ -96,8 +96,8 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
             chunks.push(Buffer.from(chunk))
           })
           stream.on("end", () => onDone(Buffer.concat(chunks)))
-          stream.on("error", (readErr) => {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error reading ${entry.fileName} of ${archivePath}: ${readErr}`)
+          stream.on("error", () => {
+            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error reading a mod archive entry.`)
             onUnreadable()
           })
         })
@@ -145,8 +145,8 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
       })
 
       zip.on("end", () => settle({ ok: true, content }))
-      zip.on("error", (zipErr) => {
-        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error walking ${archivePath}: ${zipErr}`)
+      zip.on("error", () => {
+        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error walking a mod archive.`)
         settle({ ok: false, problem: "unreadable-archive" })
       })
 
@@ -348,23 +348,22 @@ async function doPruneModIconCache(maxBytes: number): Promise<void> {
  * an entry that is itself a link is dropped, dangling ones included, which is
  * what keeps the set of archives that get opened inside the folder the user
  * pointed at.
+ *
+ * A folder that cannot be listed at all throws rather than reading as empty:
+ * an empty list is a claim about what the folder holds, and a caller that
+ * records the folder (a Mod profile) would store it.
  */
 export function createModsDirectoryReaderPort(): DirectoryReader {
   return {
     listFileNames: async (path: string): Promise<string[]> => {
-      let entries: string[]
-      try {
-        entries = await fse.readdir(path)
-      } catch {
-        return []
-      }
+      const entries = await fse.readdir(path)
 
       const names: string[] = []
       for (const entry of entries) {
         try {
           assertSafeFileName(entry)
           if ((await fse.lstat(join(path, entry))).isSymbolicLink()) {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [listFileNames] Skipping ${entry}, a symbolic link inside the Mods folder.`)
+            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [listFileNames] Skipping a symbolic link inside the Mods folder.`)
             continue
           }
           names.push(entry)

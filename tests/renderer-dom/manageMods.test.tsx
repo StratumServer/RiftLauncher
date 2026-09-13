@@ -30,6 +30,7 @@ function anInstallation(): InstallationType {
     icon: "icon-1",
     path: INSTALLATION_PATH,
     version: "1.20.0",
+    gameVersionId: "gv-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
@@ -212,6 +213,28 @@ function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof
   )
 }
 
+/**
+ * Import, Export and Export for a server moved behind a "Modpack" menu (#431). Opens it if it is
+ * not open already, then hands back the item by the same label the standalone button used to
+ * carry, so every test written against that label still works once it awaits this instead.
+ */
+async function modpackMenuItem(user: ReturnType<typeof userEvent.setup>, label: string): Promise<HTMLButtonElement> {
+  if (!screen.queryByText(label)) await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
+  return screen.getByText(label).closest("button") as HTMLButtonElement
+}
+
+/**
+ * Opens the Filters panel if it is not open already; a no-op once "Author" is already on screen.
+ * The find, not a query, is what lets a caller reach for this the moment it renders, before the
+ * scan that puts the toggle on screen has necessarily landed.
+ */
+async function openFiltersPanel(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  // "Clear filters" rather than "Author": picking a value renames the Author control to that value,
+  // so it stops being a reliable sign the panel is already open.
+  if (screen.queryByRole("button", { name: "Clear filters" })) return
+  await user.click((await screen.findByText(/^Filters/, {}, { timeout: 3000 })).closest("button") as HTMLElement)
+}
+
 describe("ManageMods", () => {
   it("sorts the scanned Mods into the updatable, incompatible and unreadable lists", async () => {
     renderManageMods()
@@ -238,6 +261,60 @@ describe("ManageMods", () => {
     // ModListCard's own content already does.
     const alphaRow = screen.getByText("Alpha Mod").closest("li")?.firstElementChild
     expect(alphaRow?.className).toContain("skip-offscreen-render")
+  })
+
+  it("has the row adapt to its own width instead of flooring the name, so the name keeps real room (#438)", async () => {
+    renderManageMods()
+
+    const nameEl = await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+
+    // A fixed floor on the name (the first attempt's min-w-9) only decides which sibling starves;
+    // it cannot fix a budget problem. The name goes back to a bare min-w-0 above truncate, and it
+    // is the row itself that now answers a `@container` query and gives way first (#438).
+    expect(nameEl.className).toContain("truncate")
+    expect(nameEl.className).toMatch(/\bmin-w-0\b/)
+    expect(nameEl.className).not.toMatch(/\bmin-w-9\b/)
+
+    const alphaRow = nameEl.closest("li")?.firstElementChild as HTMLElement
+    expect(alphaRow.className).toContain("@container")
+
+    // Below the threshold the thumbnail shrinks first, so it stays visible instead of eating the
+    // text column's width.
+    const thumbnail = screen.getByAltText("Alpha Mod")
+    expect(thumbnail.className).toContain("@max-md:size-10")
+
+    // The action buttons wrap into two rows of two rather than staying four abreast.
+    const buttonGroup = alphaRow.querySelector(".justify-end") as HTMLElement
+    expect(buttonGroup.className).toContain("@max-md:grid")
+    expect(buttonGroup.className).toContain("@max-md:grid-cols-2")
+
+    // The name/version line wraps too, so the version drops under the name instead of splitting
+    // the row's width with it. It answers a wider tier than the thumbnail and the buttons do: the
+    // detail panel open at 1280 leaves a 568px row, which never reaches @max-md's 448px, and a
+    // disabled Mod's name was down to 83px there with the version and the DISABLED badge beside it.
+    // @max-xl (576px) catches that row, and the same 568px row at 1024 with the panel closed.
+    const nameRow = nameEl.parentElement as HTMLElement
+    expect(nameRow.className).toContain("@max-xl:flex-wrap")
+    // No row gap on the fold, so a folded line costs the column nothing in height.
+    expect(nameRow.className).toContain("@max-xl:gap-y-0")
+    expect(nameEl.className).toContain("@max-xl:grow")
+
+    // The credits give up their line one tier before the description does: the folded name line
+    // needs that height, and at 568px there is still room for the description.
+    const credits = nameRow.parentElement?.lastElementChild as HTMLElement
+    expect(credits.className).toContain("@max-xl:hidden")
+    const description = nameRow.nextElementSibling as HTMLElement
+    expect(description.className).toContain("@max-md:hidden")
+    expect(description.className).not.toContain("@max-xl:hidden")
+
+    // The text column between the icon and the version/buttons must still give up its own
+    // automatic min-width explicitly, the same way the identity wrapper it sits in already does,
+    // or the name has nothing to shrink against.
+    const textColumn = nameRow.parentElement as HTMLElement
+    expect(textColumn.className).toMatch(/\bmin-w-0\b/)
+
+    const identityWrapper = textColumn.parentElement as HTMLElement
+    expect(identityWrapper.className).toMatch(/\bmin-w-0\b/)
   })
 
   it("queries one ModDB detail for repeated installed mod ids", async () => {
@@ -330,6 +407,118 @@ describe("ManageMods", () => {
   })
 })
 
+/**
+ * Issue #431: the row grew a Modpack menu, a Filters toggle, and a selection bar that no longer
+ * sits there reading "0 selected" before anyone has checked a Mod.
+ */
+describe("ManageMods: the action bar after #431", () => {
+  it("keeps the three modpack actions off screen until the Modpack menu is opened, and marks it collapsed again once one runs", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.queryByText("Export Modpack")).toBeNull()
+    expect(screen.queryByText("Export Server Modpack")).toBeNull()
+    expect(screen.queryByText("Import Modpack")).toBeNull()
+
+    const trigger = screen.getByText("Modpack").closest("button") as HTMLElement
+    await user.click(trigger)
+    expect(trigger.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByText("Export Modpack")).toBeTruthy()
+    expect(screen.getByText("Export Server Modpack")).toBeTruthy()
+    expect(screen.getByText("Import Modpack")).toBeTruthy()
+
+    await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    // The menu reports itself collapsed straight away; the fade-out on the panel itself is cosmetic.
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("opens the Modpack menu from a focused trigger with the keyboard and runs an action reached by the arrow keys", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    const trigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
+    trigger.focus()
+    await user.keyboard("{Enter}")
+    const exportItem = (await screen.findByText("Export Modpack")).closest("button") as HTMLButtonElement
+
+    // Headless UI clones its own role, id and roving tabIndex onto a MenuItem rendered as={Fragment}
+    // by merging them onto the single child's props; a FormButton with no rest slot to catch them
+    // would silently drop every one, and a separate DOM pass then stamps the orphaned button
+    // role="none" for hiding nothing else claimed. This is what a mouse-only check cannot catch,
+    // since none of it affects a click.
+    expect(exportItem.getAttribute("role")).toBe("menuitem")
+    expect(exportItem.tabIndex).toBe(-1)
+
+    // Arrow down onto the first action, Enter to run it: the same path a mouse click takes, just
+    // from the keyboard. Before the Fragment fix, the outer <li> ate this Enter and closed the
+    // menu without ever reaching the FormButton's own onClick.
+    await user.keyboard("{ArrowDown}{Enter}")
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    // The action closes the menu behind it, same as a mouse click does; the fade-out is cosmetic.
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("closes the Modpack menu on Escape without running any action", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    const trigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
+    await user.click(trigger)
+    expect(await screen.findByText("Export Modpack")).toBeTruthy()
+
+    await user.keyboard("{Escape}")
+    // The menu reports itself collapsed straight away; the fade-out on the panel itself is cosmetic.
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    expect(exportModpack).not.toHaveBeenCalled()
+  })
+
+  it("hides the count and the five batch actions until a Mod is checked, but keeps select-all reachable throughout", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const selectAll = await screen.findByRole("checkbox", { name: "Select every Mod shown" }, { timeout: 3000 })
+    expect(selectAll).toBeTruthy()
+    expect(screen.queryByText(/^\d+ selected$/)).toBeNull()
+    expect(screen.queryByRole("button", { name: /Delete the selected Mods/ })).toBeNull()
+    // The live region is already in the DOM, just empty: a screen reader is far more reliably told
+    // about a change to an announced node's text than about a brand new node appearing with text
+    // already in it. Scoped to select-all's own group: the page carries other status regions too.
+    const selectionGroup = selectAll.closest("div") as HTMLElement
+    expect(within(selectionGroup).getByRole("status").textContent).toBe("")
+
+    await user.click(screen.getByRole("checkbox", { name: "Select Alpha Mod" }))
+
+    expect(screen.getByText("1 selected")).toBeTruthy()
+    expect(screen.getByRole("button", { name: /Delete the selected Mods/ })).toBeTruthy()
+  })
+
+  it("shows the Filters toggle closed by default, and counts the axis it is told to set", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    const filtersToggle = screen.getByText("Filters").closest("button") as HTMLElement
+    expect(filtersToggle).toBeTruthy()
+    // It reveals a panel, it is not a stateful toggle: aria-expanded, not aria-pressed.
+    expect(filtersToggle.getAttribute("aria-expanded")).toBe("false")
+    expect(screen.queryByRole("button", { name: "Author" })).toBeNull()
+
+    await user.click(filtersToggle)
+    expect(filtersToggle.getAttribute("aria-expanded")).toBe("true")
+    await user.click(screen.getByRole("button", { name: "Author" }))
+    await user.click(await screen.findByRole("option", { name: "Ann" }))
+
+    expect(screen.getByText("Filters (1)")).toBeTruthy()
+  })
+})
+
 /** Issue #194: a Mod the player holds at its current version, without going blind to what is out there. */
 describe("ManageMods: suspended Mod updates", () => {
   /** The row for one Mod, found by its name. */
@@ -342,17 +531,22 @@ describe("ManageMods: suspended Mod updates", () => {
     renderManageMods()
 
     const alphaRow = await rowFor("Alpha Mod")
-    expect(within(alphaRow).getByTitle(SUSPEND_TITLE)).toBeTruthy()
+    const suspendButton = within(alphaRow).getByTitle(SUSPEND_TITLE)
+    expect(suspendButton.querySelector('svg path[opacity="0.2"]')).toBeTruthy()
 
-    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+    await user.click(suspendButton)
 
-    expect(within(alphaRow).getByTitle(RESUME_TITLE)).toBeTruthy()
+    const resumeButton = within(alphaRow).getByTitle(RESUME_TITLE)
+    const resumeIcon = resumeButton.querySelector("svg")
+    if (!resumeIcon) throw new Error("resume icon not found")
+    expect(resumeIcon.getAttribute("class")).toContain("text-yellow-400")
+    expect(resumeIcon.querySelector('path[opacity="0.2"]')).toBeNull()
     // Marked at a glance, in the same tint family the row already uses for its update states.
     expect(alphaRow.firstElementChild?.className).toContain("bg-sky-500/25")
 
-    await user.click(within(alphaRow).getByTitle(RESUME_TITLE))
+    await user.click(resumeButton)
 
-    expect(within(alphaRow).getByTitle(SUSPEND_TITLE)).toBeTruthy()
+    expect(within(alphaRow).getByTitle(SUSPEND_TITLE).querySelector('svg path[opacity="0.2"]')).toBeTruthy()
     expect(alphaRow.firstElementChild?.className).not.toContain("bg-sky-500/25")
   })
 
@@ -400,7 +594,7 @@ describe("ManageMods: suspended Mod updates", () => {
     await user.click(within(alphaRow).getByTitle("Update"))
 
     const popup = await screen.findByRole("dialog")
-    await user.click(within(popup).getByTitle("Author tagged it as compatible with your selected Vintage Story Version!"))
+    await user.click(within(popup).getByTitle("Author tagged it as compatible with your selected Vintage Story Version."))
 
     await waitFor(() => expect(downloadOnPath).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(ALPHA_PATH))
@@ -498,7 +692,7 @@ describe("ManageMods: searching the installed Mods", () => {
 
     await searchFor(user, "nothinglikethis")
 
-    expect(await screen.findByText("There are no Mods that match your filters!")).toBeTruthy()
+    expect(await screen.findByText("There are no Mods that match your filters.")).toBeTruthy()
     expect(screen.queryAllByRole("listitem")).toHaveLength(0)
     expect(screen.queryByText("Mods with updates")).toBeNull()
   })
@@ -548,10 +742,10 @@ describe("ManageMods: searching the installed Mods", () => {
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
 
     // Nothing on screen would go into a server modpack, so there is nothing to export.
-    expect((screen.getByText("Export Server Modpack").closest("button") as HTMLButtonElement).disabled).toBe(true)
+    expect((await modpackMenuItem(user, "Export Server Modpack")).disabled).toBe(true)
 
     // The plain export ships the visible list itself, so one visible Mod is still one Mod to write.
-    const plainExport = screen.getByText("Export Modpack").closest("button") as HTMLButtonElement
+    const plainExport = await modpackMenuItem(user, "Export Modpack")
     expect(plainExport.disabled).toBe(false)
 
     await user.click(plainExport)
@@ -569,7 +763,7 @@ describe("ManageMods: searching the installed Mods", () => {
     await searchFor(user, "ta")
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
 
-    const serverExport = screen.getByText("Export Server Modpack").closest("button") as HTMLButtonElement
+    const serverExport = await modpackMenuItem(user, "Export Server Modpack")
     expect(serverExport.disabled).toBe(false)
 
     await user.click(serverExport)
@@ -600,12 +794,17 @@ describe("ManageMods: enabling and disabling a Mod", () => {
     const epsilonRow = await rowFor("Epsilon Mod")
 
     expect(within(epsilonRow).getByText("Disabled")).toBeTruthy()
-    expect(within(epsilonRow).getByTitle(ENABLE_TITLE)).toBeTruthy()
+    const enableButton = within(epsilonRow).getByTitle(ENABLE_TITLE)
+    const enableIcon = enableButton.querySelector("svg")
+    if (!enableIcon) throw new Error("enable icon not found")
+    expect(enableIcon.getAttribute("class")).toContain("text-yellow-400")
+    expect(enableIcon.querySelector('path[opacity="0.2"]')).toBeNull()
     expect(epsilonRow.firstElementChild?.className).toContain("bg-zinc-500/25")
 
     // An enabled row offers the other direction and is not greyed at all.
     const alphaRow = await rowFor("Alpha Mod")
-    expect(within(alphaRow).getByTitle(DISABLE_TITLE)).toBeTruthy()
+    const disableButton = within(alphaRow).getByTitle(DISABLE_TITLE)
+    expect(disableButton.querySelector('svg path[opacity="0.2"]')).toBeTruthy()
     expect(within(alphaRow).queryByText("Disabled")).toBeNull()
     expect(alphaRow.firstElementChild?.className).not.toContain("bg-zinc-500/25")
   })
@@ -623,7 +822,7 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     // The renderer names the file and the state it wants. It never composes the new name.
     await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(ALPHA_PATH, false))
-    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded!")).toBeTruthy()
+    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded.")).toBeTruthy()
     // The archive's name is its path, so every button on that row is pointing at a name that has
     // just stopped existing. The rescan is what puts them back on the real file.
     await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
@@ -657,8 +856,8 @@ describe("ManageMods: enabling and disabling a Mod", () => {
       landIpc({ ok: true, path: `${ALPHA_PATH}.disabled` })
     })
 
-    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded!")).toBeTruthy()
-    expect(screen.queryByText("An error has occurred enabling or disabling Alpha Mod!")).toBeNull()
+    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded.")).toBeTruthy()
+    expect(screen.queryByText("An error has occurred enabling or disabling Alpha Mod.")).toBeNull()
     await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
     // Still one call once everything has settled, and the row is live again for the next real click.
     expect(setModEnabled).toHaveBeenCalledTimes(1)
@@ -673,7 +872,7 @@ describe("ManageMods: enabling and disabling a Mod", () => {
     await user.click(within(await rowFor("Epsilon Mod")).getByTitle(ENABLE_TITLE))
 
     await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(EPSILON_PATH, true))
-    expect(await screen.findByText("Epsilon Mod is enabled again!")).toBeTruthy()
+    expect(await screen.findByText("Epsilon Mod is enabled again.")).toBeTruthy()
   })
 
   it("names the clash instead of pretending nothing happened when the other file already exists", async () => {
@@ -713,14 +912,25 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     await rowFor("Epsilon Mod")
 
-    await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+    await user.click(await modpackMenuItem(user, "Export Modpack"))
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
     expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0", name: "Alpha Mod" }])
 
     // Epsilon declares no side, which the server export otherwise reads as "the server loads it".
-    await user.click(screen.getByText("Export Server Modpack").closest("button") as HTMLElement)
+    await user.click(await modpackMenuItem(user, "Export Server Modpack"))
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(2))
     expect(exportModpack.mock.calls[1]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0", name: "Alpha Mod" }])
+  })
+
+  it("greys the plain export out too once a search leaves only a disabled Mod on screen", async () => {
+    const user = userEvent.setup()
+    renderWithADisabledMod()
+
+    await rowFor("Epsilon Mod")
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "epsilon")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    expect((await modpackMenuItem(user, "Export Modpack")).disabled).toBe(true)
   })
 
   it("finds a disabled Mod by search like any other, name or id", async () => {
@@ -827,10 +1037,12 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
   }
 
   /**
-   * Opens one dropdown by the name it carries while unset. The findByRole wait doubles as the wait
-   * for the scan to land: the bar only mounts once there is more than one installed Mod.
+   * Opens one dropdown by the name it carries while unset, opening the Filters panel first if it
+   * is not already. The findByRole wait doubles as the wait for the scan to land: the toggle only
+   * mounts once there is more than one installed Mod.
    */
   async function openFilter(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
+    await openFiltersPanel(user)
     await user.click(await screen.findByRole("button", { name }, { timeout: 3000 }))
   }
 
@@ -840,10 +1052,12 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
   }
 
   it("names every control it offers, and offers no tag control for a folder the ModDB tagged none of", async () => {
+    const user = userEvent.setup()
     renderManageMods()
 
     // The default fixture's details carry release tags but no category tags at all.
     expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    await openFiltersPanel(user)
     expect(screen.getByRole("button", { name: "Author" })).toBeTruthy()
     expect(await screen.findByRole("button", { name: "VS Version" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Clear filters" })).toBeTruthy()
@@ -854,9 +1068,11 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
   })
 
   it("offers only the author control when the ModDB answers nothing", async () => {
+    const user = userEvent.setup()
     renderManageMods({ netManager: { queryURL: vi.fn(async () => JSON.stringify({ statuscode: "404" })) } })
 
     expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    await openFiltersPanel(user)
     expect(screen.getByRole("button", { name: "Author" })).toBeTruthy()
     // Both ModDB-derived axes stay off screen rather than offering a filter that would hide the folder.
     expect(screen.queryByRole("button", { name: "Tags" })).toBeNull()
@@ -986,7 +1202,7 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
     await pick(user, "Author", "Bob")
     await pick(user, "Tags", "qol")
 
-    expect(await screen.findByText("There are no Mods that match your filters!")).toBeTruthy()
+    expect(await screen.findByText("There are no Mods that match your filters.")).toBeTruthy()
     expect(screen.queryAllByRole("listitem")).toHaveLength(0)
   })
 
@@ -1099,7 +1315,7 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
     await pick(user, "Author", "Cal")
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
 
-    await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+    await user.click(await modpackMenuItem(user, "Export Modpack"))
 
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
     expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([
@@ -1169,5 +1385,619 @@ describe("ManageMods: a ModDB payload with nulls in it", () => {
     // newest release actually tagged for this Installation once its own null tag was dropped.
     const summary = await screen.findByRole("dialog", {}, { timeout: 3000 })
     expect(within(summary).getByText("v1.2.0")).toBeTruthy()
+  })
+})
+
+/**
+ * Issue #340: checking installed Mods and acting on all of them at once. The selection is keyed by
+ * archive path, and every action works on the checked Mods among those shown (#228).
+ */
+describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () => {
+  const GAMMA_PATH = "/games/a/Mods/gamma-3.0.0.zip"
+  const SELECT_ALL = "Select every Mod shown"
+  const ENABLE_SELECTED = "Enable the selected Mods: Vintage Story will load them again"
+  const DISABLE_SELECTED = "Disable the selected Mods: they stay installed, Vintage Story just won't load them"
+  const SUSPEND_SELECTED = "Suspend updates for the selected Mods: Update all will skip them"
+  const RESUME_SELECTED = "Resume updates for the selected Mods: Update all will include them again"
+  const DELETE_SELECTED = "Delete the selected Mods"
+
+  function checkboxOf(name: string): HTMLInputElement {
+    return screen.getByRole("checkbox", { name: `Select ${name}` }) as HTMLInputElement
+  }
+
+  /** The bar only mounts once the scan has listed a Mod, so finding it is also waiting for the scan. */
+  async function selectAllBox(): Promise<HTMLInputElement> {
+    return (await screen.findByRole("checkbox", { name: SELECT_ALL }, { timeout: 3000 })) as HTMLInputElement
+  }
+
+  function batchButton(name: string): HTMLButtonElement {
+    return screen.getByRole("button", { name }) as HTMLButtonElement
+  }
+
+  function buttonWithText(text: string): HTMLButtonElement {
+    return screen.getByText(text).closest("button") as HTMLButtonElement
+  }
+
+  async function check(user: ReturnType<typeof userEvent.setup>, ...names: string[]): Promise<void> {
+    for (const name of names) await user.click(await screen.findByRole("checkbox", { name: `Select ${name}` }, { timeout: 3000 }))
+  }
+
+  /** A batch is over once its rescan is in, which is when select-all comes back. */
+  async function batchLanded(): Promise<void> {
+    const selectAll = await selectAllBox()
+    await waitFor(() => expect(selectAll.disabled).toBe(false))
+  }
+
+  /**
+   * One toast shows at a time, so the next one only appears once this one is gone. The one before it
+   * can still be on its way out, so this waits until the toast on screen is the only one.
+   */
+  async function discardToast(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Discard notification" })).toHaveLength(1))
+    await user.click(screen.getByRole("button", { name: "Discard notification" }))
+  }
+
+  function renamesAnswering(answer: (path: string) => SetModEnabledResult = (path) => ({ ok: true, path })): ReturnType<typeof vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>> {
+    return vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => answer(path))
+  }
+
+  it("checks only the Mods the search left on screen when selecting all, and acts on nothing else", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering()
+    renderManageMods({ modsManager: { setModEnabled } })
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    const search = screen.getByPlaceholderText(SEARCH_PLACEHOLDER)
+    await user.type(search, "beta")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    await user.click(await selectAllBox())
+
+    // Nothing the search hid was checked along with Beta.
+    await user.clear(search)
+    await screen.findByText("Alpha Mod")
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([false, true, false, false])
+    expect(screen.getByText("1 selected")).toBeTruthy()
+    // Beta is already on, so there is nothing to enable.
+    expect(batchButton(ENABLE_SELECTED).disabled).toBe(true)
+
+    await user.click(batchButton(DISABLE_SELECTED))
+
+    expect(await screen.findByText("1 Mod disabled.")).toBeTruthy()
+    expect(setModEnabled.mock.calls).toEqual([[BETA_PATH, false]])
+  })
+
+  it("leaves a checked Mod that the Author filter hides out of the count and out of the action", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering()
+    let scans = 0
+    // Every rescan after the first reads Beta at a new version, so the page shows when one is in.
+    const getInstalledMods = vi.fn(async () => {
+      const scan = aModScan()
+      scans++
+      return scans === 1 ? scan : { ...scan, mods: scan.mods.map((iMod) => (iMod.path === BETA_PATH ? { ...iMod, version: "2.0.1" } : iMod)) }
+    })
+    renderManageMods({ modsManager: { setModEnabled, getInstalledMods } })
+
+    async function showOnlyBob(): Promise<void> {
+      await openFiltersPanel(user)
+      await user.click(screen.getByRole("button", { name: "Author" }))
+      await user.click(await screen.findByRole("option", { name: "Bob" }))
+      await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    }
+
+    await check(user, "Alpha Mod")
+    await showOnlyBob()
+    await check(user, "Beta Mod")
+
+    // Alpha is still checked, only hidden, so the count leaves it out.
+    expect(screen.getByText("1 selected")).toBeTruthy()
+
+    // A rescan while it is hidden keeps it checked too: the folder still has it.
+    await user.click(screen.getByRole("button", { name: "Reload" }))
+    await screen.findByText("v2.0.1", {}, { timeout: 3000 })
+
+    // It comes back checked when the filter goes, because hiding a Mod is not unchecking it.
+    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    await screen.findByText("Alpha Mod")
+    expect(checkboxOf("Alpha Mod").checked).toBe(true)
+    expect(screen.getByText("2 selected")).toBeTruthy()
+
+    await showOnlyBob()
+    await user.click(batchButton(DISABLE_SELECTED))
+
+    expect(await screen.findByText("1 Mod disabled.")).toBeTruthy()
+    expect(setModEnabled.mock.calls).toEqual([[BETA_PATH, false]])
+
+    // The batch leaves checked only what failed, so the hidden check it did not touch is gone.
+    await batchLanded()
+    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    await screen.findByText("Alpha Mod")
+    expect(checkboxOf("Alpha Mod").checked).toBe(false)
+  })
+
+  it("deletes only the checked Mods the search left on screen, and leaves a hidden checked one alone", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    renderManageMods({ pathsManager: { deletePath } })
+
+    await check(user, "Alpha Mod")
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "beta")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+    await check(user, "Beta Mod")
+
+    await user.click(batchButton(DELETE_SELECTED))
+    const dialog = await screen.findByRole("dialog")
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["Beta Mod"])
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }))
+
+    expect(await screen.findByText("1 Mod deleted.")).toBeTruthy()
+    expect(deletePath.mock.calls).toEqual([[BETA_PATH]])
+  })
+
+  it("deletes a disabled Mod by the file name it actually has, along with the enabled ones", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    renderManageMods({ modsManager: { getInstalledMods: vi.fn(async () => scanWithADisabledMod()) }, pathsManager: { deletePath } })
+
+    await user.click(await selectAllBox())
+    await user.click(batchButton(DELETE_SELECTED))
+    const dialog = await screen.findByRole("dialog")
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["Alpha Mod", "Epsilon Mod"])
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }))
+
+    expect(await screen.findByText("2 Mods deleted.")).toBeTruthy()
+    // Epsilon's archive is epsilon-5.0.0.zip.disabled: that is the file sent, not the enabled name.
+    expect(deletePath.mock.calls.map((call) => call[0]).sort()).toEqual([ALPHA_PATH, EPSILON_PATH].sort())
+  })
+
+  it("disables the checked Mods with one rename each, one notification and one rescan", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering()
+    const getInstalledMods = vi.fn(async () => aModScan())
+    renderManageMods({ modsManager: { setModEnabled, getInstalledMods } })
+
+    await check(user, "Alpha Mod", "Beta Mod")
+    const scansBefore = getInstalledMods.mock.calls.length
+    await user.click(batchButton(DISABLE_SELECTED))
+
+    expect(await screen.findByText("2 Mods disabled.")).toBeTruthy()
+    await batchLanded()
+    expect(setModEnabled.mock.calls).toEqual([
+      [ALPHA_PATH, false],
+      [BETA_PATH, false]
+    ])
+    // One verdict for the batch, not one per Mod.
+    expect(screen.getAllByText("2 Mods disabled.")).toHaveLength(1)
+    expect(screen.queryByText("Alpha Mod is disabled and will not be loaded.")).toBeNull()
+    expect(screen.queryByText("Beta Mod is disabled and will not be loaded.")).toBeNull()
+    expect(getInstalledMods.mock.calls.length).toBe(scansBefore + 1)
+  })
+
+  it("enables only the disabled Mods among the checked ones", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering()
+    renderManageMods({ modsManager: { setModEnabled, getInstalledMods: vi.fn(async () => scanWithADisabledMod()) } })
+
+    // Epsilon alone is off, so there is nothing to disable.
+    await check(user, "Epsilon Mod")
+    expect(batchButton(DISABLE_SELECTED).disabled).toBe(true)
+    expect(batchButton(ENABLE_SELECTED).disabled).toBe(false)
+
+    await user.click(await selectAllBox())
+    await user.click(batchButton(ENABLE_SELECTED))
+
+    expect(await screen.findByText("1 Mod enabled.")).toBeTruthy()
+    // Alpha is checked too, and already on, so it is not sent at all.
+    expect(setModEnabled.mock.calls).toEqual([[EPSILON_PATH, true]])
+  })
+
+  it("reports a half-failed batch as partial and keeps only the failed Mod checked", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering((path) => (path === BETA_PATH ? { ok: false, reason: "name-taken" } : { ok: true, path }))
+    renderManageMods({ modsManager: { setModEnabled } })
+
+    await check(user, "Alpha Mod", "Beta Mod")
+    await user.click(batchButton(DISABLE_SELECTED))
+
+    expect(await screen.findByText("1 of 2 Mods went through. The one left as it was is still selected.")).toBeTruthy()
+    expect(screen.queryByText("1 Mod disabled.")).toBeNull()
+    expect(screen.queryByText("2 Mods disabled.")).toBeNull()
+
+    // The Mod that did not go through is the one still checked, so the page shows which.
+    await batchLanded()
+    expect(checkboxOf("Beta Mod").checked).toBe(true)
+    expect(checkboxOf("Alpha Mod").checked).toBe(false)
+    expect(screen.getByText("1 selected")).toBeTruthy()
+  })
+
+  it("counts the renames it sent, not the Mods checked, when two of them are refused", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering((path) => (path === ALPHA_PATH ? { ok: true, path } : { ok: false, reason: "refused" }))
+    const scan = (): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } => ({ ...aModScan(), mods: [...aModScan().mods, ...scanWithADisabledMod().mods.filter((iMod) => !iMod.enabled)] })
+    renderManageMods({ modsManager: { setModEnabled, getInstalledMods: vi.fn(async () => scan()) } })
+
+    await check(user, "Alpha Mod", "Beta Mod", "Gamma Mod", "Epsilon Mod")
+    await user.click(batchButton(DISABLE_SELECTED))
+
+    // Epsilon is already off, so three renames went out, and two of them were refused.
+    expect(await screen.findByText("1 of 3 Mods went through. The 2 left as they were are still selected.")).toBeTruthy()
+    expect(setModEnabled).toHaveBeenCalledTimes(3)
+  })
+
+  it("says nothing went through when every rename is refused, and keeps them all checked", async () => {
+    const user = userEvent.setup()
+    renderManageMods({ modsManager: { setModEnabled: renamesAnswering(() => ({ ok: false, reason: "refused" })) } })
+
+    await check(user, "Alpha Mod", "Beta Mod")
+    await user.click(batchButton(DISABLE_SELECTED))
+
+    expect(await screen.findByText("None of the selected Mods could be changed. They are still selected, and the log has the details.")).toBeTruthy()
+    expect(screen.queryByText(/Mods went through/)).toBeNull()
+    await batchLanded()
+    expect(checkboxOf("Alpha Mod").checked).toBe(true)
+    expect(checkboxOf("Beta Mod").checked).toBe(true)
+  })
+
+  it("asks before deleting the checked Mods, names each one, and deletes nothing on cancel", async () => {
+    const user = userEvent.setup()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    renderManageMods({ pathsManager: { deletePath } })
+
+    await check(user, "Alpha Mod", "Gamma Mod", "Delta Mod")
+    await user.click(batchButton(DELETE_SELECTED))
+
+    let dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Delete 3 Mods")).toBeTruthy()
+    // Sorted by name, whatever order the sections list them in, and nothing that is not checked.
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["Alpha Mod", "Delta Mod", "Gamma Mod"])
+    expect(within(dialog).queryByText("Beta Mod")).toBeNull()
+    expect(within(dialog).getByText("Are you sure you want to delete these Mods?")).toBeTruthy()
+    expect(within(dialog).getByText(/Deletion is not reversible/)).toBeTruthy()
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(deletePath).not.toHaveBeenCalled()
+
+    await user.click(batchButton(DELETE_SELECTED))
+    dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }))
+
+    expect(await screen.findByText("3 Mods deleted.")).toBeTruthy()
+    expect(deletePath.mock.calls.map((call) => call[0]).sort()).toEqual([ALPHA_PATH, DELTA_PATH, GAMMA_PATH].sort())
+    // The rows it deleted are gone from under the focus, so it lands on select-all.
+    const selectAll = await selectAllBox()
+    await waitFor(() => expect(document.activeElement).toBe(selectAll))
+  })
+
+  it("checks one of two rows with the same name and modid by its file, and names each by its file", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering()
+    const twinPath = "/games/a/Mods/alpha-1.0.1.zip"
+    const twins = (): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } => ({
+      mods: [
+        { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, authors: [] },
+        { name: "Alpha Mod", modid: "alpha", version: "1.0.1", path: twinPath, enabled: true, authors: [] }
+      ],
+      errors: []
+    })
+    renderManageMods({ modsManager: { setModEnabled, getInstalledMods: vi.fn(async () => twins()) } })
+
+    const newerRow = (await screen.findByText("v1.0.1", {}, { timeout: 3000 })).closest("li") as HTMLElement
+    const olderRow = screen.getByText("v1.0.0").closest("li") as HTMLElement
+    // Same name, so each checkbox also goes by its file.
+    await user.click(within(newerRow).getByRole("checkbox", { name: "Select Alpha Mod (alpha-1.0.1.zip)" }))
+
+    expect((within(olderRow).getByRole("checkbox", { name: "Select Alpha Mod (alpha-1.0.0.zip)" }) as HTMLInputElement).checked).toBe(false)
+    expect(screen.getByText("1 selected")).toBeTruthy()
+
+    // The confirmation says which of the two copies it would delete.
+    await user.click(batchButton(DELETE_SELECTED))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Delete 1 Mod")).toBeTruthy()
+    expect(within(dialog).getByText("Are you sure you want to delete this Mod?")).toBeTruthy()
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["Alpha Mod (alpha-1.0.1.zip)"])
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+
+    await user.click(batchButton(DISABLE_SELECTED))
+    expect(await screen.findByText("1 Mod disabled.")).toBeTruthy()
+    expect(setModEnabled.mock.calls).toEqual([[twinPath, false]])
+  })
+
+  it("suspends updates for the checked Mods with no duplicate id, then resumes them", async () => {
+    const user = userEvent.setup()
+    renderManageMods({ modsManager: { getInstalledMods: vi.fn(async () => duplicateModScan()) } })
+    const lastSaved = (): string[] | undefined => vi.mocked(window.api.configManager.saveConfig).mock.calls.at(-1)?.[0].suspendedModUpdates
+
+    await user.click(await selectAllBox())
+    // Nothing is suspended yet, so there is nothing to resume.
+    expect(batchButton(RESUME_SELECTED).disabled).toBe(true)
+    await user.click(batchButton(SUSPEND_SELECTED))
+
+    // Two rows, one modid: suspension is recorded per modid, once.
+    expect(await screen.findByText("Updates suspended for 1 Mod.")).toBeTruthy()
+    await waitFor(() => expect(lastSaved()).toEqual(["alpha"]))
+    expect(screen.getAllByTitle(RESUME_TITLE)).toHaveLength(2)
+    expect(screen.getByText("0 selected")).toBeTruthy()
+    expect(document.activeElement).toBe(await selectAllBox())
+    await discardToast(user)
+
+    await user.click(await selectAllBox())
+    expect(batchButton(SUSPEND_SELECTED).disabled).toBe(true)
+    await user.click(batchButton(RESUME_SELECTED))
+
+    expect(await screen.findByText("Updates resumed for 1 Mod.")).toBeTruthy()
+    await waitFor(() => expect(lastSaved()).toEqual([]))
+    expect(screen.getAllByTitle(SUSPEND_TITLE)).toHaveLength(2)
+  })
+
+  it("holds Update all, Import and the rows it is changing while it runs, and a second click sends nothing more", async () => {
+    const user = userEvent.setup()
+    const landings: (() => void)[] = []
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(
+      (path: string) => new Promise<SetModEnabledResult>((resolve) => landings.push(() => resolve({ ok: true, path: `${path}.disabled` })))
+    )
+    let holdScans = false
+    let releaseScan: () => void = () => {}
+    const getInstalledMods = vi.fn(async () => {
+      if (holdScans) await new Promise<void>((resolve) => (releaseScan = resolve))
+      return aModScan()
+    })
+    renderManageMods({ modsManager: { setModEnabled, getInstalledMods } })
+
+    await check(user, "Alpha Mod", "Beta Mod")
+    const disable = batchButton(DISABLE_SELECTED)
+    // Held from before the click: a disabled row button drops its title.
+    const alphaToggle = within(screen.getByText("Alpha Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE) as HTMLButtonElement
+    const gammaToggle = within(screen.getByText("Gamma Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE) as HTMLButtonElement
+
+    // Both clicks inside one commit, before React has painted anything the first one changed.
+    await act(async () => {
+      disable.click()
+      disable.click()
+    })
+
+    expect(setModEnabled.mock.calls).toEqual([
+      [ALPHA_PATH, false],
+      [BETA_PATH, false]
+    ])
+    expect(buttonWithText("Update all").disabled).toBe(true)
+    expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(true)
+    expect(alphaToggle.disabled).toBe(true)
+    expect(checkboxOf("Alpha Mod").disabled).toBe(true)
+    // A row outside the selection is not part of the batch and stays live.
+    expect(gammaToggle.disabled).toBe(false)
+
+    const scansBefore = getInstalledMods.mock.calls.length
+    holdScans = true
+    await act(async () => {
+      for (const land of landings) land()
+    })
+
+    // The renames are in but the rescan is not, so the page still lists the names from before them.
+    expect(await screen.findByText("2 Mods disabled.")).toBeTruthy()
+    await waitFor(() => expect(getInstalledMods).toHaveBeenCalledTimes(scansBefore + 1))
+    expect(buttonWithText("Update all").disabled).toBe(true)
+    expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(true)
+    expect((await selectAllBox()).disabled).toBe(true)
+
+    await act(async () => releaseScan())
+    await batchLanded()
+    expect(buttonWithText("Update all").disabled).toBe(false)
+    expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(false)
+    expect((within(screen.getByText("Alpha Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false)
+    expect(setModEnabled).toHaveBeenCalledTimes(2)
+  })
+
+  it("leaves Update all and the exports blind to the selection", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn(async (_id: string, url: string) => (url.includes("alpha") ? "/games/a/Mods/alpha-1.1.0.zip" : "/games/a/Mods/beta-2.1.0.zip"))
+    renderManageMods({ modsManager: { exportModpack }, pathsManager: { deletePath, downloadOnPath } })
+
+    await check(user, "Alpha Mod")
+
+    await user.click(await modpackMenuItem(user, "Export Modpack"))
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    expect(exportModpack.mock.calls[0]?.[0].mods.map((mod) => mod.modid)).toEqual(["alpha", "beta", "gamma", "quirkid"])
+
+    await user.click(buttonWithText("Update all"))
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
+    expect(downloadOnPath).toHaveBeenCalledTimes(2)
+    expect(deletePath.mock.calls.map((call) => call[0]).sort()).toEqual([ALPHA_PATH, BETA_PATH])
+  })
+
+  it("hides the selection bar while Update all rewrites the folder", async () => {
+    const user = userEvent.setup()
+    let finishDownloads: () => void = () => {}
+    const downloadsHeld = new Promise<void>((resolve) => (finishDownloads = resolve))
+    const downloadOnPath = vi.fn(async (_id: string, url: string) => {
+      await downloadsHeld
+      return url.includes("alpha") ? "/games/a/Mods/alpha-1.1.0.zip" : "/games/a/Mods/beta-2.1.0.zip"
+    })
+    renderManageMods({ pathsManager: { deletePath: vi.fn(async () => true), downloadOnPath } })
+
+    await selectAllBox()
+    await user.click(buttonWithText("Update all"))
+    await waitFor(() => expect(screen.queryByRole("checkbox", { name: SELECT_ALL })).toBeNull())
+
+    await act(async () => finishDownloads())
+    expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
+  })
+
+  it("offers select-all as a real tri-state checkbox a keyboard can reach, and no checkbox on an unreadable archive", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await check(user, "Alpha Mod")
+    const selectAll = await selectAllBox()
+    expect(selectAll.checked).toBe(false)
+    expect(selectAll.indeterminate).toBe(true)
+    expect(within(screen.getByText("broken.zip").closest("li") as HTMLElement).queryByRole("checkbox")).toBeNull()
+
+    // Reached with Tab from the search field, like any other control on the page.
+    await user.click(screen.getByPlaceholderText(SEARCH_PLACEHOLDER))
+    for (let step = 0; step < 20 && document.activeElement !== selectAll; step++) await user.tab()
+    expect(document.activeElement).toBe(selectAll)
+
+    const names = ["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"]
+    await user.keyboard(" ")
+    await waitFor(() => expect(names.map((name) => checkboxOf(name).checked)).toEqual([true, true, true, true]))
+    expect(selectAll.checked).toBe(true)
+    expect(selectAll.indeterminate).toBe(false)
+
+    await user.keyboard(" ")
+    await waitFor(() => expect(names.map((name) => checkboxOf(name).checked)).toEqual([false, false, false, false]))
+    expect(selectAll.checked).toBe(false)
+    expect(selectAll.indeterminate).toBe(false)
+  })
+
+  it("leaves select-all unchecked when the search shows nothing", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const selectAll = await selectAllBox()
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "no such mod")
+    await screen.findByText("There are no Mods that match your filters.")
+
+    // Nothing shown is not every shown Mod checked.
+    expect(selectAll.checked).toBe(false)
+    expect(selectAll.indeterminate).toBe(false)
+  })
+
+  it("moves focus to select-all, not back to Delete, once the dialog of a failed batch Delete is gone", async () => {
+    const user = userEvent.setup()
+    renderManageMods({ pathsManager: { deletePath: vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => false) } })
+
+    await check(user, "Alpha Mod", "Gamma Mod")
+    const deleteSelected = batchButton(DELETE_SELECTED)
+    await user.click(deleteSelected)
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }))
+
+    expect(await screen.findByText("None of the selected Mods could be changed. They are still selected, and the log has the details.")).toBeTruthy()
+    await batchLanded()
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    // The dialog hands focus back to the button that opened it as it goes, after the batch has landed.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+    expect(deleteSelected.disabled).toBe(false)
+    expect(document.activeElement).toBe(await selectAllBox())
+  })
+
+  it("moves focus to select-all when a batch lands", async () => {
+    const user = userEvent.setup()
+    renderManageMods({ modsManager: { setModEnabled: renamesAnswering() } })
+
+    await check(user, "Alpha Mod")
+    const disable = batchButton(DISABLE_SELECTED)
+    await user.click(disable)
+    expect(await screen.findByText("1 Mod disabled.")).toBeTruthy()
+
+    const selectAll = await selectAllBox()
+    await waitFor(() => expect(document.activeElement).toBe(selectAll))
+    // Left where it was, focus would sit on a button that has nothing left to do.
+    expect(disable.disabled).toBe(true)
+  })
+
+  it("forgets a checked Mod the rescan no longer finds", async () => {
+    const user = userEvent.setup()
+    let alphaOnDisk = true
+    const getInstalledMods = vi.fn(async () => {
+      const scan = aModScan()
+      return alphaOnDisk ? scan : { ...scan, mods: scan.mods.filter((iMod) => iMod.path !== ALPHA_PATH) }
+    })
+    renderManageMods({ modsManager: { getInstalledMods } })
+
+    await check(user, "Alpha Mod")
+    alphaOnDisk = false
+    await user.click(screen.getByRole("button", { name: "Reload" }))
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    alphaOnDisk = true
+    await user.click(await screen.findByRole("button", { name: "Reload" }))
+    await screen.findByText("Alpha Mod")
+    expect(checkboxOf("Alpha Mod").checked).toBe(false)
+    expect(screen.getByText("0 selected")).toBeTruthy()
+    expect(batchButton(DELETE_SELECTED).disabled).toBe(true)
+  })
+
+  it("waits for a single row's rename before letting any batch start", async () => {
+    const user = userEvent.setup()
+    let land: (result: SetModEnabledResult) => void = () => {}
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(() => new Promise<SetModEnabledResult>((resolve) => (land = resolve)))
+    renderManageMods({ modsManager: { setModEnabled } })
+
+    await check(user, "Beta Mod")
+    await user.click(within(screen.getByText("Alpha Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE))
+
+    const selectAll = await selectAllBox()
+    await waitFor(() => expect(selectAll.disabled).toBe(true))
+    expect(batchButton(DISABLE_SELECTED).disabled).toBe(true)
+
+    await act(async () => land({ ok: true, path: `${ALPHA_PATH}.disabled` }))
+    await waitFor(() => expect(selectAll.disabled).toBe(false))
+    expect(batchButton(DISABLE_SELECTED).disabled).toBe(false)
+    expect(setModEnabled).toHaveBeenCalledTimes(1)
+  })
+
+  it("refuses to rename or delete while the Installation is backing up, and still suspends updates", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering()
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    renderManageMods({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [{ ...anInstallation(), _backuping: true }] })) },
+      modsManager: { setModEnabled },
+      pathsManager: { deletePath }
+    })
+
+    await check(user, "Alpha Mod")
+    await user.click(batchButton(DISABLE_SELECTED))
+    expect(await screen.findByText("You can't enable or disable a Mod while it's in use.")).toBeTruthy()
+    expect(setModEnabled).not.toHaveBeenCalled()
+    await discardToast(user)
+
+    await user.click(batchButton(DELETE_SELECTED))
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }))
+    expect(await screen.findByText("You can't delete a Mod while it's in use.")).toBeTruthy()
+    expect(deletePath).not.toHaveBeenCalled()
+    await discardToast(user)
+
+    // Suspension is a config change, not a write to the folder, so a backup does not stop it.
+    await user.click(batchButton(SUSPEND_SELECTED))
+    expect(await screen.findByText("Updates suspended for 1 Mod.")).toBeTruthy()
+  })
+
+  it("logs a batch without any path or Mod name", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering((path) => (path === BETA_PATH ? { ok: false, reason: "name-taken" } : { ok: true, path }))
+    renderManageMods({ modsManager: { setModEnabled } })
+
+    await check(user, "Alpha Mod", "Beta Mod")
+    const logMessage = vi.mocked(window.api.utils.logMessage)
+    logMessage.mockClear()
+    await user.click(batchButton(DISABLE_SELECTED))
+    await screen.findByText(/1 of 2 Mods went through/)
+    await batchLanded()
+
+    const lines = logMessage.mock.calls.map((call) => call.join(" "))
+    expect(lines.filter((line) => line.includes("/games/a") || line.includes("Alpha Mod") || line.includes("Beta Mod"))).toEqual([])
+    expect(logMessage.mock.calls.filter(([level, text]) => level === "info" && text.includes("Batch disable: 1 changed, 1 failed (name-taken 1, refused 0)."))).toHaveLength(1)
   })
 })

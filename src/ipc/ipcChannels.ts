@@ -26,7 +26,9 @@ export const IPC_CHANNELS = {
     CACHE_MOD_IMAGE: "cache-mod-image",
     EXPORT_MODPACK: "export-modpack",
     IMPORT_MODPACK: "import-modpack",
-    CLEAR_MOD_ICON_MEMORY_CACHE: "clear-mod-icon-memory-cache"
+    CLEAR_MOD_ICON_MEMORY_CACHE: "clear-mod-icon-memory-cache",
+    GET_MOD_PROFILES: "get-mod-profiles",
+    SAVE_MOD_PROFILES: "save-mod-profiles"
   },
   PATHS_MANAGER: {
     GET_CURRENT_USER_DATA_PATH: "get-current-user-data-path",
@@ -54,7 +56,8 @@ export const IPC_CHANNELS = {
   },
   NET_MANAGER: {
     QUERY_URL: "query-url",
-    ACCEPT_MODDB_VISIBILITY: "accept-moddb-visibility"
+    ACCEPT_MODDB_VISIBILITY: "accept-moddb-visibility",
+    FETCH_RELEASE_NOTES: "fetch-release-notes"
   },
   BACKGROUNDS_MANAGER: {
     ENSURE_BACKGROUND: "ensure-background",

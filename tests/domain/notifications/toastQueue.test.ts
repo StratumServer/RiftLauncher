@@ -35,6 +35,22 @@ describe("backlogToastDuration", () => {
     assert.equal(backlogToastDuration(4_500, -1), 4_500)
   })
 
+  it("shortens what is left of a banner already on screen to the backlog turn", () => {
+    assert.equal(backlogToastDuration(8_000, 1, 400), BACKLOG_TOAST_DURATION)
+  })
+
+  it("never lengthens a banner that has less left than the backlog turn", () => {
+    assert.equal(backlogToastDuration(8_000, 1, 7_500), 500)
+  })
+
+  it("never returns a negative turn for a banner that has already outstayed it", () => {
+    assert.equal(backlogToastDuration(4_500, 2, 6_000), 0)
+  })
+
+  it("still keeps a question open however much of a notional turn has elapsed", () => {
+    assert.equal(backlogToastDuration(null, 3, 5_000), null)
+  })
+
   /**
    * The measured case from the audit. Five errors fired in one tick used to take 40 s to drain
    * with the last one appearing 32 s in; under these rules the four behind the first serve

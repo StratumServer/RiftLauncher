@@ -6,13 +6,21 @@ import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import DropdownSection from "@renderer/components/ui/DropdownSection"
+import WhatsNewReleaseSection from "@renderer/components/ui/WhatsNewReleaseSection"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
+import { useLatestReleases } from "@renderer/features/info/hooks/useWhatsNew"
+
+const RELEASES_PAGE_URL = "https://github.com/StratumServer/RiftLauncher/releases"
 
 function InfoAndHelpPage(): JSX.Element {
   const { t } = useTranslation()
   const { vslVersion, os, openLogsFolder } = useAppInfo()
+  // The latest releases, not the ones this update brought: the section is here to be read on any
+  // launch, so it never depends on whether the startup dialog has already been dismissed.
+  const { releases, status } = useLatestReleases(vslVersion)
+  const { openOnBrowser } = useExternalLinks()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -33,7 +41,10 @@ function InfoAndHelpPage(): JSX.Element {
           </StickyMenuGroupWrapper>
         </StickyMenuWrapper>
 
-        <div className="w-[50rem] flex flex-col justify-center gap-6 my-auto">
+        {/* max-w, not a fixed width: the scroll container is 730px at 1024x600, and a fixed 50rem
+            block centred inside it overruns on both sides, clipping the title, the Privacy Policy
+            button and "All releases" with no way to scroll to them. Same shape as every other page. */}
+        <div className="max-w-[50rem] w-full flex flex-col justify-center gap-6 my-auto">
           <h1 className="text-center text-4xl font-bold">{t("features.infoAndHelp.title")}</h1>
 
           <div className="w-full shrink-0 flex flex-wrap items-center justify-center gap-2">
@@ -44,6 +55,14 @@ function InfoAndHelpPage(): JSX.Element {
             <SocialButtons icon={<PiShieldCheckDuotone />} to="https://github.com/StratumServer/RiftLauncher/blob/main/PRIVACY.md" text={t("generic.privacyPolicy")} />
             <SocialButtons icon={<PiCodeDuotone />} to="https://github.com/StratumServer/RiftLauncher" text={t("generic.source")} />
           </div>
+
+          <DropdownSection title={t("features.infoAndHelp.whatsNewTitle")} startOpen={false}>
+            {status === "unavailable" ? <p>{t("features.infoAndHelp.whatsNewUnavailable")}</p> : releases.map((release) => <WhatsNewReleaseSection key={release.version} release={release} />)}
+
+            <FormButton onClick={() => openOnBrowser(RELEASES_PAGE_URL)} title={t("components.whatsNew.allReleases")} variant="secondary" size="md" className="self-start">
+              {t("components.whatsNew.allReleases")}
+            </FormButton>
+          </DropdownSection>
 
           <DropdownSection title={t("features.infoAndHelp.debugInfoTitle")} startOpen={false}>
             <p>{t("features.infoAndHelp.debugInfoDesc")}</p>

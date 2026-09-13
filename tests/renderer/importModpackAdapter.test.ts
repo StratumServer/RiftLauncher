@@ -11,6 +11,7 @@ function installation(overrides: Partial<InstallationType> = {}): InstallationTy
     icon: "",
     path: "/installations/main",
     version: "1.20.4",
+    gameVersionId: "gv-1",
     startParams: "",
     backupsLimit: 3,
     backupsAuto: false,
