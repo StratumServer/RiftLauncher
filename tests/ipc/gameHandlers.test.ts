@@ -77,7 +77,7 @@ vi.mock("@src/ipc/atomicJsonFile", async (importOriginal) => {
 })
 
 type ExecuteGameHandler = (event: IpcMainInvokeEvent, version: unknown, installation: unknown) => Promise<GameExecutionResult>
-type LookForAGameVersionHandler = (event: IpcMainInvokeEvent, path: unknown) => Promise<{ exists: boolean; installedGameVersion?: string }>
+type LookForAGameVersionHandler = (event: IpcMainInvokeEvent, path: unknown) => Promise<{ exists: boolean; installedGameVersion?: string; variant?: GameBuildVariantType }>
 
 /** The key the game writes after prompting the player, which the launcher has never seen. */
 const GAME_REFRESHED_KEY = "game-session-key"
@@ -859,6 +859,40 @@ describe("LOOK_FOR_A_GAME_VERSION", () => {
 
     assert.deepEqual(result, { exists: false })
     assert.equal(spawnThrow.next, false, "the throwing spawn is the one this test ran")
+  })
+
+  /**
+   * The two tests below are the only ones here that let a probe run to
+   * completion, so they are also the only place the widened result is checked
+   * end to end: a shell script standing in for the game binary prints the
+   * transcript, the real probe reads it, and the boundary check decides what
+   * crosses. The script lives in this run's own temporary folder, never beside
+   * a real install.
+   */
+  it.skipIf(process.platform !== "linux")("carries the build variant across when the probe names the fork", async () => {
+    const folder = join(versionsFolder, "optimum-build")
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, GAME_EXECUTABLE), "#!/bin/sh\nprintf '%s\\n' '[Optimum] Optimum v0.3.14' '1.22.7 + Optimum v0.3.14' '1.22.7'\n")
+    chmodSync(join(folder, GAME_EXECUTABLE), 0o755)
+    writeConfig({ gameVersions: [{ version: "1.22.7", path: folder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const result = await lookForAGameVersionHandler()(event, folder)
+
+    assert.deepEqual(result, { exists: true, installedGameVersion: "1.22.7", variant: { name: "Optimum", version: "0.3.14" } })
+  })
+
+  it.skipIf(process.platform !== "linux")("sends no variant key at all for a build that names nothing", async () => {
+    const folder = join(versionsFolder, "vanilla-build")
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, GAME_EXECUTABLE), "#!/bin/sh\necho 1.22.7\n")
+    chmodSync(join(folder, GAME_EXECUTABLE), 0o755)
+    writeConfig({ gameVersions: [{ version: "1.22.7", path: folder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const result = await lookForAGameVersionHandler()(event, folder)
+
+    assert.deepEqual(result, { exists: true, installedGameVersion: "1.22.7" })
   })
 
   it("reports not found when only the mono fallback candidate (Vintagestory.exe) is present and fails its probe", async () => {
