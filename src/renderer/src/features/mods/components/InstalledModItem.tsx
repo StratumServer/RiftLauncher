@@ -96,9 +96,13 @@ function InstalledModItem({
 
           <ThinSeparator />
 
-          <div className={clsx("w-full flex flex-col gap-1 justify-center overflow-hidden", !iMod.enabled && "opacity-50")}>
+          <div className={clsx("min-w-0 w-full flex flex-col gap-1 justify-center overflow-hidden", !iMod.enabled && "opacity-50")}>
             <div className="flex gap-2 items-center">
-              <p className="min-w-0 truncate font-bold">{iMod.name}</p>
+              {/* A floor above zero: at the 1024px minimum window, the detail panel (#426) leaves this
+                  row so little width that a bare min-w-0 let the version and buttons win every last
+                  pixel and the name disappear outright (#438). This keeps a few characters and the
+                  ellipsis on screen; the version is what gives way first when space runs out. */}
+              <p className="min-w-9 truncate font-bold">{iMod.name}</p>
               <span>·</span>
               <p>v{iMod.version}</p>
               {!iMod.enabled && (
