@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen } from "@testing-library/react"
+import { screen, waitFor } from "@testing-library/react"
 
 import AddInstallation from "@renderer/features/installations/pages/AddInstallation"
 
@@ -44,6 +44,11 @@ describe("AddInstallation version picker", () => {
     renderWithProviders(<AddInstallation />, { route: "/installations/add" })
 
     expect(await screen.findByText("1.20.0")).toBeTruthy()
-    expect(screen.queryByText(/No VS Versions found/)).toBeNull()
+    // The empty-state block sits beside the row inside the same AnimatePresence
+    // (see GameVersionPicker/TableBody): its removal is a DOM mutation the row's
+    // own appearance does not wait on, so a bare queryByText right after
+    // findByText can catch it a tick before it clears, the way the analogous
+    // checks in versionsListVersions.test.tsx already wait for it.
+    await waitFor(() => expect(screen.queryByText(/No VS Versions found/)).toBeNull())
   })
 })
