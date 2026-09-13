@@ -289,9 +289,23 @@ describe("ManageMods", () => {
     expect(buttonGroup.className).toContain("@max-md:grid-cols-2")
 
     // The name/version line wraps too, so the version drops under the name instead of splitting
-    // the row's width with it.
+    // the row's width with it. It answers a wider tier than the thumbnail and the buttons do: the
+    // detail panel open at 1280 leaves a 568px row, which never reaches @max-md's 448px, and a
+    // disabled Mod's name was down to 83px there with the version and the DISABLED badge beside it.
+    // @max-xl (576px) catches that row, and the same 568px row at 1024 with the panel closed.
     const nameRow = nameEl.parentElement as HTMLElement
-    expect(nameRow.className).toContain("@max-md:flex-wrap")
+    expect(nameRow.className).toContain("@max-xl:flex-wrap")
+    // No row gap on the fold, so a folded line costs the column nothing in height.
+    expect(nameRow.className).toContain("@max-xl:gap-y-0")
+    expect(nameEl.className).toContain("@max-xl:grow")
+
+    // The credits give up their line one tier before the description does: the folded name line
+    // needs that height, and at 568px there is still room for the description.
+    const credits = nameRow.parentElement?.lastElementChild as HTMLElement
+    expect(credits.className).toContain("@max-xl:hidden")
+    const description = nameRow.nextElementSibling as HTMLElement
+    expect(description.className).toContain("@max-md:hidden")
+    expect(description.className).not.toContain("@max-xl:hidden")
 
     // The text column between the icon and the version/buttons must still give up its own
     // automatic min-width explicitly, the same way the identity wrapper it sits in already does,

@@ -91,6 +91,18 @@ function NotificationsOverlay(): JSX.Element {
     // not have the banner pulled out from under them. Leaving it restarts the
     // full turn rather than resuming what was left of it: the point is to give
     // back the reading time, not to hand back two hundred milliseconds of it.
+    //
+    // Bottom right, and transparent to the pointer. Top right put the region
+    // straight over the right-hand end of every page's sticky menu, and the
+    // region is painted whether or not it holds a banner, so "Select Mods to
+    // install together" and "Go to top" swallowed every click at both window
+    // sizes. A banner carrying actions never times out, so those controls
+    // stayed dead until the player discarded it. Every persistent control in
+    // this app sits at the top of its column or in the left sidebar, so the
+    // bottom of the main area is the one strip a banner can take without
+    // covering something a player has to reach. pointer-events-none here with
+    // pointer-events-auto on the banner keeps even that strip live when the
+    // region is empty, which it is most of the time.
     <div
       ref={regionRef}
       role="status"
@@ -100,7 +112,7 @@ function NotificationsOverlay(): JSX.Element {
       onMouseLeave={handleMouseLeave}
       onFocusCapture={handleFocusCapture}
       onBlurCapture={handleBlurCapture}
-      className="w-[20rem] h-fit absolute flex flex-col items-end top-2 right-2 z-800 gap-2"
+      className="w-[20rem] h-fit absolute flex flex-col items-end bottom-2 right-2 z-800 gap-2 pointer-events-none"
     >
       <AnimatePresence>
         {activeToast && (
@@ -109,7 +121,7 @@ function NotificationsOverlay(): JSX.Element {
             // Errors keep their own assertive region, which does announce on
             // insertion; everything else is announced by the polite parent.
             role={activeToast.type === "error" ? "alert" : undefined}
-            className="relative w-full flex items-center justify-between gap-2 p-2 rounded-sm text-center bg-zinc-950/60 backdrop-blur-sm overflow-hidden"
+            className="pointer-events-auto relative w-full flex items-center justify-between gap-2 p-2 rounded-sm text-center bg-zinc-950/60 backdrop-blur-sm overflow-hidden"
             initial={reduceMotion ? false : { x: 400 }}
             animate={{ x: 0 }}
             exit={reduceMotion ? { opacity: 0 } : { x: 400 }}

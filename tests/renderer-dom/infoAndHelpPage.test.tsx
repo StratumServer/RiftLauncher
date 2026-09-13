@@ -188,4 +188,19 @@ describe("InfoAndHelpPage", () => {
     expect(await screen.findByText("The release notes could not be loaded right now.")).toBeTruthy()
     expect(screen.getByRole("button", { name: "All releases" })).toBeTruthy()
   })
+  it("keeps its body inside the scroll container instead of fixing a width", async () => {
+    const api = installMockWindowApi()
+
+    renderWithProviders(<InfoAndHelpPage />, { route: "/info-and-help" })
+    await waitForAppInfoToSettle(api)
+
+    // The page body is the block holding the title. A fixed w-[50rem] overruns the 730px scroll
+    // container at 1024x600, and because the block is centred the spill falls on both sides: the
+    // title, the Privacy Policy button and "All releases" are clipped with no way to scroll to them.
+    const body = screen.getByRole("heading", { level: 1 }).parentElement
+
+    expect(body?.className).toContain("max-w-[50rem]")
+    expect(body?.className).toContain("w-full")
+    expect(body?.className).not.toMatch(/(^|\s)w-\[50rem\]/)
+  })
 })
