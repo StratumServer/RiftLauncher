@@ -7,7 +7,7 @@ import { useGameVersions, useInstallations } from "@renderer/features/config/con
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUninstallGameVersion"
 import { useOpenVersionFolder } from "@renderer/features/versions/hooks/useOpenVersionFolder"
-import { formatUsedByInstallations } from "@renderer/features/versions/adapters/uninstall"
+import { summarizeUsedByInstallations } from "@renderer/features/versions/adapters/uninstall"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -38,6 +38,12 @@ function ListVersions(): JSX.Element {
 
   function installationsUsing(version: GameVersionType): string[] {
     return installations.filter((installation) => installation.gameVersionId === version.id).map((installation) => installation.name)
+  }
+
+  /** Composes the in-use warning's installation list, folding anything past the cap into a translated "N more" through t() instead of hardcoding it. */
+  function installationsInUseLabel(names: string[]): string {
+    const { shown, remaining } = summarizeUsedByInstallations(names)
+    return remaining > 0 ? `${shown.join(", ")} ${t("features.versions.installationsAndMore", { count: remaining })}` : shown.join(", ")
   }
 
   async function DeleteVersionHandler(): Promise<void> {
@@ -159,7 +165,7 @@ function ListVersions(): JSX.Element {
           <>
             <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
               <PiWarningDuotone className="text-lg shrink-0" />
-              <span>{t("features.versions.versionInUseByInstallations", { installations: formatUsedByInstallations(versionInUseWarning?.usedByInstallations ?? []) })}</span>
+              <span>{t("features.versions.versionInUseByInstallations", { installations: installationsInUseLabel(versionInUseWarning?.usedByInstallations ?? []) })}</span>
             </div>
             <p className="text-zinc-400">{t(versionInUseWarning?.version.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
             <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
