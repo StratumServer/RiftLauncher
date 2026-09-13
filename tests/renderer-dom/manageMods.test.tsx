@@ -15,8 +15,8 @@ const ALPHA_PATH = "/games/a/Mods/alpha-1.0.0.zip"
 const BETA_PATH = "/games/a/Mods/beta-2.0.0.zip"
 const DELTA_PATH = "/games/a/Mods/delta-4.0.0.zip"
 const SEARCH_PLACEHOLDER = "Search by name, id or author"
-const SUSPEND_TITLE = "Suspend updates for this Mod: Update all will skip it, you can still update it from here"
-const RESUME_TITLE = "Resume updates for this Mod: Update all will include it again"
+// The row's suspend control is a pressed toggle: one fixed name, aria-pressed carries the state (#450).
+const SUSPEND_TOGGLE_TITLE = "Updates suspended: Update all skips this Mod"
 const EPSILON_PATH = "/games/a/Mods/epsilon-5.0.0.zip.disabled"
 const ALPHA_LOGO = "https://moddbcdn.vintagestory.at/alpha.png"
 const BETA_LOGO = "https://moddbcdn.vintagestory.at/beta.png"
@@ -531,22 +531,26 @@ describe("ManageMods: suspended Mod updates", () => {
     renderManageMods()
 
     const alphaRow = await rowFor("Alpha Mod")
-    const suspendButton = within(alphaRow).getByTitle(SUSPEND_TITLE)
+    const suspendButton = within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE)
+    expect(suspendButton.getAttribute("aria-pressed")).toBe("false")
     expect(suspendButton.querySelector('svg path[opacity="0.2"]')).toBeTruthy()
 
     await user.click(suspendButton)
 
-    const resumeButton = within(alphaRow).getByTitle(RESUME_TITLE)
-    const resumeIcon = resumeButton.querySelector("svg")
-    if (!resumeIcon) throw new Error("resume icon not found")
-    expect(resumeIcon.getAttribute("class")).toContain("text-yellow-400")
-    expect(resumeIcon.querySelector('path[opacity="0.2"]')).toBeNull()
+    // The accessible name never moves: only aria-pressed carries the state (#450).
+    expect(within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE)).toBe(suspendButton)
+    expect(suspendButton.getAttribute("aria-pressed")).toBe("true")
+    const pressedIcon = suspendButton.querySelector("svg")
+    if (!pressedIcon) throw new Error("suspended icon not found")
+    expect(pressedIcon.getAttribute("class")).toContain("text-yellow-400")
+    expect(pressedIcon.querySelector('path[opacity="0.2"]')).toBeNull()
     // Marked at a glance, in the same tint family the row already uses for its update states.
     expect(alphaRow.firstElementChild?.className).toContain("bg-sky-500/25")
 
-    await user.click(resumeButton)
+    await user.click(suspendButton)
 
-    expect(within(alphaRow).getByTitle(SUSPEND_TITLE).querySelector('svg path[opacity="0.2"]')).toBeTruthy()
+    expect(suspendButton.getAttribute("aria-pressed")).toBe("false")
+    expect(suspendButton.querySelector('svg path[opacity="0.2"]')).toBeTruthy()
     expect(alphaRow.firstElementChild?.className).not.toContain("bg-sky-500/25")
   })
 
@@ -559,7 +563,7 @@ describe("ManageMods: suspended Mod updates", () => {
     const alphaRow = await rowFor("Alpha Mod")
     await screen.findByText("Beta Mod")
 
-    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE))
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
     expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
@@ -575,7 +579,7 @@ describe("ManageMods: suspended Mod updates", () => {
     renderManageMods()
 
     const alphaRow = await rowFor("Alpha Mod")
-    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE))
 
     // Watching for the new version is the reason to suspend, so the notice has to survive it.
     const updatesSection = screen.getByText("Mods with updates").closest("ul") as HTMLElement
@@ -589,7 +593,7 @@ describe("ManageMods: suspended Mod updates", () => {
     renderManageMods({ pathsManager: { deletePath, downloadOnPath } })
 
     const alphaRow = await rowFor("Alpha Mod")
-    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE))
 
     await user.click(within(alphaRow).getByTitle("Update"))
 
@@ -600,7 +604,11 @@ describe("ManageMods: suspended Mod updates", () => {
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(ALPHA_PATH))
 
     // The suspension is lifted by the player, never by an update they asked for themselves.
-    expect(within(await rowFor("Alpha Mod")).getByTitle(RESUME_TITLE)).toBeTruthy()
+    expect(
+      within(await rowFor("Alpha Mod"))
+        .getByTitle(SUSPEND_TOGGLE_TITLE)
+        .getAttribute("aria-pressed")
+    ).toBe("true")
   })
 })
 
@@ -1730,10 +1738,11 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     expect(batchButton(RESUME_SELECTED).disabled).toBe(true)
     await user.click(batchButton(SUSPEND_SELECTED))
 
-    // Two rows, one modid: suspension is recorded per modid, once.
+    // Two rows, one modid: suspension is recorded per modid, once. Same fixed name on both rows,
+    // aria-pressed is what carries the state now (#450).
     expect(await screen.findByText("Updates suspended for 1 Mod.")).toBeTruthy()
     await waitFor(() => expect(lastSaved()).toEqual(["alpha"]))
-    expect(screen.getAllByTitle(RESUME_TITLE)).toHaveLength(2)
+    expect(screen.getAllByTitle(SUSPEND_TOGGLE_TITLE).map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "true"])
     expect(screen.getByText("0 selected")).toBeTruthy()
     expect(document.activeElement).toBe(await selectAllBox())
     await discardToast(user)
@@ -1744,7 +1753,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
 
     expect(await screen.findByText("Updates resumed for 1 Mod.")).toBeTruthy()
     await waitFor(() => expect(lastSaved()).toEqual([]))
-    expect(screen.getAllByTitle(SUSPEND_TITLE)).toHaveLength(2)
+    expect(screen.getAllByTitle(SUSPEND_TOGGLE_TITLE).map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "false"])
   })
 
   it("holds Update all, Import and the rows it is changing while it runs, and a second click sends nothing more", async () => {

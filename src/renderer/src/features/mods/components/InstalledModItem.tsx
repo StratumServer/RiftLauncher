@@ -162,7 +162,7 @@ function InstalledModItem({
             {iMod.enabled ? <PiPowerDuotone /> : <PiPowerFill className="text-yellow-400" />}
           </NormalButton>
 
-          <NormalButton className="p-1" title={suspended ? t("features.mods.resumeUpdates") : t("features.mods.suspendUpdates")} variant="ghost" onClick={onToggleSuspendClick}>
+          <NormalButton className="p-1" title={t("features.mods.updatesSuspendedToggle")} variant="ghost" ariaPressed={suspended} onClick={onToggleSuspendClick}>
             {suspended ? <PiMoonFill className="text-yellow-400" /> : <PiMoonDuotone />}
           </NormalButton>
 
