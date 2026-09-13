@@ -20,7 +20,7 @@ function AuthorFilter({
 }>): JSX.Element {
   const { t } = useTranslation()
 
-  const authorsList = useAuthorsLookup()
+  const { entries: authorsList, failed: lookupFailed } = useAuthorsLookup()
   const [authorsQuery, setAuthorsQuery] = useState<string>("")
 
   const filteredAuthors =
@@ -57,6 +57,7 @@ function AuthorFilter({
                   className="w-full max-h-40 flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm overflow-y-scroll"
                 >
                   <>
+                    {lookupFailed && <li className="w-full shrink-0 px-2 py-2 text-sm text-red-400">{t("features.mods.errorFetchingMods")}</li>}
                     <ComboboxOption
                       as={motion.li}
                       variants={DROPDOWN_MENU_ITEM_VARIANTS}
