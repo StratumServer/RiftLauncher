@@ -41,7 +41,10 @@ function InfoAndHelpPage(): JSX.Element {
           </StickyMenuGroupWrapper>
         </StickyMenuWrapper>
 
-        <div className="w-[50rem] flex flex-col justify-center gap-6 my-auto">
+        {/* max-w, not a fixed width: the scroll container is 730px at 1024x600, and a fixed 50rem
+            block centred inside it overruns on both sides, clipping the title, the Privacy Policy
+            button and "All releases" with no way to scroll to them. Same shape as every other page. */}
+        <div className="max-w-[50rem] w-full flex flex-col justify-center gap-6 my-auto">
           <h1 className="text-center text-4xl font-bold">{t("features.infoAndHelp.title")}</h1>
 
           <div className="w-full shrink-0 flex flex-wrap items-center justify-center gap-2">
