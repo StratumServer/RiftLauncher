@@ -139,7 +139,10 @@
       "removeFromList": "Retirer de la liste",
       "areYouSureUnlink": "Êtes-vous sûr de vouloir retirer la version de VS {{version}} de la liste ?",
       "unlinkingKeepsTheFolder": "Le dossier reste où il est. Seule la trace qu'en garde le launcher disparaît.",
-      "versionUnlinkedSuccessfully": "Version de VS {{version}} retirée de la liste. Son dossier n'a pas été touché."
+      "versionUnlinkedSuccessfully": "Version de VS {{version}} retirée de la liste. Son dossier n'a pas été touché.",
+      "renameVersion": "Renommer la version de VS",
+      "renameVersionDesc": "Seul le nom affiché dans cette liste change. Le numéro de la version de VS et son dossier restent tels quels.",
+      "versionRenamed": "Cette version de VS a été renommée."
     },
     "installations": {
       "noInstallationsFound": "Aucune installation trouvée !",

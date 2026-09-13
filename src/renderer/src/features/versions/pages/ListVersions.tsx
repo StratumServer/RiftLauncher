@@ -1,9 +1,19 @@
 import { useRef, useState } from "react"
-import { PiFolderOpenDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone, PiWarningDuotone, PiLinkDuotone } from "react-icons/pi"
+import {
+  PiFloppyDiskBackDuotone,
+  PiFolderOpenDuotone,
+  PiPlusCircleDuotone,
+  PiTrashDuotone,
+  PiMagnifyingGlassDuotone,
+  PiPencilSimpleDuotone,
+  PiXCircleDuotone,
+  PiWarningDuotone,
+  PiLinkDuotone
+} from "react-icons/pi"
 import { useTranslation } from "react-i18next"
 
 import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
-import { useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useConfigDispatch, useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUninstallGameVersion"
 import { useOpenVersionFolder } from "@renderer/features/versions/hooks/useOpenVersionFolder"
@@ -13,7 +23,7 @@ import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { LinkButton, NormalButton } from "@renderer/components/ui/Buttons"
-import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
+import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -28,11 +38,14 @@ function ListVersions(): JSX.Element {
   const { addNotification } = useNotificationsContext()
   const gameVersions = useGameVersions()
   const installations = useInstallations()
+  const configDispatch = useConfigDispatch()
   const uninstallVersion = useUninstallGameVersion()
   const openVersionFolder = useOpenVersionFolder()
 
   const [versionToDelete, setVersionToDelete] = useState<GameVersionType | null>(null)
   const [versionInUseWarning, setVersionInUseWarning] = useState<VersionInUseWarning | null>(null)
+  const [versionToRename, setVersionToRename] = useState<GameVersionType | null>(null)
+  const [newLabel, setNewLabel] = useState<string>("")
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -44,6 +57,23 @@ function ListVersions(): JSX.Element {
   function installationsInUseLabel(names: string[]): string {
     const { shown, remaining } = summarizeUsedByInstallations(names)
     return remaining > 0 ? `${shown.join(", ")} ${t("features.versions.installationsAndMore", { count: remaining })}` : shown.join(", ")
+  }
+
+  /**
+   * Writes the typed name onto the selected build.
+   *
+   * Only the label moves: the version number the compatibility checks read and
+   * the folder the game runs from are both left alone. A name that is empty or
+   * nothing but spaces falls back to the version number, the same rule
+   * registering a build applies, so no row can end up with a blank name.
+   */
+  function RenameVersionHandler(): void {
+    if (versionToRename === null) return
+
+    const label = newLabel.trim() || versionToRename.version
+    configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: versionToRename.id, updates: { label } } })
+    setVersionToRename(null)
+    addNotification(t("features.versions.versionRenamed"), "success")
   }
 
   async function DeleteVersionHandler(): Promise<void> {
@@ -125,6 +155,17 @@ function ListVersions(): JSX.Element {
                       </NormalButton>
                       <NormalButton
                         className="p-1"
+                        title={t("features.versions.renameVersion")}
+                        variant="ghost"
+                        onClick={() => {
+                          setNewLabel(gv.label)
+                          setVersionToRename(gv)
+                        }}
+                      >
+                        <PiPencilSimpleDuotone />
+                      </NormalButton>
+                      <NormalButton
+                        className="p-1"
                         title={gv.linked ? t("features.versions.removeFromList") : t("features.versions.deleteVersion")}
                         variant="ghost"
                         onClick={async () => {
@@ -157,6 +198,17 @@ function ListVersions(): JSX.Element {
                 size="md"
                 icon={<PiTrashDuotone />}
               />
+            </ButtonsWrapper>
+          </>
+        </PopupDialogPanel>
+
+        <PopupDialogPanel title={t("features.versions.renameVersion")} isOpen={versionToRename !== null} close={() => setVersionToRename(null)}>
+          <>
+            <p className="text-zinc-400">{t("features.versions.renameVersionDesc")}</p>
+            <FormInputText value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={t("generic.name")} className="w-full" />
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <FormButton title={t("generic.cancel")} onClick={() => setVersionToRename(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+              <FormButton title={t("generic.save")} onClick={RenameVersionHandler} variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
             </ButtonsWrapper>
           </>
         </PopupDialogPanel>
