@@ -562,7 +562,9 @@
       "includeLogs": "Send us the log files you can find on <folderlink /> to help us even more!",
       "logsFolderTitle": "Logs folder",
       "thisFolder": "this folder",
-      "debugInfoDesc": "Copy the next info and send it with your bug report to help us find the issue!"
+      "debugInfoDesc": "Copy the next info and send it with your bug report to help us find the issue!",
+      "whatsNewTitle": "What's new",
+      "whatsNewUnavailable": "The release notes could not be loaded right now."
     }
   },
   "components": {
@@ -605,6 +607,12 @@
       "accept": "Count me in",
       "decline": "No thanks",
       "alreadyDone": "Already did it"
+    },
+    "whatsNew": {
+      "title": "What's new in {{version}}",
+      "titleSince": "What's new since {{version}}",
+      "gotIt": "Got it",
+      "allReleases": "All releases"
     },
     "activityCenter": {
       "title": "Activity Center",

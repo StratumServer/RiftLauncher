@@ -54,6 +54,7 @@ export function createMockConfig(overrides: MockConfigOverrides = {}): ConfigTyp
     accentColor: "amber",
     moddbVisibilityAnswer: "unasked",
     receiveBetaUpdates: null,
+    lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides,
     gameVersions: gameVersions ?? []
@@ -127,7 +128,8 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     netManager: {
       queryURL: vi.fn(notMocked("netManager.queryURL")),
-      acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility"))
+      acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility")),
+      fetchReleaseNotes: vi.fn(async () => ({ ok: true, releases: [] }) as FetchReleaseNotesResult)
     },
     backgroundsManager: {
       ensureBackground: vi.fn(notMocked("backgroundsManager.ensureBackground")),
