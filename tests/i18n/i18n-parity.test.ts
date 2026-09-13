@@ -154,3 +154,38 @@ describe("Activity Center translation contract", () => {
     assert.deepEqual(failures, [], `incomplete Activity Center translations: ${failures.join(" | ")}`)
   })
 })
+
+describe("fr-FR stays in step with en-US", () => {
+  // French is kept complete on purpose (issue #411): a slice that adds an
+  // en-US key adds its French one in the same PR, so the next feature can't
+  // land half-translated. The other locales are not held to this yet -- the
+  // coverage snapshot above reports how far behind each of them is.
+  const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
+  const frFR = flattenTranslationObject(readLocaleJson("fr-FR.json"))
+
+  /** The {{interpolations}} and <components /> a string carries, sorted so order never matters. */
+  function markers(value: unknown): string[] {
+    return typeof value === "string" ? (value.match(/\{\{[^}]+\}\}|<\/?[A-Za-z][^>]*>/g) ?? []).sort() : []
+  }
+
+  it("has every en-US key with a non-empty string value", () => {
+    const missing = Object.keys(enUS).filter((key) => typeof frFR[key] !== "string" || (frFR[key] as string).trim().length === 0)
+
+    assert.deepEqual(missing, [], `en-US keys with no French translation: ${missing.join(", ")}`)
+  })
+
+  it("carries the same placeholders and component tags as en-US", () => {
+    const mismatched = Object.keys(enUS)
+      .filter((key) => key in frFR)
+      .filter((key) => markers(enUS[key]).join("|") !== markers(frFR[key]).join("|"))
+      .map((key) => `${key} (en-US: ${markers(enUS[key]).join(" ") || "none"}; fr-FR: ${markers(frFR[key]).join(" ") || "none"})`)
+
+    assert.deepEqual(mismatched, [], `fr-FR strings whose placeholders differ from en-US: ${mismatched.join(", ")}`)
+  })
+
+  it("has no key en-US does not have", () => {
+    const orphans = Object.keys(frFR).filter((key) => !(key in enUS))
+
+    assert.deepEqual(orphans, [], `fr-FR keys en-US no longer has: ${orphans.join(", ")}`)
+  })
+})
