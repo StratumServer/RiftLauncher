@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
 import { Input } from "@headlessui/react"
-import { PiArrowClockwiseDuotone, PiMoonDuotone, PiPowerDuotone, PiTrashDuotone } from "react-icons/pi"
+import { PiArrowClockwiseDuotone, PiMoonDuotone, PiMoonFill, PiPowerDuotone, PiPowerFill, PiTrashDuotone } from "react-icons/pi"
 import { FiExternalLink } from "react-icons/fi"
 import clsx from "clsx"
 

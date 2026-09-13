@@ -96,8 +96,8 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
             chunks.push(Buffer.from(chunk))
           })
           stream.on("end", () => onDone(Buffer.concat(chunks)))
-          stream.on("error", (readErr) => {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error reading ${entry.fileName} of ${archivePath}: ${readErr}`)
+          stream.on("error", () => {
+            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error reading a mod archive entry.`)
             onUnreadable()
           })
         })
@@ -145,8 +145,8 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
       })
 
       zip.on("end", () => settle({ ok: true, content }))
-      zip.on("error", (zipErr) => {
-        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error walking ${archivePath}: ${zipErr}`)
+      zip.on("error", () => {
+        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error walking a mod archive.`)
         settle({ ok: false, problem: "unreadable-archive" })
       })
 

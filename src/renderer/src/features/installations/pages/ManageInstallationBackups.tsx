@@ -109,7 +109,7 @@ function ManageInstallationBackups(): JSX.Element {
 
     if (logged) {
       window.api.utils.logMessage("error", `${LOG_TAG} [DeleteBackupHandler] Error deleting a backup.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} [DeleteBackupHandler] Error deleting the backup file ${backup.path}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} [DeleteBackupHandler] Error deleting the backup file [PATH].`)
     }
 
     addNotification(t(messageKey), "error")
