@@ -6,13 +6,19 @@ import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import DropdownSection from "@renderer/components/ui/DropdownSection"
+import WhatsNewReleaseSection from "@renderer/components/ui/WhatsNewReleaseSection"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
+import { useWhatsNew } from "@renderer/features/info/hooks/useWhatsNew"
+
+const RELEASES_PAGE_URL = "https://github.com/StratumServer/RiftLauncher/releases"
 
 function InfoAndHelpPage(): JSX.Element {
   const { t } = useTranslation()
   const { vslVersion, os, openLogsFolder } = useAppInfo()
+  const { releases, status } = useWhatsNew()
+  const { openOnBrowser } = useExternalLinks()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -44,6 +50,14 @@ function InfoAndHelpPage(): JSX.Element {
             <SocialButtons icon={<PiShieldCheckDuotone />} to="https://github.com/StratumServer/RiftLauncher/blob/main/PRIVACY.md" text={t("generic.privacyPolicy")} />
             <SocialButtons icon={<PiCodeDuotone />} to="https://github.com/StratumServer/RiftLauncher" text={t("generic.source")} />
           </div>
+
+          <DropdownSection title={t("features.infoAndHelp.whatsNewTitle")} startOpen={false}>
+            {status === "unavailable" ? <p>{t("features.infoAndHelp.whatsNewUnavailable")}</p> : releases.map((release) => <WhatsNewReleaseSection key={release.version} release={release} />)}
+
+            <FormButton onClick={() => openOnBrowser(RELEASES_PAGE_URL)} title={t("components.whatsNew.allReleases")} variant="secondary" size="md" className="self-start">
+              {t("components.whatsNew.allReleases")}
+            </FormButton>
+          </DropdownSection>
 
           <DropdownSection title={t("features.infoAndHelp.debugInfoTitle")} startOpen={false}>
             <p>{t("features.infoAndHelp.debugInfoDesc")}</p>

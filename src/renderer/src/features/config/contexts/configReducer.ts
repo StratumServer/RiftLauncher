@@ -15,6 +15,7 @@ export enum CONFIG_ACTIONS {
   SET_ACCENT_COLOR = "SET_ACCENT_COLOR",
   SET_MODDB_VISIBILITY_ANSWER = "SET_MODDB_VISIBILITY_ANSWER",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
+  SET_LAST_SEEN_CHANGELOG_VERSION = "SET_LAST_SEEN_CHANGELOG_VERSION",
 
   ADD_INSTALLATION = "ADD_INSTALLATION",
   DELETE_INSTALLATION = "DELETE_INSTALLATION",
@@ -129,6 +130,16 @@ export interface SetModDbVisibilityAnswer {
 export interface SetReceiveBetaUpdates {
   type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES
   payload: boolean
+}
+
+/**
+ * Marks the "what's new" dialog's notes seen up to `payload` (the running version), which is what
+ * stops it reappearing for that version. Dispatched from the dialog's "Got it" and from nowhere
+ * else. See src/domain/appUpdate/whatsNew.ts.
+ */
+export interface SetLastSeenChangelogVersion {
+  type: CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION
+  payload: string
 }
 
 export interface AddInstallation {
@@ -274,6 +285,7 @@ export type ConfigAction =
   | SetAccentColor
   | SetModDbVisibilityAnswer
   | SetReceiveBetaUpdates
+  | SetLastSeenChangelogVersion
   | AddInstallation
   | DeleteInstallation
   | EditInstallation
@@ -332,6 +344,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, moddbVisibilityAnswer: action.payload }
     case CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES:
       return { ...config, receiveBetaUpdates: action.payload }
+    case CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION:
+      return { ...config, lastSeenChangelogVersion: action.payload }
     case CONFIG_ACTIONS.ADD_INSTALLATION:
       return { ...config, installations: [action.payload, ...config.installations] }
     case CONFIG_ACTIONS.DELETE_INSTALLATION:

@@ -89,6 +89,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     accentColor: DEFAULT_ACCENT_ID,
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
+    lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides
   }
@@ -448,6 +449,53 @@ describe("normalizeConfig: accentColor", () => {
     const { getConfig } = await freshConfigManager()
     const config = await getConfig()
     assert.equal(config.accentColor, DEFAULT_ACCENT_ID)
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+})
+
+describe("normalizeConfig: lastSeenChangelogVersion", () => {
+  it("defaults to empty when the field is missing, which the what's new dialog reads as a fresh install", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).lastSeenChangelogVersion, "")
+  })
+
+  it("keeps a stored version string as is", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({ lastSeenChangelogVersion: "1.7.0-beta.9" }).lastSeenChangelogVersion, "1.7.0-beta.9")
+  })
+
+  it("falls back to empty for anything that is not a bounded string", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    for (const value of [7, null, {}, ["1.0.0"], "x".repeat(200)]) {
+      assert.equal(normalizeConfig({ lastSeenChangelogVersion: value }).lastSeenChangelogVersion, "", String(value))
+    }
+  })
+
+  /**
+   * The field's whole point, same as accentColor's: adding it must not need a schema bump. A
+   * beta.9 (schema 4) document never heard of it, and an older build reading a schema this
+   * launcher wrote drops the field it does not recognize and saves without it. Both land back
+   * here with no field at all, and both must read as empty rather than fail to migrate or start.
+   */
+  it("keeps a beta.9 (schema 4) document with no lastSeenChangelogVersion field readable, defaulting to empty", async () => {
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }) }
+    delete legacyDoc.lastSeenChangelogVersion
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.equal(config.lastSeenChangelogVersion, "")
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+
+  it("keeps a schema-current document an older build re-saved without lastSeenChangelogVersion readable, defaulting to empty", async () => {
+    const doc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, lastSeenChangelogVersion: "1.7.0" }) }
+    delete doc.lastSeenChangelogVersion
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(doc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.equal(config.lastSeenChangelogVersion, "")
     assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
   })
 })
