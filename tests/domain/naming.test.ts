@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { cleanFolderName, formatTimestampForFilename } from "../../src/domain/naming"
+import { buildGameVersionLabel, cleanFolderName, formatTimestampForFilename } from "../../src/domain/naming"
 
 describe("cleanFolderName", () => {
   it("replaces characters a folder name cannot carry", () => {
@@ -65,5 +65,15 @@ describe("formatTimestampForFilename", () => {
     assert.equal(formatTimestampForFilename(at), "2026-09-08_22-18-08")
     // ManageInstallationBackups renders exactly this for the row next to the file.
     assert.ok(new Date(at).toLocaleString("es").includes("22:18:08"), "the list row and the file name disagree")
+  })
+})
+
+describe("buildGameVersionLabel", () => {
+  it("names a plain build by its version number alone", () => {
+    assert.equal(buildGameVersionLabel("1.22.7"), "1.22.7")
+  })
+
+  it("spells the fork out after the game version it was built against", () => {
+    assert.equal(buildGameVersionLabel("1.22.7", { name: "Optimum", version: "0.3.14" }), "1.22.7 Optimum 0.3.14")
   })
 })
