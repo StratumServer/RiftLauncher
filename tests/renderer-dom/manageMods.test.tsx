@@ -263,6 +263,29 @@ describe("ManageMods", () => {
     expect(alphaRow?.className).toContain("skip-offscreen-render")
   })
 
+  it("keeps the Mod name a real minimum width so a narrow list column cannot collapse it to nothing (#438)", async () => {
+    renderManageMods()
+
+    const nameEl = await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+
+    // truncate is what lets the name ellipsize at all; min-w-0 on it, unlike everywhere else in
+    // this row, gives it no floor, so the detail panel's narrow list column (#426) can squeeze it
+    // all the way to zero while the version and buttons keep their full size (#438). The name
+    // needs a floor above zero instead.
+    expect(nameEl.className).toContain("truncate")
+    expect(nameEl.className).not.toMatch(/\bmin-w-0\b/)
+    expect(nameEl.className).toMatch(/\bmin-w-(?!0\b)\S+/)
+
+    // The text column between the icon and the version/buttons must give up its own automatic
+    // min-width explicitly, the same way the identity wrapper it sits in already does, or the
+    // name's new floor has nothing to shrink against.
+    const textColumn = nameEl.closest(".flex-col") as HTMLElement
+    expect(textColumn.className).toMatch(/\bmin-w-0\b/)
+
+    const identityWrapper = textColumn.parentElement as HTMLElement
+    expect(identityWrapper.className).toMatch(/\bmin-w-0\b/)
+  })
+
   it("queries one ModDB detail for repeated installed mod ids", async () => {
     const queryURL = vi.fn(queryModDb)
     renderManageMods({
