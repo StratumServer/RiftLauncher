@@ -88,7 +88,7 @@
     },
     "versions": {
       "uninstallVersion": "Uninstall VS Version",
-      "noVersionsFound": "No VS Versions found!",
+      "noVersionsFound": "No VS Versions found.",
       "areYouSureUninstall": "Are you sure you want to uninstall VS Version {{version}}?",
       "uninstallingNotReversible": "Uninstalling is not reversible but you can download the same VS Version again!",
       "noVersionSelected": "No VS Version selected.",
@@ -109,9 +109,9 @@
       "labelGameVersion": "VS Version",
       "labelGameVersions": "VS Versions",
       "versionFolder": "VS Version folder",
-      "gameVersionDownloadDesc": "Downloading VS Version {{version}}!",
+      "gameVersionDownloadDesc": "Downloading VS Version {{version}}.",
       "gameVersionTaskName": "VS Version {{version}}",
-      "gameVersionExtractDesc": "Extracting VS Version {{version}}!",
+      "gameVersionExtractDesc": "Extracting VS Version {{version}}.",
       "labelStables": "Stables",
       "labelRCs": "Release Candidates",
       "labelPreReleases": "Pre Releases",
@@ -120,7 +120,7 @@
       "versionFound": "VS Version found",
       "versionInstalling": "VS Version {{version}} is still installing. Wait for it to finish before playing.",
       "folderAlreadyInUse": "That folder is already in use!",
-      "noVersionsFoundDesc": "Install a new one on the <link /> page!",
+      "noVersionsFoundDesc": "Install one on the <link /> page.",
       "versionDeleting": "That VS Version is being deleted.",
       "versionPlaying": "You're already playing that VS Version.",
       "deleteWhilePlaying": "You can't delete a VS Version while you're playing it!",
@@ -141,7 +141,7 @@
       "versionUnlinkedSuccessfully": "VS Version {{version}} removed from the list. Its folder was left alone."
     },
     "installations": {
-      "noInstallationsFound": "No Installations found!",
+      "noInstallationsFound": "No Installations found.",
       "noInstallationsFoundDesc": "Add a new one on the <link /> page",
       "deleteInstallation": "Delete Installation",
       "areYouSureDelete": "Are you sure you want to delete this Installation?",
@@ -562,7 +562,7 @@
       "includeLogs": "Send us the log files you can find on <folderlink /> to help us even more!",
       "logsFolderTitle": "Logs folder",
       "thisFolder": "this folder",
-      "debugInfoDesc": "Copy the next info and send it with your bug report to help us find the issue!",
+      "debugInfoDesc": "Copy the information below and send it with your bug report so we can find the issue.",
       "whatsNewTitle": "What's new",
       "whatsNewUnavailable": "The release notes could not be loaded right now."
     }
@@ -591,7 +591,7 @@
       "noTasksAvailable": "There are no tasks queued."
     },
     "loader": {
-      "title": "Welcome to RiftLauncher!",
+      "title": "Welcome to RiftLauncher",
       "desc": "We are preparing everything for you!"
     },
     "pageError": {
