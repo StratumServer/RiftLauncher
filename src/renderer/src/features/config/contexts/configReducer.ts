@@ -348,11 +348,17 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, lastSeenChangelogVersion: action.payload }
     case CONFIG_ACTIONS.ADD_INSTALLATION:
       return { ...config, installations: [action.payload, ...config.installations] }
-    case CONFIG_ACTIONS.DELETE_INSTALLATION:
-      return {
-        ...config,
-        installations: config.installations.filter((installation) => installation.id !== action.payload.id)
-      }
+    case CONFIG_ACTIONS.DELETE_INSTALLATION: {
+      const installations = config.installations.filter((installation) => installation.id !== action.payload.id)
+      // Deleting the selected Installation left `lastUsedInstallation` naming an id that is no
+      // longer in the list, and that dangling reference reached config.json (#411). It moves to
+      // whatever the sidebar would select instead, which is the first row, and to null when the
+      // last Installation is the one going: the same shape REMOVE_ACCOUNT already uses for
+      // `activeAccountId`. ConfigContext's repair effect only covers the first of those two,
+      // and only after a render, so the reducer is where it belongs.
+      const lastUsedInstallation = config.lastUsedInstallation === action.payload.id ? (installations[0]?.id ?? null) : config.lastUsedInstallation
+      return { ...config, installations, lastUsedInstallation }
+    }
     case CONFIG_ACTIONS.EDIT_INSTALLATION:
       return {
         ...config,

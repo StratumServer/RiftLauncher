@@ -124,7 +124,7 @@ function MainMenu(): JSX.Element {
       if (!gameVersionToRun) {
         // An Installation with no version at all reaches here too (configManager normalizes a
         // missing version to ""), and interpolating that into versionNotInstalled reads as
-        // "VS Version  not installed!" with a blank name (#118).
+        // "VS Version  not installed." with a blank name (#118).
         const status = getInstallationVersionStatus(selectedInstallation, gameVersions)
         const message =
           status === "unset"

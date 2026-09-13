@@ -268,7 +268,7 @@ describe("ModListCard accessibility", () => {
     const card = screen.getByRole("button", { name: "Better Ruins, Not installed" })
     const listItem = screen.getByRole("listitem")
     const favorite = within(listItem).getByTitle("Favorite")
-    const modDb = within(listItem).getByTitle("Open on the ModDB!")
+    const modDb = within(listItem).getByTitle("Open on the ModDB.")
 
     expect(card.className).toContain("cursor-pointer")
     expect(card.contains(favorite)).toBe(false)
@@ -309,7 +309,7 @@ describe("ModListCard accessibility", () => {
     expect(enabled.getAttribute("aria-pressed")).toBe("true")
     expect(suspended.getAttribute("aria-pressed")).toBe("false")
 
-    within(listItem).getByTitle("Open on the ModDB!").focus()
+    within(listItem).getByTitle("Open on the ModDB.").focus()
     await user.tab()
     expect(document.activeElement).toBe(enabled)
 

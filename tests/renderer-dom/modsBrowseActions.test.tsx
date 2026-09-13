@@ -193,7 +193,7 @@ describe("ModDB card actions: no Installation", () => {
     await screen.findByRole("button", { name: "Primitive Survival, Not installed" }, { timeout: 3000 })
 
     // The config selects the first Installation whenever there is one, so none selected means none at all.
-    expect(screen.getAllByText(/No Installations found!/)).toHaveLength(1)
+    expect(screen.getAllByText(/No Installations found/)).toHaveLength(1)
     expect(screen.getByRole("link", { name: "Installations" }).getAttribute("href")).toBe("/installations")
     expect(screen.queryAllByRole("group")).toHaveLength(0)
     for (const card of screen.getAllByRole("listitem")) expect(within(card).getAllByRole("button")).toHaveLength(3)
@@ -212,7 +212,7 @@ describe("ModDB card actions: quick install", () => {
     mount({ folder: () => folder, details: { 123: aDetail(123, "Better Ruins", releases) }, pathsManager: { downloadOnPath }, routes: true })
 
     await screen.findByRole("button", { name: "Better Ruins, Not installed" }, { timeout: 3000 })
-    expect(screen.queryByText(/No Installations found!/)).toBeNull()
+    expect(screen.queryByText(/No Installations found/)).toBeNull()
     await user.click(within(strip("Better Ruins")).getByRole("button", { name: QUICK_INSTALL }))
 
     await waitFor(() => expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/betterruins-2.0.0.zip", "/games/a/Mods", "betterruins-2.0.0.zip"))
@@ -307,7 +307,7 @@ describe("ModDB card actions: one installed copy", () => {
     expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scans)
     expect(within(strip("Better Ruins")).getByRole("button", { name: ENABLED }).getAttribute("aria-pressed")).toBe("false")
     expect(within(card.closest("li") as HTMLElement).getByText("Disabled")).toBeTruthy()
-    expect(historyBodies()).toEqual(["Better Ruins is disabled and will not be loaded!"])
+    expect(historyBodies()).toEqual(["Better Ruins is disabled and will not be loaded."])
     expect(getModsBrowseState()).toMatchObject({ visibleMods: 40, scrollTop: 120 })
   }, 15_000)
 

@@ -57,22 +57,28 @@ describe("AddInstallation, data folder following the name", () => {
     await waitFor(() => expect(folder.value).toBe("/base/Second-Name"))
   })
 
-  it("stops following the name once the folder is edited by hand", async () => {
+  /**
+   * #411: the field used to be editable, and a folder typed outside the managed roots was
+   * refused by assertManagedPath with a message about permissions that had nothing to do with
+   * the real reason. Browse grants the path, so Browse is the only way in, which is the shape
+   * the "Add an already installed VS Version" form has always had.
+   */
+  it("refuses a typed folder and keeps following the name", async () => {
     const user = userEvent.setup()
     renderAddInstallation()
 
     const folder = await folderField()
     await waitFor(() => expect(folder.value).toBe("/base/My-New-Installation"))
 
-    await user.clear(folder)
+    expect(folder.readOnly).toBe(true)
+
     await user.type(folder, "/somewhere/else")
+    expect(folder.value).toBe("/base/My-New-Installation")
 
     await user.clear(nameField())
     await user.type(nameField(), "Renamed Later")
 
-    // The name field really did change; the folder the user typed survived it.
-    await waitFor(() => expect(nameField().value).toBe("Renamed Later"))
-    expect(folder.value).toBe("/somewhere/else")
+    await waitFor(() => expect(folder.value).toBe("/base/Renamed-Later"))
   })
 
   it("stops following the name once a folder is picked from the dialog", async () => {

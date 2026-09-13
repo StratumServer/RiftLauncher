@@ -116,7 +116,7 @@ describe("AddInstallation", () => {
 
     await user.click(screen.getByTitle("Add"))
 
-    await screen.findByText("Installation name must contain between 5 and 50 characters!")
+    await screen.findByText("Installation name must contain between 5 and 50 characters.")
     expect(screen.queryByText("installations-list")).toBeNull()
   })
 
@@ -145,7 +145,7 @@ describe("AddInstallation", () => {
 
     await user.click(screen.getByTitle("Add"))
 
-    await screen.findByText("That folder is already in use!")
+    await screen.findByText("That folder is already in use.")
     expect(screen.queryByText("installations-list")).toBeNull()
   })
 })

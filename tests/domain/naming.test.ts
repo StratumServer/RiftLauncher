@@ -46,18 +46,24 @@ describe("cleanFolderName", () => {
 })
 
 describe("formatTimestampForFilename", () => {
-  it("formats an epoch timestamp as a sortable UTC stamp", () => {
-    assert.equal(formatTimestampForFilename(1755300000000), "2025-08-15_23-20-00")
+  it("formats an epoch timestamp as a sortable stamp", () => {
+    assert.equal(formatTimestampForFilename(new Date(2025, 7, 16, 1, 20, 0).getTime()), "2025-08-16_01-20-00")
   })
 
   it("pads single-digit month, day, hour, minute and second fields", () => {
-    // 2026-01-02T03:04:05Z
-    assert.equal(formatTimestampForFilename(Date.UTC(2026, 0, 2, 3, 4, 5)), "2026-01-02_03-04-05")
+    assert.equal(formatTimestampForFilename(new Date(2026, 0, 2, 3, 4, 5).getTime()), "2026-01-02_03-04-05")
   })
 
-  it("uses UTC regardless of the host's local time zone", () => {
-    // 2026-01-01T00:30:00Z stays on the same UTC day even for a locale
-    // that would otherwise roll it back to Dec 31 in a negative offset.
-    assert.equal(formatTimestampForFilename(Date.UTC(2026, 0, 1, 0, 30, 0)), "2026-01-01_00-30-00")
+  /**
+   * #411 reported "Sweep-Install-2_2026-09-08_20-18-08.tar.gz" sitting next to a list row
+   * reading 22:18:08 for that same archive. The stamp is the only thing in a backup's name a
+   * player can match against the list, so it has to be the same clock the list reads.
+   */
+  it("reads the same clock the backups list shows", () => {
+    const at = new Date(2026, 8, 8, 22, 18, 8).getTime()
+
+    assert.equal(formatTimestampForFilename(at), "2026-09-08_22-18-08")
+    // ManageInstallationBackups renders exactly this for the row next to the file.
+    assert.ok(new Date(at).toLocaleString("es").includes("22:18:08"), "the list row and the file name disagree")
   })
 })

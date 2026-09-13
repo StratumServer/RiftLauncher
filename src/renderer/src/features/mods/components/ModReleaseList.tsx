@@ -88,7 +88,7 @@ function ModReleaseList({
   // Newest first is this hook's doing, not the ModDB's: `useGameVersionsLookup` reverses the
   // oldest-first payload. `summarizeGameVersionTags` reads coverage off that order alone and never
   // compares version numbers, so keeping the reverse here is what keeps its ranges the right way up.
-  const gameVersionCatalog = useGameVersionsLookup().map((gameVersion) => gameVersion.name)
+  const gameVersionCatalog = useGameVersionsLookup().entries.map((gameVersion) => gameVersion.name)
 
   return (
     <TableWrapper className={clsx("w-full max-w-[50rem]", className)}>

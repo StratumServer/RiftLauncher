@@ -24,18 +24,18 @@ import { renderWithProviders } from "./helpers/render"
 const PALETTE_UTILITY = /^text-[a-z]+-\d+$/
 
 const VERDICTS = [
-  { tags: ["1.20.0"], modversion: "3.0.0", label: "Tagged", sentence: "Author tagged it as compatible with your selected Vintage Story Version!" },
+  { tags: ["1.20.0"], modversion: "3.0.0", label: "Tagged", sentence: "Author tagged it as compatible with your selected Vintage Story Version." },
   {
     tags: ["1.20.4"],
     modversion: "2.0.0",
     label: "Likely",
-    sentence: "Author didn't tag it as compatible but there is a 95% chance that it will work on the selected Vintage Story Version!"
+    sentence: "Author didn't tag it as compatible but there is a 95% chance that it will work on the selected Vintage Story Version."
   },
   {
     tags: ["1.19.8"],
     modversion: "1.0.0",
     label: "Untagged",
-    sentence: "Author didn't tag it as compatible and there is a 90% chance that it will not work on the selected Vintage Story Version!"
+    sentence: "Author didn't tag it as compatible and there is a 90% chance that it will not work on the selected Vintage Story Version."
   }
 ] as const
 

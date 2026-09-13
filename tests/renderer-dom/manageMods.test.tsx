@@ -580,7 +580,7 @@ describe("ManageMods: suspended Mod updates", () => {
     await user.click(within(alphaRow).getByTitle("Update"))
 
     const popup = await screen.findByRole("dialog")
-    await user.click(within(popup).getByTitle("Author tagged it as compatible with your selected Vintage Story Version!"))
+    await user.click(within(popup).getByTitle("Author tagged it as compatible with your selected Vintage Story Version."))
 
     await waitFor(() => expect(downloadOnPath).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(ALPHA_PATH))
@@ -678,7 +678,7 @@ describe("ManageMods: searching the installed Mods", () => {
 
     await searchFor(user, "nothinglikethis")
 
-    expect(await screen.findByText("There are no Mods that match your filters!")).toBeTruthy()
+    expect(await screen.findByText("There are no Mods that match your filters.")).toBeTruthy()
     expect(screen.queryAllByRole("listitem")).toHaveLength(0)
     expect(screen.queryByText("Mods with updates")).toBeNull()
   })
@@ -808,7 +808,7 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     // The renderer names the file and the state it wants. It never composes the new name.
     await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(ALPHA_PATH, false))
-    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded!")).toBeTruthy()
+    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded.")).toBeTruthy()
     // The archive's name is its path, so every button on that row is pointing at a name that has
     // just stopped existing. The rescan is what puts them back on the real file.
     await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
@@ -842,8 +842,8 @@ describe("ManageMods: enabling and disabling a Mod", () => {
       landIpc({ ok: true, path: `${ALPHA_PATH}.disabled` })
     })
 
-    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded!")).toBeTruthy()
-    expect(screen.queryByText("An error has occurred enabling or disabling Alpha Mod!")).toBeNull()
+    expect(await screen.findByText("Alpha Mod is disabled and will not be loaded.")).toBeTruthy()
+    expect(screen.queryByText("An error has occurred enabling or disabling Alpha Mod.")).toBeNull()
     await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
     // Still one call once everything has settled, and the row is live again for the next real click.
     expect(setModEnabled).toHaveBeenCalledTimes(1)
@@ -858,7 +858,7 @@ describe("ManageMods: enabling and disabling a Mod", () => {
     await user.click(within(await rowFor("Epsilon Mod")).getByTitle(ENABLE_TITLE))
 
     await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(EPSILON_PATH, true))
-    expect(await screen.findByText("Epsilon Mod is enabled again!")).toBeTruthy()
+    expect(await screen.findByText("Epsilon Mod is enabled again.")).toBeTruthy()
   })
 
   it("names the clash instead of pretending nothing happened when the other file already exists", async () => {
@@ -1188,7 +1188,7 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
     await pick(user, "Author", "Bob")
     await pick(user, "Tags", "qol")
 
-    expect(await screen.findByText("There are no Mods that match your filters!")).toBeTruthy()
+    expect(await screen.findByText("There are no Mods that match your filters.")).toBeTruthy()
     expect(screen.queryAllByRole("listitem")).toHaveLength(0)
   })
 
@@ -1562,8 +1562,8 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     ])
     // One verdict for the batch, not one per Mod.
     expect(screen.getAllByText("2 Mods disabled.")).toHaveLength(1)
-    expect(screen.queryByText("Alpha Mod is disabled and will not be loaded!")).toBeNull()
-    expect(screen.queryByText("Beta Mod is disabled and will not be loaded!")).toBeNull()
+    expect(screen.queryByText("Alpha Mod is disabled and will not be loaded.")).toBeNull()
+    expect(screen.queryByText("Beta Mod is disabled and will not be loaded.")).toBeNull()
     expect(getInstalledMods.mock.calls.length).toBe(scansBefore + 1)
   })
 
@@ -1861,7 +1861,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
 
     const selectAll = await selectAllBox()
     await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "no such mod")
-    await screen.findByText("There are no Mods that match your filters!")
+    await screen.findByText("There are no Mods that match your filters.")
 
     // Nothing shown is not every shown Mod checked.
     expect(selectAll.checked).toBe(false)

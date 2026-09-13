@@ -51,9 +51,21 @@ export function GameVersionPicker({ gameVersions, version, onSelect, unresolvedV
           </TableHead>
 
           <TableBody className="max-h-[14rem]">
+            {/*
+             * The error treatment every other field on this form gets, not the neutral notice this
+             * used to be (#411). With no game version installed, saving is refused with "Fill in
+             * every field before saving." and this is the field that is missing, so it wears the
+             * same red-800 border and fill FormInputText paints on a `user-invalid` input. The
+             * headline takes the red-400 an error already speaks in elsewhere (notifications, the
+             * Activity Center); the line under it keeps zinc-400 so the link inside it still reads
+             * as a link rather than as part of the error.
+             */}
             {gameVersions.length < 1 && (
-              <div className="w-full p-1 flex flex-col items-center justify-center">
-                <p>{t("features.versions.noVersionsFound")}</p>
+              <div className="w-full p-2 flex flex-col gap-1 items-center justify-center border border-red-800 bg-red-800/20">
+                <p className="flex gap-2 items-center text-red-400">
+                  <PiWarningDuotone className="text-lg shrink-0" />
+                  {t("features.versions.noVersionsFound")}
+                </p>
                 <p className="text-zinc-400 text-sm flex gap-1 items-center flex-wrap justify-center">
                   <Trans
                     i18nKey="features.versions.noVersionsFoundDesc"

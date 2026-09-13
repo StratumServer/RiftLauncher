@@ -23,12 +23,12 @@ describe("the launch splash", () => {
 
     renderWithProviders(<Loader />)
 
-    expect(await screen.findByText("Welcome to RiftLauncher!")).toBeTruthy()
+    expect(await screen.findByText("Welcome to RiftLauncher")).toBeTruthy()
 
     // Far past the floor. Under the old fixed timer this alone took the splash down.
     await vi.advanceTimersByTimeAsync(5_000)
 
-    expect(screen.queryByText("Welcome to RiftLauncher!")).toBeTruthy()
+    expect(screen.queryByText("Welcome to RiftLauncher")).toBeTruthy()
 
     vi.useRealTimers()
   })
@@ -38,11 +38,11 @@ describe("the launch splash", () => {
 
     renderWithProviders(<Loader />)
 
-    expect(await screen.findByText("Welcome to RiftLauncher!")).toBeTruthy()
+    expect(await screen.findByText("Welcome to RiftLauncher")).toBeTruthy()
 
     // The default mock resolves getConfig with a real config, so this is the ordinary launch:
     // the splash serves its floor and then goes, without anyone waiting two seconds for it.
-    await waitFor(() => expect(screen.queryByText("Welcome to RiftLauncher!")).toBeNull())
+    await waitFor(() => expect(screen.queryByText("Welcome to RiftLauncher")).toBeNull())
   })
 
   it("still comes down, into a usable default config, when getConfig rejects", async () => {
@@ -58,9 +58,9 @@ describe("the launch splash", () => {
 
     renderWithProviders(<Loader />)
 
-    expect(await screen.findByText("Welcome to RiftLauncher!")).toBeTruthy()
+    expect(await screen.findByText("Welcome to RiftLauncher")).toBeTruthy()
 
-    await waitFor(() => expect(screen.queryByText("Welcome to RiftLauncher!")).toBeNull())
+    await waitFor(() => expect(screen.queryByText("Welcome to RiftLauncher")).toBeNull())
 
     expect(api.utils.logMessage).toHaveBeenCalledWith("error", expect.stringContaining("Error reading the config file"))
   })

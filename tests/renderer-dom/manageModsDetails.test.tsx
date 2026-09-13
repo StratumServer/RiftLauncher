@@ -251,7 +251,7 @@ describe("ManageMods details panel", () => {
     expect(within(aside).getByText("Delta's own words.")).toBeTruthy()
     expect(within(aside).queryByText(LOAD_FAILED)).toBeNull()
     expect(within(aside).queryByRole("button", { name: "Reload" })).toBeNull()
-    expect(within(aside).queryByRole("button", { name: "Open on the ModDB!" })).toBeNull()
+    expect(within(aside).queryByRole("button", { name: "Open on the ModDB." })).toBeNull()
   })
 
   it("offers a retry when the ModDB could not be reached, then shows the details", async () => {
@@ -521,7 +521,7 @@ describe("ManageMods details panel", () => {
 
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
-    expect(await screen.findByText("Updating installed Mods!")).toBeTruthy()
+    expect(await screen.findByText("Updating installed Mods.")).toBeTruthy()
     await waitFor(() => expect(downloadOnPath).toHaveBeenCalled())
     expect(detailsPanel()).toBeNull()
   })
@@ -552,7 +552,7 @@ describe("ManageMods details panel", () => {
     await user.click(await detailsButtonFor("Alpha Mod"))
     const aside = await screen.findByRole("complementary", { name: "Alpha Mod" })
 
-    await user.click(within(aside).getByRole("button", { name: "Open on the ModDB!" }))
+    await user.click(within(aside).getByRole("button", { name: "Open on the ModDB." }))
 
     expect(window.api.utils.openOnBrowser).toHaveBeenCalledWith("https://mods.vintagestory.at/show/mod/101")
   })
@@ -562,9 +562,9 @@ describe("ManageMods details panel", () => {
     renderManageMods()
 
     // The ModDB answered 404 for Delta, so there is no page to open and no /show/mod/undefined.
-    expect(within(rowOf(await detailsButtonFor("Delta Mod"))).queryByTitle("Open on the ModDB!")).toBeNull()
+    expect(within(rowOf(await detailsButtonFor("Delta Mod"))).queryByTitle("Open on the ModDB.")).toBeNull()
 
-    await user.click(within(rowOf(await detailsButtonFor("Alpha Mod"))).getByTitle("Open on the ModDB!"))
+    await user.click(within(rowOf(await detailsButtonFor("Alpha Mod"))).getByTitle("Open on the ModDB."))
 
     expect(window.api.utils.openOnBrowser).toHaveBeenCalledWith("https://mods.vintagestory.at/show/mod/101")
   })

@@ -64,7 +64,7 @@ function AddInslallation(): JSX.Element {
     launchWrapper: ""
   })
 
-  const { folder: path, setFolder: setPath, browseFolder } = useInstallationFolder(fields.name, settings.defaultInstallationsFolder)
+  const { folder: path, browseFolder } = useInstallationFolder(fields.name, settings.defaultInstallationsFolder)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -157,7 +157,7 @@ function AddInslallation(): JSX.Element {
                   <FormButton onClick={browseFolder} title={t("generic.browse")} variant="secondary" className="h-8 px-2 py-1">
                     <PiMagnifyingGlassDuotone />
                   </FormButton>
-                  <FormInputText placeholder={t("features.installations.installationFolder")} value={path} onChange={(e) => setPath(e.target.value)} minLength={1} className="w-full" />
+                  <FormInputText placeholder={t("features.installations.installationFolder")} value={path} readOnly className="w-full" />
                 </FormFieldGroup>
               </FormBody>
             </FromGroup>

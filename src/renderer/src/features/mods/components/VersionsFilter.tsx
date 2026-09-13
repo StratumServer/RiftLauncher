@@ -20,7 +20,7 @@ function VersionsFilter({
 }>): JSX.Element {
   const { t } = useTranslation()
 
-  const gameVersionsList = useGameVersionsLookup()
+  const { entries: gameVersionsList, failed: lookupFailed } = useGameVersionsLookup()
 
   return (
     <Listbox value={versionsFilter} onChange={setVersionsFilter} multiple>
@@ -49,6 +49,7 @@ function VersionsFilter({
                   exit="exit"
                   className="w-full max-h-40 flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm overflow-y-scroll"
                 >
+                  {lookupFailed && <li className="w-full shrink-0 px-2 py-2 text-sm text-red-400">{t("features.mods.errorFetchingMods")}</li>}
                   {gameVersionsList.map((v) => (
                     <ListboxOption
                       key={v.tagid}

@@ -37,7 +37,7 @@ describe("LookForAVersion", () => {
     await user.click(screen.getByTitle("Add"))
 
     await waitFor(() => expect(saveConfig).not.toHaveBeenCalled())
-    expect(await screen.findByText("That folder is already in use!")).toBeTruthy()
+    expect(await screen.findByText("That folder is already in use.")).toBeTruthy()
   })
 
   it("registers a second build with the same version when its folder is different", async () => {

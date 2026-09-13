@@ -7,8 +7,6 @@ import { createPathBuilderPort } from "@renderer/adapters/paths"
 export interface UseVersionInstallFolderResult {
   /** The folder the version installs into, either suggested or user picked. */
   folder: string
-  /** Free text edit of the folder, e.g. typing directly in the input. Does not count as a user pick. */
-  setFolder: (folder: string) => void
   /** Opens the OS folder picker and, once one is picked, warns when it is not empty. */
   browseFolder: () => Promise<void>
 }
@@ -18,9 +16,11 @@ export interface UseVersionInstallFolderResult {
  * default versions folder and the selected catalog version, kept in sync
  * until the user picks their own folder through the browse button.
  *
- * Typing in the folder input does not count as a pick: it only changes what
- * is shown, same as before this moved out of the page. Only `browseFolder`
- * flips the suggestion off for good, matching the original handler.
+ * Only `browseFolder` flips the suggestion off for good. The input used to be
+ * editable too, and a typed folder outside the managed roots was refused by
+ * assertManagedPath with a message about the download failing rather than
+ * about the folder (#411). The picker is what grants the path, so it is the
+ * only way to change this field now.
  */
 export function useVersionInstallFolder(version: DownloadableGameVersionTypeType | undefined, defaultVersionsFolder: string): UseVersionInstallFolderResult {
   const { t } = useTranslation()
@@ -47,5 +47,5 @@ export function useVersionInstallFolder(version: DownloadableGameVersionTypeType
     setFolderByUser(true)
   }
 
-  return { folder, setFolder, browseFolder }
+  return { folder, browseFolder }
 }
