@@ -155,7 +155,7 @@ describe("ListMods", () => {
       { route: "/mods" }
     )
 
-    expect(await screen.findByText("There are no Mods that match your filters!", {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText("There are no Mods that match your filters.", {}, { timeout: 3000 })).toBeTruthy()
   })
 
   it("does not let a slower, superseded search overwrite a newer, faster one", async () => {

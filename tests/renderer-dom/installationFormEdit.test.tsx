@@ -201,7 +201,7 @@ describe("EditInstallation", () => {
 
     await user.click(screen.getByTitle("Save"))
 
-    await screen.findByText("Installation name must contain between 5 and 50 characters!")
+    await screen.findByText("Installation name must contain between 5 and 50 characters.")
     expect(screen.queryByText("installations-list")).toBeNull()
   })
 

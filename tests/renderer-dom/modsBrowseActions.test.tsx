@@ -307,7 +307,7 @@ describe("ModDB card actions: one installed copy", () => {
     expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scans)
     expect(within(strip("Better Ruins")).getByRole("button", { name: ENABLED }).getAttribute("aria-pressed")).toBe("false")
     expect(within(card.closest("li") as HTMLElement).getByText("Disabled")).toBeTruthy()
-    expect(historyBodies()).toEqual(["Better Ruins is disabled and will not be loaded!"])
+    expect(historyBodies()).toEqual(["Better Ruins is disabled and will not be loaded."])
     expect(getModsBrowseState()).toMatchObject({ visibleMods: 40, scrollTop: 120 })
   }, 15_000)
 

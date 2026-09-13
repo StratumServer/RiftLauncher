@@ -41,3 +41,40 @@ describe("page copy and task descriptions do not shout (#411)", () => {
     })
   }
 })
+
+/**
+ * The follow-up swept the rest of en-US.json: every string value in the file, not just the keys
+ * #411 named. Nothing here is allowlisted today. If a string genuinely needs an exclamation mark,
+ * add its key below with a comment explaining why, rather than loosening the walk itself.
+ */
+
+const ALLOWLISTED_EXCLAMATIONS: readonly string[] = []
+
+function collectStringPaths(node: unknown, path: string, out: Map<string, string>): void {
+  if (typeof node === "string") {
+    out.set(path, node)
+    return
+  }
+  if (typeof node === "object" && node !== null) {
+    for (const [childKey, childValue] of Object.entries(node)) {
+      collectStringPaths(childValue, path ? `${path}.${childKey}` : childKey, out)
+    }
+  }
+}
+
+describe("no en-US string shouts (#411 follow-up)", () => {
+  const enUS: unknown = JSON.parse(readFileSync(join(EN_US), "utf8"))
+  const strings = new Map<string, string>()
+  collectStringPaths(enUS, "", strings)
+
+  it("found string values to check", () => {
+    assert.ok(strings.size > 0, "en-US.json produced no string values, the walk is broken")
+  })
+
+  for (const [key, value] of strings) {
+    if (ALLOWLISTED_EXCLAMATIONS.includes(key)) continue
+    it(`${key} does not contain "!"`, () => {
+      assert.ok(!value.includes("!"), `${key} still contains an exclamation mark: ${value}`)
+    })
+  }
+})

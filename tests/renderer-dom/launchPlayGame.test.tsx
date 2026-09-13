@@ -311,7 +311,7 @@ describe("MainMenu Play button", () => {
     renderMainMenu()
     await clickPlay(user)
 
-    await screen.findByText("This Installation has no VS Version set!")
+    await screen.findByText("This Installation has no VS Version set.")
     expect(executeGame).not.toHaveBeenCalled()
   })
 

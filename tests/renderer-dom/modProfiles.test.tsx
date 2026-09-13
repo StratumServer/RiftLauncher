@@ -623,7 +623,7 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     await waitFor(() => expect(setModEnabled).toHaveBeenCalledTimes(4))
     // The switch holds the Installation's Mods as busy: the page says so, and the rows, with every
     // action on them, are gone until the renames are done.
-    expect(screen.getByText("Updating installed Mods!")).toBeTruthy()
+    expect(screen.getByText("Updating installed Mods.")).toBeTruthy()
     expect(screen.queryByText("Gamma Mod")).toBeNull()
     expect(buttonWithText("Update all").disabled).toBe(true)
     expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(true)
