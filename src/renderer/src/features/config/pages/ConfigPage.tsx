@@ -381,7 +381,7 @@ function AccentColorPicker(): JSX.Element {
             size="sm"
             ariaPressed={selected}
             title={name}
-            style={{ backgroundColor: preset.hex }}
+            style={{ backgroundColor: preset.light }}
             onClick={() => configDispatch({ type: CONFIG_ACTIONS.SET_ACCENT_COLOR, payload: preset.id })}
             className={clsx("w-8 h-8 rounded-full p-0", selected ? "border-2 border-vsl" : "border border-zinc-400/5")}
           />

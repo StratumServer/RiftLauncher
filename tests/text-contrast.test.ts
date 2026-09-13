@@ -572,9 +572,9 @@ describe("prompts the player is meant to read and act on", () => {
  * this file measures, never on a real white surface: the worst case is that stack over a white
  * image, not white itself. --color-vs and --color-vsd are separate tokens that style the active
  * menu marker and the enabled toggle; they carry light text on top rather than being text
- * themselves, so they are untouched here.
+ * themselves, so they get their own floor further down instead of the one this block checks.
  *
- * #432: the player can now repaint --color-vsl at runtime, from a closed palette rather than a
+ * #432: the player can now repaint the whole ramp at runtime, from a closed palette rather than a
  * free field (see src/domain/accentColors.ts). Every assertion below that used to read the
  * shipped token once now loops over the whole palette, so a preset added to that list without
  * clearing these floors fails here instead of shipping.
@@ -582,7 +582,9 @@ describe("prompts the player is meant to read and act on", () => {
 describe("the brand accent where it carries text", () => {
   it("ships the same default the config falls back to, so picking nothing looks like picking the first preset", () => {
     assert.equal(ACCENT_PRESETS[0]?.id, DEFAULT_ACCENT_ID)
-    assert.deepEqual(hexRgb(ACCENT_PRESETS[0]?.hex ?? ""), themeColor("vsl"))
+    assert.deepEqual(hexRgb(ACCENT_PRESETS[0]?.light ?? ""), themeColor("vsl"))
+    assert.deepEqual(hexRgb(ACCENT_PRESETS[0]?.mid ?? ""), themeColor("vs"))
+    assert.deepEqual(hexRgb(ACCENT_PRESETS[0]?.dark ?? ""), themeColor("vsd"))
   })
 
   it("keeps every accent link readable on the panel it ships on, for every preset", () => {
@@ -602,7 +604,7 @@ describe("the brand accent where it carries text", () => {
     for (const [, anchor, file] of links) match(file, anchor) // fails loudly, naming the file, if the link class or its underline has moved
 
     for (const preset of ACCENT_PRESETS) {
-      const accent: Layer = [hexRgb(preset.hex), 1]
+      const accent: Layer = [hexRgb(preset.light), 1]
       for (const [label, , , stack] of links) assertReadable(`${label} (${preset.id})`, accent, stack, TEXT_FLOOR)
     }
   })
@@ -612,7 +614,7 @@ describe("the brand accent where it carries text", () => {
     match("components/ui/ActivityCenter.tsx", /pending: "text-vsl"/)
 
     for (const preset of ACCENT_PRESETS) {
-      const accent: Layer = [hexRgb(preset.hex), 1]
+      const accent: Layer = [hexRgb(preset.light), 1]
       assertReadable(`info toast icon (${preset.id})`, accent, TOAST, NON_TEXT_FLOOR)
       assertReadable(`pending task icon (${preset.id})`, accent, TASKS_ROW, NON_TEXT_FLOOR)
     }
@@ -624,24 +626,23 @@ describe("the brand accent where it carries text", () => {
     // cue: see ModListCard.tsx's `selected={installed}`). It is opaque now, but the backdrop it
     // reads against is still the card's own bg-vsd/NN fill composited over the grid panel, not the
     // panel alone: a border painted at the default border-box clip shows through the fill wherever
-    // the fill itself has any transparency, which bg-vsd/NN always does here. The fill is --color-vsd,
-    // fixed whatever the accent preset is (see the file-level comment above), so only the border
-    // moves per preset below.
+    // the fill itself has any transparency, which bg-vsd/NN always does here. #432: --color-vsd
+    // moves with the accent too now, so both the fill and the border move together per preset below.
     const fillAlpha = Number(match("components/ui/Grid.tsx", /selected \? "bg-vsd\/(\d+) border-vsl"/)[1]) / 100
-    const fill: Layer = [themeColor("vsd"), fillAlpha]
 
     for (const preset of ACCENT_PRESETS) {
-      const border: Layer = [hexRgb(preset.hex), 1]
+      const fill: Layer = [hexRgb(preset.dark), fillAlpha]
+      const border: Layer = [hexRgb(preset.light), 1]
       assertReadable(`Grid selected-card border (${preset.id})`, border, [shell, gridPanel, fill], NON_TEXT_FLOOR)
     }
   })
 
-  it("keeps the accent ramp and its selected borders coherent, for every preset", () => {
-    const dark = luminance(themeColor("vsd"))
-    const base = luminance(themeColor("vs"))
+  it("keeps each preset's own ramp dark-to-light in that order", () => {
     for (const preset of ACCENT_PRESETS) {
-      const light = luminance(hexRgb(preset.hex))
-      assert.ok(dark < base && base < light, `the vs/vsl/vsd ramp should stay dark-to-light in that order with ${preset.id} as vsl`)
+      const dark = luminance(hexRgb(preset.dark))
+      const mid = luminance(hexRgb(preset.mid))
+      const light = luminance(hexRgb(preset.light))
+      assert.ok(dark < mid && mid < light, `the ${preset.id} ramp should stay dark-to-light in that order`)
     }
 
     // The ConfigPage tile border and the accent swatch itself have a different backdrop on each of
@@ -679,6 +680,25 @@ describe("button labels on the fill they ship on", () => {
       ["active", "vsd", themeColor("vsd")]
     ]
     for (const [state, token, color] of fills) assertReadable(`primary button label in ${state}`, label, [buttonFill("primary", state, token, color)], TEXT_FLOOR)
+  })
+
+  /**
+   * #432: --color-vs and --color-vsd now move with the chosen accent, the Play button among their
+   * fills. The assertion above only ever sees the shipped default (Amber); this one holds every
+   * preset's own mid and dark stop to the same label floor, so a preset that repaints the Play
+   * button unreadable cannot ship either.
+   */
+  it("keeps the primary action's label readable on every preset's own mid and dark stop", () => {
+    const label = foreground("components/ui/buttonStyles.ts", /primary: "[^"]*\bbg-vs\b[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
+
+    for (const preset of ACCENT_PRESETS) {
+      const fills: ReadonlyArray<readonly [ButtonState, string, Rgb]> = [
+        ["default", "vs", hexRgb(preset.mid)],
+        ["hover", "vs", hexRgb(preset.mid)],
+        ["active", "vsd", hexRgb(preset.dark)]
+      ]
+      for (const [state, token, color] of fills) assertReadable(`primary button label on ${preset.id} in ${state}`, label, [buttonFill("primary", state, token, color)], TEXT_FLOOR)
+    }
   })
 
   it("keeps the destructive action's label readable on the red fill", () => {

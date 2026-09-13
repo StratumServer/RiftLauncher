@@ -22,21 +22,26 @@ function lastSavedAccentColor(api: MockedBridgeAPI): string | undefined {
   return vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0].accentColor
 }
 
+/** The three brand-ramp properties applyAccentColor moves together. */
+const ACCENT_PROPERTIES = ["--color-vsl", "--color-vs", "--color-vsd"] as const
+
 // The applied accent lives on the root element, which jsdom keeps for the whole file.
 beforeEach(() => {
-  document.documentElement.style.removeProperty("--color-vsl")
+  for (const property of ACCENT_PROPERTIES) document.documentElement.style.removeProperty(property)
 })
 
 describe("ConfigPage accent color picker", () => {
-  it("paints no override at startup for the shipped default, so the stylesheet's own token shows", async () => {
+  it("paints no override at startup for the shipped default, so the stylesheet's own tokens show", async () => {
     renderConfigPage(DEFAULT_ACCENT_ID)
     await screen.findByRole("group", { name: "Accent color" })
-    expect(document.documentElement.style.getPropertyValue("--color-vsl")).toBe("")
+    for (const property of ACCENT_PROPERTIES) expect(document.documentElement.style.getPropertyValue(property)).toBe("")
   })
 
-  it("paints the stored preset at startup when it is not the default", async () => {
+  it("paints all three stops of the stored preset at startup when it is not the default", async () => {
     renderConfigPage("teal")
-    await waitFor(() => expect(document.documentElement.style.getPropertyValue("--color-vsl")).toBe(TEAL.hex))
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue("--color-vsl")).toBe(TEAL.light))
+    expect(document.documentElement.style.getPropertyValue("--color-vs")).toBe(TEAL.mid)
+    expect(document.documentElement.style.getPropertyValue("--color-vsd")).toBe(TEAL.dark)
   })
 
   it("marks exactly the stored preset pressed, and every other preset unpressed", async () => {
@@ -58,7 +63,9 @@ describe("ConfigPage accent color picker", () => {
 
     expect(tealSwatch.getAttribute("aria-pressed")).toBe("true")
     expect(amberSwatch.getAttribute("aria-pressed")).toBe("false")
-    expect(document.documentElement.style.getPropertyValue("--color-vsl")).toBe(TEAL.hex)
+    expect(document.documentElement.style.getPropertyValue("--color-vsl")).toBe(TEAL.light)
+    expect(document.documentElement.style.getPropertyValue("--color-vs")).toBe(TEAL.mid)
+    expect(document.documentElement.style.getPropertyValue("--color-vsd")).toBe(TEAL.dark)
     await waitFor(() => expect(lastSavedAccentColor(api)).toBe("teal"))
   })
 
