@@ -106,7 +106,7 @@ const isTight = (character: string): boolean => character !== "" && !/\s/.test(c
  */
 function stripEmphasisMarkers(text: string): string {
   return text.replace(EMPHASIS_RUN, (run: string, index: number) => {
-    const before = index > 0 ? text[index - 1] ?? "" : ""
+    const before = index > 0 ? (text[index - 1] ?? "") : ""
     const after = text[index + run.length] ?? ""
 
     const intraword = WORD_CHARACTER.test(before) && WORD_CHARACTER.test(after)
@@ -395,5 +395,8 @@ export function selectReleasesToShow(releases: readonly WhatsNewReleaseInfo[], p
 export function selectLatestReleases(releases: readonly WhatsNewReleaseInfo[], currentVersion: string, options: SelectReleasesOptions = {}): WhatsNewReleaseInfo[] {
   const currentIsPrerelease = isPrereleaseVersion(stripVersionPrefix(currentVersion))
 
-  return releases.filter((release) => isShowable(release, currentIsPrerelease)).sort(newestTagFirst).slice(0, options.maxReleases ?? DEFAULT_MAX_RELEASES_TO_SHOW)
+  return releases
+    .filter((release) => isShowable(release, currentIsPrerelease))
+    .sort(newestTagFirst)
+    .slice(0, options.maxReleases ?? DEFAULT_MAX_RELEASES_TO_SHOW)
 }

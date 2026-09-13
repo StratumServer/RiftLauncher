@@ -10,14 +10,16 @@ import WhatsNewReleaseSection from "@renderer/components/ui/WhatsNewReleaseSecti
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
-import { useWhatsNew } from "@renderer/features/info/hooks/useWhatsNew"
+import { useLatestReleases } from "@renderer/features/info/hooks/useWhatsNew"
 
 const RELEASES_PAGE_URL = "https://github.com/StratumServer/RiftLauncher/releases"
 
 function InfoAndHelpPage(): JSX.Element {
   const { t } = useTranslation()
   const { vslVersion, os, openLogsFolder } = useAppInfo()
-  const { releases, status } = useWhatsNew()
+  // The latest releases, not the ones this update brought: the section is here to be read on any
+  // launch, so it never depends on whether the startup dialog has already been dismissed.
+  const { releases, status } = useLatestReleases(vslVersion)
   const { openOnBrowser } = useExternalLinks()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
