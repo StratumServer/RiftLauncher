@@ -263,23 +263,40 @@ describe("ManageMods", () => {
     expect(alphaRow?.className).toContain("skip-offscreen-render")
   })
 
-  it("keeps the Mod name a real minimum width so a narrow list column cannot collapse it to nothing (#438)", async () => {
+  it("has the row adapt to its own width instead of flooring the name, so the name keeps real room (#438)", async () => {
     renderManageMods()
 
     const nameEl = await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
 
-    // truncate is what lets the name ellipsize at all; min-w-0 on it, unlike everywhere else in
-    // this row, gives it no floor, so the detail panel's narrow list column (#426) can squeeze it
-    // all the way to zero while the version and buttons keep their full size (#438). The name
-    // needs a floor above zero instead.
+    // A fixed floor on the name (the first attempt's min-w-9) only decides which sibling starves;
+    // it cannot fix a budget problem. The name goes back to a bare min-w-0 above truncate, and it
+    // is the row itself that now answers a `@container` query and gives way first (#438).
     expect(nameEl.className).toContain("truncate")
-    expect(nameEl.className).not.toMatch(/\bmin-w-0\b/)
-    expect(nameEl.className).toMatch(/\bmin-w-(?!0\b)\S+/)
+    expect(nameEl.className).toMatch(/\bmin-w-0\b/)
+    expect(nameEl.className).not.toMatch(/\bmin-w-9\b/)
 
-    // The text column between the icon and the version/buttons must give up its own automatic
-    // min-width explicitly, the same way the identity wrapper it sits in already does, or the
-    // name's new floor has nothing to shrink against.
-    const textColumn = nameEl.closest(".flex-col") as HTMLElement
+    const alphaRow = nameEl.closest("li")?.firstElementChild as HTMLElement
+    expect(alphaRow.className).toContain("@container")
+
+    // Below the threshold the thumbnail shrinks first, so it stays visible instead of eating the
+    // text column's width.
+    const thumbnail = screen.getByAltText("Alpha Mod")
+    expect(thumbnail.className).toContain("@max-md:size-10")
+
+    // The action buttons wrap into two rows of two rather than staying four abreast.
+    const buttonGroup = alphaRow.querySelector(".justify-end") as HTMLElement
+    expect(buttonGroup.className).toContain("@max-md:grid")
+    expect(buttonGroup.className).toContain("@max-md:grid-cols-2")
+
+    // The name/version line wraps too, so the version drops under the name instead of splitting
+    // the row's width with it.
+    const nameRow = nameEl.parentElement as HTMLElement
+    expect(nameRow.className).toContain("@max-md:flex-wrap")
+
+    // The text column between the icon and the version/buttons must still give up its own
+    // automatic min-width explicitly, the same way the identity wrapper it sits in already does,
+    // or the name has nothing to shrink against.
+    const textColumn = nameRow.parentElement as HTMLElement
     expect(textColumn.className).toMatch(/\bmin-w-0\b/)
 
     const identityWrapper = textColumn.parentElement as HTMLElement
