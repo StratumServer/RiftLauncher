@@ -145,14 +145,28 @@ export function countActiveInstalledModFilters(filters: InstalledModFilters): nu
 }
 
 /**
+ * True when two modids name the same mod.
+ *
+ * A mod id is ASCII by the game's own rules (Vintage Story rejects anything else in `modinfo.json`),
+ * so a plain `toLowerCase` fold is safe here, no locale needed. Neither side is trusted to already be
+ * lowercase: the ModDB documents `modidstrs` as lowercase, but old releases (#454, "CutTheFat") carry
+ * whatever casing an author typed at upload time, and a `modinfo.json` can spell its own `ModID` any
+ * way it likes.
+ */
+function sameModid(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase()
+}
+
+/**
  * True when a ModDB listing's `modidstrs` name an installed modid.
  *
- * The listing spells its ids in lowercase while a `modinfo.json` may use any casing, so an installed
- * id matches spelled as it is or lowercased. Nothing looser: a prefix or substring match would call
+ * Both sides are case-folded before comparing: relying on the listing's advertised lowercase
+ * convention missed listings like "Cut the Fat" whose `modidstrs` kept an old release's mixed-case
+ * spelling (#454). Nothing looser than a full fold: a prefix or substring match would call
  * "betterruinsplus" installed because "betterruins" is.
  */
 export function listingDeclaresModid(modidstrs: readonly string[], installedModid: string): boolean {
-  return modidstrs.some((modidstr) => modidstr === installedModid.toLocaleLowerCase() || modidstr === installedModid)
+  return modidstrs.some((modidstr) => sameModid(modidstr, installedModid))
 }
 
 /**
