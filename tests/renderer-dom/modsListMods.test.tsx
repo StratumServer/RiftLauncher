@@ -484,9 +484,9 @@ describe("ListMods", () => {
     await user.click(screen.getByTitle("Show favorite Mods only"))
 
     await user.click(screen.getByTitle("Order"))
-    await user.click(screen.getByRole("button", { name: "Downloads" }))
+    await user.click(screen.getByRole("menuitem", { name: "Downloads" }))
     await user.click(screen.getByTitle("Order"))
-    await user.click(screen.getByRole("button", { name: "Downloads" }))
+    await user.click(screen.getByRole("menuitem", { name: "Downloads" }))
 
     await waitFor(
       () => {

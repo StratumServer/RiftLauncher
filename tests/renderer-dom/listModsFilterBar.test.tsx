@@ -127,4 +127,80 @@ describe("ListMods filter bar", () => {
     await waitFor(() => expect(screen.queryByText("Client Only Tool")).toBeNull(), { timeout: 3000 })
     expect(screen.getByText("Better Ruins")).toBeTruthy()
   })
+
+  // @headlessui/react's MenuItems defaults to modal=true, which marks the rest of the page
+  // inert (aria-hidden + focus-trapped) while it is open. OrderFilter opts out: it is a small
+  // sort menu in a filter bar, not a dialog, and the rest of the bar has to stay usable.
+  it("keeps the rest of the filter bar reachable while the sort menu is open", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    expect(await screen.findByText("Better Ruins", {}, { timeout: 3000 })).toBeTruthy()
+
+    await user.click(screen.getByTitle("Order"))
+    await screen.findByText("Trending")
+
+    const searchInput = screen.getByRole("textbox")
+    expect(searchInput.closest('[aria-hidden="true"]')).toBeNull()
+  })
+
+  // Headless UI v2's Menu keeps DOM focus on the menu itself (an activedescendant pattern) and,
+  // on Enter or Space, calls .click() on the active item's own node -- the decorative MenuItem
+  // wrapper, never a button nested inside it. A click on an ancestor does not fire a descendant's
+  // onClick, so the keyboard used to close the menu without ever running changeOrder; only a
+  // mouse, which lands straight on the button, worked.
+  it("changes the sort order from the keyboard, not just a mouse click", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    expect(await screen.findByText("Better Ruins", {}, { timeout: 3000 })).toBeTruthy()
+
+    const trigger = screen.getByTitle("Order")
+    trigger.focus()
+    await user.keyboard("{Enter}")
+    await screen.findByText("Trending")
+
+    // Every option must be the real, clickable node itself: a decorative wrapper around a nested
+    // button would still report role="menuitem" on itself, just not on a <button> tag.
+    const options = screen.getAllByRole("menuitem")
+    expect(options).toHaveLength(6)
+    for (const option of options) expect(option.tagName).toBe("BUTTON")
+
+    await user.keyboard("{ArrowDown}{Enter}")
+
+    await waitFor(() => expect(window.localStorage.getItem("listModsOrderBy")).not.toBeNull())
+    // Whichever option the arrow key landed on, the store has to have followed it off the
+    // default "trendingpoints" -- that move is exactly what a swallowed Enter would prevent.
+    expect(window.localStorage.getItem("listModsOrderBy")).not.toBe("trendingpoints")
+  })
 })

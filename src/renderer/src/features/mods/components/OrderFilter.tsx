@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react"
-import { Dispatch, SetStateAction, useEffect } from "react"
+import { Dispatch, Fragment, SetStateAction, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { PiArrowDownDuotone, PiArrowsDownUpDuotone, PiCalendarDuotone, PiChatCenteredTextDuotone, PiDownloadDuotone, PiFireDuotone, PiStarDuotone, PiUploadDuotone } from "react-icons/pi"
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react"
@@ -7,7 +7,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
-import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
+import { DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 
 function OrderFilter({
   orderBy,
@@ -61,8 +61,21 @@ function OrderFilter({
           </MenuButton>
           <AnimatePresence>
             {open && (
-              <MenuItems static anchor="bottom" className="w-40 z-600 mt-1 select-none rounded-sm overflow-hidden">
-                <motion.ul
+              // modal=false: this is a small sort menu, not a dialog. The default would mark
+              // the rest of the page (the search field, the other filter bar controls, the Mod
+              // list) inert to assistive tech for as long as it stayed open, which a menu this
+              // size never earns.
+              <MenuItems static anchor="bottom" modal={false} className="w-40 z-600 mt-1 select-none rounded-sm overflow-hidden">
+                {/*
+                 * as={Fragment} on every item below: Headless UI activates the item under Enter
+                 * or Space by calling .click() on that item's own DOM node, not by dispatching
+                 * into its descendants. A MenuItem that renders its own wrapper
+                 * element (a <li>, a <div>) around a nested NormalButton puts that click on the
+                 * wrapper, never on the button inside it, so Enter/Space silently do nothing.
+                 * Fragment mode makes the NormalButton itself the item Headless UI tracks, so the
+                 * exact click it fires lands on the element with the real handler.
+                 */}
+                <motion.div
                   variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
                   initial="initial"
                   animate="animate"
@@ -70,13 +83,13 @@ function OrderFilter({
                   className="w-full flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
                 >
                   {ORDER_BY.map((ob) => (
-                    <MenuItem
-                      key={ob.key}
-                      as={motion.li}
-                      variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className={`${MENU_OPTION_STYLES} odd:bg-zinc-800/30 even:bg-zinc-950/30 whitespace-nowrap text-ellipsis text-sm`}
-                    >
-                      <NormalButton title={`${ob.value}`} onClick={() => changeOrder(ob.key)} variant="ghost" className="w-full">
+                    <MenuItem key={ob.key} as={Fragment}>
+                      <NormalButton
+                        title={`${ob.value}`}
+                        onClick={() => changeOrder(ob.key)}
+                        variant="ghost"
+                        className={`${MENU_OPTION_STYLES} odd:bg-zinc-800/30 even:bg-zinc-950/30 whitespace-nowrap text-ellipsis text-sm`}
+                      >
                         <div className="w-full flex items-center justify-between gap-1">
                           <p className="flex items-center gap-1">
                             <span>{ob.icon}</span>
@@ -87,7 +100,7 @@ function OrderFilter({
                       </NormalButton>
                     </MenuItem>
                   ))}
-                </motion.ul>
+                </motion.div>
               </MenuItems>
             )}
           </AnimatePresence>
