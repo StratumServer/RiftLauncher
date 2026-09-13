@@ -5,7 +5,10 @@ import { makeInstallationBackup } from "../../../src/domain/installations/backup
 import type { BackupRecord, InstallationSnapshot, MakeInstallationBackupEvents, MakeInstallationBackupPorts } from "../../../src/domain/installations/backup"
 import type { Archiver, CompressOutcome, CompressRequest, FileSystem } from "../../../src/domain/ports"
 
-const FIXED_NOW = 1755300000000
+// Local wall-clock 2025-08-16 01:20:00, whatever zone the runner is in: the archive name
+// carries the host's own clock now (see formatTimestampForFilename), so the expected stamp
+// below has to be built from local fields rather than from a fixed UTC instant.
+const FIXED_NOW = new Date(2025, 7, 16, 1, 20, 0).getTime()
 
 /** Everything the fakes wrote down, in the order it happened. */
 let trace: string[] = []
@@ -249,16 +252,16 @@ describe("makeInstallationBackup pruning", () => {
 })
 
 describe("makeInstallationBackup archiving", () => {
-  it("builds the archive name from a cleaned installation name and a UTC date stamp", async () => {
+  it("builds the archive name from a cleaned installation name and a local date stamp", async () => {
     const { archiver, requests } = fakeArchiver()
 
     const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot(), backupsFolder: "/backups" })
 
-    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-15_23-20-00.tar.gz")
+    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-16_01-20-00.tar.gz")
     assert.equal(requests[0]?.outputFolder, "/backups/Installations/My-Install-Test")
     assert.equal(requests[0]?.sourcePath, "/games/my-install")
     assert.equal(requests[0]?.compressionLevel, 5)
-    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.tar.gz")
+    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz")
   })
 
   it("falls back to a slice of the installation id when the cleaned name is empty", async () => {
@@ -266,9 +269,9 @@ describe("makeInstallationBackup archiving", () => {
 
     const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot({ id: "installation-1", name: "***" }), backupsFolder: "/backups" })
 
-    assert.equal(requests[0]?.fileName, "installa_2025-08-15_23-20-00.tar.gz")
+    assert.equal(requests[0]?.fileName, "installa_2025-08-16_01-20-00.tar.gz")
     assert.equal(requests[0]?.outputFolder, "/backups/Installations/installa")
-    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/installa/installa_2025-08-15_23-20-00.tar.gz")
+    assert.equal(result.ok === true && result.backup.path, "/backups/Installations/installa/installa_2025-08-16_01-20-00.tar.gz")
   })
 
   it("stamps the record with the clock time and a generated id", async () => {
@@ -277,7 +280,7 @@ describe("makeInstallationBackup archiving", () => {
     assert.deepEqual(result.ok === true && result.backup, {
       id: "generated-id-1",
       date: FIXED_NOW,
-      path: "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.tar.gz"
+      path: "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz"
     })
   })
 
@@ -290,7 +293,7 @@ describe("makeInstallationBackup archiving", () => {
       "started",
       "remove:/backups/b1.tar.gz",
       "deleted:b1",
-      "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-15_23-20-00.tar.gz",
+      "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
       "guard-release",
       "finished"
     ])
