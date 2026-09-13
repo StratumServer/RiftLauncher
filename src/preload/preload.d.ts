@@ -81,6 +81,8 @@ declare global {
        * player's courtesy going unnoticed, not their problem.
        */
       acceptModDbVisibility: () => Promise<boolean>
+      /** Fetches this repository's GitHub releases, for the "what's new" dialog and the Info & Help page. See src/domain/appUpdate/whatsNew.ts. */
+      fetchReleaseNotes: () => Promise<FetchReleaseNotesResult>
     }
     backgroundsManager: {
       /** Downloads one catalog scene into the cache when it is missing or its manifest hash changed, and reports what it did. */

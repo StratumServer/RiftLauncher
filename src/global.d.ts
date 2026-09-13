@@ -490,6 +490,32 @@ declare global {
    */
   type EnsureBackgroundResult = "refreshed" | "current" | "failed"
 
+  /**
+   * One GitHub release, trimmed to the fields FETCH_RELEASE_NOTES validates out of the API
+   * response. See src/domain/appUpdate/whatsNew.ts, which is the only place `body` is ever turned
+   * into anything shown on screen.
+   */
+  type WhatsNewReleaseInfo = {
+    tag: string
+    name: string
+    body: string
+    prerelease: boolean
+    draft: boolean
+    publishedAt: string
+  }
+
+  /**
+   * Why FETCH_RELEASE_NOTES could not answer with releases: `offline` for anything that never got
+   * a response (no connection, a timeout, a connection reset), `bad-response` for a response that
+   * came back but was not a usable release list (a non-2xx status other than the rate limit
+   * below, or a body that failed to parse), `too-large` for a response over the byte cap, and
+   * `rate-limited` for GitHub's own 403 with `x-ratelimit-remaining: 0`. See
+   * src/ipc/handlers/netHandlers.ts.
+   */
+  type FetchReleaseNotesFailureReason = "offline" | "bad-response" | "too-large" | "rate-limited"
+
+  type FetchReleaseNotesResult = { ok: true; releases: WhatsNewReleaseInfo[] } | { ok: false; reason: FetchReleaseNotesFailureReason }
+
   declare module "*.png" {
     const value: string
     export default value
