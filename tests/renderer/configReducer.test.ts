@@ -283,6 +283,29 @@ describe("configReducer: installations", () => {
     assert.deepEqual(result.installations, [keep])
   })
 
+  it("DELETE_INSTALLATION moves lastUsedInstallation to the first row left when the selected one goes", () => {
+    const keep = installation({ id: "keep" })
+    const remove = installation({ id: "remove" })
+    const config = baseConfig({ installations: [keep, remove], lastUsedInstallation: "remove" })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.DELETE_INSTALLATION, payload: { id: "remove" } })
+    assert.equal(result.lastUsedInstallation, "keep")
+  })
+
+  it("DELETE_INSTALLATION clears lastUsedInstallation when the last installation goes", () => {
+    const config = baseConfig({ installations: [installation({ id: "only" })], lastUsedInstallation: "only" })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.DELETE_INSTALLATION, payload: { id: "only" } })
+    assert.equal(result.lastUsedInstallation, null)
+  })
+
+  it("DELETE_INSTALLATION leaves lastUsedInstallation alone when another installation is deleted", () => {
+    const config = baseConfig({ installations: [installation({ id: "keep" }), installation({ id: "remove" })], lastUsedInstallation: "keep" })
+
+    const result = configReducer(config, { type: CONFIG_ACTIONS.DELETE_INSTALLATION, payload: { id: "remove" } })
+    assert.equal(result.lastUsedInstallation, "keep")
+  })
+
   it("DELETE_INSTALLATION on an id naming nothing leaves every installation as it was", () => {
     const config = baseConfig({ installations: [installation()] })
     const result = configReducer(config, { type: CONFIG_ACTIONS.DELETE_INSTALLATION, payload: { id: "no-such-id" } })
