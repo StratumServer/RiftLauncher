@@ -66,7 +66,7 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
 
     if (logged) {
       window.api.utils.logMessage("error", `${LOG_TAG} Error installing VS Version ${version.version}.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Error installing VS Version ${version.version} in target folder ${folderName}: ${result.reason}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Error installing VS Version ${version.version}: ${result.reason}.`)
     }
 
     addNotification(t(messageKey, { version: version.version, folder }), "error")

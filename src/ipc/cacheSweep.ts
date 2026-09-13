@@ -88,7 +88,7 @@ export async function sweepCacheFolder(spec: CacheSweepSpec): Promise<void> {
       const stats = await fse.stat(join(spec.folder, name))
       if (stats.isFile()) entries.push({ name, bytes: stats.size, recencyMs: spec.recencyOf(stats) })
     } catch (err) {
-      logMessage("debug", `${spec.origin} Skipping ${name}: ${err}`)
+      logMessage("debug", `${spec.origin} Skipping an entry: ${err}`)
     }
   }
 
@@ -111,7 +111,7 @@ export async function sweepCacheFolder(spec: CacheSweepSpec): Promise<void> {
           await fse.remove(join(spec.folder, name))
           reclaimed += bytesByName.get(name) ?? 0
         } catch (err) {
-          logMessage("debug", `${spec.origin} Could not remove ${name} from ${spec.subject}: ${err}`)
+          logMessage("debug", `${spec.origin} Could not remove an entry from ${spec.subject}: ${err}`)
         }
       })
     )

@@ -117,8 +117,8 @@ export async function getConfig(): Promise<ConfigType> {
     if (mustSave) await saveConfig(ensuredConfig)
     return ensuredConfig
   } catch (err) {
-    logMessage("error", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at ${configPath}. Using default config.`)
-    logMessage("debug", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at ${configPath}: ${err}`)
+    logMessage("error", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at [PATH]. Using default config.`)
+    logMessage("debug", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at [PATH]: ${err}`)
     await saveConfig(defaultConfig)
     return defaultConfig
   }
@@ -133,11 +133,11 @@ export async function ensureConfig(): Promise<boolean> {
       return await saveConfig(defaultConfig)
     }
     configReady = true
-    logMessage("info", `[back] [config] [config/configManager.ts] [ensureConfig] Config found at ${configPath}.`)
+    logMessage("info", `[back] [config] [config/configManager.ts] [ensureConfig] Config found at [PATH].`)
     return true
   } catch (err) {
     logMessage("error", `[back] [config] [config/configManager.ts] [ensureConfig] Error ensuring config.`)
-    logMessage("error", `[back] [config] [config/configManager.ts] [ensureConfig] Error ensuring config at ${configPath}: ${err}`)
+    logMessage("error", `[back] [config] [config/configManager.ts] [ensureConfig] Error ensuring config at [PATH]: ${err}`)
     return false
   }
 }

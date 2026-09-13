@@ -77,7 +77,7 @@ function ListInslallations(): JSX.Element {
 
       if (result.failedBackupPaths.length > 0) {
         window.api.utils.logMessage("error", `${LOG_TAG} Installation deleted but some backups survived.`)
-        window.api.utils.logMessage("debug", `${LOG_TAG} Backups left over for Installation ${installation.id}: ${result.failedBackupPaths.join(", ")}.`)
+        window.api.utils.logMessage("debug", `${LOG_TAG} Backups left over for Installation ${installation.id}: ${result.failedBackupPaths.length}.`)
         return addNotification(t("features.installations.installationDeletedBackupsLeftOver", { count: result.failedBackupPaths.length }), "warning")
       }
 
