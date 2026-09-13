@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
 import { CONFIG_ACTIONS, useConfigDispatch, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { fetchReleaseNotes } from "@renderer/features/info/adapters/whatsNew"
-import { releaseNotesToBlocks, selectReleasesToShow, type WhatsNewBlock } from "@domain/appUpdate/whatsNew"
+import { releaseNotesToBlocks, selectLatestReleases, selectReleasesToShow, type WhatsNewBlock } from "@domain/appUpdate/whatsNew"
 
 export interface WhatsNewRelease {
   version: string
@@ -20,18 +20,26 @@ interface WhatsNewState {
 
 const LOADING_STATE: WhatsNewState = { releases: [], status: "loading" }
 const NOTHING_TO_SHOW_STATE: WhatsNewState = { releases: [], status: "ready" }
+const UNAVAILABLE_STATE: WhatsNewState = { releases: [], status: "unavailable" }
 
 /**
- * The one fetch this feature makes each session, shared by every consumer of {@link useWhatsNew}
- * (the startup dialog and the Info & Help section both call the hook, and neither should trigger
- * its own round trip to GitHub). A module-level promise rather than React state on purpose: it
- * has to survive the dialog and the page mounting and unmounting independently of each other, and
- * it has to be computed from the versions the very first caller saw, not whatever
- * `lastSeenChangelogVersion` has become by the time a later caller renders (see below).
+ * The one fetch this feature makes each session, shared by both consumers: the startup dialog
+ * ({@link useWhatsNew}) and the Info & Help section ({@link useLatestReleases}) ask for the same
+ * release list, and whichever of them needs it first is the only one that goes to GitHub.
+ *
+ * A module-level promise rather than React state, because the dialog and the page mount and
+ * unmount independently of each other. It holds the raw response and nothing derived from it: the
+ * two consumers want different slices of the same list, and #442 tied them to one derived answer,
+ * which is how Info & Help ended up empty on every launch after the first.
  *
  * Reset only by a full reload of the renderer, which is what "once per session" means here.
  */
-let cachedWhatsNew: Promise<WhatsNewState> | null = null
+let cachedReleaseNotes: Promise<FetchReleaseNotesResult> | null = null
+
+function fetchOnce(): Promise<FetchReleaseNotesResult> {
+  cachedReleaseNotes ??= fetchReleaseNotes().catch((): FetchReleaseNotesResult => ({ ok: false, reason: "offline" }))
+  return cachedReleaseNotes
+}
 
 /**
  * Test-only escape hatch: clears the module cache above without reloading the module (which would
@@ -40,45 +48,33 @@ let cachedWhatsNew: Promise<WhatsNewState> | null = null
  * real session gets exactly one renderer module instance, which is what "once per session" means.
  */
 export function resetWhatsNewCacheForTests(): void {
-  cachedWhatsNew = null
+  cachedReleaseNotes = null
 }
 
-async function computeWhatsNew(previousVersion: string, currentVersion: string): Promise<WhatsNewState> {
-  // Nothing changed since this version's notes were last shown (or acknowledged this session):
-  // no fetch, nothing to show. This is also what a config carrying the very version already
-  // running produces, so a second render after "Got it" never re-fetches.
-  if (previousVersion === currentVersion) return NOTHING_TO_SHOW_STATE
-
-  try {
-    const result = await fetchReleaseNotes()
-    if (!result.ok) return { releases: [], status: "unavailable" }
-
-    const releases = selectReleasesToShow(result.releases, previousVersion, currentVersion).map((release) => ({
-      version: release.tag.replace(/^v/i, ""),
-      name: release.name,
-      blocks: releaseNotesToBlocks(release.body)
-    }))
-
-    return { releases, status: "ready" }
-  } catch {
-    return { releases: [], status: "unavailable" }
-  }
+function toWhatsNewReleases(releases: readonly WhatsNewReleaseInfo[]): WhatsNewRelease[] {
+  return releases.map((release) => ({ version: release.tag.replace(/^v/i, ""), name: release.name, blocks: releaseNotesToBlocks(release.body) }))
 }
 
 /**
- * The releases to show after an update, reduced to plain blocks, plus how to mark them seen.
+ * The releases the startup dialog should interrupt a player with, plus how to mark them seen.
  *
- * `releases` and `status` are frozen for the rest of the session the first time a consumer's
- * effect runs with both a running version and a loaded config: that first computation is the one
- * that read `lastSeenChangelogVersion` as it stood before "Got it" could have touched it, and the
- * Info & Help section reusing the same frozen answer later in the session is what lets a player
- * "read them again" rather than watch the section go empty the moment the dialog is dismissed.
+ * The window is (last seen, running version], so this answers with something exactly once per
+ * update, and with nothing at all when the two versions already match, which is also the one case
+ * where it makes no request. The version it compares against is frozen on the first run that sees
+ * a loaded config, so "Got it" writing the running version does not empty the dialog out from
+ * under its own closing animation.
+ *
+ * A successful fetch that matches no release (a development build, or a version whose release is
+ * not published yet) writes the running version to the config anyway: there is nothing to show
+ * and there never will be, so the next launch should not ask GitHub again. A failed fetch writes
+ * nothing, because that answer may well be different next time.
  */
-export function useWhatsNew(): WhatsNewState & { markSeen: () => void } {
+export function useWhatsNew(): WhatsNewState & { previousVersion: string; markSeen: () => void } {
   const { vslVersion } = useAppInfo()
   const { schemaVersion, lastSeenChangelogVersion } = useSettingsConfig()
   const dispatch = useConfigDispatch()
   const [state, setState] = useState<WhatsNewState>(LOADING_STATE)
+  const previousVersion = useRef<string | null>(null)
 
   useEffect(() => {
     // schemaVersion 0: the stored config has not arrived yet (see configReducer's initialState).
@@ -86,21 +82,70 @@ export function useWhatsNew(): WhatsNewState & { markSeen: () => void } {
     // instead of racing it against the reducer's empty-string default.
     if (!vslVersion || schemaVersion === 0) return
 
-    cachedWhatsNew ??= computeWhatsNew(lastSeenChangelogVersion, vslVersion)
+    previousVersion.current ??= lastSeenChangelogVersion
+    const previous = previousVersion.current
+
+    if (previous === vslVersion) {
+      setState(NOTHING_TO_SHOW_STATE)
+      return
+    }
 
     let cancelled = false
-    void cachedWhatsNew.then((result) => {
-      if (!cancelled) setState(result)
+
+    void fetchOnce().then((result) => {
+      if (cancelled) return
+      if (!result.ok) return setState(UNAVAILABLE_STATE)
+
+      const releases = toWhatsNewReleases(selectReleasesToShow(result.releases, previous, vslVersion))
+      if (releases.length === 0 && lastSeenChangelogVersion !== vslVersion) dispatch({ type: CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION, payload: vslVersion })
+
+      setState({ releases, status: "ready" })
     })
 
     return (): void => {
       cancelled = true
     }
-  }, [vslVersion, schemaVersion, lastSeenChangelogVersion])
+  }, [vslVersion, schemaVersion, lastSeenChangelogVersion, dispatch])
 
   const markSeen = (): void => {
     dispatch({ type: CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION, payload: vslVersion })
   }
 
-  return { ...state, markSeen }
+  // The frozen version rather than the live config value, so the dialog's own title does not
+  // rewrite itself the moment closing it marks the running version seen.
+  return { ...state, previousVersion: previousVersion.current ?? "", markSeen }
+}
+
+/**
+ * The latest releases for the Info & Help section, fetched when the page mounts and listed
+ * whatever the player has already seen.
+ *
+ * Deliberately not {@link useWhatsNew}. That hook answers "what did this update bring", which is
+ * nothing on an ordinary launch, and #442 gave the section that same answer: from the second
+ * launch of a version onward it rendered a heading over an empty space. A player opening Info &
+ * Help is asking to read the notes, so the section fetches on its own and shows the latest
+ * releases, sharing the session's one request with the dialog when both want it.
+ *
+ * `currentVersion` is the running version, taken as an argument rather than read through another
+ * useAppInfo, whose mount effect costs four IPC calls; the page already has it.
+ */
+export function useLatestReleases(currentVersion: string): WhatsNewState {
+  const [state, setState] = useState<WhatsNewState>(LOADING_STATE)
+
+  useEffect(() => {
+    if (!currentVersion) return
+
+    let cancelled = false
+
+    void fetchOnce().then((result) => {
+      if (cancelled) return
+      setState(result.ok ? { releases: toWhatsNewReleases(selectLatestReleases(result.releases, currentVersion)), status: "ready" } : UNAVAILABLE_STATE)
+    })
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [currentVersion])
+
+  return state
 }

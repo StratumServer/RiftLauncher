@@ -89,6 +89,46 @@ describe("WhatsNewDialog", () => {
     await waitFor(() => expect(screen.queryByText("What's new in 1.1.0")).toBeNull())
   })
 
+  it("marks the running version seen when Escape closes it, the same as Got it", async () => {
+    const user = userEvent.setup()
+    const api = mountWith({ lastSeenChangelogVersion: "1.0.0", version: "1.1.0" })
+
+    await screen.findByText("What's new in 1.1.0")
+    // Escape and a backdrop click both reach PopupDialogPanel's `close`, which is the handler
+    // "Got it" is wired to as well; the notes stay readable on Info & Help afterwards.
+    await user.keyboard("{Escape}")
+
+    await waitFor(() => expect(savedVersion(api)).toBe("1.1.0"))
+    await waitFor(() => expect(screen.queryByText("What's new in 1.1.0")).toBeNull())
+  })
+
+  it("marks the version seen when the fetch succeeded but carries no release for it", async () => {
+    // A development build, or a version whose release is not published yet. There is nothing to
+    // show and there never will be, so the next launch should not ask GitHub all over again.
+    const api = mountWith({ lastSeenChangelogVersion: "1.0.0", version: "1.1.0-dev", releases: [releaseFixture({ tag: "1.0.0" })] })
+
+    await waitFor(() => expect(savedVersion(api)).toBe("1.1.0-dev"))
+    expect(screen.queryByText(/What's new/)).toBeNull()
+  })
+
+  it("marks nothing seen when the fetch failed, so the next launch tries again", async () => {
+    resetWhatsNewCacheForTests()
+
+    const api = installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ lastSeenChangelogVersion: "1.0.0", moddbVisibilityAnswer: "declined" })) },
+      utils: { getAppVersion: vi.fn(async () => "1.1.0") },
+      netManager: { fetchReleaseNotes: vi.fn(async () => ({ ok: false, reason: "offline" }) as FetchReleaseNotesResult) }
+    })
+
+    renderWithProviders(<WhatsNewDialog />)
+
+    await waitFor(() => expect(api.netManager.fetchReleaseNotes).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(api.configManager.saveConfig).not.toHaveBeenCalled()
+    expect(screen.queryByText(/What's new/)).toBeNull()
+  })
+
   it("does not reappear on a rerender once the version is marked seen", async () => {
     const user = userEvent.setup()
     const api = mountWith({ lastSeenChangelogVersion: "1.0.0", version: "1.1.0" })

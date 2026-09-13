@@ -205,23 +205,40 @@ const GITHUB_ACCEPT_HEADER = "application/vnd.github+json"
 // maintainer would want to see in GitHub's own request logs if this endpoint ever misbehaves.
 const GITHUB_USER_AGENT = "RiftLauncher"
 
-/** One release entry off the raw API response, kept only when it carries a usable tag. Everything else about it defaults rather than rejects the whole release. */
+/** Chromium's redirect refusals, the shape a `redirect: "error"` request fails with: ERR_UNEXPECTED_REDIRECT, ERR_UNSAFE_REDIRECT, ERR_TOO_MANY_REDIRECTS. */
+const REDIRECT_ERROR = /\bERR_[A-Z_]*REDIRECT/
+
+/**
+ * Per-field ceilings, applied here so no single release can push the renderer a field larger than
+ * the whole list is supposed to be. The 256 KiB response cap bounds all ten releases together;
+ * without these a response could spend all of it on one body. 128 for a tag (a semver string with
+ * room to spare), 256 for a name (one line), 64 KiB for a body (the longest this project has
+ * published is under 7 KB, and it is what releaseNotesToBlocks slices to anyway), 64 for an ISO
+ * timestamp.
+ */
+const MAX_RELEASE_TAG_LENGTH = 128
+const MAX_RELEASE_NAME_LENGTH = 256
+const MAX_RELEASE_BODY_LENGTH = 64 * 1024
+const MAX_RELEASE_PUBLISHED_AT_LENGTH = 64
+
+/** A string field of a release, capped, or the given fallback when the API sent something that is not a string. */
+function releaseText(value: unknown, maxLength: number, fallback: string): string {
+  return typeof value === "string" ? value.slice(0, maxLength) : fallback
+}
+
+/** One release entry off the raw API response, kept only when it carries a usable tag. Everything else about it defaults rather than rejects the whole release, and every field is capped before it crosses IPC. */
 function validateReleaseEntry(value: unknown): WhatsNewReleaseInfo | undefined {
   if (!isRecord(value)) return undefined
   const tag = value["tag_name"]
-  if (typeof tag !== "string" || tag.length === 0 || tag.length > 128) return undefined
-
-  const name = value["name"]
-  const body = value["body"]
-  const publishedAt = value["published_at"]
+  if (typeof tag !== "string" || tag.length === 0 || tag.length > MAX_RELEASE_TAG_LENGTH) return undefined
 
   return {
     tag,
-    name: typeof name === "string" ? name : tag,
-    body: typeof body === "string" ? body : "",
+    name: releaseText(value["name"], MAX_RELEASE_NAME_LENGTH, tag),
+    body: releaseText(value["body"], MAX_RELEASE_BODY_LENGTH, ""),
     prerelease: value["prerelease"] === true,
     draft: value["draft"] === true,
-    publishedAt: typeof publishedAt === "string" ? publishedAt : ""
+    publishedAt: releaseText(value["published_at"], MAX_RELEASE_PUBLISHED_AT_LENGTH, "")
   }
 }
 
@@ -252,11 +269,20 @@ function headerValue(headers: Record<string, string | string[] | undefined>, nam
  */
 function releaseNotesFailureReason(error: unknown): FetchReleaseNotesFailureReason {
   if (error instanceof BoundedResponseError) {
+    // 403 with the remaining count at zero is the primary rate limit; 429 is the secondary one,
+    // which GitHub sends for a burst even while the hourly budget still has room.
+    if (error.statusCode === 429) return "rate-limited"
     if (error.statusCode === 403 && headerValue(error.headers, "x-ratelimit-remaining") === "0") return "rate-limited"
     return "bad-response"
   }
 
   if (error instanceof Error && error.message === "Network response is too large") return "too-large"
+
+  // The transport refuses to follow a redirect (network.ts, `redirect: "error"`), which surfaces
+  // as a transport error rather than a status. That is the repository having been renamed or
+  // moved, not a machine that is offline: calling it offline would have the launcher retry it on
+  // every launch forever, when the answer will never change until this file's URL does.
+  if (error instanceof Error && REDIRECT_ERROR.test(error.message)) return "bad-response"
 
   return "offline"
 }
