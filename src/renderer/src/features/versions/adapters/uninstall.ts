@@ -17,17 +17,20 @@ export function toGameVersionSnapshot(version: GameVersionType): GameVersionSnap
   }
 }
 
-/** How many installation names the in-use warning spells out before folding the rest into "and N more". */
+/** How many installation names the in-use warning spells out before folding the rest into a count. */
 const MAX_LISTED_INSTALLATIONS = 5
 
-/** Names the installations pinned to a version, for the in-use warning. Caps the list so a version shared by dozens of installations doesn't blow up the dialog. */
-export function formatUsedByInstallations(names: readonly string[]): string {
-  if (names.length <= MAX_LISTED_INSTALLATIONS) return names.join(", ")
+/** The installations an in-use warning spells out, and how many more were left off the list. */
+export interface UsedByInstallationsSummary {
+  /** Installation names to show verbatim, capped at MAX_LISTED_INSTALLATIONS. */
+  shown: readonly string[]
+  /** Installations left out of `shown`, 0 when none were. Left as a number so the caller can phrase "N more" through i18n instead of this staying English-only. */
+  remaining: number
+}
 
-  const shown = names.slice(0, MAX_LISTED_INSTALLATIONS)
-  const remaining = names.length - MAX_LISTED_INSTALLATIONS
-
-  return `${shown.join(", ")} and ${remaining} more`
+/** Splits the installations pinned to a version for the in-use warning. Caps the list so a version shared by dozens of installations doesn't blow up the dialog. */
+export function summarizeUsedByInstallations(names: readonly string[]): UsedByInstallationsSummary {
+  return { shown: names.slice(0, MAX_LISTED_INSTALLATIONS), remaining: Math.max(0, names.length - MAX_LISTED_INSTALLATIONS) }
 }
 
 export interface UninstallFailureFeedback {

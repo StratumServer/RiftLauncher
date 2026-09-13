@@ -130,7 +130,7 @@ function InstalledModItem({
             <div className="flex gap-2 items-center text-sm text-zinc-400 @max-md:hidden">
               {iMod.authors && iMod.authors?.length > 0 && (
                 <p className="shrink-0 overflow-hidden whitespace-nowrap text-ellipsis">
-                  {t("generic.authors")}: {iMod.authors?.join(", ")}
+                  {t("features.mods.authorsLabel")} {iMod.authors?.join(", ")}
                 </p>
               )}
 
@@ -138,7 +138,7 @@ function InstalledModItem({
 
               {iMod.contributors && iMod.contributors?.length > 0 && (
                 <p className="overflow-hidden whitespace-nowrap text-ellipsis">
-                  {t("generic.contributors")}: {iMod.contributors?.join(", ")}
+                  {t("features.mods.contributorsLabel")} {iMod.contributors?.join(", ")}
                 </p>
               )}
             </div>
