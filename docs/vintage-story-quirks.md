@@ -1,6 +1,6 @@
 # Vintage Story quirks
 
-Field knowledge for anyone touching the game catalog, archive extraction, the installer, the ModDB API, or account login. Everything below is verified against this codebase's own code, comments, tests, or open issues; nothing here is general Vintage Story lore that isn't also load-bearing somewhere in RiftLauncher. Closes #31.
+Field knowledge for anyone touching the game catalog, a fork of the client, archive extraction, the installer, the ModDB API, or account login. Everything below is verified against this codebase's own code, comments, tests, or open issues; nothing here is general Vintage Story lore that isn't also load-bearing somewhere in RiftLauncher. Closes #31.
 
 ## Catalog
 
@@ -11,6 +11,16 @@ Field knowledge for anyone touching the game catalog, archive extraction, the in
 **Older Linux entries ship as `vs_archive_<v>.tar.gz`, one archive for client and server, sharing the same wrapping folder as everything else.** Per issue #31: "Older Linux entries ship as `vs_archive_<v>.tar.gz`, one archive for client and server, same wrapping folder. The new extraction path handles the shape but has never been run against a real one." The generic flattening logic in `src/ipc/workers/extraction.ts` (`contentRoot()`, see Archive below) would handle this shape if it showed up, and `isTarGzName` in `src/ipc/validation.ts` routes any `.tar.gz`/`.tgz` name to the tar extractor regardless of the specific filename, but no test in this repo exercises the literal `vs_archive_` name against a real download. Treat this path as plausible, not proven.
 
 **`assets/version-<v>.txt`, the zero-byte marker the game itself checks at startup, does not exist in 1.18.15 and older.** It only appears in later builds. Any install-verification code must not assume it exists. The current detection code sidesteps the problem entirely rather than working around it: `src/domain/versions/detect.ts` and `src/domain/versions/gameExecutable.ts` verify an install by looking for the game's executable (`expectedGameExecutables`, `gameExecutable.ts:35-44`), never for the marker file, which is exactly why this trap has never been triggered. See issue #31.
+
+## Forks
+
+**Optimum is a client-side fork built on the player's own machine, and there is no build of it to download.** The game is proprietary, so Optimum compiles from source: it decompiles the player's own client and IL-patches `VintagestoryLib.dll` and `VintagestoryAPI.dll` with Cecil, which needs a .NET 10 SDK, git, python3, curl and perl on the machine plus a client download on the first build. Its GitHub releases are source-only by policy and carry no binary asset; the two zips on its ModDB listing (mod id 9833, type `other`, side `client`) are the build kit, not a client. Sources: <https://github.com/StratumServer/Optimum>, its Installation and Packaging wiki pages, and <https://mods.vintagestory.at/optimum>. So the launcher never offers Optimum as a download, and nothing about registering one implies it could: a player brings a folder they already built.
+
+**A built Optimum folder registers as a normal VS Version, because the fork's own packaging keeps the vanilla file name.** `scripts/package-linux.sh` copies the vanilla-named launcher next to the branded one on purpose, so the folder holds both `Vintagestory` and `Optimum` and `expectedGameExecutables` (`src/domain/versions/gameExecutable.ts`) matches it with nothing added. Its launcher also takes `--dataPath`, which is what `buildGameLaunchPlan` passes.
+
+**What identifies the fork is the `LongGameVersion` suffix, not the file name.** The IL patch appends `" + Optimum v<version>"` to `GameVersion.LongGameVersion` (`Optimum.Patcher/api-patcher.cs`, `PatchGameVersionLabel`), and the patch path also logs `[Optimum] Optimum v0.3.14`. `extractOptimumVersion` in `src/domain/versions/detect.ts` reads that marker, off the same version grammar the game version is read with, and the label builder in `src/domain/naming.ts` turns it into `1.22.7 Optimum 0.3.14`. The file names in the folder are deliberately not consulted: anyone can name a file `Optimum`, while the suffix comes from the patched DLL that actually changes how the build behaves.
+
+**Optimum reports the vanilla game version, and versions itself on a separate 0.x line.** The number a registered Optimum build carries is the game version it was built against (1.22.7 today), which is what mods target, so nothing compatibility-related needs to know the build is a fork. Its own version, 0.3.14 today, only ever shows up in the label. There is no artefact called "Optimum 1.22.7", and its ModDB releases tag the game version as `0.0.0`, so that API carries no usable game-version metadata either.
 
 ## Archive
 
