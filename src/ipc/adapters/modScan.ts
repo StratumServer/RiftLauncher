@@ -363,7 +363,7 @@ export function createModsDirectoryReaderPort(): DirectoryReader {
         try {
           assertSafeFileName(entry)
           if ((await fse.lstat(join(path, entry))).isSymbolicLink()) {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [listFileNames] Skipping ${entry}, a symbolic link inside the Mods folder.`)
+            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [listFileNames] Skipping a symbolic link inside the Mods folder.`)
             continue
           }
           names.push(entry)

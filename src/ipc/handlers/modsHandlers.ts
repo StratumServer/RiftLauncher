@@ -91,7 +91,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
   // policy as before.
   path = await assertManagedPath(path, "mods path", { allowMissing: true, allowSymlinks: true })
   try {
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Looking for mods at ${path}.`)
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Looking for mods at [PATH].`)
 
     if (!(await fse.pathExists(path))) {
       // pathExists follows a link, so a linked Mods folder whose disk is not mounted lands here too.
@@ -108,10 +108,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
 
     logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Found ${scan.mods.length} mods and ${scan.errors.length} mods with errors.`)
     if (scan.errors.length > 0)
-      logMessage(
-        "debug",
-        `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Found ${scan.errors.length} mods with errors: ${scan.errors.map((archive) => `${archive.zipname} (${archive.problem})`)}`
-      )
+      logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Found ${scan.errors.length} mods with errors: ${scan.errors.map((archive) => archive.problem).join(", ")}`)
 
     void pruneModIconCache()
 
@@ -183,7 +180,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
   assertTrustedIpcSender(event)
   try {
     const safeManifest = parseModpackManifest(manifest)
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Exporting modpack "${safeManifest.name}" with ${safeManifest.mods.length} mods.`)
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Exporting a modpack with ${safeManifest.mods.length} mods.`)
 
     const result = await dialog.showSaveDialog({
       title: "Export Modpack",
@@ -200,7 +197,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
     const safeOutputPath = await assertManagedPath(result.filePath, "modpack path", { allowMissing: true })
     await writeJsonAtomic(safeOutputPath, safeManifest, { spaces: 2 })
 
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Modpack exported to ${result.filePath}.`)
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Modpack exported to [PATH].`)
     return { success: true, path: result.filePath }
   } catch (err) {
     logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Error exporting modpack.`)
@@ -238,7 +235,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<
 
     const manifest = parseModpackManifest(parsedManifest)
 
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Modpack "${manifest.name}" loaded with ${manifest.mods.length} mods.`)
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] A modpack loaded with ${manifest.mods.length} mods.`)
     return { success: true, manifest }
   } catch (err) {
     logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Error importing modpack.`)

@@ -346,7 +346,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     // Never logs what the file held: the path this installation was copied out of is untrusted
     // input and stays out of the log. The path we put there is our own and may be named.
     const modPathsNotice = "modPaths" in written ? written.modPaths : undefined
-    if (modPathsNotice === "repointed") logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Repointed this installation's mod folder list at ${modsPath}.`)
+    if (modPathsNotice === "repointed") logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Repointed this installation's mod folder list at [PATH].`)
     else if (modPathsNotice === "repoint-write-failed")
       logMessage(
         "warn",

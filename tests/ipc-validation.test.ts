@@ -149,11 +149,31 @@ describe("IPC boundary validators", () => {
         "Looking for mods at /home/Jane Doe/.config/RiftLauncherInstallations/My New Installation/Mods. and C:\\Users\\Jane Doe\\AppData\\Roaming\\RiftLauncherInstallations\\My World\\Mods.",
         "Looking for mods at [PATH] and [PATH]"
       ],
-      ["Could not open /home/user/Mods. Check permissions before retrying.", "Could not open [PATH] Check permissions before retrying."]
+      ["Could not open /home/user/Mods. Check permissions before retrying.", "Could not open [PATH] Check permissions before retrying."],
+      // A single path component can run to several spaced words ("My Vintage Story
+      // Survival World 2026 Edition One"); the lookahead has to look far enough
+      // ahead to see the "/Mods" that proves those words are still inside the path.
+      ["Scanning /home/qwerty/My Vintage Story Survival World 2026 Edition One/Mods now", "Scanning [PATH] now"],
+      // ...but the lookahead must not look so far that it swallows a second, unrelated
+      // path into the first one. Nine plain words between two paths is enough prose
+      // that the bound has to give up and treat them as two separate matches.
+      ["Moved /home/alpha/x.zip right over there and back around to somewhere else /home/beta/y.zip.", "Moved [PATH] right over there and back around to somewhere else [PATH]"],
+      // A tab is as much a separator as a space; it must bridge a path component too.
+      ["/home/Jane\tDoe/.config/Rift/Mods", "[PATH]"]
     ] as const
 
     for (const [message, expected] of cases) {
       assert.equal(redactSensitiveText(message), expected)
     }
+  })
+
+  it("keeps absolute path redaction linear, not quadratic, on adversarial input", () => {
+    // A run of spaces with no further path separator anywhere after it is exactly
+    // the shape that made an earlier, unbounded lookahead blow up (~100 ms on 16 KiB);
+    // the bound keeps this under 20 ms with plenty of headroom so CI never flakes.
+    const input = "/home/q/x" + " ".repeat(16_000) + "y"
+    const start = performance.now()
+    redactSensitiveText(input)
+    assert.ok(performance.now() - start < 20, "absolute path redaction should stay well under 20 ms")
   })
 })

@@ -60,7 +60,7 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
           const release = modToUpdate._mod?.releases.find((candidate) => candidate.modversion === modToUpdate._updatableTo)
 
           if (!modToUpdate._mod || !release) {
-            logMods("error", `${LOG_TAG} [updateAllMods] No ModDB release matching ${modToUpdate._updatableTo} for the ${modToUpdate.name} Mod.`)
+            logMods("error", `${LOG_TAG} [updateAllMods] No ModDB release matching ${modToUpdate._updatableTo} for a Mod.`)
             collected.push({ name: modToUpdate.name, modid: modToUpdate.modid, fromVersion: modToUpdate.version, toVersion: null, assetid: modToUpdate._mod?.assetid })
             return
           }
