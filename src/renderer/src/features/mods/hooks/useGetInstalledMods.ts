@@ -18,9 +18,9 @@ async function getInstalledMods({ path, onFinish }: { path: string; onFinish?: (
     if (onFinish) onFinish()
 
     return mods
-  } catch (err) {
-    logMods("error", `[front] [mods] [features/mods/hooks/useGetInstalledMods.ts] [useGetInstalledMods > getInstalledMods] Error getting mods installed on ${path}.`)
-    logMods("debug", `[front] [mods] [features/mods/hooks/useGetInstalledMods.ts] [useGetInstalledMods > getInstalledMods] Error getting mods installed on ${path}: ${err}`)
+  } catch {
+    logMods("error", `[front] [mods] [features/mods/hooks/useGetInstalledMods.ts] [useGetInstalledMods > getInstalledMods] Error getting installed mods.`)
+    logMods("debug", `[front] [mods] [features/mods/hooks/useGetInstalledMods.ts] [useGetInstalledMods > getInstalledMods] Error getting installed mods.`)
     return { mods: [], errors: [] }
   }
 }

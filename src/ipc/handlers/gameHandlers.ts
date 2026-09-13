@@ -511,7 +511,7 @@ function realProcessProbe(): ProcessProbe {
 ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, path: unknown): Promise<LookForAGameVersionResult> => {
   assertTrustedIpcSender(event)
   const safePath = await assertManagedPath(path, "game version path", { allowMissing: true })
-  logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Looking for the game at ${safePath}`)
+  logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Looking for the game at [PATH]`)
 
   let fileNames: string[]
   try {

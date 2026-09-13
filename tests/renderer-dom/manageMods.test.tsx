@@ -343,17 +343,22 @@ describe("ManageMods: suspended Mod updates", () => {
     renderManageMods()
 
     const alphaRow = await rowFor("Alpha Mod")
-    expect(within(alphaRow).getByTitle(SUSPEND_TITLE)).toBeTruthy()
+    const suspendButton = within(alphaRow).getByTitle(SUSPEND_TITLE)
+    expect(suspendButton.querySelector('svg path[opacity="0.2"]')).toBeTruthy()
 
-    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+    await user.click(suspendButton)
 
-    expect(within(alphaRow).getByTitle(RESUME_TITLE)).toBeTruthy()
+    const resumeButton = within(alphaRow).getByTitle(RESUME_TITLE)
+    const resumeIcon = resumeButton.querySelector("svg")
+    if (!resumeIcon) throw new Error("resume icon not found")
+    expect(resumeIcon.getAttribute("class")).toContain("text-yellow-400")
+    expect(resumeIcon.querySelector('path[opacity="0.2"]')).toBeNull()
     // Marked at a glance, in the same tint family the row already uses for its update states.
     expect(alphaRow.firstElementChild?.className).toContain("bg-sky-500/25")
 
-    await user.click(within(alphaRow).getByTitle(RESUME_TITLE))
+    await user.click(resumeButton)
 
-    expect(within(alphaRow).getByTitle(SUSPEND_TITLE)).toBeTruthy()
+    expect(within(alphaRow).getByTitle(SUSPEND_TITLE).querySelector('svg path[opacity="0.2"]')).toBeTruthy()
     expect(alphaRow.firstElementChild?.className).not.toContain("bg-sky-500/25")
   })
 
@@ -601,12 +606,17 @@ describe("ManageMods: enabling and disabling a Mod", () => {
     const epsilonRow = await rowFor("Epsilon Mod")
 
     expect(within(epsilonRow).getByText("Disabled")).toBeTruthy()
-    expect(within(epsilonRow).getByTitle(ENABLE_TITLE)).toBeTruthy()
+    const enableButton = within(epsilonRow).getByTitle(ENABLE_TITLE)
+    const enableIcon = enableButton.querySelector("svg")
+    if (!enableIcon) throw new Error("enable icon not found")
+    expect(enableIcon.getAttribute("class")).toContain("text-yellow-400")
+    expect(enableIcon.querySelector('path[opacity="0.2"]')).toBeNull()
     expect(epsilonRow.firstElementChild?.className).toContain("bg-zinc-500/25")
 
     // An enabled row offers the other direction and is not greyed at all.
     const alphaRow = await rowFor("Alpha Mod")
-    expect(within(alphaRow).getByTitle(DISABLE_TITLE)).toBeTruthy()
+    const disableButton = within(alphaRow).getByTitle(DISABLE_TITLE)
+    expect(disableButton.querySelector('svg path[opacity="0.2"]')).toBeTruthy()
     expect(within(alphaRow).queryByText("Disabled")).toBeNull()
     expect(alphaRow.firstElementChild?.className).not.toContain("bg-zinc-500/25")
   })
