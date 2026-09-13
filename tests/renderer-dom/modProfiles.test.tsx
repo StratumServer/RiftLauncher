@@ -223,6 +223,12 @@ function buttonWithText(text: string): HTMLButtonElement {
   return screen.getByText(text).closest("button") as HTMLButtonElement
 }
 
+/** Import, Export and Export for a server moved behind a "Modpack" menu (#431): open it if needed. */
+async function modpackMenuItem(user: ReturnType<typeof userEvent.setup>, label: string): Promise<HTMLButtonElement> {
+  if (!screen.queryByText(label)) await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
+  return screen.getByText(label).closest("button") as HTMLButtonElement
+}
+
 /**
  * The toasts on screen. The dialog hides the page it sits over from assistive technology, and the
  * toasts live in that page, so the query has to look past `aria-hidden` or it would find none.
@@ -620,7 +626,7 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(screen.getByText("Updating installed Mods!")).toBeTruthy()
     expect(screen.queryByText("Gamma Mod")).toBeNull()
     expect(buttonWithText("Update all").disabled).toBe(true)
-    expect(buttonWithText("Import Modpack").disabled).toBe(true)
+    expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(true)
     expect(useButtonOf(dialog, "Server").disabled).toBe(true)
 
     await act(async () => {

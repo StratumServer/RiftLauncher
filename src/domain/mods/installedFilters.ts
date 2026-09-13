@@ -135,6 +135,16 @@ export function hasActiveInstalledModFilters(filters: InstalledModFilters): bool
 }
 
 /**
+ * How many of the three axes are set, from 0 to 3. The Filters toggle shows this count rather than
+ * a plain on/off state, so a player who set two axes and forgot about one still sees why the list
+ * is short. A tag axis with several tags picked still counts as the one axis it is: the toggle is
+ * about which controls are touched, not how many values sit inside one of them.
+ */
+export function countActiveInstalledModFilters(filters: InstalledModFilters): number {
+  return (filters.author !== "" ? 1 : 0) + (filters.tags.length > 0 ? 1 : 0) + (filters.gameVersion !== "" ? 1 : 0)
+}
+
+/**
  * True when a ModDB listing's `modidstrs` name an installed modid.
  *
  * The listing spells its ids in lowercase while a `modinfo.json` may use any casing, so an installed

@@ -1,5 +1,6 @@
 import { Button as HButton } from "@headlessui/react"
 import clsx from "clsx"
+import { forwardRef } from "react"
 import { Link } from "react-router-dom"
 
 import {
@@ -80,27 +81,29 @@ type FormButtonProps = Readonly<{
   size?: ButtonSize
   ariaLabel?: string
   ariaPressed?: boolean
+  /** For a disclosure control (a toggle that shows or hides another element), not a stateful one. */
+  ariaExpanded?: boolean
 }> &
-  Readonly<FormButtonAction>
+  Readonly<FormButtonAction> &
+  /*
+   * Everything else (role, id, tabIndex, aria-labelledby, the hover/focus tracking handlers, the
+   * data-* state attributes) passed straight to the underlying button. A MenuItem rendered
+   * `as={Fragment}` clones its single child and merges exactly these onto it, expecting them to
+   * land on the real DOM node; a component with no rest slot to catch them would silently drop
+   * every one, leaving the button with none of the roving-focus wiring Headless UI thinks it set.
+   */
+  Readonly<Omit<React.ComponentPropsWithoutRef<"button">, "onClick" | "disabled" | "title" | "className" | "children" | "type">>
 
-export function FormButton({
-  children,
-  icon,
-  className,
-  onClick,
-  title,
-  disabled,
-  busy,
-  variant = "secondary",
-  size = "sm",
-  nativeType = "button",
-  ariaLabel,
-  ariaPressed
-}: FormButtonProps): JSX.Element {
+export const FormButton = forwardRef<HTMLButtonElement, FormButtonProps>(function FormButton(
+  { children, icon, className, onClick, title, disabled, busy, variant = "secondary", size = "sm", nativeType = "button", ariaLabel, ariaPressed, ariaExpanded, ...rest },
+  ref
+) {
   const action = useActionBusy(onClick, busy, disabled)
 
   return (
     <HButton
+      {...rest}
+      ref={ref}
       type={nativeType}
       disabled={disabled || action.busy}
       onClick={action.onClick}
@@ -108,12 +111,13 @@ export function FormButton({
       aria-label={ariaLabel ?? title}
       aria-busy={action.busy}
       aria-pressed={ariaPressed}
+      aria-expanded={ariaExpanded}
       className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}
     >
       {renderActionContent(children, icon, title, action.busy)}
     </HButton>
   )
-}
+})
 
 /**
  * Link to a page with the same styles as the FormButton.

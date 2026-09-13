@@ -213,6 +213,28 @@ function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof
   )
 }
 
+/**
+ * Import, Export and Export for a server moved behind a "Modpack" menu (#431). Opens it if it is
+ * not open already, then hands back the item by the same label the standalone button used to
+ * carry, so every test written against that label still works once it awaits this instead.
+ */
+async function modpackMenuItem(user: ReturnType<typeof userEvent.setup>, label: string): Promise<HTMLButtonElement> {
+  if (!screen.queryByText(label)) await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
+  return screen.getByText(label).closest("button") as HTMLButtonElement
+}
+
+/**
+ * Opens the Filters panel if it is not open already; a no-op once "Author" is already on screen.
+ * The find, not a query, is what lets a caller reach for this the moment it renders, before the
+ * scan that puts the toggle on screen has necessarily landed.
+ */
+async function openFiltersPanel(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  // "Clear filters" rather than "Author": picking a value renames the Author control to that value,
+  // so it stops being a reliable sign the panel is already open.
+  if (screen.queryByRole("button", { name: "Clear filters" })) return
+  await user.click((await screen.findByText(/^Filters/, {}, { timeout: 3000 })).closest("button") as HTMLElement)
+}
+
 describe("ManageMods", () => {
   it("sorts the scanned Mods into the updatable, incompatible and unreadable lists", async () => {
     renderManageMods()
@@ -328,6 +350,118 @@ describe("ManageMods", () => {
     // Gamma had no compatible update, so the bulk run never touched it.
     expect(downloadOnPath).toHaveBeenCalledTimes(2)
     expect(deletePath.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([ALPHA_PATH, BETA_PATH]))
+  })
+})
+
+/**
+ * Issue #431: the row grew a Modpack menu, a Filters toggle, and a selection bar that no longer
+ * sits there reading "0 selected" before anyone has checked a Mod.
+ */
+describe("ManageMods: the action bar after #431", () => {
+  it("keeps the three modpack actions off screen until the Modpack menu is opened, and marks it collapsed again once one runs", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.queryByText("Export Modpack")).toBeNull()
+    expect(screen.queryByText("Export Server Modpack")).toBeNull()
+    expect(screen.queryByText("Import Modpack")).toBeNull()
+
+    const trigger = screen.getByText("Modpack").closest("button") as HTMLElement
+    await user.click(trigger)
+    expect(trigger.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByText("Export Modpack")).toBeTruthy()
+    expect(screen.getByText("Export Server Modpack")).toBeTruthy()
+    expect(screen.getByText("Import Modpack")).toBeTruthy()
+
+    await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    // The menu reports itself collapsed straight away; the fade-out on the panel itself is cosmetic.
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("opens the Modpack menu from a focused trigger with the keyboard and runs an action reached by the arrow keys", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    const trigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
+    trigger.focus()
+    await user.keyboard("{Enter}")
+    const exportItem = (await screen.findByText("Export Modpack")).closest("button") as HTMLButtonElement
+
+    // Headless UI clones its own role, id and roving tabIndex onto a MenuItem rendered as={Fragment}
+    // by merging them onto the single child's props; a FormButton with no rest slot to catch them
+    // would silently drop every one, and a separate DOM pass then stamps the orphaned button
+    // role="none" for hiding nothing else claimed. This is what a mouse-only check cannot catch,
+    // since none of it affects a click.
+    expect(exportItem.getAttribute("role")).toBe("menuitem")
+    expect(exportItem.tabIndex).toBe(-1)
+
+    // Arrow down onto the first action, Enter to run it: the same path a mouse click takes, just
+    // from the keyboard. Before the Fragment fix, the outer <li> ate this Enter and closed the
+    // menu without ever reaching the FormButton's own onClick.
+    await user.keyboard("{ArrowDown}{Enter}")
+    await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+    // The action closes the menu behind it, same as a mouse click does; the fade-out is cosmetic.
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("closes the Modpack menu on Escape without running any action", async () => {
+    const user = userEvent.setup()
+    const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+    renderManageMods({ modsManager: { exportModpack } })
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    const trigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
+    await user.click(trigger)
+    expect(await screen.findByText("Export Modpack")).toBeTruthy()
+
+    await user.keyboard("{Escape}")
+    // The menu reports itself collapsed straight away; the fade-out on the panel itself is cosmetic.
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    expect(exportModpack).not.toHaveBeenCalled()
+  })
+
+  it("hides the count and the five batch actions until a Mod is checked, but keeps select-all reachable throughout", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    const selectAll = await screen.findByRole("checkbox", { name: "Select every Mod shown" }, { timeout: 3000 })
+    expect(selectAll).toBeTruthy()
+    expect(screen.queryByText(/^\d+ selected$/)).toBeNull()
+    expect(screen.queryByRole("button", { name: /Delete the selected Mods/ })).toBeNull()
+    // The live region is already in the DOM, just empty: a screen reader is far more reliably told
+    // about a change to an announced node's text than about a brand new node appearing with text
+    // already in it. Scoped to select-all's own group: the page carries other status regions too.
+    const selectionGroup = selectAll.closest("div") as HTMLElement
+    expect(within(selectionGroup).getByRole("status").textContent).toBe("")
+
+    await user.click(screen.getByRole("checkbox", { name: "Select Alpha Mod" }))
+
+    expect(screen.getByText("1 selected")).toBeTruthy()
+    expect(screen.getByRole("button", { name: /Delete the selected Mods/ })).toBeTruthy()
+  })
+
+  it("shows the Filters toggle closed by default, and counts the axis it is told to set", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    const filtersToggle = screen.getByText("Filters").closest("button") as HTMLElement
+    expect(filtersToggle).toBeTruthy()
+    // It reveals a panel, it is not a stateful toggle: aria-expanded, not aria-pressed.
+    expect(filtersToggle.getAttribute("aria-expanded")).toBe("false")
+    expect(screen.queryByRole("button", { name: "Author" })).toBeNull()
+
+    await user.click(filtersToggle)
+    expect(filtersToggle.getAttribute("aria-expanded")).toBe("true")
+    await user.click(screen.getByRole("button", { name: "Author" }))
+    await user.click(await screen.findByRole("option", { name: "Ann" }))
+
+    expect(screen.getByText("Filters (1)")).toBeTruthy()
   })
 })
 
@@ -549,10 +683,10 @@ describe("ManageMods: searching the installed Mods", () => {
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
 
     // Nothing on screen would go into a server modpack, so there is nothing to export.
-    expect((screen.getByText("Export Server Modpack").closest("button") as HTMLButtonElement).disabled).toBe(true)
+    expect((await modpackMenuItem(user, "Export Server Modpack")).disabled).toBe(true)
 
     // The plain export ships the visible list itself, so one visible Mod is still one Mod to write.
-    const plainExport = screen.getByText("Export Modpack").closest("button") as HTMLButtonElement
+    const plainExport = await modpackMenuItem(user, "Export Modpack")
     expect(plainExport.disabled).toBe(false)
 
     await user.click(plainExport)
@@ -570,7 +704,7 @@ describe("ManageMods: searching the installed Mods", () => {
     await searchFor(user, "ta")
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
 
-    const serverExport = screen.getByText("Export Server Modpack").closest("button") as HTMLButtonElement
+    const serverExport = await modpackMenuItem(user, "Export Server Modpack")
     expect(serverExport.disabled).toBe(false)
 
     await user.click(serverExport)
@@ -714,14 +848,25 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     await rowFor("Epsilon Mod")
 
-    await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+    await user.click(await modpackMenuItem(user, "Export Modpack"))
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
     expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0", name: "Alpha Mod" }])
 
     // Epsilon declares no side, which the server export otherwise reads as "the server loads it".
-    await user.click(screen.getByText("Export Server Modpack").closest("button") as HTMLElement)
+    await user.click(await modpackMenuItem(user, "Export Server Modpack"))
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(2))
     expect(exportModpack.mock.calls[1]?.[0].mods).toEqual([{ modid: "alpha", version: "1.0.0", name: "Alpha Mod" }])
+  })
+
+  it("greys the plain export out too once a search leaves only a disabled Mod on screen", async () => {
+    const user = userEvent.setup()
+    renderWithADisabledMod()
+
+    await rowFor("Epsilon Mod")
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "epsilon")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    expect((await modpackMenuItem(user, "Export Modpack")).disabled).toBe(true)
   })
 
   it("finds a disabled Mod by search like any other, name or id", async () => {
@@ -828,10 +973,12 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
   }
 
   /**
-   * Opens one dropdown by the name it carries while unset. The findByRole wait doubles as the wait
-   * for the scan to land: the bar only mounts once there is more than one installed Mod.
+   * Opens one dropdown by the name it carries while unset, opening the Filters panel first if it
+   * is not already. The findByRole wait doubles as the wait for the scan to land: the toggle only
+   * mounts once there is more than one installed Mod.
    */
   async function openFilter(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
+    await openFiltersPanel(user)
     await user.click(await screen.findByRole("button", { name }, { timeout: 3000 }))
   }
 
@@ -841,10 +988,12 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
   }
 
   it("names every control it offers, and offers no tag control for a folder the ModDB tagged none of", async () => {
+    const user = userEvent.setup()
     renderManageMods()
 
     // The default fixture's details carry release tags but no category tags at all.
     expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    await openFiltersPanel(user)
     expect(screen.getByRole("button", { name: "Author" })).toBeTruthy()
     expect(await screen.findByRole("button", { name: "VS Version" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Clear filters" })).toBeTruthy()
@@ -855,9 +1004,11 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
   })
 
   it("offers only the author control when the ModDB answers nothing", async () => {
+    const user = userEvent.setup()
     renderManageMods({ netManager: { queryURL: vi.fn(async () => JSON.stringify({ statuscode: "404" })) } })
 
     expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+    await openFiltersPanel(user)
     expect(screen.getByRole("button", { name: "Author" })).toBeTruthy()
     // Both ModDB-derived axes stay off screen rather than offering a filter that would hide the folder.
     expect(screen.queryByRole("button", { name: "Tags" })).toBeNull()
@@ -1100,7 +1251,7 @@ describe("ManageMods: filtering the installed Mods", { timeout: 20000 }, () => {
     await pick(user, "Author", "Cal")
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
 
-    await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+    await user.click(await modpackMenuItem(user, "Export Modpack"))
 
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
     expect(exportModpack.mock.calls[0]?.[0].mods).toEqual([
@@ -1264,6 +1415,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     renderManageMods({ modsManager: { setModEnabled, getInstalledMods } })
 
     async function showOnlyBob(): Promise<void> {
+      await openFiltersPanel(user)
       await user.click(screen.getByRole("button", { name: "Author" }))
       await user.click(await screen.findByRole("option", { name: "Bob" }))
       await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
@@ -1562,7 +1714,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
       [BETA_PATH, false]
     ])
     expect(buttonWithText("Update all").disabled).toBe(true)
-    expect(buttonWithText("Import Modpack").disabled).toBe(true)
+    expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(true)
     expect(alphaToggle.disabled).toBe(true)
     expect(checkboxOf("Alpha Mod").disabled).toBe(true)
     // A row outside the selection is not part of the batch and stays live.
@@ -1578,13 +1730,13 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     expect(await screen.findByText("2 Mods disabled.")).toBeTruthy()
     await waitFor(() => expect(getInstalledMods).toHaveBeenCalledTimes(scansBefore + 1))
     expect(buttonWithText("Update all").disabled).toBe(true)
-    expect(buttonWithText("Import Modpack").disabled).toBe(true)
+    expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(true)
     expect((await selectAllBox()).disabled).toBe(true)
 
     await act(async () => releaseScan())
     await batchLanded()
     expect(buttonWithText("Update all").disabled).toBe(false)
-    expect(buttonWithText("Import Modpack").disabled).toBe(false)
+    expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(false)
     expect((within(screen.getByText("Alpha Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false)
     expect(setModEnabled).toHaveBeenCalledTimes(2)
   })
@@ -1598,7 +1750,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
 
     await check(user, "Alpha Mod")
 
-    await user.click(buttonWithText("Export Modpack"))
+    await user.click(await modpackMenuItem(user, "Export Modpack"))
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
     expect(exportModpack.mock.calls[0]?.[0].mods.map((mod) => mod.modid)).toEqual(["alpha", "beta", "gamma", "quirkid"])
 
