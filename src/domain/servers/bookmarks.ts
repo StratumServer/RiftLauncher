@@ -99,8 +99,18 @@ export function checkServerBookmark(input: { id: string; name: string; host: str
  * can tell the address's colons from the port's, and that is the whole of it.
  */
 export function joinTargetUrl(server: Pick<ServerBookmarkType, "host" | "port">): string {
+  return `vintagestoryjoin://${formatServerEndpoint(server)}`
+}
+
+/** The host and port a player can paste into a server browser or chat. */
+export function formatServerEndpoint(server: Pick<ServerBookmarkType, "host" | "port">): string {
   const host = server.host.includes(":") ? `[${server.host}]` : server.host
-  return `vintagestoryjoin://${host}:${server.port}`
+  return `${host}:${server.port}`
+}
+
+/** Omits the default port in the compact address shown on a server row. */
+export function formatServerAddress(server: Pick<ServerBookmarkType, "host" | "port">): string {
+  return server.port === DEFAULT_GAME_SERVER_PORT ? server.host : formatServerEndpoint(server)
 }
 
 /**

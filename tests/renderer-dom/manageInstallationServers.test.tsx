@@ -273,6 +273,16 @@ describe("ManageInstallationServers", () => {
     expect(await screen.findByText("Address copied.")).toBeTruthy()
   })
 
+  it("copies a non-default IPv6 address with brackets", async () => {
+    const user = userEvent.setup()
+    const copyToClipboard = vi.fn<BridgeAPI["utils"]["copyToClipboard"]>(async () => true)
+    renderServersPage([{ id: "s-1", name: "Stratum", host: "2001:db8::1", port: 30_000, lastLaunched: -1 }], { utils: { copyToClipboard } })
+
+    await user.click(await screen.findByRole("button", { name: "Copy address" }))
+
+    expect(copyToClipboard).toHaveBeenCalledWith("[2001:db8::1]:30000")
+  })
+
   it("says so and opens nothing when the host refuses the copy", async () => {
     const user = userEvent.setup()
     const copyToClipboard = vi.fn<BridgeAPI["utils"]["copyToClipboard"]>(async () => false)
