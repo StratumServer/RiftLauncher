@@ -5,6 +5,7 @@ export const IPC_CHANNELS = {
     LOG_MESSAGE: "log-message",
     SET_PREVENT_APP_CLOSE: "set-prevent-app-close",
     OPEN_ON_BROWSER: "open-on-browser",
+    COPY_TO_CLIPBOARD: "copy-to-clipboard",
     SELECT_FOLDER_DIALOG: "select-folder-dialog",
     PREVENTED_APP_CLOSE: "prevented-app-close"
   },

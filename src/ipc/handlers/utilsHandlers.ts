@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, shell } from "electron"
+import { ipcMain, dialog, app, shell, clipboard } from "electron"
 import { platform } from "node:os"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
@@ -51,6 +51,24 @@ ipcMain.on(IPC_CHANNELS.UTILS.OPEN_ON_BROWSER, (event, url: string): void => {
     })
   } catch {
     logMessage("warn", "[back] [ipc] [ipc/handlers/utilsHandlers.ts] [OPEN_ON_BROWSER] Rejected an unsafe URL.")
+  }
+})
+
+/**
+ * The renderer's own clipboard is closed: the session denies every permission check (see
+ * src/main/index.ts), so navigator.clipboard.writeText rejects with NotAllowedError in every build.
+ * The host writes instead. Nothing about the text reaches the log, since what a player copies here
+ * is a server address.
+ */
+ipcMain.handle(IPC_CHANNELS.UTILS.COPY_TO_CLIPBOARD, (event, text: string): boolean => {
+  assertTrustedIpcSender(event)
+
+  try {
+    clipboard.writeText(assertString(text, "clipboard text", 2_048))
+    return true
+  } catch {
+    logMessage("warn", "[back] [ipc] [ipc/handlers/utilsHandlers.ts] [COPY_TO_CLIPBOARD] The clipboard refused the write.")
+    return false
   }
 })
 

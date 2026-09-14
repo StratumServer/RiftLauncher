@@ -62,13 +62,17 @@ function ManageInstallationServers(): JSX.Element {
     setServerToRemove(null)
   }
 
+  /**
+   * Through the host, not navigator.clipboard: the app denies every renderer permission check
+   * (src/main/index.ts), clipboard-write included, so the web clipboard rejects in every build and
+   * this action could only ever fail. Issue #460 names copy as the fallback for a join that does
+   * not connect, so it is the one thing on the row that has to work.
+   */
   async function copyAddress(server: ServerBookmarkType): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(server.port === DEFAULT_GAME_SERVER_PORT ? server.host : `${server.host}:${server.port}`)
-      addNotification(t("features.servers.addressCopied"), "success")
-    } catch {
-      addNotification(t("features.servers.addressCopyFailed"), "error")
-    }
+    const address = server.port === DEFAULT_GAME_SERVER_PORT ? server.host : `${server.host}:${server.port}`
+    const copied = await window.api.utils.copyToClipboard(address).catch(() => false)
+    if (copied) return addNotification(t("features.servers.addressCopied"), "success")
+    addNotification(t("features.servers.addressCopyFailed"), "error")
   }
 
   function openAddDialog(): void {

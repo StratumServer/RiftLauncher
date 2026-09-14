@@ -22,6 +22,8 @@ declare global {
       logMessage: (mode: ErrorTypes, message: string) => void
       setPreventAppClose: (action: "add" | "remove", id: string, desc: string) => void
       openOnBrowser: (url: string) => void
+      /** Writes one short string to the system clipboard, answering whether it landed. */
+      copyToClipboard: (text: string) => Promise<boolean>
       selectFolderDialog: (options?: { type?: "file" | "folder"; mode?: "single" | "multi"; extensions?: string[] }) => Promise<string[]>
       onPreventedAppClose: (callback: () => void) => Unsubscribe
     }

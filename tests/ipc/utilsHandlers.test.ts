@@ -63,12 +63,13 @@ vi.mock("electron", () => {
 
   const dialog = { showOpenDialog: vi.fn() }
   const shell = { openExternal: vi.fn() }
+  const clipboard = { writeText: vi.fn() }
 
-  return { app, ipcMain, dialog, shell }
+  return { app, ipcMain, dialog, shell, clipboard }
 })
 
 import "@src/ipc/handlers/utilsHandlers"
-import { dialog, shell } from "electron"
+import { clipboard, dialog, shell } from "electron"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import { isUserApprovedPath } from "@src/ipc/pathPolicy"
 
@@ -177,6 +178,39 @@ describe("SET_PREVENT_APP_CLOSE", () => {
     const event = await createTrustedEvent()
     assert.doesNotThrow(() => onListener(IPC_CHANNELS.UTILS.SET_PREVENT_APP_CLOSE)(event, "add", "bad id!", "desc"))
     assert.equal(getShouldPreventClose(), false)
+  })
+})
+
+/**
+ * The renderer cannot write the clipboard itself: whenReady denies every permission check, so
+ * navigator.clipboard.writeText rejects in every build, packaged one included. This channel is the
+ * only clipboard the app has.
+ */
+describe("COPY_TO_CLIPBOARD", () => {
+  it("throws Unauthorized IPC sender for an untrusted caller, writing nothing", () => {
+    assert.throws(() => handler(IPC_CHANNELS.UTILS.COPY_TO_CLIPBOARD)(createUntrustedEvent(), "play.example.com"), /Unauthorized IPC sender/)
+    assert.equal(vi.mocked(clipboard.writeText).mock.calls.length, 0)
+  })
+
+  it("writes the text and says it landed", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(handler<boolean>(IPC_CHANNELS.UTILS.COPY_TO_CLIPBOARD)(event, "play.example.com:30000"), true)
+    assert.equal(vi.mocked(clipboard.writeText).mock.calls[0]?.[0], "play.example.com:30000")
+  })
+
+  it("answers false for a shape that is not a short string, rather than throwing at the caller", async () => {
+    const event = await createTrustedEvent()
+    assert.equal(handler<boolean>(IPC_CHANNELS.UTILS.COPY_TO_CLIPBOARD)(event, "x".repeat(2_049)), false)
+    assert.equal(handler<boolean>(IPC_CHANNELS.UTILS.COPY_TO_CLIPBOARD)(event, 42), false)
+    assert.equal(vi.mocked(clipboard.writeText).mock.calls.length, 0)
+  })
+
+  it("answers false when the host clipboard refuses the write", async () => {
+    vi.mocked(clipboard.writeText).mockImplementationOnce(() => {
+      throw new Error("no clipboard on this session")
+    })
+    const event = await createTrustedEvent()
+    assert.equal(handler<boolean>(IPC_CHANNELS.UTILS.COPY_TO_CLIPBOARD)(event, "play.example.com"), false)
   })
 })
 
