@@ -479,7 +479,10 @@ describe("normalizeConfig: installation servers (#460)", () => {
     const { normalizeConfig } = await freshConfigManager()
     const config = normalizeConfig({ installations: [installation({ servers: [{ id: "s-2", name: "Broken", host: "not a host", port: 1 }, server] })] })
 
-    assert.deepEqual(config.installations[0]?.servers?.map((entry) => entry.id), ["s-1"])
+    assert.deepEqual(
+      config.installations[0]?.servers?.map((entry) => entry.id),
+      ["s-1"]
+    )
   })
 
   it("drops a servers field that is not a list", async () => {

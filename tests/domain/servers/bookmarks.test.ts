@@ -218,11 +218,7 @@ describe("orderServerBookmarks", () => {
 })
 
 describe("resolveServerBookmark", () => {
-  const installations = [
-    { id: "i-1", servers: [bookmark({ id: "s-1" })] },
-    { id: "i-2", servers: [bookmark({ id: "s-2", host: "other.example.com" })] },
-    { id: "i-3" }
-  ] as InstallationType[]
+  const installations = [{ id: "i-1", servers: [bookmark({ id: "s-1" })] }, { id: "i-2", servers: [bookmark({ id: "s-2", host: "other.example.com" })] }, { id: "i-3" }] as InstallationType[]
 
   it("finds a bookmark inside its own Installation", () => {
     assert.equal(resolveServerBookmark(installations, "i-1", "s-1")?.host, "play.example.com")

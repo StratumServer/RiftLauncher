@@ -388,12 +388,7 @@ describe("EXECUTE_GAME", () => {
       const result = await executeGameHandler()(event, version, installation, "s-1")
 
       assert.deepEqual(result, { ok: true, exitCode: 0 })
-      assert.deepEqual(readFileSync(gameArgvFile, "utf-8").split("\n").slice(0, -1), [
-        `--dataPath=${installationFolder}`,
-        "-c",
-        "vintagestoryjoin://play.example.com:42420",
-        "--openWorld My World"
-      ])
+      assert.deepEqual(readFileSync(gameArgvFile, "utf-8").split("\n").slice(0, -1), [`--dataPath=${installationFolder}`, "-c", "vintagestoryjoin://play.example.com:42420", "--openWorld My World"])
     })
 
     it.skipIf(process.platform !== "linux")("starts the game with no connect pair when no server was asked for", async () => {
