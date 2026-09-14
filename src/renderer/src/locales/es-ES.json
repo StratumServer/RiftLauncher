@@ -104,6 +104,9 @@
       "backupInstallation": "Hacer una Copia de Seguridad de la Instalación",
       "editInstallation": "Editar Instalación"
     },
+    "sessions": {
+      "forget": "Olvidar estas sesiones"
+    },
     "mods": {
       "modsCount": "{{count}} Mods",
       "modsCount_few": "{{count}} Mods",
