@@ -189,6 +189,28 @@
       "moveInstallationUp": "Monter l'installation",
       "moveInstallationDown": "Descendre l'installation"
     },
+    "sessions": {
+      "recentSessions": "Sessions récentes",
+      "empty": "Aucune session enregistrée pour l'instant. Le launcher mesure la mémoire pendant que le jeu tourne et conserve ici les {{kept}} dernières sessions.",
+      "whatThisIs": "Chaque ligne est une session que le launcher a mesurée depuis l'extérieur du jeu. Ouvrez-en une pour voir la courbe entière.",
+      "openSession": "Ouvrir cette session",
+      "forget": "Oublier ces sessions",
+      "sessionTitle": "Session de jeu",
+      "ranFor": "A duré {{duration}}, terminée le {{ended}}.",
+      "partial": "Le launcher a perdu la trace du jeu en cours de route, cette session est donc incomplète.",
+      "unreadable": "Ces sessions n'ont pas pu être lues, le launcher a laissé le fichier tel quel.",
+      "newerFormat": "Ces sessions ont été enregistrées par une version plus récente du launcher, le launcher a laissé le fichier tel quel.",
+      "chartLabel": "Mémoire et processeur sur une session, avec un pic à {{peak}} sur {{duration}}.",
+      "chartLegend": "La mémoire est la ligne pleine, avec un pic à {{peak}}. Le processeur est la ligne pointillée.",
+      "chartLegendMemoryOnly": "La mémoire est la ligne pleine, avec un pic à {{peak}}. Le processeur n'est pas mesuré sur ce système.",
+      "tableCaption": "Chaque relevé pris pendant cette session.",
+      "tableTime": "Moment",
+      "tableMemory": "Mémoire",
+      "tableCpu": "Processeur",
+      "cpuNotMeasured": "Non mesuré",
+      "steadyClimb": "La mémoire n'a fait que monter pendant cette session.",
+      "steadyClimbMeaning": "Le launcher mesure tout le jeu depuis l'extérieur, il ne peut donc pas dire ce qui a consommé cette mémoire. Un mod, le jeu lui-même et un monde très grand se ressemblent tous, vus d'ici. Comparer des sessions avec des mods différents est ce qui permet de resserrer la recherche."
+    },
     "mods": {
       "modsCount": "{{count}} mods",
       "modsCount_zero": "{{count}} mod",
@@ -564,7 +586,9 @@
         "sky": "Ciel",
         "lavender": "Lavande",
         "rose": "Rose"
-      }
+      },
+      "measurePlaySessions": "Mesurer la mémoire pendant que le jeu tourne",
+      "measurePlaySessionsDesc": "Conservé sur cet ordinateur et jamais envoyé nulle part."
     },
     "backups": {
       "backupInProgress": "Une sauvegarde est déjà en cours.",

@@ -189,6 +189,28 @@
       "moveInstallationUp": "Move Installation up",
       "moveInstallationDown": "Move Installation down"
     },
+    "sessions": {
+      "recentSessions": "Recent sessions",
+      "empty": "No sessions recorded yet. The launcher measures memory while the game runs and keeps the last {{kept}} sessions here.",
+      "whatThisIs": "Each row is one session the launcher measured from outside the game. Open one to see the whole curve.",
+      "openSession": "Open this session",
+      "forget": "Forget these sessions",
+      "sessionTitle": "Play session",
+      "ranFor": "Ran for {{duration}}, ending {{ended}}.",
+      "partial": "The launcher lost track of the game part way through, so this session is incomplete.",
+      "unreadable": "These sessions could not be read, so the launcher has left the file alone.",
+      "newerFormat": "These sessions were recorded by a newer version of the launcher, so the launcher has left the file alone.",
+      "chartLabel": "Memory and CPU across one session, peaking at {{peak}} over {{duration}}.",
+      "chartLegend": "Memory is the solid line, peaking at {{peak}}. CPU is the dashed line.",
+      "chartLegendMemoryOnly": "Memory is the solid line, peaking at {{peak}}. CPU is not measured on this system.",
+      "tableCaption": "Every reading taken during this session.",
+      "tableTime": "Time",
+      "tableMemory": "Memory",
+      "tableCpu": "CPU",
+      "cpuNotMeasured": "Not measured",
+      "steadyClimb": "Memory only went up during this session.",
+      "steadyClimbMeaning": "The launcher measures the whole game from outside, so this cannot say what used the memory. A mod, the game itself and a large world all look the same from here. Comparing sessions with different mods enabled is what narrows it down."
+    },
     "mods": {
       "modsCount": "{{count}} Mods",
       "modsCount_zero": "{{count}} Mods",
@@ -564,7 +586,9 @@
         "sky": "Sky",
         "lavender": "Lavender",
         "rose": "Rose"
-      }
+      },
+      "measurePlaySessions": "Measure memory while the game runs",
+      "measurePlaySessionsDesc": "Kept on this computer and never sent anywhere."
     },
     "backups": {
       "backupInProgress": "There is a backup already in progress.",
