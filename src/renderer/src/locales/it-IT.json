@@ -273,6 +273,12 @@
       "thisFolder": "questa cartella",
       "title": "Info & Aiuto RiftLauncher"
     },
+    "servers": {
+      "addServer": "Aggiungi un server",
+      "join": "Entra",
+      "importServersAdd": "Aggiungi i server scelti",
+      "importServersSkip": "Salta i server"
+    },
     "sessionReport": {
       "copyReport": "Copia il rapporto",
       "openLogsFolder": "Apri la cartella dei log",

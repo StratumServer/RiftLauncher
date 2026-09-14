@@ -78,6 +78,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
       logMessage: vi.fn(),
       setPreventAppClose: vi.fn(),
       openOnBrowser: vi.fn(),
+      copyToClipboard: vi.fn(async () => true),
       selectFolderDialog: vi.fn(async () => []),
       onPreventedAppClose: vi.fn(noopUnsubscribe)
     },

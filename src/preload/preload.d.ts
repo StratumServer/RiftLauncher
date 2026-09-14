@@ -22,6 +22,8 @@ declare global {
       logMessage: (mode: ErrorTypes, message: string) => void
       setPreventAppClose: (action: "add" | "remove", id: string, desc: string) => void
       openOnBrowser: (url: string) => void
+      /** Writes one short string to the system clipboard, answering whether it landed. */
+      copyToClipboard: (text: string) => Promise<boolean>
       selectFolderDialog: (options?: { type?: "file" | "folder"; mode?: "single" | "multi"; extensions?: string[] }) => Promise<string[]>
       onPreventedAppClose: (callback: () => void) => Unsubscribe
     }
@@ -70,7 +72,12 @@ declare global {
       copyToIcons: (path: string, name: string) => Promise<CustomIconCopyResult>
     }
     gameManager: {
-      executeGame: (version: GameVersionType, installation: InstallationType) => Promise<GameExecutionResult>
+      /**
+       * `serverId` names one of the Installation's OWN stored bookmarks. It is never an address:
+       * the main process looks the id up in the config it already holds and builds the URL from
+       * the record it finds, so nothing typed in the renderer can reach the game's argv.
+       */
+      executeGame: (version: GameVersionType, installation: InstallationType, serverId?: string) => Promise<GameExecutionResult>
       lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }>
       /** The play sessions recorded for one Installation, newest first. Read only: nothing writes samples from here. */
       getPlaySessions: (installationId: string) => Promise<PlaySessionsReadResult>

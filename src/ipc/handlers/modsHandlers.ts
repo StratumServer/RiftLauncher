@@ -15,6 +15,7 @@ import { MODS_BY_SERVER_FOLDER_NAME, scanServerMods } from "@domain/mods/serverM
 import type { ScannedMod } from "@domain/mods/scanInstalled"
 import { MAX_MODPACK_MOD_NAME_LENGTH } from "@domain/mods/importModpack"
 import { emptyModProfilesDocument, MAX_MOD_PROFILES_FILE_BYTES, MOD_PROFILES_FILE_NAME, normalizeModProfilesDocument } from "@domain/mods/profiles"
+import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 
 const MAX_MODPACK_ENTRIES = 2_000
 
@@ -57,9 +58,16 @@ async function cacheModImage(urlValue: unknown): Promise<string | undefined> {
 function parseModpackManifest(value: unknown): ModpackManifestType {
   if (!isRecord(value) || !Array.isArray(value.mods) || value.mods.length > MAX_MODPACK_ENTRIES) throw new TypeError("Invalid modpack file structure")
 
+  // The same validator the Add dialog and the config normalizer run, which is the whole point:
+  // one set of rules, not two that drift. Tolerant rather than strict, unlike the mod entries
+  // above: a stranger's pack with one unreadable server row still imports, minus that row. The
+  // field is dropped entirely when nothing survives, so an older pack round trips unchanged.
+  const servers = normalizeServerBookmarks(value.servers)
+
   return {
     name: assertString(value.name, "modpack name", 256),
     gameVersion: assertString(value.gameVersion, "modpack game version", 128),
+    ...(servers.length > 0 ? { servers } : {}),
     mods: value.mods.map((entry) => {
       if (!isRecord(entry)) throw new TypeError("Invalid modpack entry")
       const parsed = { modid: assertString(entry.modid, "mod id", 256), version: assertString(entry.version, "mod version", 128) }
@@ -221,7 +229,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
   assertTrustedIpcSender(event)
   try {
     const safeManifest = parseModpackManifest(manifest)
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Exporting a modpack with ${safeManifest.mods.length} mods.`)
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Exporting a modpack with ${safeManifest.mods.length} mods and ${safeManifest.servers?.length ?? 0} servers.`)
 
     const result = await dialog.showSaveDialog({
       title: "Export Modpack",
@@ -276,7 +284,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<
 
     const manifest = parseModpackManifest(parsedManifest)
 
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] A modpack loaded with ${manifest.mods.length} mods.`)
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] A modpack loaded with ${manifest.mods.length} mods and ${manifest.servers?.length ?? 0} servers.`)
     return { success: true, manifest }
   } catch (err) {
     logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Error importing modpack.`)

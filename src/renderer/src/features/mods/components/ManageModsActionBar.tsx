@@ -1,7 +1,7 @@
-import { Fragment } from "react"
+import { Fragment, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { AnimatePresence, motion } from "motion/react"
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react"
+import { Input, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react"
 import clsx from "clsx"
 import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBoxArrowDownDuotone, PiDesktopTowerDuotone, PiStackDuotone, PiPackageDuotone } from "react-icons/pi"
 
@@ -44,6 +44,12 @@ function ManageModsActionBar({
 
   const exportModpack = useExportModpack()
   const openPathInExplorer = useOpenPathInExplorer()
+
+  // Off by default and reset on every mount: a modpack is a file people hand around, and a default
+  // that puts somebody's server address in it is the wrong default. Shown only when there is
+  // something to include, so a player with no saved servers never sees a choice they cannot make.
+  const [includeServers, setIncludeServers] = useState(false)
+  const savedServers = installation.servers?.length ?? 0
 
   // A modpack is the set someone else is meant to be able to play, so a Mod the player turned off
   // is not in it. Both exports read this list, and both are greyed out by it: a folder whose Mods
@@ -121,7 +127,7 @@ function ManageModsActionBar({
                           title={t("features.mods.exportModpack")}
                           variant="ghost"
                           className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
-                          onClick={() => exportModpack({ installedMods: enabledMods, installation })}
+                          onClick={() => exportModpack({ installedMods: enabledMods, installation, includeServers })}
                           disabled={enabledMods.length === 0}
                         >
                           <div className="w-full flex items-center gap-2">
@@ -136,7 +142,7 @@ function ManageModsActionBar({
                           title={t("features.mods.exportServerModpack")}
                           variant="ghost"
                           className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
-                          onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` } })}
+                          onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` }, includeServers })}
                           disabled={serverMods.length === 0}
                         >
                           <div className="w-full flex items-center gap-2">
@@ -167,6 +173,23 @@ function ManageModsActionBar({
             </>
           )}
         </Menu>
+
+        {/*
+         * Beside the menu rather than inside it. A bare checkbox in MenuItems is reachable by the
+         * mouse and by nothing else: the arrow keys walk items only, and Space is the menu's own
+         * activation key, so it closed the menu instead of ticking the box. Out here it is a plain
+         * checkbox, one Tab from the Modpack button, and it keeps its value while the menu opens.
+         * The short label carries the long sentence as its tooltip, which also stops it from
+         * truncating in the longer translations.
+         */}
+        {savedServers > 0 && (
+          <div className="flex items-center gap-2 h-8 px-1" title={t("features.servers.includeServersInExport")}>
+            <Input id="export-include-servers" type="checkbox" checked={includeServers} onChange={(e) => setIncludeServers(e.target.checked)} />
+            <label htmlFor="export-include-servers" className="text-sm">
+              {t("features.servers.includeServers")}
+            </label>
+          </div>
+        )}
 
         <FormButton
           title={t("features.mods.openModsFolder")}

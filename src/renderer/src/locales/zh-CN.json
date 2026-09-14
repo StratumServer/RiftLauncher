@@ -116,6 +116,12 @@
       "loginPrivacyPolicy": "阅读隐私政策",
       "removeAccountAction": "移除账户"
     },
+    "servers": {
+      "addServer": "添加服务器",
+      "join": "加入",
+      "importServersAdd": "添加所选服务器",
+      "importServersSkip": "跳过服务器"
+    },
     "sessionReport": {
       "copyReport": "复制报告",
       "openLogsFolder": "打开日志文件夹",

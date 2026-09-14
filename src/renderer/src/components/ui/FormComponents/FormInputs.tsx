@@ -102,7 +102,8 @@ export function FormInputNumber({
   max,
   placeholder,
   disabled,
-  readOnly = false
+  readOnly = false,
+  id
 }: Readonly<{
   className?: string
   value: number
@@ -112,6 +113,8 @@ export function FormInputNumber({
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
+  /** Ties the field to its own FormLabel, exactly as FormInputText's does. */
+  id?: string
 }>): JSX.Element {
   return (
     <Input
@@ -124,6 +127,7 @@ export function FormInputNumber({
       max={max}
       disabled={disabled}
       readOnly={readOnly}
+      id={id}
     />
   )
 }

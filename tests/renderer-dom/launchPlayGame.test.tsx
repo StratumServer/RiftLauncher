@@ -186,7 +186,8 @@ describe("MainMenu Play button", () => {
     await clickPlay(user)
 
     await waitFor(() => expect(executeGame).toHaveBeenCalled())
-    expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ id: "gv-optimum", path: "/versions/optimum" }), installation)
+    // The third argument is the server bookmark id (#460), undefined for a plain Play.
+    expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ id: "gv-optimum", path: "/versions/optimum" }), installation, undefined)
   })
 
   it("refuses to launch an Installation whose build id is gone even when its version number remains", async () => {
@@ -247,7 +248,7 @@ describe("MainMenu Play button", () => {
     await clickPlay(user)
 
     // executeGame gets the exact installation and version PlayHandler resolved, not just any object.
-    expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ version: "1.20.0" }), expect.objectContaining({ id: "install-a" }))
+    expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ version: "1.20.0" }), expect.objectContaining({ id: "install-a" }), undefined)
 
     // Both the installation and its version flip to "playing" while runGame is still pending.
     await waitFor(() => expect(readProbe().installationPlaying).toBe(true))

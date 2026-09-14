@@ -278,6 +278,13 @@ const tasksPanel = scrim("components/ui/ActivityCenter.tsx", /max-h-\[32rem\] fl
 const menuCard = scrim("features/installations/components/InstallationsDropdownMenu.tsx", /backdrop-blur-xs bg-zinc-950\/(\d+) border border-zinc-400\/5 group/)
 
 const LIST_PANEL = [shell, listPanel] as const
+// One row of a list, which carries its own tint on top of the panel: the thinnest stack the
+// servers page's secondary text ever sits on (#460).
+const listRow = scrim("components/ui/List.tsx", /backdrop-blur-xs bg-zinc-950\/(\d+) border border-zinc-400\/5 group/)
+const LIST_ROW = [shell, listPanel, listRow] as const
+// The import dialog lists a pack's servers on their own tinted rows inside the popup panel (#460).
+const importedServerRow = fixed("zinc-950", 0.5) // ImportServersDialog row
+const POPUP_SERVER_ROW = [popupShell, popupPanel, importedServerRow] as const
 const SECTION_TABLE = [shell, section, tableFill] as const
 const MENU_CARD = [shell, menu, menuCard] as const
 const TOAST = [shell, toast] as const
@@ -302,6 +309,29 @@ describe("text over the player's background image", () => {
     // The reported case: the beta updates hint on the settings page.
     const description = foreground("components/ui/FormComponents/FormLayout.tsx", /text-xs text-(zinc-\d+)(?:\/(\d+))? pl-1/)
     assertReadable("form field descriptions", description, FORM_SECTION, TEXT_FLOOR)
+  })
+
+  it("keeps a saved server's address and launch stamp readable on its row", () => {
+    const address = foreground("features/servers/pages/ManageInstallationServers.tsx", /text-sm text-(zinc-\d+)(?:\/(\d+))? overflow-hidden text-ellipsis/)
+    const stamp = foreground("features/servers/pages/ManageInstallationServers.tsx", /shrink-0 w-44 text-sm text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("saved server address", address, LIST_ROW, TEXT_FLOOR)
+    assertReadable("saved server launch stamp", stamp, LIST_ROW, TEXT_FLOOR)
+  })
+
+  it("keeps the servers page's empty state hint readable", () => {
+    const hint = foreground("features/servers/pages/ManageInstallationServers.tsx", /text-sm text-(zinc-\d+)(?:\/(\d+))?">\{t\("features\.servers\.manageServersDesc/)
+    assertReadable("servers empty state hint", hint, LIST_ROW, TEXT_FLOOR)
+  })
+
+  it("keeps the address of a carried server readable on the import dialog's rows", () => {
+    const address = foreground("features/servers/components/ImportServersDialog.tsx", /block truncate text-sm text-(zinc-\d+)(?:\/(\d+))?/)
+    assertReadable("imported server address", address, POPUP_SERVER_ROW, TEXT_FLOOR)
+  })
+
+  it("keeps the server dialog's validation message readable", () => {
+    const problem = paletteForeground("features/servers/components/ServerBookmarkDialog.tsx", /className="text-(orange-\d+)"/)
+    assertReadable("server dialog validation message", problem, POPUP, TEXT_FLOOR)
   })
 
   it("keeps the main menu link descriptions readable", () => {

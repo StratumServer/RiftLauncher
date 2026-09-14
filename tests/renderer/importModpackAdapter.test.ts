@@ -56,6 +56,18 @@ describe("toModpackManifest", () => {
     assert.equal(manifest.mods[0]?.name, "A".repeat(MAX_MODPACK_MOD_NAME_LENGTH))
   })
 
+  /**
+   * The safe default is the one nobody passes. A pack is a file people hand around, so a caller
+   * that forgets the third argument must not put somebody's server address in it, and the launch
+   * stamps are dropped even when the address is meant to travel.
+   */
+  it("carries no servers unless the caller asks for them, and never the launch stamps", () => {
+    const withServers = installation({ servers: [{ id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: 1_700_000_000_000 }] })
+
+    assert.equal("servers" in toModpackManifest(withServers, []), false)
+    assert.deepEqual(toModpackManifest(withServers, [], true).servers, [{ id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: -1 }])
+  })
+
   it("leaves a name at or under the cap exactly as it was read off disk", () => {
     const manifest = toModpackManifest(installation(), [installedMod({ name: "Traders Expansion" })])
 

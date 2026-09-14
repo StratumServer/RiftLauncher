@@ -124,6 +124,12 @@
       "loginPrivacyPolicy": "Privacybeleid lezen",
       "removeAccountAction": "Account verwijderen"
     },
+    "servers": {
+      "addServer": "Server toevoegen",
+      "join": "Deelnemen",
+      "importServersAdd": "Gekozen servers toevoegen",
+      "importServersSkip": "Servers overslaan"
+    },
     "sessionReport": {
       "copyReport": "Rapport kopiëren",
       "openLogsFolder": "Logmap openen",

@@ -222,6 +222,12 @@
       "backupsAmount": "Biztonsági mentés korlátja",
       "folderDoesntExists": "Ez a Telepítés nem tartalmaz adatokat. Legalább egyszer játszanod kell vele, hogy a játék legenerálja az alapvető adatokat!"
     },
+    "servers": {
+      "addServer": "Szerver hozzáadása",
+      "join": "Csatlakozás",
+      "importServersAdd": "A kiválasztott szerverek hozzáadása",
+      "importServersSkip": "Szerverek kihagyása"
+    },
     "sessionReport": {
       "copyReport": "Jelentés másolása",
       "openLogsFolder": "Naplómappa megnyitása",

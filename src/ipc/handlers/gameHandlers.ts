@@ -10,7 +10,7 @@ import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertConfiguredInstallationPath, assertManagedPath } from "@src/ipc/pathPolicy"
-import { comparablePath, parseSafeEnvironment, toWireBuildVariant, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
+import { assertString, comparablePath, parseSafeEnvironment, toWireBuildVariant, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
 import { createProcessSampler } from "@src/ipc/adapters/processSampler"
 import { createPlaySessionRecorder, forgetPlaySessions, readPlaySessions, recordPlaySession } from "@src/ipc/playSessionsStore"
 import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
@@ -20,6 +20,7 @@ import { buildSessionReport, type InstalledModRef } from "@domain/gameLogs/repor
 import { scanInstalledMods } from "@domain/mods/scanInstalled"
 import { createScanInstalledModsPorts } from "@src/ipc/adapters/modScan"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
+import { joinTargetUrl, resolveServerBookmark } from "@domain/servers/bookmarks"
 import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
 import { MODS_FOLDER_NAME } from "@domain/mods/folder"
 import {
@@ -250,8 +251,16 @@ function realGameProcess(): GameProcess {
  * (trusted sender, request shape, managed paths) stay throws: those guard
  * against a hostile renderer, not against a player whose game would not
  * start, and turning them into reasons would blur that line.
+ *
+ * `serverId` is a bookmark id, never an address. The handler already has the
+ * config open, so it looks the id up in THIS Installation's own stored list
+ * and spells the URL from the record it finds. "Refuses a target that is not
+ * one of the Installation's stored servers" is then true by construction
+ * rather than by a check: there is no path from what the renderer sends to
+ * the game's argv. An id naming nothing is a refusal a player can reach (the
+ * bookmark was removed in another window), so it resolves rather than throws.
  */
-ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: unknown, installation: unknown): Promise<GameExecutionResult> => {
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: unknown, installation: unknown, serverId: unknown): Promise<GameExecutionResult> => {
   assertTrustedIpcSender(event)
   const safeVersion = validateGameVersion(version)
   const safeInstallation = validateGameInstallation(installation)
@@ -264,6 +273,20 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   const account = config.accounts.find((candidate) => candidate.playerUid === config.activeAccountId) ?? null
   const accountSecrets = account ? await getAccountSecrets(account.playerUid) : null
   logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Trying to run Vintage Story ${safeVersion.version}.`)
+
+  let connectTarget: string | undefined
+  if (serverId !== undefined) {
+    const safeServerId = assertString(serverId, "server bookmark id", 128)
+    const bookmark = safeInstallation.id ? resolveServerBookmark(config.installations, safeInstallation.id, safeServerId) : null
+    if (!bookmark) {
+      logMessage("warn", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused a server that is not one this installation has saved.`)
+      return invalidRequestResult()
+    }
+    connectTarget = joinTargetUrl(bookmark)
+    // One fixed line, and nothing of the server in it. A server address is somebody's machine,
+    // often somebody's home, and redactSensitiveText strips paths rather than host names.
+    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Joining a saved server.`)
+  }
 
   let processEnv: Record<string, string>
   try {
@@ -302,7 +325,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       installationPath: safeInstallation.path,
       startParams: safeInstallation.startParams,
       mesaGlThread: safeInstallation.mesaGlThread,
-      launchWrapper
+      launchWrapper,
+      connectTarget
     }
   )
 
