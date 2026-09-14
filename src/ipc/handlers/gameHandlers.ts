@@ -1,5 +1,5 @@
 import { ipcMain } from "electron"
-import { spawn } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import fse from "fs-extra"
 import { constants } from "node:fs"
@@ -413,10 +413,11 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   // The id comes from the config the launcher wrote, never from the renderer's own object, so the
   // file name a session lands under cannot be chosen by whatever sent the launch.
   const installationId = config.installations.find((candidate) => comparablePath(candidate.path) === comparablePath(safeInstallation.path))?.id
-  const recorder =
-    config.measurePlaySessions && installationId
-      ? createPlaySessionRecorder(createProcessSampler(os.platform(), os.platform() === "win32" ? { processProbe: realProcessProbe({ allowTasklist: true }) } : {}))
-      : undefined
+  // Windows has no /proc, so its sampler reads `tasklist` and needs a probe to run it with. Passing
+  // it only there keeps macOS on the absent sampler, which is what the factory answers with none.
+  const platform = os.platform()
+  const samplerOptions = platform === "win32" ? { processProbe: tasklistProbe() } : {}
+  const recorder = config.measurePlaySessions && installationId ? createPlaySessionRecorder(createProcessSampler(platform, samplerOptions)) : undefined
 
   const outcome = await realGameProcess().run({
     command: plan.command,
@@ -496,12 +497,11 @@ const LOOK_FOR_A_GAME_VERSION_PROBE_TIMEOUT_MS = 10_000
  * the executable with `-v` and reads the version off stdout, and nothing a
  * wrapper does changes what that prints.
  */
-function realProcessProbe(options: { allowTasklist?: boolean } = {}): ProcessProbe {
+function realProcessProbe(): ProcessProbe {
   return {
     run: async (request: ProcessProbeRequest): Promise<ProcessProbeOutcome> => {
       try {
-        const fixedTasklist = options.allowTasklist === true && request.command === "tasklist"
-        if (!fixedTasklist) await assertExecutable(request.command === "mono" ? (request.args[0] ?? "") : request.command)
+        await assertExecutable(request.command === "mono" ? (request.args[0] ?? "") : request.command)
       } catch (err) {
         logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Refused to probe an invalid executable.`)
         logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
@@ -567,6 +567,34 @@ function realProcessProbe(options: { allowTasklist?: boolean } = {}): ProcessPro
   }
 }
 
+/** A sample is dropped rather than allowed to run into the next one, which the recorder takes every five seconds. */
+const TASKLIST_TIMEOUT_MS = 4_000
+
+/**
+ * Runs `tasklist` for the Windows play session sampler (#461).
+ *
+ * Its own probe rather than {@link realProcessProbe}, for two reasons. That one validates the
+ * command as a game executable, which `tasklist` is not and cannot be made to pass, so sharing it
+ * would mean a flag that turns the validation off; there is nothing to validate here anyway, since
+ * the command and its arguments are fixed in the adapter and no part of either comes from the
+ * renderer or from config. And it logs a line per call under the version-check tag, which at one
+ * sample every five seconds would bury a Windows session's log in several hundred of them.
+ *
+ * `execFile` runs with no shell and kills the child at {@link TASKLIST_TIMEOUT_MS}, and the callback
+ * reports both as `ok: false`, so this keeps the port's promise never to reject. A refused sample
+ * is one reading the session does without, which is the same answer a pid that has gone gives.
+ */
+function tasklistProbe(): ProcessProbe {
+  return {
+    run: async (request: ProcessProbeRequest): Promise<ProcessProbeOutcome> =>
+      new Promise<ProcessProbeOutcome>((resolve) => {
+        execFile(request.command, request.args, { windowsHide: true, timeout: TASKLIST_TIMEOUT_MS }, (err, stdout) => {
+          resolve(err ? { ok: false, stdout: "", error: getErrorMessage(err) } : { ok: true, stdout })
+        })
+      })
+  }
+}
+
 ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, path: unknown): Promise<LookForAGameVersionResult> => {
   assertTrustedIpcSender(event)
   const safePath = await assertManagedPath(path, "game version path", { allowMissing: true })
@@ -589,6 +617,10 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, 
   }
 
   logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Found Vintage Story ${result.version}.`)
+
+  // Nothing the probe printed reaches the renderer unchecked: the variant goes
+  // through the boundary check, and a value that does not pass it is simply not
+  // there, which is the same thing a vanilla build sends.
   const variant = toWireBuildVariant(result.variant)
   return variant ? { exists: true, installedGameVersion: result.version, variant } : { exists: true, installedGameVersion: result.version }
 })

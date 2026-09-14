@@ -205,6 +205,38 @@ describe("the play session recorder", () => {
     assert.equal(await recorder.finish(), undefined)
   })
 
+  /**
+   * The port promises never to reject, and this is what it costs when one does.
+   *
+   * Without the guard the rejected reading stays on the chain every later reading is queued behind,
+   * so the session stops being measured from there on and `finish` rethrows into EXECUTE_GAME,
+   * which would lose the player the launch outcome as well as the session.
+   */
+  it("counts a sampler that throws as a miss and keeps measuring", async () => {
+    vi.useFakeTimers()
+    const { createPlaySessionRecorder } = await store()
+    let index = 0
+    const readings: (ProcessReading | undefined)[] = [{ rssBytes: MIB }, undefined, { rssBytes: 2 * MIB }]
+    const sampler: ProcessSampler = {
+      sample: async (): Promise<ProcessReading | undefined> => {
+        const reading = readings[index++]
+        if (index === 2) throw Object.assign(new Error("spawn tasklist EACCES"), { code: "EACCES" })
+        return reading
+      }
+    }
+
+    const recorder = createPlaySessionRecorder(sampler, { intervalMs: 1_000 })
+    recorder.onStarted(7)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    const recorded = await recorder.finish()
+    assert.deepEqual(
+      recorded?.samples.map((sample) => sample.rssBytes),
+      [MIB, 2 * MIB]
+    )
+    assert.equal(recorded?.partial, false)
+  })
+
   it("arms once, whatever a second start says", async () => {
     vi.useFakeTimers()
     const { createPlaySessionRecorder } = await store()
