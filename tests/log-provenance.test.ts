@@ -51,7 +51,33 @@ const BRACE_GROUP = "(?:[^{}]|\\{[^{}]*\\})*"
 const LOG_CALL = new RegExp(String.raw`\b(?:logMessage|logMods|window\.api\.utils\.logMessage)\(\s*["'][a-zA-Z]+["']\s*,\s*\x60((?:\$\{${BRACE_GROUP}\}|[^\x60\\]|\\.)*)\x60`, "g")
 const EXPRESSION = new RegExp(String.raw`\$\{(${BRACE_GROUP})\}`, "g")
 const IDENTIFIER = /[A-Za-z_$][A-Za-z0-9_$]*/g
-const RISKY_WORDS = new Set(["path", "Path", "name", "Name", "folder", "Folder", "file", "File", "entry", "dir", "Dir", "zipname"])
+// host/address/url/server joined the list with #460: a server address is somebody's machine, often
+// somebody's home, and redactSensitiveText strips absolute paths rather than host names, so there
+// is nothing downstream to catch one. The plural `servers` is deliberately NOT here: a count of
+// them (`${servers.length}`) names nobody, and the match below is on the whole trailing word.
+const RISKY_WORDS = new Set([
+  "path",
+  "Path",
+  "name",
+  "Name",
+  "folder",
+  "Folder",
+  "file",
+  "File",
+  "entry",
+  "dir",
+  "Dir",
+  "zipname",
+  "host",
+  "Host",
+  "address",
+  "Address",
+  "url",
+  "Url",
+  "URL",
+  "server",
+  "Server"
+])
 
 function lastCamelWord(identifier: string): string {
   const words = identifier
@@ -94,7 +120,7 @@ function findViolations(): Violation[] {
 }
 
 describe("log line provenance (#419)", () => {
-  it("never interpolates a path, a folder, a file name, or a Mod/label name into a log line", () => {
+  it("never interpolates a path, a folder, a file name, a Mod/label name, or a server address into a log line", () => {
     const violations = findViolations()
     const report = violations.map((v) => `${v.file}: \${${v.expression}} in "${v.message}"`).join("\n")
     assert.equal(violations.length, 0, `Found log lines that interpolate a risky identifier:\n${report}`)
