@@ -22,7 +22,9 @@
  * - The start parameters go in as ONE argument, whatever they contain. They are
  *   not split on spaces, so `--foo --bar` reaches the game as a single argv
  *   entry. They are also always passed, so an installation with none gives the
- *   game one empty argument.
+ *   game one empty argument. A connect target, when there is one, goes in as its
+ *   own `-c` pair AHEAD of them, so the start parameters stay the single trailing
+ *   argument they have always been rather than absorbing the flag.
  * - Under `mono` the executable path leads the argument list, ahead of
  *   `--dataPath`.
  * - {@link MESA_GL_THREAD_VARIABLE} is set for the native Linux launcher only.
@@ -94,6 +96,12 @@ export interface BuildGameLaunchPlanInput {
   mesaGlThread: boolean
   /** Resolved Linux wrapper command, or empty when the game runs directly. */
   launchWrapper?: string
+  /**
+   * The server to connect to, spelled by `joinTargetUrl` in src/domain/servers/bookmarks.ts, or
+   * absent for a plain launch. Passed as its own `-c <url>` pair, which is the form the game's own
+   * `Vintagestory_url_connect.desktop` handler uses.
+   */
+  connectTarget?: string
 }
 
 /**
@@ -126,7 +134,7 @@ export async function buildGameLaunchPlan(ports: BuildGameLaunchPlanPorts, input
   if (!candidate) return { ok: false, reason: "no-executable" }
 
   const executablePath = await ports.paths.join([input.versionFolder, candidate.fileName])
-  const gameArgs = [`--dataPath=${input.installationPath}`, input.startParams]
+  const gameArgs = [`--dataPath=${input.installationPath}`, ...(input.connectTarget ? ["-c", input.connectTarget] : []), input.startParams]
   const runsUnderMono = candidate.launchMode === "mono"
   const gameCommand = runsUnderMono ? "mono" : executablePath
   const gameCommandArgs = runsUnderMono ? [executablePath, ...gameArgs] : gameArgs
