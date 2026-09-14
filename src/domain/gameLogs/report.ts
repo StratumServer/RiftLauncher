@@ -106,8 +106,15 @@ export function buildSessionReport(input: SessionReportInput): SessionReport {
   const accountValues = input.accountValues ?? []
   const clean = (value: string): string => maskValues(redactSensitiveText(value), accountValues)
   const installedMods = input.installedMods ?? []
-  const nameFor = (modid: string): string | undefined => installedMods.find((mod) => mod.modid.toLowerCase() === modid.toLowerCase())?.name
-  const labelFor = (modid: string): string => nameFor(modid) ?? modid
+  // Every name and id in the report is text someone else wrote: a name out of a modinfo, an id off
+  // a log line, a mod the crash header blames. They are ordinary strings and can hold a path, an
+  // address or a token like any other, so they leave through here and no call site can forget.
+  const cleanLabel = (value: string): string => clean(boundLine(value))
+  const nameFor = (modid: string): string | undefined => {
+    const name = installedMods.find((mod) => mod.modid.toLowerCase() === modid.toLowerCase())?.name
+    return name ? cleanLabel(name) : undefined
+  }
+  const labelFor = (modid: string): string => nameFor(modid) ?? cleanLabel(modid)
 
   const toLine = (entry: LogEntry): ReportLine => ({
     clock: clock(entry.at),
@@ -124,12 +131,12 @@ export function buildSessionReport(input: SessionReportInput): SessionReport {
   const crashSummary = input.crashFile ? parseCrashFile(input.crashFile.text) : null
   const crash: ReportCrash | undefined = crashSummary
     ? {
-        // Both go through the redactor: the crash file spells the blamed mod as `modid@version`,
+        // Every one of these is header text: the crash file spells the blamed mod as `modid@version`,
         // where an unrecognised modid is answered with the raw text and a version built from a
         // source tree is the mod author's own path.
-        modLabel: crashSummary.blamedModid ? clean(boundLine(labelFor(crashSummary.blamedModid))) : undefined,
-        modVersion: crashSummary.blamedVersion ? clean(boundLine(crashSummary.blamedVersion)) : undefined,
-        exceptionType: crashSummary.exceptionType,
+        modLabel: crashSummary.blamedModid ? labelFor(crashSummary.blamedModid) : undefined,
+        modVersion: crashSummary.blamedVersion ? cleanLabel(crashSummary.blamedVersion) : undefined,
+        exceptionType: crashSummary.exceptionType ? cleanLabel(crashSummary.exceptionType) : undefined,
         exceptionMessage: crashSummary.exceptionMessage ? clean(crashSummary.exceptionMessage) : undefined,
         frames: crashSummary.frames.map(clean),
         clock: clock(crashSummary.at),
@@ -140,15 +147,15 @@ export function buildSessionReport(input: SessionReportInput): SessionReport {
             crashSummary.harmonyIds
               .map((id) => installedModids.find((modid) => modid.toLowerCase() === (id.split(".")[0] ?? "").toLowerCase()))
               .filter((modid): modid is string => modid !== undefined && modid.toLowerCase() !== (crashSummary.blamedModid ?? "").toLowerCase())
-              .map((modid) => clean(boundLine(labelFor(modid))))
+              .map(labelFor)
           )
         ]
       }
     : undefined
 
   const mods: ReportModGroup[] = attributed.groups.map((group) => ({
-    modid: clean(boundLine(group.modid)),
-    name: nameFor(group.modid) ? clean(boundLine(nameFor(group.modid) as string)) : undefined,
+    modid: cleanLabel(group.modid),
+    name: nameFor(group.modid),
     // The crash file naming a Mod outranks either log-line rule: it is the game's own verdict.
     signal: crashSummary?.blamedModid?.toLowerCase() === group.modid.toLowerCase() ? "crash-file" : group.signal,
     errors: group.errors,

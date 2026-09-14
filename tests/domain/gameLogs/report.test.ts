@@ -175,6 +175,50 @@ describe("what leaves the process", () => {
     assert.ok(!copied.includes("/home/will"))
   })
 
+  it("redacts the exception type, which a Mod is free to name after itself", () => {
+    const report = buildSessionReport({
+      crashFile: { text: ["Will_T.Modx.LoadException: it broke", "   at X.Y()"].join("\n") },
+      accountValues: ["Will_T"]
+    })
+
+    assert.equal(report.crash?.exceptionType, "[ACCOUNT].Modx.LoadException")
+    assert.ok(!formatReportText(report).includes("Will_T"), "the exception type reached the copied report unmasked")
+  })
+
+  it("redacts a Mod's own name wherever the report shows it, heading or Harmony label", () => {
+    // A modid and a name are read out of a modinfo and a crash header. Nothing constrains either,
+    // so both can carry a path, an address or a token, and both are shown to whoever the report
+    // is pasted to.
+    const report = buildSessionReport({
+      mainLog: {
+        fileName: "client-main.log",
+        text: ["1.1.2026 0:00:00 [Error] [secretpack] failed to load", "1.1.2026 0:00:01 [Warning] [tokenpack] slow"].join("\n")
+      },
+      crashFile: {
+        text: [
+          "22.02.2026 20:39:11: Critical error occurred in the following mod: secretpack@1.0.0",
+          "Involved Harmony IDs: tokenpack.patches",
+          "System.NullReferenceException: Object reference not set to an instance of an object.",
+          "   at X.Y()"
+        ].join("\n")
+      },
+      installedMods: [
+        { modid: "secretpack", name: "/home/Jane Doe/secret" },
+        { modid: "tokenpack", name: "pack token=abc jane@example.com" }
+      ],
+      accountValues: ["jane@example.com", "Jane Doe"]
+    })
+
+    assert.equal(report.mods.find((mod) => mod.modid === "secretpack")?.name, "[PATH]")
+    assert.equal(report.verdict.modLabel, "[PATH]")
+    assert.equal(report.crash?.otherPatchLabels[0], "pack token=[REDACTED] [ACCOUNT]")
+
+    const copied = formatReportText(report)
+    assert.ok(!copied.includes("/home/Jane Doe"), "a Mod name that is a path reached the copied report")
+    assert.ok(!copied.includes("token=abc"), "a Mod name carrying a token value reached the copied report")
+    assert.ok(!copied.includes("jane@example.com"), "a Mod name carrying an address reached the copied report")
+  })
+
   it("keeps an error verdict when the unattributed display cap hides the error", () => {
     const lines = [
       ...Array.from({ length: 12 }, (_, index) => `1.1.2026 0:00:${String(index).padStart(2, "0")} [Warning] unrelated warning ${index}`),
