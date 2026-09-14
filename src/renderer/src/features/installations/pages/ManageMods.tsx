@@ -41,6 +41,7 @@ import ManageModsActionBar from "@renderer/features/mods/components/ManageModsAc
 import ManageModsSelectionBar from "@renderer/features/mods/components/ManageModsSelectionBar"
 import ModProfilesPopup from "@renderer/features/mods/components/ModProfilesPopup"
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
+import ModHealthPanel from "@renderer/features/mods/components/ModHealthPanel"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
 import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
@@ -102,7 +103,9 @@ function ListMods(): JSX.Element {
   // through the native file dialog.
   const folderInUse = installation ? modsFolderInUse(installation) : false
   const [profilesOpen, setProfilesOpen] = useState(false)
-  const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
+  // A mod id and a name, not a Mod: the install popup already takes a mod id and finds the installed
+  // copy itself, so the health panel can point it at a dependency nobody has installed yet.
+  const [modToUpdate, setModToUpdate] = useState<{ modid: string; name?: string } | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -299,6 +302,23 @@ function ListMods(): JSX.Element {
                       </ListGroup>
                     </ListWrapper>
                   )}
+
+                  {/*
+                   * Judged against the whole folder rather than the filtered list: a dependency a
+                   * search hides is still missing, and this says what the Installation is, not what
+                   * is on screen. It is above "Mods with errors" because it is the one thing here
+                   * that says the game may not start.
+                   */}
+                  <ModHealthPanel
+                    installedMods={installedMods}
+                    unreadableCount={modsWithErrors.length}
+                    gameVersion={installation.version}
+                    suspended={suspendedModUpdates}
+                    labelOf={batch.labelOf}
+                    actions={actions}
+                    onUpdate={setModToUpdate}
+                    onUpdateAll={updateAllMods}
+                  />
 
                   {visibleModsWithErrors.length > 0 && (
                     <ListWrapper className="w-full">
