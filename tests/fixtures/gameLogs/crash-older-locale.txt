@@ -1,0 +1,6 @@
+Running on 64 bit Windows 10.0.19044.0 with 8134 MB RAM
+Game Version: v1.17.5 (Stable)
+16/10/2022 12:19:11 PM: Critical error occurred in the following mod: carryon@1.5.1
+Loaded Mods: game@1.17.5, carryon@1.5.1, survival@1.17.5
+System.NullReferenceException: Object reference not set to an instance of an object.
+   at CarryOn.CarrySystem.OnPlayerInteract(IPlayer player)
