@@ -154,6 +154,18 @@ describe("checkModHealth ModDB verdicts", () => {
     ])
   })
 
+  it("says nothing about a release tagged for the game version's own series but not for the version itself", () => {
+    // The narrow reading of "not declared" is the whole point of the section: same-minor is what
+    // the detail panel words as "should work on the version", so a line here saying nobody has
+    // vouched for the Mod would put the two panels at odds about it.
+    const tags = ["1.20.1"]
+    assert.equal(evaluateModCompatibility(tags, GAME_VERSION), "same-minor")
+
+    const mods = [aMod({ modid: "alpha", version: "1.0.0", releases: [{ modversion: "1.0.0", tags }] })]
+
+    assert.deepEqual(checkModHealth({ mods, gameVersion: GAME_VERSION }), [])
+  })
+
   it("says nothing about a Mod the ModDB never answered for, and still checks its dependencies", () => {
     const mods = [aMod({ modid: "alpha", version: "0.0.1", dependencies: { beta: "2.0.0" } })]
 
