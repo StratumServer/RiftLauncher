@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Disclosure, DisclosureButton, DisclosurePanel } from "@headlessui/react"
-import { PiCaretDownDuotone, PiCheckCircleDuotone, PiXCircleDuotone } from "react-icons/pi"
+import { PiCheckCircleDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { checkServerBookmark, DEFAULT_GAME_SERVER_PORT, MAX_GAME_SERVER_PORT, MAX_SERVER_BOOKMARK_NAME_LENGTH, MIN_GAME_SERVER_PORT } from "@domain/servers/bookmarks"
 import type { ServerBookmarkProblem } from "@domain/servers/bookmarks"
 
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
-import { ButtonsWrapper, FormButton, FormFieldGroup, FormInputNumber, FormInputText, FormLabel, FromGroup, FromWrapper } from "@renderer/components/ui/FormComponents"
+import { ButtonsWrapper, FormBody, FormButton, FormGroupWrapper, FormHead, FormInputNumber, FormInputText, FormLabel, FromGroup, FromWrapper } from "@renderer/components/ui/FormComponents"
 
 /** One message per problem the domain can report, so no refusal ever reaches a player unexplained. */
 const PROBLEM_KEYS: Record<ServerBookmarkProblem, string> = {
@@ -60,6 +59,14 @@ function ServerBookmarkDialog({
     setProblem(null)
   }, [isOpen, server])
 
+  /** Clears the last refusal as soon as the player edits anything, so no message outlives its cause. */
+  function edit<T>(set: (value: T) => void): (value: T) => void {
+    return (value) => {
+      setProblem(null)
+      set(value)
+    }
+  }
+
   function save(): void {
     const checked = checkServerBookmark({ id: server?.id ?? crypto.randomUUID(), name, host, port }, existing)
     if (!checked.ok) return setProblem(checked.problem)
@@ -71,32 +78,37 @@ function ServerBookmarkDialog({
     <PopupDialogPanel title={server ? t("features.servers.editServer") : t("features.servers.addServer")} isOpen={isOpen} close={close}>
       <>
         <FromWrapper className="w-full">
-          <FromGroup alignment="y">
-            <FormFieldGroup>
+          <FromGroup>
+            <FormHead>
               <FormLabel content={t("features.servers.serverName")} htmlFor="server-name" />
-              <FormInputText id="server-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={MAX_SERVER_BOOKMARK_NAME_LENGTH} autoFocus />
-            </FormFieldGroup>
-
-            <FormFieldGroup>
-              <FormLabel content={t("features.servers.serverAddress")} htmlFor="server-host" />
-              <FormInputText id="server-host" value={host} onChange={(e) => setHost(e.target.value)} placeholder="play.example.com" inputMode="url" autoComplete="off" />
-            </FormFieldGroup>
-
-            {/* defaultOpen only when the stored port is not the default one: a player who set 30000
-                should see it without having to go looking, and everybody else should not. */}
-            <Disclosure defaultOpen={port !== DEFAULT_GAME_SERVER_PORT}>
-              <DisclosureButton className="w-full flex items-center justify-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 rounded-sm focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2">
-                <PiCaretDownDuotone className="shrink-0" />
-                {t("features.servers.advanced")}
-              </DisclosureButton>
-              <DisclosurePanel>
-                <FormFieldGroup>
-                  <FormLabel content={t("features.servers.serverPort")} htmlFor="server-port" />
-                  <FormInputNumber id="server-port" value={port} onChange={(e) => setPort(e.target.valueAsNumber)} min={MIN_GAME_SERVER_PORT} max={MAX_GAME_SERVER_PORT} />
-                </FormFieldGroup>
-              </DisclosurePanel>
-            </Disclosure>
+            </FormHead>
+            <FormBody>
+              <FormInputText id="server-name" value={name} onChange={(e) => edit(setName)(e.target.value)} maxLength={MAX_SERVER_BOOKMARK_NAME_LENGTH} autoFocus />
+            </FormBody>
           </FromGroup>
+
+          <FromGroup>
+            <FormHead>
+              <FormLabel content={t("features.servers.serverAddress")} htmlFor="server-host" />
+            </FormHead>
+            <FormBody>
+              <FormInputText id="server-host" value={host} onChange={(e) => edit(setHost)(e.target.value)} placeholder="play.example.com" inputMode="url" autoComplete="off" />
+            </FormBody>
+          </FromGroup>
+
+          {/* Open only when the stored port is not the default one: a player who set 30000 should
+              see it without going looking, and everybody else should not have to look at a field
+              they will never touch. The same Advanced section the Installation form already uses. */}
+          <FormGroupWrapper title={t("generic.advanced")} startOpen={port !== DEFAULT_GAME_SERVER_PORT} bgDark={false} flush>
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.servers.serverPort")} htmlFor="server-port" />
+              </FormHead>
+              <FormBody>
+                <FormInputNumber id="server-port" value={port} onChange={(e) => edit(setPort)(e.target.valueAsNumber)} min={MIN_GAME_SERVER_PORT} max={MAX_GAME_SERVER_PORT} />
+              </FormBody>
+            </FromGroup>
+          </FormGroupWrapper>
         </FromWrapper>
 
         {problem && (

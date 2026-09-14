@@ -619,7 +619,6 @@
       "serverName": "Name",
       "serverAddress": "Address",
       "serverPort": "Port",
-      "advanced": "Advanced",
       "join": "Join",
       "copyAddress": "Copy address",
       "addressCopied": "Address copied.",
