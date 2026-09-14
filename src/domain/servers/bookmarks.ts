@@ -120,6 +120,11 @@ export function normalizeServerBookmarks(value: unknown): ServerBookmarkType[] {
     const record = entry as Record<string, unknown>
     const id = typeof record.id === "string" ? record.id : ""
     if (!id || id.length > 128) continue
+    // checkServerBookmark excludes an entry's own id from the duplicate test, so that an edit does
+    // not collide with itself, which leaves one id worn twice by two different addresses looking
+    // like two perfectly good rows. Everything downstream keys off the id: the import dialog's
+    // checkboxes, and the servers page's Edit and Remove. The first entry keeps the id.
+    if (bookmarks.some((bookmark) => bookmark.id === id)) continue
     if (typeof record.name !== "string" || typeof record.host !== "string" || typeof record.port !== "number") continue
 
     const checked = checkServerBookmark({ id, name: record.name, host: record.host, port: record.port }, bookmarks)
