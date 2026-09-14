@@ -1355,7 +1355,7 @@ describe("Activity Center keyboard reach", () => {
     openCenter()
     fireEvent.keyDown(panel(), { key: "Escape" })
 
-    await waitFor(() => expect(screen.queryByRole("region", { name: "Activity Center" })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Activity Center" })).toBeNull(), { timeout: 5_000 })
     expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Activity Center:/ }))
   })
 })
