@@ -265,6 +265,7 @@
       "discardTask": "Feladat elvetése",
       "markAllRead": "Összes megjelölése olvasottként",
       "clearRead": "Olvasottak törlése",
+      "clearAll": "Összes törlése",
       "markRead": "Megjelölés olvasottként",
       "markUnread": "Megjelölés olvasatlanként",
       "panelSummary": "{{active}} folyamatban, {{unread}} olvasatlan",

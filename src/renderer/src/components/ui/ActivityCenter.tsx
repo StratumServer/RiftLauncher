@@ -5,6 +5,7 @@ import { PiBoxArrowDownDuotone, PiBoxArrowUpDuotone, PiDownloadDuotone, PiEnvelo
 import clsx from "clsx"
 import { useTranslation } from "react-i18next"
 
+import { BULK_CLEAR_UNDO_DURATION, taskSurvivesBulkClear } from "@domain/notifications/bulkClear"
 import { failureReasonKey } from "@domain/notifications/failureReason"
 import { awaitsAnswer, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext, type TaskType } from "@renderer/contexts/TaskManagerContext"
@@ -108,8 +109,20 @@ function ActivityPanel(): JSX.Element {
   const { t } = useTranslation()
   const reduceMotion = useReducedMotion()
   const panelRef = useRef<HTMLDivElement>(null)
-  const { tasks, activeTaskCount, removeTask } = useTaskContext()
-  const { history, unreadCount, markAllSeen, markAllRead, setNotificationRead, clearReadNotifications, invokeAction, removeNotification } = useNotificationsContext()
+  const { tasks, activeTaskCount, removeTask, clearFinishedTasks, undoClearFinishedTasks } = useTaskContext()
+  const {
+    addNotification,
+    history,
+    unreadCount,
+    markAllSeen,
+    markAllRead,
+    setNotificationRead,
+    clearReadNotifications,
+    clearAllNotifications,
+    undoClearAllNotifications,
+    invokeAction,
+    removeNotification
+  } = useNotificationsContext()
 
   // Mounting means the center is open; a record arriving while it is open is on
   // screen, so it counts as seen too.
@@ -129,6 +142,31 @@ function ActivityPanel(): JSX.Element {
   const failedTasks = tasks.filter((task) => task.status === "failed")
   const completedTasks = tasks.filter((task) => task.status === "completed")
   const hasClearableRead = history.some((notification) => notification.read && !awaitsAnswer(notification))
+  const hasAnythingToClear = history.some((notification) => !awaitsAnswer(notification)) || tasks.some((task) => !taskSurvivesBulkClear(task.status))
+
+  /**
+   * Both halves of the panel in one press, with one way back. The undo toast is
+   * raised here rather than inside either provider because it is the one thing
+   * that puts both of them back, and neither knows about the other.
+   */
+  const clearEverything = (): void => {
+    clearFinishedTasks()
+    clearAllNotifications()
+    addNotification(t("notifications.body.activityCleared"), "info", {
+      presentation: "toast",
+      duration: BULK_CLEAR_UNDO_DURATION,
+      actions: [
+        {
+          id: "undo-clear-all",
+          label: t("notifications.actions.undo"),
+          onClick: (): void => {
+            undoClearFinishedTasks()
+            undoClearAllNotifications()
+          }
+        }
+      ]
+    })
+  }
 
   return (
     <motion.div
@@ -145,9 +183,16 @@ function ActivityPanel(): JSX.Element {
         <h2 id="activity-center-title" className="font-bold leading-tight">
           {t("components.activityCenter.title")}
         </h2>
-        <span className="text-xs text-zinc-400 leading-tight" aria-live="polite" aria-atomic="true">
-          {t("components.activityCenter.panelSummary", { active: activeTaskCount, unread: unreadCount })}
-        </span>
+        <div className="flex flex-wrap items-center justify-between gap-x-2">
+          <span className="text-xs text-zinc-400 leading-tight" aria-live="polite" aria-atomic="true">
+            {t("components.activityCenter.panelSummary", { active: activeTaskCount, unread: unreadCount })}
+          </span>
+          {hasAnythingToClear && (
+            <NormalButton className="px-1 text-xs text-zinc-400" title={t("components.activityCenter.clearAll")} ariaLabel={t("components.activityCenter.clearAll")} onClick={() => clearEverything()}>
+              {t("components.activityCenter.clearAll")}
+            </NormalButton>
+          )}
+        </div>
       </div>
       {/* Failures first. The one section a player has to act on used to sit under the one they can
           only watch, which is the wrong way round for a panel opened because something went wrong. */}

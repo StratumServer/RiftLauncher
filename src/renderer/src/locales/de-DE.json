@@ -281,6 +281,7 @@
       "discardTask": "Aufgabe verwerfen",
       "markAllRead": "Alle als gelesen markieren",
       "clearRead": "Gelesene löschen",
+      "clearAll": "Alles löschen",
       "markRead": "Als gelesen markieren",
       "markUnread": "Als ungelesen markieren",
       "panelSummary": "{{active}} laufend, {{unread}} ungelesen",

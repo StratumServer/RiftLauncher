@@ -640,6 +640,7 @@
       "discardTask": "Discard task",
       "markAllRead": "Mark all read",
       "clearRead": "Clear read",
+      "clearAll": "Clear all",
       "markRead": "Mark as read",
       "markUnread": "Mark as unread",
       "panelSummary": "{{active}} running, {{unread}} unread",
@@ -692,12 +693,14 @@
       "iconAddFailed": "Something went wrong adding that icon. Restart RiftLauncher, and let us know if it keeps happening.",
       "backgroundDownloadFailed": "That background couldn't be downloaded. Check your connection and try again.",
       "backgroundCopyFailed": "That image couldn't be used as a background. It has to be a JPEG under 2 MB.",
-      "appClosePrevented": "RiftLauncher can't close yet: either Vintage Story is running or a task is still going."
+      "appClosePrevented": "RiftLauncher can't close yet: either Vintage Story is running or a task is still going.",
+      "activityCleared": "Cleared the Activity Center."
     },
     "actions": {
       "openInstallGuide": "Open the install guide",
       "updateNow": "Update now",
-      "notNow": "Not now"
+      "notNow": "Not now",
+      "undo": "Undo"
     },
     "discard": "Discard notification",
     "repeats": "x{{count}}"

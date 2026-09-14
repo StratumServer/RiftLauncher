@@ -640,6 +640,7 @@
       "discardTask": "Ignorer la tâche",
       "markAllRead": "Tout marquer comme lu",
       "clearRead": "Effacer les notifications lues",
+      "clearAll": "Tout effacer",
       "markRead": "Marquer comme lue",
       "markUnread": "Marquer comme non lue",
       "panelSummary": "{{active}} en cours, {{unread}} non lues",
@@ -692,12 +693,14 @@
       "iconAddFailed": "Un problème est survenu pendant l'ajout de cette icône. Redémarrez RiftLauncher, et dites-le-nous si cela se reproduit.",
       "backgroundDownloadFailed": "Cet arrière-plan n'a pas pu être téléchargé. Vérifiez votre connexion et réessayez.",
       "backgroundCopyFailed": "Cette image n'a pas pu servir d'arrière-plan. Elle doit être au format JPEG et faire moins de 2 Mo.",
-      "appClosePrevented": "RiftLauncher ne peut pas encore se fermer : soit Vintage Story tourne, soit une tâche est toujours en cours."
+      "appClosePrevented": "RiftLauncher ne peut pas encore se fermer : soit Vintage Story tourne, soit une tâche est toujours en cours.",
+      "activityCleared": "Le centre d'activité a été vidé."
     },
     "actions": {
       "openInstallGuide": "Ouvrir le guide d'installation",
       "updateNow": "Mettre à jour maintenant",
-      "notNow": "Pas maintenant"
+      "notNow": "Pas maintenant",
+      "undo": "Annuler"
     },
     "discard": "Ignorer la notification",
     "repeats": "x{{count}}"

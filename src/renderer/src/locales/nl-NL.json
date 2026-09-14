@@ -167,6 +167,7 @@
       "discardTask": "Taak verwijderen",
       "markAllRead": "Alles als gelezen markeren",
       "clearRead": "Gelezen wissen",
+      "clearAll": "Alles wissen",
       "markRead": "Markeren als gelezen",
       "markUnread": "Markeren als ongelezen",
       "panelSummary": "{{active}} bezig, {{unread}} ongelezen",

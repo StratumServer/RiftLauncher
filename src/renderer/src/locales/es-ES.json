@@ -48,6 +48,7 @@
       "discardTask": "Descartar tarea",
       "markAllRead": "Marcar todas como leídas",
       "clearRead": "Limpiar leídas",
+      "clearAll": "Borrar todo",
       "markRead": "Marcar como leída",
       "markUnread": "Marcar como no leída",
       "panelSummary": "{{active}} en curso, {{unread}} sin leer",

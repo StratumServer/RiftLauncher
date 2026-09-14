@@ -324,6 +324,7 @@
       "discardTask": "Eliminar tarefa",
       "markAllRead": "Marcar todas como lidas",
       "clearRead": "Limpar lidas",
+      "clearAll": "Limpar tudo",
       "markRead": "Marcar como lida",
       "markUnread": "Marcar como não lida",
       "panelSummary": "{{active}} em curso, {{unread}} não lidas",

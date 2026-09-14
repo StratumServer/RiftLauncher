@@ -48,6 +48,7 @@
       "discardTask": "Elimina attività",
       "markAllRead": "Segna tutto come letto",
       "clearRead": "Cancella notifiche lette",
+      "clearAll": "Cancella tutto",
       "markRead": "Segna come letta",
       "markUnread": "Segna come da leggere",
       "panelSummary": "{{active}} in corso, {{unread}} da leggere",

@@ -541,6 +541,12 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /** #392's one new control, which sits on the panel scrim beside the summary rather than on a row. */
+  it("keeps the Clear all control readable on the panel it sits on", () => {
+    const clearAll = foreground("components/ui/ActivityCenter.tsx", /className="px-1 text-xs text-(zinc-\d+)(?:\/(\d+))?"\s+title=\{t\("components\.activityCenter\.clearAll"\)\}/)
+    assertReadable("Clear all", clearAll, TASKS_PANEL, TEXT_FLOOR)
+  })
+
   it("keeps the active task badge readable on the accent fill it sits on", () => {
     const badge = match("components/ui/ActivityCenter.tsx", /rounded-full bg-(vs) text-\[10px\] leading-none text-(white)/)
     assert.equal(badge[2], "white", "the active task count no longer paints its own label")
