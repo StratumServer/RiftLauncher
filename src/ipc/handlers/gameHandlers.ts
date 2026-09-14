@@ -9,11 +9,14 @@ import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { assertManagedPath } from "@src/ipc/pathPolicy"
+import { assertConfiguredInstallationPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
 import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
+import { buildSessionReport, type InstalledModRef } from "@domain/gameLogs/report"
+import { scanInstalledMods } from "@domain/mods/scanInstalled"
+import { createScanInstalledModsPorts } from "@src/ipc/adapters/modScan"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
 import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
 import { MODS_FOLDER_NAME } from "@domain/mods/folder"
@@ -531,4 +534,127 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, 
 
   logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Found Vintage Story ${result.version}.`)
   return { exists: true, installedGameVersion: result.version }
+})
+
+/**
+ * Reading the last session's own logs, for the report on `/installations/report/:id` (#462).
+ *
+ * Nothing read here ever reaches the launcher's own log, not even at verbose: these files carry the
+ * player's paths, and the domain redacts every string the report keeps before it crosses IPC. The
+ * one line this logs carries counts and fixed tokens.
+ *
+ * The renderer names an Installation and never a file. The handler joins the two names it knows and
+ * puts each through the read-only grade #237 added for linked data folders, so a player who keeps
+ * their data folder behind a symbolic link still gets a report, while nothing outside the
+ * Installation the config names can be reached. `client-debug.log`, the chat and audit logs and the
+ * server files are not opened at all.
+ */
+const GAME_LOGS_FOLDER_NAME = "Logs"
+const CLIENT_MAIN_LOG_FILE_NAME = "client-main.log"
+const CLIENT_CRASH_FILE_NAME = "client-crash.txt"
+
+/** Under this, the log is read whole. A real session writes a few hundred KiB. */
+const WHOLE_LOG_BYTES = 2 * 1024 * 1024
+/** The phase timeline and the mod roster live at the top of the file. */
+const LOG_HEAD_BYTES = 512 * 1024
+/** The errors and the crash live at the bottom. */
+const LOG_TAIL_BYTES = 1536 * 1024
+/** A crash file is a header and a trace. Past this it is a payload, and only its head is read. */
+const CRASH_FILE_BYTES = 256 * 1024
+
+interface BoundedRead {
+  text: string
+  truncated: boolean
+  lastWrittenAtMs: number
+}
+
+/**
+ * Reads a file whole under `whole` bytes, and head plus tail above it.
+ *
+ * `stat`, not `lstat`: this is the grade that admits a linked data folder, so following the link is
+ * the point. A missing file, a folder, or anything that is not a regular file answers null, which
+ * the caller reads as "there is no such log" rather than as a failure.
+ *
+ * The cut is by bytes, not by lines, so the two halves can each begin or end mid-character. The
+ * line grammar drops a mangled leading run for exactly this reason, and a replacement character
+ * inside one line costs that line and nothing else.
+ */
+async function readBoundedText(filePath: string, whole: number, head: number, tail: number): Promise<BoundedRead | null> {
+  const stats = await fse.stat(filePath).catch(() => null)
+  if (!stats || !stats.isFile()) return null
+  if (stats.size <= whole) return { text: await fse.readFile(filePath, "utf-8"), truncated: false, lastWrittenAtMs: stats.mtimeMs }
+
+  const handle = await fse.open(filePath, "r")
+  try {
+    const headBuffer = Buffer.alloc(head)
+    await fse.read(handle, headBuffer, 0, head, 0)
+    if (tail <= 0) return { text: headBuffer.toString("utf-8"), truncated: true, lastWrittenAtMs: stats.mtimeMs }
+
+    const tailBuffer = Buffer.alloc(tail)
+    await fse.read(handle, tailBuffer, 0, tail, stats.size - tail)
+    return { text: `${headBuffer.toString("utf-8")}\n${tailBuffer.toString("utf-8")}`, truncated: true, lastWrittenAtMs: stats.mtimeMs }
+  } finally {
+    await fse.close(handle)
+  }
+}
+
+/** The Mods the launcher recognises, so an assembly or a Harmony id can be tied to one and a group can carry a name. */
+async function readInstalledModRefs(installationPath: string): Promise<InstalledModRef[]> {
+  try {
+    const folder = await assertManagedPath(join(installationPath, MODS_FOLDER_NAME), "mods path", { allowMissing: true, allowSymlinks: true })
+    if (!(await fse.pathExists(folder))) return []
+    const scan = await scanInstalledMods(createScanInstalledModsPorts(), { folder })
+    return scan.mods.map((mod) => ({ modid: mod.modid, name: mod.name }))
+  } catch {
+    // A Mods folder that cannot be read costs the report its display names and its assembly rule,
+    // and nothing else. The bracket rule reads the log line itself and still works.
+    return []
+  }
+}
+
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.GET_GAME_LOG_REPORT, async (event, installationPath: unknown): Promise<GameLogReportResult> => {
+  assertTrustedIpcSender(event)
+
+  let installation: string
+  try {
+    installation = await assertConfiguredInstallationPath(installationPath)
+  } catch {
+    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [GET_GAME_LOG_REPORT] Refused: not a configured Installation.`)
+    return { ok: false, reason: "refused" }
+  }
+
+  let mainLog: BoundedRead | null
+  let crashFile: BoundedRead | null
+  try {
+    const readOnly = { allowMissing: true, allowSymlinks: true } as const
+    const logsFolder = join(installation, GAME_LOGS_FOLDER_NAME)
+    const mainLogPath = await assertManagedPath(join(logsFolder, CLIENT_MAIN_LOG_FILE_NAME), "game log path", readOnly)
+    const crashPath = await assertManagedPath(join(logsFolder, CLIENT_CRASH_FILE_NAME), "game crash path", readOnly)
+    mainLog = await readBoundedText(mainLogPath, WHOLE_LOG_BYTES, LOG_HEAD_BYTES, LOG_TAIL_BYTES)
+    crashFile = await readBoundedText(crashPath, CRASH_FILE_BYTES, CRASH_FILE_BYTES, 0)
+  } catch (err) {
+    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [GET_GAME_LOG_REPORT] Could not read this Installation's logs.`)
+    logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [GET_GAME_LOG_REPORT] ${getErrorMessage(err)}`)
+    return { ok: false, reason: "unreadable" }
+  }
+
+  if (!mainLog && !crashFile) {
+    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [GET_GAME_LOG_REPORT] No session logs to read yet.`)
+    return { ok: false, reason: "no-logs" }
+  }
+
+  const config = await getConfig()
+  const report = buildSessionReport({
+    ...(mainLog ? { mainLog: { fileName: CLIENT_MAIN_LOG_FILE_NAME, text: mainLog.text, lastWrittenAtMs: mainLog.lastWrittenAtMs, truncated: mainLog.truncated } } : {}),
+    ...(crashFile ? { crashFile: { text: crashFile.text } } : {}),
+    installedMods: await readInstalledModRefs(installation),
+    // The pattern redactor cannot recognise an email or a player name, so they are masked by value.
+    accountValues: config.accounts.flatMap((account) => [account.email, account.playerName])
+  })
+
+  logMessage(
+    "info",
+    `[back] [ipc] [ipc/handlers/gameHandlers.ts] [GET_GAME_LOG_REPORT] Built a session report: ${report.mods.length} groups, ${report.unattributed.length} other lines, crash ${report.crash ? 1 : 0}, truncated ${report.source.truncated ? 1 : 0}.`
+  )
+  return { ok: true, report }
 })
