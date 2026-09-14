@@ -191,7 +191,6 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   // render, and without these the second of two identical ones cannot see the
   // first. Emptied on every render, by which point they are in `records`.
   const pendingToasts = useRef<RepeatableToast[]>([])
-  // What the last "Clear all" took, held only so the undo toast can put it back.
   // When each banner's turn started, refreshed by every (re)start of its timer,
   // so the shortening effect can read how much of that turn is already gone.
   const turnStartedAt = useRef(new Map<string, number>())
@@ -450,7 +449,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
         setNotificationRead,
         removeNotification,
         clearReadNotifications,
-        clearAllNotifications,
+        clearAllNotifications
       }}
     >
       {/* One timer per place in the stack, mounted as children so each starts, pauses and expires on

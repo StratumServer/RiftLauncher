@@ -193,8 +193,6 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
    */
   const launcherUpdateTaskAdded = useRef(false)
 
-  /** What the last "Clear all" dropped, held only so the undo toast can put it back. */
-
   useEffect((): (() => void) => {
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for download progress.`)
     const removeDownloadProgressListener = window.api.pathsManager.onDownloadProgress(({ id, progress }) => {
@@ -277,13 +275,13 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
 
     try {
       window.api.utils.setPreventAppClose("add", id, "Started download.")
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Adding download to [PATH].`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Adding download to [PATH].`)
       tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "download", progress: 0, status: "pending" } })
 
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Downloading...`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Downloading...`)
       const downloadedFile = await window.api.pathsManager.downloadOnPath(id, url, outputPath, fileName)
 
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Downloaded.`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Downloaded.`)
       // The download resolving is what completes the task, not the progress
       // events: a source whose last tick lands at 97 would otherwise leave the
       // task showing as still running forever. See the reducer above for why
@@ -292,8 +290,8 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       if (notifications.completion === "toast") addNotification(t("notifications.body.downloaded", { downloadName: name }), "success", { presentation: "toast" })
       onFinish(true, downloadedFile, null)
     } catch (err) {
-      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Error downloading.`)
-      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [${fileName}] Error downloading: ${err}`)
+      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Error downloading.`)
+      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Error downloading: ${err}`)
       const reason = classifyFailure(err)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
       if (notifications.failure === "generic") addNotification(t("notifications.body.downloadError", { downloadName: name }), "error", { reason })
@@ -317,10 +315,10 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
 
     try {
       window.api.utils.setPreventAppClose("add", id, "Started extraction.")
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Adding extraction to [PATH].`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Adding extraction to [PATH].`)
       tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "extract", progress: 0, status: "pending" } })
 
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Extracting...`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Extracting...`)
       const result = await window.api.pathsManager.extractOnPath(id, filePath, outputPath, deleteZip, unwrapSingleRootFolder)
 
       if (!result) throw new Error("Extraction failed")
@@ -331,15 +329,15 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       // call resolves `false` without throwing, which is the normal, expected outcome.)
       await window.api.pathsManager.changePerms([outputPath], 0o755)
 
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Extracted.`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Extracted.`)
       // Completed once the extraction and the chmod are both through, so a
       // last progress tick under 100 cannot strand the task as running.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
       if (notifications.completion === "toast") addNotification(t("notifications.body.extracted", { extractName: name }), "success", { presentation: "toast" })
       onFinish(true, null)
     } catch (err) {
-      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Error extracting.`)
-      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [${filePath}] Error extracting: ${err}`)
+      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Error extracting.`)
+      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Error extracting: ${err}`)
       const reason = classifyFailure(err)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
       if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error", { reason })
@@ -362,10 +360,10 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
 
     try {
       window.api.utils.setPreventAppClose("add", id, "Started installation.")
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Adding installation to [PATH].`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Adding installation to [PATH].`)
       tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "install", progress: 0, status: "pending" } })
 
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Installing...`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Installing...`)
       const result = await window.api.pathsManager.runInstaller(id, filePath, outputPath, deleteInstaller)
 
       // The wire tells apart why the installer never landed the game (see
@@ -374,7 +372,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       // along on the thrown Error's message for the log line below.
       if (!result.ok) throw new Error(`Installation failed: ${result.reason}`)
 
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Installed.`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Installed.`)
       // The worst of the four for this: an installer that ran to the end sends
       // a 100 tick, but one whose payload was read out instead reports whatever
       // the reader last counted, and neither is what says the task is done.
@@ -382,8 +380,8 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       if (notifications.completion === "toast") addNotification(t("notifications.body.extracted", { extractName: name }), "success", { presentation: "toast" })
       onFinish(true, null)
     } catch (err) {
-      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Error installing.`)
-      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [${filePath}] Error installing: ${err}`)
+      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Error installing.`)
+      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Error installing: ${err}`)
       const reason = classifyFailure(err)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
       if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error", { reason })
@@ -407,22 +405,22 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
 
     try {
       window.api.utils.setPreventAppClose("add", id, "Started compression.")
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Adding compression of [PATH] to [PATH].`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Adding compression of [PATH] to [PATH].`)
       tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "compress", progress: 0, status: "pending" } })
 
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Compressing...`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Compressing...`)
       const result = await window.api.pathsManager.compressOnPath(id, inputPath, outputPath, fileName, compressionLevel)
 
       if (!result) throw new Error("Compression failed")
 
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Compressed.`)
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Compressed.`)
       // Same as the other three: the resolved call is the completion signal.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
       if (notifications.completion === "toast") addNotification(t("notifications.body.compressed", { compressName: name }), "success", { presentation: "toast" })
       onFinish(true, null)
     } catch (err) {
-      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Error compressing.`)
-      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [${fileName}] Error compressing: ${err}`)
+      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Error compressing.`)
+      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Error compressing: ${err}`)
       const reason = classifyFailure(err)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
       if (notifications.failure === "generic") addNotification(t("notifications.body.compressError", { compressName: name }), "error", { reason })
@@ -436,7 +434,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id } })
   }
 
-  function clearFinishedTasks(): (() => void) {
+  function clearFinishedTasks(): () => void {
     const clearedTasks = tasks.filter((task) => !taskSurvivesBulkClear(task.status))
     for (const task of clearedTasks) tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id: task.id } })
     let restored = false
@@ -451,11 +449,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   }
 
   const activeTaskCount = tasks.filter((task) => task.status === "pending" || task.status === "in-progress").length
-  return (
-    <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask, clearFinishedTasks }}>
-      {children}
-    </TaskContext.Provider>
-  )
+  return <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask, clearFinishedTasks }}>{children}</TaskContext.Provider>
 }
 
 export const useTaskContext = (): TaskContextType => {
