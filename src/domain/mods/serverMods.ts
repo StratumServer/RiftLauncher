@@ -69,8 +69,7 @@ export async function scanServerMods(ports: ScanInstalledModsPorts, input: { fol
   let truncated = names.length > kept.length
   let archives = 0
 
-  for (let index = 0; index < kept.length; index++) {
-    const server = kept[index]
+  for (const [index, server] of kept.entries()) {
     const path = await ports.paths.join([input.folder, server])
 
     let scan

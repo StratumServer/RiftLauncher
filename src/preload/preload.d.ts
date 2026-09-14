@@ -39,6 +39,8 @@ declare global {
     }
     modsManager: {
       getInstalledMods: (path: string) => Promise<InstalledModsScan>
+      /** Reads the Installation's ModsByServer tree. The host names the folder; this only names the Installation. */
+      getServerMods: (installationPath: string) => Promise<ServerModsScan>
       setModEnabled: (path: string, enabled: boolean) => Promise<SetModEnabledResult>
       cacheModImage: (url: string) => Promise<string | undefined>
       exportModpack: (manifest: ModpackManifestType) => Promise<{ success: boolean; path?: string }>

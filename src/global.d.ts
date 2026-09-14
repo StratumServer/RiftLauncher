@@ -205,6 +205,21 @@ declare global {
    */
   type InstalledModsScan = { mods: InstalledModType[]; errors: ErrorInstalledModType[]; unreadable?: true }
 
+  /**
+   * One server's downloaded Mods. `server` is the folder's name, which is whatever the server calls
+   * itself: untrusted text, escaped and truncated on screen, never logged and never joined into a
+   * path by the renderer. `path` is the folder the host built and the only thing a removal echoes
+   * back. `unreadable` counts the archives that would not read; none of them is named, because
+   * nothing here acts on one archive.
+   */
+  type ServerModGroupType = { server: string; path: string; mods: InstalledModType[]; unreadable: number }
+
+  /**
+   * GET_SERVER_MODS' answer. `truncated` means there is more under ModsByServer than came back, a
+   * cap having bitten. `unreadable` is the folder itself failing, the way InstalledModsScan uses it.
+   */
+  type ServerModsScan = { groups: ServerModGroupType[]; truncated?: true; unreadable?: true }
+
   type DownloadableModOnListType = {
     modid: number
     assetid: number
