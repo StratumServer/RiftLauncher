@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
+import { PiFileTextDuotone, PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH, validateInstallationFields } from "@domain/installations/create"
 import { getInstallationVersionStatus } from "@domain/installations/versionReference"
@@ -210,6 +210,20 @@ function EditInslallation(): JSX.Element {
                 launchWrapper={fields.launchWrapper}
                 onLaunchWrapperChange={fields.setLaunchWrapper}
               />
+
+              {/* Always offered, and it reads nothing until it is opened: one row, and a player
+                  whose session ended badly does not have to remember where the logs live. */}
+              <FormGroupWrapper title={t("features.sessionReport.lastSessionReport")} startOpen={false}>
+                <p className="text-sm text-zinc-400">{t("features.sessionReport.lastSessionReportDesc")}</p>
+                <FormLinkButton
+                  to={`/installations/report/${installation.id}`}
+                  title={t("features.sessionReport.lastSessionReport")}
+                  variant="secondary"
+                  size="md"
+                  className="self-start"
+                  icon={<PiFileTextDuotone />}
+                />
+              </FormGroupWrapper>
 
               <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
                 <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />

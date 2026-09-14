@@ -568,6 +568,44 @@
       "debugInfoDesc": "Copy the information below and send it with your bug report so we can find the issue.",
       "whatsNewTitle": "What's new",
       "whatsNewUnavailable": "The release notes could not be loaded right now."
+    },
+    "sessionReport": {
+      "verdictCrashedInMod": "The game crashed in {{mod}}.",
+      "verdictCrashed": "The game crashed.",
+      "verdictErrors": "The game exited with errors.",
+      "verdictClean": "No errors were logged.",
+      "provenance": "From {{file}}, last written {{when}}.",
+      "unknownTime": "at an unknown time",
+      "truncated": "The middle of this log was not read.",
+      "loading": "Reading the last session.",
+      "noLogs": "No logs were found for this Installation yet.",
+      "unreadable": "This Installation's logs could not be read.",
+      "crashTitle": "Crash",
+      "crashBlames": "The crash file blames {{mod}} {{version}}.",
+      "crashPatchNote": "A patch from {{mod}} was involved.",
+      "byModTitle": "By Mod",
+      "startupTitle": "Startup",
+      "anythingElseTitle": "Anything else",
+      "errorCount": "{{count}} errors",
+      "errorCount_one": "{{count}} error",
+      "errorCount_other": "{{count}} errors",
+      "warningCount": "{{count}} warnings",
+      "warningCount_one": "{{count}} warning",
+      "warningCount_other": "{{count}} warnings",
+      "signalLogLine": "named by the log line",
+      "signalAssembly": "named by the assembly",
+      "signalCrashFile": "named by the crash file",
+      "landmarkMods": "Mods found: {{count}}",
+      "landmarkModSystems": "Mod systems instantiated: {{count}}",
+      "landmarkBlocks": "Unique blocks loaded: {{count}}",
+      "phaseElapsed": "{{name}}, about {{seconds}} s",
+      "copyReport": "Copy report",
+      "copyReportDesc": "Copies the report with paths and account details removed.",
+      "openLogsFolder": "Open logs folder",
+      "copied": "The report is on your clipboard.",
+      "copyFailed": "The report could not be copied.",
+      "lastSessionReport": "Last session report",
+      "lastSessionReportDesc": "What the game's own logs say about the last time this Installation ran."
     }
   },
   "components": {
@@ -687,7 +725,8 @@
     "actions": {
       "openInstallGuide": "Open the install guide",
       "updateNow": "Update now",
-      "notNow": "Not now"
+      "notNow": "Not now",
+      "seeWhatWentWrong": "See what went wrong"
     },
     "discard": "Discard notification"
   },
@@ -703,6 +742,7 @@
     "manageBackups": "Manage Backups",
     "versions": "Versions",
     "addVersion": "Add Version",
-    "lookForAVersion": "Look for a Version"
+    "lookForAVersion": "Look for a Version",
+    "sessionReport": "Session report"
   }
 }

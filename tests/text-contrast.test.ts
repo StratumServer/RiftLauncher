@@ -534,6 +534,18 @@ describe("prompts the player is meant to read and act on", () => {
     assertReadable("active task count", [WHITE, 1], [[themeColor(badge[1] as string), 1]], TEXT_FLOOR)
   })
 
+  /**
+   * The session report (#462) is the one page that paints a colour of its own: an error count and a
+   * warning count beside each Mod group, on the table fill inside a DropdownSection. Both are read
+   * out of the component rather than written down here, so recolouring them fails this rather than
+   * shipping a count nobody can read.
+   */
+  it("keeps the session report's error and warning counts readable on the panel they sit on", () => {
+    const badges = match("features/installations/pages/SessionReport.tsx", /const SEVERITY_COLORS = \{ error: "text-([a-z]+-\d+)", warning: "text-([a-z]+-\d+)" \}/)
+    assertReadable("session report error count", [tailwindColor(badges[1] as string), 1], SECTION_TABLE, TEXT_FLOOR)
+    assertReadable("session report warning count", [tailwindColor(badges[2] as string), 1], SECTION_TABLE, TEXT_FLOOR)
+  })
+
   it("keeps Activity Center history text readable on both row tints", () => {
     const historyBody = foreground("components/ui/ActivityCenter.tsx", /text-xs break-words text-(zinc-\d+)(?:\/(\d+))?/)
     const answered = foreground("components/ui/ActivityCenter.tsx", /mt-1 text-xs text-(zinc-\d+)(?:\/(\d+))?/)
