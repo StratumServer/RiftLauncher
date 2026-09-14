@@ -29,6 +29,12 @@ export interface PlayOutcomeNotification {
   key: string
   /** An optional "read more" the caller turns into a notification action. Both halves are fixed here, never built from anything the game printed. */
   link?: { url: string; labelKey: string }
+  /**
+   * An optional action taking the player to the session report (#462), which the caller turns into
+   * a navigation rather than a URL. Set on the non-zero exit alone: every other verdict means the
+   * game never ran, so there is no new log to read and offering one would be a dead end.
+   */
+  report?: { labelKey: string }
 }
 
 /**
@@ -39,7 +45,7 @@ export interface PlayOutcomeNotification {
  * `os` only matters to `missing-dotnet`, which links the guide for that OS.
  */
 export function pickPlayOutcomeNotification(result: GameExecutionResult, os: string): PlayOutcomeNotification | null {
-  if (result.ok) return result.exitCode !== null && result.exitCode !== 0 ? { key: "notifications.body.gameExitedWithErrors" } : null
+  if (result.ok) return result.exitCode !== null && result.exitCode !== 0 ? { key: "notifications.body.gameExitedWithErrors", report: { labelKey: "notifications.actions.seeWhatWentWrong" } } : null
 
   switch (result.reason) {
     case "unsupported-platform":

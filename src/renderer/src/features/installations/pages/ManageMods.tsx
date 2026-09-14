@@ -23,6 +23,7 @@ import {
   installedModAuthors,
   installedModGameVersions,
   installedModTags,
+  matchesModSearch,
   NO_INSTALLED_MOD_FILTERS,
   sameModid
 } from "@domain/mods/installedFilters"
@@ -45,16 +46,12 @@ import ModProfilesPopup from "@renderer/features/mods/components/ModProfilesPopu
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
 import ModHealthPanel from "@renderer/features/mods/components/ModHealthPanel"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
+import ServerModsSection from "@renderer/features/mods/components/ServerModsSection"
 import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 function byName(a: InstalledModType, b: InstalledModType): number {
   return a.name.localeCompare(b.name)
-}
-
-/** What the player types matched against what they can see of a Mod: its name, id, or author. */
-function matchesSearch(iMod: InstalledModType, search: string): boolean {
-  return iMod.name.toLowerCase().includes(search) || iMod.modid.toLowerCase().includes(search) || (iMod.authors?.some((author) => author.toLowerCase().includes(search)) ?? false)
 }
 
 function ListMods(): JSX.Element {
@@ -69,6 +66,9 @@ function ListMods(): JSX.Element {
   const { installedMods, modsWithErrors, gettingMods, refresh } = useManageInstalledMods(installation)
 
   const [search, setSearch] = useState("")
+  // Counted up by Reload. The Mods a server downloaded are scanned by their own section, which would
+  // otherwise sit on what it read when the page opened while the count above it moves.
+  const [serverModsReload, setServerModsReload] = useState(0)
   const [filters, setFilters] = useState<InstalledModFilters>(NO_INSTALLED_MOD_FILTERS)
   // Collapsed on every fresh visit: the three dropdowns are what pushed the Mod list off the first
   // screen (#431). Search stays out of this, so narrowing by name never needs the extra click.
@@ -84,7 +84,7 @@ function ListMods(): JSX.Element {
   // One list feeds everything below: the three sections, and the buttons that act on the folder at
   // once. What a player sees is what those buttons touch, filtered or not (#228).
   const query = search.trim().toLowerCase()
-  const textFiltered = query ? installedMods.filter((iMod) => matchesSearch(iMod, query)) : installedMods
+  const textFiltered = query ? installedMods.filter((iMod) => matchesModSearch(iMod, query)) : installedMods
   const visibleMods = filterInstalledMods(textFiltered, filters)
   // Unreadable archives carry no author, tag or game version, so the three dropdowns have nothing to
   // judge them by and leave them alone. Only the text query narrows them, by file name.
@@ -193,7 +193,15 @@ function ListMods(): JSX.Element {
           <StickyMenuGroupWrapper>
             <StickyMenuGroup>
               <GoBackButton to="/installations" />
-              <ReloadButton reloading={gettingMods} onClick={() => refresh()} />
+              <ReloadButton
+                reloading={gettingMods}
+                onClick={() => {
+                  // The server folders are read by their own scan, and the game writes them while
+                  // the player is in game, so Reload has to reach both halves of the page.
+                  setServerModsReload((count) => count + 1)
+                  void refresh()
+                }}
+              />
             </StickyMenuGroup>
 
             <StickyMenuBreadcrumbs
@@ -373,6 +381,11 @@ function ListMods(): JSX.Element {
                       <ListGroup>{upToDateMods.map(modRow)}</ListGroup>
                     </ListWrapper>
                   )}
+
+                  {/* Last, and only when the game has actually downloaded something: these are not
+                      the Mods the player came here to manage, they are the ones they did not know
+                      they had. Nothing above reads them. */}
+                  <ServerModsSection installation={installation} search={query} reloadToken={serverModsReload} />
 
                   <InstallModPopup
                     modToInstall={modToUpdate?.modid || null}

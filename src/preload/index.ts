@@ -40,6 +40,7 @@ const api: BridgeAPI = {
   },
   modsManager: {
     getInstalledMods: (path: string): Promise<InstalledModsScan> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, path),
+    getServerMods: (installationPath: string): Promise<ServerModsScan> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS, installationPath),
     setModEnabled: (path: string, enabled: boolean): Promise<SetModEnabledResult> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, path, enabled),
     cacheModImage: (url: string): Promise<string | undefined> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.CACHE_MOD_IMAGE, url),
     exportModpack: (manifest: ModpackManifestType): Promise<{ success: boolean; path?: string }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, manifest),
@@ -76,7 +77,8 @@ const api: BridgeAPI = {
     executeGame: (version: GameVersionType, installation: InstallationType, serverId?: string): Promise<GameExecutionResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation, serverId),
     lookForAGameVersion: (path: string): Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }> =>
-      ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, path)
+      ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, path),
+    getGameLogReport: (installationPath: string): Promise<GameLogReportResult> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.GET_GAME_LOG_REPORT, installationPath)
   },
   netManager: {
     queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url),

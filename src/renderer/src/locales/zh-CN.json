@@ -118,6 +118,11 @@
       "join": "加入",
       "importServersAdd": "添加所选服务器",
       "importServersSkip": "跳过服务器"
+    },
+    "sessionReport": {
+      "copyReport": "复制报告",
+      "openLogsFolder": "打开日志文件夹",
+      "lastSessionReport": "上次会话报告"
     }
   },
   "components": {

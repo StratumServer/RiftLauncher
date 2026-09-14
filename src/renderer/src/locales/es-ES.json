@@ -264,6 +264,11 @@
       "join": "Entrar",
       "importServersAdd": "Añadir los servidores elegidos",
       "importServersSkip": "Omitir los servidores"
+    },
+    "sessionReport": {
+      "copyReport": "Copiar informe",
+      "openLogsFolder": "Abrir la carpeta de registros",
+      "lastSessionReport": "Informe de la última sesión"
     }
   },
   "generic": {

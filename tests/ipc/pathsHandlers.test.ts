@@ -310,6 +310,39 @@ describe("DELETE_PATH", () => {
     const { existsSync } = await import("node:fs")
     assert.equal(existsSync(installation), false)
   })
+
+  // Removing one server's downloaded Mods (#459) is this channel and nothing new: the renderer
+  // echoes back the folder path the host built, and the grant the Installation already carries is
+  // what says the delete may happen.
+  it("deletes one server's folder under an Installation's ModsByServer", async () => {
+    const installation = join(managedFolder, "Main")
+    const serverFolder = join(installation, "ModsByServer", "My Test Server")
+    mkdirSync(serverFolder, { recursive: true })
+    writeFileSync(join(serverFolder, "amod.zip"), "archive")
+    writeConfig({ installations: [{ id: "a", name: "A", path: installation, backups: [] }] as unknown as ConfigType["installations"] })
+
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH)(event, serverFolder), true)
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(serverFolder), false)
+    // Only that one server goes. The Installation, and every other server folder, stay.
+    assert.equal(existsSync(join(installation, "ModsByServer")), true)
+  })
+
+  it("refuses a ModsByServer folder under a folder no Installation claims", async () => {
+    const installation = join(managedFolder, "Main")
+    mkdirSync(installation, { recursive: true })
+    const stranger = join(temporaryRoot, "elsewhere", "ModsByServer", "My Test Server")
+    mkdirSync(stranger, { recursive: true })
+    writeConfig({ installations: [{ id: "a", name: "A", path: installation, backups: [] }] as unknown as ConfigType["installations"] })
+
+    const event = await createTrustedEvent()
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH)(event, stranger), false)
+
+    const { existsSync } = await import("node:fs")
+    assert.equal(existsSync(stranger), true)
+  })
 })
 
 describe("MOVE_PATH", () => {

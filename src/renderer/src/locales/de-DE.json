@@ -240,6 +240,11 @@
       "join": "Beitreten",
       "importServersAdd": "Ausgewählte Server hinzufügen",
       "importServersSkip": "Server überspringen"
+    },
+    "sessionReport": {
+      "copyReport": "Bericht kopieren",
+      "openLogsFolder": "Log-Ordner öffnen",
+      "lastSessionReport": "Bericht der letzten Sitzung"
     }
   },
   "components": {

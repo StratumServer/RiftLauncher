@@ -333,6 +333,11 @@
       "join": "Entrar",
       "importServersAdd": "Adicionar os servidores escolhidos",
       "importServersSkip": "Ignorar os servidores"
+    },
+    "sessionReport": {
+      "copyReport": "Copiar relatório",
+      "openLogsFolder": "Abrir a pasta de logs",
+      "lastSessionReport": "Relatório da última sessão"
     }
   },
   "components": {

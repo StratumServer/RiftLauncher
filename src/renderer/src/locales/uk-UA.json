@@ -279,6 +279,11 @@
       "join": "Приєднатися",
       "importServersAdd": "Додати вибрані сервери",
       "importServersSkip": "Пропустити сервери"
+    },
+    "sessionReport": {
+      "copyReport": "Скопіювати звіт",
+      "openLogsFolder": "Відкрити теку логів",
+      "lastSessionReport": "Звіт про останню сесію"
     }
   },
   "components": {

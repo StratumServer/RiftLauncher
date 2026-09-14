@@ -279,6 +279,11 @@
       "join": "Подключиться",
       "importServersAdd": "Добавить выбранные серверы",
       "importServersSkip": "Пропустить серверы"
+    },
+    "sessionReport": {
+      "copyReport": "Скопировать отчёт",
+      "openLogsFolder": "Открыть папку логов",
+      "lastSessionReport": "Отчёт о последней сессии"
     }
   },
   "components": {

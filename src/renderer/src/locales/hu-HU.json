@@ -224,6 +224,11 @@
       "join": "Csatlakozás",
       "importServersAdd": "A kiválasztott szerverek hozzáadása",
       "importServersSkip": "Szerverek kihagyása"
+    },
+    "sessionReport": {
+      "copyReport": "Jelentés másolása",
+      "openLogsFolder": "Naplómappa megnyitása",
+      "lastSessionReport": "Legutóbbi munkamenet jelentése"
     }
   },
   "components": {
