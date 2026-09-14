@@ -1144,6 +1144,153 @@ describe("toast stack", () => {
   })
 })
 
+/**
+ * #392: the panel could only be emptied one row at a time, while the notification half right
+ * below it already had "Mark all read" and "Clear read".
+ */
+describe("Clear all empties the centre in one action", () => {
+  async function renderWithFinishedWork(): Promise<void> {
+    installMockWindowApi({
+      pathsManager: {
+        downloadOnPath: vi.fn((_id: string, url: string) => (url.endsWith("boom") ? Promise.reject(new Error("the transfer died")) : Promise.resolve("/tmp/file.zip")))
+      }
+    })
+
+    render(
+      <>
+        <Controls />
+        <ActiveToastProbe />
+        <NotificationsOverlay />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Start task" })))
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Start failing task" })))
+    fireEvent.click(screen.getByRole("button", { name: "Add centered notice" }))
+  }
+
+  it("takes every finished row and every message, and offers one way back", async () => {
+    await renderWithFinishedWork()
+    openCenter()
+
+    expect(within(panel()).getByText("Example download")).toBeTruthy()
+    expect(within(panel()).getByText("Doomed download")).toBeTruthy()
+    expect(within(panel()).getByText("A quiet centered notice")).toBeTruthy()
+
+    fireEvent.click(within(panel()).getByRole("button", { name: "Clear all" }))
+
+    expect(within(panel()).queryByText("Example download")).toBeNull()
+    expect(within(panel()).queryByText("Doomed download")).toBeNull()
+    expect(within(panel()).queryByText("A quiet centered notice")).toBeNull()
+    expect(within(panel()).getByText("No activity right now.")).toBeTruthy()
+
+    // And the way back is a banner, not a dialog the player has to answer before they can go on.
+    expect(stack()).toContain("Cleared the Activity Center.")
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }))
+
+    expect(within(panel()).getByText("Example download")).toBeTruthy()
+    expect(within(panel()).getByText("Doomed download")).toBeTruthy()
+    expect(within(panel()).getByText("A quiet centered notice")).toBeTruthy()
+  })
+
+  it("leaves the banner on screen alone, because it is being read right now", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <ActiveToastProbe />
+        <NotificationsOverlay />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    openCenter()
+    fireEvent.click(within(panel()).getByRole("button", { name: "Clear all" }))
+
+    expect(stack()).toContain("A notification worth keeping")
+    expect(within(panel()).getByText("A notification worth keeping")).toBeTruthy()
+  })
+
+  it("leaves a question that has not been answered, the way Clear read already does", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <ActiveToastProbe />
+        <NotificationsOverlay />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add actionable warning" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add centered notice" }))
+    // Discarded, so the question is only a row in the centre: being on screen is not what saves it.
+    fireEvent.click(screen.getAllByRole("button", { name: "Discard notification" })[0]!)
+    openCenter()
+    fireEvent.click(within(panel()).getByRole("button", { name: "Clear all" }))
+
+    expect(within(panel()).getByText("A decision is required")).toBeTruthy()
+    expect(within(panel()).getByRole("button", { name: "Resolve" })).toBeTruthy()
+    expect(within(panel()).queryByText("A quiet centered notice")).toBeNull()
+  })
+
+  it("leaves work that is still running, since there is no way to put a live task back", () => {
+    installMockWindowApi({ pathsManager: { downloadOnPath: vi.fn(() => new Promise<string>(() => {})) } })
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Start task" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add centered notice" }))
+    openCenter()
+    fireEvent.click(within(panel()).getByRole("button", { name: "Clear all" }))
+
+    expect(within(panel()).getByText("Example download")).toBeTruthy()
+    expect(within(panel()).queryByText("A quiet centered notice")).toBeNull()
+  })
+
+  it("takes the toasts still waiting behind the stack, and puts them back on undo", () => {
+    installMockWindowApi()
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    act(() => {
+      for (const body of ["first", "second", "third", "waiting"]) result.current.addNotification(body, "info", { presentation: "toast" })
+    })
+    expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["first", "second", "third"])
+
+    act(() => result.current.clearAllNotifications())
+    // The three on screen stay; only the one still queued is taken.
+    expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["first", "second", "third"])
+
+    act(() => result.current.dismissToast(result.current.activeToasts[0]!.record.id))
+    expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["second", "third"])
+
+    act(() => result.current.undoClearAllNotifications())
+    expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["second", "third", "waiting"])
+  })
+
+  it("offers nothing to clear when there is nothing there", () => {
+    installMockWindowApi()
+
+    render(<ActivityCenter />, { wrapper })
+    openCenter()
+
+    expect(within(panel()).queryByRole("button", { name: "Clear all" })).toBeNull()
+  })
+})
+
 describe("Activity Center keyboard reach", () => {
   it("moves focus into the panel on open, because it is portalled away from the trigger", () => {
     installMockWindowApi()

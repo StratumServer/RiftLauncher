@@ -1,6 +1,7 @@
 import React, { createContext, useReducer, useContext, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 
+import { taskSurvivesBulkClear } from "@domain/notifications/bulkClear"
 import { classifyFailure, type FailureReason } from "@domain/notifications/failureReason"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { LAUNCHER_UPDATE_TASK_ID, launcherUpdateName } from "@renderer/utils/launcherUpdateTask"
@@ -170,6 +171,10 @@ export interface TaskContextType {
     compressionLevel?: number
   ): Promise<void>
   removeTask(id: string): void
+  /** Drops every finished row in one action. Work still running stays: it is not a leftover. */
+  clearFinishedTasks(): void
+  /** Puts back exactly what the last clearFinishedTasks dropped. */
+  undoClearFinishedTasks(): void
 }
 
 const TaskContext = createContext<TaskContextType | null>(null)
@@ -189,6 +194,9 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
    * to see the flag change.
    */
   const launcherUpdateTaskAdded = useRef(false)
+
+  /** What the last "Clear all" dropped, held only so the undo toast can put it back. */
+  const clearedTasks = useRef<readonly TaskType[]>([])
 
   useEffect((): (() => void) => {
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for download progress.`)
@@ -431,8 +439,27 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id } })
   }
 
+  function clearFinishedTasks(): void {
+    clearedTasks.current = tasks.filter((task) => !taskSurvivesBulkClear(task.status))
+    for (const task of clearedTasks.current) tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id: task.id } })
+  }
+
+  function undoClearFinishedTasks(): void {
+    // ADD_TASK puts a row at the head, so the snapshot goes back newest last to
+    // come out in the order it had. A task started inside the five second undo
+    // window ends up below these rather than above them, which is the one thing
+    // this loses by reusing ADD_TASK rather than growing a restore action of
+    // its own.
+    for (const task of [...clearedTasks.current].reverse()) tasksDispatch({ type: ACTIONS.ADD_TASK, payload: task })
+    clearedTasks.current = []
+  }
+
   const activeTaskCount = tasks.filter((task) => task.status === "pending" || task.status === "in-progress").length
-  return <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask }}>{children}</TaskContext.Provider>
+  return (
+    <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask, clearFinishedTasks, undoClearFinishedTasks }}>
+      {children}
+    </TaskContext.Provider>
+  )
 }
 
 export const useTaskContext = (): TaskContextType => {

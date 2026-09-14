@@ -52,6 +52,7 @@
       "discardTask": "Odrzuć zadanie",
       "markAllRead": "Oznacz wszystkie jako przeczytane",
       "clearRead": "Wyczyść przeczytane",
+      "clearAll": "Wyczyść wszystko",
       "markRead": "Oznacz jako przeczytane",
       "markUnread": "Oznacz jako nieprzeczytane",
       "panelSummary": "{{active}} w toku, {{unread}} nieprzeczytanych",

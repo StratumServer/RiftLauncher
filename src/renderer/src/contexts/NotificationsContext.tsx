@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
+import { survivesBulkClear } from "@domain/notifications/bulkClear"
 import { duplicateToastId, type RepeatableToast } from "@domain/notifications/duplicateToast"
 import { type FailureReason } from "@domain/notifications/failureReason"
 import { MAX_VISIBLE_TOASTS, backlogToastDuration, capNotificationRecords, waitingBehindStack } from "@domain/notifications/toastQueue"
@@ -86,6 +87,10 @@ interface NotificationsContextType {
   setNotificationRead: (id: string, read: boolean) => void
   removeNotification: (id: string) => void
   clearReadNotifications: () => void
+  /** Empties the centre in one action: every record but the banners on screen and the questions still owed an answer. */
+  clearAllNotifications: () => void
+  /** Puts back exactly what the last clearAllNotifications took, banners it was about to show included. */
+  undoClearAllNotifications: () => void
 }
 
 const defaultValue: NotificationsContextType = {
@@ -103,7 +108,9 @@ const defaultValue: NotificationsContextType = {
   markAllRead: () => {},
   setNotificationRead: () => {},
   removeNotification: () => {},
-  clearReadNotifications: () => {}
+  clearReadNotifications: () => {},
+  clearAllNotifications: () => {},
+  undoClearAllNotifications: () => {}
 }
 
 const NotificationsContext = createContext<NotificationsContextType>(defaultValue)
@@ -187,6 +194,9 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   // render, and without these the second of two identical ones cannot see the
   // first. Emptied on every render, by which point they are in `records`.
   const pendingToasts = useRef<RepeatableToast[]>([])
+  // What the last "Clear all" took, held only so the undo toast can put it back.
+  const clearedRecords = useRef<readonly NotificationType[]>([])
+  const clearedQueue = useRef<readonly string[]>([])
   // When each banner's turn started, refreshed by every (re)start of its timer,
   // so the shortening effect can read how much of that turn is already gone.
   const turnStartedAt = useRef(new Map<string, number>())
@@ -407,6 +417,29 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     setRecords((previous) => previous.filter((record) => !record.read || awaitsAnswer(record)))
   }
 
+  const clearAllNotifications = (): void => {
+    const onScreen = new Set(stackRef.current.map((entry) => entry.id))
+    const taken = recordsRef.current.filter((record) => !survivesBulkClear({ onScreen: onScreen.has(record.id), awaitsAnswer: awaitsAnswer(record) }))
+    if (taken.length === 0) return
+    const takenIds = new Set(taken.map((record) => record.id))
+    clearedRecords.current = taken
+    clearedQueue.current = toastQueueRef.current.filter((id) => takenIds.has(id))
+    setRecords((previous) => previous.filter((record) => !takenIds.has(record.id)))
+    setToastQueue((queue) => queue.filter((id) => !takenIds.has(id)))
+  }
+
+  const undoClearAllNotifications = (): void => {
+    const restored = clearedRecords.current
+    const requeued = clearedQueue.current
+    if (restored.length === 0) return
+    clearedRecords.current = []
+    clearedQueue.current = []
+    // Back in arrival order rather than appended, so the centre reads the same
+    // as it did before the clear rather than standing everything on its head.
+    setRecords((previous) => [...previous, ...restored].sort((left, right) => left.createdAt - right.createdAt))
+    setToastQueue((queue) => [...requeued, ...queue])
+  }
+
   return (
     <NotificationsContext.Provider
       value={{
@@ -425,7 +458,9 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
         markAllRead,
         setNotificationRead,
         removeNotification,
-        clearReadNotifications
+        clearReadNotifications,
+        clearAllNotifications,
+        undoClearAllNotifications
       }}
     >
       {/* One timer per place in the stack, mounted as children so each starts, pauses and expires on

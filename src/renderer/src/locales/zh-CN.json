@@ -157,6 +157,7 @@
       "discardTask": "移除任务",
       "markAllRead": "全部标为已读",
       "clearRead": "清除已读",
+      "clearAll": "全部清除",
       "markRead": "标为已读",
       "markUnread": "标为未读",
       "panelSummary": "{{active}} 项进行中，{{unread}} 条未读",
