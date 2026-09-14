@@ -351,6 +351,31 @@ describe("normalizeConfig: game versions", () => {
       [undefined, undefined, undefined]
     )
   })
+
+  // Same kind of loss as `linked` above, in the other direction: a build the player
+  // patched would read as plain again on the next load, and the two actions that only
+  // exist on a patched row would be gone with it.
+  it("keeps a build variant across normalization", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ gameVersions: [{ version: "1.22.7", path: "/v", label: "1.22.7 Optimum 0.3.14", variant: { name: "Optimum", version: "0.3.14" } }] })
+    assert.deepEqual(result.gameVersions[0]!.variant, { name: "Optimum", version: "0.3.14" })
+  })
+
+  it("drops a variant a probe would never have produced", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({
+      gameVersions: [
+        { version: "1.22.7", path: "/v1" },
+        { version: "1.22.7", path: "/v2", variant: { name: "Sodium", version: "0.3.14" } },
+        { version: "1.22.7", path: "/v3", variant: { name: "Optimum", version: "latest" } },
+        { version: "1.22.7", path: "/v4", variant: "Optimum v0.3.14" }
+      ]
+    })
+    assert.deepEqual(
+      result.gameVersions.map((g) => g.variant),
+      [undefined, undefined, undefined, undefined]
+    )
+  })
 })
 
 describe("normalizeConfig: custom icons", () => {
