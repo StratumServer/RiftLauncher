@@ -12,6 +12,7 @@ import { normalizeBackgroundId } from "@domain/backgrounds"
 import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
+import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 
 const defaultConfig: ConfigType = {
   ...DEFAULT_CONFIG_BASE,
@@ -354,6 +355,12 @@ function normalizeInstallation(value: unknown): InstallationType | null {
 
   const launchWrapper = asString(value.launchWrapper, "", 4_096).trim()
   if (launchWrapper) installation.launchWrapper = launchWrapper
+
+  // Written only when there is something to write, the same way launchWrapper is: that is what
+  // lets this field be additive with no schema bump. An older build drops what it does not know
+  // and re-saves without it, and both directions read clean either way.
+  const servers = normalizeServerBookmarks(value.servers)
+  if (servers.length > 0) installation.servers = servers
 
   return installation.id && installation.path ? installation : null
 }
