@@ -197,6 +197,7 @@
       "ended": "Ended",
       "partial": "The launcher lost track of the game part way through, so this session is incomplete.",
       "unreadable": "These sessions could not be read, so the launcher has left the file alone.",
+      "unreadableRecovery": "Clearing them removes the file, and the launcher starts recording again from the next session.",
       "newerFormat": "These sessions were recorded by a newer version of the launcher, so the launcher has left the file alone.",
       "chartLabel": "Memory and CPU across one session, peaking at {{peak}} over {{duration}}.",
       "chartLegend": "Memory is the solid line, peaking at {{peak}}. CPU is the dashed line.",
