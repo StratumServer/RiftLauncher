@@ -152,10 +152,10 @@ function runTrackedWorker<T>(
   progressChannel: string | undefined,
   workerPath: string,
   workerData: object,
-  operationName: string,
+  operation: string,
   onFinished: (message: WorkerMessage) => T
 ): Promise<T> {
-  const lease = acquireWorker(workerPath, WORKER_POOL_MAX_IDLE[operationName] ?? 0)
+  const lease = acquireWorker(workerPath, WORKER_POOL_MAX_IDLE[operation] ?? 0)
   const worker = lease.worker
 
   return new Promise((resolvePromise, rejectPromise) => {
@@ -166,9 +166,9 @@ function runTrackedWorker<T>(
         // Never reused: the abandoned task is still running inside this thread (still
         // holding a socket or an open archive), so its eventual message could still arrive
         // after some later task has been dispatched to the same worker.
-        rejectOnce(new Error(`${operationName} timed out`), "discard")
+        rejectOnce(new Error(`${operation} timed out`), "discard")
       },
-      WORKER_TIMEOUTS_MS[operationName] ?? 30 * 60 * 1_000
+      WORKER_TIMEOUTS_MS[operation] ?? 30 * 60 * 1_000
     )
 
     // Named removals, never removeAllListeners(): the pool keeps its own "error" and
@@ -194,12 +194,12 @@ function runTrackedWorker<T>(
       if (settled) return
       settled = true
       cleanup(disposition)
-      rejectPromise(error instanceof Error ? error : new Error(`${operationName} failed`))
+      rejectPromise(error instanceof Error ? error : new Error(`${operation} failed`))
     }
 
     const onMessage = (message: unknown): void => {
       if (!isRecord(message) || typeof message.type !== "string") {
-        rejectOnce(new Error(`${operationName} returned an invalid worker message`))
+        rejectOnce(new Error(`${operation} returned an invalid worker message`))
         return
       }
 
@@ -214,7 +214,7 @@ function runTrackedWorker<T>(
 
       if (workerMessage.type === "progress") {
         if (typeof workerMessage.progress !== "number" || !Number.isFinite(workerMessage.progress) || workerMessage.progress < 0 || workerMessage.progress > 100) {
-          rejectOnce(new Error(`${operationName} returned invalid progress`))
+          rejectOnce(new Error(`${operation} returned invalid progress`))
           return
         }
 
@@ -239,21 +239,21 @@ function runTrackedWorker<T>(
         // module under src/ipc/workers/ releases its temp dir, file handle, or partial
         // download in a finally block or its own fail() path, so the worker is fit to
         // reuse unless it says otherwise with retire.
-        rejectOnce(new Error(typeof workerMessage.message === "string" ? workerMessage.message : `${operationName} failed`), workerMessage.retire === true ? "discard" : "reuse")
+        rejectOnce(new Error(typeof workerMessage.message === "string" ? workerMessage.message : `${operation} failed`), workerMessage.retire === true ? "discard" : "reuse")
         return
       }
 
-      rejectOnce(new Error(`${operationName} returned an unknown worker message`))
+      rejectOnce(new Error(`${operation} returned an unknown worker message`))
     }
 
     const onError = (error: Error): void => {
-      logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operationName}] Worker error.`)
-      logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operationName}] ${getErrorMessage(error)}`)
+      logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operation}] Worker error.`)
+      logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operation}] ${getErrorMessage(error)}`)
       rejectOnce(error)
     }
 
     const onExit = (code: number): void => {
-      if (!settled) rejectOnce(new Error(`${operationName} worker exited with code ${code}`))
+      if (!settled) rejectOnce(new Error(`${operation} worker exited with code ${code}`))
     }
 
     worker.on("message", onMessage)

@@ -376,7 +376,8 @@ describe("scanInstalledMods results", () => {
       side: "universal",
       authors: ["Alice"],
       contributors: undefined,
-      type: "code"
+      type: "code",
+      dependencies: undefined
     })
   })
 

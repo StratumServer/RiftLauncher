@@ -443,6 +443,26 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /**
+   * The Installation check repeats those hues on its four section headings, one panel layer up from
+   * the release rows above, and they are plain bold text at the default scale rather than WCAG large
+   * text, so the text floor applies to all four. On the bare panel lime-600 reads 3.98:1 and red-400
+   * 4.22:1, the same shortfall RELEASE_ROW_FILL answers, so the heading row carries a fill of its own.
+   */
+  it("keeps the Installation check's section headings readable on their fill", () => {
+    const file = "features/mods/components/ModHealthPanel.tsx"
+    const headingFill: Layer = [ZINC["zinc-950"], Number(match(file, /const SECTION_HEADING_FILL = "bg-zinc-950\/(\d+)"/)[1]) / 100]
+    // The constant alone proves nothing: the row the headings sit in has to wear it.
+    match(file, /className=\{clsx\("flex flex-wrap[^"]*", SECTION_HEADING_FILL\)\}/)
+
+    const headings = [...(match(file, /const SECTIONS([\s\S]+?)\n\]/)[1] as string).matchAll(/section: "([a-z]+)"[^}]*className: "text-([a-z]+-\d+)"/g)]
+    assert.equal(headings.length, 4, "the Installation check no longer ships four section headings")
+
+    for (const heading of headings) {
+      assertReadable(`the ${heading[1] as string} section heading`, [tailwindColor(heading[2] as string), 1], [shell, listPanel, headingFill], TEXT_FLOOR)
+    }
+  })
+
   it("keeps the icons that stand in for a control above the non-text bar", () => {
     // Each of these is the whole visible content of a button: there is no label beside it, so the
     // icon is the affordance and the 3:1 rule applies. Actions that ship a label are covered by
@@ -669,6 +689,29 @@ describe("the brand accent where it carries text", () => {
       const border: Layer = [hexRgb(preset.light), 1]
       assertReadable(`Grid selected-card border (${preset.id})`, border, [shell, gridPanel, fill], NON_TEXT_FLOOR)
     }
+  })
+
+  it("keeps the invalid-field border and headline above their floors, on both stacks it ships on", () => {
+    // #447: border-red-800 read 1.97:1 as a border against the panel behind it, below the 3:1
+    // non-text floor, on both the plain form panel FormInputs ships on and the table-backed panel
+    // GameVersionPicker reuses the same pair for (see the comment above its div, which calls out
+    // the reuse on purpose). Read out of both components, so a shade change on either one comes
+    // back through here, and so the two are kept in lockstep with each other.
+    const inputInvalid = match("components/ui/FormComponents/FormInputs.tsx", /user-invalid:border-(red-\d+) user-invalid:bg-(red-\d+)\/(\d+)/)
+    const pickerBox = match("features/installations/components/GameVersionPicker.tsx", /border border-(red-\d+) bg-(red-\d+)\/(\d+)/)
+
+    assert.equal(inputInvalid[1], inputInvalid[2], "FormInputs should paint its invalid border and fill the same red shade")
+    assert.equal(pickerBox[1], pickerBox[2], "GameVersionPicker should paint its invalid box border and fill the same red shade")
+    assert.equal(inputInvalid[1], pickerBox[1], "GameVersionPicker should reuse the same invalid-field border shade FormInputs does")
+
+    const border: Layer = [tailwindColor(inputInvalid[1] as string), 1]
+    assertReadable("invalid-field border on the plain form panel", border, FORM_SECTION, NON_TEXT_FLOOR)
+    assertReadable("invalid-field border on the table-backed panel", border, SECTION_TABLE, NON_TEXT_FLOOR)
+
+    // The headline stays on red-400, the shade every other error already speaks in, but it sits on
+    // top of the invalid fill above, so a fill change still has to clear the text floor here too.
+    const headline = paletteForeground("features/installations/components/GameVersionPicker.tsx", /items-center text-(red-\d+)"/)
+    assertReadable("invalid-field headline on the table-backed panel", headline, SECTION_TABLE, TEXT_FLOOR)
   })
 
   it("keeps each preset's own ramp dark-to-light in that order", () => {
