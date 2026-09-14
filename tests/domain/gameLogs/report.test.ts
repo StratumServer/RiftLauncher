@@ -162,6 +162,31 @@ describe("what leaves the process", () => {
     assert.ok(!copied.includes("Will_T"), "the blamed modid reached the copied report unmasked")
   })
 
+  it("redacts an installed Mod name before it becomes a report heading", () => {
+    const report = buildSessionReport({
+      mainLog: { fileName: "client-main.log", text: "1.1.2026 0:00:00 [Error] [ancienttools] failed" },
+      installedMods: [{ modid: "ancienttools", name: "Will_T pack /home/will/build" }],
+      accountValues: ["Will_T"]
+    })
+
+    assert.equal(report.mods[0]?.name, "[ACCOUNT] pack [PATH]")
+    const copied = formatReportText(report)
+    assert.ok(!copied.includes("Will_T"))
+    assert.ok(!copied.includes("/home/will"))
+  })
+
+  it("keeps an error verdict when the unattributed display cap hides the error", () => {
+    const lines = [
+      ...Array.from({ length: 12 }, (_, index) => `1.1.2026 0:00:${String(index).padStart(2, "0")} [Warning] unrelated warning ${index}`),
+      "1.1.2026 0:00:12 [Error] the error is after the display cap"
+    ]
+
+    const report = buildSessionReport({ mainLog: { fileName: "client-main.log", text: lines.join("\n") } })
+
+    assert.deepEqual(report.verdict, { kind: "errors" })
+    assert.equal(report.unattributed.length, 12)
+  })
+
   it("lays the report out top to bottom, verdict first", () => {
     const copied = formatReportText(reportFor("mod-exception-main.log"))
     assert.match(copied, /^The game exited with errors\.\nFrom client-main\.log\./)

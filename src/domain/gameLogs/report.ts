@@ -140,15 +140,15 @@ export function buildSessionReport(input: SessionReportInput): SessionReport {
             crashSummary.harmonyIds
               .map((id) => installedModids.find((modid) => modid.toLowerCase() === (id.split(".")[0] ?? "").toLowerCase()))
               .filter((modid): modid is string => modid !== undefined && modid.toLowerCase() !== (crashSummary.blamedModid ?? "").toLowerCase())
-              .map(labelFor)
+              .map((modid) => clean(boundLine(labelFor(modid))))
           )
         ]
       }
     : undefined
 
   const mods: ReportModGroup[] = attributed.groups.map((group) => ({
-    modid: group.modid,
-    name: nameFor(group.modid),
+    modid: clean(boundLine(group.modid)),
+    name: nameFor(group.modid) ? clean(boundLine(nameFor(group.modid) as string)) : undefined,
     // The crash file naming a Mod outranks either log-line rule: it is the game's own verdict.
     signal: crashSummary?.blamedModid?.toLowerCase() === group.modid.toLowerCase() ? "crash-file" : group.signal,
     errors: group.errors,
@@ -164,7 +164,10 @@ export function buildSessionReport(input: SessionReportInput): SessionReport {
     return seconds > 0 ? { name: phase.name, seconds } : { name: phase.name }
   })
 
-  const anyErrors = attributed.groups.some((group) => group.errors > 0) || attributed.unattributed.some((entry) => entry.severity.toLowerCase() === "error")
+  // Decide the verdict from every parsed entry before attribution applies its display caps. A
+  // bounded report may omit an error from the visible list, but it must not say that no errors
+  // were logged when the source contains one.
+  const anyErrors = entries.some((entry) => entry.severity.toLowerCase() === "error")
   const verdict: SessionReport["verdict"] = crash ? (crash.modLabel ? { kind: "crashed-in-mod", modLabel: crash.modLabel } : { kind: "crashed" }) : anyErrors ? { kind: "errors" } : { kind: "clean" }
 
   return {
