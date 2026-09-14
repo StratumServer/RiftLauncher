@@ -656,8 +656,8 @@ declare global {
     supportedGameVersions: string[]
     /** Where the overlay archive is fetched from. */
     downloadUrl: string
-    /** Folder the archive is downloaded into, under the launcher's own cache. */
-    cacheFolder: string
+    /** Folder the archive is downloaded into: the cache root, not the folder it is later staged into. */
+    downloadFolder: string
     /** Name the archive is saved under, which is also the stem of the folder inside it. */
     archiveFileName: string
   }
@@ -677,6 +677,46 @@ declare global {
   type OptimumManifestFailureReason = "unreachable" | "unreadable" | "unsupported-system"
 
   type OptimumManifestResult = { ok: true; manifest: OptimumManifestInfo } | { ok: false; reason: OptimumManifestFailureReason }
+
+  /**
+   * Why a patch or a restore did not happen.
+   *
+   * The first ten are Optimum's own wire tokens, the next four are the ones the
+   * runner owns (src/domain/optimum/ndjson.ts documents both sets), and the last
+   * three belong to the launcher's side of the flow:
+   *
+   * - `manifest-unavailable`: no manifest was read this session, so there is
+   *   nothing to verify the overlay against.
+   * - `overlay-unverified`: the archive or one of the files staged out of it did
+   *   not match the hash the manifest published. Nothing was run.
+   * - `backup-missing`: the folder carries no `.optimum/vanilla/` to restore the
+   *   assemblies from.
+   * - `restore-failed`: the copies back were refused by the file system.
+   *
+   * Nothing here is ever text the CLI wrote: its `message` and `detail` fields
+   * carry absolute paths and are dropped where its output is read.
+   */
+  type OptimumPatchFailureReason =
+    | "bad-input"
+    | "unsupported-version"
+    | "patch-conflict"
+    | "decompile-failed"
+    | "assemble-failed"
+    | "verification-failed"
+    | "output-exists"
+    | "source-unavailable"
+    | "cancelled"
+    | "engine-internal"
+    | "no-result"
+    | "timed-out"
+    | "runtime-missing"
+    | "output-unverified"
+    | "manifest-unavailable"
+    | "overlay-unverified"
+    | "backup-missing"
+    | "restore-failed"
+
+  type OptimumPatchResult = { ok: true } | { ok: false; reason: OptimumPatchFailureReason }
 
   declare module "*.png" {
     const value: string

@@ -98,7 +98,7 @@ export async function getOptimumManifest(): Promise<OptimumManifestResult> {
         optimumVersion: manifest.optimumVersion,
         supportedGameVersions: manifest.supportedGameVersions,
         downloadUrl: overlayDownloadUrl(manifest),
-        cacheFolder: optimumOverlayDirectory(manifest),
+        downloadFolder: optimumCacheDirectory(),
         archiveFileName: manifest.archive.filename
       }
     }

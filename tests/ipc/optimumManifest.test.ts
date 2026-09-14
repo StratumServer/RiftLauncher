@@ -95,7 +95,7 @@ describe("getOptimumManifest", () => {
     assert.equal(result.manifest.archiveFileName, `Optimum-v0.3.14-${RID}-overlay.tar.gz`)
     assert.equal(result.manifest.downloadUrl, `https://github.com/StratumServer/Optimum/releases/download/v0.3.14/Optimum-v0.3.14-${RID}-overlay.tar.gz`)
     // The hash, the file list and the donors stay on this side of the bridge.
-    assert.deepEqual(Object.keys(result.manifest).sort(), ["archiveFileName", "cacheFolder", "downloadUrl", "optimumVersion", "supportedGameVersions"])
+    assert.deepEqual(Object.keys(result.manifest).sort(), ["archiveFileName", "downloadFolder", "downloadUrl", "optimumVersion", "supportedGameVersions"])
   })
 
   it.skipIf(RID === undefined)("writes the manifest into the launcher's own cache and parses it back off disk", async () => {

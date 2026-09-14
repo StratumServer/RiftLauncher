@@ -89,6 +89,12 @@ declare global {
     optimumManager: {
       /** Optimum's published overlay for this machine, or the one reason no Optimum is offered this session. Never rejects. */
       getManifest: () => Promise<OptimumManifestResult>
+      /** Stages the downloaded overlay, verifies it file by file, and patches the build at `gameDirectory`. Never rejects for anything a player can reach. */
+      applyOverlay: (id: string, gameDirectory: string, gameVersion: string) => Promise<OptimumPatchResult>
+      /** Puts the four assemblies back out of the patch's own backup and takes Optimum's marks off the folder. */
+      restoreVanilla: (id: string, gameDirectory: string) => Promise<OptimumPatchResult>
+      /** The patch's own progress, 0 to 99. The last tick belongs to the task that started it. */
+      onPatchProgress: (callback: ProgressCallback) => Unsubscribe
     }
     netManager: {
       queryURL: (url: string) => Promise<string>

@@ -83,7 +83,11 @@ const api: BridgeAPI = {
     getGameLogReport: (installationPath: string): Promise<GameLogReportResult> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.GET_GAME_LOG_REPORT, installationPath)
   },
   optimumManager: {
-    getManifest: (): Promise<OptimumManifestResult> => ipcRenderer.invoke(IPC_CHANNELS.OPTIMUM_MANAGER.GET_MANIFEST)
+    getManifest: (): Promise<OptimumManifestResult> => ipcRenderer.invoke(IPC_CHANNELS.OPTIMUM_MANAGER.GET_MANIFEST),
+    applyOverlay: (id: string, gameDirectory: string, gameVersion: string): Promise<OptimumPatchResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.OPTIMUM_MANAGER.APPLY_OVERLAY, id, gameDirectory, gameVersion),
+    restoreVanilla: (id: string, gameDirectory: string): Promise<OptimumPatchResult> => ipcRenderer.invoke(IPC_CHANNELS.OPTIMUM_MANAGER.RESTORE_VANILLA, id, gameDirectory),
+    onPatchProgress: (callback: ProgressCallback): Unsubscribe => subscribe(IPC_CHANNELS.OPTIMUM_MANAGER.PATCH_PROGRESS, callback)
   },
   netManager: {
     queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url),
