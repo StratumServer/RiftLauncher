@@ -754,6 +754,16 @@ describe("play session rows and their chart", () => {
     const legend = foreground(SESSION_CHART, /className="text-xs text-(zinc-\d+)(?:\/(\d+))? text-left"/)
     assertReadable("session chart legend", legend, POPUP, TEXT_FLOOR)
   })
+
+  it("keeps the steady climb flag readable, since it is the one sentence a player acts on", () => {
+    const flag = foreground(SESSION_SECTION, /<p className="text-sm text-(zinc-\d+)(?:\/(\d+))? text-left">\{t\("features\.sessions\.steadyClimb"\)\}/)
+    // The sentence under it is a FormFieldDescription, whose own colour the form section test above
+    // already holds; this is the stack it lands on inside the dialog rather than on a page.
+    const meaning = foreground("components/ui/FormComponents/FormLayout.tsx", /text-xs text-(zinc-\d+)(?:\/(\d+))? pl-1/)
+
+    assertReadable("steady climb flag", flag, POPUP, TEXT_FLOOR)
+    assertReadable("what the steady climb flag means", meaning, POPUP, TEXT_FLOOR)
+  })
 })
 
 describe("button labels on the fill they ship on", () => {

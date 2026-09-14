@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { MAX_SESSIONS_PER_INSTALLATION, peakRssBytes } from "@domain/sessions/sampling"
+import { steadyClimbVerdict } from "@domain/sessions/steadyClimb"
 import { usePlaySessions } from "@renderer/features/installations/hooks/usePlaySessions"
 import { formatBytes, formatDuration, SessionMemoryChart, SessionSparkline } from "@renderer/features/installations/components/SessionMemoryChart"
 
@@ -80,6 +81,18 @@ export function RecentSessionsSection({ installationId, isPlaying, measuring }: 
               <SessionMemoryChart session={openSession} />
 
               {openSession.partial && <FormFieldDescription content={t("features.sessions.partial")} />}
+
+              {/*
+                The one verdict, and only when it is the flag. "not-steady-climb" is never rendered:
+                the sampler stands outside the game, so a session it did not flag is not a session
+                it has cleared, and saying so would be a claim nothing here can make.
+              */}
+              {steadyClimbVerdict(openSession) === "steady-climb" && (
+                <div className="w-full flex flex-col gap-1">
+                  <p className="text-sm text-zinc-200 text-left">{t("features.sessions.steadyClimb")}</p>
+                  <FormFieldDescription content={t("features.sessions.steadyClimbMeaning")} />
+                </div>
+              )}
             </div>
           )}
         </>
