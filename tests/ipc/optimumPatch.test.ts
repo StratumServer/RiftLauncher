@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
+import { cliFileName } from "@domain/optimum/plan"
 import { verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
 import { isOptimumRuntimeAvailable, readRunOutcome, runOptimumCli } from "@src/ipc/optimumPatch"
 
@@ -23,7 +24,18 @@ import { isOptimumRuntimeAvailable, readRunOutcome, runOptimumCli } from "@src/i
  * It is a stand-in for the payload, not for the protocol: no overlay archive
  * has ever been published, so the contract these assertions encode was read out
  * of Optimum's source rather than observed against a real one.
+ *
+ * On Windows none of that happens. The runner spawns the name the plan builds
+ * with no shell, so CreateProcess is asked to start `optimum.exe`, and a Node
+ * script is not something it can start: there are no shebangs, a shim cannot
+ * carry that name and be a batch file, and Node refuses to spawn a batch file
+ * without a shell anyway. The cases that need a child process are Linux only for
+ * that reason, and the cases that need none, which are the outcome mapping and
+ * the staging checks, run everywhere. A Windows player runs the real optimum.exe
+ * out of the overlay, so what is skipped here is the fixture, not the launcher.
  */
+
+const needsTheFakeCli = it.skipIf(process.platform === "win32")
 
 const TARGETS = [
   { assembly: "VintagestoryLib.dll", donor: ".optimum/donors/VintagestoryLib.Donor.dll", mode: "transplant" },
@@ -129,9 +141,9 @@ function manifest(overrides: Partial<OptimumManifest> = {}): OptimumManifest {
   }
 }
 
-/** Writes the fake CLI into the overlay folder and makes it runnable. */
+/** Writes the fake CLI into the overlay folder under the name the runner will look for, and makes it runnable. */
 function installFakeCli(): void {
-  const cli = join(overlayDirectory, "optimum")
+  const cli = join(overlayDirectory, cliFileName(process.platform))
   writeFileSync(cli, FAKE_CLI)
   chmodSync(cli, 0o755)
 }
@@ -173,7 +185,7 @@ afterEach(() => {
   rmSync(workspace, { recursive: true, force: true })
 })
 
-describe("runOptimumCli", () => {
+describe.skipIf(process.platform === "win32")("runOptimumCli", () => {
   it("runs a clean patch and forwards its progress", async () => {
     const progress: number[] = []
     setMode("ok")
@@ -245,7 +257,7 @@ describe("runOptimumCli", () => {
   })
 
   it("reports a refusal, not a success, when there is no CLI to spawn", async () => {
-    rmSync(join(overlayDirectory, "optimum"))
+    rmSync(join(overlayDirectory, cliFileName(process.platform)))
 
     // `no-result` is the honest token here: nothing ran, so nothing was said.
     // A player never reaches it, because the preflight below refuses a missing
@@ -288,24 +300,31 @@ describe("readRunOutcome", () => {
 })
 
 describe("isOptimumRuntimeAvailable", () => {
-  it("answers yes when the CLI can print its own version", async () => {
+  needsTheFakeCli("answers yes when the CLI can print its own version", async () => {
     assert.equal(await isOptimumRuntimeAvailable(overlayDirectory), true)
   })
 
-  it("answers no when the apphost refuses for want of a runtime", async () => {
+  needsTheFakeCli("answers no when the apphost refuses for want of a runtime", async () => {
     setMode("no-runtime")
 
     assert.equal(await isOptimumRuntimeAvailable(overlayDirectory), false)
   })
 
   it("answers no when there is no CLI to ask", async () => {
-    rmSync(join(overlayDirectory, "optimum"))
+    rmSync(join(overlayDirectory, cliFileName(process.platform)))
 
     assert.equal(await isOptimumRuntimeAvailable(overlayDirectory), false)
   })
 })
 
 describe("verifyStagedOverlay", () => {
+  // These build the whole staging folder out of `stage`, so the fixture the other
+  // blocks need would be one more file the manifest never named.
+  beforeEach(() => {
+    rmSync(overlayDirectory, { recursive: true, force: true })
+    mkdirSync(overlayDirectory, { recursive: true })
+  })
+
   it("accepts a staging folder that matches the manifest file for file", async () => {
     const files = [stage("optimum", "the cli"), stage(".optimum/donors/VintagestoryLib.Donor.dll", "a donor")]
     writeFileSync(join(overlayDirectory, "optimum-manifest.json"), "{}")
@@ -348,20 +367,20 @@ describe("verifyStagedOverlay", () => {
 })
 
 describe("verifyPatchedOutput", () => {
-  it("accepts a folder whose recorded hashes match what is on disk", async () => {
+  needsTheFakeCli("accepts a folder whose recorded hashes match what is on disk", async () => {
     await run("ok")
 
     assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), true)
   })
 
-  it("refuses the half patch a failed mod donor leaves behind, which still exits 0", async () => {
+  needsTheFakeCli("refuses the half patch a failed mod donor leaves behind, which still exits 0", async () => {
     const result = await run("short")
 
     assert.deepEqual(result, { ok: true })
     assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), false)
   })
 
-  it("refuses a folder whose assemblies were rewritten after the patch", async () => {
+  needsTheFakeCli("refuses a folder whose assemblies were rewritten after the patch", async () => {
     await run("ok")
     writeFileSync(join(gameDirectory, "VintagestoryLib.dll"), "something else entirely")
 
@@ -372,13 +391,13 @@ describe("verifyPatchedOutput", () => {
     assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), false)
   })
 
-  it("refuses a record written by a different overlay version", async () => {
+  needsTheFakeCli("refuses a record written by a different overlay version", async () => {
     await run("ok")
 
     assert.equal(await verifyPatchedOutput(gameDirectory, manifest({ optimumVersion: "0.4.0" })), false)
   })
 
-  it("refuses a manifest that names no target, since it vouches for nothing", async () => {
+  needsTheFakeCli("refuses a manifest that names no target, since it vouches for nothing", async () => {
     await run("ok")
 
     assert.equal(await verifyPatchedOutput(gameDirectory, manifest({ targets: [] })), false)

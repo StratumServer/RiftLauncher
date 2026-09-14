@@ -19,7 +19,17 @@ import { applyOptimumOverlay, restoreVanillaBuild } from "@src/ipc/optimumInstal
  * that prints the contract's NDJSON and writes the folder the patch would
  * write; how a run ends is baked into the archive, which is also how the
  * verification of that file is exercised rather than worked around.
+ *
+ * The overlay built here is the linux-x64 one its manifest says it is, and its
+ * CLI is a Node script. Windows can start neither: CreateProcess reads no
+ * shebang, and NTFS carries no execute bit for the extraction to put back. The
+ * cases that run the CLI or read that bit are Linux only for those two reasons,
+ * and the refusals that happen before anything is spawned run everywhere. A
+ * Windows player runs the real optimum.exe out of a win-x64 overlay, so what is
+ * skipped here is the fixture, not the launcher.
  */
+
+const needsTheFakeCli = it.skipIf(process.platform === "win32")
 
 const TARGETS = [
   { assembly: "VintagestoryLib.dll", donor: ".optimum/donors/VintagestoryLib.Donor.dll", mode: "transplant" },
@@ -167,7 +177,7 @@ afterEach(() => {
 })
 
 describe("applyOptimumOverlay", () => {
-  it("stages the archive, runs the patch, and accepts what it wrote", async () => {
+  needsTheFakeCli("stages the archive, runs the patch, and accepts what it wrote", async () => {
     const progress: number[] = []
     const manifest = buildOverlay()
 
@@ -179,13 +189,13 @@ describe("applyOptimumOverlay", () => {
     assert.equal(existsSync(join(gameDirectory, ".optimum", "vanilla", "VintagestoryLib.vanilla.dll")), true)
   })
 
-  it("puts the execute bit back on the CLI the extraction published", async () => {
+  needsTheFakeCli("puts the execute bit back on the CLI the extraction published", async () => {
     await apply(buildOverlay())
 
     assert.equal(statSync(join(overlayDirectory, "optimum")).mode & 0o111, 0o111)
   })
 
-  it("converges on a second run instead of compounding", async () => {
+  needsTheFakeCli("converges on a second run instead of compounding", async () => {
     const manifest = buildOverlay()
 
     assert.deepEqual(await apply(manifest), { ok: true })
@@ -193,7 +203,7 @@ describe("applyOptimumOverlay", () => {
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "patched VintagestoryLib.dll")
   })
 
-  it("re-stages an overlay something has tampered with since", async () => {
+  needsTheFakeCli("re-stages an overlay something has tampered with since", async () => {
     const manifest = buildOverlay()
     await apply(manifest)
     writeFileSync(join(overlayDirectory, "optimum"), "#!/usr/bin/env node\nprocess.exit(0)\n")
@@ -265,16 +275,16 @@ describe("applyOptimumOverlay", () => {
     assert.equal(existsSync(join(gameDirectory, ".optimum")), false)
   })
 
-  it("carries a failed patch's own reason through", async () => {
+  needsTheFakeCli("carries a failed patch's own reason through", async () => {
     assert.deepEqual(await apply(buildOverlay({ cliMode: "fail:patch-conflict" })), { ok: false, reason: "patch-conflict" })
   })
 
-  it("refuses the half patch that still exits 0, and puts the build back", async () => {
+  needsTheFakeCli("refuses the half patch that still exits 0, and puts the build back", async () => {
     assert.deepEqual(await apply(buildOverlay({ cliMode: "short" })), { ok: false, reason: "output-unverified", rolledBack: true })
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
   })
 
-  it("puts the assemblies back when the run stops partway, rather than leaving two overlays in one folder", async () => {
+  needsTheFakeCli("puts the assemblies back when the run stops partway, rather than leaving two overlays in one folder", async () => {
     // What a killed patch leaves: one assembly replaced, three not, and a state
     // file recording an overlay version that matches neither. Saying the build
     // was left as it was is only true if it was put back.
@@ -287,7 +297,7 @@ describe("applyOptimumOverlay", () => {
     assert.equal(existsSync(join(gameDirectory, "Optimum.Api.Contracts.dll")), false)
   })
 
-  it("keeps the plain refusal when the run failed before it wrote anything", async () => {
+  needsTheFakeCli("keeps the plain refusal when the run failed before it wrote anything", async () => {
     // Nothing was replaced and nothing was backed up, so there is nothing to put
     // back and nothing to claim about it.
     assert.deepEqual(await apply(buildOverlay({ cliMode: "fail:source-unavailable" })), { ok: false, reason: "source-unavailable" })
@@ -296,7 +306,7 @@ describe("applyOptimumOverlay", () => {
 })
 
 describe("restoreVanillaBuild", () => {
-  it("puts the assemblies back and takes Optimum's own marks off", async () => {
+  needsTheFakeCli("puts the assemblies back and takes Optimum's own marks off", async () => {
     await apply(buildOverlay())
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "patched VintagestoryLib.dll")
 
@@ -313,14 +323,14 @@ describe("restoreVanillaBuild", () => {
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
   })
 
-  it("refuses a backup missing one of the two root assemblies", async () => {
+  needsTheFakeCli("refuses a backup missing one of the two root assemblies", async () => {
     await apply(buildOverlay())
     rmSync(join(gameDirectory, ".optimum", "vanilla", "VintagestoryLib.vanilla.dll"))
 
     assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: false, reason: "backup-missing" })
   })
 
-  it("can be asked twice, and says so the second time rather than pretending", async () => {
+  needsTheFakeCli("can be asked twice, and says so the second time rather than pretending", async () => {
     await apply(buildOverlay())
 
     assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: true })
