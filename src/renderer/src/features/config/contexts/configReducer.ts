@@ -24,6 +24,7 @@ export enum CONFIG_ACTIONS {
   ADD_INSTALLATION_BACKUP = "ADD_INSTALLATION_BACKUP",
   DELETE_INSTALLATION_BACKUP = "DELETE_INSTALLATION_BACKUP",
   EDIT_INSTALLATION_BACKUP = "EDIT_INSTALLATION_BACKUP",
+  STAMP_SERVER_LAUNCH = "STAMP_SERVER_LAUNCH",
 
   ADD_GAME_VERSION = "ADD_GAME_VERSION",
   DELETE_GAME_VERSION = "DELETE_GAME_VERSION",
@@ -189,6 +190,23 @@ export interface DeleteInstallationBackup {
   }
 }
 
+/**
+ * Marks one server bookmark as the one the launcher last started the game on.
+ *
+ * Its own action rather than an EDIT_INSTALLATION carrying a whole `servers` array: the stamp is
+ * written when the game exits, which can be hours after Join was pressed, and the array a launch
+ * captured back then is a list of bookmarks the player has since added to, edited and removed. The
+ * reducer holds the current one, so the stamp is applied here instead of shipped with the action.
+ */
+export interface StampServerLaunch {
+  type: CONFIG_ACTIONS.STAMP_SERVER_LAUNCH
+  payload: {
+    id: string
+    serverId: string
+    when: number
+  }
+}
+
 export interface AddCustomIcon {
   type: CONFIG_ACTIONS.ADD_CUSTOM_ICON
   payload: IconType
@@ -293,6 +311,7 @@ export type ConfigAction =
   | AddInstallationBackup
   | DeleteInstallationBackup
   | EditInslallationBackup
+  | StampServerLaunch
   | AddCustomIcon
   | DeleteCustomIcon
   | AddGameVersion
@@ -404,6 +423,18 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
             ? {
                 ...installation,
                 backups: installation.backups.map((backup) => (backup.id === action.payload.backupId ? { ...backup, ...action.payload.updates } : backup))
+              }
+            : installation
+        )
+      }
+    case CONFIG_ACTIONS.STAMP_SERVER_LAUNCH:
+      return {
+        ...config,
+        installations: config.installations.map((installation) =>
+          installation.id === action.payload.id && installation.servers
+            ? {
+                ...installation,
+                servers: installation.servers.map((server) => (server.id === action.payload.serverId ? { ...server, lastLaunched: action.payload.when } : server))
               }
             : installation
         )
