@@ -76,15 +76,67 @@ describe("the session report page", () => {
     expect(screen.getByText("named by the log line")).toBeTruthy()
   })
 
-  it("says so in place when there are no logs to read yet", async () => {
+  it("waits visibly, then says so in place when there are no logs to read yet", async () => {
+    const deferred: { answer: (answer: GameLogReportResult) => void } = { answer: () => undefined }
+    const held = new Promise<GameLogReportResult>((resolve) => {
+      deferred.answer = resolve
+    })
     installMockWindowApi({
       configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
-      gameManager: { getGameLogReport: vi.fn(async () => ({ ok: false as const, reason: "no-logs" as const })) }
+      gameManager: { getGameLogReport: vi.fn(() => held) }
+    })
+
+    renderReport()
+
+    // Held open on purpose. The page is reachable before the config lands, and a sentence read off
+    // a page that has not asked yet would pass for any answer at all; this waits for the loading
+    // state, so what comes after it is the answer rather than the state the page started in.
+    expect(await screen.findByText("Reading the last session.")).toBeTruthy()
+
+    deferred.answer({ ok: false, reason: "no-logs" })
+
+    expect(await screen.findByText("No logs were found for this Installation yet.")).toBeTruthy()
+  })
+
+  it("says the logs could not be read, which is not the same as saying there are none", async () => {
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
+      gameManager: { getGameLogReport: vi.fn(async () => ({ ok: false as const, reason: "unreadable" as const })) }
+    })
+
+    renderReport()
+
+    expect(await screen.findByText("This Installation's logs could not be read.")).toBeTruthy()
+    expect(screen.queryByText("No logs were found for this Installation yet.")).toBeNull()
+  })
+
+  it("reads a rejected channel the same way, rather than telling the player nothing was logged", async () => {
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
+      gameManager: {
+        getGameLogReport: vi.fn(async () => {
+          throw new Error("the bridge is gone")
+        })
+      }
+    })
+
+    renderReport()
+
+    expect(await screen.findByText("This Installation's logs could not be read.")).toBeTruthy()
+    expect(screen.queryByText("No logs were found for this Installation yet.")).toBeNull()
+  })
+
+  it("says no logs, and reads nothing, for an id the config does not name", async () => {
+    const getGameLogReport = vi.fn(async () => ({ ok: true as const, report: aReport() }))
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [] })) },
+      gameManager: { getGameLogReport }
     })
 
     renderReport()
 
     expect(await screen.findByText("No logs were found for this Installation yet.")).toBeTruthy()
+    expect(getGameLogReport).not.toHaveBeenCalled()
   })
 
   it("says the middle of a long log was not read rather than implying it saw everything", async () => {
