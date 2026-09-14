@@ -63,14 +63,14 @@ export class AccountStorageFailure extends Error {
  * to `unclassified-Error` and this table needs the new wording; nothing
  * breaks and no secret escapes in the meantime.
  */
-const NETWORK_MESSAGES = new Map<string, string>([
+export const NETWORK_MESSAGES = new Map<string, string>([
   ["Network request timed out", "timeout"],
   ["Network response is too large", "response-too-large"],
   ["Network response was aborted", "response-aborted"]
 ])
 
 /** The literals `assertSecureStorage` throws, reached through {@link AccountStorageFailure}. */
-const STORAGE_MESSAGES = new Map<string, string>([
+export const STORAGE_MESSAGES = new Map<string, string>([
   ["Secure account storage is unavailable", "secure-storage-unavailable"],
   ["A system password store is required for account storage", "no-system-password-store"]
 ])
@@ -93,7 +93,7 @@ const STATUS_MESSAGE = /^Network request failed with status (\d{3}|unknown)$/
  * follow, or the literal `unknown` when the response had no status line at
  * all) is `http-other`.
  */
-const HTTP_STATUSES = new Map<number, string>([
+export const HTTP_STATUSES = new Map<number, string>([
   [400, "http-bad-request"],
   [401, "http-unauthorized"],
   [403, "http-forbidden"],
@@ -123,7 +123,7 @@ const HTTP_STATUSES = new Map<number, string>([
  * accept, most often a corporate middlebox or a clock that is badly wrong,
  * arrives on the same `error` event as the rest.
  */
-const NETWORK_CODES = new Map<string, string>([
+export const NETWORK_CODES = new Map<string, string>([
   ["ENOTFOUND", "network-ENOTFOUND"],
   ["EAI_AGAIN", "network-EAI_AGAIN"],
   ["ECONNREFUSED", "network-ECONNREFUSED"],
@@ -154,7 +154,7 @@ const NETWORK_CODES = new Map<string, string>([
  * something else", and three answers cover it. Same rule as
  * {@link NETWORK_CODES}, the value logged is this table's string.
  */
-const STORAGE_CODES = new Map<string, string>([
+export const STORAGE_CODES = new Map<string, string>([
   ["ENOSPC", "storage-no-space"],
   ["EDQUOT", "storage-no-space"],
   ["EFBIG", "storage-no-space"],
@@ -177,7 +177,7 @@ const STORAGE_CODES = new Map<string, string>([
  * separates a bug in our own parsing (a `TypeError`) from a call the user
  * cancelled (an `AbortError`).
  */
-const ERROR_NAMES = new Map<string, string>([
+export const ERROR_NAMES = new Map<string, string>([
   ["Error", "unclassified-Error"],
   ["TypeError", "unclassified-TypeError"],
   ["RangeError", "unclassified-RangeError"],
@@ -231,4 +231,81 @@ export function loginFailureReason(error: unknown): string {
   // still separates a thrown TypeError from anything else, which is the
   // difference a maintainer reading a field report needs first.
   return ERROR_NAMES.get(error.name) ?? "unclassified"
+}
+
+/**
+ * The four shapes a rejected login can be told apart as on screen (issue
+ * #481). `unknown` is not shown to the player: it is what keeps the LOGIN
+ * handler's catch throwing its generic failure for a reason this module
+ * cannot place, exactly as it always has.
+ */
+export type LoginFailureFamily = "network-unreachable" | "certificate-error" | "service-error" | "account-restricted" | "unknown"
+
+/**
+ * Reasons that mean the request never reached the service, or never came
+ * back: a name that will not resolve, a peer that refused or reset the
+ * connection, or a round trip that ran out of time. This is also where a
+ * proxied network without the proxy configured lands, so the sentence this
+ * family picks is the one that tells a player to check one.
+ */
+const NETWORK_UNREACHABLE_REASONS = new Set<string>([
+  "timeout",
+  "response-aborted",
+  "http-request-timeout",
+  "http-gateway-timeout",
+  "network-ENOTFOUND",
+  "network-EAI_AGAIN",
+  "network-ECONNREFUSED",
+  "network-ECONNRESET",
+  "network-ECONNABORTED",
+  "network-EPIPE",
+  "network-ETIMEDOUT",
+  "network-EHOSTUNREACH",
+  "network-ENETUNREACH",
+  "network-ENETDOWN",
+  "network-EPROTO",
+  "network-ERR_SOCKET_CONNECTION_TIMEOUT",
+  "network-ERR_STREAM_PREMATURE_CLOSE"
+])
+
+/** The TLS codes {@link NETWORK_CODES} lists: a certificate this machine will not accept. */
+const CERTIFICATE_REASONS = new Set<string>([
+  "network-CERT_HAS_EXPIRED",
+  "network-CERT_NOT_YET_VALID",
+  "network-UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "network-UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "network-SELF_SIGNED_CERT_IN_CHAIN",
+  "network-DEPTH_ZERO_SELF_SIGNED_CERT",
+  "network-ERR_TLS_CERT_ALTNAME_INVALID"
+])
+
+/** The service itself answered, but with a failure that is its own to fix, not the player's. */
+const SERVICE_ERROR_REASONS = new Set<string>(["http-server-error", "http-bad-gateway", "http-unavailable", "http-5xx"])
+
+/** An HTTP-level refusal rather than the ordinary `valid: 0` envelope: the account itself, not the password, is what the service objects to. */
+const ACCOUNT_RESTRICTED_REASONS = new Set<string>(["http-unauthorized", "http-forbidden", "http-rate-limited"])
+
+/**
+ * Groups a {@link loginFailureReason} token into the family the renderer
+ * picks a sentence from.
+ *
+ * Deliberately reads the token, not the original error, so it stays exactly
+ * as safe to call from the renderer's side of the IPC boundary as the token
+ * itself: nothing here can carry a value the classifier above did not
+ * already decide was safe to log.
+ *
+ * A `storage-*` token, and anything else this module has no table entry for
+ * (`http-bad-request`, `http-not-found`, `http-4xx`, `http-other`,
+ * `response-too-large`, `network-other`, every `unclassified*` and
+ * `non-error-throw`), is deliberately left off every set above and falls
+ * through to `unknown`: none of them says with any confidence which of the
+ * four sentences fits, and guessing wrong would tell a player with a full
+ * disk to check their firewall.
+ */
+export function loginFailureFamily(reason: string): LoginFailureFamily {
+  if (NETWORK_UNREACHABLE_REASONS.has(reason)) return "network-unreachable"
+  if (CERTIFICATE_REASONS.has(reason)) return "certificate-error"
+  if (SERVICE_ERROR_REASONS.has(reason)) return "service-error"
+  if (ACCOUNT_RESTRICTED_REASONS.has(reason)) return "account-restricted"
+  return "unknown"
 }

@@ -107,10 +107,31 @@ declare global {
    * check silently drop the account. It flags that the store had to be
    * rebuilt around this one login, so a previously unreadable file's other
    * saved accounts are gone and will need to log in again.
+   *
+   * `network-unreachable`, `certificate-error`, `service-error` and
+   * `account-restricted` name the request itself failing, which used to
+   * throw and collapse into one generic toast no matter the cause (issue
+   * #481). They carry `loginFailureFamily`'s classification of whatever
+   * `src/ipc/handlers/loginFailureReason.ts` named the error, so the
+   * renderer can say which of the four it was without the raw error message
+   * ever crossing the IPC boundary. A cause that classifier does not
+   * recognise still throws the generic failure, unchanged.
    */
   type AccountLoginResult =
     | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean }
-    | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response" | "session-store-unreadable"; account?: undefined }
+    | {
+        status:
+          | "invalid-credentials"
+          | "requires-two-factor"
+          | "wrong-two-factor"
+          | "unexpected-response"
+          | "session-store-unreadable"
+          | "network-unreachable"
+          | "certificate-error"
+          | "service-error"
+          | "account-restricted"
+        account?: undefined
+      }
 
   /**
    * A fork of Vintage Story that named itself when the launcher probed it.

@@ -1,7 +1,18 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { AccountStorageFailure, loginFailureReason } from "@src/ipc/handlers/loginFailureReason"
+import {
+  AccountStorageFailure,
+  ERROR_NAMES,
+  HTTP_STATUSES,
+  loginFailureFamily,
+  loginFailureReason,
+  NETWORK_CODES,
+  NETWORK_MESSAGES,
+  STORAGE_CODES,
+  STORAGE_MESSAGES,
+  type LoginFailureFamily
+} from "@src/ipc/handlers/loginFailureReason"
 
 /**
  * The mapping the LOGIN handler logs instead of the caught error's message
@@ -169,5 +180,114 @@ describe("loginFailureReason cannot carry a secret out", () => {
     // Anchored, so a message that merely starts like the known one is not
     // matched and sliced: it falls through to the class name instead.
     assert.equal(reason, "unclassified-Error")
+  })
+})
+
+/**
+ * A table walk over every token `loginFailureReason` can actually emit (issue #481), read
+ * straight out of its own tables rather than guessed at, so this list cannot go stale on its
+ * own. `EXPECTED_FAMILY` is written independently of `loginFailureFamily`'s internal sets: a
+ * token missing from it fails the completeness check below before it can silently read as
+ * `unknown`, which is the failure mode this test exists to catch. A future token added to one of
+ * the tables therefore has to be given a family here, even if that family is a deliberate
+ * `unknown`, rather than falling through unnoticed.
+ */
+describe("loginFailureFamily places every token loginFailureReason can emit", () => {
+  const ALL_REASON_TOKENS = new Set<string>([
+    ...NETWORK_MESSAGES.values(),
+    ...NETWORK_CODES.values(),
+    ...HTTP_STATUSES.values(),
+    "http-4xx",
+    "http-5xx",
+    "http-other",
+    ...STORAGE_MESSAGES.values(),
+    ...STORAGE_CODES.values(),
+    "storage-other",
+    ...ERROR_NAMES.values(),
+    "unclassified",
+    "non-error-throw",
+    "network-other"
+  ])
+
+  const EXPECTED_FAMILY: Record<string, LoginFailureFamily> = {
+    // Could not reach the service, or never heard back from it.
+    timeout: "network-unreachable",
+    "response-aborted": "network-unreachable",
+    "http-request-timeout": "network-unreachable",
+    "http-gateway-timeout": "network-unreachable",
+    "network-ENOTFOUND": "network-unreachable",
+    "network-EAI_AGAIN": "network-unreachable",
+    "network-ECONNREFUSED": "network-unreachable",
+    "network-ECONNRESET": "network-unreachable",
+    "network-ECONNABORTED": "network-unreachable",
+    "network-EPIPE": "network-unreachable",
+    "network-ETIMEDOUT": "network-unreachable",
+    "network-EHOSTUNREACH": "network-unreachable",
+    "network-ENETUNREACH": "network-unreachable",
+    "network-ENETDOWN": "network-unreachable",
+    "network-EPROTO": "network-unreachable",
+    "network-ERR_SOCKET_CONNECTION_TIMEOUT": "network-unreachable",
+    "network-ERR_STREAM_PREMATURE_CLOSE": "network-unreachable",
+    // A certificate this machine would not accept.
+    "network-CERT_HAS_EXPIRED": "certificate-error",
+    "network-CERT_NOT_YET_VALID": "certificate-error",
+    "network-UNABLE_TO_VERIFY_LEAF_SIGNATURE": "certificate-error",
+    "network-UNABLE_TO_GET_ISSUER_CERT_LOCALLY": "certificate-error",
+    "network-SELF_SIGNED_CERT_IN_CHAIN": "certificate-error",
+    "network-DEPTH_ZERO_SELF_SIGNED_CERT": "certificate-error",
+    "network-ERR_TLS_CERT_ALTNAME_INVALID": "certificate-error",
+    // The service answered, but with a failure that is its own to fix.
+    "http-server-error": "service-error",
+    "http-bad-gateway": "service-error",
+    "http-unavailable": "service-error",
+    "http-5xx": "service-error",
+    // An HTTP-level refusal of the account itself, outside the ordinary envelope.
+    "http-unauthorized": "account-restricted",
+    "http-forbidden": "account-restricted",
+    "http-rate-limited": "account-restricted",
+    // Everything else: not confidently any of the four, so the generic failure stands.
+    "response-too-large": "unknown",
+    "http-bad-request": "unknown",
+    "http-not-found": "unknown",
+    "http-4xx": "unknown",
+    "http-other": "unknown",
+    "network-other": "unknown",
+    "secure-storage-unavailable": "unknown",
+    "no-system-password-store": "unknown",
+    "storage-no-space": "unknown",
+    "storage-permission": "unknown",
+    "storage-locked": "unknown",
+    "storage-io": "unknown",
+    "storage-other": "unknown",
+    "unclassified-Error": "unknown",
+    "unclassified-TypeError": "unknown",
+    "unclassified-RangeError": "unknown",
+    "unclassified-SyntaxError": "unknown",
+    "unclassified-ReferenceError": "unknown",
+    "unclassified-AbortError": "unknown",
+    unclassified: "unknown",
+    "non-error-throw": "unknown"
+  }
+
+  it("has a recorded expectation for every token the module's own tables can produce", () => {
+    const unrecorded = [...ALL_REASON_TOKENS].filter((token) => !(token in EXPECTED_FAMILY))
+
+    assert.deepEqual(unrecorded, [], `token(s) with no recorded family, so they would silently fall back to "unknown": ${unrecorded.join(", ")}`)
+  })
+
+  it("never records an expectation for a token none of the tables can actually produce", () => {
+    // The other direction: a stale entry here would hide a table entry that was renamed or
+    // removed, and this test would keep passing on a token nothing can emit any more.
+    const stale = Object.keys(EXPECTED_FAMILY).filter((token) => !ALL_REASON_TOKENS.has(token))
+
+    assert.deepEqual(stale, [], `recorded token(s) no table can actually produce: ${stale.join(", ")}`)
+  })
+
+  it("classifies every token exactly as recorded", () => {
+    const mismatched = Object.entries(EXPECTED_FAMILY)
+      .filter(([token, expected]) => loginFailureFamily(token) !== expected)
+      .map(([token, expected]) => `${token}: expected ${expected}, got ${loginFailureFamily(token)}`)
+
+    assert.deepEqual(mismatched, [], mismatched.join("; "))
   })
 })
