@@ -10,7 +10,9 @@ import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
-import { parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
+import { comparablePath, parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
+import { createProcessSampler } from "@src/ipc/adapters/processSampler"
+import { createPlaySessionRecorder, recordPlaySession } from "@src/ipc/playSessionsStore"
 import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
@@ -208,6 +210,11 @@ function realGameProcess(): GameProcess {
           return
         }
 
+        // The one thing about the running child that leaves this closure, and only once the spawn
+        // actually produced a process. Under a launch wrapper this is the wrapper's pid, which is
+        // the caller's problem to survive, not this adapter's to hide.
+        if (externalApp.pid !== undefined) request.onStarted?.(externalApp.pid)
+
         externalApp.stdout.resume()
 
         let stderrScan = ""
@@ -403,7 +410,28 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
 
   logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable${launchWrapper ? ` through ${launchWrapper}` : ""}.`)
 
-  const outcome = await realGameProcess().run({ command: plan.command, args: plan.args, env: { ...process.env, ...processEnv, ...plan.env }, cwd: plan.cwd })
+  // The id comes from the config the launcher wrote, never from the renderer's own object, so the
+  // file name a session lands under cannot be chosen by whatever sent the launch.
+  const installationId = config.installations.find((candidate) => comparablePath(candidate.path) === comparablePath(safeInstallation.path))?.id
+  const recorder = config.measurePlaySessions && installationId ? createPlaySessionRecorder(createProcessSampler(os.platform())) : undefined
+
+  const outcome = await realGameProcess().run({
+    command: plan.command,
+    args: plan.args,
+    env: { ...process.env, ...processEnv, ...plan.env },
+    cwd: plan.cwd,
+    ...(recorder ? { onStarted: recorder.onStarted } : {})
+  })
+
+  // Settles the sampling loop on the same path the launch outcome settles on, whichever way it
+  // went, so the timer cannot outlive this handler.
+  const session = await recorder?.finish()
+  if (session && installationId) {
+    const stored = await recordPlaySession(installationId, session)
+    const shape = session.partial ? "partial" : "complete"
+    if (stored) logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Recorded a ${shape} play session of ${session.samples.length} readings.`)
+    else logMessage("warn", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not record this play session; the sessions file was left as it was.`)
+  }
 
   if (!outcome.started)
     logMessage(
