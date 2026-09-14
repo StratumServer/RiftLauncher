@@ -551,10 +551,9 @@ describe("EXECUTE_GAME", () => {
       assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+/, "the sampler never ran tasklist for the pid the launcher spawned")
       assert.equal(existsSync(join(userDataFolder, "Sessions", "main-1.json")), false)
     })
-
   })
 
-    /**
+  /**
    * The server-bookmark half of #460, run end to end through the same argv-dumping fixture the
    * wrapper test uses. What is being pinned is that the handler builds the URL from the record it
    * finds in ITS OWN config, and that an id naming nothing never reaches a spawn at all.
