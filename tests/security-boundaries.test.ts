@@ -88,6 +88,21 @@ describe("process and navigation boundaries", () => {
     assert.throws(() => validateGameInstallation({ ...base, id: "x".repeat(129) }), /Invalid installation id/)
   })
 
+  /**
+   * The renderer-dom tests mock the bridge and the handler tests call the handler directly, so the
+   * preload line between them is the one link nothing else exercises. Dropping the argument there
+   * turns every Join into a plain launch that leaves the player on the main menu, with no failure
+   * anywhere to say so. Pinned by reading the source, the same way the mod profile channels below
+   * are, since the preload cannot be imported outside Electron.
+   */
+  it("keeps handing EXECUTE_GAME the server bookmark id", () => {
+    assert.equal(
+      PRELOAD_SOURCE.includes("ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation, serverId)"),
+      true,
+      "the preload stopped carrying the server bookmark id to EXECUTE_GAME"
+    )
+  })
+
   it("accepts only the exact renderer document or development origin", () => {
     const packagedPath = resolve("/tmp/out/renderer/index.html")
     assert.equal(isAllowedRendererUrl(`${pathToFileURL(packagedPath).toString()}#/home`, undefined, packagedPath), true)
