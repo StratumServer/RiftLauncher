@@ -22,6 +22,7 @@ export const IPC_CHANNELS = {
   },
   MODS_MANAGER: {
     GET_INSTALLED_MODS: "get-installed-mods",
+    GET_SERVER_MODS: "get-server-mods",
     SET_MOD_ENABLED: "set-mod-enabled",
     CACHE_MOD_IMAGE: "cache-mod-image",
     EXPORT_MODPACK: "export-modpack",
