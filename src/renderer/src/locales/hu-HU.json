@@ -88,7 +88,8 @@
       "deleteWhilePlaying": "Nem törölhetsz egy Verziót miközben az fut!",
       "installNewVersion": "Új verzió telepítése",
       "deleteAnyway": "Törlés mindenképp",
-      "removeFromList": "Eltávolítás a listáról"
+      "removeFromList": "Eltávolítás a listáról",
+      "restoreVanilla": "Optimum eltávolítása"
     },
     "installations": {
       "noInstallationsFound": "Nem találtam Telepítéseket.",

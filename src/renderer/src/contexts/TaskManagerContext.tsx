@@ -170,6 +170,23 @@ export interface TaskContextType {
     onFinish: (status: boolean, error: Error | null) => void,
     compressionLevel?: number
   ): Promise<void>
+  /**
+   * Patching an installed build with Optimum's overlay, or putting the vanilla
+   * assemblies back.
+   *
+   * Reuses the `install` task type rather than adding a fifth: it is the same
+   * thing to a player watching the list, a build being turned into something
+   * else, and a type only exists to pick an icon.
+   */
+  startOptimumPatch(
+    name: string,
+    desc: string,
+    notifications: TaskNotificationPolicy,
+    mode: "apply" | "restore",
+    gameDirectory: string,
+    gameVersion: string,
+    onFinish: (result: OptimumPatchResult) => void
+  ): Promise<void>
   removeTask(id: string): void
   /** Drops every finished row in one action. Work still running stays: it is not a leftover. */
   clearFinishedTasks(): () => void
@@ -211,6 +228,13 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for compress progress.`)
     const removeCompressProgressListener = window.api.pathsManager.onCompressProgress(({ id, progress }) => {
       if (progress === 100) return tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
+    })
+
+    window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for Optimum patch progress.`)
+    const removePatchProgressListener = window.api.optimumManager.onPatchProgress(({ id, progress }) => {
+      // The CLI climbs to 99 and never emits 100: the awaited call below is what
+      // completes the task, the same split every other flow here keeps.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { progress, status: "in-progress" } } })
     })
 
@@ -256,6 +280,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       removeDownloadProgressListener()
       removeExtractProgressListener()
       removeCompressProgressListener()
+      removePatchProgressListener()
       removeUpdateProgressListener()
       removeUpdateDownloadedListener()
       removeUpdateErrorListener()
@@ -430,6 +455,50 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     }
   }
 
+  async function startOptimumPatch(
+    name: string,
+    desc: string,
+    notifications: TaskNotificationPolicy,
+    mode: "apply" | "restore",
+    gameDirectory: string,
+    gameVersion: string,
+    onFinish: (result: OptimumPatchResult) => void
+  ): Promise<void> {
+    const id = crypto.randomUUID()
+
+    try {
+      window.api.utils.setPreventAppClose("add", id, "Started an Optimum patch.")
+      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startOptimumPatch] [${id}] [install] Adding an Optimum patch of [PATH].`)
+      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "install", progress: 0, status: "pending" } })
+
+      const result = mode === "apply" ? await window.api.optimumManager.applyOverlay(id, gameDirectory, gameVersion) : await window.api.optimumManager.restoreVanilla(id, gameDirectory)
+
+      if (result.ok) {
+        window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startOptimumPatch] [${id}] [install] Patched.`)
+        // The CLI owns 0 to 99 and this owns the last tick, so the resolved call
+        // is the only thing that can complete the task.
+        tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
+        if (notifications.completion === "toast") addNotification(t("notifications.body.extracted", { extractName: name }), "success", { presentation: "toast" })
+      } else {
+        window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startOptimumPatch] [${id}] [install] Refused: ${result.reason}.`)
+        tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
+        if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error")
+      }
+
+      onFinish(result)
+    } catch (err) {
+      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startOptimumPatch] [${id}] [install] Error patching.`)
+      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startOptimumPatch] [${id}] [install] Error patching: ${err}`)
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
+      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error")
+      // Only a rejected invoke reaches here, which means the boundary refused the
+      // call rather than the patch refusing the folder.
+      onFinish({ ok: false, reason: "engine-internal" })
+    } finally {
+      window.api.utils.setPreventAppClose("remove", id, "Finished an Optimum patch.")
+    }
+  }
+
   function removeTask(id: string): void {
     tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id } })
   }
@@ -449,7 +518,11 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   }
 
   const activeTaskCount = tasks.filter((task) => task.status === "pending" || task.status === "in-progress").length
-  return <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask, clearFinishedTasks }}>{children}</TaskContext.Provider>
+  return (
+    <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, startOptimumPatch, removeTask, clearFinishedTasks }}>
+      {children}
+    </TaskContext.Provider>
+  )
 }
 
 export const useTaskContext = (): TaskContextType => {

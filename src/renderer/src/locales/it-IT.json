@@ -263,7 +263,8 @@
       "installNewVersion": "Installa una nuova Versione",
       "deleteVersion": "Elimina Versione",
       "deleteAnyway": "Elimina comunque",
-      "removeFromList": "Rimuovi dall'elenco"
+      "removeFromList": "Rimuovi dall'elenco",
+      "restoreVanilla": "Rimuovi Optimum"
     },
     "infoAndHelp": {
       "debugInfoTitle": "Informazioni di Debug",

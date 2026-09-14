@@ -113,7 +113,8 @@
       "installNewVersion": "Усталяваць новую версію VS",
       "deleteVersion": "Выдаліць версію",
       "deleteAnyway": "Усё роўна выдаліць",
-      "removeFromList": "Выдаліць са спісу"
+      "removeFromList": "Выдаліць са спісу",
+      "restoreVanilla": "Выдаліць Optimum"
     },
     "installations": {
       "noInstallationsFound": "Усталёўкі не знойдзены!",

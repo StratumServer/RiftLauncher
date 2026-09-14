@@ -8,17 +8,22 @@ import {
   PiPencilSimpleDuotone,
   PiXCircleDuotone,
   PiWarningDuotone,
-  PiLinkDuotone
+  PiLinkDuotone,
+  PiArrowCircleUpDuotone,
+  PiArrowUUpLeftDuotone
 } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
 
 import { MAX_GAME_VERSION_LABEL_LENGTH } from "@domain/naming"
+import { isUpdateAvailable } from "@domain/optimum/plan"
 import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { CONFIG_ACTIONS, useConfigDispatch, useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUninstallGameVersion"
 import { useOpenVersionFolder } from "@renderer/features/versions/hooks/useOpenVersionFolder"
 import { summarizeUsedByInstallations } from "@renderer/features/versions/adapters/uninstall"
+import { useOptimumActions } from "@renderer/features/versions/hooks/useOptimumActions"
+import { useOptimumManifest } from "@renderer/features/versions/hooks/useOptimumManifest"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -42,11 +47,14 @@ function ListVersions(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const uninstallVersion = useUninstallGameVersion()
   const openVersionFolder = useOpenVersionFolder()
+  const optimum = useOptimumManifest()
+  const { applyOptimum, restoreVanilla } = useOptimumActions()
 
   const [versionToDelete, setVersionToDelete] = useState<GameVersionType | null>(null)
   const [versionInUseWarning, setVersionInUseWarning] = useState<VersionInUseWarning | null>(null)
   const [versionToRename, setVersionToRename] = useState<GameVersionType | null>(null)
   const [newLabel, setNewLabel] = useState<string>("")
+  const [versionToRestore, setVersionToRestore] = useState<GameVersionType | null>(null)
 
   const renameFieldId = useId()
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -80,6 +88,28 @@ function ListVersions(): JSX.Element {
     configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: versionToRename.id, updates: { label } } })
     setVersionToRename(null)
     addNotification(t("features.versions.versionRenamed"), "success")
+  }
+
+  /**
+   * Whether a newer overlay is published that still covers this row's game
+   * version. Both halves matter: a newer Optimum that dropped 1.22.7 is not an
+   * update for a 1.22.7 build, it is an overlay for a build nobody has here.
+   */
+  function optimumUpdateAvailable(version: GameVersionType): boolean {
+    return version.variant !== undefined && optimum.manifest !== undefined && isUpdateAvailable(version.variant.version, version.version, optimum.manifest)
+  }
+
+  async function UpdateOptimumHandler(version: GameVersionType): Promise<void> {
+    if (!optimum.manifest) return
+    await applyOptimum({ id: version.id, path: version.path, version: version.version }, optimum.manifest)
+  }
+
+  async function RestoreVanillaHandler(): Promise<void> {
+    if (versionToRestore === null) return
+
+    const target = versionToRestore
+    setVersionToRestore(null)
+    await restoreVanilla({ id: target.id, path: target.path, version: target.version })
   }
 
   async function DeleteVersionHandler(): Promise<void> {
@@ -156,6 +186,21 @@ function ListVersions(): JSX.Element {
 
                     <div className="shrink-0 w-fit flex gap-1 items-center text-lg">
                       {gv.linked && <PiLinkDuotone className="p-1" title={t("features.versions.linkedVersion")} />}
+                      {optimumUpdateAvailable(gv) && (
+                        <NormalButton
+                          className="p-1"
+                          title={t("features.versions.updateOptimumTo", { version: optimum.manifest?.optimumVersion ?? "" })}
+                          variant="ghost"
+                          onClick={() => UpdateOptimumHandler(gv)}
+                        >
+                          <PiArrowCircleUpDuotone />
+                        </NormalButton>
+                      )}
+                      {gv.variant && (
+                        <NormalButton className="p-1" title={t("features.versions.restoreVanilla")} variant="ghost" onClick={() => setVersionToRestore(gv)}>
+                          <PiArrowUUpLeftDuotone />
+                        </NormalButton>
+                      )}
                       <NormalButton onClick={() => openVersionFolder(gv.path)} title={`${t("generic.openOnFileExplorer")} · ${gv.path}`} variant="ghost" className="p-1">
                         <PiFolderOpenDuotone />
                       </NormalButton>
@@ -228,6 +273,17 @@ function ListVersions(): JSX.Element {
               <FormButton title={t("generic.save")} nativeType="submit" variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
             </ButtonsWrapper>
           </form>
+        </PopupDialogPanel>
+
+        <PopupDialogPanel title={t("features.versions.restoreVanilla")} isOpen={versionToRestore !== null} close={() => setVersionToRestore(null)}>
+          <>
+            <p>{t("features.versions.areYouSureRestoreVanilla", { version: versionToRestore?.label ?? versionToRestore?.version })}</p>
+            <p className="text-zinc-400">{t("features.versions.restoreVanillaIsPartial")}</p>
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <FormButton title={t("generic.cancel")} onClick={() => setVersionToRestore(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+              <FormButton title={t("features.versions.restoreVanilla")} onClick={RestoreVanillaHandler} variant="primary" size="md" icon={<PiArrowUUpLeftDuotone />} />
+            </ButtonsWrapper>
+          </>
         </PopupDialogPanel>
 
         <PopupDialogPanel title={t("features.versions.versionInUse")} isOpen={versionInUseWarning !== null} close={() => setVersionInUseWarning(null)}>
