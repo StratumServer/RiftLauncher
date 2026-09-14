@@ -76,6 +76,13 @@ export interface DownloadOptions {
    * bug that resolves in favour of SHA-256.
    */
   expectedSha256?: unknown
+  /**
+   * Ceiling on the response, when the caller knows one smaller than the global
+   * {@link MAX_DOWNLOAD_BYTES}. Checked against the declared length up front and
+   * against the running total as bytes arrive, so a lying `Content-Length` costs
+   * the cap and not the disk.
+   */
+  maxBytes?: number
   /** Transport, defaulting to Node's `https.request`. */
   request?: DownloadRequestFn
   /** Called with 0 to 100 as the bytes arrive, and once with 100 at the end. */
@@ -97,7 +104,8 @@ export interface DownloadOptions {
  * telling the renderer apart.
  */
 export function runDownload(options: DownloadOptions): Promise<string> {
-  const { url, outputPath, fileName, expectedMd5, expectedSha256, request = httpsRequest, onProgress } = options
+  const { url, outputPath, fileName, expectedMd5, expectedSha256, maxBytes = MAX_DOWNLOAD_BYTES, request = httpsRequest, onProgress } = options
+  const byteCeiling = Math.min(maxBytes, MAX_DOWNLOAD_BYTES)
   const pathToDownload = join(outputPath, assertSafeFileName(fileName))
   const temporaryPath = `${pathToDownload}.${DOWNLOAD_TEMP_FILE_NAMESPACE}.${process.pid}.${Date.now()}.part`
   const expectedDigest = typeof expectedSha256 === "string" ? expectedSha256 : expectedMd5
@@ -175,7 +183,7 @@ export function runDownload(options: DownloadOptions): Promise<string> {
             return
           }
 
-          if (statusCode < 200 || statusCode >= 300 || (Number.isFinite(contentLength) && (contentLength < 0 || contentLength > MAX_DOWNLOAD_BYTES))) {
+          if (statusCode < 200 || statusCode >= 300 || (Number.isFinite(contentLength) && (contentLength < 0 || contentLength > byteCeiling))) {
             response.resume()
             fail()
             return
@@ -197,7 +205,7 @@ export function runDownload(options: DownloadOptions): Promise<string> {
             if (settled) return
             downloadedLength += chunk.length
             digest.update(chunk)
-            if (downloadedLength > MAX_DOWNLOAD_BYTES) {
+            if (downloadedLength > byteCeiling) {
               fail()
               return
             }

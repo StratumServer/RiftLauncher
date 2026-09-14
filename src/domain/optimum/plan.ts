@@ -34,8 +34,14 @@ export function hostRid(platform: string, architecture: string): OptimumRid | un
   return undefined
 }
 
-/** True when this overlay was published for `gameVersion`. */
-export function supportsGameVersion(manifest: OptimumManifest, gameVersion: string): boolean {
+/**
+ * True when this overlay was published for `gameVersion`.
+ *
+ * Takes the one field it reads rather than a whole manifest, so the main
+ * process can ask it of the document it parsed and the renderer can ask it of
+ * the trimmed shape that crosses the bridge, with one rule between them.
+ */
+export function supportsGameVersion(manifest: Pick<OptimumManifest, "supportedGameVersions">, gameVersion: string): boolean {
   const version = semver.valid(gameVersion)
   return version !== null && manifest.supportedGameVersions.includes(version)
 }
@@ -69,7 +75,7 @@ export function overlayFolderName(manifest: OptimumManifest): string {
  * update for that row, it is an overlay for a build the player does not have,
  * and offering it would patch a version Optimum never claimed.
  */
-export function isUpdateAvailable(installedOverlayVersion: string, gameVersion: string, manifest: OptimumManifest): boolean {
+export function isUpdateAvailable(installedOverlayVersion: string, gameVersion: string, manifest: Pick<OptimumManifest, "optimumVersion" | "supportedGameVersions">): boolean {
   const installed = semver.valid(installedOverlayVersion)
   if (!installed) return false
   return semver.gt(manifest.optimumVersion, installed) && supportsGameVersion(manifest, gameVersion)

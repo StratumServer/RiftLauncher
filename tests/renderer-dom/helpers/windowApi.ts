@@ -132,6 +132,12 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
       forgetPlaySessions: vi.fn(notMocked("gameManager.forgetPlaySessions")),
       getGameLogReport: vi.fn(async () => ({ ok: false as const, reason: "no-logs" as const }))
     },
+    optimumManager: {
+      // No Optimum unless a test says otherwise: a page that mounts without
+      // thinking about forks must render the way it does for a player whose
+      // machine Optimum publishes nothing for.
+      getManifest: vi.fn(async () => ({ ok: false as const, reason: "unsupported-system" as const }))
+    },
     netManager: {
       queryURL: vi.fn(notMocked("netManager.queryURL")),
       acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility")),

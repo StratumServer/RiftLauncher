@@ -82,6 +82,9 @@ const api: BridgeAPI = {
     forgetPlaySessions: (installationId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.FORGET_PLAY_SESSIONS, installationId),
     getGameLogReport: (installationPath: string): Promise<GameLogReportResult> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.GET_GAME_LOG_REPORT, installationPath)
   },
+  optimumManager: {
+    getManifest: (): Promise<OptimumManifestResult> => ipcRenderer.invoke(IPC_CHANNELS.OPTIMUM_MANAGER.GET_MANIFEST)
+  },
   netManager: {
     queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url),
     acceptModDbVisibility: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY),

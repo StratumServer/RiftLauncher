@@ -130,6 +130,15 @@ declare global {
     version: string
     label: string
     path: string
+    /**
+     * The fork this build was patched into, when it is one. Absent means vanilla,
+     * so no config written before this field existed needs migrating.
+     *
+     * Written by the install flow from what the launcher's own probe read back off
+     * the patched folder (#457), never from anything the renderer decided, and
+     * validated by `toWireBuildVariant` on the way in.
+     */
+    variant?: GameBuildVariantType
     /** Registered from a folder the launcher did not install, so removing it must only unregister it. */
     linked?: boolean
     _installing?: boolean
@@ -632,6 +641,42 @@ declare global {
   type FetchReleaseNotesFailureReason = "offline" | "bad-response" | "too-large" | "rate-limited"
 
   type FetchReleaseNotesResult = { ok: true; releases: WhatsNewReleaseInfo[] } | { ok: false; reason: FetchReleaseNotesFailureReason }
+
+  /**
+   * Optimum's published overlay, trimmed to what the renderer decides with.
+   *
+   * The file list, the per-target donors and the archive hash stay in the main
+   * process: the renderer never verifies anything, it only asks whether Optimum
+   * can be offered for a version and, when the player says yes, starts the
+   * download at an address the main process built out of checked fields.
+   */
+  type OptimumManifestInfo = {
+    optimumVersion: string
+    /** Game versions this overlay was published for. The gate is entirely the launcher's; the CLI never enforces it. */
+    supportedGameVersions: string[]
+    /** Where the overlay archive is fetched from. */
+    downloadUrl: string
+    /** Folder the archive is downloaded into, under the launcher's own cache. */
+    cacheFolder: string
+    /** Name the archive is saved under, which is also the stem of the folder inside it. */
+    archiveFileName: string
+  }
+
+  /**
+   * Why no Optimum is offered this session.
+   *
+   * - `unreachable`: the manifest never arrived. One token for the lot, because
+   *   the download worker reports one uniform failure by design, so no
+   *   connection, a refused response and an oversized one are genuinely
+   *   indistinguishable here.
+   * - `unreadable`: it arrived and is not a manifest this build can act on.
+   * - `unsupported-system`: it describes an overlay for another platform. Today
+   *   that is every machine that is not linux-x64, since one manifest is
+   *   published per release under one name.
+   */
+  type OptimumManifestFailureReason = "unreachable" | "unreadable" | "unsupported-system"
+
+  type OptimumManifestResult = { ok: true; manifest: OptimumManifestInfo } | { ok: false; reason: OptimumManifestFailureReason }
 
   declare module "*.png" {
     const value: string

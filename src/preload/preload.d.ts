@@ -86,6 +86,10 @@ declare global {
       /** Reads the last session's own log files out of one Installation and answers the report built from them. See #462. */
       getGameLogReport: (installationPath: string) => Promise<GameLogReportResult>
     }
+    optimumManager: {
+      /** Optimum's published overlay for this machine, or the one reason no Optimum is offered this session. Never rejects. */
+      getManifest: () => Promise<OptimumManifestResult>
+    }
     netManager: {
       queryURL: (url: string) => Promise<string>
       /**
