@@ -218,6 +218,11 @@
       "errorMakingBackup": "Hiba törént a biztonsági mentés létrehozása közben!",
       "backupsAmount": "Biztonsági mentés korlátja",
       "folderDoesntExists": "Ez a Telepítés nem tartalmaz adatokat. Legalább egyszer játszanod kell vele, hogy a játék legenerálja az alapvető adatokat!"
+    },
+    "sessionReport": {
+      "copyReport": "Jelentés másolása",
+      "openLogsFolder": "Naplómappa megnyitása",
+      "lastSessionReport": "Legutóbbi munkamenet jelentése"
     }
   },
   "components": {

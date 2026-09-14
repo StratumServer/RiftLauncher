@@ -1,0 +1,9 @@
+Running on 64 bit Windows 10.0.26200.0 with 16163 MB RAM
+Game Version: v1.22.0-pre.3 (Unstable)
+22.02.2026 20:39:11: Critical error occurred in the following mod: egocaribautomapmarkers@4.0.3
+Loaded Mods: game@1.22.0-pre.3, egocaribautomapmarkers@4.0.3, betterruins@0.5.7, creative@1.22.0-pre.3, survival@1.22.0-pre.3
+Involved Harmony IDs: Egocarib.AutoMapMarkers.Patches, BetterRuins.Patches
+System.TypeLoadException: Could not load type 'Vintagestory.GameContent.BlockTallGrass' from assembly 'VSSurvivalMod, Version=1.22.0.0, Culture=neutral, PublicKeyToken=null'.
+   at Egocarib.AutoMapMarkers.Patches.Block.Postfix(BlockSelection blockSel) in C:\Users\Egocarib\source\repos\AutoMapMarkers\src\Patches\Block.cs:line 36
+   at Vintagestory.Client.NoObf.ClientMain.OnBlockInteract_PatchN(ClientMain __instance)
+   at Vintagestory.Client.NoObf.ClientMain.RenderToDefaultFramebuffer(Single dt)

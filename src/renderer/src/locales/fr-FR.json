@@ -617,6 +617,44 @@
       "debugInfoDesc": "Copiez les informations ci-dessous et envoyez-les avec votre rapport de bug pour nous aider à trouver le problème !",
       "whatsNewTitle": "Nouveautés",
       "whatsNewUnavailable": "Les notes de version n'ont pas pu être chargées pour le moment."
+    },
+    "sessionReport": {
+      "verdictCrashedInMod": "Le jeu a planté dans {{mod}}.",
+      "verdictCrashed": "Le jeu a planté.",
+      "verdictErrors": "Le jeu s'est fermé avec des erreurs.",
+      "verdictClean": "Aucune erreur n'a été enregistrée.",
+      "provenance": "D'après {{file}}, écrit pour la dernière fois {{when}}.",
+      "unknownTime": "à une heure inconnue",
+      "truncated": "Le milieu de ce journal n'a pas été lu.",
+      "loading": "Lecture de la dernière session.",
+      "noLogs": "Aucun journal n'a encore été trouvé pour cette installation.",
+      "unreadable": "Les journaux de cette installation n'ont pas pu être lus.",
+      "crashTitle": "Plantage",
+      "crashBlames": "Le fichier de plantage met en cause {{mod}} {{version}}.",
+      "crashPatchNote": "Un patch de {{mod}} était impliqué.",
+      "byModTitle": "Par mod",
+      "startupTitle": "Démarrage",
+      "anythingElseTitle": "Le reste",
+      "errorCount": "{{count}} erreurs",
+      "errorCount_one": "{{count}} erreur",
+      "errorCount_other": "{{count}} erreurs",
+      "warningCount": "{{count}} avertissements",
+      "warningCount_one": "{{count}} avertissement",
+      "warningCount_other": "{{count}} avertissements",
+      "signalLogLine": "nommé par la ligne de journal",
+      "signalAssembly": "nommé par l'assembly",
+      "signalCrashFile": "nommé par le fichier de plantage",
+      "landmarkMods": "Mods trouvés : {{count}}",
+      "landmarkModSystems": "Systèmes de mods instanciés : {{count}}",
+      "landmarkBlocks": "Blocs uniques chargés : {{count}}",
+      "phaseElapsed": "{{name}}, environ {{seconds}} s",
+      "copyReport": "Copier le rapport",
+      "copyReportDesc": "Copie le rapport sans les chemins ni les informations de compte.",
+      "openLogsFolder": "Ouvrir le dossier des journaux",
+      "copied": "Le rapport est dans votre presse-papiers.",
+      "copyFailed": "Le rapport n'a pas pu être copié.",
+      "lastSessionReport": "Rapport de la dernière session",
+      "lastSessionReportDesc": "Ce que les journaux du jeu disent de la dernière exécution de cette installation."
     }
   },
   "components": {
@@ -736,7 +774,8 @@
     "actions": {
       "openInstallGuide": "Ouvrir le guide d'installation",
       "updateNow": "Mettre à jour maintenant",
-      "notNow": "Pas maintenant"
+      "notNow": "Pas maintenant",
+      "seeWhatWentWrong": "Voir ce qui s'est passé"
     },
     "discard": "Ignorer la notification"
   },
@@ -752,6 +791,7 @@
     "manageBackups": "Gérer les sauvegardes",
     "versions": "Versions",
     "addVersion": "Ajouter une version",
-    "lookForAVersion": "Rechercher une version"
+    "lookForAVersion": "Rechercher une version",
+    "sessionReport": "Rapport de session"
   }
 }
