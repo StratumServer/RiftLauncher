@@ -112,6 +112,9 @@ function SessionButton(): JSX.Element {
       if (result.status !== "success") return
 
       if (result.storeRebuilt) addNotification(t("features.config.sessionStoreRebuilt"), "warning")
+      // Logged in, and staying logged in until the launcher is closed. Said out loud rather than
+      // left to be discovered on the next start, and pointed at the guide that makes it stick.
+      if (result.sessionInMemoryOnly) addNotification(t("features.config.sessionNotRemembered"), "warning", keyringGuideOptions())
       await saveLogin(result.account)
     } catch {
       // A throw here means the request never produced a verdict, for a cause

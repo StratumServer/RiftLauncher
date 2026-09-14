@@ -138,6 +138,30 @@ function assertSecureStorage(): void {
   if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") throw new Error("A system password store is required for account storage")
 }
 
+/** The same rule as {@link assertSecureStorage}, as a question rather than a demand. */
+function isSecureStorageAvailable(): boolean {
+  try {
+    assertSecureStorage()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Sessions this process is holding and will never write down.
+ *
+ * A machine with no keyring used to fail the login outright, with credentials
+ * the service had already accepted: the player could not play at all, over a
+ * missing wallet (#481). Holding the secrets here instead lets the login
+ * finish and the game launch, for as long as the launcher stays open, and
+ * quitting is what drops them: this Map lives and dies with the process, and
+ * nothing here ever reaches {@link writeAccounts}. That is the whole security
+ * property, and it is enforced by where the entries live rather than by a
+ * flag some later caller has to remember to check.
+ */
+const memorySecrets = new Map<string, AccountSecrets>()
+
 async function readStore(): Promise<StoreRead> {
   if (cachedRead !== undefined) return cachedRead
 
@@ -238,8 +262,12 @@ async function writeAccounts(accounts: Map<string, AccountSecrets>): Promise<voi
   cachedRead = { accounts, status: "readable" }
 }
 
-/** What {@link saveAccountSecrets} actually did: a plain save, or a save that first had to rebuild an unreadable store around it. */
-export type AccountSaveOutcome = "saved" | "saved-after-rebuild"
+/**
+ * What {@link saveAccountSecrets} actually did: a plain save, a save that first
+ * had to rebuild an unreadable store around it, or a session kept in memory
+ * because there is no keyring on this machine to write it to.
+ */
+export type AccountSaveOutcome = "saved" | "saved-after-rebuild" | "saved-in-memory"
 
 /**
  * Saves or replaces one account's secrets. Logging into an already-saved
@@ -254,9 +282,22 @@ export type AccountSaveOutcome = "saved" | "saved-after-rebuild"
  * "never destroy without a snapshot" rule the rest of this file already
  * follows. The caller is told which happened, so a login that quietly wiped
  * a housemate's session is never reported as an ordinary one.
+ *
+ * When there is no keyring at all, nothing is written and the session is held
+ * in {@link memorySecrets} for this run instead. Refusing the write is still
+ * the rule; what changed is that refusing it no longer throws away credentials
+ * the service already accepted. The caller is told, so the player can be.
  */
 export function saveAccountSecrets(accountId: string, secrets: AccountSecrets): Promise<AccountSaveOutcome> {
   return serializeMutation(async () => {
+    // Asked before the read, not after a failed write: writeAccounts asserts the same rule and
+    // would throw, and the point here is to leave whatever is on disk untouched, snapshot
+    // machinery included. A store that is present but locked stays exactly as it is.
+    if (!isSecureStorageAvailable()) {
+      memorySecrets.set(accountId, secrets)
+      return "saved-in-memory"
+    }
+
     const store = await readStore()
     const accounts = new Map(store.accounts)
     accounts.set(accountId, secrets)
@@ -275,9 +316,16 @@ export function saveAccountSecrets(accountId: string, secrets: AccountSecrets): 
   })
 }
 
-/** Reads one account's secrets, or null when nothing is stored for it. */
+/**
+ * Reads one account's secrets, or null when nothing is stored for it.
+ *
+ * A session held for this run only answers first, and is the only thing that
+ * can: the store it would otherwise come from is the one that could not be
+ * opened. Every reader goes through here, so a login with no keyring behind it
+ * is a usable account everywhere the stored kind is, EXECUTE_GAME included.
+ */
 export async function getAccountSecrets(accountId: string): Promise<AccountSecrets | null> {
-  return (await readAccounts()).get(accountId) ?? null
+  return memorySecrets.get(accountId) ?? (await readAccounts()).get(accountId) ?? null
 }
 
 /**
@@ -296,12 +344,18 @@ export async function getAccountSecrets(accountId: string): Promise<AccountSecre
  * nothing names any more. Refusing keeps the account and surfaces the store
  * problem instead. This never rebuilds the file: only `saveAccountSecrets`,
  * running for a login the player actually asked for, does that.
+ *
+ * A session held in memory is dropped first and answers `true` on its own: it
+ * was never on disk, so there is nothing an unreadable store could still be
+ * hiding for it, and the player removing an account must not be refused over a
+ * file that has nothing to do with theirs.
  */
 export function removeAccountSecrets(accountId: string): Promise<boolean> {
   return serializeMutation(async () => {
+    const heldInMemory = memorySecrets.delete(accountId)
     const store = await readStore()
     const accounts = new Map(store.accounts)
-    if (!accounts.delete(accountId)) return store.status === "readable"
+    if (!accounts.delete(accountId)) return heldInMemory || store.status === "readable"
 
     try {
       if (accounts.size === 0) {

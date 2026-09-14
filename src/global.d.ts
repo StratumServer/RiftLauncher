@@ -130,10 +130,19 @@ declare global {
    * the network nor the service: this machine has no system keyring, so
    * there is nowhere safe to keep a session. It is what a Debian KDE player
    * with no wallet actually hit, while the generic connection sentence sent
-   * them looking at a firewall that was never involved.
+   * them looking at a firewall that was never involved. The ordinary path for
+   * it is now a success carrying `sessionInMemoryOnly`, since the credentials
+   * were accepted and only the saving failed; the status is what is left for a
+   * keyring failure reaching the handler's catch some other way.
+   *
+   * `sessionInMemoryOnly` flags exactly that success: the player is logged in
+   * and can play, the secrets are held in the main process and were never
+   * written, and quitting ends the session. Not a status of its own, for the
+   * same reason `storeRebuilt` is not: the login succeeded, and a separate
+   * status would have every `status === "success"` check drop the account.
    */
   type AccountLoginResult =
-    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean }
+    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean; sessionInMemoryOnly?: boolean }
     | {
         status:
           | "invalid-credentials"
