@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest"
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { useLocation } from "react-router-dom"
 
 import MainMenu from "@renderer/components/layout/MainMenu"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
@@ -78,12 +79,18 @@ function readProbe(): ProbeState {
   return JSON.parse(screen.getByTestId("probe").textContent ?? "{}") as ProbeState
 }
 
+/** Where MainMenu's own navigations land, the session report notice's action among them. */
+function WhereProbe(): JSX.Element {
+  return <output data-testid="where">{useLocation().pathname}</output>
+}
+
 function renderMainMenu(): void {
   renderWithProviders(
     <TaskProvider>
       <NotificationsOverlay />
       <MainMenu />
       <ConfigProbe />
+      <WhereProbe />
     </TaskProvider>
   )
 }
@@ -289,6 +296,31 @@ describe("MainMenu Play button", () => {
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
     // ok: true still means the game ran, so it is still worth crediting the playtime.
     expect(readProbe().lastTimePlayed).toBeGreaterThan(-1)
+  })
+
+  it("offers the session report from the exited-with-errors notice and lands on that Installation's page", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation()],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      gameManager: { executeGame: vi.fn(async () => ({ ok: true, exitCode: 1 }) as GameExecutionResult) }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText("Vintage Story exited with errors. The log has the details.")
+    await user.click(await screen.findByRole("button", { name: "See what went wrong" }))
+
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/installations/report/install-a"))
   })
 
   it("refuses to play an Installation with no VS Version set and names the state instead of a blank version", async () => {
