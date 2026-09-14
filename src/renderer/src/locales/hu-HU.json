@@ -270,12 +270,23 @@
       "discardTask": "Feladat elvetése",
       "markAllRead": "Összes megjelölése olvasottként",
       "clearRead": "Olvasottak törlése",
+      "clearAll": "Összes törlése",
       "markRead": "Megjelölés olvasottként",
       "markUnread": "Megjelölés olvasatlanként",
       "panelSummary": "{{active}} folyamatban, {{unread}} olvasatlan",
       "answeredWith": "Válasz: {{action}}",
       "restartAndUpdate": "Újraindítás és frissítés",
-      "viewUpdates": "Frissítések megtekintése"
+      "viewUpdates": "Frissítések megtekintése",
+      "failureReasons": {
+        "network": "A kapcsolat nem jött létre. Ellenőrizd a kapcsolatot vagy a tűzfalat, majd próbáld újra.",
+        "no-space": "Nincs több hely a meghajtón. Szabadíts fel helyet, majd próbáld újra.",
+        "no-permission": "A RiftLauncher nem írhat oda. Ellenőrizd a mappa jogosultságait, majd próbáld újra.",
+        "missing-file": "Egy szükséges fájl már nem volt ott. Próbáld újra, és telepítsd újra, ha ismétlődik.",
+        "damaged-archive": "Az archívum nem nyílt meg, valószínűleg sérült. Töltsd le újra.",
+        "timed-out": "Túl sokáig tartott, ezért leállt. Próbáld újra.",
+        "unsupported-platform": "Ez a lépés csak Windowson fut.",
+        "unknown": "Ez a feladat a befejezés előtt megállt. A részletek a naplóban vannak."
+      }
     }
   },
   "notifications": {

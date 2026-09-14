@@ -286,12 +286,23 @@
       "discardTask": "Aufgabe verwerfen",
       "markAllRead": "Alle als gelesen markieren",
       "clearRead": "Gelesene löschen",
+      "clearAll": "Alles löschen",
       "markRead": "Als gelesen markieren",
       "markUnread": "Als ungelesen markieren",
       "panelSummary": "{{active}} laufend, {{unread}} ungelesen",
       "answeredWith": "Beantwortet: {{action}}",
       "restartAndUpdate": "Neu starten und aktualisieren",
-      "viewUpdates": "Updates anzeigen"
+      "viewUpdates": "Updates anzeigen",
+      "failureReasons": {
+        "network": "Die Verbindung ist fehlgeschlagen. Prüfe deine Verbindung oder Firewall und versuche es erneut.",
+        "no-space": "Auf dem Laufwerk ist kein Platz mehr. Gib Speicherplatz frei und versuche es erneut.",
+        "no-permission": "RiftLauncher darf dort nicht schreiben. Prüfe die Berechtigungen des Ordners und versuche es erneut.",
+        "missing-file": "Eine benötigte Datei war nicht mehr vorhanden. Versuche es erneut und installiere neu, falls es wieder passiert.",
+        "damaged-archive": "Das Archiv ließ sich nicht öffnen, es ist wahrscheinlich beschädigt. Lade es erneut herunter.",
+        "timed-out": "Der Vorgang hat zu lange gedauert und wurde abgebrochen. Versuche es erneut.",
+        "unsupported-platform": "Dieser Schritt läuft nur unter Windows.",
+        "unknown": "Diese Aufgabe wurde vor dem Ende abgebrochen. Die Details stehen im Protokoll."
+      }
     }
   },
   "notifications": {

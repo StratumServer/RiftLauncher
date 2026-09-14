@@ -1,6 +1,8 @@
 import React, { createContext, useReducer, useContext, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 
+import { taskSurvivesBulkClear } from "@domain/notifications/bulkClear"
+import { classifyFailure, type FailureReason } from "@domain/notifications/failureReason"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { LAUNCHER_UPDATE_TASK_ID, launcherUpdateName } from "@renderer/utils/launcherUpdateTask"
 
@@ -11,6 +13,12 @@ export interface TaskType {
   type: "download" | "extract" | "install" | "compress"
   progress: number
   status: "pending" | "in-progress" | "completed" | "failed"
+  /**
+   * Why a failed task failed, as a token the locale turns into a sentence. Set
+   * once by the catch site that has the error, which is the only place that
+   * ever sees the raw text. Absent on anything that has not failed.
+   */
+  reason?: FailureReason
 }
 
 /** Describes which terminal task events should reach the notification system. */
@@ -163,6 +171,8 @@ export interface TaskContextType {
     compressionLevel?: number
   ): Promise<void>
   removeTask(id: string): void
+  /** Drops every finished row in one action. Work still running stays: it is not a leftover. */
+  clearFinishedTasks(): () => void
 }
 
 const TaskContext = createContext<TaskContextType | null>(null)
@@ -282,8 +292,9 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Error downloading.`)
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Error downloading: ${err}`)
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
-      if (notifications.failure === "generic") addNotification(t("notifications.body.downloadError", { downloadName: name }), "error")
+      const reason = classifyFailure(err)
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
+      if (notifications.failure === "generic") addNotification(t("notifications.body.downloadError", { downloadName: name }), "error", { reason })
       onFinish(false, "", new Error(`Error downloading ${url}: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished download.")
@@ -327,8 +338,9 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Error extracting.`)
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Error extracting: ${err}`)
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
-      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error")
+      const reason = classifyFailure(err)
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
+      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error", { reason })
       onFinish(false, new Error(`Error extracting ${filePath}: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished extraction.")
@@ -370,8 +382,9 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Error installing.`)
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Error installing: ${err}`)
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
-      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error")
+      const reason = classifyFailure(err)
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
+      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error", { reason })
       onFinish(false, new Error(`Error installing ${filePath}: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished installation.")
@@ -408,8 +421,9 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Error compressing.`)
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Error compressing: ${err}`)
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed" } } })
-      if (notifications.failure === "generic") addNotification(t("notifications.body.compressError", { compressName: name }), "error")
+      const reason = classifyFailure(err)
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
+      if (notifications.failure === "generic") addNotification(t("notifications.body.compressError", { compressName: name }), "error", { reason })
       onFinish(false, new Error(`Error compressing: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished compression.")
@@ -420,8 +434,22 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id } })
   }
 
+  function clearFinishedTasks(): () => void {
+    const clearedTasks = tasks.filter((task) => !taskSurvivesBulkClear(task.status))
+    for (const task of clearedTasks) tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id: task.id } })
+    let restored = false
+    return (): void => {
+      if (restored) return
+      restored = true
+      // ADD_TASK puts a row at the head, so the snapshot goes back newest last to
+      // come out in the order it had. A task started inside the five second undo
+      // window ends up below these rather than above them.
+      for (const task of [...clearedTasks].reverse()) tasksDispatch({ type: ACTIONS.ADD_TASK, payload: task })
+    }
+  }
+
   const activeTaskCount = tasks.filter((task) => task.status === "pending" || task.status === "in-progress").length
-  return <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask }}>{children}</TaskContext.Provider>
+  return <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask, clearFinishedTasks }}>{children}</TaskContext.Provider>
 }
 
 export const useTaskContext = (): TaskContextType => {
