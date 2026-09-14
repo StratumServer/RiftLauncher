@@ -28,8 +28,17 @@ export type FailureReason = "network" | "no-space" | "no-permission" | "missing-
  * purpose: an error crossing the IPC boundary arrives as text, with the
  * original message wrapped in the remote-call one, and its `code` does not
  * survive the trip.
+ *
+ * A needle earns its place only when the cause is the one thing it can mean.
+ * That is why two are deliberately absent. A bare "Extraction failed" is the
+ * sentence the extractor raises for a read, a write and a permission refusal
+ * alike, so reading it as a damaged archive tells a player to download a file
+ * again that was never the problem. And EMFILE is a process that has run out
+ * of file descriptors, not a folder it may not write to. Both fall through to
+ * `unknown`, whose sentence points at the log; a message that also carries
+ * EACCES or ENOSPC is still placed by that.
  */
-const REASON_NEEDLES: ReadonlyArray<readonly [string, FailureReason]> = [
+export const REASON_NEEDLES: ReadonlyArray<readonly [string, FailureReason]> = [
   // What the installer handler reports through InstallerRunResult.
   ["installer-timed-out", "timed-out"],
   ["installer-missing", "missing-file"],
