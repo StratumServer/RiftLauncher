@@ -165,12 +165,23 @@
       "discardTask": "移除任务",
       "markAllRead": "全部标为已读",
       "clearRead": "清除已读",
+      "clearAll": "全部清除",
       "markRead": "标为已读",
       "markUnread": "标为未读",
       "panelSummary": "{{active}} 项进行中，{{unread}} 条未读",
       "answeredWith": "已选择：{{action}}",
       "restartAndUpdate": "重启并更新",
-      "viewUpdates": "查看更新"
+      "viewUpdates": "查看更新",
+      "failureReasons": {
+        "network": "连接失败。请检查网络或防火墙，然后重试。",
+        "no-space": "磁盘已没有剩余空间。请释放一些空间，然后重试。",
+        "no-permission": "RiftLauncher 无权写入该位置。请检查该文件夹的权限，然后重试。",
+        "missing-file": "所需的文件已不存在。请重试，如果反复出现请重新安装。",
+        "damaged-archive": "压缩包无法打开，可能已损坏。请重新下载。",
+        "timed-out": "运行时间过长，已被停止。请重试。",
+        "unsupported-platform": "此步骤仅在 Windows 上运行。",
+        "unknown": "此任务在完成前停止。详情见日志。"
+      }
     }
   },
   "notifications": {

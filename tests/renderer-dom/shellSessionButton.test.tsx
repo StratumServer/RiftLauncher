@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { fireEvent, screen, within } from "@testing-library/react"
+import { screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import SessionButton from "@renderer/components/ui/SessionButton"
@@ -58,8 +58,8 @@ describe("SessionButton", () => {
     await user.type(screen.getByLabelText("Email"), "steve@example.com")
     await user.type(screen.getByLabelText("Password"), "hunter2")
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Log in" }))
-    fireEvent.click(await screen.findByTitle("Discard notification"))
 
+    // The "Logging in..." banner and the failure stack together, so the failure needs no dismissal first.
     expect(await screen.findByText("Couldn't reach the login service. Check your connection or firewall and try again.")).toBeTruthy()
     expect(screen.queryByText("Invalid email or password.")).toBeNull()
   })

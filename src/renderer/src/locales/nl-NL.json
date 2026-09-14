@@ -175,12 +175,23 @@
       "discardTask": "Taak verwijderen",
       "markAllRead": "Alles als gelezen markeren",
       "clearRead": "Gelezen wissen",
+      "clearAll": "Alles wissen",
       "markRead": "Markeren als gelezen",
       "markUnread": "Markeren als ongelezen",
       "panelSummary": "{{active}} bezig, {{unread}} ongelezen",
       "answeredWith": "Beantwoord: {{action}}",
       "restartAndUpdate": "Herstarten en bijwerken",
-      "viewUpdates": "Updates bekijken"
+      "viewUpdates": "Updates bekijken",
+      "failureReasons": {
+        "network": "De verbinding is mislukt. Controleer je verbinding of firewall en probeer het opnieuw.",
+        "no-space": "Er is geen ruimte meer op de schijf. Maak ruimte vrij en probeer het opnieuw.",
+        "no-permission": "RiftLauncher mag daar niet schrijven. Controleer de rechten van die map en probeer het opnieuw.",
+        "missing-file": "Een benodigd bestand was er niet meer. Probeer het opnieuw, en installeer opnieuw als het blijft gebeuren.",
+        "damaged-archive": "Het archief ging niet open, het is waarschijnlijk beschadigd. Download het opnieuw.",
+        "timed-out": "Het duurde te lang en is gestopt. Probeer het opnieuw.",
+        "unsupported-platform": "Deze stap werkt alleen op Windows.",
+        "unknown": "Deze taak is gestopt voordat ze klaar was. De details staan in het logboek."
+      }
     }
   },
   "notifications": {

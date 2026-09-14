@@ -547,6 +547,19 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /**
+   * #391 folds a repeated message into the banner already up and marks it with a count. The count
+   * is the only thing on screen that says the message arrived twice, so it is a fill of its own
+   * on the toast scrim and has to clear the text bar on both extremes.
+   */
+  it("keeps the repeat count on a folded banner readable on its own fill", () => {
+    const overlay = "components/layout/NotificationsOverlay.tsx"
+    const badgeFill = foreground(overlay, /rounded-full bg-(zinc-\d+)(?:\/(\d+))? text-\[10px\]/)
+    const badgeText = foreground(overlay, /text-\[10px\] leading-4 text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("repeat count", badgeText, [...TOAST, badgeFill], TEXT_FLOOR)
+  })
+
   it("keeps every Activity Center task row readable", () => {
     const panel = "components/ui/ActivityCenter.tsx"
     const operation = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? break-words/)
@@ -570,6 +583,12 @@ describe("prompts the player is meant to read and act on", () => {
       if (token === "vsl") continue // the accent, already covered by the block below
       assertReadable(`${status} task icon`, [tailwindOrTheme(token), 1], TASKS_ROW, NON_TEXT_FLOOR)
     }
+  })
+
+  /** #392's one new control, which sits on the panel scrim beside the summary rather than on a row. */
+  it("keeps the Clear all control readable on the panel it sits on", () => {
+    const clearAll = foreground("components/ui/ActivityCenter.tsx", /className="px-1 text-xs text-(zinc-\d+)(?:\/(\d+))?"\s+title=\{t\("components\.activityCenter\.clearAll"\)\}/)
+    assertReadable("Clear all", clearAll, TASKS_PANEL, TEXT_FLOOR)
   })
 
   it("keeps the active task badge readable on the accent fill it sits on", () => {
@@ -596,6 +615,21 @@ describe("prompts the player is meant to read and act on", () => {
 
     assertReadable("Activity Center notification body", historyBody, TASKS_ROW, TEXT_FLOOR)
     assertReadable("Activity Center answered marker", answered, TASKS_ROW, TEXT_FLOOR)
+  })
+
+  /**
+   * #390 put a second red line in the panel: the cause under a failed message, beside the one a
+   * failed task row already carries. It is the line a player opened the panel to read, so it
+   * takes the text floor rather than the weaker non-text one, and it is read out of the
+   * component so a shade that moves fails here instead of shipping.
+   */
+  it("keeps the cause under a failed notification readable on both row tints", () => {
+    const cause = paletteForeground("components/ui/ActivityCenter.tsx", /mt-0\.5 text-xs break-words text-([a-z]+-\d+)"/)
+    const taskCause = paletteForeground("components/ui/ActivityCenter.tsx", /task.status === "failed" && <p className="text-xs text-([a-z]+-\d+)"/)
+
+    assertReadable("failed notification cause", cause, TASKS_ROW, TEXT_FLOOR)
+    // The two say the same kind of thing in the same panel, so they wear the same red.
+    assert.deepEqual(cause, taskCause, "the cause under a failed message should carry the same red as the one on a failed task row")
   })
 
   /**
