@@ -76,10 +76,7 @@ line({ type: "log", level: "info", message: "Patching " + gameDirectory })
 for (const progress of [10, 40, 90]) line({ type: "progress", phase: "patch", progress, detail: gameDirectory })
 
 if (mode === "no-result") process.exit(1)
-if (mode === "usage") {
-  line({ type: "result", ok: false, reason: "bad-input", message: gameDirectory })
-  process.exit(2)
-}
+if (mode === "usage") process.exit(2)
 if (mode.startsWith("fail:")) {
   line({ type: "result", ok: false, reason: mode.slice(5), message: gameDirectory })
   process.exit(1)
@@ -205,7 +202,7 @@ describe("runOptimumCli", () => {
     assert.equal(seen().secret, null)
   })
 
-  it("reads exit 2 as bad input whatever else the run said", async () => {
+  it("reads exit 2 as bad input even when the run said nothing terminal", async () => {
     assert.deepEqual(await run("usage"), { ok: false, reason: "bad-input" })
   })
 
@@ -261,6 +258,14 @@ describe("readRunOutcome", () => {
 
   it("refuses a non-zero exit whose run claimed success", () => {
     assert.deepEqual(readRunOutcome(1, { ok: true }, false), { ok: false, reason: "no-result" })
+  })
+
+  it("lets exit 2 mean bad input whatever the run reported", () => {
+    // The contract reserves 2 for that one reason, so a run that exits 2 while
+    // naming something else is a run the launcher believes the code of.
+    assert.deepEqual(readRunOutcome(2, { ok: false, reason: "patch-conflict" }, false), { ok: false, reason: "bad-input" })
+    assert.deepEqual(readRunOutcome(2, { ok: true }, false), { ok: false, reason: "bad-input" })
+    assert.deepEqual(readRunOutcome(2, { ok: false, reason: "no-result" }, false), { ok: false, reason: "bad-input" })
   })
 })
 

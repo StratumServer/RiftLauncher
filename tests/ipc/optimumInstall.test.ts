@@ -210,6 +210,17 @@ describe("applyOptimumOverlay", () => {
     assert.equal(existsSync(join(gameDirectory, ".optimum")), false)
   })
 
+  it("refuses an archive whose hash is not the published one, even at the published size", async () => {
+    // The archive on disk is intact; what does not match is the hash the manifest
+    // vouches for it with, which is the only thing standing between a swapped
+    // payload and a child process.
+    const manifest = buildOverlay()
+    manifest.archive.sha256 = sha256(Buffer.from("a different archive entirely"))
+
+    assert.deepEqual(await apply(manifest), { ok: false, reason: "overlay-unverified" })
+    assert.equal(existsSync(overlayDirectory), false)
+  })
+
   it("refuses an archive that is not there at all", async () => {
     const manifest = buildOverlay()
     rmSync(archivePath)
