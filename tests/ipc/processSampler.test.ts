@@ -135,6 +135,13 @@ describe("the Windows sampler", () => {
     const { probe } = probeAnswering({ ok: false, stdout: "", error: "spawn ENOENT" })
     assert.equal(await createProcessSampler("win32", { processProbe: probe }).sample(4242), undefined)
   })
+
+  it("uses the fixed tasklist command for the Windows sampler", async () => {
+    const { probe, calls } = probeAnswering({ ok: true, stdout: '"Vintagestory.exe","4242","Console","1","64 K"' })
+
+    assert.deepEqual(await createProcessSampler("win32", { processProbe: probe }).sample(4242), { rssBytes: 64 * 1024 })
+    assert.equal(calls[0]?.command, "tasklist")
+  })
 })
 
 describe("a platform with no mechanism", () => {

@@ -413,7 +413,10 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   // The id comes from the config the launcher wrote, never from the renderer's own object, so the
   // file name a session lands under cannot be chosen by whatever sent the launch.
   const installationId = config.installations.find((candidate) => comparablePath(candidate.path) === comparablePath(safeInstallation.path))?.id
-  const recorder = config.measurePlaySessions && installationId ? createPlaySessionRecorder(createProcessSampler(os.platform())) : undefined
+  const recorder =
+    config.measurePlaySessions && installationId
+      ? createPlaySessionRecorder(createProcessSampler(os.platform(), os.platform() === "win32" ? { processProbe: realProcessProbe({ allowTasklist: true }) } : {}))
+      : undefined
 
   const outcome = await realGameProcess().run({
     command: plan.command,
@@ -493,11 +496,12 @@ const LOOK_FOR_A_GAME_VERSION_PROBE_TIMEOUT_MS = 10_000
  * the executable with `-v` and reads the version off stdout, and nothing a
  * wrapper does changes what that prints.
  */
-function realProcessProbe(): ProcessProbe {
+function realProcessProbe(options: { allowTasklist?: boolean } = {}): ProcessProbe {
   return {
     run: async (request: ProcessProbeRequest): Promise<ProcessProbeOutcome> => {
       try {
-        await assertExecutable(request.command === "mono" ? (request.args[0] ?? "") : request.command)
+        const fixedTasklist = options.allowTasklist === true && request.command === "tasklist"
+        if (!fixedTasklist) await assertExecutable(request.command === "mono" ? (request.args[0] ?? "") : request.command)
       } catch (err) {
         logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Refused to probe an invalid executable.`)
         logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
