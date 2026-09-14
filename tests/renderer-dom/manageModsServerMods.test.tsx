@@ -75,6 +75,12 @@ function serverGroups(): ServerModsScan {
   }
 }
 
+/** The same answer, with the folder the scan stopped short of marked as the prefix it is. */
+function truncatedGroups(): ServerModsScan {
+  const scan = serverGroups()
+  return { groups: scan.groups.map((group) => (group.server === "My Test Server" ? { ...group, truncated: true as const } : group)), truncated: true as const }
+}
+
 function renderManageMods(overrides: WindowApiOverrides = {}): MockedBridgeAPI {
   const api = installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
@@ -335,6 +341,49 @@ describe("Manage Mods: the Mods a server downloaded", () => {
     await screen.findByText("Alpha Mod")
     expect(screen.queryByText("Mods from servers")).toBeNull()
     expect(screen.queryAllByTitle(GROUP_TOGGLE).length).toBe(0)
+  })
+
+  // A folder past the per-folder cap comes back listed short. Everything that states the set has to
+  // say so: the header counts it, the export promises to reproduce it, the dialog says what goes.
+  it("marks a group the scan stopped short of, rather than counting the prefix as the set", async () => {
+    renderManageMods({ modsManager: { getServerMods: vi.fn(async () => truncatedGroups()) } })
+
+    const header = await groupHeader("My Test Server")
+    expect(header.textContent).toContain("2 Mods and more")
+
+    // The group read whole says nothing of the sort.
+    expect((await groupHeader("192.168.1.10")).textContent).not.toContain("and more")
+  })
+
+  it("offers no modpack of a partly listed group, rather than writing an incomplete one", async () => {
+    const api = renderManageMods({ modsManager: { getServerMods: vi.fn(async () => truncatedGroups()), exportModpack: vi.fn(async () => ({ success: true })) } })
+    const user = userEvent.setup()
+
+    const header = await groupHeader("My Test Server")
+    // A disabled FormButton drops its title and keeps the label, so the button is found by name.
+    const save = within(header.parentElement!).getByRole("button", { name: SAVE_TITLE })
+    expect(save.hasAttribute("disabled")).toBe(true)
+
+    await user.click(save)
+    expect(vi.mocked(api.modsManager.exportModpack).mock.calls.length).toBe(0)
+
+    // The group that was read whole still offers it.
+    expect(
+      within((await groupHeader("192.168.1.10")).parentElement!)
+        .getByRole("button", { name: SAVE_TITLE })
+        .hasAttribute("disabled")
+    ).toBe(false)
+  })
+
+  it("says the folder holds more than the dialog counts before it removes it", async () => {
+    renderManageMods({ modsManager: { getServerMods: vi.fn(async () => truncatedGroups()) }, pathsManager: { deletePath: vi.fn(async () => true) } })
+    const user = userEvent.setup()
+
+    const header = await groupHeader("My Test Server")
+    await user.click(within(header.parentElement!).getByTitle(REMOVE_TITLE))
+
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(/This folder holds more Mods than the list shows/)).toBeTruthy()
   })
 
   it("says so when a cap stopped the scan short", async () => {

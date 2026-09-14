@@ -172,6 +172,13 @@ describe("scanServerMods", () => {
     assert.equal(scan.truncated, false)
   })
 
+  it("marks no group when every folder was read whole", async () => {
+    const scan = await scanServerMods(fakePorts({ [FOLDER]: ["srv"], [`${FOLDER}/srv`]: ["one.zip"] }, { [`${FOLDER}/srv/one.zip`]: "one" }), { folder: FOLDER })
+
+    assert.equal(scan.groups[0]!.truncated, undefined)
+    assert.equal(scan.truncated, false)
+  })
+
   it("marks a server group when its own archive cap hides files", async () => {
     const archiveNames = Array.from({ length: 2_001 }, (_, index) => `mod-${index}.zip`)
     const archives: Record<string, string> = {}

@@ -165,6 +165,21 @@ describe("scanInstalledMods folder listing", () => {
     assert.equal(ports.readsOf().length, MAX_MOD_ARCHIVES)
   })
 
+  it("says the folder was listed short when the bound stopped it, so no caller reads the result as the whole folder", async () => {
+    const folder: Record<string, FakeArchive> = {}
+    for (let index = 0; index < MAX_MOD_ARCHIVES + 1; index += 1) folder[`mod-${index}.zip`] = {}
+
+    const scan = await scanInstalledMods(fakePorts(folder), { folder: FOLDER })
+
+    assert.equal(scan.truncated, true)
+  })
+
+  it("claims nothing of the sort for a folder the scan read whole", async () => {
+    const scan = await scanInstalledMods(fakePorts({ "a.zip": { modinfo: modinfoText() }, "notes.txt": {} }), { folder: FOLDER })
+
+    assert.equal(scan.truncated, undefined)
+  })
+
   it("reads every archive exactly once", async () => {
     const folder: Record<string, FakeArchive> = {}
     for (let index = 0; index < 40; index += 1) folder[`mod-${index}.zip`] = { modinfo: modinfoText({ modid: `mod${index}` }) }

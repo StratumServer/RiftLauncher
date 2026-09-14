@@ -106,7 +106,7 @@ export function useServerMods(installation: InstallationType, reloadToken = 0): 
         setRemoving(null)
       }
     },
-    [addNotification, refresh, t]
+    [addNotification, installation, refresh, t]
   )
 
   return { groups, truncated, unreadable, remove, removing }

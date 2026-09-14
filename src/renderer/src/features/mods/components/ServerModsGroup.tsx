@@ -54,6 +54,11 @@ function ServerModsGroup({
                   the filter otherwise reaches nothing but rows that are not rendered. */}
               <span className="shrink-0 text-zinc-300">
                 {searching ? t("features.mods.serverModsCountFiltered", { matched: mods.length, total: group.mods.length }) : t("features.mods.serverModsCount", { count: group.mods.length })}
+                {/* The count is a prefix of the folder when the scan stopped short of it, and a
+                    header reading "2 Mods" for a folder holding more is a completeness claim the
+                    rest of the group is careful not to make. Searched or not, the total it counts
+                    against is the short one, so the marker rides with both. */}
+                {group.truncated && ` ${t("features.mods.serverModsCountTruncated")}`}
               </span>
             </FormButton>
 

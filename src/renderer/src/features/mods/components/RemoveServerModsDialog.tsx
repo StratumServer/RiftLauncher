@@ -25,6 +25,9 @@ function RemoveServerModsDialog({ group, close, onConfirm }: Readonly<{ group: S
             ? t("features.mods.serverModsRemoveUnlistable", { server: group.server, interpolation: { escapeValue: false } })
             : t("features.mods.serverModsRemoveConfirm", { count: group?.mods.length ?? 0, server: group?.server ?? "", interpolation: { escapeValue: false } })}
         </p>
+        {/* The count above is what the scan listed, not what the folder holds, so stating it alone
+            would understate what this button is about to delete. */}
+        {group?.truncated && <p>{t("features.mods.serverModsRemoveTruncated")}</p>}
         <p className="text-zinc-400">{t("features.mods.serverModsRemoveReassurance")}</p>
         <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
           <FormButton title={t("generic.cancel")} onClick={close} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
