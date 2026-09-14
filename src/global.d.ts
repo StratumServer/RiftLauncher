@@ -113,9 +113,15 @@ declare global {
    * throw and collapse into one generic toast no matter the cause (issue
    * #481). They carry `loginFailureFamily`'s classification of whatever
    * `src/ipc/handlers/loginFailureReason.ts` named the error, so the
-   * renderer can say which of the four it was without the raw error message
+   * renderer can say which of them it was without the raw error message
    * ever crossing the IPC boundary. A cause that classifier does not
    * recognise still throws the generic failure, unchanged.
+   *
+   * `no-keyring` is the same mechanism for the one failure that is neither
+   * the network nor the service: this machine has no system keyring, so
+   * there is nowhere safe to keep a session. It is what a Debian KDE player
+   * with no wallet actually hit, while the generic connection sentence sent
+   * them looking at a firewall that was never involved.
    */
   type AccountLoginResult =
     | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean }
@@ -130,6 +136,7 @@ declare global {
           | "certificate-error"
           | "service-error"
           | "account-restricted"
+          | "no-keyring"
         account?: undefined
       }
 

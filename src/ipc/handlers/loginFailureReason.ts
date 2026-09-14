@@ -234,12 +234,12 @@ export function loginFailureReason(error: unknown): string {
 }
 
 /**
- * The four shapes a rejected login can be told apart as on screen (issue
- * #481). `unknown` is not shown to the player: it is what keeps the LOGIN
- * handler's catch throwing its generic failure for a reason this module
- * cannot place, exactly as it always has.
+ * The shapes a rejected login can be told apart as on screen (issue #481).
+ * `unknown` is not shown to the player: it is what keeps the LOGIN handler's
+ * catch throwing its generic failure for a reason this module cannot place,
+ * exactly as it always has.
  */
-export type LoginFailureFamily = "network-unreachable" | "certificate-error" | "service-error" | "account-restricted" | "unknown"
+export type LoginFailureFamily = "network-unreachable" | "certificate-error" | "service-error" | "account-restricted" | "no-keyring" | "unknown"
 
 /**
  * Reasons that mean the request never reached the service, or never came
@@ -286,6 +286,19 @@ const SERVICE_ERROR_REASONS = new Set<string>(["http-server-error", "http-bad-ga
 const ACCOUNT_RESTRICTED_REASONS = new Set<string>(["http-unauthorized", "http-forbidden", "http-rate-limited"])
 
 /**
+ * The two literals `assertSecureStorage` throws, reached here through
+ * {@link AccountStorageFailure}: a platform offering no encryption at all, and
+ * a Linux session where safeStorage would fall back to its basic store.
+ *
+ * They are one family because they are one thing to the player and have one
+ * fix: no keyring is holding this machine's secrets, so nothing can keep a
+ * session between runs until one does. The generic "check your connection"
+ * sentence was the whole of what a Debian KDE player with no wallet was told
+ * while the log named the reason plainly (issue #481).
+ */
+const NO_KEYRING_REASONS = new Set<string>(["secure-storage-unavailable", "no-system-password-store"])
+
+/**
  * Groups a {@link loginFailureReason} token into the family the renderer
  * picks a sentence from.
  *
@@ -299,13 +312,17 @@ const ACCOUNT_RESTRICTED_REASONS = new Set<string>(["http-unauthorized", "http-f
  * `response-too-large`, `network-other`, every `unclassified*` and
  * `non-error-throw`), is deliberately left off every set above and falls
  * through to `unknown`: none of them says with any confidence which of the
- * four sentences fits, and guessing wrong would tell a player with a full
- * disk to check their firewall.
+ * sentences fits, and guessing wrong would tell a player with a full disk to
+ * check their firewall. The `storage-*` tokens stay out for exactly that
+ * reason while the two keyring messages come in: a disk that is full, or a
+ * folder that refuses a write, is not a missing keyring and must not be sent
+ * to the keyring guide.
  */
 export function loginFailureFamily(reason: string): LoginFailureFamily {
   if (NETWORK_UNREACHABLE_REASONS.has(reason)) return "network-unreachable"
   if (CERTIFICATE_REASONS.has(reason)) return "certificate-error"
   if (SERVICE_ERROR_REASONS.has(reason)) return "service-error"
   if (ACCOUNT_RESTRICTED_REASONS.has(reason)) return "account-restricted"
+  if (NO_KEYRING_REASONS.has(reason)) return "no-keyring"
   return "unknown"
 }

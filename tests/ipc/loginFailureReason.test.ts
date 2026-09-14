@@ -252,8 +252,10 @@ describe("loginFailureFamily places every token loginFailureReason can emit", ()
     "http-4xx": "unknown",
     "http-other": "unknown",
     "network-other": "unknown",
-    "secure-storage-unavailable": "unknown",
-    "no-system-password-store": "unknown",
+    // The two keyring messages: no store on this machine can hold a session, one fix for both.
+    "secure-storage-unavailable": "no-keyring",
+    "no-system-password-store": "no-keyring",
+    // Every other storage token stays out: a full disk is not a missing keyring.
     "storage-no-space": "unknown",
     "storage-permission": "unknown",
     "storage-locked": "unknown",
