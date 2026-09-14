@@ -52,7 +52,9 @@ export const IPC_CHANNELS = {
   },
   GAME_MANAGER: {
     EXECUTE_GAME: "execute-game",
-    LOOK_FOR_A_GAME_VERSION: "look-for-a-game-version"
+    LOOK_FOR_A_GAME_VERSION: "look-for-a-game-version",
+    GET_PLAY_SESSIONS: "get-play-sessions",
+    FORGET_PLAY_SESSIONS: "forget-play-sessions"
   },
   NET_MANAGER: {
     QUERY_URL: "query-url",

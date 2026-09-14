@@ -125,7 +125,9 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     gameManager: {
       executeGame: vi.fn(notMocked("gameManager.executeGame")),
-      lookForAGameVersion: vi.fn(async () => ({ exists: false as const }))
+      lookForAGameVersion: vi.fn(async () => ({ exists: false as const })),
+      getPlaySessions: vi.fn(async () => ({ ok: true as const, sessions: [] })),
+      forgetPlaySessions: vi.fn(notMocked("gameManager.forgetPlaySessions"))
     },
     netManager: {
       queryURL: vi.fn(notMocked("netManager.queryURL")),
