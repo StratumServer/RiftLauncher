@@ -145,7 +145,11 @@ describe("detectInstalledGameVersion probe interpretation", () => {
 
     const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
 
-    assert.deepEqual(result, { ok: true, version: "1.21.1" }, "0.3.14 is Optimum's own version and 1.9.2-4f0ab21c73 is a mod archive stem; only the game prints a version on a line of its own")
+    assert.deepEqual(
+      result,
+      { ok: true, version: "1.21.1", variant: { name: "Optimum", version: "0.3.14" } },
+      "0.3.14 is Optimum's own version and 1.9.2-4f0ab21c73 is a mod archive stem; only the game prints a version on a line of its own"
+    )
   })
 
   it("keeps a pre-release version whole", async () => {
@@ -230,5 +234,104 @@ describe("detectInstalledGameVersion probe interpretation", () => {
 
     assert.equal(requests.length, 1)
     assert.deepEqual(trace, [`probe:${FOLDER}/Vintagestory -v`])
+  })
+})
+
+/**
+ * A build that names itself.
+ *
+ * The transcript here is the shape Optimum prints on the `-v` path: its own
+ * chatter line, the long game version its IL patch appends the marker to, and
+ * the bare game version the client prints last.
+ */
+const OPTIMUM_TRANSCRIPT = ["[Optimum] Optimum v0.3.14", "1.22.7 + Optimum v0.3.14", "1.22.7", ""].join("\n")
+
+describe("detectInstalledGameVersion build variant", () => {
+  it("reads Optimum's own version off the marker, beside the game version", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: OPTIMUM_TRANSCRIPT })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7", variant: { name: "Optimum", version: "0.3.14" } })
+  })
+
+  it("never lets the marker version stand in as the game version", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: OPTIMUM_TRANSCRIPT })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.equal(result.ok && result.version, "1.22.7", "0.3.14 is printed first and on a line of its own it is not; the game version is the one printed bare")
+  })
+
+  it("leaves the variant key off a vanilla transcript entirely", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "1.22.7\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7" })
+    assert.equal("variant" in result, false, "absent, not present and undefined: nothing downstream has to tell the two apart")
+  })
+
+  it("does not take a file named Optimum as a build that is one", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "1.22.7\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input({ fileNames: ["Vintagestory", "Optimum"] }))
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7" }, "the packaging script copies file names around; the patched DLL is what prints the marker")
+  })
+
+  it("keeps the game version and drops the variant when the marker carries no readable version", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "[Optimum] Optimum vtrunk\n1.22.7\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7" })
+  })
+
+  it("reports an unreadable version rather than a variant when the probe printed no version at all", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "[Optimum] Optimum v01.02.03\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: false, reason: "unreadable-version" }, "a variant never substitutes for the number the compatibility checks run on")
+  })
+
+  it("refuses a marker version the version grammar accepts and semver does not", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "[Optimum] Optimum v01.02.03\n1.22.7\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7" })
+    assert.equal("variant" in result, false, "leading zeros parse as three dotted numbers and are not a version anyone can order")
+  })
+
+  it("keeps the game version off the marker when nothing is printed on a line of its own", async () => {
+    // What the client prints when it answers -v while the patch path is running:
+    // the fork's own number comes first, and no line holds a bare version.
+    const stdout = ["[Optimum] Optimum v0.3.14", "[Optimum] Patching VintagestoryLib.dll", "1.22.7 + Optimum v0.3.14", ""].join("\n")
+    const { processProbe } = fakeProbe({ ok: true, stdout })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7", variant: { name: "Optimum", version: "0.3.14" } }, "0.3.14 is printed first and is still not the game version")
+  })
+
+  it("stays unreadable when the marker is the only version in the output", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "[Optimum] Optimum v0.3.14\nno version here\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: false, reason: "unreadable-version" }, "the fork naming itself is not the game answering")
+  })
+
+  it("reads the long version suffix on its own, which is what a warm cache leaves", async () => {
+    // On a cache hit the patch path never runs, so the chatter line is absent and
+    // the documented LongGameVersion suffix is the only signal left.
+    const stdout = ["[Optimum] Cache valid (12ms). Launching...", "1.22.7 + Optimum v0.3.14", ""].join("\n")
+    const { processProbe } = fakeProbe({ ok: true, stdout })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7", variant: { name: "Optimum", version: "0.3.14" } })
   })
 })
