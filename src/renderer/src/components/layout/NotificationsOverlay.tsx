@@ -177,7 +177,14 @@ function NotificationsOverlay(): JSX.Element {
                 {ICON_TYPES[record.type]}
               </span>
               <div className="flex flex-col items-start justify-center gap-2 min-w-0">
-                <p className="text-xs text-zinc-400 break-words">{record.body}</p>
+                <p className="text-xs text-zinc-400 break-words">
+                  {record.body}
+                  {/* Not hidden from a screen reader: the polite region announces the banner again
+                      when the count changes, and the count is the whole of what is new about it. */}
+                  {record.repeats > 1 && (
+                    <span className="ml-1 px-1 rounded-full bg-zinc-800 text-[10px] leading-4 text-zinc-300 tabular-nums">{t("notifications.repeats", { count: record.repeats })}</span>
+                  )}
+                </p>
                 {record.options?.actions && record.options.actions.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
                     {record.options.actions.map((action, index) => {

@@ -32,6 +32,7 @@ function Controls(): JSX.Element {
       <button onClick={() => addNotification("Only a toast", "info", { presentation: "toast" })}>Add toast only</button>
       <button onClick={() => addNotification("A fourth message", "info")}>Add fourth</button>
       <button onClick={() => addNotification("A fifth message", "info")}>Add fifth</button>
+      <button onClick={() => addNotification("A quiet centered notice", "info", { presentation: "center" })}>Add centered notice</button>
       <button onClick={() => addNotification("A decision is required", "warning", { actions: [{ id: "resolve", label: "Resolve" }] })}>Add actionable warning</button>
       <button onClick={() => void startDownload("Example download", "An active download", TASK_NOTIFICATION_POLICIES.individual, "https://example.test/file", "/tmp", "file.zip", () => {})}>
         Start task
@@ -117,7 +118,7 @@ describe("ActivityCenter", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start task" }))
     fireEvent.click(screen.getByRole("button", { name: "Start task" }))
     fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
-    fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add fourth" }))
 
     expect(screen.getByRole("button", { name: "Activity Center: 2 active tasks, 2 new notifications" })).toBeTruthy()
   })
@@ -1169,6 +1170,135 @@ describe("Activity Center keyboard reach", () => {
  * #390: a failed row said "This task stopped before it finished" for every failure it could
  * possibly show, while the thing that failed knew perfectly well why.
  */
+/**
+ * #391: toggling a mod off and straight back on, or a retry that fails the same way twice, put
+ * the same sentence on screen twice and spent two of the stack's three places on one word.
+ */
+describe("a repeated message folds into the banner already up", () => {
+  it("keeps one banner, wearing the count, instead of two saying the same thing", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <ActiveToastProbe />
+        <NotificationsOverlay />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+
+    expect(stack()).toEqual(["Something went wrong"])
+    expect(screen.getAllByRole("button", { name: "Discard notification" })).toHaveLength(1)
+    expect(screen.getByText("x2")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+    expect(screen.getByText("x3")).toBeTruthy()
+  })
+
+  it("wears no count at all the first time a message arrives", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <NotificationsOverlay />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+    expect(screen.queryByText(/^x\d+$/)).toBeNull()
+  })
+
+  it("gives the banner a fresh turn, because the repeat arrived just now", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+      act(() => vi.advanceTimersByTime(4_000))
+      fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+
+      // Without the restart the fold would have swallowed the second message and let the banner
+      // go at 4.5s, half a second after the player was told about it.
+      act(() => vi.advanceTimersByTime(3_000))
+      expect(stack()).toEqual(["A successful action"])
+      act(() => vi.advanceTimersByTime(2_000))
+      expect(stack()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("folds into one still waiting behind a full stack rather than queueing it twice", () => {
+    installMockWindowApi()
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    act(() => {
+      for (const body of ["first", "second", "third"]) result.current.addNotification(body, "info")
+      result.current.addNotification("waiting", "info")
+      result.current.addNotification("waiting", "info")
+    })
+
+    // Three on screen and one waiting, which is the one record the two identical adds made.
+    expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["first", "second", "third"])
+    expect(result.current.history.map((record) => record.body)).toEqual(["first", "second", "third", "waiting"])
+    expect(result.current.history.at(-1)?.repeats).toBe(2)
+
+    act(() => result.current.dismissToast(result.current.activeToasts[0]!.record.id))
+    expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["second", "third", "waiting"])
+  })
+
+  it("never folds a question, because two questions are two answers owed", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <ActiveToastProbe />
+        <NotificationsOverlay />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add actionable warning" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add actionable warning" }))
+
+    expect(stack()).toEqual(["A decision is required", "A decision is required"])
+    expect(screen.getAllByRole("button", { name: "Resolve" })).toHaveLength(2)
+  })
+
+  it("keeps both entries in the center, which is history and is meant to hold them", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add centered notice" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add centered notice" }))
+    openCenter()
+
+    expect(within(panel()).getAllByText("A quiet centered notice")).toHaveLength(2)
+  })
+})
+
 describe("a failed row names its cause", () => {
   it("says the connection failed on a download the network killed, and repeats it on the message", async () => {
     installMockWindowApi({

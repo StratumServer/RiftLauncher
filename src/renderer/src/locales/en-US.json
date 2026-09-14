@@ -748,7 +748,8 @@
       "updateNow": "Update now",
       "notNow": "Not now"
     },
-    "discard": "Discard notification"
+    "discard": "Discard notification",
+    "repeats": "x{{count}}"
   },
   "breadcrumbs": {
     "mods": "Mods",

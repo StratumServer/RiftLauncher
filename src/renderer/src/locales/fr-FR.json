@@ -748,7 +748,8 @@
       "updateNow": "Mettre à jour maintenant",
       "notNow": "Pas maintenant"
     },
-    "discard": "Ignorer la notification"
+    "discard": "Ignorer la notification",
+    "repeats": "x{{count}}"
   },
   "breadcrumbs": {
     "mods": "Mods",
