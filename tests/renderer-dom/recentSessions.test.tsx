@@ -192,6 +192,17 @@ describe("Recent sessions", () => {
     expect(api.gameManager.forgetPlaySessions).toHaveBeenCalledWith("install-a")
   })
 
+  it("reads the file again as soon as the game stops running", async () => {
+    const api = installMockWindowApi({ gameManager: { getPlaySessions: vi.fn(async () => ({ ok: true as const, sessions: [aSession()] })) } })
+    const { rerender } = renderWithProviders(<RecentSessionsSection installationId="install-a" isPlaying measuring />)
+
+    await waitFor(() => expect(api.gameManager.getPlaySessions).not.toHaveBeenCalled())
+
+    rerender(<RecentSessionsSection installationId="install-a" isPlaying={false} measuring />)
+
+    expect(await screen.findByTitle("Open this session")).toBeTruthy()
+  })
+
   it("does not read the file again while the game is still running", async () => {
     const api = mountWith({ ok: true, sessions: [] }, { isPlaying: true })
 

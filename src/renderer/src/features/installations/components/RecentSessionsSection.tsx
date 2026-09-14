@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
+import { PiEraserDuotone } from "react-icons/pi"
 
 import { MAX_SESSIONS_PER_INSTALLATION, peakRssBytes } from "@domain/sessions/sampling"
 import { steadyClimbVerdict } from "@domain/sessions/steadyClimb"
@@ -62,7 +63,7 @@ export function RecentSessionsSection({ installationId, isPlaying, measuring }: 
           <FormFieldDescription content={t("features.sessions.whatThisIs")} />
 
           <div className="w-full flex justify-end">
-            <FormButton onClick={forget} title={t("features.sessions.forget")} variant="secondary" size="sm" />
+            <FormButton onClick={forget} title={t("features.sessions.forget")} variant="secondary" size="sm" icon={<PiEraserDuotone />} />
           </div>
         </div>
       )}
@@ -71,11 +72,17 @@ export function RecentSessionsSection({ installationId, isPlaying, measuring }: 
         <>
           {openSession && (
             <div className="w-full max-w-[40rem] flex flex-col gap-2 text-left">
+              {/*
+                The date sits beside the sentence rather than inside it: i18next escapes what it
+                interpolates and a date carries slashes, which would reach the page as entities.
+                Every other date in the launcher is printed straight into the markup for the same
+                reason.
+              */}
               <p className="text-sm text-zinc-200">
-                {t("features.sessions.ranFor", {
-                  duration: formatDuration(openSession.endedAt - openSession.startedAt),
-                  ended: new Date(openSession.endedAt).toLocaleString(i18n.resolvedLanguage)
-                })}
+                {t("features.sessions.ranFor", { duration: formatDuration(openSession.endedAt - openSession.startedAt) })}{" "}
+                <span className="text-zinc-400">
+                  {t("features.sessions.ended")} {new Date(openSession.endedAt).toLocaleString(i18n.resolvedLanguage)}
+                </span>
               </p>
 
               <SessionMemoryChart session={openSession} />
