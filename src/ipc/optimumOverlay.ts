@@ -25,12 +25,10 @@ import { createReadStream } from "node:fs"
 import { join, relative, sep } from "node:path"
 
 import { type OptimumManifest } from "@domain/optimum/manifest"
+import { OPTIMUM_STATE_FOLDER } from "@domain/optimum/plan"
 
 /** The one file the archive carries that `files[]` never names: the walk that built the list ran before it was written. */
 const UNLISTED_ARCHIVE_FILE = "optimum-manifest.json"
-
-/** Where the patch records what it did, relative to the game folder. */
-export const OPTIMUM_STATE_FOLDER = ".optimum"
 
 const OPTIMUM_STATE_MANIFEST = join(OPTIMUM_STATE_FOLDER, "manifest.json")
 

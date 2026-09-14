@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
@@ -66,7 +66,12 @@ if (args[0] === "--version") {
   process.exit(mode === "no-runtime" ? 150 : 0)
 }
 
-if (mode === "hang") {
+if (mode === "hang" || mode === "grandchild") {
+  // The patcher the real CLI spawns per target: its own process, still writing
+  // into --game-dir long after the CLI stopped answering.
+  if (mode === "grandchild") {
+    require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(() => require('node:fs').writeFileSync(process.argv[1], 'written after the kill'), 1200)", path.join(gameDirectory, "grandchild-wrote-this.txt")], { stdio: "ignore" })
+  }
   process.on("SIGTERM", () => {})
   setInterval(() => {}, 1000)
   return
@@ -224,6 +229,19 @@ describe("runOptimumCli", () => {
     const result = await run("hang", { timeoutMs: 300 })
 
     assert.deepEqual(result, { ok: false, reason: "timed-out" })
+  })
+
+  it("kills the patcher processes the run spawned, not just the CLI", async () => {
+    // The CLI is one process and the patch is five: a SIGKILL aimed at the pid
+    // the launcher holds leaves the rest rewriting assemblies inside the game
+    // folder while the player is being told the patch was stopped.
+    const marker = join(gameDirectory, "grandchild-wrote-this.txt")
+
+    const result = await run("grandchild", { timeoutMs: 300 })
+
+    assert.deepEqual(result, { ok: false, reason: "timed-out" })
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+    assert.equal(existsSync(marker), false)
   })
 
   it("reports a refusal, not a success, when there is no CLI to spawn", async () => {

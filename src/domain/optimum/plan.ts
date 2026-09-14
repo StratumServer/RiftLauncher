@@ -20,6 +20,19 @@ export const OPTIMUM_MANIFEST_URL = "https://github.com/StratumServer/Optimum/re
 export const OPTIMUM_MANIFEST_FILE_NAME = "optimum-manifest.json"
 
 /**
+ * The folder a patched build keeps Optimum's own state in, and the folder under
+ * it holding the untouched assemblies.
+ *
+ * Spelled here rather than beside the verification passes because both sides
+ * need it: the main process restores out of it, and the VS Versions page asks
+ * whether it is there before offering to.
+ */
+export const OPTIMUM_STATE_FOLDER = ".optimum"
+
+/** Where the patch keeps its copy of the untouched assemblies, under {@link OPTIMUM_STATE_FOLDER}. */
+export const OPTIMUM_VANILLA_FOLDER = "vanilla"
+
+/**
  * The runtime identifier for a host, or undefined when Optimum publishes no
  * overlay for it.
  *

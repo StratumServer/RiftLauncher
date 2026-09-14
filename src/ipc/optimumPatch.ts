@@ -18,13 +18,14 @@
  * against a fake CLI from a plain test.
  */
 
-import { execFile } from "node:child_process"
-import type { ExecFileException } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
+import type { ChildProcess } from "node:child_process"
 import { createWriteStream } from "node:fs"
 import { join } from "node:path"
 
 import { createOptimumOutputReader, type OptimumRunResult } from "@domain/optimum/ndjson"
 import { cliFileName, patchArgs, rollbackArgs } from "@domain/optimum/plan"
+import { attemptInstallerTreeKill } from "@src/ipc/handlers/installerTimeoutOutcome"
 
 /**
  * Wall clock for one patch. Twenty minutes, because each of the four targets is
@@ -32,7 +33,7 @@ import { cliFileName, patchArgs, rollbackArgs } from "@domain/optimum/plan"
  * CLI's own worst case is just under this.
  *
  * Node sends SIGTERM at the bound, which the CLI traps into a clean `cancelled`
- * run, and {@link SIGKILL_GRACE_MS} later the process is killed outright if it
+ * run, and {@link SIGKILL_GRACE_MS} later the whole run is killed outright if it
  * is still there.
  */
 const PATCH_TIMEOUT_MS = 20 * 60 * 1_000
@@ -49,7 +50,7 @@ const SIGKILL_GRACE_MS = 30 * 1_000
 /** The preflight is one process printing one line. Ten seconds is generous for that and short enough not to look like a hang. */
 const VERSION_PROBE_TIMEOUT_MS = 10 * 1_000
 
-/** Ceiling on what the CLI may print. The protocol is a few hundred short lines; a megabyte is far past any of them. */
+/** Ceiling on what the CLI may print before the run is killed. The protocol is a few hundred short lines; a megabyte is far past any of them. */
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 
 /**
@@ -93,10 +94,24 @@ export interface OptimumRunOptions {
   platform?: string
 }
 
-/** The exit code a run left with, or undefined when it never got one (a spawn failure, a signal). */
-function exitCodeOf(error: ExecFileException | null): number | undefined {
-  if (!error) return 0
-  return typeof error.code === "number" ? error.code : undefined
+/**
+ * Kills the whole run rather than the one process the launcher spawned.
+ *
+ * Each of the four targets is its own `Optimum.Patcher` process, so signalling
+ * the CLI alone leaves grandchildren rewriting assemblies inside `--game-dir`
+ * after the launcher has already told the player the patch was stopped. The run
+ * is given a process group of its own (see `detached` below) so there is
+ * something to signal; Windows has no such group, and RUN_INSTALLER's own
+ * `taskkill /T /F` walk already covers that side.
+ */
+function killRunTree(child: ChildProcess, platform: string): void {
+  if (platform === "win32") return attemptInstallerTreeKill(child.pid, "win32", spawn, () => undefined)
+
+  try {
+    if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL")
+  } catch {
+    // The group is already gone, which is the outcome this was after anyway.
+  }
 }
 
 /**
@@ -131,43 +146,55 @@ export function runOptimumCli(options: OptimumRunOptions): Promise<OptimumRunRes
     const reader = createOptimumOutputReader(onProgress)
     const stderrLog = stderrLogPath ? createWriteStream(stderrLogPath, { flags: "a" }) : undefined
     let timedOut = false
+    let spawnFailed = false
+    let printed = 0
 
-    const child = execFile(
-      cli,
-      args,
-      {
-        cwd: overlayDirectory,
-        env: childEnvironment(),
-        shell: false,
-        windowsHide: true,
-        maxBuffer: MAX_OUTPUT_BYTES,
-        timeout: timeoutMs,
-        killSignal: "SIGTERM"
-      },
-      (error) => {
-        clearTimeout(killTimer)
-        stderrLog?.end()
-        resolvePromise(readRunOutcome(exitCodeOf(error), reader.finish(), timedOut))
-      }
-    )
+    // `spawn` rather than `execFile`, which drops the one option this run needs:
+    // `detached` gives the CLI a process group of its own, and without one the
+    // kill below reaches the CLI and none of the patchers it started.
+    const child = spawn(cli, args, {
+      cwd: overlayDirectory,
+      env: childEnvironment(),
+      shell: false,
+      windowsHide: true,
+      timeout: timeoutMs,
+      killSignal: "SIGTERM",
+      detached: platform !== "win32"
+    })
 
     // Node's own `timeout` sends SIGTERM and then waits forever. This is the
-    // second half of that: a CLI that trapped the signal and stopped answering
-    // is killed rather than left holding the run open.
+    // second half of that: a run that trapped the signal and stopped answering
+    // is killed rather than left holding the patch open.
     const killTimer = setTimeout(
       () => {
         timedOut = true
-        child.kill("SIGKILL")
+        killRunTree(child, platform)
       },
       timeoutMs + Math.min(SIGKILL_GRACE_MS, timeoutMs)
     )
 
-    child.on("exit", (_code, signal) => {
+    // A CLI that was never there fails to spawn and then closes like any other
+    // run: nothing was said, so the fold answers for it.
+    child.on("error", () => {
+      spawnFailed = true
+    })
+
+    child.on("close", (code, signal) => {
+      clearTimeout(killTimer)
+      stderrLog?.end()
       if (signal === "SIGTERM" || signal === "SIGKILL") timedOut = true
+      resolvePromise(readRunOutcome(spawnFailed || code === null ? undefined : code, reader.finish(), timedOut))
     })
 
     child.stdout?.setEncoding("utf8")
-    child.stdout?.on("data", (chunk: string) => reader.push(chunk))
+    child.stdout?.on("data", (chunk: string) => {
+      printed += chunk.length
+      // A run printing past the ceiling is not one the launcher keeps reading:
+      // the protocol is a few hundred short lines, and the fold drops all of it
+      // but a token either way.
+      if (printed > MAX_OUTPUT_BYTES) return killRunTree(child, platform)
+      reader.push(chunk)
+    })
     child.stderr?.setEncoding("utf8")
     child.stderr?.on("data", (chunk: string) => stderrLog?.write(chunk))
     // A stderr log that cannot be written is not worth failing a patch over.

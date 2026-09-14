@@ -109,14 +109,14 @@ describe("useOptimumActions", () => {
     })
 
     expect(applyOverlay).not.toHaveBeenCalled()
-    expect(await screen.findByText("Optimum couldn't be downloaded. The VS Version is installed, so you can add Optimum to it later.")).toBeTruthy()
+    expect(await screen.findByText("Optimum couldn't be downloaded, so nothing on this VS Version was changed. You can try again from this page.")).toBeTruthy()
   })
 
   for (const [reason, sentence] of [
     ["runtime-missing", "Optimum needs the .NET 10 runtime, which isn't installed on this computer."],
     ["overlay-unverified", "What was downloaded doesn't match what Optimum published, so nothing was run."],
     ["patch-conflict", "Optimum couldn't patch this VS Version."],
-    ["timed-out", "Applying Optimum stopped before it finished. The VS Version was left as it was."],
+    ["timed-out", "Applying Optimum stopped before it finished, so this VS Version may hold a mix of files. Install it again before you play it."],
     ["unsupported-version", "Optimum has no build for this version yet."]
   ] as const) {
     it(`turns ${reason} into its own line`, async () => {
@@ -134,6 +134,56 @@ describe("useOptimumActions", () => {
       expect(result.current.versions[0]?.variant).toBeUndefined()
     })
   }
+
+  it("marks the build as being written to for as long as the patch runs", async () => {
+    // Play, Delete and a second patch all read this flag. Without it the row is
+    // live for the twenty minutes a patch can take to rewrite four assemblies.
+    let finishPatch: (result: OptimumPatchResult) => void = () => {}
+    const { result } = mountWith({
+      pathsManager: { downloadOnPath: vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz") },
+      optimumManager: { applyOverlay: vi.fn(() => new Promise<OptimumPatchResult>((resolve) => (finishPatch = resolve))) },
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7", variant: { name: "Optimum" as const, version: "0.3.14" } })) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    let applied: Promise<boolean> = Promise.resolve(false)
+    await act(async () => {
+      applied = result.current.actions.applyOptimum(TARGET, MANIFEST)
+    })
+
+    expect(result.current.versions[0]?._installing).toBe(true)
+
+    await act(async () => {
+      finishPatch({ ok: true })
+      await applied
+    })
+
+    expect(result.current.versions[0]?._installing).toBeUndefined()
+  })
+
+  it("puts the row back to the plain version when the patch was rolled back", async () => {
+    const { result } = mountWith({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({ gameVersions: [{ id: "gv-1", version: "1.22.7", label: "1.22.7 Optimum 0.3.14", path: "/versions/1.22.7", variant: { name: "Optimum", version: "0.3.14" } }] })
+        )
+      },
+      pathsManager: { downloadOnPath: vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz") },
+      optimumManager: { applyOverlay: vi.fn(async () => ({ ok: false, reason: "timed-out", rolledBack: true }) as OptimumPatchResult) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.actions.applyOptimum(TARGET, MANIFEST)
+    })
+
+    // The update ran against a build that already carried 0.3.14 and the folder
+    // is vanilla again, so a row still reading as Optimum would name a version
+    // that is no longer on disk.
+    expect(await screen.findByText("Applying Optimum didn't finish, so the original game files were put back.")).toBeTruthy()
+    expect(result.current.versions[0]).toMatchObject({ label: "1.22.7" })
+    expect(result.current.versions[0]?.variant).toBeUndefined()
+  })
 
   it("says the build carries no backup rather than pretending a restore happened", async () => {
     const { result } = mountWith({

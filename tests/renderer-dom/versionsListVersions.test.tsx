@@ -461,10 +461,15 @@ describe("ListVersions", () => {
       }
     }
 
-    function withRows(gameVersions: (Pick<GameVersionType, "version" | "path"> & Partial<GameVersionType>)[], manifest: OptimumManifestResult): void {
-      installMockWindowApi({
+    function withRows(
+      gameVersions: (Pick<GameVersionType, "version" | "path"> & Partial<GameVersionType>)[],
+      manifest: OptimumManifestResult,
+      overrides: Parameters<typeof installMockWindowApi>[0] = {}
+    ): ReturnType<typeof installMockWindowApi> {
+      return installMockWindowApi({
         configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions })) },
-        optimumManager: { getManifest: vi.fn(async () => manifest) }
+        optimumManager: { getManifest: vi.fn(async () => manifest) },
+        ...overrides
       })
     }
 
@@ -539,6 +544,75 @@ describe("ListVersions", () => {
 
       expect(screen.queryByTitle("Update Optimum to 0.3.14")).toBeNull()
       expect(screen.getByTitle("Remove Optimum")).toBeTruthy()
+    })
+
+    it("offers Optimum on a plain build the published overlay covers, and applies it", async () => {
+      // The download-failure line tells the player they can try again from this
+      // page, which is only true if a plain row carries the action at all.
+      const user = userEvent.setup()
+      const applyOverlay = vi.fn(async () => ({ ok: true }) as OptimumPatchResult)
+      const api = withRows([{ version: "1.22.7", path: "/versions/plain" }], { ok: true, manifest: anOptimumManifest() }, { optimumManager: { applyOverlay } })
+      api.optimumManager.getManifest = vi.fn(async () => ({ ok: true as const, manifest: anOptimumManifest() }))
+      api.pathsManager.downloadOnPath = vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz")
+
+      renderList()
+      await user.click(await screen.findByTitle("Add Optimum 0.3.14"))
+
+      await waitFor(() => expect(applyOverlay).toHaveBeenCalledWith(expect.any(String), "/versions/plain", "1.22.7"))
+    })
+
+    it("offers nothing on a plain build the published overlay was not made for", async () => {
+      withRows([{ version: "1.21.0", path: "/versions/old" }], { ok: true, manifest: anOptimumManifest() })
+
+      renderList()
+      await screen.findByText("1.21.0")
+
+      expect(screen.queryByTitle("Add Optimum 0.3.14")).toBeNull()
+      expect(screen.queryByTitle("Remove Optimum")).toBeNull()
+    })
+
+    it("offers Remove whenever the folder still holds the original files, registered as Optimum or not", async () => {
+      // A patch that ran and then failed the launcher's own reading of the folder
+      // leaves the four originals in .optimum/vanilla and the row unregistered.
+      // Gating the action on the variant is what left that folder with no way back.
+      withRows(
+        [{ version: "1.22.7", path: "/versions/unregistered" }],
+        { ok: true, manifest: anOptimumManifest() },
+        {
+          pathsManager: { checkPathExists: vi.fn(async (path: string) => path === "/versions/unregistered/.optimum/vanilla") }
+        }
+      )
+
+      renderList()
+      await screen.findByText("1.22.7")
+
+      expect(await screen.findByTitle("Remove Optimum")).toBeTruthy()
+    })
+
+    it("refuses to delete a build while the launcher is patching it", async () => {
+      const user = userEvent.setup()
+      let finishPatch: () => void = () => {}
+      const api = withRows([{ version: "1.22.7", path: "/versions/optimum", label: "1.22.7 Optimum 0.3.13", variant: { name: "Optimum", version: "0.3.13" } }], {
+        ok: true,
+        manifest: anOptimumManifest()
+      })
+      api.pathsManager.downloadOnPath = vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz")
+      api.optimumManager.applyOverlay = vi.fn(
+        (): Promise<OptimumPatchResult> =>
+          new Promise<OptimumPatchResult>((resolve) => {
+            finishPatch = (): void => resolve({ ok: true })
+          })
+      )
+      api.gameManager.lookForAGameVersion = vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7", variant: { name: "Optimum" as const, version: "0.3.14" } }))
+
+      renderList()
+      await user.click(await screen.findByTitle("Update Optimum to 0.3.14"))
+
+      const deleteButton = (): HTMLButtonElement => screen.getByRole("button", { name: "Delete Version" }) as HTMLButtonElement
+      await waitFor(() => expect(deleteButton().disabled).toBe(true))
+
+      finishPatch()
+      await waitFor(() => expect(deleteButton().disabled).toBe(false))
     })
 
     it("says plainly what removing Optimum does, and does nothing until it is confirmed", async () => {

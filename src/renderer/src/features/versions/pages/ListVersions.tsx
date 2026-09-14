@@ -15,7 +15,7 @@ import {
 import { useTranslation } from "react-i18next"
 
 import { MAX_GAME_VERSION_LABEL_LENGTH } from "@domain/naming"
-import { isUpdateAvailable } from "@domain/optimum/plan"
+import { isUpdateAvailable, supportsGameVersion } from "@domain/optimum/plan"
 import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { CONFIG_ACTIONS, useConfigDispatch, useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -23,6 +23,7 @@ import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUn
 import { useOpenVersionFolder } from "@renderer/features/versions/hooks/useOpenVersionFolder"
 import { summarizeUsedByInstallations } from "@renderer/features/versions/adapters/uninstall"
 import { useOptimumActions } from "@renderer/features/versions/hooks/useOptimumActions"
+import { useOptimumBackups } from "@renderer/features/versions/hooks/useOptimumBackups"
 import { useOptimumManifest } from "@renderer/features/versions/hooks/useOptimumManifest"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
@@ -48,6 +49,7 @@ function ListVersions(): JSX.Element {
   const uninstallVersion = useUninstallGameVersion()
   const openVersionFolder = useOpenVersionFolder()
   const optimum = useOptimumManifest()
+  const optimumBackups = useOptimumBackups(gameVersions)
   const { applyOptimum, restoreVanilla } = useOptimumActions()
 
   const [versionToDelete, setVersionToDelete] = useState<GameVersionType | null>(null)
@@ -91,15 +93,22 @@ function ListVersions(): JSX.Element {
   }
 
   /**
-   * Whether a newer overlay is published that still covers this row's game
-   * version. Both halves matter: a newer Optimum that dropped 1.22.7 is not an
-   * update for a 1.22.7 build, it is an overlay for a build nobody has here.
+   * What the published overlay is good for on this row, if anything.
+   *
+   * `add` for a plain build the overlay was published for, which is what makes
+   * "you can try again from this page" true after a download that failed partway
+   * through an install. `update` when the row already reads as Optimum and a
+   * newer overlay still covers that game version: both halves matter, since a
+   * newer Optimum that dropped 1.22.7 is not an update for a 1.22.7 build, it is
+   * an overlay for a build nobody has here.
    */
-  function optimumUpdateAvailable(version: GameVersionType): boolean {
-    return version.variant !== undefined && optimum.manifest !== undefined && isUpdateAvailable(version.variant.version, version.version, optimum.manifest)
+  function optimumActionFor(version: GameVersionType): "add" | "update" | undefined {
+    if (!optimum.manifest) return undefined
+    if (!version.variant) return supportsGameVersion(optimum.manifest, version.version) ? "add" : undefined
+    return isUpdateAvailable(version.variant.version, version.version, optimum.manifest) ? "update" : undefined
   }
 
-  async function UpdateOptimumHandler(version: GameVersionType): Promise<void> {
+  async function ApplyOptimumHandler(version: GameVersionType): Promise<void> {
     if (!optimum.manifest) return
     await applyOptimum({ id: version.id, path: version.path, version: version.version }, optimum.manifest)
   }
@@ -175,60 +184,69 @@ function ListVersions(): JSX.Element {
             {gameVersions
               .slice()
               .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
-              .map((gv) => (
-                <ListItem key={gv.id}>
-                  <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
-                    <div className="w-full flex items-center justify-center text-start font-bold pl-1">
-                      <p className="w-full">{gv.label}</p>
-                    </div>
+              .map((gv) => {
+                const optimumAction = optimumActionFor(gv)
+                // Everything that writes into the folder, or launches out of it,
+                // is refused while the launcher is writing into it itself.
+                const busy = gv._installing === true
 
-                    <ThinSeparator />
+                return (
+                  <ListItem key={gv.id}>
+                    <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
+                      <div className="w-full flex items-center justify-center text-start font-bold pl-1">
+                        <p className="w-full">{gv.label}</p>
+                      </div>
 
-                    <div className="shrink-0 w-fit flex gap-1 items-center text-lg">
-                      {gv.linked && <PiLinkDuotone className="p-1" title={t("features.versions.linkedVersion")} />}
-                      {optimumUpdateAvailable(gv) && (
+                      <ThinSeparator />
+
+                      <div className="shrink-0 w-fit flex gap-1 items-center text-lg">
+                        {gv.linked && <PiLinkDuotone className="p-1" title={t("features.versions.linkedVersion")} />}
+                        {optimumAction && (
+                          <NormalButton
+                            className="p-1"
+                            title={t(optimumAction === "add" ? "features.versions.addOptimum" : "features.versions.updateOptimumTo", { version: optimum.manifest?.optimumVersion ?? "" })}
+                            variant="ghost"
+                            disabled={busy}
+                            onClick={() => ApplyOptimumHandler(gv)}
+                          >
+                            <PiArrowCircleUpDuotone />
+                          </NormalButton>
+                        )}
+                        {(gv.variant || optimumBackups.has(gv.id)) && (
+                          <NormalButton className="p-1" title={t("features.versions.restoreVanilla")} variant="ghost" disabled={busy} onClick={() => setVersionToRestore(gv)}>
+                            <PiArrowUUpLeftDuotone />
+                          </NormalButton>
+                        )}
+                        <NormalButton onClick={() => openVersionFolder(gv.path)} title={`${t("generic.openOnFileExplorer")} · ${gv.path}`} variant="ghost" className="p-1">
+                          <PiFolderOpenDuotone />
+                        </NormalButton>
                         <NormalButton
                           className="p-1"
-                          title={t("features.versions.updateOptimumTo", { version: optimum.manifest?.optimumVersion ?? "" })}
+                          title={t("features.versions.renameVersion")}
                           variant="ghost"
-                          onClick={() => UpdateOptimumHandler(gv)}
+                          onClick={() => {
+                            setNewLabel(gv.label)
+                            setVersionToRename(gv)
+                          }}
                         >
-                          <PiArrowCircleUpDuotone />
+                          <PiPencilSimpleDuotone />
                         </NormalButton>
-                      )}
-                      {gv.variant && (
-                        <NormalButton className="p-1" title={t("features.versions.restoreVanilla")} variant="ghost" onClick={() => setVersionToRestore(gv)}>
-                          <PiArrowUUpLeftDuotone />
+                        <NormalButton
+                          className="p-1"
+                          title={gv.linked ? t("features.versions.removeFromList") : t("features.versions.deleteVersion")}
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={async () => {
+                            setVersionToDelete(gv)
+                          }}
+                        >
+                          <PiTrashDuotone />
                         </NormalButton>
-                      )}
-                      <NormalButton onClick={() => openVersionFolder(gv.path)} title={`${t("generic.openOnFileExplorer")} · ${gv.path}`} variant="ghost" className="p-1">
-                        <PiFolderOpenDuotone />
-                      </NormalButton>
-                      <NormalButton
-                        className="p-1"
-                        title={t("features.versions.renameVersion")}
-                        variant="ghost"
-                        onClick={() => {
-                          setNewLabel(gv.label)
-                          setVersionToRename(gv)
-                        }}
-                      >
-                        <PiPencilSimpleDuotone />
-                      </NormalButton>
-                      <NormalButton
-                        className="p-1"
-                        title={gv.linked ? t("features.versions.removeFromList") : t("features.versions.deleteVersion")}
-                        variant="ghost"
-                        onClick={async () => {
-                          setVersionToDelete(gv)
-                        }}
-                      >
-                        <PiTrashDuotone />
-                      </NormalButton>
+                      </div>
                     </div>
-                  </div>
-                </ListItem>
-              ))}
+                  </ListItem>
+                )
+              })}
           </ListGroup>
         </ListWrapper>
 

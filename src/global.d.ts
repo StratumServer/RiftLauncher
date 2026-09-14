@@ -716,7 +716,13 @@ declare global {
     | "backup-missing"
     | "restore-failed"
 
-  type OptimumPatchResult = { ok: true } | { ok: false; reason: OptimumPatchFailureReason }
+  /**
+   * `rolledBack` says the folder was put back to its vanilla assemblies out of
+   * the patch's own backup after the run failed. It is the difference between a
+   * build that is simply unpatched and one holding two overlay versions at
+   * once, and it is what the sentence the player reads is chosen on.
+   */
+  type OptimumPatchResult = { ok: true } | { ok: false; reason: OptimumPatchFailureReason; rolledBack?: boolean }
 
   declare module "*.png" {
     const value: string

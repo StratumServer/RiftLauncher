@@ -41,9 +41,15 @@ export function describeOptimumManifestFailure(reason: OptimumManifestFailureRea
  * player acts on differently. The ones that are kept apart are the ones that
  * point at something they can do: install a runtime, pick another version, try
  * again later.
+ *
+ * A run the launcher rolled back afterwards is one line whatever stopped it.
+ * What a player needs from that sentence is the state of their build, and every
+ * one of those runs ends the same way: the original game files are back.
  */
-export function describeOptimumFailure(reason: OptimumPatchFailureReason): OptimumFailureFeedback {
-  switch (reason) {
+export function describeOptimumFailure(failure: { reason: OptimumPatchFailureReason; rolledBack?: boolean }): OptimumFailureFeedback {
+  if (failure.rolledBack) return { messageKey: "features.versions.optimumRolledBack", logged: true }
+
+  switch (failure.reason) {
     case "runtime-missing":
       return { messageKey: "features.versions.optimumRuntimeMissing", logged: false }
     case "unsupported-version":

@@ -11,8 +11,8 @@ import fse from "fs-extra"
 import { join } from "node:path"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
-import { cliFileName, supportsGameVersion } from "@domain/optimum/plan"
-import { OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_STATE_FOLDER, sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
+import { cliFileName, OPTIMUM_STATE_FOLDER, OPTIMUM_VANILLA_FOLDER, supportsGameVersion } from "@domain/optimum/plan"
+import { OPTIMUM_CONTRACTS_ASSEMBLY, sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
 import { isOptimumRuntimeAvailable, runOptimumCli } from "@src/ipc/optimumPatch"
 import { runExtraction } from "@src/ipc/workers/extraction"
 
@@ -34,9 +34,9 @@ const VANILLA_BACKUPS = [
 ] as const
 
 /** Where the patch keeps its copy of the untouched assemblies, relative to the game folder. */
-const VANILLA_FOLDER = join(OPTIMUM_STATE_FOLDER, "vanilla")
+const VANILLA_FOLDER = join(OPTIMUM_STATE_FOLDER, OPTIMUM_VANILLA_FOLDER)
 
-function refuse(reason: OptimumPatchFailureReason): OptimumPatchResult {
+function refuse(reason: OptimumPatchFailureReason): { ok: false; reason: OptimumPatchFailureReason } {
   return { ok: false, reason }
 }
 
@@ -144,11 +144,30 @@ export async function applyOptimumOverlay(options: ApplyOverlayOptions): Promise
   if (!(await isOptimumRuntimeAvailable(overlayDirectory, platform))) return refuse("runtime-missing")
 
   const run = await runOptimumCli({ overlayDirectory, gameDirectory, mode: "patch", stderrLogPath, onProgress, platform })
-  if (!run.ok) return run
+  if (!run.ok) return rollBackFailedRun(gameDirectory, run)
 
-  if (!(await verifyPatchedOutput(gameDirectory, manifest))) return refuse("output-unverified")
+  if (!(await verifyPatchedOutput(gameDirectory, manifest))) return rollBackFailedRun(gameDirectory, refuse("output-unverified"))
 
   return { ok: true }
+}
+
+/**
+ * Puts a folder back after a run that did not finish.
+ *
+ * The patch replaces the four assemblies one at a time and backs each one up
+ * before it does, so a run that stopped partway leaves a build carrying two
+ * overlay versions at once and a `.optimum/manifest.json` that matches neither.
+ * The launcher owns that backup already, so the honest answer to a failed run is
+ * to use it rather than to report that the build was left as it was.
+ *
+ * The reason the run gave is what the player is told either way. `rolledBack`
+ * only says which sentence is true about the folder afterwards, and a build with
+ * no backup to restore from (a run that failed before it wrote anything) keeps
+ * the plain refusal.
+ */
+async function rollBackFailedRun(gameDirectory: string, failure: { ok: false; reason: OptimumPatchFailureReason }): Promise<OptimumPatchResult> {
+  const restored = await restoreVanillaBuild(gameDirectory)
+  return restored.ok ? { ...failure, rolledBack: true } : failure
 }
 
 /**

@@ -57,7 +57,7 @@ if (mode.startsWith("fail:")) {
 }
 
 const assemblies = ${ASSEMBLIES}
-const written = mode === "short" ? assemblies.slice(0, 1) : assemblies
+const written = mode === "short" || mode === "half" ? assemblies.slice(0, 1) : assemblies
 fs.mkdirSync(path.join(gameDirectory, ".optimum", "vanilla", "Mods"), { recursive: true })
 const records = []
 for (const assembly of assemblies) {
@@ -73,6 +73,13 @@ for (const assembly of assemblies) {
 fs.writeFileSync(path.join(gameDirectory, "Optimum.Api.Contracts.dll"), "contracts")
 fs.writeFileSync(path.join(gameDirectory, ".optimum", "version"), "0.3.14")
 fs.writeFileSync(path.join(gameDirectory, ".optimum", "manifest.json"), JSON.stringify({ optimumVersion: "0.3.14", patchedAtUtc: "2026-09-14T00:00:00Z", gameDirectory, targets: records }))
+
+// The run that stops partway: the backups are taken, one assembly is replaced
+// and the rest are not, which is the folder a killed or conflicted patch leaves.
+if (mode === "half") {
+  line({ type: "result", ok: false, reason: "patch-conflict", message: gameDirectory })
+  process.exit(1)
+}
 
 line({ type: "progress", phase: "verify", progress: 99, detail: gameDirectory })
 line({ type: "result", ok: true, runtimePath: gameDirectory })
@@ -262,8 +269,29 @@ describe("applyOptimumOverlay", () => {
     assert.deepEqual(await apply(buildOverlay({ cliMode: "fail:patch-conflict" })), { ok: false, reason: "patch-conflict" })
   })
 
-  it("refuses the half patch that still exits 0", async () => {
-    assert.deepEqual(await apply(buildOverlay({ cliMode: "short" })), { ok: false, reason: "output-unverified" })
+  it("refuses the half patch that still exits 0, and puts the build back", async () => {
+    assert.deepEqual(await apply(buildOverlay({ cliMode: "short" })), { ok: false, reason: "output-unverified", rolledBack: true })
+    assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
+  })
+
+  it("puts the assemblies back when the run stops partway, rather than leaving two overlays in one folder", async () => {
+    // What a killed patch leaves: one assembly replaced, three not, and a state
+    // file recording an overlay version that matches neither. Saying the build
+    // was left as it was is only true if it was put back.
+    const result = await apply(buildOverlay({ cliMode: "half" }))
+
+    assert.deepEqual(result, { ok: false, reason: "patch-conflict", rolledBack: true })
+    assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
+    assert.equal(readFileSync(join(gameDirectory, "Mods", "VSEssentials.dll"), "utf8"), "vanilla essentials")
+    assert.equal(existsSync(join(gameDirectory, ".optimum")), false)
+    assert.equal(existsSync(join(gameDirectory, "Optimum.Api.Contracts.dll")), false)
+  })
+
+  it("keeps the plain refusal when the run failed before it wrote anything", async () => {
+    // Nothing was replaced and nothing was backed up, so there is nothing to put
+    // back and nothing to claim about it.
+    assert.deepEqual(await apply(buildOverlay({ cliMode: "fail:source-unavailable" })), { ok: false, reason: "source-unavailable" })
+    assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
   })
 })
 

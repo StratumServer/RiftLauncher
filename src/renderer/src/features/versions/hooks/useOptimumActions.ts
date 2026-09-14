@@ -45,17 +45,40 @@ export function useOptimumActions(): OptimumActions {
   const { startDownload, startOptimumPatch } = useTaskContext()
   const configDispatch = useConfigDispatch()
 
-  function refuse(reason: OptimumPatchFailureReason): false {
-    const { messageKey, logged } = describeOptimumFailure(reason)
+  function refuse(failure: { reason: OptimumPatchFailureReason; rolledBack?: boolean }): false {
+    const { messageKey, logged } = describeOptimumFailure(failure)
     if (logged) {
       window.api.utils.logMessage("error", `${LOG_TAG} Optimum was not applied.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Optimum was not applied: ${reason}.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Optimum was not applied: ${failure.reason}.`)
     }
     addNotification(t(messageKey), "error")
     return false
   }
 
+  /**
+   * Marks the build as being written to, the same way installing one does.
+   *
+   * A patch rewrites four assemblies over as much as twenty minutes, and for
+   * that whole time the row must read as busy: `MainMenu` refuses Play on this
+   * flag, and the VS Versions page refuses to delete the folder, to remove
+   * Optimum from it or to start a second patch against it. The install flow
+   * clears its own `_installing` as soon as the vanilla build is unpacked, which
+   * is before the patch it goes on to start, so this is what covers that half.
+   */
+  function markBusy(id: string, busy: boolean): void {
+    configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id, updates: { _installing: busy ? true : undefined } } })
+  }
+
   async function applyOptimum(target: OptimumTarget, manifest: OptimumManifestInfo): Promise<boolean> {
+    markBusy(target.id, true)
+    try {
+      return await downloadAndPatch(target, manifest)
+    } finally {
+      markBusy(target.id, false)
+    }
+  }
+
+  async function downloadAndPatch(target: OptimumTarget, manifest: OptimumManifestInfo): Promise<boolean> {
     const taskName = t("features.versions.optimumTaskName", { version: manifest.optimumVersion })
 
     let downloaded = false
@@ -89,13 +112,21 @@ export function useOptimumActions(): OptimumActions {
       }
     )
 
-    if (!patched.ok) return refuse(patched.reason)
+    if (!patched.ok) {
+      // A run the main process rolled back leaves a plain vanilla build behind,
+      // so a row that was reading as Optimum before the update is not any more.
+      if (patched.rolledBack) configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: target.id, updates: { variant: undefined, label: buildGameVersionLabel(target.version) } } })
+      return refuse(patched)
+    }
 
     // The post-check, and the only thing that decides what the row says: the
     // marker comes off the patched assembly itself, which is the one signal
     // anyone can neither rename nor fake by writing a file.
     const probe = await window.api.gameManager.lookForAGameVersion(target.path)
-    if (!probe.exists || !probe.variant) return refuse("output-unverified")
+    // Nothing is rolled back here: the patch itself checked out file by file, so
+    // what failed is the launcher's reading of the folder. Remove Optimum stays
+    // reachable on that row, because the backup is there.
+    if (!probe.exists || !probe.variant) return refuse({ reason: "output-unverified" })
 
     configDispatch({
       type: CONFIG_ACTIONS.EDIT_GAME_VERSION,
@@ -106,6 +137,15 @@ export function useOptimumActions(): OptimumActions {
   }
 
   async function restoreVanilla(target: OptimumTarget): Promise<boolean> {
+    markBusy(target.id, true)
+    try {
+      return await putVanillaBack(target)
+    } finally {
+      markBusy(target.id, false)
+    }
+  }
+
+  async function putVanillaBack(target: OptimumTarget): Promise<boolean> {
     let restored: OptimumPatchResult = { ok: false, reason: "engine-internal" }
     await startOptimumPatch(
       t("features.versions.optimumRestoreTaskName"),
@@ -119,7 +159,7 @@ export function useOptimumActions(): OptimumActions {
       }
     )
 
-    if (!restored.ok) return refuse(restored.reason)
+    if (!restored.ok) return refuse(restored)
 
     configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: target.id, updates: { variant: undefined, label: buildGameVersionLabel(target.version) } } })
     addNotification(t("features.versions.optimumRestored"), "success")
