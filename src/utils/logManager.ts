@@ -1,14 +1,13 @@
 import Logger from "electron-log"
 
-const sensitiveValuePattern = /(\b(?:password|pass|sessionkey|sessionsignature|mptoken|prelogintoken|token|signature|authorization|cookie|secret)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}\]]+)/gi
-const sensitiveQueryPattern = /([?&](?:password|pass|sessionkey|sessionsignature|mptoken|prelogintoken|token|signature|authorization|cookie|secret)=)[^&#\s]+/gi
-// Keep path components that contain spaces, but only when another separator proves the space is
-// still inside the path; otherwise a sentence after a path would be swallowed as part of it.
-const absolutePathPattern = /(?:[A-Za-z]:[\\/]|\/(?:home|Users|mnt|tmp|var|opt|root)\/)(?:[^\s\]]+|[ \t]+(?=(?:[^\s\],.;:!?]+[ \t]+){0,8}[^\s\],.;:!?]*[\\/]))+/g
+import { redactSensitiveText } from "@domain/redaction"
 
-export function redactSensitiveText(message: string): string {
-  return message.slice(0, 16_384).replace(sensitiveValuePattern, "$1[REDACTED]").replace(sensitiveQueryPattern, "$1[REDACTED]").replace(absolutePathPattern, "[PATH]")
-}
+/**
+ * Re-exported, not redefined. The patterns moved to src/domain/redaction.ts so the session report
+ * (#462) could reach them from pure code, and every caller that imported the redactor from here
+ * still does, tests/log-provenance.test.ts and tests/ipc-validation.test.ts included.
+ */
+export { redactSensitiveText }
 
 export function getErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return "Operation failed"
