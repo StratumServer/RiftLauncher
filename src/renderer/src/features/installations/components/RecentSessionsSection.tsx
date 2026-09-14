@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 
 import { MAX_SESSIONS_PER_INSTALLATION, peakRssBytes } from "@domain/sessions/sampling"
 import { usePlaySessions } from "@renderer/features/installations/hooks/usePlaySessions"
-import { formatBytes, formatDuration } from "@renderer/features/installations/components/SessionMemoryChart"
+import { formatBytes, formatDuration, SessionMemoryChart, SessionSparkline } from "@renderer/features/installations/components/SessionMemoryChart"
 
 import { FormButton, FormFieldDescription, FormGroupWrapper } from "@renderer/components/ui/FormComponents"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
@@ -52,6 +52,7 @@ export function RecentSessionsSection({ installationId, isPlaying, measuring }: 
                   <span className="shrink-0">{new Date(session.startedAt).toLocaleString(i18n.resolvedLanguage)}</span>
                   <span className="shrink-0 text-zinc-400">{formatDuration(session.endedAt - session.startedAt)}</span>
                   <span className="shrink-0 text-zinc-400">{formatBytes(peakRssBytes(session.samples))}</span>
+                  <SessionSparkline session={session} />
                 </button>
               </li>
             ))}
@@ -75,6 +76,8 @@ export function RecentSessionsSection({ installationId, isPlaying, measuring }: 
                   ended: new Date(openSession.endedAt).toLocaleString(i18n.resolvedLanguage)
                 })}
               </p>
+
+              <SessionMemoryChart session={openSession} />
 
               {openSession.partial && <FormFieldDescription content={t("features.sessions.partial")} />}
             </div>

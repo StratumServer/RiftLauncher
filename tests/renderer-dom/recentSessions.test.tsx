@@ -78,6 +78,33 @@ describe("Recent sessions", () => {
     expect(await screen.findByText(/Ran for 45m/)).toBeTruthy()
   })
 
+  it("draws the chart with a name, and offers the same readings as a table", async () => {
+    const user = userEvent.setup()
+    mountWith({ ok: true, sessions: [aSession({}, { count: 4, minutes: 30, baseMiB: 1_000, stepMiB: 100 })] })
+
+    await user.click(await screen.findByTitle("Open this session"))
+
+    const chart = await screen.findByRole("img", { name: /Memory and CPU across one session/ })
+    expect(chart.querySelectorAll("polyline").length).toBe(2)
+
+    // The table is the accessible equivalent, so it carries every point the line is drawn from.
+    const table = screen.getByRole("table")
+    expect(table.querySelectorAll("tbody tr").length).toBe(4)
+    expect(table.textContent).toContain("1.27 GiB")
+    expect(screen.getByText(/CPU is the dashed line/)).toBeTruthy()
+  })
+
+  it("says CPU is not measured rather than drawing a line it does not have", async () => {
+    const user = userEvent.setup()
+    const noCpu = aSession({}, { count: 4 })
+    mountWith({ ok: true, sessions: [{ ...noCpu, samples: noCpu.samples.map(({ t, rssBytes }) => ({ t, rssBytes })) }] })
+
+    await user.click(await screen.findByTitle("Open this session"))
+
+    expect(await screen.findByText(/CPU is not measured on this system/)).toBeTruthy()
+    expect(screen.getByRole("img", { name: /Memory and CPU/ }).querySelectorAll("polyline").length).toBe(1)
+  })
+
   it("says a session is incomplete rather than calling it a crash", async () => {
     const user = userEvent.setup()
     mountWith({ ok: true, sessions: [aSession({ partial: true })] })
