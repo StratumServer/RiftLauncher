@@ -270,6 +270,12 @@
       "title": "Info y Ayuda de RiftLauncher",
       "debugInfoDesc": "¡Copia la siguiente información y envíala con tu informe de errores para ayudarnos a encontrar el problema!"
     },
+    "servers": {
+      "addServer": "Añadir un servidor",
+      "join": "Entrar",
+      "importServersAdd": "Añadir los servidores elegidos",
+      "importServersSkip": "Omitir los servidores"
+    },
     "sessionReport": {
       "copyReport": "Copiar informe",
       "openLogsFolder": "Abrir la carpeta de registros",

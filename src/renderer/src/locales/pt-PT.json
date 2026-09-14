@@ -274,6 +274,12 @@
       "includeLogs": "Envia-nos os ficheiros de log que estão na pasta <folderlink /> para nos ajudares ainda mais!",
       "debugInfoDesc": "Copia a seguinte informação e envia-a juntamente com a informação dos erros para nos ajudares a encontrar o problema!"
     },
+    "servers": {
+      "addServer": "Adicionar um servidor",
+      "join": "Entrar",
+      "importServersAdd": "Adicionar os servidores escolhidos",
+      "importServersSkip": "Ignorar os servidores"
+    },
     "sessionReport": {
       "copyReport": "Copiar relatório",
       "openLogsFolder": "Abrir a pasta de registos",

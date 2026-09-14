@@ -139,6 +139,23 @@ declare global {
     _restoring?: boolean
   }
 
+  /**
+   * One server an Installation can join straight from the launcher (#460).
+   *
+   * `host` is stored without brackets, whatever the player typed, so there is one form to compare
+   * and one place (`joinTargetUrl`) that puts the brackets back for an IPv6 literal. `lastLaunched`
+   * is -1 until the launcher has spawned the game with this bookmark's connect argument, and says
+   * exactly that and no more: the launcher never learns whether the connection itself succeeded.
+   * See src/domain/servers/bookmarks.ts.
+   */
+  type ServerBookmarkType = {
+    id: string
+    name: string
+    host: string
+    port: number
+    lastLaunched: number
+  }
+
   type InstallationType = {
     id: string
     name: string
@@ -158,6 +175,12 @@ declare global {
     envVars: string
     /** Optional Linux command that receives the game command as its arguments. */
     launchWrapper?: string
+    /**
+     * Servers saved for this Installation, absent rather than empty when there are none: the field
+     * is additive, so an older build drops it and re-saves without it and both directions still
+     * read clean. Same trick `launchWrapper` uses, and the reason this needed no schema bump.
+     */
+    servers?: ServerBookmarkType[]
     _modsCount?: number
     _playing?: boolean
     _backuping?: boolean
@@ -354,6 +377,15 @@ declare global {
     name: string
     gameVersion: string
     mods: ModpackModEntryType[]
+    /**
+     * The servers the exporting player chose to hand over, absent from every pack that carries
+     * none and from every pack written before #460, so no reader may require it. Optional is
+     * load-bearing here for the same reason it is on `ModpackModEntryType.name`.
+     *
+     * Written only when the exporter ticked the box: the default is off, because a modpack is a
+     * file people pass around and a default that discloses an address is the wrong default.
+     */
+    servers?: ServerBookmarkType[]
   }
 
   type ModChangeSummaryEntry = {

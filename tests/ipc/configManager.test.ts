@@ -453,6 +453,73 @@ describe("normalizeConfig: accentColor", () => {
   })
 })
 
+describe("normalizeConfig: installation servers (#460)", () => {
+  function installation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return { id: "i-1", path: join(appDataFolder, "installations", "one"), ...overrides }
+  }
+
+  const server = { id: "s-1", name: "Home", host: "play.example.com", port: 42_420, lastLaunched: -1 }
+
+  it("reads a stored list back unchanged", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const config = normalizeConfig({ installations: [installation({ servers: [server] })] })
+
+    assert.deepEqual(config.installations[0]?.servers, [server])
+  })
+
+  it("leaves the field off entirely for an Installation with no servers, so an older build reads it the same", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const config = normalizeConfig({ installations: [installation(), installation({ id: "i-2", servers: [] })] })
+
+    assert.equal("servers" in (config.installations[0] ?? {}), false)
+    assert.equal("servers" in (config.installations[1] ?? {}), false)
+  })
+
+  it("drops a junk entry and keeps the Installation, never losing it over one bad row", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const config = normalizeConfig({ installations: [installation({ servers: [{ id: "s-2", name: "Broken", host: "not a host", port: 1 }, server] })] })
+
+    assert.deepEqual(
+      config.installations[0]?.servers?.map((entry) => entry.id),
+      ["s-1"]
+    )
+  })
+
+  it("drops a servers field that is not a list", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    for (const value of ["play.example.com", 7, {}, null]) {
+      assert.equal("servers" in (normalizeConfig({ installations: [installation({ servers: value })] }).installations[0] ?? {}), false, String(value))
+    }
+  })
+
+  /**
+   * The field's whole point, same as accentColor's and lastSeenChangelogVersion's: adding it must
+   * not need a schema bump. A beta.9 (schema 4) document never heard of it, and an older build
+   * reading a document this launcher wrote drops the field and saves without it. Both land back
+   * here with no field at all, and both must read as an Installation with no servers.
+   */
+  it("keeps a beta.9 (schema 4) document with no servers field readable, and does not bump the schema for one", async () => {
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }), installations: [installation()] }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+
+    assert.equal(config.installations[0]?.servers, undefined)
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+
+  it("round trips a list through a save and a fresh read", async () => {
+    const doc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA }), installations: [installation({ servers: [server] })] }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(doc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+
+    assert.deepEqual(config.installations[0]?.servers, [server])
+  })
+})
+
 describe("normalizeConfig: lastSeenChangelogVersion", () => {
   it("defaults to empty when the field is missing, which the what's new dialog reads as a fresh install", async () => {
     const { normalizeConfig } = await freshConfigManager()

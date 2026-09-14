@@ -21,6 +21,7 @@ const api: BridgeAPI = {
     logMessage: (mode: ErrorTypes, message: string): void => ipcRenderer.send(IPC_CHANNELS.UTILS.LOG_MESSAGE, mode, message),
     setPreventAppClose: (action: "add" | "remove", id: string, desc: string): void => ipcRenderer.send(IPC_CHANNELS.UTILS.SET_PREVENT_APP_CLOSE, action, id, desc),
     openOnBrowser: (url: string): void => ipcRenderer.send(IPC_CHANNELS.UTILS.OPEN_ON_BROWSER, url),
+    copyToClipboard: (text: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.UTILS.COPY_TO_CLIPBOARD, text),
     selectFolderDialog: (options?: { type?: "file" | "folder"; mode?: "single" | "multi"; extensions?: string[] }): Promise<string[]> =>
       ipcRenderer.invoke(IPC_CHANNELS.UTILS.SELECT_FOLDER_DIALOG, options),
     onPreventedAppClose: (callback: () => void): Unsubscribe => subscribeWithoutPayload(IPC_CHANNELS.UTILS.PREVENTED_APP_CLOSE, callback)
@@ -73,7 +74,8 @@ const api: BridgeAPI = {
     copyToIcons: (path: string, name: string): Promise<CustomIconCopyResult> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.COPY_TO_ICONS, path, name)
   },
   gameManager: {
-    executeGame: (version: GameVersionType, installation: InstallationType): Promise<GameExecutionResult> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation),
+    executeGame: (version: GameVersionType, installation: InstallationType, serverId?: string): Promise<GameExecutionResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation, serverId),
     lookForAGameVersion: (path: string): Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }> =>
       ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, path),
     getGameLogReport: (installationPath: string): Promise<GameLogReportResult> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.GET_GAME_LOG_REPORT, installationPath)

@@ -309,6 +309,99 @@ describe("EXPORT_MODPACK", () => {
   })
 })
 
+/**
+ * #460's half of the modpack: a pack can carry the servers the Installation was for. Optional in
+ * both directions, tolerant on the way in (a stranger's file must not fail over one bad row), and
+ * never invented by a reader that does not find the field.
+ */
+describe("modpack server lists (#460)", () => {
+  const server = { id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: -1 }
+
+  function importFile(name: string, document: unknown): void {
+    const importDirectory = join(temporaryRoot, "imports-servers")
+    mkdirSync(importDirectory, { recursive: true })
+    const file = join(importDirectory, name)
+    writeFileSync(file, JSON.stringify(document), "utf-8")
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [file] })
+  }
+
+  it("writes the servers an export hands it", async () => {
+    const exportDirectory = join(temporaryRoot, "exports-servers")
+    mkdirSync(exportDirectory, { recursive: true })
+    const targetFile = join(exportDirectory, "With Servers.json")
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: targetFile })
+
+    const event = await createTrustedEvent()
+    const result = await exportModpackHandler()(event, { ...validManifest(), servers: [server] })
+
+    const { readFileSync } = await import("node:fs")
+    assert.equal(result.success, true)
+    assert.deepEqual(JSON.parse(readFileSync(targetFile, "utf-8")).servers, [server])
+  })
+
+  it("leaves the field out of a pack whose servers were not included", async () => {
+    const exportDirectory = join(temporaryRoot, "exports-no-servers")
+    mkdirSync(exportDirectory, { recursive: true })
+    const targetFile = join(exportDirectory, "No Servers.json")
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: targetFile })
+
+    const event = await createTrustedEvent()
+    await exportModpackHandler()(event, validManifest())
+
+    const { readFileSync } = await import("node:fs")
+    assert.equal("servers" in JSON.parse(readFileSync(targetFile, "utf-8")), false)
+  })
+
+  it("reads a pack's server list back", async () => {
+    importFile("with-servers.json", { ...validManifest(), servers: [server] })
+
+    const event = await createTrustedEvent()
+    const result = await importModpackHandler()(event)
+
+    assert.equal(result.success, true)
+    assert.deepEqual(result.manifest?.servers, [server])
+  })
+
+  it("drops a malformed server entry without failing the pack, so one bad row costs one row", async () => {
+    importFile("mixed-servers.json", { ...validManifest(), servers: [{ id: "s-2", name: "Broken", host: "not a host", port: 1 }, server, "a string"] })
+
+    const event = await createTrustedEvent()
+    const result = await importModpackHandler()(event)
+
+    assert.equal(result.success, true)
+    assert.deepEqual(result.manifest?.servers, [server])
+  })
+
+  it("refuses nothing and carries no field when the servers value is junk outright", async () => {
+    importFile("junk-servers.json", { ...validManifest(), servers: "play.example.com" })
+
+    const event = await createTrustedEvent()
+    const result = await importModpackHandler()(event)
+
+    assert.equal(result.success, true)
+    assert.equal(result.manifest?.servers, undefined)
+  })
+
+  it("still imports a pack written before the field existed", async () => {
+    importFile("old-pack.json", validManifest())
+
+    const event = await createTrustedEvent()
+    const result = await importModpackHandler()(event)
+
+    assert.deepEqual(result, { success: true, manifest: validManifest() })
+  })
+
+  it("caps what one pack can contribute, so a hostile file cannot fill the list", async () => {
+    const many = Array.from({ length: 60 }, (_, index) => ({ ...server, id: `s-${index}`, host: `h${index}.example.com` }))
+    importFile("many-servers.json", { ...validManifest(), servers: many })
+
+    const event = await createTrustedEvent()
+    const result = await importModpackHandler()(event)
+
+    assert.equal(result.manifest?.servers?.length, 50)
+  })
+})
+
 describe("IMPORT_MODPACK", () => {
   it("throws Unauthorized IPC sender for an untrusted caller", async () => {
     await assert.rejects(() => importModpackHandler()(createUntrustedEvent()), /Unauthorized IPC sender/)

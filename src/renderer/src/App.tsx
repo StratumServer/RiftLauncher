@@ -26,6 +26,7 @@ const EditInslallation = lazy(() => import("@renderer/features/installations/pag
 const ManageInstallationBackups = lazy(() => import("@renderer/features/installations/pages/ManageInstallationBackups"))
 const SessionReport = lazy(() => import("@renderer/features/installations/pages/SessionReport"))
 const ManageInstallationMods = lazy(() => import("@renderer/features/installations/pages/ManageMods"))
+const ManageInstallationServers = lazy(() => import("@renderer/features/servers/pages/ManageInstallationServers"))
 const ListVersions = lazy(() => import("@renderer/features/versions/pages/ListVersions"))
 const AddVersion = lazy(() => import("@renderer/features/versions/pages/AddVersion"))
 const LookForAVersion = lazy(() => import("@renderer/features/versions/pages/LookForAVersion"))
@@ -102,6 +103,7 @@ function AnimatedRoutes(): JSX.Element {
           <Route path="/installations/backups/:id" element={<AnimatedRoute element={<ManageInstallationBackups />} />} />
           <Route path="/installations/report/:id" element={<AnimatedRoute element={<SessionReport />} />} />
           <Route path="/installations/mods/:id" element={<AnimatedRoute element={<ManageInstallationMods />} />} />
+          <Route path="/installations/servers/:id" element={<AnimatedRoute element={<ManageInstallationServers />} />} />
           <Route path="/versions" element={<AnimatedRoute element={<ListVersions />} />} />
           <Route path="/versions/add" element={<AnimatedRoute element={<AddVersion />} />} />
           <Route path="/versions/look-for-a-version" element={<AnimatedRoute element={<LookForAVersion />} />} />
