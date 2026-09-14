@@ -193,8 +193,6 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
    */
   const launcherUpdateTaskAdded = useRef(false)
 
-  /** What the last "Clear all" dropped, held only so the undo toast can put it back. */
-
   useEffect((): (() => void) => {
     window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider] Adding listener for download progress.`)
     const removeDownloadProgressListener = window.api.pathsManager.onDownloadProgress(({ id, progress }) => {
@@ -436,7 +434,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id } })
   }
 
-  function clearFinishedTasks(): (() => void) {
+  function clearFinishedTasks(): () => void {
     const clearedTasks = tasks.filter((task) => !taskSurvivesBulkClear(task.status))
     for (const task of clearedTasks) tasksDispatch({ type: ACTIONS.REMOVE_TASK, payload: { id: task.id } })
     let restored = false
@@ -451,11 +449,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
   }
 
   const activeTaskCount = tasks.filter((task) => task.status === "pending" || task.status === "in-progress").length
-  return (
-    <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask, clearFinishedTasks }}>
-      {children}
-    </TaskContext.Provider>
-  )
+  return <TaskContext.Provider value={{ tasks, activeTaskCount, startDownload, startExtract, startInstall, startCompress, removeTask, clearFinishedTasks }}>{children}</TaskContext.Provider>
 }
 
 export const useTaskContext = (): TaskContextType => {

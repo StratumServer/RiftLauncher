@@ -110,18 +110,8 @@ function ActivityPanel(): JSX.Element {
   const reduceMotion = useReducedMotion()
   const panelRef = useRef<HTMLDivElement>(null)
   const { tasks, activeTaskCount, removeTask, clearFinishedTasks } = useTaskContext()
-  const {
-    addNotification,
-    history,
-    unreadCount,
-    markAllSeen,
-    markAllRead,
-    setNotificationRead,
-    clearReadNotifications,
-    clearAllNotifications,
-    invokeAction,
-    removeNotification
-  } = useNotificationsContext()
+  const { addNotification, history, unreadCount, markAllSeen, markAllRead, setNotificationRead, clearReadNotifications, clearAllNotifications, invokeAction, removeNotification } =
+    useNotificationsContext()
 
   // Mounting means the center is open; a record arriving while it is open is on
   // screen, so it counts as seen too.

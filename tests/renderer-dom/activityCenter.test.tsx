@@ -1270,7 +1270,7 @@ describe("Clear all empties the centre in one action", () => {
     })
     expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["first", "second", "third"])
 
-    let undo = () => {}
+    let undo: () => void = () => {}
     act(() => {
       undo = result.current.clearAllNotifications()
     })
@@ -1290,14 +1290,14 @@ describe("Clear all empties the centre in one action", () => {
     const { result } = renderHook(() => useNotificationsContext(), { wrapper })
 
     act(() => result.current.addNotification("from the first clear", "info", { presentation: "center" }))
-    let undoFirst = () => {}
+    let undoFirst: () => void = () => {}
     act(() => {
       undoFirst = result.current.clearAllNotifications()
     })
     expect(result.current.history).toHaveLength(0)
 
     // A second clear with nothing left to take, and then an undo of that one.
-    let undo = () => {}
+    let undo: () => void = () => {}
     act(() => {
       undo = result.current.clearAllNotifications()
     })
