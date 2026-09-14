@@ -34,8 +34,14 @@ describe("classifyFailure", () => {
     assert.equal(classifyFailure(new Error("Installation failed: installer-missing")), "missing-file")
   })
 
-  it("reads an archive that would not open as a damaged archive", () => {
-    assert.equal(classifyFailure(new Error("Extraction failed")), "damaged-archive")
+  it("does not guess that a generic extraction failure is a damaged archive", () => {
+    assert.equal(classifyFailure(new Error("Extraction failed")), "unknown")
+    assert.equal(classifyFailure(new Error("Extraction failed: EACCES")), "no-permission")
+    assert.equal(classifyFailure(new Error("Extraction failed: ENOSPC")), "no-space")
+  })
+
+  it("does not call file descriptor exhaustion a permission problem", () => {
+    assert.equal(classifyFailure(new Error("EMFILE: too many open files")), "unknown")
   })
 
   /** The installer's own timeout has to win over the generic one, or a killed run reads as a network stall. */
