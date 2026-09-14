@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
+import { duplicateToastId, type RepeatableToast } from "@domain/notifications/duplicateToast"
 import { type FailureReason } from "@domain/notifications/failureReason"
 import { MAX_VISIBLE_TOASTS, backlogToastDuration, capNotificationRecords, waitingBehindStack } from "@domain/notifications/toastQueue"
 
@@ -44,6 +45,12 @@ export interface NotificationType {
   resolved: boolean
   /** Label of the action that answered it, so an answered question does not sit in the center still asking. */
   resolvedWith?: string
+  /**
+   * How many times this same message has arrived, counting the first. Above one
+   * the banner wears the count, because folding a repeat into a banner already
+   * on screen would otherwise look like the second one went missing.
+   */
+  repeats: number
   options?: NotificationOptions
 }
 
@@ -134,15 +141,24 @@ interface StackedToast {
  * record `seen`, replacing the record object while its id stays the same.
  * Depending on the whole record would restart the countdown on every seen/read
  * mutation, so a player who keeps opening the panel could pin a toast on screen
- * forever.
+ * forever. The repeat count is the one part of the record that is in there, and
+ * the one thing that does restart it: a message folded into this banner arrived
+ * just now, and the player has to get a turn to read it.
  */
-function ToastTimer({ id, turn, paused, onStart, onExpire }: Readonly<{ id: string; turn: number | null; paused: boolean; onStart: (id: string) => void; onExpire: (id: string) => void }>): null {
+function ToastTimer({
+  id,
+  turn,
+  paused,
+  repeats,
+  onStart,
+  onExpire
+}: Readonly<{ id: string; turn: number | null; paused: boolean; repeats: number; onStart: (id: string) => void; onExpire: (id: string) => void }>): null {
   useEffect(() => {
     if (turn == null || paused) return
     onStart(id)
     const timeout = window.setTimeout((): void => onExpire(id), turn)
     return (): void => window.clearTimeout(timeout)
-  }, [id, turn, paused, onStart, onExpire])
+  }, [id, turn, paused, repeats, onStart, onExpire])
 
   return null
 }
@@ -161,6 +177,16 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   // rather than the state itself: addNotification is handed out through the
   // context and may run from a closure that predates the current stack.
   const stackRef = useRef<readonly StackedToast[]>([])
+  // Same reason as stackRef: addNotification may run from a closure older than
+  // the current queue or record list, and folding a repeat has to look at both
+  // as they are now.
+  const toastQueueRef = useRef<readonly string[]>([])
+  const recordsRef = useRef<readonly NotificationType[]>([])
+  // Toasts added since the last render, which no state has caught up with yet.
+  // A burst fired in one tick is several addNotification calls before a single
+  // render, and without these the second of two identical ones cannot see the
+  // first. Emptied on every render, by which point they are in `records`.
+  const pendingToasts = useRef<RepeatableToast[]>([])
   // When each banner's turn started, refreshed by every (re)start of its timer,
   // so the shortening effect can read how much of that turn is already gone.
   const turnStartedAt = useRef(new Map<string, number>())
@@ -179,6 +205,9 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
 
   const history = useMemo(() => records.filter((record) => !isToastOnly(record)), [records])
   stackRef.current = stack
+  toastQueueRef.current = toastQueue
+  recordsRef.current = records
+  pendingToasts.current = []
   const activeToasts = useMemo(
     () =>
       stack.flatMap((entry) => {
@@ -287,8 +316,30 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   }, [])
 
   const addNotification = (body: string, type: NotificationTypes, options?: NotificationOptions): void => {
-    const id = crypto.randomUUID()
     const presentation = options?.presentation ?? "both"
+    const hasActions = Boolean(options?.actions?.length)
+
+    // A message the player can already see, or is about to, is refreshed rather
+    // than repeated: the count on the banner is what says it happened twice.
+    // Only where there is a banner, because a center record the player has
+    // scrolled past is history, and history is meant to hold both entries.
+    if (presentation !== "center") {
+      const onScreenOrWaiting = [...stackRef.current.map((entry) => entry.id), ...toastQueueRef.current].flatMap((toastId) => {
+        const candidate = recordsRef.current.find((record) => record.id === toastId)
+        return candidate ? [{ id: candidate.id, body: candidate.body, type: candidate.type, hasActions: Boolean(candidate.options?.actions?.length) }] : []
+      })
+      const repeated = duplicateToastId([...onScreenOrWaiting, ...pendingToasts.current], { body, type, hasActions })
+      if (repeated !== undefined) {
+        // The record cap could in principle have dropped the one being folded
+        // into, in the same tick, behind a burst wide enough to overflow the
+        // toast budget; the count would then land on nothing. Left as is: it
+        // takes a burst of eight identical-plus-different messages in one tick.
+        setRecords((previous) => previous.map((record) => (record.id === repeated ? { ...record, repeats: record.repeats + 1, createdAt: Date.now() } : record)))
+        return
+      }
+    }
+
+    const id = crypto.randomUUID()
     const record: NotificationType = {
       id,
       body,
@@ -297,10 +348,14 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       seen: false,
       read: false,
       resolved: false,
+      repeats: 1,
       options: { ...options, presentation, duration: resolveToastDuration(type, options) }
     }
     setRecords((previous) => capNotificationRecords([...previous, record], isToastOnly, (candidate) => stackRef.current.some((entry) => entry.id === candidate.id)))
-    if (presentation !== "center") setToastQueue((queue) => [...queue, id])
+    if (presentation !== "center") {
+      pendingToasts.current.push({ id, body, type, hasActions })
+      setToastQueue((queue) => [...queue, id])
+    }
   }
 
   const dismissToast = (id: string, reason: ToastDismissReason = "manual"): void => {
@@ -376,7 +431,15 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       {/* One timer per place in the stack, mounted as children so each starts, pauses and expires on
           its own. They render nothing; the overlay draws the banners. */}
       {stack.map((entry) => (
-        <ToastTimer key={entry.id} id={entry.id} turn={entry.turn} paused={pausedToastIds.includes(entry.id)} onStart={startTurn} onExpire={expireToast} />
+        <ToastTimer
+          key={entry.id}
+          id={entry.id}
+          turn={entry.turn}
+          paused={pausedToastIds.includes(entry.id)}
+          repeats={records.find((record) => record.id === entry.id)?.repeats ?? 1}
+          onStart={startTurn}
+          onExpire={expireToast}
+        />
       ))}
       {children}
     </NotificationsContext.Provider>

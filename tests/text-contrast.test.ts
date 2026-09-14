@@ -503,6 +503,19 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /**
+   * #391 folds a repeated message into the banner already up and marks it with a count. The count
+   * is the only thing on screen that says the message arrived twice, so it is a fill of its own
+   * on the toast scrim and has to clear the text bar on both extremes.
+   */
+  it("keeps the repeat count on a folded banner readable on its own fill", () => {
+    const overlay = "components/layout/NotificationsOverlay.tsx"
+    const badgeFill = foreground(overlay, /rounded-full bg-(zinc-\d+)(?:\/(\d+))? text-\[10px\]/)
+    const badgeText = foreground(overlay, /text-\[10px\] leading-4 text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("repeat count", badgeText, [...TOAST, badgeFill], TEXT_FLOOR)
+  })
+
   it("keeps every Activity Center task row readable", () => {
     const panel = "components/ui/ActivityCenter.tsx"
     const operation = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? break-words/)
