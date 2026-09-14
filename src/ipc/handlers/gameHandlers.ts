@@ -10,7 +10,7 @@ import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
-import { assertString, parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
+import { assertString, parseSafeEnvironment, toWireBuildVariant, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
 import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
@@ -439,7 +439,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   return gameProcessOutcomeToResult(outcome)
 })
 
-type LookForAGameVersionResult = { exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }
+type LookForAGameVersionResult = { exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }
 
 const NOT_FOUND: LookForAGameVersionResult = { exists: false }
 
@@ -554,5 +554,10 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, 
   }
 
   logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Found Vintage Story ${result.version}.`)
-  return { exists: true, installedGameVersion: result.version }
+
+  // Nothing the probe printed reaches the renderer unchecked: the variant goes
+  // through the boundary check, and a value that does not pass it is simply not
+  // there, which is the same thing a vanilla build sends.
+  const variant = toWireBuildVariant(result.variant)
+  return variant ? { exists: true, installedGameVersion: result.version, variant } : { exists: true, installedGameVersion: result.version }
 })

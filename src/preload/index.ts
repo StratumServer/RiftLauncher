@@ -75,7 +75,7 @@ const api: BridgeAPI = {
   gameManager: {
     executeGame: (version: GameVersionType, installation: InstallationType, serverId?: string): Promise<GameExecutionResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation, serverId),
-    lookForAGameVersion: (path: string): Promise<{ exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }> =>
+    lookForAGameVersion: (path: string): Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }> =>
       ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, path)
   },
   netManager: {

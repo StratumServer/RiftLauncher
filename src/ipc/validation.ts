@@ -1,6 +1,8 @@
 import { isAbsolute, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import semver from "semver"
+
 import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
 
 export const MAX_IPC_STRING_LENGTH = 8_192
@@ -212,6 +214,30 @@ export function assertInteger(value: unknown, name: string, min: number, max: nu
   const numberValue = assertFiniteNumber(value, name, min, max)
   if (!Number.isInteger(numberValue)) throw new TypeError(`Invalid ${name}`)
   return numberValue
+}
+
+/** The one fork the launcher recognises. A second one is a second token here, never a free string. */
+const KNOWN_BUILD_VARIANT_NAME = "Optimum"
+
+/**
+ * Narrows a detected build variant to the shape the renderer is allowed to see.
+ *
+ * This is the outbound half of a real trust boundary. The variant is read off
+ * the stdout of a binary the launcher did not build, sitting in a folder the
+ * player picked, so nothing from it crosses to the renderer except a value that
+ * passed a fixed-shape check: the name has to be the token this file already
+ * knows, and the version has to be a version, judged by the same semver grammar
+ * detection accepts on the way in. Anything else is no variant at all, which
+ * every caller already handles, since a vanilla build has none.
+ *
+ * @param value The domain's variant, or whatever turned up in its place.
+ * @returns The variant, normalised, or undefined when it is not one.
+ */
+export function toWireBuildVariant(value: unknown): GameBuildVariantType | undefined {
+  if (!isRecord(value) || value.name !== KNOWN_BUILD_VARIANT_NAME || typeof value.version !== "string") return undefined
+
+  const version = semver.valid(value.version)
+  return version ? { name: KNOWN_BUILD_VARIANT_NAME, version } : undefined
 }
 
 export function validateGameVersion(value: unknown): Pick<GameVersionType, "version" | "path"> & { id?: string } {

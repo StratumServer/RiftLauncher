@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import type { IpcMainInvokeEvent } from "electron"
@@ -68,6 +68,11 @@ function exportModpackHandler(): ExportModpackHandler {
 
 function importModpackHandler(): ImportModpackHandler {
   return getIpcHandler<ImportModpackHandler>(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK)
+}
+
+/** Puts one committed archive from tests/fixtures into the folder the scan is pointed at. */
+function seedModsFolder(fixture: string): void {
+  copyFileSync(resolve(__dirname, "../fixtures", fixture), join(modsFolder, fixture))
 }
 
 function validManifest(): ModpackManifestType {
@@ -161,6 +166,28 @@ describe("GET_INSTALLED_MODS", () => {
     } finally {
       chmodSync(modsFolder, 0o755)
     }
+  })
+
+  // The scan reads a declared dependency map out of the archive and the handler spreads the scanned
+  // mod onto the wire, so this is the one place the whole path is checked end to end: real zip
+  // bytes in, the renderer's own InstalledModType out.
+  it("carries a declared dependency map through to the renderer", async () => {
+    seedModsFolder("dependencies-mod.zip")
+    const event = await createTrustedEvent()
+
+    const result = await getInstalledModsHandler()(event, modsFolder)
+
+    assert.deepEqual(result.mods[0]?.dependencies, { game: "1.20.0", riftfixture: "*" })
+  })
+
+  it("lists a Mod whose dependency map is malformed with no dependencies at all", async () => {
+    seedModsFolder("bad-dependencies-mod.zip")
+    const event = await createTrustedEvent()
+
+    const result = await getInstalledModsHandler()(event, modsFolder)
+
+    assert.equal(result.mods[0]?.modid, "riftbaddeps")
+    assert.equal(result.mods[0]?.dependencies, undefined)
   })
 
   // Listing is a read, so it asks the policy for the grade that tolerates a

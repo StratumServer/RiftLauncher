@@ -132,6 +132,51 @@ describe("parseModInfo optional fields", () => {
   })
 })
 
+describe("parseModInfo dependencies", () => {
+  it("leaves the field absent when the file declares none", () => {
+    assert.equal(parsed(JSON.stringify(MINIMAL)).dependencies, undefined)
+  })
+
+  it("reads an empty map as an empty map, not as an absence", () => {
+    assert.deepEqual(parsed(JSON.stringify({ ...MINIMAL, dependencies: {} })).dependencies, {})
+  })
+
+  it("reads a normal map of mod id to version bound", () => {
+    assert.deepEqual(parsed(JSON.stringify({ ...MINIMAL, dependencies: { game: "1.12.14", survival: "1.12.14" } })).dependencies, { game: "1.12.14", survival: "1.12.14" })
+  })
+
+  it("keeps the two bounds that mean any version, since both still say the mod has to be there", () => {
+    assert.deepEqual(parsed(JSON.stringify({ ...MINIMAL, dependencies: { anystar: "*", anyempty: "" } })).dependencies, { anystar: "*", anyempty: "" })
+  })
+
+  it("drops one entry of the wrong type and keeps the rest of the map", () => {
+    assert.deepEqual(parsed(JSON.stringify({ ...MINIMAL, dependencies: { good: "1.0.0", numeric: 3, missing: null } })).dependencies, { good: "1.0.0" })
+  })
+
+  it("drops an entry whose bound carries a NUL, which would travel on into logs", () => {
+    assert.deepEqual(parsed(JSON.stringify({ ...MINIMAL, dependencies: { good: "1.0.0", nul: `1.0${String.fromCharCode(0)}0` } })).dependencies, { good: "1.0.0" })
+  })
+
+  it("keeps a key exactly as its author cased it, since matching it is not this file's rule", () => {
+    assert.deepEqual(parsed(JSON.stringify({ ...MINIMAL, dependencies: { PrimitiveSurvival: "3.5.1" } })).dependencies, { PrimitiveSurvival: "3.5.1" })
+  })
+
+  it("drops the field when it is a list or a scalar, neither of which carries a bound to compare", () => {
+    assert.equal(parsed(JSON.stringify({ ...MINIMAL, dependencies: ["game"] })).dependencies, undefined)
+    assert.equal(parsed(JSON.stringify({ ...MINIMAL, dependencies: "game" })).dependencies, undefined)
+  })
+
+  it("drops a map longer than any real dependency list, and a key longer than an identifier", () => {
+    const many = Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`d${index}`, "1.0.0"]))
+    assert.equal(parsed(JSON.stringify({ ...MINIMAL, dependencies: many })).dependencies, undefined)
+    assert.deepEqual(parsed(JSON.stringify({ ...MINIMAL, dependencies: { ["d".repeat(257)]: "1.0.0", ok: "1.0.0" } })).dependencies, { ok: "1.0.0" })
+  })
+
+  it("reads the field however its author cased it, like every other one", () => {
+    assert.deepEqual(parsed(JSON.stringify({ ...MINIMAL, Dependencies: { game: "1.12.14" } })).dependencies, { game: "1.12.14" })
+  })
+})
+
 describe("readModSide", () => {
   it("reads the game's and the ModDB's spellings of each side, in any casing", () => {
     for (const side of ["client", "Client", "CLIENT"]) assert.equal(readModSide(side), "client")
