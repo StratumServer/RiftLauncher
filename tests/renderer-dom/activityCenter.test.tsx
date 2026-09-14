@@ -3,7 +3,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@te
 import { describe, expect, it, vi } from "vitest"
 
 import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { MAX_TOAST_BACKLOG } from "@domain/notifications/toastQueue"
+import { MAX_TOAST_BACKLOG, MAX_VISIBLE_TOASTS } from "@domain/notifications/toastQueue"
 import { TASK_NOTIFICATION_POLICIES, TaskProvider, useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import ActivityCenter from "@renderer/components/ui/ActivityCenter"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
@@ -30,6 +30,8 @@ function Controls(): JSX.Element {
       <button onClick={() => addNotification("A successful action", "success")}>Add success</button>
       <button onClick={() => addNotification("Something went wrong", "error")}>Add error</button>
       <button onClick={() => addNotification("Only a toast", "info", { presentation: "toast" })}>Add toast only</button>
+      <button onClick={() => addNotification("A fourth message", "info")}>Add fourth</button>
+      <button onClick={() => addNotification("A fifth message", "info")}>Add fifth</button>
       <button onClick={() => addNotification("A decision is required", "warning", { actions: [{ id: "resolve", label: "Resolve" }] })}>Add actionable warning</button>
       <button onClick={() => void startDownload("Example download", "An active download", TASK_NOTIFICATION_POLICIES.individual, "https://example.test/file", "/tmp", "file.zip", () => {})}>
         Start task
@@ -51,15 +53,22 @@ function panel(): HTMLElement {
   return screen.getByRole("region", { name: "Activity Center" })
 }
 
-/** Exposes the presented toast so timer behaviour is read off state, not the DOM. */
+/** Exposes the stack so timer behaviour is read off state, not the DOM. `active-toast` is its newest banner. */
 function ActiveToastProbe(): JSX.Element {
-  const { activeToast, toastPaused } = useNotificationsContext()
+  const { activeToast, activeToasts, toastPaused } = useNotificationsContext()
   return (
     <>
       <span data-testid="active-toast">{activeToast?.body ?? "none"}</span>
+      <span data-testid="toast-stack">{activeToasts.map((entry) => entry.record.body).join(" | ") || "none"}</span>
       <span data-testid="toast-paused">{String(toastPaused)}</span>
     </>
   )
+}
+
+/** The bodies on screen right now, oldest first. */
+function stack(): string[] {
+  const shown = screen.getByTestId("toast-stack").textContent ?? "none"
+  return shown === "none" ? [] : shown.split(" | ")
 }
 
 describe("ActivityCenter", () => {
@@ -478,45 +487,48 @@ describe("NotificationsContext history caps", () => {
     const { result } = renderHook(() => useNotificationsContext(), { wrapper })
 
     act(() => result.current.addNotification("being read", "info", { presentation: "toast" }))
-    expect(result.current.activeToast?.body).toBe("being read")
+    expect(result.current.activeToasts[0]?.record.body).toBe("being read")
 
     act(() => {
-      for (let index = 0; index <= MAX_TOAST_BACKLOG; index += 1) result.current.addNotification(`burst ${index}`, "info", { presentation: "toast" })
+      for (let index = 0; index < MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS; index += 1) result.current.addNotification(`burst ${index}`, "info", { presentation: "toast" })
     })
 
-    expect(result.current.activeToast?.body).toBe("being read")
+    expect(result.current.activeToasts[0]?.record.body).toBe("being read")
   })
 
   it("keeps a both-presentation toast on screen when center history overflows behind it", () => {
     const { result } = renderHook(() => useNotificationsContext(), { wrapper })
 
     act(() => result.current.addNotification("being read", "info"))
-    expect(result.current.activeToast?.body).toBe("being read")
+    expect(result.current.activeToasts[0]?.record.body).toBe("being read")
 
     act(() => {
       for (let index = 0; index < 50; index += 1) result.current.addNotification(`center ${index}`, "info", { presentation: "center" })
     })
 
-    expect(result.current.activeToast?.body).toBe("being read")
+    expect(result.current.activeToasts[0]?.record.body).toBe("being read")
     expect(result.current.history).toHaveLength(51)
   })
 
-  it("lets only a full backlog wait behind a both-presentation toast on screen, not one more", () => {
+  it("lets only a full backlog wait behind a full stack, not one more", () => {
     const { result } = renderHook(() => useNotificationsContext(), { wrapper })
 
     act(() => result.current.addNotification("being read", "info"))
     act(() => {
-      for (let index = 0; index <= MAX_TOAST_BACKLOG; index += 1) result.current.addNotification(`burst ${index}`, "info", { presentation: "toast" })
+      for (let index = 0; index < MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS; index += 1) result.current.addNotification(`burst ${index}`, "info", { presentation: "toast" })
     })
 
+    // Three banners up at once, and the oldest arrival of the burst is the one the cap dropped.
+    expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["being read", "burst 1", "burst 2"])
+
     const shown: string[] = []
-    for (let turns = 0; turns < MAX_TOAST_BACKLOG + 3 && result.current.activeToast; turns += 1) {
-      shown.push(result.current.activeToast.body)
-      const id = result.current.activeToast.id
-      act(() => result.current.dismissToast(id))
+    for (let turns = 0; turns < MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS + 2 && result.current.activeToasts.length > 0; turns += 1) {
+      const head = result.current.activeToasts[0]!.record
+      shown.push(head.body)
+      act(() => result.current.dismissToast(head.id))
     }
 
-    expect(shown).toEqual(["being read", "burst 1", "burst 2", "burst 3", "burst 4"])
+    expect(shown).toEqual(["being read", "burst 1", "burst 2", "burst 3", "burst 4", "burst 5", "burst 6"])
   })
 
   it("caps center history at fifty, dropping the oldest", () => {
@@ -547,18 +559,24 @@ describe("NotificationsContext history caps", () => {
     render(
       <>
         <Controls />
-        <ProbeRemoveSecond />
+        <ActiveToastProbe />
+        <ProbeRemoveLast />
         <NotificationsOverlay />
       </>,
       { wrapper }
     )
 
+    // Three fill the stack, so the fourth is still waiting when it is taken away.
     fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add success" }))
     fireEvent.click(screen.getByRole("button", { name: "Add error" }))
-    fireEvent.click(screen.getByRole("button", { name: "Remove second" }))
-    fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add fourth" }))
+    expect(stack()).toEqual(["A notification worth keeping", "A successful action", "Something went wrong"])
 
-    expect(screen.queryByText("Something went wrong")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Remove last" }))
+    fireEvent.click(screen.getAllByRole("button", { name: "Discard notification" })[0]!)
+
+    expect(stack()).toEqual(["A successful action", "Something went wrong"])
   })
 })
 
@@ -577,17 +595,19 @@ describe("toast hand-off when the banner's record disappears", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add success" }))
     fireEvent.click(screen.getByRole("button", { name: "Add error" }))
-    expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+    fireEvent.click(screen.getByRole("button", { name: "Add fourth" }))
+    expect(stack()).toEqual(["A notification worth keeping", "A successful action", "Something went wrong"])
 
     openCenter()
     const bannerRow = within(panel()).getByText("A notification worth keeping").closest("li") as HTMLElement
     fireEvent.click(within(bannerRow).getByRole("button", { name: "Mark as read" }))
     fireEvent.click(within(panel()).getByRole("button", { name: "Clear read" }))
 
-    // The banner's record is gone but activeToastId still named it. The queue must not
-    // stall on the dead id: the error waiting behind it takes the screen at once.
-    expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+    // The banner's record is gone but the stack still named it. Its place must not stay
+    // taken by a dead id: the fourth message waiting behind it comes up at once.
+    expect(stack()).toEqual(["A successful action", "Something went wrong", "A fourth message"])
   })
 
   it("leaves the overlay cleanly empty, not stuck, when the last record behind the banner goes", () => {
@@ -608,8 +628,8 @@ describe("toast hand-off when the banner's record disappears", () => {
     fireEvent.click(within(panel()).getByRole("button", { name: "Mark as read" }))
     fireEvent.click(within(panel()).getByRole("button", { name: "Clear read" }))
 
-    // activeToastId no longer names anything, so the overlay has no live banner.
-    expect(screen.getByTestId("active-toast").textContent).toBe("none")
+    // The stack no longer names anything, so the overlay has no live banner.
+    expect(stack()).toEqual([])
 
     // And the hand-off is not blocked on the dead id: the next notification still reaches the screen.
     fireEvent.click(screen.getByRole("button", { name: "Add error" }))
@@ -655,12 +675,13 @@ describe("toast queue timing", () => {
       )
 
       fireEvent.click(screen.getByRole("button", { name: "Fire five errors" }))
-      expect(screen.getByTestId("active-toast").textContent).toBe("burst 1")
+      // Three at once, so the first three of the burst are read side by side rather than in turn.
+      expect(stack()).toEqual(["burst 1", "burst 2", "burst 3"])
 
-      // Each error carries an 8s turn of its own. Serving all five in full left the last of them
+      // Each error carries an 8s turn of its own. Serving all five in turn left the last of them
       // 32s out, which is the measurement in the audit; only the second would be up by now.
-      tick(8_500)
-      expect(screen.getByTestId("active-toast").textContent).toBe("burst 5")
+      tick(2_500)
+      expect(stack()).toEqual(["burst 4", "burst 5"])
     } finally {
       vi.useRealTimers()
     }
@@ -682,10 +703,11 @@ describe("toast queue timing", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Fire five errors" }))
 
-      tick(15_000)
-      expect(screen.getByTestId("active-toast").textContent).toBe("burst 5")
-      tick(1_500)
-      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+      // The last two take the screen at 2s with nothing behind them, so they get the whole 8s.
+      tick(9_500)
+      expect(stack()).toEqual(["burst 4", "burst 5"])
+      tick(1_000)
+      expect(stack()).toEqual([])
     } finally {
       vi.useRealTimers()
     }
@@ -730,18 +752,22 @@ describe("toast queue timing", () => {
         { wrapper }
       )
 
-      // An 8s error takes the screen with nothing behind it, so it gets its whole turn.
+      // An 8s error takes a place with nothing behind it, so it gets its whole turn. Two more
+      // join it in the stack, which is not a backlog: nothing is waiting yet.
       fireEvent.click(screen.getByRole("button", { name: "Add error" }))
-      act(() => vi.advanceTimersByTime(400))
-      // Now something lands behind it. Its turn drops to the backlog turn from this moment
-      // (2s), not the 8s it was handed. Before this change it kept the full eight, so this
-      // assertion would still read "Something went wrong" at 7s.
       fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+      act(() => vi.advanceTimersByTime(400))
+      // Now the stack is full and something lands behind it. Every turn drops to the backlog
+      // turn from this moment (2s), not the 8s the error was handed. Before this change it
+      // kept the full eight, so the error would still be up at 7s.
+      fireEvent.click(screen.getByRole("button", { name: "Add fourth" }))
 
       act(() => vi.advanceTimersByTime(1_600))
-      expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+      expect(stack()).toContain("Something went wrong")
       act(() => vi.advanceTimersByTime(600))
-      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+      expect(stack()).not.toContain("Something went wrong")
+      expect(stack()).toContain("A fourth message")
     } finally {
       vi.useRealTimers()
     }
@@ -763,9 +789,11 @@ describe("toast queue timing", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Add actionable warning" }))
       fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add fourth" }))
 
       tick(30_000)
-      expect(screen.getByTestId("active-toast").textContent).toBe("A decision is required")
+      expect(stack()).toEqual(["A decision is required"])
     } finally {
       vi.useRealTimers()
     }
@@ -816,17 +844,18 @@ describe("toast queue timing", () => {
       fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
       // Pointer settles over the region and never moves again.
       fireEvent.mouseEnter(screen.getByRole("status"))
-      // The first banner is dismissed and the second takes its place. The pointer is still
-      // there, so the new banner mounts paused rather than running its timer unseen (#398).
-      fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
-      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+      // The first banner is dismissed and the one below slides up into its place. The pointer
+      // is still there and has named no banner since, so the stack is held rather than running
+      // its timers unseen (#398).
+      fireEvent.click(screen.getAllByRole("button", { name: "Discard notification" })[0]!)
+      expect(stack()).toEqual(["A notification worth keeping"])
 
       act(() => vi.advanceTimersByTime(30_000))
-      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+      expect(stack()).toEqual(["A notification worth keeping"])
 
       fireEvent.mouseLeave(screen.getByRole("status"))
       act(() => vi.advanceTimersByTime(5_000))
-      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+      expect(stack()).toEqual([])
     } finally {
       vi.useRealTimers()
     }
@@ -847,12 +876,14 @@ describe("toast queue timing", () => {
       )
 
       fireEvent.click(screen.getByRole("button", { name: "Add error" }))
-      fireEvent.mouseEnter(screen.getByRole("status"))
       fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+      fireEvent.mouseEnter(screen.getByRole("status"))
+      fireEvent.click(screen.getByRole("button", { name: "Add fourth" }))
 
-      // The shortening effect is gated on the pause flag, so a held banner keeps its turn.
+      // The shortening effect is gated on each banner's own pause flag, so a held stack keeps its turns.
       act(() => vi.advanceTimersByTime(30_000))
-      expect(screen.getByTestId("active-toast").textContent).toBe("Something went wrong")
+      expect(stack()).toContain("Something went wrong")
     } finally {
       vi.useRealTimers()
     }
@@ -898,16 +929,16 @@ describe("toast queue timing", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Add error" }))
       fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
-      const discard = screen.getByRole("button", { name: "Discard notification" })
+      const discard = screen.getAllByRole("button", { name: "Discard notification" })[0]!
       discard.focus()
       expect(document.activeElement).toBe(discard)
 
       fireEvent.click(discard)
-      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+      expect(stack()).toEqual(["A notification worth keeping"])
       expect(screen.getByTestId("toast-paused").textContent).toBe("false")
 
       act(() => vi.advanceTimersByTime(5_000))
-      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+      expect(stack()).toEqual([])
     } finally {
       vi.useRealTimers()
     }
@@ -959,15 +990,19 @@ describe("toast queue timing", () => {
       )
 
       fireEvent.click(screen.getByRole("button", { name: "Add error" }))
-      act(() => vi.advanceTimersByTime(7_000))
       fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+      act(() => vi.advanceTimersByTime(7_000))
+      fireEvent.click(screen.getByRole("button", { name: "Add fourth" }))
 
       expect(screen.getByTestId("toast-paused").textContent).toBe("false")
       await act(async () => {
         await Promise.resolve()
       })
+      // One second left of the error's eight, and the backlog turn is two: it keeps the one it
+      // has rather than being handed a fresh two.
       act(() => vi.advanceTimersByTime(1_100))
-      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+      expect(stack()).toEqual(["A fourth message"])
     } finally {
       vi.useRealTimers()
     }
@@ -981,6 +1016,130 @@ describe("toast queue timing", () => {
     })
 
     expect(result.current.notifications.length + result.current.history.length).toBeLessThan(40)
+  })
+})
+
+/**
+ * The stack itself (#389). One banner at a time meant a burst could only be read by shortening
+ * every turn in it; three places let a burst of three be read side by side.
+ */
+describe("toast stack", () => {
+  it("shows up to three banners at once, newest at the bottom, and queues the rest", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <ActiveToastProbe />
+        <NotificationsOverlay />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add fourth" }))
+
+    expect(stack()).toHaveLength(MAX_VISIBLE_TOASTS)
+    expect(stack()).toEqual(["A notification worth keeping", "A successful action", "Something went wrong"])
+    expect(screen.queryByText("A fourth message")).toBeNull()
+
+    // Drawn in that order too, so the newest is the one nearest the bottom right corner.
+    const banners = Array.from(screen.getByRole("status").querySelectorAll("[data-toast-id]"))
+    expect(banners.map((banner) => banner.textContent)).toEqual([
+      expect.stringContaining("A notification worth keeping"),
+      expect.stringContaining("A successful action"),
+      expect.stringContaining("Something went wrong")
+    ])
+  })
+
+  it("gives each banner its own countdown bar rather than one for the stack", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <NotificationsOverlay />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+
+    expect(screen.getAllByTestId("toast-timer")).toHaveLength(2)
+  })
+
+  it("holds only the banner the pointer is on, and lets the others beside it run out", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+
+      // The pointer settles on the error, which is the banner drawn first.
+      fireEvent.mouseOver(screen.getByRole("status").querySelector("[data-toast-id]") as HTMLElement)
+
+      act(() => vi.advanceTimersByTime(30_000))
+      expect(stack()).toEqual(["Something went wrong"])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("puts every banner in the stack in tab order, so a keyboard player reaches all three", () => {
+    installMockWindowApi()
+
+    render(
+      <>
+        <Controls />
+        <NotificationsOverlay />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add error" }))
+
+    const discards = screen.getAllByRole("button", { name: "Discard notification" })
+    expect(discards).toHaveLength(MAX_VISIBLE_TOASTS)
+    for (const discard of discards) expect(discard.getAttribute("tabindex")).not.toBe("-1")
+  })
+
+  it("never times out a banner carrying a question, whatever else shares the stack with it", () => {
+    vi.useFakeTimers()
+    try {
+      installMockWindowApi()
+
+      render(
+        <>
+          <Controls />
+          <ActiveToastProbe />
+          <NotificationsOverlay />
+        </>,
+        { wrapper }
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "Add actionable warning" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add success" }))
+
+      tick(30_000)
+      expect(stack()).toEqual(["A decision is required"])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -1052,9 +1211,9 @@ describe("toast queue pointer handoff", () => {
       fireEvent.click(screen.getByRole("button", { name: "Add error" }))
       fireEvent.click(screen.getByRole("button", { name: "Add notification" }))
       fireEvent.mouseOver(toast())
-      fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
+      fireEvent.click(screen.getAllByRole("button", { name: "Discard notification" })[0]!)
 
-      expect(screen.getByTestId("active-toast").textContent).toBe("A notification worth keeping")
+      expect(stack()).toEqual(["A notification worth keeping"])
 
       fireEvent.mouseOver(screen.getByTestId("outside-toast-region"))
       await act(async () => {
@@ -1063,7 +1222,7 @@ describe("toast queue pointer handoff", () => {
 
       expect(screen.getByTestId("toast-paused").textContent).toBe("false")
       act(() => vi.advanceTimersByTime(4_500))
-      expect(screen.getByTestId("active-toast").textContent).toBe("none")
+      expect(stack()).toEqual([])
     } finally {
       vi.clearAllTimers()
       vi.useRealTimers()
@@ -1071,7 +1230,7 @@ describe("toast queue pointer handoff", () => {
   })
 })
 
-function ProbeRemoveSecond(): JSX.Element {
+function ProbeRemoveLast(): JSX.Element {
   const { history, removeNotification } = useNotificationsContext()
-  return <button onClick={() => history[1] && removeNotification(history[1].id)}>Remove second</button>
+  return <button onClick={() => history.at(-1) && removeNotification(history.at(-1)!.id)}>Remove last</button>
 }

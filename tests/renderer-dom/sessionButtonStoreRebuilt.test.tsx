@@ -16,7 +16,6 @@ async function login(email: string, password: string): Promise<void> {
   await user.type(screen.getByLabelText("Email"), email)
   await user.type(screen.getByLabelText("Password"), password)
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Log in" }))
-  await user.click(await screen.findByRole("button", { name: "Discard notification" }, { timeout: 10000 }))
 }
 
 /**
@@ -40,7 +39,6 @@ describe("SessionButton on an account-store rebuild", () => {
     await login("player@example.test", "correct-horse-battery-staple")
 
     expect(await screen.findByText(/couldn't be read/i)).toBeTruthy()
-    await userEvent.setup().click(await screen.findByRole("button", { name: "Discard notification" }))
     expect(await screen.findByText(/logged in as player/i)).toBeTruthy()
   }, 15000)
 
