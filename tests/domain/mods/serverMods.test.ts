@@ -76,7 +76,7 @@ describe("scanServerMods", () => {
       scan.groups.map((group) => group.server),
       ["alpha", "Mike", "zulu"]
     )
-    assert.equal(scan.groups[0].path, `${FOLDER}/alpha`)
+    assert.equal(scan.groups[0]!.path, `${FOLDER}/alpha`)
     assert.deepEqual(
       scan.groups.map((group) => group.mods.map((mod) => mod.modid)),
       [["one"], ["two"], ["three"]]
@@ -110,8 +110,8 @@ describe("scanServerMods", () => {
       folder: FOLDER
     })
 
-    assert.equal(scan.groups[0].mods.length, 1)
-    assert.equal(scan.groups[0].unreadable, 1)
+    assert.equal(scan.groups[0]!.mods.length, 1)
+    assert.equal(scan.groups[0]!.unreadable, 1)
   })
 
   it("stops at the folder cap and says there is more on disk", async () => {

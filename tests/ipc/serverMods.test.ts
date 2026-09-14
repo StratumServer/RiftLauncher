@@ -123,12 +123,12 @@ describe("GET_SERVER_MODS", () => {
       result.groups.map((group) => group.server),
       ["192.168.1.10", "Empty Server", "My Test Server"]
     )
-    assert.equal(result.groups[0].path, serverFolder("192.168.1.10"))
+    assert.equal(result.groups[0]!.path, serverFolder("192.168.1.10"))
     assert.deepEqual(
-      result.groups[0].mods.map((mod) => ({ modid: mod.modid, version: mod.version, enabled: mod.enabled, path: mod.path })),
+      result.groups[0]!.mods.map((mod) => ({ modid: mod.modid, version: mod.version, enabled: mod.enabled, path: mod.path })),
       [{ modid: "riftfixture", version: "1.0.0", enabled: true, path: join(serverFolder("192.168.1.10"), "valid-mod.zip") }]
     )
-    assert.deepEqual(result.groups[1].mods, [])
+    assert.deepEqual(result.groups[1]!.mods, [])
     assert.equal(result.truncated, undefined)
   })
 
@@ -139,8 +139,8 @@ describe("GET_SERVER_MODS", () => {
     const event = await createTrustedEvent()
     const result = await getServerMods()(event, installation)
 
-    assert.equal(result.groups[0].mods.length, 1)
-    assert.equal(result.groups[0].unreadable, 1)
+    assert.equal(result.groups[0]!.mods.length, 1)
+    assert.equal(result.groups[0]!.unreadable, 1)
   })
 
   // The Mods folder's own scan never sees this folder, and this one never sees the Mods folder: the
@@ -169,7 +169,7 @@ describe("GET_SERVER_MODS", () => {
       result.groups.map((group) => group.server),
       ["My Test Server"]
     )
-    assert.equal(result.groups[0].mods.length, 1)
+    assert.equal(result.groups[0]!.mods.length, 1)
   })
 
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("says the folder could not be read rather than answering an empty list", async () => {

@@ -173,7 +173,7 @@ describe("startup network boundaries", () => {
     for (const line of body.split("\n").filter((text) => text.includes("logMessage("))) {
       // Only what gets interpolated: the fixed English of a line is free to say "folder".
       for (const [, expression] of line.matchAll(/\$\{([^}]*)\}/g)) {
-        assert.equal(/server|folder|path/i.test(expression), false, `a GET_SERVER_MODS log line interpolates a server or a folder: ${line.trim()}`)
+        assert.equal(/server|folder|path/i.test(expression ?? ""), false, `a GET_SERVER_MODS log line interpolates a server or a folder: ${line.trim()}`)
       }
     }
   })
