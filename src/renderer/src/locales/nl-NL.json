@@ -120,6 +120,12 @@
       "loginPrivacyGame": "Wanneer je de game start, worden de sessiegegevens die Vintage Story nodig heeft naar de geselecteerde installatie geschreven.",
       "loginPrivacyPolicy": "Privacybeleid lezen",
       "removeAccountAction": "Account verwijderen"
+    },
+    "servers": {
+      "addServer": "Server toevoegen",
+      "join": "Deelnemen",
+      "importServersAdd": "Gekozen servers toevoegen",
+      "importServersSkip": "Servers overslaan"
     }
   },
   "components": {

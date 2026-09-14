@@ -262,6 +262,12 @@
       "thisFolder": "tym folderze",
       "title": "Pomoc i informacje o RiftLauncher",
       "debugInfoDesc": "Skopiuj poniższe informacje i wyślij je wraz ze zgłoszeniem błędu, aby pomóc nam znaleźć problem!"
+    },
+    "servers": {
+      "addServer": "Dodaj serwer",
+      "join": "Dołącz",
+      "importServersAdd": "Dodaj wybrane serwery",
+      "importServersSkip": "Pomiń serwery"
     }
   },
   "generic": {
