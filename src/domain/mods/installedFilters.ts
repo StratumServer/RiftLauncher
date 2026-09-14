@@ -120,6 +120,16 @@ function matchesGameVersion(mod: InstalledModType, gameVersion: string): boolean
   return releasesOf(mod).some((release) => evaluateModCompatibility(textEntries(release.tags), gameVersion) !== "undeclared")
 }
 
+/**
+ * What the player types matched against what they can see of a mod: its name, id, or author.
+ *
+ * `search` arrives trimmed and lower-cased, because the page does that once per keystroke rather
+ * than once per mod. Shared with the server groups (#459), which narrow on the same field.
+ */
+export function matchesModSearch(mod: InstalledModType, search: string): boolean {
+  return mod.name.toLowerCase().includes(search) || mod.modid.toLowerCase().includes(search) || (mod.authors?.some((author) => author.toLowerCase().includes(search)) ?? false)
+}
+
 /** All three axes at once. A mod clears every one of them, so each pick narrows what is left. */
 export function matchesInstalledModFilters(mod: InstalledModType, filters: InstalledModFilters): boolean {
   return matchesAuthor(mod, filters.author) && matchesTags(mod, filters.tags) && matchesGameVersion(mod, filters.gameVersion)
