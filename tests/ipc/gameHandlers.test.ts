@@ -81,6 +81,27 @@ vi.mock("node:child_process", async (importOriginal) => {
  */
 const detectedVersion = vi.hoisted(() => ({ next: null as unknown }))
 
+/**
+ * Stands Windows in for the host, on demand, so the Windows arms of EXECUTE_GAME can be driven
+ * from a Linux runner.
+ *
+ * Only `os.platform()` moves. `comparablePath` and the path policy read `process.platform`
+ * instead, so a fixture path still compares the way the real host compares it, and every other
+ * `node:os` export is the real one. The handler reads the platform for three decisions: the launch
+ * wrapper (Linux only), the launch plan's executable name, and which process sampler the session
+ * recorder gets. That last one is the point: the Windows sampler is a `tasklist` reader, so it only
+ * measures anything if the handler hands the factory a probe to run it with.
+ */
+const hostPlatform = vi.hoisted(() => ({ value: null as NodeJS.Platform | null }))
+
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>()
+  const platform = (): NodeJS.Platform => hostPlatform.value ?? actual.platform()
+  // gameHandlers.ts imports the default, which the interop resolves to the namespace, so both have
+  // to carry the stand-in or the handler keeps reading the real platform.
+  return { ...actual, platform, default: { ...actual, platform } }
+})
+
 vi.mock("@domain/versions/detect", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@domain/versions/detect")>()
   type Detect = typeof actual.detectInstalledGameVersion
@@ -172,6 +193,7 @@ beforeEach(async () => {
   // it on for the next test, whose real spawn would then throw.
   spawnThrow.next = false
   detectedVersion.next = null
+  hostPlatform.value = null
 
   temporaryRoot = mkdtempSync(join(tmpdir(), "game-handlers-"))
   managedFolder = join(temporaryRoot, "Installations")
@@ -421,6 +443,114 @@ describe("EXECUTE_GAME", () => {
     await executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
 
     assert.equal(existsSync(join(userDataFolder, "Sessions")), false)
+  })
+
+  /**
+   * The Windows sampler, from EXECUTE_GAME rather than from the adapter's own tests.
+   *
+   * The handler builds the sampler itself, so nothing below the handler can prove that a Windows
+   * launch is measured at all: hand `createProcessSampler` no probe and it answers the absent
+   * sampler, the session records nothing, and every test under the handler still passes. These
+   * three drive the real factory, the real `tasklist` adapter and the real probe, with only the
+   * platform and the `tasklist` binary itself standing in.
+   *
+   * Still Linux-only, because the stand-ins are `#!/bin/sh` scripts: the launcher believes it is on
+   * Windows, the runner is not. A launch plan for Windows spawns `Vintagestory.exe` directly, and a
+   * shell script under that name runs perfectly well on Linux.
+   */
+  describe("with a Windows sampler", () => {
+    let tasklistCalls: string
+
+    /**
+     * Puts a stand-in `tasklist` first on PATH, which is where `execFile` looks for a bare command.
+     *
+     * It records the arguments it was given before answering, so a test can tell a sampler that ran
+     * and got nothing usable apart from one that was never built.
+     */
+    function fakeTasklist(body: string): void {
+      const binFolder = join(temporaryRoot, "bin")
+      mkdirSync(binFolder, { recursive: true })
+      tasklistCalls = join(temporaryRoot, "tasklist-calls")
+      writeFileSync(join(binFolder, "tasklist"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${tasklistCalls}'\n${body}`)
+      chmodSync(join(binFolder, "tasklist"), 0o755)
+      process.env.PATH = `${binFolder}:${process.env.PATH ?? ""}`
+    }
+
+    /** A Windows game folder and Installation, with the game itself sleeping long enough to be measured once. */
+    function seedWindowsLaunch(): { gameVersionFolder: string; installationFolder: string } {
+      const gameVersionFolder = join(versionsFolder, "1.20.0")
+      const installationFolder = join(managedFolder, "Main")
+      mkdirSync(gameVersionFolder, { recursive: true })
+      mkdirSync(installationFolder, { recursive: true })
+      writeFileSync(join(gameVersionFolder, "Vintagestory.exe"), "#!/bin/sh\nsleep 1\nexit 0\n")
+      chmodSync(join(gameVersionFolder, "Vintagestory.exe"), 0o755)
+
+      writeConfig({
+        gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+        installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+      })
+      return { gameVersionFolder, installationFolder }
+    }
+
+    async function launch(gameVersionFolder: string, installationFolder: string): Promise<GameExecutionResult> {
+      const event = await createTrustedEvent()
+      return executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+    }
+
+    let originalPath: string | undefined
+
+    beforeEach(() => {
+      originalPath = process.env.PATH
+      hostPlatform.value = "win32"
+    })
+
+    afterEach(() => {
+      process.env.PATH = originalPath
+    })
+
+    it.skipIf(process.platform !== "linux")("stores what tasklist reported for a Windows launch", async () => {
+      fakeTasklist(`echo '"Vintagestory.exe","4242","Console","1","65,536 K"'\n`)
+      const { gameVersionFolder, installationFolder } = seedWindowsLaunch()
+
+      assert.deepEqual(await launch(gameVersionFolder, installationFolder), { ok: true, exitCode: 0 })
+
+      assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+ \/NH \/FO CSV/, "the sampler never ran tasklist for the pid the launcher spawned")
+      const document = JSON.parse(readFileSync(join(userDataFolder, "Sessions", "main-1.json"), "utf-8"))
+      assert.equal(document.sessions.length, 1)
+      assert.equal(document.sessions[0].partial, false)
+      assert.deepEqual(
+        document.sessions[0].samples.map((sample: { rssBytes: number }) => sample.rssBytes),
+        [65_536 * 1024]
+      )
+      // tasklist carries no CPU column, so a Windows reading is memory and nothing else.
+      assert.equal(document.sessions[0].samples[0].cpuPercent, undefined)
+    })
+
+    /**
+     * The game exited between samples: `tasklist` still answers, and answers that the pid is gone.
+     * A session with no reading in it is not written at all, which is the recorder's own answer for
+     * one it never measured, and the launch result reaches the player unchanged.
+     */
+    it.skipIf(process.platform !== "linux")("records no session, and still answers the launch, when the process has gone", async () => {
+      fakeTasklist("echo 'INFO: No tasks are running which match the specified criteria.'\n")
+      const { gameVersionFolder, installationFolder } = seedWindowsLaunch()
+
+      assert.deepEqual(await launch(gameVersionFolder, installationFolder), { ok: true, exitCode: 0 })
+
+      assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+/, "the sampler never ran tasklist for the pid the launcher spawned")
+      assert.equal(existsSync(join(userDataFolder, "Sessions", "main-1.json")), false)
+    })
+
+    /** A process another account owns: `tasklist` refuses it, which is a reading the session does without. */
+    it.skipIf(process.platform !== "linux")("records no session, and still answers the launch, when tasklist is denied the process", async () => {
+      fakeTasklist("echo 'ERROR: Access is denied.' >&2\nexit 1\n")
+      const { gameVersionFolder, installationFolder } = seedWindowsLaunch()
+
+      assert.deepEqual(await launch(gameVersionFolder, installationFolder), { ok: true, exitCode: 0 })
+
+      assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+/, "the sampler never ran tasklist for the pid the launcher spawned")
+      assert.equal(existsSync(join(userDataFolder, "Sessions", "main-1.json")), false)
+    })
   })
 
   /**

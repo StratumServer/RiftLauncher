@@ -143,7 +143,11 @@ export function createPlaySessionRecorder(sampler: ProcessSampler, options: { in
   }
 
   async function take(pid: number): Promise<void> {
-    const reading = await sampler.sample(pid)
+    // The port says it never rejects, and a sampler that breaks that promise would otherwise leave
+    // `inFlight` rejected: every later reading chains off it and is skipped, and `finish` rethrows
+    // into EXECUTE_GAME, so one bad reading would cost the player the launch result as well as the
+    // session. A throw counts as the miss it is instead.
+    const reading = await sampler.sample(pid).catch(() => undefined)
     if (!reading) {
       misses += 1
       if (misses >= MISSES_BEFORE_PARTIAL) {
