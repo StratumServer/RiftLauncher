@@ -575,9 +575,11 @@ interface BoundedRead {
  * the point. A missing file, a folder, or anything that is not a regular file answers null, which
  * the caller reads as "there is no such log" rather than as a failure.
  *
- * The cut is by bytes, not by lines, so the two halves can each begin or end mid-character. The
- * line grammar drops a mangled leading run for exactly this reason, and a replacement character
- * inside one line costs that line and nothing else.
+ * The cut is by bytes, not by lines, so each half can begin or end mid-character and mid-line. A
+ * replacement character inside one line costs that line and nothing else, and the two half lines at
+ * the cuts are dropped here: the head's is a sentence with its end missing, and joining it to the
+ * tail's, which comes from megabytes later in the file, would make one line out of two unrelated
+ * fragments for the line grammar to hand to whichever entry came before.
  */
 async function readBoundedText(filePath: string, whole: number, head: number, tail: number): Promise<BoundedRead | null> {
   const stats = await fse.stat(filePath).catch(() => null)
@@ -588,11 +590,15 @@ async function readBoundedText(filePath: string, whole: number, head: number, ta
   try {
     const headBuffer = Buffer.alloc(head)
     await fse.read(handle, headBuffer, 0, head, 0)
-    if (tail <= 0) return { text: headBuffer.toString("utf-8"), truncated: true, lastWrittenAtMs: stats.mtimeMs }
+    const headText = headBuffer.toString("utf-8")
+    const headLines = headText.slice(0, Math.max(headText.lastIndexOf("\n"), 0))
+    if (tail <= 0) return { text: headLines, truncated: true, lastWrittenAtMs: stats.mtimeMs }
 
     const tailBuffer = Buffer.alloc(tail)
     await fse.read(handle, tailBuffer, 0, tail, stats.size - tail)
-    return { text: `${headBuffer.toString("utf-8")}\n${tailBuffer.toString("utf-8")}`, truncated: true, lastWrittenAtMs: stats.mtimeMs }
+    const tailText = tailBuffer.toString("utf-8")
+    const firstBreak = tailText.indexOf("\n")
+    return { text: `${headLines}\n${firstBreak === -1 ? "" : tailText.slice(firstBreak + 1)}`, truncated: true, lastWrittenAtMs: stats.mtimeMs }
   } finally {
     await fse.close(handle)
   }

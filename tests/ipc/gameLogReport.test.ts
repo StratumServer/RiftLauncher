@@ -148,6 +148,38 @@ describe("GET_GAME_LOG_REPORT on a real session", () => {
     assert.ok(!wire.includes("Will_T"), "the player's name crossed IPC")
   })
 
+  it("drops the half lines the byte cut leaves at each end rather than splicing them together", async () => {
+    // The head stops mid-line and the tail starts mid-line, and the two are megabytes apart. Joined
+    // as they stand, the parser reads them as one line and attaches both to the last entry the head
+    // produced: text from the far end of the file, shown to a mod author as this error's own trace.
+    const HEAD_BYTES = 512 * 1024
+    const TAIL_BYTES = 1536 * 1024
+    const filler = (n: number): string => `${"1.1.2026 0:00:30 [Notification] filler ".padEnd(n - 1, "x")}\n`
+
+    const error = "1.1.2026 0:02:00 [Error] [modx] early failure at startup\n"
+    const cutByHead = "1.1.2026 0:02:01 [Notification] the head read stops inside this line\n"
+    const fromFarLater = "a fragment from far later in the file\n"
+    const lastError = "1.1.2026 9:00:00 [Error] [mody] the very last error\n"
+
+    // The error ends twenty bytes short of the head cut, so `cutByHead` is what the head ends inside.
+    const head = filler(HEAD_BYTES - 20 - error.length) + error + cutByHead
+    // The tail begins exactly where `fromFarLater` does, so the line before it is what it ends inside.
+    const tailEnd = fromFarLater + filler(TAIL_BYTES - fromFarLater.length - lastError.length) + lastError
+    const middle = "1.1.2026 8:00:00 [Notification] the tail read starts inside this line"
+
+    writeFileSync(join(logsFolder, "client-main.log"), head + middle + tailEnd, "utf-8")
+
+    const answer = await handler()(await createTrustedEvent(), installationFolder)
+    assert.ok(answer.ok)
+    assert.equal(answer.report.source.truncated, true)
+    assert.deepEqual(
+      answer.report.mods.map((mod) => mod.modid),
+      ["modx", "mody"]
+    )
+    assert.deepEqual(answer.report.mods[0]?.lines[0]?.continuation, [])
+    assert.ok(!JSON.stringify(answer.report).includes("far later in the file"), "a fragment from the far end of the file was kept as a trace")
+  })
+
   it("reads a 50 MiB log bounded, keeping both ends and saying the middle was skipped", async () => {
     const head = "1.1.2026 0:00:00 [Notification] Entering runphase Initialization\n"
     const tail = "\n1.1.2026 0:09:00 [Error] [lategamemod] the very last error\n"
