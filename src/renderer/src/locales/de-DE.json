@@ -134,6 +134,9 @@
       "mesaGlThread": "mesa_glthread",
       "mesaGlThreadDesc": "Aktiviere diese Option, um das Spiel mit mesa_glthread auszuführen. Dies kann die Leistung auf einigen Linux-Systemen erhöhen."
     },
+    "sessions": {
+      "forget": "Diese Sitzungen vergessen"
+    },
     "mods": {
       "modsCount": "{{count}} Modifikationen",
       "modsCount_zero": "{{count}} Modifikationen",
