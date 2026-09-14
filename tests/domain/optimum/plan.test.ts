@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
-import { cliFileName, hostRid, isUpdateAvailable, overlayCacheFolder, overlayDownloadUrl, overlayFolderName, patchArgs, rollbackArgs, supportsGameVersion } from "@domain/optimum/plan"
+import { cliFileName, hostRid, isUpdateAvailable, overlayCacheFolder, overlayDownloadUrl, patchArgs, rollbackArgs, supportsGameVersion } from "@domain/optimum/plan"
 
 function manifest(overrides: Partial<OptimumManifest> = {}): OptimumManifest {
   return {
@@ -71,10 +71,9 @@ describe("addresses built by the launcher", () => {
     assert.equal(overlayDownloadUrl(manifest()), "https://github.com/StratumServer/Optimum/releases/download/v0.3.14/Optimum-v0.3.14-linux-x64-overlay.tar.gz")
   })
 
-  it("names one cache folder per version and platform, and the folder the archive unpacks into", () => {
+  it("names one cache folder per version and platform", () => {
     assert.equal(overlayCacheFolder(manifest()), "0.3.14-linux-x64")
     assert.equal(overlayCacheFolder(manifest({ rid: "win-x64" })), "0.3.14-win-x64")
-    assert.equal(overlayFolderName(manifest()), "Optimum-v0.3.14-linux-x64-overlay")
   })
 
   it("names the CLI per platform", () => {

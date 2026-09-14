@@ -103,15 +103,6 @@ export function expectedArchiveName(optimumVersion: string, rid: OptimumRid): st
   return `Optimum-v${optimumVersion}-${rid}-overlay.tar.gz`
 }
 
-/**
- * The folder the archive unpacks into, which is the stem of its own name.
- *
- * That folder, not the tarball, is what `--overlay` takes.
- */
-export function expectedOverlayFolderName(optimumVersion: string, rid: OptimumRid): string {
-  return `Optimum-v${optimumVersion}-${rid}-overlay`
-}
-
 function readArchive(value: unknown, optimumVersion: string, rid: OptimumRid): OptimumArchive | undefined {
   if (!isRecord(value)) return undefined
 

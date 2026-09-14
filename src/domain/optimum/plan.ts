@@ -11,7 +11,7 @@
 
 import semver from "semver"
 
-import { expectedOverlayFolderName, type OptimumManifest, type OptimumRid } from "./manifest"
+import type { OptimumManifest, OptimumRid } from "./manifest"
 
 /** Where the manifest of the newest published overlay is read from. One fixed address, no listing call. */
 export const OPTIMUM_MANIFEST_URL = "https://github.com/StratumServer/Optimum/releases/latest/download/optimum-manifest.json"
@@ -57,14 +57,15 @@ export function overlayDownloadUrl(manifest: OptimumManifest): string {
   return `https://github.com/StratumServer/Optimum/releases/download/v${manifest.optimumVersion}/${manifest.archive.filename}`
 }
 
-/** The cache folder one overlay is staged into, one per version and platform. */
+/**
+ * The cache folder one overlay is staged into, one per version and platform.
+ *
+ * The archive's single wrapping folder is stepped into on the way out, the same
+ * way a game build's `vintagestory/` is, so this folder is what `--overlay` is
+ * pointed at rather than a child of it.
+ */
 export function overlayCacheFolder(manifest: OptimumManifest): string {
   return `${manifest.optimumVersion}-${manifest.rid}`
-}
-
-/** The folder the archive unpacks into, which is what `--overlay` is pointed at. */
-export function overlayFolderName(manifest: OptimumManifest): string {
-  return expectedOverlayFolderName(manifest.optimumVersion, manifest.rid)
 }
 
 /**
