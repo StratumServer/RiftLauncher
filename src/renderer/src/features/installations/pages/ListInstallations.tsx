@@ -11,7 +11,8 @@ import {
   PiTrashDuotone,
   PiWarningDuotone,
   PiArrowUpDuotone,
-  PiArrowDownDuotone
+  PiArrowDownDuotone,
+  PiGlobeDuotone
 } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
 import clsx from "clsx"
@@ -199,18 +200,26 @@ function ListInslallations(): JSX.Element {
                           <PiArrowCounterClockwiseDuotone />
                         </LinkButton>
                       </div>
+                      {/* Servers sits beside Manage Mods rather than at the end of the strip: the two are
+                          the per-Installation pages a player opens over and over, and the column pairs
+                          stay two high so the row keeps its height. */}
                       <div className="flex flex-col gap-1">
                         <LinkButton to={`/installations/mods/${installation.id}`} title={t("features.mods.manageMods")} className="p-1" variant="ghost">
                           <PiWrenchDuotone />
                         </LinkButton>
+                        <LinkButton to={`/installations/servers/${installation.id}`} title={t("features.servers.manageServers")} className="p-1" variant="ghost">
+                          <PiGlobeDuotone />
+                        </LinkButton>
+                      </div>
+                      <div className="flex flex-col gap-1">
                         <NormalButton onClick={() => openPathInExplorer(installation.path)} title={`${t("generic.openOnFileExplorer")} · ${installation.path}`} className="p-1" variant="ghost">
                           <PiFolderOpenDuotone />
                         </NormalButton>
-                      </div>
-                      <div className="flex flex-col gap-1">
                         <LinkButton to={`/installations/edit/${installation.id}`} title={t("features.installations.editInstallation")} className="p-1" variant="ghost">
                           <PiPencilDuotone />
                         </LinkButton>
+                      </div>
+                      <div className="flex flex-col gap-1">
                         <NormalButton
                           className="p-1"
                           title={t("features.installations.deleteInstallation")}
