@@ -68,6 +68,32 @@ vi.mock("node:child_process", async (importOriginal) => {
   }
 })
 
+/**
+ * Stands one detection result in for the domain's, on demand.
+ *
+ * The boundary check the handler runs on the way out reads the same semver
+ * grammar detection reads on the way in, so no transcript a real probe could
+ * print produces a variant the domain accepts and the check refuses: a test
+ * driving a script can only ever watch the two agree. Queueing a result here is
+ * what hands the handler a variant the check has to catch, which pins the call
+ * itself rather than the function it calls. Off unless a test turns it on, like
+ * the spawn flag above, and consumed by the first detection after it is set.
+ */
+const detectedVersion = vi.hoisted(() => ({ next: null as unknown }))
+
+vi.mock("@domain/versions/detect", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@domain/versions/detect")>()
+  type Detect = typeof actual.detectInstalledGameVersion
+  return {
+    ...actual,
+    detectInstalledGameVersion: async (...args: Parameters<Detect>): ReturnType<Detect> => {
+      const queued = detectedVersion.next
+      detectedVersion.next = null
+      return queued ? (queued as Awaited<ReturnType<Detect>>) : actual.detectInstalledGameVersion(...args)
+    }
+  }
+})
+
 // Real implementation, wrapped, so the crash-safety guarantee stays covered by
 // atomicJsonFile.test.ts and this file only asserts that the settings write
 // goes through the shared adapter rather than a bare fse.writeJSON.
@@ -145,6 +171,7 @@ beforeEach(async () => {
   // test that turns this on and fails before the spawn consumes it would leave
   // it on for the next test, whose real spawn would then throw.
   spawnThrow.next = false
+  detectedVersion.next = null
 
   temporaryRoot = mkdtempSync(join(tmpdir(), "game-handlers-"))
   managedFolder = join(temporaryRoot, "Installations")
@@ -893,6 +920,22 @@ describe("LOOK_FOR_A_GAME_VERSION", () => {
     const result = await lookForAGameVersionHandler()(event, folder)
 
     assert.deepEqual(result, { exists: true, installedGameVersion: "1.22.7" })
+  })
+
+  it("drops a variant the boundary check refuses before it reaches the renderer", async () => {
+    const folder = join(versionsFolder, "spoofed-variant")
+    mkdirSync(folder, { recursive: true })
+    writeConfig({ gameVersions: [{ version: "1.22.7", path: folder }] as unknown as ConfigType["gameVersions"] })
+
+    // Four dotted numbers: the version grammar reads three of them and semver
+    // refuses the whole, which is what the check is there to catch.
+    detectedVersion.next = { ok: true, version: "1.22.7", variant: { name: "Optimum", version: "0.3.14.7" } }
+
+    const event = await createTrustedEvent()
+    const result = await lookForAGameVersionHandler()(event, folder)
+
+    assert.deepEqual(result, { exists: true, installedGameVersion: "1.22.7" }, "the game version still crosses; the variant does not")
+    assert.equal(detectedVersion.next, null, "the queued result is the one this test ran")
   })
 
   it("reports not found when only the mono fallback candidate (Vintagestory.exe) is present and fails its probe", async () => {
