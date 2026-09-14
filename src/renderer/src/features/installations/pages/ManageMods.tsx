@@ -23,7 +23,8 @@ import {
   installedModAuthors,
   installedModGameVersions,
   installedModTags,
-  NO_INSTALLED_MOD_FILTERS
+  NO_INSTALLED_MOD_FILTERS,
+  sameModid
 } from "@domain/mods/installedFilters"
 import type { InstalledModFilters } from "@domain/mods/installedFilters"
 
@@ -90,7 +91,7 @@ function ListMods(): JSX.Element {
   const hasActiveFilters = hasActiveInstalledModFilters(filters)
   const nothingMatches = (query.length > 0 || hasActiveFilters) && visibleMods.length < 1 && visibleModsWithErrors.length < 1
 
-  const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, visibleMods)
+  const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
   const actions = useInstalledModActions(installation, refresh)
@@ -208,7 +209,7 @@ function ListMods(): JSX.Element {
               <ManageModsActionBar
                 installation={installation}
                 installedMods={visibleMods}
-                onUpdateAll={updateAllMods}
+                onUpdateAll={() => updateAllMods(visibleMods)}
                 onImportModpack={pickModpack}
                 activeProfileName={profiles.activeProfile?.name}
                 onOpenProfiles={() => setProfilesOpen(true)}
@@ -306,8 +307,10 @@ function ListMods(): JSX.Element {
                   {/*
                    * Judged against the whole folder rather than the filtered list: a dependency a
                    * search hides is still missing, and this says what the Installation is, not what
-                   * is on screen. It is above "Mods with errors" because it is the one thing here
-                   * that says the game may not start.
+                   * is on screen. Its Update all is handed that same whole folder, so the button
+                   * under a heading cannot do less than the lines above it just listed. It is above
+                   * "Mods with errors" because it is the one thing here that says the game may not
+                   * start.
                    */}
                   <ModHealthPanel
                     installedMods={installedMods}
@@ -317,7 +320,7 @@ function ListMods(): JSX.Element {
                     labelOf={batch.labelOf}
                     actions={actions}
                     onUpdate={setModToUpdate}
-                    onUpdateAll={updateAllMods}
+                    onUpdateAll={() => updateAllMods(installedMods)}
                   />
 
                   {visibleModsWithErrors.length > 0 && (
@@ -373,7 +376,13 @@ function ListMods(): JSX.Element {
                     modName={modToUpdate?.name}
                     installation={{
                       installation: installation,
-                      oldMod: installedMods.find((iMod) => iMod.modid === modToUpdate?.modid)
+                      // Case-folded, because this no longer only ever receives a mod id read off an
+                      // installed copy: the Installation check points the popup at a dependency id
+                      // as the declaring author typed it, and the check itself matches those without
+                      // regard for case. An exact compare missed the copy being replaced, so the
+                      // fix for an outdated dependency left the old archive next to the new one and
+                      // the next scan reported the pair as a duplicate mod id.
+                      oldMod: modToUpdate ? installedMods.find((iMod) => sameModid(iMod.modid, modToUpdate.modid)) : undefined
                     }}
                     onFinishInstallation={() => {
                       refresh()

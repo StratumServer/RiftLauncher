@@ -443,6 +443,26 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /**
+   * The Installation check repeats those hues on its four section headings, one panel layer up from
+   * the release rows above, and they are plain bold text at the default scale rather than WCAG large
+   * text, so the text floor applies to all four. On the bare panel lime-600 reads 3.98:1 and red-400
+   * 4.22:1, the same shortfall RELEASE_ROW_FILL answers, so the heading row carries a fill of its own.
+   */
+  it("keeps the Installation check's section headings readable on their fill", () => {
+    const file = "features/mods/components/ModHealthPanel.tsx"
+    const headingFill: Layer = [ZINC["zinc-950"], Number(match(file, /const SECTION_HEADING_FILL = "bg-zinc-950\/(\d+)"/)[1]) / 100]
+    // The constant alone proves nothing: the row the headings sit in has to wear it.
+    match(file, /className=\{clsx\("flex flex-wrap[^"]*", SECTION_HEADING_FILL\)\}/)
+
+    const headings = [...(match(file, /const SECTIONS([\s\S]+?)\n\]/)[1] as string).matchAll(/section: "([a-z]+)"[^}]*className: "text-([a-z]+-\d+)"/g)]
+    assert.equal(headings.length, 4, "the Installation check no longer ships four section headings")
+
+    for (const heading of headings) {
+      assertReadable(`the ${heading[1] as string} section heading`, [tailwindColor(heading[2] as string), 1], [shell, listPanel, headingFill], TEXT_FLOOR)
+    }
+  })
+
   it("keeps the icons that stand in for a control above the non-text bar", () => {
     // Each of these is the whole visible content of a button: there is no label beside it, so the
     // icon is the affordance and the 3:1 rule applies. Actions that ship a label are covered by

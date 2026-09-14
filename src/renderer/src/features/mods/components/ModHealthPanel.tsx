@@ -4,6 +4,7 @@ import { PiCaretDownDuotone, PiCaretRightDuotone } from "react-icons/pi"
 import clsx from "clsx"
 
 import { checkModHealth } from "@domain/mods/health"
+import { sameModid } from "@domain/mods/installedFilters"
 import type { ModHealthFinding, ModHealthSection } from "@domain/mods/health"
 
 import type { InstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
@@ -13,10 +14,17 @@ import { FormButton } from "@renderer/components/ui/FormComponents"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 
 /**
+ * The fill under every section heading. Two of the four hues below do not clear 4.5:1 on the bare
+ * panel (lime-600 reads 3.98:1 there and red-400 4.22:1), which is the same shortfall the detail
+ * panel's release rows have and the same fill that answers it (InstalledModDetails' RELEASE_ROW_FILL).
+ * tests/text-contrast.test.ts reads the class from here and measures all four hues on it.
+ */
+const SECTION_HEADING_FILL = "bg-zinc-950/50"
+
+/**
  * The four headings, worst first, each in the hue the release table already gives that verdict
  * (ModReleaseList's COMPATIBILITY_STYLE): red for what will not load, yellow for what nobody has
- * vouched for, lime for an update that is there for the taking. Both fills come from classes that
- * already ship elsewhere on this page, so tests/text-contrast.test.ts has no new surface to judge.
+ * vouched for, lime for an update that is there for the taking.
  */
 const SECTIONS: readonly { section: ModHealthSection; titleKey: string; className: string }[] = [
   { section: "blocking", titleKey: "features.mods.healthBlockingTitle", className: "text-red-400" },
@@ -47,7 +55,9 @@ const RAW = { interpolation: { escapeValue: false } }
  * @param labelOf The Mod's name, with its file name added when a second copy shares it (batch.labelOf).
  * @param actions The per-Mod actions the page already builds: turn on, delete, hold.
  * @param onUpdate Opens the install popup on a mod id, for an update or for a dependency nobody has yet.
- * @param onUpdateAll The action bar's own Update all, wired to the update section's heading.
+ * @param onUpdateAll Update all over the same whole folder the lines above are derived from, wired to
+ *   the update section's heading. Handing it the filtered list instead let a search quietly drop Mods
+ *   the heading had just listed, and the summary that followed said nothing about them.
  */
 function ModHealthPanel({
   installedMods,
@@ -149,7 +159,7 @@ function ModHealthPanel({
           </FormButton>
         )
       case "dependency-disabled": {
-        const copy = installedMods.find((candidate) => !candidate.enabled && candidate.modid.toLowerCase() === finding.dependency.toLowerCase())
+        const copy = installedMods.find((candidate) => !candidate.enabled && sameModid(candidate.modid, finding.dependency))
         if (!copy) return null
         return (
           <FormButton title={t("features.mods.healthEnableDependency")} busy={actions.isBusy(copy.path)} onClick={() => actions.toggleEnabled(copy)}>
@@ -205,7 +215,7 @@ function ModHealthPanel({
 
             return (
               <div key={section} className="flex flex-col gap-1">
-                <div className="flex flex-wrap gap-2 items-center justify-between">
+                <div className={clsx("flex flex-wrap gap-2 items-center justify-between rounded-sm p-2", SECTION_HEADING_FILL)}>
                   <h3 className={clsx("font-bold", className)}>{t(titleKey)}</h3>
                   {section === "update" && (
                     <FormButton title={t("features.mods.healthUpdateThese")} onClick={onUpdateAll}>

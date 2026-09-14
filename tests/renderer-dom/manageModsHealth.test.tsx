@@ -53,7 +53,7 @@ function anUnhealthyScan(): { mods: InstalledModType[]; errors: ErrorInstalledMo
       { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: GAMMA_PATH, enabled: true, authors: [] },
       { name: "Delta Mod", modid: "delta", version: "1.0.0", path: DELTA_PATH, enabled: true, authors: [] },
       { name: "Delta Mod", modid: "delta", version: "1.0.1", path: DELTA_COPY_PATH, enabled: true, authors: [] },
-      { name: "Zeta Mod", modid: "zeta", version: "1.0.0", path: ZETA_PATH, enabled: true, authors: [], dependencies: { epsilon: "1.0.0" } },
+      { name: "Zeta Mod", modid: "zeta", version: "1.0.0", path: ZETA_PATH, enabled: true, authors: [], dependencies: { Epsilon: "1.0.0" } },
       { name: "Epsilon Mod", modid: "epsilon", version: "1.0.0", path: EPSILON_PATH, enabled: false, authors: [] }
     ],
     errors: [{ zipname: "broken.zip", path: "/games/a/Mods/broken.zip" }]
@@ -155,7 +155,9 @@ describe("ManageMods: the Installation check", () => {
     // Blocking, in mod id order, and each sentence says which of the three shapes of failure it is.
     expect(within(body).getByText("Alpha Mod needs nowheremod 1.0.0 or newer, which is not in this folder.")).toBeTruthy()
     expect(within(body).getByText("Beta Mod needs gamma 4.0.0 or newer, and 3.0.0 is installed.")).toBeTruthy()
-    expect(within(body).getByText("Zeta Mod needs epsilon, which is installed but turned off.")).toBeTruthy()
+    // Declared with a capital the installed copy does not carry, so the line and the button behind
+    // it both have to find that copy without regard for case.
+    expect(within(body).getByText("Zeta Mod needs Epsilon, which is installed but turned off.")).toBeTruthy()
 
     // Both copies of one mod id get a line, each naming the other by the file name that tells them apart.
     expect(within(body).getByText("Delta Mod (delta-1.0.0.zip) declares the same mod id as Delta Mod (delta-1.0.1.zip). Vintage Story loads one of the two.")).toBeTruthy()
@@ -209,7 +211,7 @@ describe("ManageMods: the Installation check", () => {
     const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async () => ({ ok: true, path: "/games/a/Mods/epsilon-1.0.0.zip" }))
     renderManageMods({ modsManager: { setModEnabled } })
 
-    const line = await lineSaying(/Zeta Mod needs epsilon/)
+    const line = await lineSaying(/Zeta Mod needs Epsilon/)
     await user.click(within(line).getByRole("button", { name: "Turn it back on" }))
 
     await waitFor(() => expect(setModEnabled).toHaveBeenCalledWith(EPSILON_PATH, true))
@@ -269,6 +271,57 @@ describe("ManageMods: the Installation check", () => {
     expect(deletePath.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([ALPHA_PATH, BETA_PATH]))
     // Nothing rolls Alpha back over a Mod that did not make it: its new archive is left where it landed.
     expect(deletePath.mock.calls.map((call) => call[0])).not.toContain("/games/a/Mods/alpha-1.1.0.zip")
+  })
+
+  it("updates every Mod the update heading lists, including the ones the search has hidden", async () => {
+    const user = userEvent.setup()
+    const downloadOnPath = vi.fn(async (_id: string, url: string) => `/games/a/Mods/${url.split("/").pop()}`)
+    renderManageMods({ pathsManager: { deletePath: vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true), downloadOnPath } })
+
+    const body = await healthBody()
+    await within(body).findByText("Beta Mod has a newer release for this version: 2.1.0.", {}, { timeout: 3000 })
+
+    await user.type(screen.getByPlaceholderText("Search by name, id or author"), "Alpha")
+
+    // The panel describes the folder, not the screen, so Beta's line stays through a search that
+    // hides its row. The button under that heading has to mean the same list the heading just read.
+    expect(within(body).getByText("Beta Mod has a newer release for this version: 2.1.0.")).toBeTruthy()
+
+    await user.click(within(body).getByRole("button", { name: "Update these" }))
+
+    await waitFor(() => expect(downloadOnPath.mock.calls.map((call) => call[1])).toEqual(expect.arrayContaining(["https://mods.example/alpha-1.1.0.zip", "https://mods.example/beta-2.1.0.zip"])), {
+      timeout: 3000
+    })
+  })
+
+  it("replaces the installed copy when the dependency is declared under a different casing", async () => {
+    const user = userEvent.setup()
+    const scan = anUnhealthyScan()
+    // The same dependency the fixture already carries, spelled the way its author typed it. The
+    // check folds the case to find the copy, so the line reads the same and the fix has to match it.
+    scan.mods[1] = { ...(scan.mods[1] as InstalledModType), dependencies: { Gamma: "4.0.0" } }
+
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn(async () => "/games/a/Mods/gamma-4.0.0.zip")
+    renderManageMods({
+      pathsManager: { deletePath, downloadOnPath },
+      modsManager: { getInstalledMods: vi.fn(async () => scan) },
+      // The ModDB resolves a mod id whatever its case, which is why the popup opens at all here.
+      netManager: {
+        queryURL: vi.fn((url: string) => (/\/mod\/gamma$/i.test(url) ? Promise.resolve(aModDetail(3, "Gamma Mod", "gamma", [{ modversion: "4.0.0", tags: ["1.20.0"] }])) : queryModDb(url)))
+      }
+    })
+
+    const line = await lineSaying(/Beta Mod needs Gamma 4\.0\.0 or newer/)
+    await user.click(within(line).getByRole("button", { name: "Install Gamma" }))
+
+    const popup = await screen.findByRole("dialog")
+    await within(popup).findByText("4.0.0", {}, { timeout: 3000 })
+    await user.click(within(popup).getByTitle("Author tagged it as compatible with your selected Vintage Story Version."))
+
+    // The old archive goes first, which is the whole difference: leaving it there is how fixing an
+    // outdated dependency used to create the duplicate mod id this same panel then reported.
+    await waitFor(() => expect(deletePath).toHaveBeenCalledWith(GAMMA_PATH), { timeout: 3000 })
   })
 
   it("stays collapsed and says the folder is clean when there is nothing to fix", async () => {
