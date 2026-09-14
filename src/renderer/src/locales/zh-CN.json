@@ -79,6 +79,9 @@
       "errorDeletingInstallation": "在删除安装时出现错误！",
       "addNewInstallation": "添加新的安装"
     },
+    "sessions": {
+      "forget": "忘记这些会话"
+    },
     "mods": {
       "modsCount": "{{count}} 个模组",
       "modsCount_zero": "{{count}} 个模组",

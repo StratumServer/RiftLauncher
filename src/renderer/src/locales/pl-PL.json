@@ -180,6 +180,9 @@
       "editInstallation": "Edytuj instancję",
       "backupInstallation": "Utwórz kopię zapasową instancji"
     },
+    "sessions": {
+      "forget": "Zapomnij te sesje"
+    },
     "mods": {
       "modsCount": "{{count}} modów",
       "modsCount_few": "{{count}} mody",

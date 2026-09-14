@@ -85,6 +85,9 @@
       "startParamsLink": "Vintage Story Wiki",
       "addNewInstallation": "Nieuwe installatie toevoegen"
     },
+    "sessions": {
+      "forget": "Deze sessies vergeten"
+    },
     "mods": {
       "modsCount": "{{count}} Mods",
       "modsCount_zero": "{{count}} Mods",

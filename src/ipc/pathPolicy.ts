@@ -86,7 +86,7 @@ function getConfiguredFolders(config: ConfigType): string[] {
 
 /** The folders the launcher writes to inside its own user data folder. */
 function getLauncherFolders(): string[] {
-  return [resolve(app.getPath("userData"), "Logs"), resolve(app.getPath("userData"), "Cache"), resolve(app.getPath("userData"), "Icons")]
+  return [resolve(app.getPath("userData"), "Logs"), resolve(app.getPath("userData"), "Cache"), resolve(app.getPath("userData"), "Icons"), resolve(app.getPath("userData"), "Sessions")]
 }
 
 /**

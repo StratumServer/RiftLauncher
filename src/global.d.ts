@@ -41,6 +41,12 @@ declare global {
      */
     receiveBetaUpdates: boolean | null
     /**
+     * Whether the launcher reads memory and CPU off the game process while it runs, and keeps the
+     * last sessions per Installation. On unless the player turns it off. Nothing measured here
+     * leaves the machine. See src/domain/sessions/sampling.ts.
+     */
+    measurePlaySessions: boolean
+    /**
      * The version the "what's new" dialog last showed notes up to, empty for a fresh install or
      * a config written before this field existed. Compared against the running version by
      * useWhatsNew.ts to decide whether there is anything left to show. See
@@ -556,6 +562,32 @@ declare global {
 
   /** SAVE_MOD_PROFILES' verdict. `invalid` is a document that is not a format-1 profiles document. */
   type ModProfilesSaveResult = { ok: true } | { ok: false; reason: "newer-format" | "unreadable" | "invalid" | "refused" }
+
+  /**
+   * One reading of the game process while it ran: milliseconds since the session started, resident
+   * memory in bytes, and the CPU share since the previous reading where the host can answer it
+   * (Linux today, see src/ipc/adapters/processSampler.ts).
+   */
+  type PlaySample = { t: number; rssBytes: number; cpuPercent?: number }
+
+  /**
+   * One recorded play session (#461). `partial` means the launcher lost track of the process part
+   * way through, which is what a launch wrapper that forks looks like from here: the series stops
+   * but the game did not.
+   */
+  type PlaySession = { id: string; startedAt: number; endedAt: number; intervalMs: number; partial: boolean; samples: PlaySample[] }
+
+  /**
+   * The sessions file for one Installation, under the launcher's own user data folder. Newest
+   * session first. See src/domain/sessions/sampling.ts.
+   */
+  type PlaySessionsDocument = { format: 1; sessions: PlaySession[] }
+
+  /**
+   * GET_PLAY_SESSIONS' verdict. `newer-format` and `unreadable` name a file this build must leave
+   * alone; `refused` is an installation id the path policy would not build a file name from.
+   */
+  type PlaySessionsReadResult = { ok: true; sessions: PlaySession[] } | { ok: false; reason: "newer-format" | "unreadable" | "refused" }
 
   /**
    * ENSURE_BACKGROUND's verdict for one catalog scene.

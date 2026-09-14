@@ -177,6 +177,33 @@ describe("startup network boundaries", () => {
   })
 
   /**
+   * The play session channels (#461) read and write a file the renderer never names: it names the
+   * Installation, and the id is checked against a fixed alphabet before anything is joined to it.
+   * tests/ipc/playSessionsStore.test.ts proves the refusals; this keeps the order they run in and
+   * keeps the renderer out of the writing half altogether.
+   */
+  it("holds both play session channels to a trusted sender and a checked installation id", () => {
+    const gameHandlers = readFileSync(resolve(__dirname, "../src/ipc/handlers/gameHandlers.ts"), "utf8")
+
+    for (const channel of ["GET_PLAY_SESSIONS", "FORGET_PLAY_SESSIONS"]) {
+      const start = gameHandlers.indexOf(`ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.${channel},`)
+      assert.notEqual(start, -1, `gameHandlers.ts stopped registering ${channel}`)
+      const body = gameHandlers.slice(start, gameHandlers.indexOf("\n})", start))
+      assert.match(body, /^[^\n]*\n {2}assertTrustedIpcSender\(event\)\n/, `${channel} no longer checks its sender before anything else`)
+      assert.equal(PRELOAD_SOURCE.includes(`ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.${channel},`), true, `the preload stopped exposing ${channel}`)
+    }
+
+    const store = readFileSync(resolve(__dirname, "../src/ipc/playSessionsStore.ts"), "utf8")
+    assert.equal(store.includes("assertSafeInstallationId(installationId)"), true, "the sessions file is no longer derived from a checked installation id")
+    assert.equal(store.includes('assertManagedPath(join(folder, `${id}.json`), "play sessions path"'), true, "the sessions file left the managed path policy")
+    assert.equal(store.includes("allowSymlinks"), false, "a sessions file may now be read or written through a symbolic link")
+
+    // Writing samples is EXECUTE_GAME's job alone. A renderer that could append to these files
+    // could write whatever series it liked into a player's history.
+    assert.equal(PRELOAD_SOURCE.includes("recordPlaySession"), false, "the preload now exposes a way to write play sessions from the renderer")
+  })
+
+  /**
    * The server-mods channel is read only and never takes a folder: the renderer names the
    * Installation, the host joins the game's own subfolder onto it. #459 turns on that shape, and a
    * later change that let the renderer send the folder (or the server's name) would hand it a reach

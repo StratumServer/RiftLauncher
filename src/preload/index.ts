@@ -78,6 +78,8 @@ const api: BridgeAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation, serverId),
     lookForAGameVersion: (path: string): Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }> =>
       ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, path),
+    getPlaySessions: (installationId: string): Promise<PlaySessionsReadResult> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.GET_PLAY_SESSIONS, installationId),
+    forgetPlaySessions: (installationId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.FORGET_PLAY_SESSIONS, installationId),
     getGameLogReport: (installationPath: string): Promise<GameLogReportResult> => ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.GET_GAME_LOG_REPORT, installationPath)
   },
   netManager: {

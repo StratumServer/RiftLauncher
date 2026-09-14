@@ -122,6 +122,9 @@
       "dataFolder": "Adat könyvtár",
       "addNewInstallation": "Új Telepítés hozzáadása"
     },
+    "sessions": {
+      "forget": "Munkamenetek elfelejtése"
+    },
     "mods": {
       "modsCount": "{{count}} mod",
       "modsCount_zero": "{{count}} mod",

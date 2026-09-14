@@ -15,6 +15,7 @@ export enum CONFIG_ACTIONS {
   SET_ACCENT_COLOR = "SET_ACCENT_COLOR",
   SET_MODDB_VISIBILITY_ANSWER = "SET_MODDB_VISIBILITY_ANSWER",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
+  SET_MEASURE_PLAY_SESSIONS = "SET_MEASURE_PLAY_SESSIONS",
   SET_LAST_SEEN_CHANGELOG_VERSION = "SET_LAST_SEEN_CHANGELOG_VERSION",
 
   ADD_INSTALLATION = "ADD_INSTALLATION",
@@ -130,6 +131,12 @@ export interface SetModDbVisibilityAnswer {
  */
 export interface SetReceiveBetaUpdates {
   type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES
+  payload: boolean
+}
+
+/** Whether the launcher measures the game process while it runs. See src/domain/sessions/sampling.ts. */
+export interface SetMeasurePlaySessions {
+  type: CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS
   payload: boolean
 }
 
@@ -303,6 +310,7 @@ export type ConfigAction =
   | SetAccentColor
   | SetModDbVisibilityAnswer
   | SetReceiveBetaUpdates
+  | SetMeasurePlaySessions
   | SetLastSeenChangelogVersion
   | AddInstallation
   | DeleteInstallation
@@ -363,6 +371,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, moddbVisibilityAnswer: action.payload }
     case CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES:
       return { ...config, receiveBetaUpdates: action.payload }
+    case CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS:
+      return { ...config, measurePlaySessions: action.payload }
     case CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION:
       return { ...config, lastSeenChangelogVersion: action.payload }
     case CONFIG_ACTIONS.ADD_INSTALLATION:

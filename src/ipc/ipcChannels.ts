@@ -55,6 +55,8 @@ export const IPC_CHANNELS = {
   GAME_MANAGER: {
     EXECUTE_GAME: "execute-game",
     LOOK_FOR_A_GAME_VERSION: "look-for-a-game-version",
+    GET_PLAY_SESSIONS: "get-play-sessions",
+    FORGET_PLAY_SESSIONS: "forget-play-sessions",
     GET_GAME_LOG_REPORT: "get-game-log-report"
   },
   NET_MANAGER: {

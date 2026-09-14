@@ -176,6 +176,9 @@
       "envVarsPlaceholder": "ENV_1=qualcosa, ENV_2=qualcos altro",
       "mesaGlThreadDesc": "Abilita il gioco a eseguire con mesa_glthread. Questo potrebbe migliorare le prestazioni su alcuni sistemi Linux."
     },
+    "sessions": {
+      "forget": "Dimentica queste sessioni"
+    },
     "mods": {
       "areYouSureDelete": "Sei sicuro di voler eliminare questa mod?",
       "cantDeleteWhileinUse": "Non puoi eliminare questa mod mentre è in uso!",

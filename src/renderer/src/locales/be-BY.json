@@ -154,6 +154,9 @@
       "backupInstallation": "Стварыць рэзервовую копію усталёўкі",
       "editInstallation": "Рэдагаваць усталёўку"
     },
+    "sessions": {
+      "forget": "Забыць гэтыя сесіі"
+    },
     "mods": {
       "modsCount": "{{count}} модаў",
       "modsCount_zero": "{{count}} модаў",

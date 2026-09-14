@@ -17,6 +17,7 @@ import { DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
+import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
 
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "../../src/renderer/src/features/config/contexts/configReducer"
 
@@ -38,6 +39,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     accentColor: DEFAULT_ACCENT_ID,
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
+    measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
     lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides

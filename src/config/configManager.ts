@@ -470,6 +470,8 @@ export function normalizeConfig(config: unknown): ConfigType {
     // Null for anything that is not an explicit yes or no, which is what every config written
     // before the toggle existed says, and leaves the running version deciding as it always did.
     receiveBetaUpdates: normalizeReceiveBetaUpdates(rawConfig.receiveBetaUpdates),
+    // A config written before this setting existed reads as the shipped default, which is on.
+    measurePlaySessions: asBoolean(rawConfig.measurePlaySessions, defaultConfig.measurePlaySessions),
     // Empty for anything unreadable, a config written before this field existed included: the
     // "what's new" dialog reads that the same way it reads a fresh install, showing only the
     // running version's own notes rather than guessing at a history it was never told.

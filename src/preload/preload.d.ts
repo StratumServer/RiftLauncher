@@ -79,6 +79,10 @@ declare global {
        */
       executeGame: (version: GameVersionType, installation: InstallationType, serverId?: string) => Promise<GameExecutionResult>
       lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }>
+      /** The play sessions recorded for one Installation, newest first. Read only: nothing writes samples from here. */
+      getPlaySessions: (installationId: string) => Promise<PlaySessionsReadResult>
+      /** Clears one Installation's recorded sessions. */
+      forgetPlaySessions: (installationId: string) => Promise<{ ok: boolean }>
       /** Reads the last session's own log files out of one Installation and answers the report built from them. See #462. */
       getGameLogReport: (installationPath: string) => Promise<GameLogReportResult>
     }

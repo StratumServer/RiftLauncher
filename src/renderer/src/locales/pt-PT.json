@@ -154,6 +154,9 @@
       "envVarsPlaceholder": "ENV_1=coisa, ENV_2=outracoisa",
       "mesaGlThreadDesc": "Ativa para executar o jogo com mesa_glthread. Isto pode melhorar o desempenho em alguns sistemas Linux."
     },
+    "sessions": {
+      "forget": "Esquecer estas sessões"
+    },
     "mods": {
       "modsCount": "{{count}} Mods",
       "modsCount_zero": "{{count}} Mods",

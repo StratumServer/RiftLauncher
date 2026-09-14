@@ -1,5 +1,5 @@
 import { ipcMain } from "electron"
-import { spawn } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import fse from "fs-extra"
 import { constants } from "node:fs"
@@ -9,9 +9,10 @@ import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { assertManagedPath } from "@src/ipc/pathPolicy"
-import { assertString, parseSafeEnvironment, toWireBuildVariant, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
-import { assertConfiguredInstallationPath } from "@src/ipc/pathPolicy"
+import { assertConfiguredInstallationPath, assertManagedPath } from "@src/ipc/pathPolicy"
+import { assertString, comparablePath, parseSafeEnvironment, toWireBuildVariant, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
+import { createProcessSampler } from "@src/ipc/adapters/processSampler"
+import { createPlaySessionRecorder, forgetPlaySessions, readPlaySessions, recordPlaySession } from "@src/ipc/playSessionsStore"
 import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
@@ -212,6 +213,11 @@ function realGameProcess(): GameProcess {
           settle({ started: false, error: getErrorMessage(err) })
           return
         }
+
+        // The one thing about the running child that leaves this closure, and only once the spawn
+        // actually produced a process. Under a launch wrapper this is the wrapper's pid, which is
+        // the caller's problem to survive, not this adapter's to hide.
+        if (externalApp.pid !== undefined) request.onStarted?.(externalApp.pid)
 
         externalApp.stdout.resume()
 
@@ -431,7 +437,32 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
 
   logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable${launchWrapper ? ` through ${launchWrapper}` : ""}.`)
 
-  const outcome = await realGameProcess().run({ command: plan.command, args: plan.args, env: { ...process.env, ...processEnv, ...plan.env }, cwd: plan.cwd })
+  // The id comes from the config the launcher wrote, never from the renderer's own object, so the
+  // file name a session lands under cannot be chosen by whatever sent the launch.
+  const installationId = config.installations.find((candidate) => comparablePath(candidate.path) === comparablePath(safeInstallation.path))?.id
+  // Windows has no /proc, so its sampler reads `tasklist` and needs a probe to run it with. Passing
+  // it only there keeps macOS on the absent sampler, which is what the factory answers with none.
+  const platform = os.platform()
+  const samplerOptions = platform === "win32" ? { processProbe: tasklistProbe() } : {}
+  const recorder = config.measurePlaySessions && installationId ? createPlaySessionRecorder(createProcessSampler(platform, samplerOptions)) : undefined
+
+  const outcome = await realGameProcess().run({
+    command: plan.command,
+    args: plan.args,
+    env: { ...process.env, ...processEnv, ...plan.env },
+    cwd: plan.cwd,
+    ...(recorder ? { onStarted: recorder.onStarted } : {})
+  })
+
+  // Settles the sampling loop on the same path the launch outcome settles on, whichever way it
+  // went, so the timer cannot outlive this handler.
+  const session = await recorder?.finish()
+  if (session && installationId) {
+    const stored = await recordPlaySession(installationId, session)
+    const shape = session.partial ? "partial" : "complete"
+    if (stored) logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Recorded a ${shape} play session of ${session.samples.length} readings.`)
+    else logMessage("warn", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not record this play session; the sessions file was left as it was.`)
+  }
 
   if (!outcome.started)
     logMessage(
@@ -441,6 +472,33 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   else logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
 
   return gameProcessOutcomeToResult(outcome)
+})
+
+/**
+ * The two read-only session channels.
+ *
+ * Both take an Installation id and nothing else, so the renderer never names a file, and both
+ * check it the same way before anything is joined to a path. Nothing writes samples from the
+ * renderer: the only thing that ever appends to one of these files is EXECUTE_GAME above.
+ *
+ * The log lines carry counts and fixed tokens only. A session's own memory numbers, and the
+ * Installation's name, stay out of them.
+ */
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.GET_PLAY_SESSIONS, async (event, installationId: unknown): Promise<PlaySessionsReadResult> => {
+  assertTrustedIpcSender(event)
+
+  const read = await readPlaySessions(installationId)
+  if (!read.ok) logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [GET_PLAY_SESSIONS] Refused: ${read.reason}.`)
+  else logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [GET_PLAY_SESSIONS] Read ${read.sessions.length} play sessions.`)
+  return read
+})
+
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.FORGET_PLAY_SESSIONS, async (event, installationId: unknown): Promise<{ ok: boolean }> => {
+  assertTrustedIpcSender(event)
+
+  const ok = await forgetPlaySessions(installationId)
+  logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [FORGET_PLAY_SESSIONS] Cleared the play sessions: ${ok}.`)
+  return { ok }
 })
 
 type LookForAGameVersionResult = { exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }
@@ -533,6 +591,34 @@ function realProcessProbe(): ProcessProbe {
         })
       })
     }
+  }
+}
+
+/** A sample is dropped rather than allowed to run into the next one, which the recorder takes every five seconds. */
+const TASKLIST_TIMEOUT_MS = 4_000
+
+/**
+ * Runs `tasklist` for the Windows play session sampler (#461).
+ *
+ * Its own probe rather than {@link realProcessProbe}, for two reasons. That one validates the
+ * command as a game executable, which `tasklist` is not and cannot be made to pass, so sharing it
+ * would mean a flag that turns the validation off; there is nothing to validate here anyway, since
+ * the command and its arguments are fixed in the adapter and no part of either comes from the
+ * renderer or from config. And it logs a line per call under the version-check tag, which at one
+ * sample every five seconds would bury a Windows session's log in several hundred of them.
+ *
+ * `execFile` runs with no shell and kills the child at {@link TASKLIST_TIMEOUT_MS}, and the callback
+ * reports both as `ok: false`, so this keeps the port's promise never to reject. A refused sample
+ * is one reading the session does without, which is the same answer a pid that has gone gives.
+ */
+function tasklistProbe(): ProcessProbe {
+  return {
+    run: async (request: ProcessProbeRequest): Promise<ProcessProbeOutcome> =>
+      new Promise<ProcessProbeOutcome>((resolve) => {
+        execFile(request.command, request.args, { windowsHide: true, timeout: TASKLIST_TIMEOUT_MS }, (err, stdout) => {
+          resolve(err ? { ok: false, stdout: "", error: getErrorMessage(err) } : { ok: true, stdout })
+        })
+      })
   }
 }
 

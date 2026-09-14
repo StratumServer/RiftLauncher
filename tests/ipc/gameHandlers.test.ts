@@ -81,6 +81,27 @@ vi.mock("node:child_process", async (importOriginal) => {
  */
 const detectedVersion = vi.hoisted(() => ({ next: null as unknown }))
 
+/**
+ * Stands Windows in for the host, on demand, so the Windows arms of EXECUTE_GAME can be driven
+ * from a Linux runner.
+ *
+ * Only `os.platform()` moves. `comparablePath` and the path policy read `process.platform`
+ * instead, so a fixture path still compares the way the real host compares it, and every other
+ * `node:os` export is the real one. The handler reads the platform for three decisions: the launch
+ * wrapper (Linux only), the launch plan's executable name, and which process sampler the session
+ * recorder gets. That last one is the point: the Windows sampler is a `tasklist` reader, so it only
+ * measures anything if the handler hands the factory a probe to run it with.
+ */
+const hostPlatform = vi.hoisted(() => ({ value: null as NodeJS.Platform | null }))
+
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>()
+  const platform = (): NodeJS.Platform => hostPlatform.value ?? actual.platform()
+  // gameHandlers.ts imports the default, which the interop resolves to the namespace, so both have
+  // to carry the stand-in or the handler keeps reading the real platform.
+  return { ...actual, platform, default: { ...actual, platform } }
+})
+
 vi.mock("@domain/versions/detect", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@domain/versions/detect")>()
   type Detect = typeof actual.detectInstalledGameVersion
@@ -172,6 +193,7 @@ beforeEach(async () => {
   // it on for the next test, whose real spawn would then throw.
   spawnThrow.next = false
   detectedVersion.next = null
+  hostPlatform.value = null
 
   temporaryRoot = mkdtempSync(join(tmpdir(), "game-handlers-"))
   managedFolder = join(temporaryRoot, "Installations")
@@ -367,6 +389,168 @@ describe("EXECUTE_GAME", () => {
     assert.deepEqual(result, { ok: true, exitCode: 0 })
     assert.deepEqual(readFileSync(wrapperArgvFile, "utf-8").split("\n").slice(0, -1), [executablePath, `--dataPath=${installationFolder}`, "--openWorld My World"])
     assert.deepEqual(readFileSync(gameArgvFile, "utf-8").split("\n").slice(0, -1), [`--dataPath=${installationFolder}`, "--openWorld My World"])
+  })
+
+  /**
+   * The session recorder, end to end on Linux: a real spawn, a real pid, a real `/proc` read.
+   *
+   * The fixture sleeps long enough for the reading taken the moment the process exists to land, so
+   * the file that ends up under the launcher's own Sessions folder carries what the sampler
+   * actually measured rather than an empty series.
+   */
+  it.skipIf(process.platform !== "linux")("records the session it measured under the launcher's own Sessions folder", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "#!/bin/sh\nsleep 1\nexit 0\n")
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+
+    writeConfig({
+      gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+    })
+
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+
+    assert.deepEqual(result, { ok: true, exitCode: 0 })
+    const document = JSON.parse(readFileSync(join(userDataFolder, "Sessions", "main-1.json"), "utf-8"))
+    assert.equal(document.format, 1)
+    assert.equal(document.sessions.length, 1)
+    assert.equal(document.sessions[0].partial, false)
+    assert.ok(document.sessions[0].samples.length >= 1, "the session landed with no readings in it")
+    assert.ok(document.sessions[0].samples[0].rssBytes > 0, "the reading carries no memory")
+  })
+
+  it.skipIf(process.platform !== "linux")("measures nothing at all when the setting is off", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    // The same fixture the test above records a session from, so "nothing was written" can only be
+    // the setting and never the game exiting before a reading could land.
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "#!/bin/sh\nsleep 1\nexit 0\n")
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+
+    writeConfig({
+      measurePlaySessions: false,
+      gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+    })
+
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+
+    assert.equal(existsSync(join(userDataFolder, "Sessions")), false)
+  })
+
+  /**
+   * The Windows sampler, from EXECUTE_GAME rather than from the adapter's own tests.
+   *
+   * The handler builds the sampler itself, so nothing below the handler can prove that a Windows
+   * launch is measured at all: hand `createProcessSampler` no probe and it answers the absent
+   * sampler, the session records nothing, and every test under the handler still passes. These
+   * three drive the real factory, the real `tasklist` adapter and the real probe, with only the
+   * platform and the `tasklist` binary itself standing in.
+   *
+   * Still Linux-only, because the stand-ins are `#!/bin/sh` scripts: the launcher believes it is on
+   * Windows, the runner is not. A launch plan for Windows spawns `Vintagestory.exe` directly, and a
+   * shell script under that name runs perfectly well on Linux.
+   */
+  describe("with a Windows sampler", () => {
+    let tasklistCalls: string
+
+    /**
+     * Puts a stand-in `tasklist` first on PATH, which is where `execFile` looks for a bare command.
+     *
+     * It records the arguments it was given before answering, so a test can tell a sampler that ran
+     * and got nothing usable apart from one that was never built.
+     */
+    function fakeTasklist(body: string): void {
+      const binFolder = join(temporaryRoot, "bin")
+      mkdirSync(binFolder, { recursive: true })
+      tasklistCalls = join(temporaryRoot, "tasklist-calls")
+      writeFileSync(join(binFolder, "tasklist"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${tasklistCalls}'\n${body}`)
+      chmodSync(join(binFolder, "tasklist"), 0o755)
+      process.env.PATH = `${binFolder}:${process.env.PATH ?? ""}`
+    }
+
+    /** A Windows game folder and Installation, with the game itself sleeping long enough to be measured once. */
+    function seedWindowsLaunch(): { gameVersionFolder: string; installationFolder: string } {
+      const gameVersionFolder = join(versionsFolder, "1.20.0")
+      const installationFolder = join(managedFolder, "Main")
+      mkdirSync(gameVersionFolder, { recursive: true })
+      mkdirSync(installationFolder, { recursive: true })
+      writeFileSync(join(gameVersionFolder, "Vintagestory.exe"), "#!/bin/sh\nsleep 1\nexit 0\n")
+      chmodSync(join(gameVersionFolder, "Vintagestory.exe"), 0o755)
+
+      writeConfig({
+        gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+        installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+      })
+      return { gameVersionFolder, installationFolder }
+    }
+
+    async function launch(gameVersionFolder: string, installationFolder: string): Promise<GameExecutionResult> {
+      const event = await createTrustedEvent()
+      return executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+    }
+
+    let originalPath: string | undefined
+
+    beforeEach(() => {
+      originalPath = process.env.PATH
+      hostPlatform.value = "win32"
+    })
+
+    afterEach(() => {
+      process.env.PATH = originalPath
+    })
+
+    it.skipIf(process.platform !== "linux")("stores what tasklist reported for a Windows launch", async () => {
+      fakeTasklist(`echo '"Vintagestory.exe","4242","Console","1","65,536 K"'\n`)
+      const { gameVersionFolder, installationFolder } = seedWindowsLaunch()
+
+      assert.deepEqual(await launch(gameVersionFolder, installationFolder), { ok: true, exitCode: 0 })
+
+      assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+ \/NH \/FO CSV/, "the sampler never ran tasklist for the pid the launcher spawned")
+      const document = JSON.parse(readFileSync(join(userDataFolder, "Sessions", "main-1.json"), "utf-8"))
+      assert.equal(document.sessions.length, 1)
+      assert.equal(document.sessions[0].partial, false)
+      assert.deepEqual(
+        document.sessions[0].samples.map((sample: { rssBytes: number }) => sample.rssBytes),
+        [65_536 * 1024]
+      )
+      // tasklist carries no CPU column, so a Windows reading is memory and nothing else.
+      assert.equal(document.sessions[0].samples[0].cpuPercent, undefined)
+    })
+
+    /**
+     * The game exited between samples: `tasklist` still answers, and answers that the pid is gone.
+     * A session with no reading in it is not written at all, which is the recorder's own answer for
+     * one it never measured, and the launch result reaches the player unchanged.
+     */
+    it.skipIf(process.platform !== "linux")("records no session, and still answers the launch, when the process has gone", async () => {
+      fakeTasklist("echo 'INFO: No tasks are running which match the specified criteria.'\n")
+      const { gameVersionFolder, installationFolder } = seedWindowsLaunch()
+
+      assert.deepEqual(await launch(gameVersionFolder, installationFolder), { ok: true, exitCode: 0 })
+
+      assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+/, "the sampler never ran tasklist for the pid the launcher spawned")
+      assert.equal(existsSync(join(userDataFolder, "Sessions", "main-1.json")), false)
+    })
+
+    /** A process another account owns: `tasklist` refuses it, which is a reading the session does without. */
+    it.skipIf(process.platform !== "linux")("records no session, and still answers the launch, when tasklist is denied the process", async () => {
+      fakeTasklist("echo 'ERROR: Access is denied.' >&2\nexit 1\n")
+      const { gameVersionFolder, installationFolder } = seedWindowsLaunch()
+
+      assert.deepEqual(await launch(gameVersionFolder, installationFolder), { ok: true, exitCode: 0 })
+
+      assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+/, "the sampler never ran tasklist for the pid the launcher spawned")
+      assert.equal(existsSync(join(userDataFolder, "Sessions", "main-1.json")), false)
+    })
   })
 
   /**
@@ -943,6 +1127,54 @@ describe("EXECUTE_GAME", () => {
       [["uid-b", { sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token" }]],
       "the adopted session is stored under the uid it was issued for, and under no other"
     )
+  })
+})
+
+describe("GET_PLAY_SESSIONS and FORGET_PLAY_SESSIONS", () => {
+  type GetPlaySessionsHandler = (event: IpcMainInvokeEvent, installationId: unknown) => Promise<PlaySessionsReadResult>
+  type ForgetPlaySessionsHandler = (event: IpcMainInvokeEvent, installationId: unknown) => Promise<{ ok: boolean }>
+
+  function getHandler(): GetPlaySessionsHandler {
+    return getIpcHandler<GetPlaySessionsHandler>(IPC_CHANNELS.GAME_MANAGER.GET_PLAY_SESSIONS)
+  }
+
+  function forgetHandler(): ForgetPlaySessionsHandler {
+    return getIpcHandler<ForgetPlaySessionsHandler>(IPC_CHANNELS.GAME_MANAGER.FORGET_PLAY_SESSIONS)
+  }
+
+  function writeSessionsFile(installationId: string, document: unknown): void {
+    mkdirSync(join(userDataFolder, "Sessions"), { recursive: true })
+    writeFileSync(join(userDataFolder, "Sessions", `${installationId}.json`), JSON.stringify(document), "utf-8")
+  }
+
+  const ONE_SESSION = { id: "abc", startedAt: 0, endedAt: 1_000, intervalMs: 5_000, partial: false, samples: [{ t: 0, rssBytes: 1_024 }] }
+
+  it("throws Unauthorized IPC sender for an untrusted caller on both channels", async () => {
+    await assert.rejects(() => getHandler()(createUntrustedEvent(), "main"), /Unauthorized IPC sender/)
+    await assert.rejects(() => forgetHandler()(createUntrustedEvent(), "main"), /Unauthorized IPC sender/)
+  })
+
+  it("reads the sessions recorded for an Installation", async () => {
+    writeConfig({})
+    writeSessionsFile("main", { format: 1, sessions: [ONE_SESSION] })
+
+    assert.deepEqual(await getHandler()(await createTrustedEvent(), "main"), { ok: true, sessions: [ONE_SESSION] })
+  })
+
+  it("refuses an id that is not one the config could have written, on both channels", async () => {
+    writeConfig({})
+    const event = await createTrustedEvent()
+
+    assert.deepEqual(await getHandler()(event, "../../etc/passwd"), { ok: false, reason: "refused" })
+    assert.deepEqual(await forgetHandler()(event, "../../etc/passwd"), { ok: false })
+  })
+
+  it("clears the file the sessions were in", async () => {
+    writeConfig({})
+    writeSessionsFile("main", { format: 1, sessions: [ONE_SESSION] })
+
+    assert.deepEqual(await forgetHandler()(await createTrustedEvent(), "main"), { ok: true })
+    assert.equal(existsSync(join(userDataFolder, "Sessions", "main.json")), false)
   })
 })
 

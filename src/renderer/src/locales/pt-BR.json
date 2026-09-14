@@ -168,6 +168,9 @@
       "mesaGlThreadDesc": "Ative para executar o jogo com mesa_glthread. Isso pode melhorar o desempenho em alguns sistemas Linux.",
       "installationDeletedBackupsLeftOver": "Instalação excluída, mas {{count}} arquivo(s) de backup não puderam ser removidos. Exclua-os manualmente na pasta de backups."
     },
+    "sessions": {
+      "forget": "Esquecer estas sessões"
+    },
     "mods": {
       "modsCount": "{{count}} Mods",
       "modsCount_zero": "{{count}} Mods",
