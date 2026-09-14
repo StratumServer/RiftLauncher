@@ -133,6 +133,18 @@ describe("ManageInstallationServers", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("This Installation already has that server.")
   })
 
+  it("takes the refusal away as soon as the player edits the field it was about", async () => {
+    const user = userEvent.setup()
+    renderServersPage()
+
+    await addServer(user, "Broken", "play.example.com:42420")
+    expect(await screen.findByRole("alert")).toBeTruthy()
+
+    await user.type(screen.getByLabelText("Address"), "x")
+
+    expect(screen.queryByRole("alert")).toBe(null)
+  })
+
   it("edits a stored server in place, keeping its launch stamp", async () => {
     const user = userEvent.setup()
     const api = renderServersPage([{ id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: 1_700_000_000_000 }])

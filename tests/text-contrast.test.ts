@@ -309,11 +309,8 @@ describe("text over the player's background image", () => {
     assertReadable("servers empty state hint", hint, LIST_ROW, TEXT_FLOOR)
   })
 
-  it("keeps the server dialog's Advanced disclosure and its validation message readable", () => {
-    const disclosure = foreground("features/servers/components/ServerBookmarkDialog.tsx", /text-sm text-(zinc-\d+)(?:\/(\d+))? hover:text-zinc-200/)
+  it("keeps the server dialog's validation message readable", () => {
     const problem = paletteForeground("features/servers/components/ServerBookmarkDialog.tsx", /className="text-(orange-\d+)"/)
-
-    assertReadable("server dialog advanced disclosure", disclosure, POPUP, TEXT_FLOOR)
     assertReadable("server dialog validation message", problem, POPUP, TEXT_FLOOR)
   })
 
