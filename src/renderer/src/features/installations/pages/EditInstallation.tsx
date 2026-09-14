@@ -83,6 +83,11 @@ function EditInslallation(): JSX.Element {
     fields.setLaunchWrapper(installation?.launchWrapper ?? "")
   }, [installation])
 
+  // Read from the live list rather than from the page's own snapshot, which is only refreshed when
+  // the id changes: this flag falling back to false is how the sessions section learns a session
+  // ended, and a stale copy of it never falls back at all.
+  const isPlaying = installations.find((candidate) => candidate.id === id)?._playing ?? false
+
   // Read from the Installation, not from the picker: the warning remains visible after a
   // replacement is picked, until the edit is actually saved (#118).
   const installationVersionStatus = installation ? getInstallationVersionStatus(installation, gameVersions) : undefined
@@ -212,7 +217,7 @@ function EditInslallation(): JSX.Element {
                 onLaunchWrapperChange={fields.setLaunchWrapper}
               />
 
-              <RecentSessionsSection installationId={installation.id} isPlaying={installation._playing ?? false} measuring={measurePlaySessions} />
+              <RecentSessionsSection installationId={installation.id} isPlaying={isPlaying} measuring={measurePlaySessions} />
 
               <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
                 <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />

@@ -193,7 +193,8 @@
       "openSession": "Ouvrir cette session",
       "forget": "Oublier ces sessions",
       "sessionTitle": "Session de jeu",
-      "ranFor": "A duré {{duration}}, terminée le {{ended}}.",
+      "ranFor": "A duré {{duration}}.",
+      "ended": "Terminée le",
       "partial": "Le launcher a perdu la trace du jeu en cours de route, cette session est donc incomplète.",
       "unreadable": "Ces sessions n'ont pas pu être lues, le launcher a laissé le fichier tel quel.",
       "newerFormat": "Ces sessions ont été enregistrées par une version plus récente du launcher, le launcher a laissé le fichier tel quel.",
@@ -538,8 +539,8 @@
         "lavender": "Lavande",
         "rose": "Rose"
       },
-      "measurePlaySessions": "Mesurer la mémoire pendant que le jeu tourne",
-      "measurePlaySessionsDesc": "Conservé sur cet ordinateur et jamais envoyé nulle part."
+      "measurePlaySessions": "Mesurer les sessions",
+      "measurePlaySessionsDesc": "Mesure la mémoire pendant que le jeu tourne. Conservé sur cet ordinateur et jamais envoyé nulle part."
     },
     "backups": {
       "backupInProgress": "Une sauvegarde est déjà en cours.",

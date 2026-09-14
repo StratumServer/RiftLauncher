@@ -193,7 +193,8 @@
       "openSession": "Open this session",
       "forget": "Forget these sessions",
       "sessionTitle": "Play session",
-      "ranFor": "Ran for {{duration}}, ending {{ended}}.",
+      "ranFor": "Ran for {{duration}}.",
+      "ended": "Ended",
       "partial": "The launcher lost track of the game part way through, so this session is incomplete.",
       "unreadable": "These sessions could not be read, so the launcher has left the file alone.",
       "newerFormat": "These sessions were recorded by a newer version of the launcher, so the launcher has left the file alone.",
@@ -538,8 +539,8 @@
         "lavender": "Lavender",
         "rose": "Rose"
       },
-      "measurePlaySessions": "Measure memory while the game runs",
-      "measurePlaySessionsDesc": "Kept on this computer and never sent anywhere."
+      "measurePlaySessions": "Measure sessions",
+      "measurePlaySessionsDesc": "Measure memory while the game runs. Kept on this computer and never sent anywhere."
     },
     "backups": {
       "backupInProgress": "There is a backup already in progress.",
