@@ -18,7 +18,13 @@ function RemoveServerModsDialog({ group, close, onConfirm }: Readonly<{ group: S
   return (
     <PopupDialogPanel title={t("features.mods.serverModsRemoveTitle")} isOpen={group !== null} close={close}>
       <>
-        <p>{t("features.mods.serverModsRemoveConfirm", { count: group?.mods.length ?? 0, server: group?.server ?? "", interpolation: { escapeValue: false } })}</p>
+        {/* A folder the launcher could not open has no count to state, and "0 Mods" would be a
+            claim about a folder nothing was ever read from. */}
+        <p>
+          {group?.unlistable
+            ? t("features.mods.serverModsRemoveUnlistable", { server: group.server, interpolation: { escapeValue: false } })
+            : t("features.mods.serverModsRemoveConfirm", { count: group?.mods.length ?? 0, server: group?.server ?? "", interpolation: { escapeValue: false } })}
+        </p>
         <p className="text-zinc-400">{t("features.mods.serverModsRemoveReassurance")}</p>
         <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
           <FormButton title={t("generic.cancel")} onClick={close} variant="secondary" size="md" icon={<PiXCircleDuotone />} />

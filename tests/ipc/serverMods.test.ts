@@ -172,6 +172,30 @@ describe("GET_SERVER_MODS", () => {
     assert.equal(result.groups[0]!.mods.length, 1)
   })
 
+  // The wiki's own fix for a stale server cache is "delete that server's folder", so the folder the
+  // launcher cannot open is exactly the one the player came looking for. Dropping it would leave
+  // them the other servers and no way to reach this one.
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("keeps a server folder it cannot open, while dropping a plain file beside it", async () => {
+    seedServerMod("Good Server", "valid-mod.zip")
+    writeFileSync(join(installation, "ModsByServer", "notes.txt"), "not a server")
+    mkdirSync(serverFolder("Locked Server"), { recursive: true })
+    chmodSync(serverFolder("Locked Server"), 0o000)
+
+    const event = await createTrustedEvent()
+    try {
+      const result = await getServerMods()(event, installation)
+
+      assert.deepEqual(
+        result.groups.map((group) => group.server),
+        ["Good Server", "Locked Server"]
+      )
+      assert.equal(result.groups[1]!.unlistable, true)
+      assert.deepEqual(result.groups[1]!.mods, [])
+    } finally {
+      chmodSync(serverFolder("Locked Server"), 0o755)
+    }
+  })
+
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("says the folder could not be read rather than answering an empty list", async () => {
     mkdirSync(join(installation, "ModsByServer"), { recursive: true })
     chmodSync(join(installation, "ModsByServer"), 0o000)

@@ -258,6 +258,61 @@ describe("Manage Mods: the Mods a server downloaded", () => {
     expect(document.activeElement).toBe(within(header.parentElement!).getByTitle(REMOVE_TITLE))
   })
 
+  // The rows the filter reaches are the ones a collapsed group does not render, so without the
+  // header count a search whose only hit lives in a closed group marks nothing at all.
+  it("counts what the search left against the total, in the open group and the closed one", async () => {
+    renderManageMods()
+    const user = userEvent.setup()
+
+    const header = await groupHeader("My Test Server")
+    await user.click(header)
+    await screen.findByText("Gamma Mod")
+
+    await user.type(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), "zeta")
+
+    // The open group has nothing left, and says so rather than still reading "2 Mods".
+    await waitFor(() => expect((screen.getAllByTitle(GROUP_TOGGLE).find((button) => button.textContent?.includes("My Test Server")) as HTMLElement).textContent).toContain("0 of 2 Mods"))
+    // The match itself is in the group that is closed, which is the only thing marking it.
+    expect((await groupHeader("192.168.1.10")).textContent).toContain("1 of 1 Mods")
+  })
+
+  it("rescans the server folders when the page is reloaded", async () => {
+    const api = renderManageMods()
+    const user = userEvent.setup()
+
+    await groupHeader("My Test Server")
+    const scans = vi.mocked(api.modsManager.getServerMods).mock.calls.length
+
+    await user.click(screen.getByTitle("Reload"))
+
+    await waitFor(() => expect(vi.mocked(api.modsManager.getServerMods).mock.calls.length).toBeGreaterThan(scans))
+  })
+
+  // The player is here looking for the disk space the Mod list does not explain. An empty page
+  // answers "there is nothing there", which is the one wrong answer.
+  it("says the folder could not be read rather than showing nothing at all", async () => {
+    renderManageMods({ modsManager: { getServerMods: vi.fn(async () => ({ groups: [], unreadable: true as const })) } })
+
+    expect(await screen.findByText(/the launcher could not read it/)).toBeTruthy()
+    expect(screen.getByText("Mods from servers")).toBeTruthy()
+  })
+
+  it("keeps a server folder it could not open, with the button that clears it", async () => {
+    const locked: ServerModsScan = { groups: [{ server: "Locked Server", path: "/games/a/ModsByServer/Locked Server", mods: [], unreadable: 0, unlistable: true }] }
+    renderManageMods({ modsManager: { getServerMods: vi.fn(async () => locked) } })
+
+    const header = await groupHeader("Locked Server")
+    expect(screen.getByText(/This folder could not be read/)).toBeTruthy()
+
+    const user = userEvent.setup()
+    await user.click(within(header.parentElement!).getByTitle(REMOVE_TITLE))
+
+    // Nothing was read from that folder, so the dialog has no count to state and does not invent one.
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(/This deletes the whole folder the game downloaded for Locked Server/)).toBeTruthy()
+    expect(within(dialog).queryByText(/This deletes 0 Mods/)).toBeNull()
+  })
+
   it("shows nothing at all when the game has downloaded no server Mods", async () => {
     renderManageMods({ modsManager: { getServerMods: vi.fn(async () => ({ groups: [] })) } })
 

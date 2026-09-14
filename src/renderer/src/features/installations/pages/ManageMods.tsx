@@ -65,6 +65,9 @@ function ListMods(): JSX.Element {
   const { installedMods, modsWithErrors, gettingMods, refresh } = useManageInstalledMods(installation)
 
   const [search, setSearch] = useState("")
+  // Counted up by Reload. The Mods a server downloaded are scanned by their own section, which would
+  // otherwise sit on what it read when the page opened while the count above it moves.
+  const [serverModsReload, setServerModsReload] = useState(0)
   const [filters, setFilters] = useState<InstalledModFilters>(NO_INSTALLED_MOD_FILTERS)
   // Collapsed on every fresh visit: the three dropdowns are what pushed the Mod list off the first
   // screen (#431). Search stays out of this, so narrowing by name never needs the extra click.
@@ -186,7 +189,15 @@ function ListMods(): JSX.Element {
           <StickyMenuGroupWrapper>
             <StickyMenuGroup>
               <GoBackButton to="/installations" />
-              <ReloadButton reloading={gettingMods} onClick={() => refresh()} />
+              <ReloadButton
+                reloading={gettingMods}
+                onClick={() => {
+                  // The server folders are read by their own scan, and the game writes them while
+                  // the player is in game, so Reload has to reach both halves of the page.
+                  setServerModsReload((count) => count + 1)
+                  void refresh()
+                }}
+              />
             </StickyMenuGroup>
 
             <StickyMenuBreadcrumbs
@@ -370,7 +381,7 @@ function ListMods(): JSX.Element {
                   {/* Last, and only when the game has actually downloaded something: these are not
                       the Mods the player came here to manage, they are the ones they did not know
                       they had. Nothing above reads them. */}
-                  <ServerModsSection installation={installation} search={query} />
+                  <ServerModsSection installation={installation} search={query} reloadToken={serverModsReload} />
 
                   <InstallModPopup
                     modToInstall={modToUpdate?.modid || null}
