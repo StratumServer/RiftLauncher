@@ -4,6 +4,8 @@ import { describe, it } from "vitest"
 import {
   checkServerBookmark,
   DEFAULT_GAME_SERVER_PORT,
+  formatServerAddress,
+  formatServerEndpoint,
   joinTargetUrl,
   MAX_SERVER_BOOKMARK_NAME_LENGTH,
   MAX_SERVER_BOOKMARKS,
@@ -148,6 +150,18 @@ describe("joinTargetUrl", () => {
   it("brackets an IPv6 literal so the address's colons cannot be read as the port", () => {
     assert.equal(joinTargetUrl({ host: "2001:db8::1", port: 30_000 }), "vintagestoryjoin://[2001:db8::1]:30000")
     assert.equal(joinTargetUrl({ host: "::1", port: DEFAULT_GAME_SERVER_PORT }), "vintagestoryjoin://[::1]:42420")
+  })
+})
+
+describe("server endpoint formatting", () => {
+  it("brackets IPv6 when a non-default port is appended", () => {
+    assert.equal(formatServerEndpoint({ host: "2001:db8::1", port: 30_000 }), "[2001:db8::1]:30000")
+    assert.equal(formatServerAddress({ host: "2001:db8::1", port: 30_000 }), "[2001:db8::1]:30000")
+  })
+
+  it("keeps the compact default-port address for IPv4 and IPv6", () => {
+    assert.equal(formatServerAddress({ host: "2001:db8::1", port: DEFAULT_GAME_SERVER_PORT }), "2001:db8::1")
+    assert.equal(formatServerAddress({ host: "play.example.com", port: DEFAULT_GAME_SERVER_PORT }), "play.example.com")
   })
 })
 

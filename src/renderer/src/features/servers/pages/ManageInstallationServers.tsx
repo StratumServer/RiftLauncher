@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 import { PiCopyDuotone, PiPencilDuotone, PiPlayCircleDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
 
-import { DEFAULT_GAME_SERVER_PORT, MAX_SERVER_BOOKMARKS, NEVER_LAUNCHED, orderServerBookmarks } from "@domain/servers/bookmarks"
+import { DEFAULT_GAME_SERVER_PORT, formatServerAddress, MAX_SERVER_BOOKMARKS, NEVER_LAUNCHED, orderServerBookmarks } from "@domain/servers/bookmarks"
 
 import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -69,7 +69,7 @@ function ManageInstallationServers(): JSX.Element {
    * not connect, so it is the one thing on the row that has to work.
    */
   async function copyAddress(server: ServerBookmarkType): Promise<void> {
-    const address = server.port === DEFAULT_GAME_SERVER_PORT ? server.host : `${server.host}:${server.port}`
+    const address = formatServerAddress(server)
     const copied = await window.api.utils.copyToClipboard(address).catch(() => false)
     if (copied) return addNotification(t("features.servers.addressCopied"), "success")
     addNotification(t("features.servers.addressCopyFailed"), "error")
