@@ -10,7 +10,7 @@ import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
-import { comparablePath, parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
+import { comparablePath, parseSafeEnvironment, toWireBuildVariant, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
 import { createProcessSampler } from "@src/ipc/adapters/processSampler"
 import { createPlaySessionRecorder, forgetPlaySessions, readPlaySessions, recordPlaySession } from "@src/ipc/playSessionsStore"
 import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
@@ -473,7 +473,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.FORGET_PLAY_SESSIONS, async (event, ins
   return { ok }
 })
 
-type LookForAGameVersionResult = { exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }
+type LookForAGameVersionResult = { exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }
 
 const NOT_FOUND: LookForAGameVersionResult = { exists: false }
 
@@ -589,5 +589,6 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, 
   }
 
   logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Found Vintage Story ${result.version}.`)
-  return { exists: true, installedGameVersion: result.version }
+  const variant = toWireBuildVariant(result.variant)
+  return variant ? { exists: true, installedGameVersion: result.version, variant } : { exists: true, installedGameVersion: result.version }
 })

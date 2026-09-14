@@ -10,8 +10,12 @@ import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mo
 const LOG_TAG = "[front] [mods] [features/mods/hooks/useBulkUpdateMods.ts]"
 
 export interface BulkUpdateMods {
-  /** Updates every Mod the scan marked updatable, then reports one verdict and opens the summary. */
-  updateAllMods: () => Promise<void>
+  /**
+   * Updates every Mod of `mods` the scan marked updatable, then reports one verdict and opens the
+   * summary. The list is the caller's to pick: the action bar hands it what the player can see
+   * (#228), the Installation check hands it the whole folder, which is what that panel judges.
+   */
+  updateAllMods: (mods: readonly InstalledModType[]) => Promise<void>
   /** What each attempted update did, ready for the summary table. */
   summaryEntries: ModChangeSummaryEntry[]
   showSummary: boolean
@@ -26,7 +30,7 @@ export interface BulkUpdateMods {
  * replaced raised the failure and the success together, out of a catch and a finally, so a bulk
  * update that dropped half the Mods still signed off with "All the Mods were updated successfully".
  */
-export function useBulkUpdateMods(installation: InstallationType | undefined, installedMods: InstalledModType[]): BulkUpdateMods {
+export function useBulkUpdateMods(installation: InstallationType | undefined): BulkUpdateMods {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const configDispatch = useConfigDispatch()
@@ -37,7 +41,7 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
   const [summaryEntries, setSummaryEntries] = useState<ModChangeSummaryEntry[]>([])
   const [showSummary, setShowSummary] = useState(false)
 
-  async function updateAllMods(): Promise<void> {
+  async function updateAllMods(mods: readonly InstalledModType[]): Promise<void> {
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
 
     if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
@@ -53,7 +57,7 @@ export function useBulkUpdateMods(installation: InstallationType | undefined, in
       // A disabled Mod is held back for a different reason (#287): a Mod that is off is not part of
       // what the player is running, and changing its version behind their back means the thing they
       // turn back on later is not the thing they turned off. Its row still updates it on demand.
-      const modsToUpdate = installedMods.filter((iMod) => iMod.enabled && iMod._updatableTo && !suspendedModUpdates.includes(iMod.modid))
+      const modsToUpdate = mods.filter((iMod) => iMod.enabled && iMod._updatableTo && !suspendedModUpdates.includes(iMod.modid))
 
       await Promise.all(
         modsToUpdate.map(async (modToUpdate) => {

@@ -69,7 +69,7 @@ declare global {
     }
     gameManager: {
       executeGame: (version: GameVersionType, installation: InstallationType) => Promise<GameExecutionResult>
-      lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }>
+      lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }>
       /** The play sessions recorded for one Installation, newest first. Read only: nothing writes samples from here. */
       getPlaySessions: (installationId: string) => Promise<PlaySessionsReadResult>
       /** Clears one Installation's recorded sessions. */
