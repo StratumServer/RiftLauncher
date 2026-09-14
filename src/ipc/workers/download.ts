@@ -14,12 +14,13 @@
 import { createWriteStream, lstatSync, renameSync, unlinkSync } from "node:fs"
 import { createHash } from "node:crypto"
 import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http"
+import { request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 import fse from "fs-extra"
 import { join } from "node:path"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
-import { assertAllowedDownloadUrl, assertAllowedRedirectUrl } from "../validation"
+import { assertAllowedDownloadUrl, assertAllowedRedirectUrl, optimumTestOrigin } from "../validation"
 
 const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 30_000
@@ -56,6 +57,16 @@ export function assertSafeFileName(value: unknown): string {
 
 /** The `https.request` shape, so a test can answer without a socket. */
 export type DownloadRequestFn = (url: URL, options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest
+
+/**
+ * Node's own transport, picked per URL.
+ *
+ * Every real download is `https:`; the `http:` arm exists for the loopback
+ * source override (see `optimumTestOrigin` in src/ipc/validation.ts), which is
+ * the only thing that can produce one, and which the check below re-confirms
+ * before a request is made.
+ */
+const nodeRequest: DownloadRequestFn = (url, options, callback) => (url.protocol === "http:" ? httpRequest : httpsRequest)(url, options, callback)
 
 export interface DownloadOptions {
   /** Download URL. Checked against the allow-list in `src/ipc/validation.ts`. */
@@ -104,7 +115,7 @@ export interface DownloadOptions {
  * telling the renderer apart.
  */
 export function runDownload(options: DownloadOptions): Promise<string> {
-  const { url, outputPath, fileName, expectedMd5, expectedSha256, maxBytes = MAX_DOWNLOAD_BYTES, request = httpsRequest, onProgress } = options
+  const { url, outputPath, fileName, expectedMd5, expectedSha256, maxBytes = MAX_DOWNLOAD_BYTES, request = nodeRequest, onProgress } = options
   const byteCeiling = Math.min(maxBytes, MAX_DOWNLOAD_BYTES)
   const pathToDownload = join(outputPath, assertSafeFileName(fileName))
   const temporaryPath = `${pathToDownload}.${DOWNLOAD_TEMP_FILE_NAMESPACE}.${process.pid}.${Date.now()}.part`
@@ -132,7 +143,9 @@ export function runDownload(options: DownloadOptions): Promise<string> {
       if (fse.existsSync(pathToDownload) && lstatSync(pathToDownload).isSymbolicLink()) throw new Error("Refusing to replace a symbolic link")
       if (fse.existsSync(temporaryPath)) unlinkSync(temporaryPath)
 
-      if (parsedUrl.protocol !== "https:") {
+      // TLS for everything but the loopback source override, which has no
+      // certificate to present and nothing on the wire to protect.
+      if (parsedUrl.protocol !== "https:" && parsedUrl.origin !== optimumTestOrigin()) {
         fail()
         return
       }

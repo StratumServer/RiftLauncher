@@ -24,6 +24,7 @@ import { join } from "node:path"
 
 import { parseOptimumManifest, type OptimumManifest } from "@domain/optimum/manifest"
 import { hostRid, overlayCacheFolder, overlayDownloadUrl, OPTIMUM_MANIFEST_FILE_NAME, OPTIMUM_MANIFEST_URL } from "@domain/optimum/plan"
+import { optimumTestOrigin } from "@src/ipc/validation"
 import { runDownload } from "@src/ipc/workers/download"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
@@ -35,6 +36,24 @@ const LOG_PREFIX = "[back] [ipc] [ipc/optimumManifest.ts]"
  * headroom and still refuses anything that could pass for a payload.
  */
 const MAX_OPTIMUM_MANIFEST_BYTES = 256 * 1024
+
+/**
+ * Where the manifest is read from, and where the archive that goes with it is.
+ *
+ * GitHub, unless the loopback source override is on, in which case both come off
+ * the same local origin under the same names. Everything downstream is
+ * unchanged: the archive is still checked against the hash this manifest
+ * publishes, and every file staged out of it against its own.
+ */
+function manifestSourceUrl(): string {
+  const origin = optimumTestOrigin()
+  return origin === undefined ? OPTIMUM_MANIFEST_URL : `${origin}/${OPTIMUM_MANIFEST_FILE_NAME}`
+}
+
+export function overlaySourceUrl(manifest: OptimumManifest): string {
+  const origin = optimumTestOrigin()
+  return origin === undefined ? overlayDownloadUrl(manifest) : `${origin}/${manifest.archive.filename}`
+}
 
 /** Where every Optimum download lands: the manifest, the archive, and the folders staged out of it. */
 export function optimumCacheDirectory(): string {
@@ -63,8 +82,11 @@ async function fetchOptimumManifest(): Promise<OptimumManifest> {
   const directory = optimumCacheDirectory()
   await fse.ensureDir(directory)
 
+  const origin = optimumTestOrigin()
+  if (origin !== undefined) logMessage("warn", `${LOG_PREFIX} [GET_MANIFEST] Reading Optimum from a local source origin instead of its releases. This is a test setting.`)
+
   const manifestPath = await runDownload({
-    url: OPTIMUM_MANIFEST_URL,
+    url: manifestSourceUrl(),
     outputPath: directory,
     fileName: OPTIMUM_MANIFEST_FILE_NAME,
     maxBytes: MAX_OPTIMUM_MANIFEST_BYTES
@@ -97,7 +119,7 @@ export async function getOptimumManifest(): Promise<OptimumManifestResult> {
       manifest: {
         optimumVersion: manifest.optimumVersion,
         supportedGameVersions: manifest.supportedGameVersions,
-        downloadUrl: overlayDownloadUrl(manifest),
+        downloadUrl: overlaySourceUrl(manifest),
         downloadFolder: optimumCacheDirectory(),
         archiveFileName: manifest.archive.filename
       }
@@ -134,10 +156,11 @@ export async function getCachedOptimumManifest(): Promise<OptimumManifest | unde
  * only thing downstream of that download is a child process.
  */
 export async function getTrustedOverlayHash(url: URL): Promise<string | undefined> {
-  if (url.hostname !== "github.com" || !url.pathname.startsWith("/StratumServer/Optimum/")) return undefined
+  const isOptimumAsset = (url.hostname === "github.com" && url.pathname.startsWith("/StratumServer/Optimum/")) || url.origin === optimumTestOrigin()
+  if (!isOptimumAsset) return undefined
 
   const manifest = await getCachedOptimumManifest()
-  if (!manifest || url.toString() !== overlayDownloadUrl(manifest)) throw new TypeError("Unverified Optimum download")
+  if (!manifest || url.toString() !== overlaySourceUrl(manifest)) throw new TypeError("Unverified Optimum download")
 
   return manifest.archive.sha256
 }
