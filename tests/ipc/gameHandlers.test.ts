@@ -102,7 +102,7 @@ vi.mock("@src/ipc/atomicJsonFile", async (importOriginal) => {
   return { writeJsonAtomic: vi.fn(actual.writeJsonAtomic) }
 })
 
-type ExecuteGameHandler = (event: IpcMainInvokeEvent, version: unknown, installation: unknown) => Promise<GameExecutionResult>
+type ExecuteGameHandler = (event: IpcMainInvokeEvent, version: unknown, installation: unknown, serverId?: unknown) => Promise<GameExecutionResult>
 type LookForAGameVersionHandler = (event: IpcMainInvokeEvent, path: unknown) => Promise<{ exists: boolean; installedGameVersion?: string; variant?: GameBuildVariantType }>
 
 /** The key the game writes after prompting the player, which the launcher has never seen. */
@@ -367,6 +367,123 @@ describe("EXECUTE_GAME", () => {
     assert.deepEqual(result, { ok: true, exitCode: 0 })
     assert.deepEqual(readFileSync(wrapperArgvFile, "utf-8").split("\n").slice(0, -1), [executablePath, `--dataPath=${installationFolder}`, "--openWorld My World"])
     assert.deepEqual(readFileSync(gameArgvFile, "utf-8").split("\n").slice(0, -1), [`--dataPath=${installationFolder}`, "--openWorld My World"])
+  })
+
+  /**
+   * The server-bookmark half of #460, run end to end through the same argv-dumping fixture the
+   * wrapper test uses. What is being pinned is that the handler builds the URL from the record it
+   * finds in ITS OWN config, and that an id naming nothing never reaches a spawn at all.
+   */
+  describe("joining a saved server", () => {
+    const bookmark = { id: "s-1", name: "Home", host: "play.example.com", port: 42_420, lastLaunched: -1 }
+
+    /** Writes a game that dumps its argv, and a config where installation `i-1` owns `bookmark`. */
+    function seedJoinFixture(): { installationFolder: string; gameVersionFolder: string; gameArgvFile: string } {
+      const gameVersionFolder = join(versionsFolder, "1.20.0")
+      const installationFolder = join(managedFolder, "Main")
+      mkdirSync(gameVersionFolder, { recursive: true })
+      mkdirSync(installationFolder, { recursive: true })
+
+      const gameArgvFile = join(temporaryRoot, "game-argv")
+      const executablePath = join(gameVersionFolder, GAME_EXECUTABLE)
+      writeFileSync(executablePath, `#!/bin/sh\nprintf '%s\\n' "$@" > '${gameArgvFile}'\n`)
+      chmodSync(executablePath, 0o755)
+
+      writeConfig({
+        gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+        installations: [
+          { id: "i-1", path: installationFolder, servers: [bookmark] },
+          { id: "i-2", path: join(managedFolder, "Other"), servers: [{ ...bookmark, id: "s-2", host: "other.example.com" }] }
+        ] as unknown as ConfigType["installations"]
+      })
+
+      return { installationFolder, gameVersionFolder, gameArgvFile }
+    }
+
+    function joinRequest(installationFolder: string, gameVersionFolder: string): [unknown, unknown] {
+      return [
+        { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder },
+        { ...baseInstallation({ path: installationFolder, startParams: "--openWorld My World" }), id: "i-1", gameVersionId: "gv-1.20.0" }
+      ]
+    }
+
+    it.skipIf(process.platform !== "linux")("hands the game a connect pair built from the stored bookmark, start parameters still one argument", async () => {
+      const { installationFolder, gameVersionFolder, gameArgvFile } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      const result = await executeGameHandler()(event, version, installation, "s-1")
+
+      assert.deepEqual(result, { ok: true, exitCode: 0 })
+      assert.deepEqual(readFileSync(gameArgvFile, "utf-8").split("\n").slice(0, -1), [
+        `--dataPath=${installationFolder}`,
+        "-c",
+        "vintagestoryjoin://play.example.com:42420",
+        "--openWorld My World"
+      ])
+    })
+
+    it.skipIf(process.platform !== "linux")("starts the game with no connect pair when no server was asked for", async () => {
+      const { installationFolder, gameVersionFolder, gameArgvFile } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      const result = await executeGameHandler()(event, version, installation)
+
+      assert.deepEqual(result, { ok: true, exitCode: 0 })
+      assert.deepEqual(readFileSync(gameArgvFile, "utf-8").split("\n").slice(0, -1), [`--dataPath=${installationFolder}`, "--openWorld My World"])
+    })
+
+    it("refuses an id this Installation has not saved, and never spawns anything", async () => {
+      const { installationFolder, gameVersionFolder, gameArgvFile } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      const result = await executeGameHandler()(event, version, installation, "s-does-not-exist")
+
+      assert.deepEqual(result, { ok: false, reason: "invalid-request" })
+      assert.equal(existsSync(gameArgvFile), false, "nothing may be spawned for a bookmark that does not exist")
+    })
+
+    it("refuses another Installation's bookmark id, and never spawns anything", async () => {
+      const { installationFolder, gameVersionFolder, gameArgvFile } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      const result = await executeGameHandler()(event, version, installation, "s-2")
+
+      assert.deepEqual(result, { ok: false, reason: "invalid-request" })
+      assert.equal(existsSync(gameArgvFile), false, "one Installation's servers are not another's")
+    })
+
+    it("refuses a bookmark id when the request carries no Installation id to look it up under", async () => {
+      const { installationFolder, gameVersionFolder } = seedJoinFixture()
+      const event = await createTrustedEvent()
+
+      const result = await executeGameHandler()(
+        event,
+        { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder },
+        { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" },
+        "s-1"
+      )
+
+      assert.deepEqual(result, { ok: false, reason: "invalid-request" })
+    })
+
+    it("throws on a server id that is not a bounded string, which no player can send", async () => {
+      const { installationFolder, gameVersionFolder } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      for (const bad of [42, null, {}, "x".repeat(129), "vintagestoryjoin://evil.example.com:1"]) {
+        if (bad === "vintagestoryjoin://evil.example.com:1") {
+          // A string of the right shape is not a throw, it is simply an id that names nothing.
+          assert.deepEqual(await executeGameHandler()(event, version, installation, bad), { ok: false, reason: "invalid-request" })
+          continue
+        }
+        await assert.rejects(() => executeGameHandler()(event, version, installation, bad), /Invalid server bookmark id/, String(bad))
+      }
+    })
   })
 
   /**

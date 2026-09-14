@@ -68,7 +68,12 @@ declare global {
       copyToIcons: (path: string, name: string) => Promise<CustomIconCopyResult>
     }
     gameManager: {
-      executeGame: (version: GameVersionType, installation: InstallationType) => Promise<GameExecutionResult>
+      /**
+       * `serverId` names one of the Installation's OWN stored bookmarks. It is never an address:
+       * the main process looks the id up in the config it already holds and builds the URL from
+       * the record it finds, so nothing typed in the renderer can reach the game's argv.
+       */
+      executeGame: (version: GameVersionType, installation: InstallationType, serverId?: string) => Promise<GameExecutionResult>
       lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }>
     }
     netManager: {
