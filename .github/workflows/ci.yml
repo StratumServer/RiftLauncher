@@ -74,8 +74,9 @@ jobs:
 
   # Informational quality scan: never blocks a merge, so a SonarCloud outage
   # or configuration change can't turn the whole run red.
+  # Dependabot events carry no secrets so the scan cannot authenticate.
   sonarcloud:
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]'
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
