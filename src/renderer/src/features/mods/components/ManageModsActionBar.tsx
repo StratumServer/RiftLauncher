@@ -122,23 +122,6 @@ function ManageModsActionBar({
                       exit="exit"
                       className="w-full flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
                     >
-                      {savedServers > 0 && (
-                        <div className="w-full flex items-center gap-2 px-2 py-1 bg-zinc-950/30">
-                          <Input
-                            id="export-include-servers"
-                            type="checkbox"
-                            checked={includeServers}
-                            onChange={(e) => setIncludeServers(e.target.checked)}
-                            /* Headless UI closes a Menu on a click inside it, which would take the
-                               checkbox away before either export button could read it. */
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <label htmlFor="export-include-servers" className="text-sm truncate">
-                            {t("features.servers.includeServersInExport")}
-                          </label>
-                        </div>
-                      )}
-
                       <MenuItem as={Fragment}>
                         <FormButton
                           title={t("features.mods.exportModpack")}
@@ -190,6 +173,23 @@ function ManageModsActionBar({
             </>
           )}
         </Menu>
+
+        {/*
+         * Beside the menu rather than inside it. A bare checkbox in MenuItems is reachable by the
+         * mouse and by nothing else: the arrow keys walk items only, and Space is the menu's own
+         * activation key, so it closed the menu instead of ticking the box. Out here it is a plain
+         * checkbox, one Tab from the Modpack button, and it keeps its value while the menu opens.
+         * The short label carries the long sentence as its tooltip, which also stops it from
+         * truncating in the longer translations.
+         */}
+        {savedServers > 0 && (
+          <div className="flex items-center gap-2 h-8 px-1" title={t("features.servers.includeServersInExport")}>
+            <Input id="export-include-servers" type="checkbox" checked={includeServers} onChange={(e) => setIncludeServers(e.target.checked)} />
+            <label htmlFor="export-include-servers" className="text-sm">
+              {t("features.servers.includeServers")}
+            </label>
+          </div>
+        )}
 
         <FormButton
           title={t("features.mods.openModsFolder")}

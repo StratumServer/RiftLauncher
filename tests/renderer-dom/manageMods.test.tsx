@@ -444,13 +444,10 @@ describe("ManageMods: the action bar after #431", () => {
     const server = { id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: 1_700_000_000_000 }
 
     it("is not offered at all when the Installation has no saved servers", async () => {
-      const user = userEvent.setup()
       renderManageMods()
 
       expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
-      await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
-
-      expect(screen.queryByLabelText("Include this Installation's servers")).toBeNull()
+      expect(screen.queryByLabelText("Include servers")).toBeNull()
     })
 
     it("starts clear, so an export nobody thought about carries no address", async () => {
@@ -459,11 +456,9 @@ describe("ManageMods: the action bar after #431", () => {
       renderManageMods({ modsManager: { exportModpack } }, [server])
 
       expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
-      await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
+      expect((screen.getByLabelText("Include servers") as HTMLInputElement).checked).toBe(false)
 
-      expect((screen.getByLabelText("Include this Installation's servers") as HTMLInputElement).checked).toBe(false)
-
-      await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+      await user.click(await modpackMenuItem(user, "Export Modpack"))
       await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
       expect(exportModpack.mock.calls[0]?.[0].servers).toBe(undefined)
     })
@@ -474,10 +469,35 @@ describe("ManageMods: the action bar after #431", () => {
       renderManageMods({ modsManager: { exportModpack } }, [server])
 
       expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
-      await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
-      await user.click(screen.getByLabelText("Include this Installation's servers"))
-      await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+      await user.click(screen.getByLabelText("Include servers"))
+      await user.click(await modpackMenuItem(user, "Export Modpack"))
 
+      await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+      expect(exportModpack.mock.calls[0]?.[0].servers).toEqual([{ ...server, lastLaunched: -1 }])
+    })
+
+    /**
+     * It sat inside MenuItems, where the arrow keys walk items only and Space is the menu's own
+     * dismiss key, so it could be reached by a mouse and by nothing else. It lives on the bar now,
+     * one Tab from the Modpack button, where a plain checkbox behaves like a plain checkbox.
+     */
+    it("is reachable and ticked from the keyboard, like everything else on this bar", async () => {
+      const user = userEvent.setup()
+      const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+      renderManageMods({ modsManager: { exportModpack } }, [server])
+
+      expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+      const box = screen.getByLabelText("Include servers") as HTMLInputElement
+      const trigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
+
+      trigger.focus()
+      await user.tab()
+      expect(document.activeElement).toBe(box)
+
+      await user.keyboard("[Space]")
+      expect(box.checked).toBe(true)
+
+      await user.click(await modpackMenuItem(user, "Export Modpack"))
       await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
       expect(exportModpack.mock.calls[0]?.[0].servers).toEqual([{ ...server, lastLaunched: -1 }])
     })
