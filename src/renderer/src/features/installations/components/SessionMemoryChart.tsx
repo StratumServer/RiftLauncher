@@ -43,9 +43,22 @@ export function formatDuration(milliseconds: number): string {
   return [hours > 0 ? `${hours}h` : "", minutes > 0 ? `${minutes}m` : "", hours === 0 && seconds > 0 ? `${seconds}s` : ""].filter(Boolean).join(" ") || "0s"
 }
 
-/** Turns readings into one `points` attribute, flat when there is nothing to scale against. */
-function polylinePoints(samples: readonly PlaySample[], value: (sample: PlaySample) => number, ceiling: number, width: number, height: number, padding: number): string {
-  const span = samples[samples.length - 1]?.t ?? 0
+/**
+ * Turns readings into one `points` attribute, flat when there is nothing to scale against.
+ *
+ * `span` is the time axis the points are placed on, which is the whole session and not necessarily
+ * the last reading in `samples`: a series that skips the readings carrying no value still has to
+ * land on the same axis as the one beside it.
+ */
+function polylinePoints(
+  samples: readonly PlaySample[],
+  value: (sample: PlaySample) => number,
+  ceiling: number,
+  width: number,
+  height: number,
+  padding: number,
+  span: number = samples[samples.length - 1]?.t ?? 0
+): string {
   const usableWidth = width - padding * 2
   const usableHeight = height - padding * 2
 
@@ -83,11 +96,22 @@ export function SessionMemoryChart({ session }: Readonly<{ session: PlaySession 
   const { t } = useTranslation()
 
   const peak = peakRssBytes(session.samples)
-  const cpuCeiling = Math.max(MIN_CPU_AXIS, ...session.samples.map((sample) => sample.cpuPercent ?? 0))
-  const hasCpu = session.samples.some((sample) => sample.cpuPercent !== undefined)
+  const span = session.samples[session.samples.length - 1]?.t ?? 0
 
-  const memoryPoints = polylinePoints(session.samples, (sample) => sample.rssBytes, peak, CHART_WIDTH, CHART_HEIGHT, CHART_PADDING)
-  const cpuPoints = polylinePoints(session.samples, (sample) => sample.cpuPercent ?? 0, cpuCeiling, CHART_WIDTH, CHART_HEIGHT, CHART_PADDING)
+  /*
+    A reading with no CPU figure is not a reading of zero percent. A session's first reading never
+    carries one, because there is nothing to subtract from yet, and the Windows adapter answers
+    nothing whenever tasklist fails. Drawing those as zero hangs the line off the axis at the left
+    edge of every session, and contradicts the table below, which prints "Not measured" for the
+    very same sample. So the line is drawn from the readings that carry a figure, on the session's
+    own time axis.
+  */
+  const cpuSamples = session.samples.filter((sample) => sample.cpuPercent !== undefined)
+  const cpuCeiling = Math.max(MIN_CPU_AXIS, ...cpuSamples.map((sample) => sample.cpuPercent ?? 0))
+  const hasCpu = cpuSamples.length > 0
+
+  const memoryPoints = polylinePoints(session.samples, (sample) => sample.rssBytes, peak, CHART_WIDTH, CHART_HEIGHT, CHART_PADDING, span)
+  const cpuPoints = polylinePoints(cpuSamples, (sample) => sample.cpuPercent ?? 0, cpuCeiling, CHART_WIDTH, CHART_HEIGHT, CHART_PADDING, span)
 
   return (
     <div className="w-full flex flex-col gap-2">
@@ -112,25 +136,33 @@ export function SessionMemoryChart({ session }: Readonly<{ session: PlaySession 
         {hasCpu ? t("features.sessions.chartLegend", { peak: formatBytes(peak) }) : t("features.sessions.chartLegendMemoryOnly", { peak: formatBytes(peak) })}
       </p>
 
-      <table className="sr-only">
-        <caption>{t("features.sessions.tableCaption")}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{t("features.sessions.tableTime")}</th>
-            <th scope="col">{t("features.sessions.tableMemory")}</th>
-            <th scope="col">{t("features.sessions.tableCpu")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {session.samples.map((sample) => (
-            <tr key={sample.t}>
-              <td>{formatDuration(sample.t)}</td>
-              <td>{formatBytes(sample.rssBytes)}</td>
-              <td>{sample.cpuPercent === undefined ? t("features.sessions.cpuNotMeasured") : `${Math.round(sample.cpuPercent)}%`}</td>
+      {/*
+        Hidden on a wrapper, not on the table itself. `sr-only` hides through a 1px box and
+        overflow, and a table box honours neither: it keeps its full laid-out height, and inside a
+        positioned dialog panel that height becomes scrollable emptiness. An hour of readings turns
+        the session dialog into a thousand pixels of blank scroll. A div clips.
+      */}
+      <div className="sr-only">
+        <table>
+          <caption>{t("features.sessions.tableCaption")}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{t("features.sessions.tableTime")}</th>
+              <th scope="col">{t("features.sessions.tableMemory")}</th>
+              <th scope="col">{t("features.sessions.tableCpu")}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {session.samples.map((sample) => (
+              <tr key={sample.t}>
+                <td>{formatDuration(sample.t)}</td>
+                <td>{formatBytes(sample.rssBytes)}</td>
+                <td>{sample.cpuPercent === undefined ? t("features.sessions.cpuNotMeasured") : `${Math.round(sample.cpuPercent)}%`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

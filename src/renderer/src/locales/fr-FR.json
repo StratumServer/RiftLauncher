@@ -200,6 +200,7 @@
       "ended": "Terminée le",
       "partial": "Le launcher a perdu la trace du jeu en cours de route, cette session est donc incomplète.",
       "unreadable": "Ces sessions n'ont pas pu être lues, le launcher a laissé le fichier tel quel.",
+      "unreadableRecovery": "Les effacer supprime le fichier, et le launcher recommence à enregistrer dès la session suivante.",
       "newerFormat": "Ces sessions ont été enregistrées par une version plus récente du launcher, le launcher a laissé le fichier tel quel.",
       "chartLabel": "Mémoire et processeur sur une session, avec un pic à {{peak}} sur {{duration}}.",
       "chartLegend": "La mémoire est la ligne pleine, avec un pic à {{peak}}. Le processeur est la ligne pointillée.",

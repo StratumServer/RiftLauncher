@@ -105,6 +105,49 @@ describe("Recent sessions", () => {
     expect(screen.getByRole("img", { name: /Memory and CPU/ }).querySelectorAll("polyline").length).toBe(1)
   })
 
+  /**
+   * jsdom has no layout, so the height this is about cannot be measured here. What it can pin is
+   * where the hiding lives: `sr-only` clips through a 1px box and overflow, which a table box
+   * honours and a div does. On the table itself the readings stay at full height inside the
+   * dialog's scroll area, and an hour of them turns the panel into blank scroll.
+   */
+  it("hides the readings table on a wrapper the browser will actually clip", async () => {
+    const user = userEvent.setup()
+    mountWith({ ok: true, sessions: [aSession({}, { count: 4 })] })
+
+    await user.click(await screen.findByTitle("Open this session"))
+
+    const table = screen.getByRole("table")
+    expect(table.className).not.toContain("sr-only")
+    expect(table.parentElement?.tagName).toBe("DIV")
+    expect(table.parentElement?.className).toContain("sr-only")
+  })
+
+  /**
+   * A session's first reading never carries a CPU figure: the Linux sampler has nothing to subtract
+   * from yet. Drawing it as zero percent pins the line to the axis at the left edge of every
+   * session, and contradicts the table, which says "Not measured" for the same sample.
+   */
+  it("starts the CPU line at the first reading that carries one, not at zero", async () => {
+    const user = userEvent.setup()
+    const measured = aSession({}, { count: 4, minutes: 30 })
+    const [firstSample, ...rest] = measured.samples
+    mountWith({ ok: true, sessions: [{ ...measured, samples: [{ t: firstSample?.t ?? 0, rssBytes: firstSample?.rssBytes ?? 0 }, ...rest] }] })
+
+    await user.click(await screen.findByTitle("Open this session"))
+
+    const [cpuLine] = [...screen.getByRole("img", { name: /Memory and CPU/ }).querySelectorAll("polyline")]
+    const points = (cpuLine?.getAttribute("points") ?? "").split(" ")
+
+    expect(points.length).toBe(3)
+    // The remaining three readings are all 20 percent, so every point sits at the same height and
+    // none of them sits on the baseline the way an unmeasured zero would.
+    expect(new Set(points.map((point) => point.split(",")[1])).size).toBe(1)
+
+    // The table still reports the reading that has no figure, rather than dropping it too.
+    expect(screen.getByRole("table").textContent).toContain("Not measured")
+  })
+
   it("says a session is incomplete rather than calling it a crash", async () => {
     const user = userEvent.setup()
     mountWith({ ok: true, sessions: [aSession({ partial: true })] })
@@ -147,11 +190,66 @@ describe("Recent sessions", () => {
     expect(screen.queryByText(/fine|healthy|no problem|nothing wrong/i)).toBeNull()
   })
 
+  /**
+   * The read is a round trip over IPC, and "No sessions recorded yet" is a claim about the file.
+   * Making that claim before the answer lands tells a player with twenty recorded sessions that
+   * they have none, for as long as the round trip takes.
+   */
+  it("says nothing at all until the first read has answered", async () => {
+    let answer: (read: PlaySessionsReadResult) => void = () => {}
+    const pending = new Promise<PlaySessionsReadResult>((resolve) => {
+      answer = resolve
+    })
+    installMockWindowApi({ gameManager: { getPlaySessions: vi.fn(() => pending) } })
+
+    renderWithProviders(<RecentSessionsSection installationId="install-a" isPlaying={false} measuring />)
+
+    expect(screen.queryByText(/No sessions recorded yet/)).toBeNull()
+
+    answer({ ok: true, sessions: [aSession()] })
+
+    expect(await screen.findByTitle("Open this session")).toBeTruthy()
+    expect(screen.queryByText(/No sessions recorded yet/)).toBeNull()
+  })
+
   it("leaves a file it cannot read alone and says so", async () => {
     mountWith({ ok: false, reason: "newer-format" })
 
     expect(await screen.findByText(/recorded by a newer version of the launcher/)).toBeTruthy()
     expect(screen.queryByTitle("Open this session")).toBeNull()
+  })
+
+  /**
+   * A file this build cannot read stops the recorder for good: it refuses to replace a file it
+   * could not read, so every later session is dropped. Without a way to clear it from here the
+   * only way out is deleting the file by hand.
+   */
+  it("offers to clear a file it could not read, and says what that gets back", async () => {
+    const user = userEvent.setup()
+    const api = mountWith({ ok: false, reason: "unreadable" })
+
+    expect(await screen.findByText(/could not be read/)).toBeTruthy()
+    expect(screen.getByText(/starts recording again from the next session/)).toBeTruthy()
+
+    await user.click(screen.getByTitle("Forget these sessions"))
+
+    expect(api.gameManager.forgetPlaySessions).toHaveBeenCalledWith("install-a")
+    await waitFor(() => expect(screen.queryByText(/could not be read/)).toBeNull())
+  })
+
+  it("still offers the way out when a file cannot be read and nothing is being measured", async () => {
+    // The section hides itself when there is no history and no measuring, which would otherwise
+    // take the only way out of an unreadable file with it.
+    mountWith({ ok: false, reason: "unreadable" }, { measuring: false })
+
+    expect(await screen.findByTitle("Forget these sessions")).toBeTruthy()
+  })
+
+  it("does not offer to clear a file a newer build wrote", async () => {
+    mountWith({ ok: false, reason: "newer-format" })
+
+    expect(await screen.findByText(/recorded by a newer version of the launcher/)).toBeTruthy()
+    expect(screen.queryByTitle("Forget these sessions")).toBeNull()
   })
 
   it("treats a channel that never answers as a file it could not read", async () => {
