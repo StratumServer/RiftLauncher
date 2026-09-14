@@ -138,6 +138,30 @@ describe("what leaves the process", () => {
     assert.match(copied, /\[ACCOUNT\]/)
   })
 
+  it("redacts the blamed Mod and its version too, which the crash file spells as free text", () => {
+    const report = buildSessionReport({
+      crashFile: {
+        text: [
+          "Running on 64 bit Linux with 32000 MB RAM",
+          // Neither half of `modid@version` is constrained to anything: an unrecognised modid is
+          // answered with the raw text, and a version built from a source tree is a path.
+          "22.02.2026 20:39:11: Critical error occurred in the following mod: Will_T@/home/will/build/modx-1.0",
+          "System.NullReferenceException: Object reference not set to an instance of an object.",
+          "   at X.Y() in /home/will/a.cs:line 1"
+        ].join("\n")
+      },
+      installedMods: INSTALLED,
+      accountValues: ["will@example.com", "Will_T"]
+    })
+
+    assert.equal(report.crash?.modLabel, "[ACCOUNT]")
+    assert.equal(report.crash?.modVersion, "[PATH]")
+    assert.equal(report.verdict.modLabel, "[ACCOUNT]")
+    const copied = formatReportText(report)
+    assert.ok(!copied.includes("/home/will"), "the blamed Mod's version reached the copied report as a path")
+    assert.ok(!copied.includes("Will_T"), "the blamed modid reached the copied report unmasked")
+  })
+
   it("lays the report out top to bottom, verdict first", () => {
     const copied = formatReportText(reportFor("mod-exception-main.log"))
     assert.match(copied, /^The game exited with errors\.\nFrom client-main\.log\./)

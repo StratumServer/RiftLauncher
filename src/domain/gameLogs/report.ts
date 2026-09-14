@@ -12,7 +12,7 @@
 
 import { attributeEntries, type AttributionSignal } from "@domain/gameLogs/attribution"
 import { parseCrashFile } from "@domain/gameLogs/crashFile"
-import { parseLogLines, type LogEntry, type LogTimestamp } from "@domain/gameLogs/lines"
+import { boundLine, parseLogLines, type LogEntry, type LogTimestamp } from "@domain/gameLogs/lines"
 import { readPhaseTimeline, type Landmark } from "@domain/gameLogs/phases"
 import { maskValues, redactSensitiveText } from "@domain/redaction"
 
@@ -124,8 +124,11 @@ export function buildSessionReport(input: SessionReportInput): SessionReport {
   const crashSummary = input.crashFile ? parseCrashFile(input.crashFile.text) : null
   const crash: ReportCrash | undefined = crashSummary
     ? {
-        modLabel: crashSummary.blamedModid ? labelFor(crashSummary.blamedModid) : undefined,
-        modVersion: crashSummary.blamedVersion,
+        // Both go through the redactor: the crash file spells the blamed mod as `modid@version`,
+        // where an unrecognised modid is answered with the raw text and a version built from a
+        // source tree is the mod author's own path.
+        modLabel: crashSummary.blamedModid ? clean(boundLine(labelFor(crashSummary.blamedModid))) : undefined,
+        modVersion: crashSummary.blamedVersion ? clean(boundLine(crashSummary.blamedVersion)) : undefined,
         exceptionType: crashSummary.exceptionType,
         exceptionMessage: crashSummary.exceptionMessage ? clean(crashSummary.exceptionMessage) : undefined,
         frames: crashSummary.frames.map(clean),
