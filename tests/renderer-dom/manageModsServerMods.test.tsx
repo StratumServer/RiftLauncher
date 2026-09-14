@@ -26,7 +26,7 @@ const GROUP_TOGGLE = "Show the Mods this server downloaded"
 const REMOVE_TITLE = "Remove the Mods this server downloaded"
 const SAVE_TITLE = "Save this set as a modpack file you can install into your own Mods later"
 
-function anInstallation(): InstallationType {
+function anInstallation(overrides: Partial<InstallationType> = {}): InstallationType {
   return {
     id: "install-a",
     name: "Install A",
@@ -43,7 +43,8 @@ function anInstallation(): InstallationType {
     totalTimePlayed: 0,
     mesaGlThread: false,
     envVars: "",
-    _modsCount: 0
+    _modsCount: 0,
+    ...overrides
   }
 }
 
@@ -112,6 +113,21 @@ function groupHeader(server: string): Promise<HTMLElement> {
 }
 
 describe("Manage Mods: the Mods a server downloaded", () => {
+  it("does not remove a server folder while an installation backup is active", async () => {
+    const api = renderManageMods({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation({ _backuping: true })] })) },
+      pathsManager: { deletePath: vi.fn(async () => true) }
+    })
+    const user = userEvent.setup()
+
+    const header = await groupHeader("My Test Server")
+    await user.click(within(header.parentElement!).getByTitle(REMOVE_TITLE))
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByTitle("Delete"))
+
+    expect(vi.mocked(api.pathsManager.deletePath)).not.toHaveBeenCalled()
+  })
+
   it("shows one group per server, collapsed, with the count and the sentence that explains them", async () => {
     renderManageMods()
 

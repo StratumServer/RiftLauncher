@@ -5,6 +5,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 import { fetchServerMods } from "@renderer/features/moddb/adapters/modsManager"
 import { logMods } from "@renderer/features/moddb/adapters/log"
+import { modsFolderInUse } from "@domain/mods/install"
 
 const LOG_TAG = "[front] [mods] [features/mods/hooks/useServerMods.ts]"
 
@@ -78,6 +79,15 @@ export function useServerMods(installation: InstallationType, reloadToken = 0): 
 
   const remove = useCallback(
     async (group: ServerModGroupType): Promise<void> => {
+      if (modsFolderInUse(installation)) {
+        const messageKey = installation._backuping
+          ? "features.backups.backupInProgress"
+          : installation._restoringBackup
+            ? "features.backups.restoreInProgress"
+            : "features.mods.cantPlayWhileUpdatingMods"
+        addNotification(t(messageKey), "error")
+        return
+      }
       setRemoving(group.path)
       try {
         const removed = await createFileSystemPort()

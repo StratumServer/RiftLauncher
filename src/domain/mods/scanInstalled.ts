@@ -69,6 +69,8 @@ export interface UnidentifiedModArchive {
 export interface ScanInstalledModsResult {
   mods: ScannedMod[]
   errors: UnidentifiedModArchive[]
+  /** True when the folder held more archives than this bounded scan opened. */
+  truncated?: true
 }
 
 /**
@@ -224,7 +226,8 @@ async function readArchive(ports: ScanInstalledModsPorts, archivePath: string): 
  * @returns The mods that were identified, and every archive that was not.
  */
 export async function scanInstalledMods(ports: ScanInstalledModsPorts, input: ScanInstalledModsInput, events: ScanInstalledModsEvents = {}): Promise<ScanInstalledModsResult> {
-  const names = (await ports.directories.listFileNames(input.folder)).filter(looksLikeModArchive).slice(0, MAX_MOD_ARCHIVES)
+  const allNames = (await ports.directories.listFileNames(input.folder)).filter(looksLikeModArchive)
+  const names = allNames.slice(0, MAX_MOD_ARCHIVES)
 
   events.onArchivesFound?.(names.length)
 
@@ -260,5 +263,5 @@ export async function scanInstalledMods(ports: ScanInstalledModsPorts, input: Sc
   // whole live set, and treating it as one deleted the other installations'
   // icons on every scan (#117). The sweep runs at startup instead, on age and
   // size, in pruneModIconCache.
-  return { mods, errors }
+  return allNames.length > names.length ? { mods, errors, truncated: true } : { mods, errors }
 }

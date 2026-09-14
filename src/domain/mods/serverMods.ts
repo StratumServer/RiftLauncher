@@ -30,6 +30,8 @@ export interface ServerModGroup {
   /** Full path of the folder, built by the host from a name the host itself listed. */
   path: string
   mods: ScannedMod[]
+  /** True when this folder held more archives than the bounded scan opened. */
+  truncated?: true
   /**
    * How many archives in this folder did not read. Counted, never listed: nothing here acts on one
    * archive, so naming them would only be noise the player cannot use.
@@ -105,7 +107,8 @@ export async function scanServerMods(ports: ScanInstalledModsPorts, input: { fol
       continue
     }
 
-    groups.push({ server, path, mods: scan.mods, unreadable: scan.errors.length })
+    groups.push({ server, path, mods: scan.mods, unreadable: scan.errors.length, ...(scan.truncated ? { truncated: true as const } : {}) })
+    truncated = truncated || scan.truncated === true
 
     // Counted after the folder rather than before it: a folder is scanned whole or not at all, so a
     // group never comes back holding half of what its folder has.

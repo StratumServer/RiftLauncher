@@ -213,7 +213,7 @@ declare global {
    * nothing here acts on one archive. `unlistable` is the server's folder itself refusing to open,
    * which leaves the other two saying nothing about what it holds.
    */
-  type ServerModGroupType = { server: string; path: string; mods: InstalledModType[]; unreadable: number; unlistable?: true }
+  type ServerModGroupType = { server: string; path: string; mods: InstalledModType[]; unreadable: number; truncated?: true; unlistable?: true }
 
   /**
    * GET_SERVER_MODS' answer. `truncated` means there is more under ModsByServer than came back, a

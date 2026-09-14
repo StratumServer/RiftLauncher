@@ -58,7 +58,13 @@ function ServerModsGroup({
             </FormButton>
 
             <div className="shrink-0 flex gap-1 items-center">
-              <FormButton title={t("features.mods.serverModsSaveAsModpack")} variant="secondary" className="p-1 w-fit h-8" onClick={onSaveAsModpack} disabled={busy || group.mods.length === 0}>
+              <FormButton
+                title={t("features.mods.serverModsSaveAsModpack")}
+                variant="secondary"
+                className="p-1 w-fit h-8"
+                onClick={onSaveAsModpack}
+                disabled={busy || group.mods.length === 0 || group.truncated}
+              >
                 <PiBoxArrowUpDuotone className="text-xl" />
                 <p>{t("features.mods.serverModsSaveAsModpackButton")}</p>
               </FormButton>
@@ -73,6 +79,8 @@ function ServerModsGroup({
           {/* The sentence is the feature: it answers the disk-space question and the "I never
               installed this" question at once, so it stays visible whether the group is open or not. */}
           <p className="text-zinc-400 text-sm">{t("features.mods.serverModsExplanation")}</p>
+
+          {group.truncated && <p className="text-zinc-400 text-sm">{t("features.mods.serverModsTruncated")}</p>}
 
           {group.unreadable > 0 && <p className="text-zinc-400 text-sm">{t("features.mods.serverModsUnreadable", { count: group.unreadable })}</p>}
 
