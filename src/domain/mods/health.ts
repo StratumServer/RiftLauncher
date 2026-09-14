@@ -121,12 +121,16 @@ export function checkModHealth(input: { mods: readonly ModHealthCopy[]; gameVers
 
   for (const mod of subjects) {
     const where = { path: mod.path, modid: mod.modid }
+    /** The bundled floors this Mod asks for and the Installation does not meet, highest last. */
+    const gameFloors: string[] = []
 
     for (const [dependency, required] of Object.entries(mod.dependencies ?? {})) {
       if (GAME_BUNDLED_MODIDS.includes(lower(dependency))) {
         // The bundled ids are the mod's own floor against the game, so there is nothing to install
         // and nothing to turn on: either the Installation runs a new enough build or it does not.
-        if (satisfies(input.gameVersion, required) === false) findings.push({ section: "blocking", ...where, kind: "game-version-below", required })
+        // A mod declaring `game` and `survival` at the same version is the common case and would
+        // otherwise read as the same sentence twice, so only the highest floor is reported.
+        if (satisfies(input.gameVersion, required) === false) gameFloors.push(required)
         continue
       }
 
@@ -147,6 +151,11 @@ export function checkModHealth(input: { mods: readonly ModHealthCopy[]; gameVers
         findings.push({ section: "blocking", ...where, kind: "dependency-missing", dependency, ...bound })
       }
     }
+
+    // Every floor here is readable on both sides, since that is what satisfies() answering false
+    // means, so the highest of them is the one sentence that covers all of them.
+    const [highestFloor] = gameFloors.sort(semver.rcompare)
+    if (highestFloor) findings.push({ section: "blocking", ...where, kind: "game-version-below", required: highestFloor })
 
     // One line per copy naming the next one in the group, so a pair tells each about the other and
     // three copies still produce three lines rather than six. The fix is the row's own delete, which

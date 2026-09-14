@@ -104,6 +104,12 @@ describe("checkModHealth game-bundled mod ids", () => {
     }
   })
 
+  it("reports one sentence for a Mod declaring several bundled ids, at the highest floor it asks for", () => {
+    const findings = checkModHealth({ mods: [aMod({ modid: "alpha", dependencies: { game: "1.21.0", survival: "1.22.0", creative: "1.21.0" } })], gameVersion: "1.20.4" })
+
+    assert.deepEqual(findings, [{ section: "blocking", path: "/Mods/alpha.zip", modid: "alpha", kind: "game-version-below", required: "1.22.0" }])
+  })
+
   it("reads the bundled ids however a modinfo.json cased them", () => {
     assert.deepEqual(kinds(checkModHealth({ mods: [aMod({ modid: "alpha", dependencies: { Survival: "1.21.0" } })], gameVersion: "1.20.4" })), ["blocking:game-version-below:alpha"])
   })
