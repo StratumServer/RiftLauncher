@@ -343,6 +343,15 @@ declare global {
     name: string
     gameVersion: string
     mods: ModpackModEntryType[]
+    /**
+     * The servers the exporting player chose to hand over, absent from every pack that carries
+     * none and from every pack written before #460, so no reader may require it. Optional is
+     * load-bearing here for the same reason it is on `ModpackModEntryType.name`.
+     *
+     * Written only when the exporter ticked the box: the default is off, because a modpack is a
+     * file people pass around and a default that discloses an address is the wrong default.
+     */
+    servers?: ServerBookmarkType[]
   }
 
   type ModChangeSummaryEntry = {

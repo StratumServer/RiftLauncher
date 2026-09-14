@@ -23,8 +23,9 @@ const BETA_LOGO = "https://moddbcdn.vintagestory.at/beta.png"
 const DISABLE_TITLE = "Disable this Mod: it stays installed, Vintage Story just won't load it"
 const ENABLE_TITLE = "Enable this Mod: Vintage Story will load it again"
 
-function anInstallation(): InstallationType {
+function anInstallation(servers?: ServerBookmarkType[]): InstallationType {
   return {
+    ...(servers ? { servers } : {}),
     id: "install-a",
     name: "Install A",
     icon: "icon-1",
@@ -187,9 +188,9 @@ function queryModDb(url: string): Promise<string> {
  * to gate mounting behind the Installations being in context, because the scan effect now re-runs
  * once the config's loaded state flips (#58).
  */
-function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof renderWithProviders> {
+function renderManageMods(overrides: WindowApiOverrides = {}, servers?: ServerBookmarkType[]): ReturnType<typeof renderWithProviders> {
   installMockWindowApi({
-    configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
+    configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(servers)] })) },
     netManager: { queryURL: vi.fn(queryModDb) },
     ...overrides,
     // Last, and merged rather than replaced: a test overriding one modsManager call still wants the
@@ -433,6 +434,53 @@ describe("ManageMods: the action bar after #431", () => {
     await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
     // The menu reports itself collapsed straight away; the fade-out on the panel itself is cosmetic.
     expect(trigger.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  /**
+   * #460: the export can carry the Installation's servers, and must not do it by default. A modpack
+   * is a file people hand around, so the box starts clear and an address only travels on purpose.
+   */
+  describe("the export's server checkbox", () => {
+    const server = { id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: 1_700_000_000_000 }
+
+    it("is not offered at all when the Installation has no saved servers", async () => {
+      const user = userEvent.setup()
+      renderManageMods()
+
+      expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+      await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
+
+      expect(screen.queryByLabelText("Include this Installation's servers")).toBeNull()
+    })
+
+    it("starts clear, so an export nobody thought about carries no address", async () => {
+      const user = userEvent.setup()
+      const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+      renderManageMods({ modsManager: { exportModpack } }, [server])
+
+      expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+      await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
+
+      expect((screen.getByLabelText("Include this Installation's servers") as HTMLInputElement).checked).toBe(false)
+
+      await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+      await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+      expect(exportModpack.mock.calls[0]?.[0].servers).toBe(undefined)
+    })
+
+    it("carries the servers once it is ticked, with the launch stamps left behind", async () => {
+      const user = userEvent.setup()
+      const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+      renderManageMods({ modsManager: { exportModpack } }, [server])
+
+      expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+      await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
+      await user.click(screen.getByLabelText("Include this Installation's servers"))
+      await user.click(screen.getByText("Export Modpack").closest("button") as HTMLElement)
+
+      await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+      expect(exportModpack.mock.calls[0]?.[0].servers).toEqual([{ ...server, lastLaunched: -1 }])
+    })
   })
 
   it("opens the Modpack menu from a focused trigger with the keyboard and runs an action reached by the arrow keys", async () => {
