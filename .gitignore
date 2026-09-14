@@ -8,3 +8,6 @@ repo
 .flatpak-builder
 build-dir
 *.tsbuildinfo
+
+# The sample game logs the report tests read are fixtures, not logs this repo writes.
+!tests/fixtures/**/*.log

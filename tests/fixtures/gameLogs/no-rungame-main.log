@@ -1,0 +1,7 @@
+1.3.2026 9:05:00 [Notification] Entering runphase Initialization
+1.3.2026 9:05:01 [Notification] Entering runphase Configuration
+1.3.2026 9:05:01 [Notification] Entering runphase LoadAssets
+1.3.2026 9:05:44 [Notification] Entering runphase AssetsFinalize
+1.3.2026 9:05:45 [Notification] Entering runphase LoadGamePre
+1.3.2026 9:05:46 [Error] [egocaribautomapmarkers] Fatal: could not patch BlockTallGrass.
+32.13.2026 99:99:99 [Error] Something wrote a date the calendar does not have.
