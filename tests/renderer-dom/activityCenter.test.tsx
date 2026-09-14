@@ -1281,6 +1281,22 @@ describe("Clear all empties the centre in one action", () => {
     expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["second", "third", "waiting"])
   })
 
+  /** Found on the packaged build: the undo belongs to the press that raised it and to no other. */
+  it("does not let an undo bring back what an earlier clear took", () => {
+    installMockWindowApi()
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    act(() => result.current.addNotification("from the first clear", "info", { presentation: "center" }))
+    act(() => result.current.clearAllNotifications())
+    expect(result.current.history).toHaveLength(0)
+
+    // A second clear with nothing left to take, and then an undo of that one.
+    act(() => result.current.clearAllNotifications())
+    act(() => result.current.undoClearAllNotifications())
+
+    expect(result.current.history).toHaveLength(0)
+  })
+
   it("offers nothing to clear when there is nothing there", () => {
     installMockWindowApi()
 

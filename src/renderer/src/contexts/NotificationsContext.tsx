@@ -420,10 +420,13 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   const clearAllNotifications = (): void => {
     const onScreen = new Set(stackRef.current.map((entry) => entry.id))
     const taken = recordsRef.current.filter((record) => !survivesBulkClear({ onScreen: onScreen.has(record.id), awaitsAnswer: awaitsAnswer(record) }))
-    if (taken.length === 0) return
     const takenIds = new Set(taken.map((record) => record.id))
+    // Written even when this clear took nothing. Leaving the last snapshot in
+    // place let an undo resurrect records from a clear several presses ago: the
+    // undo belongs to the press that raised it and to no other.
     clearedRecords.current = taken
     clearedQueue.current = toastQueueRef.current.filter((id) => takenIds.has(id))
+    if (taken.length === 0) return
     setRecords((previous) => previous.filter((record) => !takenIds.has(record.id)))
     setToastQueue((queue) => queue.filter((id) => !takenIds.has(id)))
   }
@@ -432,6 +435,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     const restored = clearedRecords.current
     const requeued = clearedQueue.current
     if (restored.length === 0) return
+
     clearedRecords.current = []
     clearedQueue.current = []
     // Back in arrival order rather than appended, so the centre reads the same
