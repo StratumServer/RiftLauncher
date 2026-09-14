@@ -33,6 +33,7 @@ import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeS
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
+import ImportServersDialog from "@renderer/features/servers/components/ImportServersDialog"
 import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
 import InstalledModItem from "@renderer/features/mods/components/InstalledModItem"
 import InstalledModDetails from "@renderer/features/mods/components/InstalledModDetails"
@@ -104,6 +105,9 @@ function ListMods(): JSX.Element {
   // through the native file dialog.
   const folderInUse = installation ? modsFolderInUse(installation) : false
   const [profilesOpen, setProfilesOpen] = useState(false)
+  // The servers a finished import carried, held here so the question comes after the Mods are in
+  // rather than on top of them. Null while there is nothing to ask about.
+  const [importedServers, setImportedServers] = useState<readonly ServerBookmarkType[] | null>(null)
   // A mod id and a name, not a Mod: the install popup already takes a mod id and finds the installed
   // copy itself, so the health panel can point it at a dependency nobody has installed yet.
   const [modToUpdate, setModToUpdate] = useState<{ modid: string; name?: string } | null>(null)
@@ -396,10 +400,15 @@ function ListMods(): JSX.Element {
                     installation={installation}
                     installedMods={installedMods}
                     onFinish={() => {
+                      // Read before clearModpack, which takes the manifest away.
+                      const carried = importManifest?.servers
                       clearModpack()
+                      if (carried && carried.length > 0) setImportedServers(carried)
                       refresh()
                     }}
                   />
+
+                  <ImportServersDialog servers={importedServers} installation={installation} close={() => setImportedServers(null)} />
 
                   <ModChangeSummaryPopup
                     isOpen={showSummary}

@@ -1,7 +1,7 @@
-import { Fragment } from "react"
+import { Fragment, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { AnimatePresence, motion } from "motion/react"
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react"
+import { Input, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react"
 import clsx from "clsx"
 import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBoxArrowDownDuotone, PiDesktopTowerDuotone, PiStackDuotone, PiPackageDuotone } from "react-icons/pi"
 
@@ -44,6 +44,12 @@ function ManageModsActionBar({
 
   const exportModpack = useExportModpack()
   const openPathInExplorer = useOpenPathInExplorer()
+
+  // Off by default and reset on every mount: a modpack is a file people hand around, and a default
+  // that puts somebody's server address in it is the wrong default. Shown only when there is
+  // something to include, so a player with no saved servers never sees a choice they cannot make.
+  const [includeServers, setIncludeServers] = useState(false)
+  const savedServers = installation.servers?.length ?? 0
 
   // A modpack is the set someone else is meant to be able to play, so a Mod the player turned off
   // is not in it. Both exports read this list, and both are greyed out by it: a folder whose Mods
@@ -116,12 +122,29 @@ function ManageModsActionBar({
                       exit="exit"
                       className="w-full flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
                     >
+                      {savedServers > 0 && (
+                        <div className="w-full flex items-center gap-2 px-2 py-1 bg-zinc-950/30">
+                          <Input
+                            id="export-include-servers"
+                            type="checkbox"
+                            checked={includeServers}
+                            onChange={(e) => setIncludeServers(e.target.checked)}
+                            /* Headless UI closes a Menu on a click inside it, which would take the
+                               checkbox away before either export button could read it. */
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <label htmlFor="export-include-servers" className="text-sm truncate">
+                            {t("features.servers.includeServersInExport")}
+                          </label>
+                        </div>
+                      )}
+
                       <MenuItem as={Fragment}>
                         <FormButton
                           title={t("features.mods.exportModpack")}
                           variant="ghost"
                           className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
-                          onClick={() => exportModpack({ installedMods: enabledMods, installation })}
+                          onClick={() => exportModpack({ installedMods: enabledMods, installation, includeServers })}
                           disabled={enabledMods.length === 0}
                         >
                           <div className="w-full flex items-center gap-2">
@@ -136,7 +159,7 @@ function ManageModsActionBar({
                           title={t("features.mods.exportServerModpack")}
                           variant="ghost"
                           className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
-                          onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` } })}
+                          onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` }, includeServers })}
                           disabled={serverMods.length === 0}
                         >
                           <div className="w-full flex items-center gap-2">
