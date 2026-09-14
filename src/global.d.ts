@@ -210,9 +210,10 @@ declare global {
    * itself: untrusted text, escaped and truncated on screen, never logged and never joined into a
    * path by the renderer. `path` is the folder the host built and the only thing a removal echoes
    * back. `unreadable` counts the archives that would not read; none of them is named, because
-   * nothing here acts on one archive.
+   * nothing here acts on one archive. `unlistable` is the server's folder itself refusing to open,
+   * which leaves the other two saying nothing about what it holds.
    */
-  type ServerModGroupType = { server: string; path: string; mods: InstalledModType[]; unreadable: number }
+  type ServerModGroupType = { server: string; path: string; mods: InstalledModType[]; unreadable: number; unlistable?: true }
 
   /**
    * GET_SERVER_MODS' answer. `truncated` means there is more under ModsByServer than came back, a

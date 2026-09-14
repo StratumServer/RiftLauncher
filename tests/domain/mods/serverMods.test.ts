@@ -19,14 +19,17 @@ function modinfoText(modid: string): string {
  * Ports over a fake tree: a map of folder path to the entry names it holds, and a map of archive
  * path to the modid it describes (or `null` for an archive that will not read).
  *
- * A folder missing from `tree` throws on listing, which is what the real reader does for a plain
- * file: `readdir` on one rejects with ENOTDIR.
+ * A folder missing from `tree` throws ENOTDIR on listing, which is what the real reader does for a
+ * plain file. A path in `locked` throws EACCES instead, which is a folder that is there and will
+ * not open. The two are the same throw with a different code, and they want opposite answers, so
+ * the fake has to be able to tell them apart the way the host does.
  */
-function fakePorts(tree: Record<string, string[]>, archives: Record<string, string | null> = {}): ScanInstalledModsPorts {
+function fakePorts(tree: Record<string, string[]>, archives: Record<string, string | null> = {}, locked: readonly string[] = []): ScanInstalledModsPorts {
   const directories: DirectoryReader = {
     listFileNames: async (path: string): Promise<string[]> => {
+      if (locked.includes(path)) throw Object.assign(new Error(`EACCES: permission denied, scandir ${path}`), { code: "EACCES" })
       const names = tree[path]
-      if (names === undefined) throw new Error(`ENOTDIR: ${path}`)
+      if (names === undefined) throw Object.assign(new Error(`ENOTDIR: not a directory, scandir ${path}`), { code: "ENOTDIR" })
       return names
     }
   }
@@ -103,6 +106,17 @@ describe("scanServerMods", () => {
       scan.groups.map((group) => group.server),
       ["srv"]
     )
+  })
+
+  it("keeps a server folder that will not list, because its archives are still on the disk", async () => {
+    const locked = `${FOLDER}/Locked Server`
+    const scan = await scanServerMods(fakePorts({ [FOLDER]: ["Good Server", "Locked Server"], [`${FOLDER}/Good Server`]: [] }, {}, [locked]), { folder: FOLDER })
+
+    assert.deepEqual(
+      scan.groups.map((group) => group.server),
+      ["Good Server", "Locked Server"]
+    )
+    assert.deepEqual(scan.groups[1], { server: "Locked Server", path: locked, mods: [], unreadable: 0, unlistable: true })
   })
 
   it("counts the archives it could not read without naming one", async () => {

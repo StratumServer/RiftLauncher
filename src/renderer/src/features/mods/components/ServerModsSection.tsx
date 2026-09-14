@@ -23,24 +23,35 @@ import RemoveServerModsDialog from "@renderer/features/mods/components/RemoveSer
  *
  * @param search The page's search field, trimmed and lower-cased. It narrows an open group; the
  *   three filter dropdowns do not, because they filter a list this is not part of.
+ * @param reloadToken The page's Reload button, counted up, so the groups are re-read with the rest.
  */
-function ServerModsSection({ installation, search }: Readonly<{ installation: InstallationType; search: string }>): JSX.Element | null {
+function ServerModsSection({ installation, search, reloadToken }: Readonly<{ installation: InstallationType; search: string; reloadToken: number }>): JSX.Element | null {
   const { t } = useTranslation()
-  const { groups, truncated, remove, removing } = useServerMods(installation)
+  const { groups, truncated, unreadable, remove, removing } = useServerMods(installation, reloadToken)
   const exportModpack = useExportModpack()
 
   const [openServer, setOpenServer] = useState<string | null>(null)
   const [groupToRemove, setGroupToRemove] = useState<ServerModGroupType | null>(null)
 
-  if (groups.length < 1) return null
+  // A folder that will not open is the one case the feature exists to answer: the player is looking
+  // for the disk the Mod list does not explain, and an empty page would tell them there is nothing
+  // there. So the region stays for that, and only for that.
+  if (groups.length < 1 && !unreadable) return null
 
   return (
     <>
       <div className="w-full flex flex-col gap-1">
         <h2 className="text-2xl text-center font-bold">{t("features.mods.serverModsTitle")}</h2>
+        {/* zinc-200, not the zinc-400 the groups use: these two lines are the only prose in the
+            feature that sits on the shell scrim alone, with no list panel under them. */}
         {truncated && (
-          <p role="status" className="text-zinc-400 text-center text-sm">
+          <p role="status" className="text-zinc-200 text-center text-sm">
             {t("features.mods.serverModsTruncated")}
+          </p>
+        )}
+        {unreadable && (
+          <p role="status" className="text-zinc-200 text-center text-sm">
+            {t("features.mods.serverModsFolderUnreadable")}
           </p>
         )}
       </div>
@@ -50,6 +61,7 @@ function ServerModsSection({ installation, search }: Readonly<{ installation: In
           key={group.path}
           group={group}
           mods={search ? group.mods.filter((iMod) => matchesModSearch(iMod, search)) : group.mods}
+          searching={search.length > 0}
           open={openServer === group.path}
           onToggle={() => setOpenServer((current) => (current === group.path ? null : group.path))}
           onRemove={() => setGroupToRemove(group)}

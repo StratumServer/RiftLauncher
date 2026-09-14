@@ -149,7 +149,10 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS, async (event, installa
 
     logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_SERVER_MODS] Found ${scan.groups.length} server folders and ${scanned} mods.`)
 
-    const groups = scan.groups.map((group) => ({ server: group.server, path: group.path, mods: group.mods.map(toWireMod), unreadable: group.unreadable }))
+    const groups = scan.groups.map((group) => {
+      const wire = { server: group.server, path: group.path, mods: group.mods.map(toWireMod), unreadable: group.unreadable }
+      return group.unlistable ? { ...wire, unlistable: true as const } : wire
+    })
     return scan.truncated ? { groups, truncated: true } : { groups }
   } catch (err) {
     logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_SERVER_MODS] Error getting server mods.`)

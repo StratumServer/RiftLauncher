@@ -35,6 +35,24 @@ export interface ServerModGroup {
    * archive, so naming them would only be noise the player cannot use.
    */
   unreadable: number
+  /**
+   * The folder itself would not list, so `mods` and `unreadable` say nothing about what it holds.
+   * The group is still here: the archives take up the disk either way, and clearing the folder is
+   * the one thing this feature offers.
+   */
+  unlistable?: true
+}
+
+/**
+ * True for the listing failure that means the entry was never a folder.
+ *
+ * The host's file API reports a plain file and a folder nobody may open with the same kind of
+ * throw, and the two want opposite answers, so the code is read to tell them apart. Anything else,
+ * a permission, a dead link target, an I/O error, is a folder that is there and will not open.
+ */
+function isNotAFolder(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null | undefined)?.code
+  return code === "ENOTDIR" || code === "ENOENT"
 }
 
 /**
@@ -75,10 +93,15 @@ export async function scanServerMods(ports: ScanInstalledModsPorts, input: { fol
     let scan
     try {
       scan = await scanInstalledMods(ports, { folder: path })
-    } catch {
-      // A plain file sitting beside the server folders, or a folder that will not list at all.
-      // Neither is a server's mod set, and a group for it would offer the player a folder to clear
-      // that is not there.
+    } catch (err) {
+      // A plain file sitting beside the server folders is not a server's mod set, and a group for
+      // it would offer the player a folder to clear that is not there.
+      if (isNotAFolder(err)) continue
+
+      // A folder that will not list is a different matter. It is a server's mod set, its archives
+      // are still on the disk the player came here to free, and dropping it would leave them no row
+      // to see and no button to clear it with.
+      groups.push({ server, path, mods: [], unreadable: 0, unlistable: true })
       continue
     }
 
