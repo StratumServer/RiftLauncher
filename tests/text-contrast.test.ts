@@ -637,6 +637,29 @@ describe("the brand accent where it carries text", () => {
     }
   })
 
+  it("keeps the invalid-field border and headline above their floors, on both stacks it ships on", () => {
+    // #447: border-red-800 read 1.97:1 as a border against the panel behind it, below the 3:1
+    // non-text floor, on both the plain form panel FormInputs ships on and the table-backed panel
+    // GameVersionPicker reuses the same pair for (see the comment above its div, which calls out
+    // the reuse on purpose). Read out of both components, so a shade change on either one comes
+    // back through here, and so the two are kept in lockstep with each other.
+    const inputInvalid = match("components/ui/FormComponents/FormInputs.tsx", /user-invalid:border-(red-\d+) user-invalid:bg-(red-\d+)\/(\d+)/)
+    const pickerBox = match("features/installations/components/GameVersionPicker.tsx", /border border-(red-\d+) bg-(red-\d+)\/(\d+)/)
+
+    assert.equal(inputInvalid[1], inputInvalid[2], "FormInputs should paint its invalid border and fill the same red shade")
+    assert.equal(pickerBox[1], pickerBox[2], "GameVersionPicker should paint its invalid box border and fill the same red shade")
+    assert.equal(inputInvalid[1], pickerBox[1], "GameVersionPicker should reuse the same invalid-field border shade FormInputs does")
+
+    const border: Layer = [tailwindColor(inputInvalid[1] as string), 1]
+    assertReadable("invalid-field border on the plain form panel", border, FORM_SECTION, NON_TEXT_FLOOR)
+    assertReadable("invalid-field border on the table-backed panel", border, SECTION_TABLE, NON_TEXT_FLOOR)
+
+    // The headline stays on red-400, the shade every other error already speaks in, but it sits on
+    // top of the invalid fill above, so a fill change still has to clear the text floor here too.
+    const headline = paletteForeground("features/installations/components/GameVersionPicker.tsx", /items-center text-(red-\d+)"/)
+    assertReadable("invalid-field headline on the table-backed panel", headline, SECTION_TABLE, TEXT_FLOOR)
+  })
+
   it("keeps each preset's own ramp dark-to-light in that order", () => {
     for (const preset of ACCENT_PRESETS) {
       const dark = luminance(hexRgb(preset.dark))
