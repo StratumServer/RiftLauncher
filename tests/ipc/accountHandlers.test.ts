@@ -284,6 +284,29 @@ describe("LOGIN", () => {
     })
   })
 
+  it("reports a login whose session is only held in memory, rather than an ordinary success", async () => {
+    // #481: the credentials were accepted and there is no keyring to write them to. The login
+    // stands, the account is usable, and the renderer is told the session ends with this run.
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockResolvedValueOnce("saved-in-memory")
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.deepEqual(result, {
+      status: "success",
+      account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false },
+      sessionInMemoryOnly: true
+    })
+  })
+
+  it("does not flag an ordinary save as a session held in memory", async () => {
+    transportAnswers(SUCCESS_BODY)
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.equal(result.status === "success" && result.sessionInMemoryOnly, undefined)
+  })
+
   it("reports an unreadable, unpreservable store as its own status instead of a generic failure", async () => {
     transportAnswers(SUCCESS_BODY)
     vi.mocked(saveAccountSecrets).mockRejectedValueOnce(new AccountStoreUnreadableError(new Error("EACCES")))

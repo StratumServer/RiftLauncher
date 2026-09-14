@@ -56,3 +56,39 @@ describe("SessionButton on a machine with no keyring", () => {
     expect(vi.mocked(api.utils.openOnBrowser).mock.calls).toEqual([["https://riftlauncher.stratumvs.dev/docs/get-started/installation/linux#session-storage-and-keyrings"]])
   }, 15000)
 })
+
+/**
+ * The other half of #481: the credentials were accepted and there is simply nowhere to keep them,
+ * so the login stands for this run. The player has to end up logged in, and has to be told that
+ * this one does not survive quitting rather than finding out at the next start.
+ */
+describe("SessionButton on a login whose session is only held in memory", () => {
+  const ACCOUNT = { email: "player@example.test", playerName: "Player", playerUid: "uid-a", playerEntitlements: null, hostGameServer: false }
+
+  it("logs the player in and says the session will not be remembered", async () => {
+    renderWithLoginResult({ status: "success", account: ACCOUNT, sessionInMemoryOnly: true })
+
+    await submitLogin()
+
+    expect(await screen.findByText(/logged in as player/i)).toBeTruthy()
+    expect(await screen.findByText(/only until you close riftlauncher/i)).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "Read the keyring guide" })).toBeTruthy()
+  }, 15000)
+
+  it("shows the account as the one in use, the same as a saved login", async () => {
+    renderWithLoginResult({ status: "success", account: ACCOUNT, sessionInMemoryOnly: true })
+
+    await submitLogin()
+
+    expect(await screen.findByRole("button", { name: /player/i })).toBeTruthy()
+  }, 15000)
+
+  it("says nothing about keyrings on an ordinary saved login", async () => {
+    renderWithLoginResult({ status: "success", account: ACCOUNT })
+
+    await submitLogin()
+
+    expect(await screen.findByText(/logged in as player/i)).toBeTruthy()
+    expect(screen.queryByText(/no system keyring/i)).toBeNull()
+  }, 15000)
+})

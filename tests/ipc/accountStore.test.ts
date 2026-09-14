@@ -195,24 +195,90 @@ describe("saveAccountSecrets", () => {
     assert.equal(payload.accounts.length, 1, "one entry replaced in place, not a second one appended")
   })
 
-  it("refuses to write when the platform offers no encryption", async () => {
+  it("writes nothing when the platform offers no encryption, and holds the session for this run instead", async () => {
     mockState.encryptionAvailable = false
     const store = await loadStore()
 
-    await assert.rejects(store.saveAccountSecrets("uid-a", ACCOUNT_A), /Secure account storage is unavailable/)
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")
 
     assert.equal(existsSync(storePath()), false)
   })
 
-  it.skipIf(process.platform !== "linux")("refuses to write when Linux would fall back to an unencrypted backend", async () => {
+  it.skipIf(process.platform !== "linux")("writes nothing when Linux would fall back to an unencrypted backend", async () => {
     // `basic_text` is safeStorage's answer for a Linux session with no keyring:
     // it still encrypts, with a hardcoded key, which is not storage a session
     // key belongs in. The rule is Linux-only, and so is the case.
     mockState.storageBackend = "basic_text"
     const store = await loadStore()
 
-    await assert.rejects(store.saveAccountSecrets("uid-a", ACCOUNT_A), /A system password store is required/)
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")
     assert.equal(existsSync(storePath()), false)
+  })
+})
+
+/**
+ * #481: a machine with no keyring used to fail the login outright, with credentials the service
+ * had already accepted, so the player could not play at all over a missing wallet. The session is
+ * held in this process instead. What must stay true is that it is only ever in this process: never
+ * on disk, never in a file a later run could read, and gone when the process is.
+ */
+describe("saveAccountSecrets with no keyring at all", () => {
+  it("hands the session back to every reader for as long as this run lasts", async () => {
+    mockState.encryptionAvailable = false
+    const store = await loadStore()
+
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    assert.deepEqual(await store.getAccountSecrets("uid-a"), ACCOUNT_A, "the account is usable, so the game can be launched as it")
+  })
+
+  it("writes no file at all, not even an empty or unencrypted one", async () => {
+    mockState.encryptionAvailable = false
+    const store = await loadStore()
+
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    assert.deepEqual(readdirSync(mockState.userDataDir), [], "nothing was left behind in the user data folder")
+  })
+
+  it("is gone in the next process, which is what quitting does to it", async () => {
+    mockState.encryptionAvailable = false
+    const writer = await loadStore()
+    await writer.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    // A fresh module instance over the same folder: the same thing the next launch sees.
+    const nextRun = await loadStore()
+
+    assert.equal(await nextRun.getAccountSecrets("uid-a"), null)
+  })
+
+  it("leaves a store that is merely locked exactly where it is, and reads the keyring one back once it opens", async () => {
+    const writer = await loadStore()
+    await writer.saveAccountSecrets("uid-a", ACCOUNT_A)
+    const onDisk = readFileSync(storePath(), "utf8")
+
+    mockState.encryptionAvailable = false
+    const lockedRun = await loadStore()
+    await lockedRun.saveAccountSecrets("uid-b", ACCOUNT_B)
+
+    assert.equal(readFileSync(storePath(), "utf8"), onDisk, "the account it could not open was not overwritten by the one it could not save")
+
+    mockState.encryptionAvailable = true
+    const unlockedRun = await loadStore()
+    assert.deepEqual(await unlockedRun.getAccountSecrets("uid-a"), ACCOUNT_A)
+    assert.equal(await unlockedRun.getAccountSecrets("uid-b"), null, "and the in-memory one did not survive into it")
+  })
+
+  it("lets the player remove an account it is only holding in memory", async () => {
+    // The store on disk is unreadable here, which is the state that makes removeAccountSecrets
+    // refuse. It has nothing to say about a session that was never in it.
+    writeStoreFile({ version: 2, ciphertext: Buffer.from("someone else's bytes", "utf8").toString("base64") })
+    mockState.encryptionAvailable = false
+    const store = await loadStore()
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    assert.equal(await store.removeAccountSecrets("uid-a"), true)
+    assert.equal(await store.getAccountSecrets("uid-a"), null)
   })
 })
 
@@ -344,8 +410,8 @@ describe("saveAccountSecrets rebuilding an unreadable store", () => {
 
   it("does not snapshot or touch an intact store when only the keyring is locked", async () => {
     // A locked keyring reads as unreadable-adjacent, but the file is fine: readStore returns
-    // early with unreadable:false so a later unlock still reaches it, and writeAccounts throws
-    // before it could overwrite anything. Without that split, the first locked-keyring login
+    // early with unreadable:false so a later unlock still reaches it, and the save stops at the
+    // keyring check before it could overwrite anything. Without that split, the first login
     // would copy the intact store to the one-shot snapshot slot and then fail the login anyway,
     // stranding a stale copy where a genuine corruption event would later need one (#261 review).
     const writer = await loadStore()
@@ -357,7 +423,7 @@ describe("saveAccountSecrets rebuilding an unreadable store", () => {
     mockState.encryptionAvailable = false
     const store = await loadStore()
 
-    await assert.rejects(store.saveAccountSecrets("uid-c", ACCOUNT_A), /Secure account storage is unavailable/)
+    assert.equal(await store.saveAccountSecrets("uid-c", ACCOUNT_A), "saved-in-memory")
 
     assert.equal(existsSync(unreadableBackupPath()), false, "a locked keyring is not a corruption event")
     assert.equal(readFileSync(storePath(), "utf8"), onDisk, "the real store is left byte-for-byte")
