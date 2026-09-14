@@ -329,7 +329,17 @@
       "panelSummary": "{{active}} em curso, {{unread}} não lidas",
       "answeredWith": "Resposta: {{action}}",
       "restartAndUpdate": "Reiniciar e atualizar",
-      "viewUpdates": "Ver atualizações"
+      "viewUpdates": "Ver atualizações",
+      "failureReasons": {
+        "network": "A ligação falhou. Verifique a sua ligação ou a firewall e tente novamente.",
+        "no-space": "Já não há espaço no disco. Liberte espaço e tente novamente.",
+        "no-permission": "O RiftLauncher não tem permissão para escrever aí. Verifique as permissões dessa pasta e tente novamente.",
+        "missing-file": "Um ficheiro necessário já não estava lá. Tente novamente, e reinstale se continuar a acontecer.",
+        "damaged-archive": "O arquivo não abriu, provavelmente está danificado. Transfira-o novamente.",
+        "timed-out": "Demorou demasiado tempo e foi interrompido. Tente novamente.",
+        "unsupported-platform": "Este passo só funciona no Windows.",
+        "unknown": "Esta tarefa parou antes de terminar. Os detalhes estão no registo."
+      }
     }
   },
   "notifications": {

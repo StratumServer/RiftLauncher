@@ -1165,6 +1165,119 @@ describe("Activity Center keyboard reach", () => {
   })
 })
 
+/**
+ * #390: a failed row said "This task stopped before it finished" for every failure it could
+ * possibly show, while the thing that failed knew perfectly well why.
+ */
+describe("a failed row names its cause", () => {
+  it("says the connection failed on a download the network killed, and repeats it on the message", async () => {
+    installMockWindowApi({
+      pathsManager: {
+        downloadOnPath: vi.fn(() => Promise.reject(new Error("Error invoking remote method 'downloadOnPath': Error: connect ECONNREFUSED 127.0.0.1:443")))
+      }
+    })
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Start task" })))
+    openCenter()
+
+    const row = within(panel()).getByText("Example download").closest("li") as HTMLElement
+    expect(within(row).getByText("The connection failed. Check your connection or firewall, then try again.")).toBeTruthy()
+    expect(within(row).queryByText("This task stopped before it finished. The log has the details.")).toBeNull()
+
+    // The message the task runner raised carries the same token, so its row says the same thing.
+    const messageRow = within(panel()).getByText("Couldn't download Example download. Check your connection and try again.").closest("li") as HTMLElement
+    expect(within(messageRow).getByText("The connection failed. Check your connection or firewall, then try again.")).toBeTruthy()
+  })
+
+  it("says the drive is full when that is what stopped it", async () => {
+    installMockWindowApi({
+      pathsManager: { downloadOnPath: vi.fn(() => Promise.reject(new Error("ENOSPC: no space left on device, write"))) }
+    })
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Start task" })))
+    openCenter()
+
+    const row = within(panel()).getByText("Example download").closest("li") as HTMLElement
+    expect(within(row).getByText("The drive has no room left. Free some space, then try again.")).toBeTruthy()
+  })
+
+  it("keeps the old sentence for a failure it cannot place, rather than guessing at one", async () => {
+    installMockWindowApi({
+      pathsManager: { downloadOnPath: vi.fn(() => Promise.reject(new Error("the transfer died"))) }
+    })
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Start task" })))
+    openCenter()
+
+    const row = within(panel()).getByText("Example download").closest("li") as HTMLElement
+    expect(within(row).getByText("This task stopped before it finished. The log has the details.")).toBeTruthy()
+  })
+
+  it("never puts the error's own words on a row", async () => {
+    installMockWindowApi({
+      pathsManager: { downloadOnPath: vi.fn(() => Promise.reject(new Error("EACCES: permission denied, open '/home/someone/Vintage Story/mods'"))) }
+    })
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Start task" })))
+    openCenter()
+
+    expect(within(panel()).getAllByText("RiftLauncher is not allowed to write there. Check that folder's permissions, then try again.")).toHaveLength(2)
+    expect(panel().textContent).not.toContain("/home/someone")
+    expect(panel().textContent).not.toContain("EACCES")
+  })
+
+  it("leaves the row of a task that is still running without a cause line", async () => {
+    installMockWindowApi({ pathsManager: { downloadOnPath: vi.fn(() => new Promise<string>(() => {})) } })
+
+    render(
+      <>
+        <Controls />
+        <ActivityCenter />
+      </>,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Start task" }))
+    openCenter()
+
+    const row = within(panel()).getByText("Example download").closest("li") as HTMLElement
+    expect(within(row).queryByText(/Check your connection or firewall/)).toBeNull()
+    expect(within(row).queryByText("This task stopped before it finished. The log has the details.")).toBeNull()
+  })
+})
+
 describe("Activity Center section order", () => {
   it("puts the section a player has to act on above the one they can only watch", async () => {
     installMockWindowApi({

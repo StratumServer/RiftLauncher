@@ -5,6 +5,7 @@ import { PiBoxArrowDownDuotone, PiBoxArrowUpDuotone, PiDownloadDuotone, PiEnvelo
 import clsx from "clsx"
 import { useTranslation } from "react-i18next"
 
+import { failureReasonKey } from "@domain/notifications/failureReason"
 import { awaitsAnswer, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext, type TaskType } from "@renderer/contexts/TaskManagerContext"
 import { NormalButton } from "./Buttons"
@@ -52,7 +53,7 @@ function ActivityTask({ task, removeTask }: Readonly<{ task: TaskType; removeTas
               {t(OPERATION_LABELS[task.type])} · {t(statusKey)}
             </p>
             {task.desc && task.desc !== task.name && <p className="text-xs text-zinc-400 line-clamp-2">{task.desc}</p>}
-            {task.status === "failed" && <p className="text-xs text-red-400">{t("components.tasksMenu.error")}</p>}
+            {task.status === "failed" && <p className="text-xs text-red-400">{t(failureReasonKey(task.reason))}</p>}
           </div>
         </div>
         {terminal && (
@@ -190,7 +191,10 @@ function ActivityPanel(): JSX.Element {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2 min-w-0">
                         {!notification.read && <span className="mt-1 w-1.5 h-1.5 rounded-full bg-vsl shrink-0" aria-hidden="true" />}
-                        <p className="text-xs break-words text-zinc-400">{notification.body}</p>
+                        <div className="flex flex-col items-start min-w-0">
+                          <p className="text-xs break-words text-zinc-400">{notification.body}</p>
+                          {notification.options?.reason && <p className="mt-0.5 text-xs break-words text-red-400">{t(failureReasonKey(notification.options.reason))}</p>}
+                        </div>
                       </div>
                       <div className="flex items-start gap-1 shrink-0">
                         <NormalButton className="p-1 text-zinc-400" title={toggleLabel} ariaLabel={toggleLabel} onClick={() => setNotificationRead(notification.id, !notification.read)}>
