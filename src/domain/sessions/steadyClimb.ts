@@ -42,23 +42,36 @@ function median(values: readonly number[]): number {
 }
 
 /**
- * Splits the samples into four consecutive equal-count windows in time order, the last taking the
- * remainder, and answers each window's median memory reading.
+ * Splits the samples into four consecutive equal-length time windows, placing each reading by its
+ * own timestamp rather than by its position in the array.
+ *
+ * Position is not time here. appendSample folds a session in half every time it passes the sample
+ * cap, so a long series settles into a head whose readings each stand for eight of the raw ones and
+ * a tail of raw readings. Counting the array into quarters hands the first window the bulk of an
+ * all-night run and squeezes the other three into the last hour of it, which flattens the very
+ * trend this is reading. Equal time spans are the same thing as equal counts while the series is
+ * still raw, so a short session is unaffected.
  */
-function windowMedians(samples: readonly PlaySample[]): number[] {
-  const size = Math.floor(samples.length / WINDOW_COUNT)
-  return Array.from({ length: WINDOW_COUNT }, (_, index) => {
-    const window = index === WINDOW_COUNT - 1 ? samples.slice(index * size) : samples.slice(index * size, (index + 1) * size)
-    return median(window.map((sample) => sample.rssBytes))
-  })
+function timeWindows(samples: readonly PlaySample[]): PlaySample[][] {
+  const start = samples[0]?.t ?? 0
+  const span = (samples[samples.length - 1]?.t ?? 0) - start
+  const windows: PlaySample[][] = Array.from({ length: WINDOW_COUNT }, () => [])
+
+  for (const sample of samples) {
+    const index = span > 0 ? Math.min(WINDOW_COUNT - 1, Math.floor(((sample.t - start) / span) * WINDOW_COUNT)) : 0
+    windows[index]?.push(sample)
+  }
+
+  return windows
 }
 
 /**
  * Whether this session's memory only ever went up.
  *
- * Guards first: a session shorter than twenty minutes, one with fewer than sixty samples, or one
- * the launcher lost track of part way through answers "not-enough-data", because none of the three
- * carries enough of a run to read a trend off.
+ * Guards first: a session shorter than twenty minutes, one with fewer than sixty samples, one the
+ * launcher lost track of part way through, or one with a quarter of its span holding no reading at
+ * all answers "not-enough-data", because none of the four carries enough of a run to read a trend
+ * off.
  *
  * Then every one of these has to hold, or the answer is "not-steady-climb": each window's median at
  * least 3 percent above the one before it, the last window at least 256 MiB and a quarter above the
@@ -71,7 +84,11 @@ export function steadyClimbVerdict(session: PlaySession): SteadyClimbVerdict {
   if (session.endedAt - session.startedAt < MIN_SESSION_MS) return "not-enough-data"
   if (session.samples.length < MIN_SAMPLES) return "not-enough-data"
 
-  const [first = 0, second = 0, third = 0, last = 0] = windowMedians(session.samples)
+  const windows = timeWindows(session.samples)
+  // A quarter of the run with no reading in it has no median to compare, so there is no trend here.
+  if (windows.some((window) => window.length === 0)) return "not-enough-data"
+
+  const [first = 0, second = 0, third = 0, last = 0] = windows.map((window) => median(window.map((sample) => sample.rssBytes)))
 
   if (second < first * WINDOW_STEP_RATIO) return "not-steady-climb"
   if (third < second * WINDOW_STEP_RATIO) return "not-steady-climb"
@@ -79,7 +96,7 @@ export function steadyClimbVerdict(session: PlaySession): SteadyClimbVerdict {
   if (last - first < MIN_RISE_BYTES) return "not-steady-climb"
   if (last < first * MIN_RISE_RATIO) return "not-steady-climb"
 
-  const afterFirstWindow = session.samples.slice(Math.floor(session.samples.length / WINDOW_COUNT))
+  const afterFirstWindow = windows.slice(1).flat()
   if (afterFirstWindow.some((sample) => sample.rssBytes < first)) return "not-steady-climb"
 
   return "steady-climb"

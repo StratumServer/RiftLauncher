@@ -64,6 +64,41 @@ describe("appendSample", () => {
     assert.equal(readings[readings.length - 1], 299 * MIB)
   })
 
+  /**
+   * The property the verdict is read off: folding halves the series, and the raw readings that
+   * arrive after a fold have to be folded into it rather than appended beside it. Left alone, a
+   * long session settles into a coarse head and a fine tail, and every later fold pairs readings
+   * across that seam until the early hours of the run are a single point.
+   */
+  it("keeps a folded series evenly spaced, however long the session runs", () => {
+    const readings = 2_000
+    let samples: PlaySample[] = []
+    for (let index = 0; index < readings; index += 1) samples = appendSample(samples, { t: index * SAMPLE_INTERVAL_MS, rssBytes: (100 + index) * MIB }, 16)
+
+    const gaps = samples.slice(1).map((sample, index) => sample.t - (samples[index]?.t ?? 0))
+    assert.equal(new Set(gaps).size, 1, `folded series is unevenly spaced: ${gaps.join(", ")}`)
+
+    // And it still covers the run rather than the tail of it: the last reading kept is within one
+    // spacing of where the session actually ended.
+    assert.equal(samples[0]?.t, 0)
+    assert.ok((samples[samples.length - 1]?.t ?? 0) >= (readings - 1) * SAMPLE_INTERVAL_MS - (gaps[0] ?? 0), "folded series stops well short of the end of the run")
+  })
+
+  it("does not let one slow first reading set the resolution of the whole session", () => {
+    // The first reading is taken the moment the process exists and the second one interval later,
+    // so a sampler that took a minute to answer once is the only wide gap the series will ever see.
+    const slowStart: PlaySample[] = [
+      { t: 0, rssBytes: 100 * MIB },
+      { t: 60_000, rssBytes: 101 * MIB }
+    ]
+    const samples = Array.from({ length: 18 }, (_, index) => ({ t: 60_000 + (index + 1) * SAMPLE_INTERVAL_MS, rssBytes: (102 + index) * MIB })).reduce<PlaySample[]>(
+      (kept, sample) => appendSample(kept, sample),
+      slowStart
+    )
+
+    assert.equal(samples.length, 20)
+  })
+
   it("averages the CPU readings it folds together and drops a pair that carries none", () => {
     const withCpu = appendSample(
       [
