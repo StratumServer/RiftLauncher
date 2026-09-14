@@ -13,8 +13,6 @@ export interface ServerMods {
   groups: ServerModGroupType[]
   /** There is more under ModsByServer than came back, a scan cap having bitten. */
   truncated: boolean
-  loading: boolean
-  refresh: () => Promise<void>
   /** Deletes one server's folder whole, then rescans. Nothing else on the page writes that tree. */
   remove: (group: ServerModGroupType) => Promise<void>
   /** The folder a removal is in flight for, or null. */
@@ -33,16 +31,15 @@ export interface ServerMods {
  * list of archives the player picked. The path is the one the host handed back, echoed to
  * DELETE_PATH, which checks the grant again before anything is removed.
  */
-export function useServerMods(installation: InstallationType | undefined): ServerMods {
+export function useServerMods(installation: InstallationType): ServerMods {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
 
   const [groups, setGroups] = useState<ServerModGroupType[]>([])
   const [truncated, setTruncated] = useState(false)
-  const [loading, setLoading] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
 
-  const installationPath = installation?.path
+  const installationPath = installation.path
 
   // The scan is asynchronous and the page can be left or switched mid-flight, so a late answer for
   // an Installation the player has moved on from is dropped rather than painted over the new one.
@@ -50,13 +47,6 @@ export function useServerMods(installation: InstallationType | undefined): Serve
   wanted.current = installationPath
 
   const refresh = useCallback(async (): Promise<void> => {
-    if (!installationPath) {
-      setGroups([])
-      setTruncated(false)
-      return
-    }
-
-    setLoading(true)
     try {
       const scan = await fetchServerMods(installationPath)
       if (wanted.current !== installationPath) return
@@ -68,8 +58,6 @@ export function useServerMods(installation: InstallationType | undefined): Serve
         setGroups([])
         setTruncated(false)
       }
-    } finally {
-      if (wanted.current === installationPath) setLoading(false)
     }
   }, [installationPath])
 
@@ -100,5 +88,5 @@ export function useServerMods(installation: InstallationType | undefined): Serve
     [addNotification, refresh, t]
   )
 
-  return { groups, truncated, loading, refresh, remove, removing }
+  return { groups, truncated, remove, removing }
 }
