@@ -54,6 +54,7 @@ export function createMockConfig(overrides: MockConfigOverrides = {}): ConfigTyp
     accentColor: "amber",
     moddbVisibilityAnswer: "unasked",
     receiveBetaUpdates: null,
+    measurePlaySessions: true,
     lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides,

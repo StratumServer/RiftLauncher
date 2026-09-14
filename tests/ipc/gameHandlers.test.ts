@@ -370,6 +370,60 @@ describe("EXECUTE_GAME", () => {
   })
 
   /**
+   * The session recorder, end to end on Linux: a real spawn, a real pid, a real `/proc` read.
+   *
+   * The fixture sleeps long enough for the reading taken the moment the process exists to land, so
+   * the file that ends up under the launcher's own Sessions folder carries what the sampler
+   * actually measured rather than an empty series.
+   */
+  it.skipIf(process.platform !== "linux")("records the session it measured under the launcher's own Sessions folder", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "#!/bin/sh\nsleep 1\nexit 0\n")
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+
+    writeConfig({
+      gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+    })
+
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+
+    assert.deepEqual(result, { ok: true, exitCode: 0 })
+    const document = JSON.parse(readFileSync(join(userDataFolder, "Sessions", "main-1.json"), "utf-8"))
+    assert.equal(document.format, 1)
+    assert.equal(document.sessions.length, 1)
+    assert.equal(document.sessions[0].partial, false)
+    assert.ok(document.sessions[0].samples.length >= 1, "the session landed with no readings in it")
+    assert.ok(document.sessions[0].samples[0].rssBytes > 0, "the reading carries no memory")
+  })
+
+  it.skipIf(process.platform !== "linux")("measures nothing at all when the setting is off", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    // The same fixture the test above records a session from, so "nothing was written" can only be
+    // the setting and never the game exiting before a reading could land.
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "#!/bin/sh\nsleep 1\nexit 0\n")
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+
+    writeConfig({
+      measurePlaySessions: false,
+      gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+    })
+
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+
+    assert.equal(existsSync(join(userDataFolder, "Sessions")), false)
+  })
+
+  /**
    * A PATH entry that is itself relative used to be checked against the launcher's own working
    * directory and then executed against the spawned process's, which is the version folder. The
    * decoy below is what the old lookup would have run.

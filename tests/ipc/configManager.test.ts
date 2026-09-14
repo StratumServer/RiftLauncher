@@ -38,6 +38,7 @@ import { ACCENT_PRESETS, DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
+import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
 import { CURRENT_CONFIG_SCHEMA, legacyGameVersionId } from "@domain/config/migrations"
 
 let temporaryRoot: string
@@ -89,6 +90,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     accentColor: DEFAULT_ACCENT_ID,
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
+    measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
     lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides

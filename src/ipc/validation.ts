@@ -194,6 +194,17 @@ export function assertSafeTaskId(value: unknown): string {
   return id
 }
 
+/**
+ * An Installation id as the config writes them, checked against a fixed alphabet before it is ever
+ * joined to a path. Nothing here is a path component the caller chose: the channels that take one
+ * build a file name from it, and the built path still goes through the path policy afterwards.
+ */
+export function assertSafeInstallationId(value: unknown): string {
+  const id = assertString(value, "installation id", 64)
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new TypeError("Invalid installation id")
+  return id
+}
+
 export function assertSafeFileName(value: unknown, name = "file name"): string {
   const fileName = assertString(value, name, 255)
   if (fileName === "." || fileName === ".." || fileName.includes("/") || fileName.includes("\\")) throw new TypeError(`Invalid ${name}`)

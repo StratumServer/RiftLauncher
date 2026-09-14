@@ -41,6 +41,12 @@ declare global {
      */
     receiveBetaUpdates: boolean | null
     /**
+     * Whether the launcher reads memory and CPU off the game process while it runs, and keeps the
+     * last sessions per Installation. On unless the player turns it off. Nothing measured here
+     * leaves the machine. See src/domain/sessions/sampling.ts.
+     */
+    measurePlaySessions: boolean
+    /**
      * The version the "what's new" dialog last showed notes up to, empty for a fresh install or
      * a config written before this field existed. Compared against the running version by
      * useWhatsNew.ts to decide whether there is anything left to show. See

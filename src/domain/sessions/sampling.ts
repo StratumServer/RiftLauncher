@@ -22,6 +22,14 @@ export const MAX_SAMPLES_PER_SESSION = 720
 /** Twenty evenings, so a player comparing "with mods" against "without" has both in front of them. */
 export const MAX_SESSIONS_PER_INSTALLATION = 20
 
+/**
+ * Whether a fresh config measures at all.
+ *
+ * On, because the cost is one timer and a small local file and playtime is already recorded. Off is
+ * one click away, because measuring a player's machine when nobody asked still deserves a switch.
+ */
+export const DEFAULT_MEASURE_PLAY_SESSIONS = true
+
 /** The only format this build reads or writes. A newer one is refused, not parsed. */
 export const PLAY_SESSIONS_FORMAT = 1
 
