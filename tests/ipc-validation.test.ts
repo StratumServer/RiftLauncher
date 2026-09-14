@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, it } from "vitest"
 
@@ -178,6 +179,24 @@ describe("IPC boundary validators", () => {
     for (const [message, expected] of cases) {
       assert.equal(redactSensitiveText(message), expected)
     }
+  })
+
+  /**
+   * The session report channel (#462) reads files out of a folder full of the player's own data, so
+   * what it is allowed to open is the whole security story. Pinned at the source because the
+   * refusal itself is covered functionally in tests/ipc/gameLogReport.test.ts, and what this guards
+   * is the shape that makes the refusal possible: the renderer names an Installation, never a file.
+   */
+  it("holds the session report channel to a configured Installation and to file names it picks itself", () => {
+    const source = readFileSync(resolve(__dirname, "..", "src", "ipc", "handlers", "gameHandlers.ts"), "utf8")
+    const handler = source.slice(source.indexOf("IPC_CHANNELS.GAME_MANAGER.GET_GAME_LOG_REPORT"))
+
+    assert.ok(handler.includes("await assertConfiguredInstallationPath(installationPath)"), "the report channel no longer narrows to an Installation the config names")
+    assert.ok(handler.includes('join(logsFolder, CLIENT_MAIN_LOG_FILE_NAME), "game log path", readOnly'), "the main log path is no longer joined and validated by the handler itself")
+    assert.ok(handler.includes('join(logsFolder, CLIENT_CRASH_FILE_NAME), "game crash path", readOnly'), "the crash file path is no longer joined and validated by the handler itself")
+    assert.ok(/const readOnly = \{ allowMissing: true, allowSymlinks: true \} as const/.test(handler), "the report channel no longer reads at the read-only grade #237 added for linked data folders")
+    // Anything the renderer sent would have to reach a file name for this to be bypassable.
+    assert.equal(/readBoundedText\(\s*installationPath/.test(handler), false, "a renderer value reached the reader directly")
   })
 
   it("keeps absolute path redaction linear, not quadratic, on adversarial input", () => {

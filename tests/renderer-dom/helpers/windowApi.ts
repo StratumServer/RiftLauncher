@@ -94,6 +94,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     modsManager: {
       getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })),
+      getServerMods: vi.fn(async () => ({ groups: [] })),
       setModEnabled: vi.fn(notMocked("modsManager.setModEnabled")),
       cacheModImage: vi.fn(async () => undefined),
       exportModpack: vi.fn(notMocked("modsManager.exportModpack")),
@@ -124,7 +125,8 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     gameManager: {
       executeGame: vi.fn(notMocked("gameManager.executeGame")),
-      lookForAGameVersion: vi.fn(async () => ({ exists: false as const }))
+      lookForAGameVersion: vi.fn(async () => ({ exists: false as const })),
+      getGameLogReport: vi.fn(async () => ({ ok: false as const, reason: "no-logs" as const }))
     },
     netManager: {
       queryURL: vi.fn(notMocked("netManager.queryURL")),

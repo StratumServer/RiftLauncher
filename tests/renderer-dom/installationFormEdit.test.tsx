@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { Routes, Route, Link } from "react-router-dom"
+import { Routes, Route, Link, useParams } from "react-router-dom"
 
 import EditInstallation from "@renderer/features/installations/pages/EditInstallation"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
@@ -62,6 +62,11 @@ function InstallationsListStub(): JSX.Element {
   )
 }
 
+/** Stands in for SessionReport: the row EditInstallation offers has to reach it, with the right id. */
+function SessionReportStub(): JSX.Element {
+  return <p>{`session-report-for-${useParams().id}`}</p>
+}
+
 /**
  * Deep-links straight into the edit route, the same way a bookmark or a restored tab would: the
  * page mounts before ConfigProvider's async `getConfig()` resolves, so the Installation lookup has
@@ -73,6 +78,7 @@ async function openEditInstallation(installationId: string): Promise<void> {
       <Routes>
         <Route path="/installations" element={<InstallationsListStub />} />
         <Route path="/installations/edit/:id" element={<EditInstallation />} />
+        <Route path="/installations/report/:id" element={<SessionReportStub />} />
       </Routes>
       <NotificationsOverlay />
     </>,
@@ -81,6 +87,21 @@ async function openEditInstallation(installationId: string): Promise<void> {
 }
 
 describe("EditInstallation", () => {
+  it("offers the last session report, always, from the Installation's own page", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: GAME_VERSIONS, installations: [anInstallation()] })) }
+    })
+
+    await openEditInstallation("install-a")
+
+    // The row ships collapsed, so opening it is part of reaching the report at all.
+    await user.click(await screen.findByRole("button", { name: "Last session report" }))
+    await user.click(await screen.findByRole("link", { name: "Last session report" }))
+
+    expect(await screen.findByText("session-report-for-install-a")).toBeTruthy()
+  })
+
   it("prefills the form with the found Installation's fields", async () => {
     const user = userEvent.setup()
     installMockWindowApi({

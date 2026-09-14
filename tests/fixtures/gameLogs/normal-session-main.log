@@ -1,0 +1,14 @@
+Game Version: v1.22.0-pre.3 (Unstable)
+22.2.2026 20:39:01 [Notification] Process path: C:\Users\Will\AppData\Roaming\Vintagestory\Vintagestory.exe
+22.2.2026 20:39:01 [Notification] Entering runphase Initialization
+22.2.2026 20:39:02 [Notification] Found 24 mods (0 disabled)
+22.2.2026 20:39:02 [Notification] Entering runphase Configuration
+22.2.2026 20:39:03 [Notification] Instantiated 177 mod systems from 24 enabled mods
+22.2.2026 20:39:03 [Notification] Entering runphase LoadAssets
+22.2.2026 20:39:10 [Notification] Loaded 33308 unique blocks
+22.2.2026 20:39:10 [Notification] Entering runphase AssetsFinalize
+22.2.2026 20:39:12 [Notification] Entering runphase LoadGamePre
+22.2.2026 20:39:13 [Notification] Entering runphase LoadGame
+22.2.2026 20:39:20 [Notification] Entering runphase WorldReady
+22.2.2026 20:39:21 [Notification] Entering runphase RunGame
+22.2.2026 20:45:02 [Event] Client shutting down

@@ -269,6 +269,11 @@
       "thisFolder": "esta carpeta",
       "title": "Info y Ayuda de RiftLauncher",
       "debugInfoDesc": "¡Copia la siguiente información y envíala con tu informe de errores para ayudarnos a encontrar el problema!"
+    },
+    "sessionReport": {
+      "copyReport": "Copiar informe",
+      "openLogsFolder": "Abrir la carpeta de registros",
+      "lastSessionReport": "Informe de la última sesión"
     }
   },
   "generic": {

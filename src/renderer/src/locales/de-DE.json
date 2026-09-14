@@ -234,6 +234,11 @@
       "folderDoesntExists": "Diese Installation hat keine Daten. Bitte spiele sie mindestens einmal, um die Basisdaten zu generieren!",
       "compressionLevel": "Komprimierungsgrad",
       "compressionLevelDesc": "Ein höherer Komprimierungsgrad dauert länger, erzeugt aber kleinere Sicherheitskopien."
+    },
+    "sessionReport": {
+      "copyReport": "Bericht kopieren",
+      "openLogsFolder": "Log-Ordner öffnen",
+      "lastSessionReport": "Bericht der letzten Sitzung"
     }
   },
   "components": {

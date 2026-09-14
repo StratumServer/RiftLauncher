@@ -84,6 +84,18 @@ function foreground(file: string, anchor: RegExp): Layer {
   return [zinc(name, `${file} ${anchor}`), found[2] === undefined ? 1 : Number(found[2]) / 100]
 }
 
+/**
+ * Every `text-zinc-NNN` one component ships, as the layers they paint.
+ *
+ * Reading the whole file rather than one anchored class: a component whose prose all sits on the
+ * same backdrop gets every line measured, including the one somebody adds later.
+ */
+function foregrounds(file: string): Layer[] {
+  const found = Array.from(read(file).matchAll(/text-(zinc-\d+)(?:\/(\d+))?/g)).map((hit): Layer => [zinc(hit[1] as string, file), hit[2] === undefined ? 1 : Number(hit[2]) / 100])
+  assert.ok(found.length > 0, `no text-zinc utility left in ${file}, this test has nothing to measure`)
+  return found
+}
+
 /** A `#rrggbb` hex string as the sRGB triplet it actually paints. */
 function hexRgb(hex: string): Rgb {
   const digits = hex.replace("#", "")
@@ -324,6 +336,18 @@ describe("text over the player's background image", () => {
    * alpha, or that blur has nothing to show. And it has to stay far enough above the resting fill
    * that the bar keeps separating from the rows sliding under it.
    */
+  it("keeps the server Mods notices readable with the shell scrim as their only backdrop", () => {
+    // The cap notice and the one for a ModsByServer folder that will not open sit in the section's
+    // heading block, outside the list panel every group gets, so nothing is under them but the
+    // shell. zinc-400 measures 3.01:1 there, which is what put this test here.
+    for (const notice of foregrounds("features/mods/components/ServerModsSection.tsx")) assertReadable("server Mods section notice", notice, PAGE, TEXT_FLOOR)
+  })
+
+  it("keeps a server group's text readable on the panel it does sit on", () => {
+    for (const text of foregrounds("features/mods/components/ServerModsGroup.tsx")) assertReadable("server Mods group text", text, LIST_PANEL, TEXT_FLOOR)
+    for (const text of foregrounds("features/mods/components/ServerModItem.tsx")) assertReadable("server Mod row text", text, LIST_PANEL, TEXT_FLOOR)
+  })
+
   it("keeps the sticky bar readable and still see-through once the page is scrolled", () => {
     const label = foreground("components/ui/buttonStyles.ts", /ghost: "[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
     // Nothing in the breadcrumbs sets a colour, so what they paint with is the body's own.
@@ -571,6 +595,18 @@ describe("prompts the player is meant to read and act on", () => {
     const badge = match("components/ui/ActivityCenter.tsx", /rounded-full bg-(vs) text-\[10px\] leading-none text-(white)/)
     assert.equal(badge[2], "white", "the active task count no longer paints its own label")
     assertReadable("active task count", [WHITE, 1], [[themeColor(badge[1] as string), 1]], TEXT_FLOOR)
+  })
+
+  /**
+   * The session report (#462) is the one page that paints a colour of its own: an error count and a
+   * warning count beside each Mod group, on the table fill inside a DropdownSection. Both are read
+   * out of the component rather than written down here, so recolouring them fails this rather than
+   * shipping a count nobody can read.
+   */
+  it("keeps the session report's error and warning counts readable on the panel they sit on", () => {
+    const badges = match("features/installations/pages/SessionReport.tsx", /const SEVERITY_COLORS = \{ error: "text-([a-z]+-\d+)", warning: "text-([a-z]+-\d+)" \}/)
+    assertReadable("session report error count", [tailwindColor(badges[1] as string), 1], SECTION_TABLE, TEXT_FLOOR)
+    assertReadable("session report warning count", [tailwindColor(badges[2] as string), 1], SECTION_TABLE, TEXT_FLOOR)
   })
 
   it("keeps Activity Center history text readable on both row tints", () => {

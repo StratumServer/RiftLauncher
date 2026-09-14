@@ -12,8 +12,11 @@ describe("pickPlayOutcomeNotification on a successful exit", () => {
     assert.equal(pickPlayOutcomeNotification({ ok: true, exitCode: null }, "linux"), null)
   })
 
-  it("warns when the game exited with a non-zero code", () => {
-    assert.deepEqual(pickPlayOutcomeNotification({ ok: true, exitCode: 1 }, "linux"), { key: "notifications.body.gameExitedWithErrors" })
+  it("warns when the game exited with a non-zero code, and offers the session report", () => {
+    assert.deepEqual(pickPlayOutcomeNotification({ ok: true, exitCode: 1 }, "linux"), {
+      key: "notifications.body.gameExitedWithErrors",
+      report: { labelKey: "notifications.actions.seeWhatWentWrong" }
+    })
   })
 })
 
@@ -56,6 +59,18 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
   it("gives every other reason a bare message, so only missing-dotnet grows an action", () => {
     const reasons: GameExecutionFailureReason[] = ["unsupported-platform", "no-executable", "session-write-failed", "invalid-request", "launch-failed"]
     for (const reason of reasons) assert.equal(pickPlayOutcomeNotification({ ok: false, reason }, "linux")?.link, undefined)
+  })
+
+  /**
+   * The report reads the log files the session just wrote. Every refusal here means the game never
+   * ran, so there is nothing new on disk to read and the action would open an empty page or last
+   * session's one, which is worse than not offering it (#462).
+   */
+  it("offers the session report only where a session actually happened", () => {
+    const reasons: GameExecutionFailureReason[] = ["unsupported-platform", "no-executable", "session-write-failed", "invalid-request", "missing-dotnet", "launch-failed"]
+    for (const reason of reasons) assert.equal(pickPlayOutcomeNotification({ ok: false, reason }, "linux")?.report, undefined)
+    assert.equal(pickPlayOutcomeNotification({ ok: true, exitCode: 0 }, "linux"), null)
+    assert.equal(pickPlayOutcomeNotification({ ok: true, exitCode: 1 }, "linux")?.report?.labelKey, "notifications.actions.seeWhatWentWrong")
   })
 
   it("keys launch-failed to the generic executing-game sentence", () => {

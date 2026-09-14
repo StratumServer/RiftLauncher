@@ -273,6 +273,11 @@
       "logsFolderTitle": "Папка журналов",
       "thisFolder": "эта папка",
       "debugInfoDesc": "Скопируйте следующую информацию и отправьте её вместе с отчётом об ошибке, чтобы помочь нам найти проблему!"
+    },
+    "sessionReport": {
+      "copyReport": "Скопировать отчёт",
+      "openLogsFolder": "Открыть папку логов",
+      "lastSessionReport": "Отчёт о последней сессии"
     }
   },
   "components": {

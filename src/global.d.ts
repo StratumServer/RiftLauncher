@@ -223,6 +223,22 @@ declare global {
    */
   type InstalledModsScan = { mods: InstalledModType[]; errors: ErrorInstalledModType[]; unreadable?: true }
 
+  /**
+   * One server's downloaded Mods. `server` is the folder's name, which is whatever the server calls
+   * itself: untrusted text, escaped and truncated on screen, never logged and never joined into a
+   * path by the renderer. `path` is the folder the host built and the only thing a removal echoes
+   * back. `unreadable` counts the archives that would not read; none of them is named, because
+   * nothing here acts on one archive. `unlistable` is the server's folder itself refusing to open,
+   * which leaves the other two saying nothing about what it holds.
+   */
+  type ServerModGroupType = { server: string; path: string; mods: InstalledModType[]; unreadable: number; truncated?: true; unlistable?: true }
+
+  /**
+   * GET_SERVER_MODS' answer. `truncated` means there is more under ModsByServer than came back, a
+   * cap having bitten. `unreadable` is the folder itself failing, the way InstalledModsScan uses it.
+   */
+  type ServerModsScan = { groups: ServerModGroupType[]; truncated?: true; unreadable?: true }
+
   type DownloadableModOnListType = {
     modid: number
     assetid: number
@@ -381,6 +397,18 @@ declare global {
    * `ok: false` means the game never ran at all.
    */
   type GameExecutionResult = { ok: true; exitCode: number | null } | { ok: false; reason: GameExecutionFailureReason }
+
+  /** The session report as the domain builds it. Declared by reference so the shape has one home (src/domain/gameLogs/report.ts). */
+  type SessionReportType = import("@domain/gameLogs/report").SessionReport
+
+  /**
+   * GET_GAME_LOG_REPORT's answer.
+   *
+   * `no-logs` is the ordinary case for an Installation nobody has played yet, and the page says so
+   * in place. `refused` means the path was not an Installation the config names, `unreadable` that
+   * the files are there but could not be read.
+   */
+  type GameLogReportResult = { ok: true; report: SessionReportType } | { ok: false; reason: "no-logs" | "refused" | "unreadable" }
 
   /**
    * Why RUN_INSTALLER never finished, narrowed to what the handler can
