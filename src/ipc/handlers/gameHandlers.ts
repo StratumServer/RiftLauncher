@@ -12,7 +12,7 @@ import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
 import { comparablePath, parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
 import { createProcessSampler } from "@src/ipc/adapters/processSampler"
-import { createPlaySessionRecorder, recordPlaySession } from "@src/ipc/playSessionsStore"
+import { createPlaySessionRecorder, forgetPlaySessions, readPlaySessions, recordPlaySession } from "@src/ipc/playSessionsStore"
 import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
@@ -441,6 +441,33 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   else logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
 
   return gameProcessOutcomeToResult(outcome)
+})
+
+/**
+ * The two read-only session channels.
+ *
+ * Both take an Installation id and nothing else, so the renderer never names a file, and both
+ * check it the same way before anything is joined to a path. Nothing writes samples from the
+ * renderer: the only thing that ever appends to one of these files is EXECUTE_GAME above.
+ *
+ * The log lines carry counts and fixed tokens only. A session's own memory numbers, and the
+ * Installation's name, stay out of them.
+ */
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.GET_PLAY_SESSIONS, async (event, installationId: unknown): Promise<PlaySessionsReadResult> => {
+  assertTrustedIpcSender(event)
+
+  const read = await readPlaySessions(installationId)
+  if (!read.ok) logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [GET_PLAY_SESSIONS] Refused: ${read.reason}.`)
+  else logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [GET_PLAY_SESSIONS] Read ${read.sessions.length} play sessions.`)
+  return read
+})
+
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.FORGET_PLAY_SESSIONS, async (event, installationId: unknown): Promise<{ ok: boolean }> => {
+  assertTrustedIpcSender(event)
+
+  const ok = await forgetPlaySessions(installationId)
+  logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [FORGET_PLAY_SESSIONS] Cleared the play sessions: ${ok}.`)
+  return { ok }
 })
 
 type LookForAGameVersionResult = { exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }

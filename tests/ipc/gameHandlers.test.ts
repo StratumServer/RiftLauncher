@@ -861,6 +861,54 @@ describe("EXECUTE_GAME", () => {
   })
 })
 
+describe("GET_PLAY_SESSIONS and FORGET_PLAY_SESSIONS", () => {
+  type GetPlaySessionsHandler = (event: IpcMainInvokeEvent, installationId: unknown) => Promise<PlaySessionsReadResult>
+  type ForgetPlaySessionsHandler = (event: IpcMainInvokeEvent, installationId: unknown) => Promise<{ ok: boolean }>
+
+  function getHandler(): GetPlaySessionsHandler {
+    return getIpcHandler<GetPlaySessionsHandler>(IPC_CHANNELS.GAME_MANAGER.GET_PLAY_SESSIONS)
+  }
+
+  function forgetHandler(): ForgetPlaySessionsHandler {
+    return getIpcHandler<ForgetPlaySessionsHandler>(IPC_CHANNELS.GAME_MANAGER.FORGET_PLAY_SESSIONS)
+  }
+
+  function writeSessionsFile(installationId: string, document: unknown): void {
+    mkdirSync(join(userDataFolder, "Sessions"), { recursive: true })
+    writeFileSync(join(userDataFolder, "Sessions", `${installationId}.json`), JSON.stringify(document), "utf-8")
+  }
+
+  const ONE_SESSION = { id: "abc", startedAt: 0, endedAt: 1_000, intervalMs: 5_000, partial: false, samples: [{ t: 0, rssBytes: 1_024 }] }
+
+  it("throws Unauthorized IPC sender for an untrusted caller on both channels", async () => {
+    await assert.rejects(() => getHandler()(createUntrustedEvent(), "main"), /Unauthorized IPC sender/)
+    await assert.rejects(() => forgetHandler()(createUntrustedEvent(), "main"), /Unauthorized IPC sender/)
+  })
+
+  it("reads the sessions recorded for an Installation", async () => {
+    writeConfig({})
+    writeSessionsFile("main", { format: 1, sessions: [ONE_SESSION] })
+
+    assert.deepEqual(await getHandler()(await createTrustedEvent(), "main"), { ok: true, sessions: [ONE_SESSION] })
+  })
+
+  it("refuses an id that is not one the config could have written, on both channels", async () => {
+    writeConfig({})
+    const event = await createTrustedEvent()
+
+    assert.deepEqual(await getHandler()(event, "../../etc/passwd"), { ok: false, reason: "refused" })
+    assert.deepEqual(await forgetHandler()(event, "../../etc/passwd"), { ok: false })
+  })
+
+  it("clears the file the sessions were in", async () => {
+    writeConfig({})
+    writeSessionsFile("main", { format: 1, sessions: [ONE_SESSION] })
+
+    assert.deepEqual(await forgetHandler()(await createTrustedEvent(), "main"), { ok: true })
+    assert.equal(existsSync(join(userDataFolder, "Sessions", "main.json")), false)
+  })
+})
+
 describe("LOOK_FOR_A_GAME_VERSION", () => {
   it("throws Unauthorized IPC sender for an untrusted caller", async () => {
     await assert.rejects(() => lookForAGameVersionHandler()(createUntrustedEvent(), versionsFolder), /Unauthorized IPC sender/)
