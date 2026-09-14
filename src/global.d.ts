@@ -498,6 +498,32 @@ declare global {
   type ModProfilesSaveResult = { ok: true } | { ok: false; reason: "newer-format" | "unreadable" | "invalid" | "refused" }
 
   /**
+   * One reading of the game process while it ran: milliseconds since the session started, resident
+   * memory in bytes, and the CPU share since the previous reading where the host can answer it
+   * (Linux today, see src/ipc/adapters/processSampler.ts).
+   */
+  type PlaySample = { t: number; rssBytes: number; cpuPercent?: number }
+
+  /**
+   * One recorded play session (#461). `partial` means the launcher lost track of the process part
+   * way through, which is what a launch wrapper that forks looks like from here: the series stops
+   * but the game did not.
+   */
+  type PlaySession = { id: string; startedAt: number; endedAt: number; intervalMs: number; partial: boolean; samples: PlaySample[] }
+
+  /**
+   * The sessions file for one Installation, under the launcher's own user data folder. Newest
+   * session first. See src/domain/sessions/sampling.ts.
+   */
+  type PlaySessionsDocument = { format: 1; sessions: PlaySession[] }
+
+  /**
+   * GET_PLAY_SESSIONS' verdict. `newer-format` and `unreadable` name a file this build must leave
+   * alone; `refused` is an installation id the path policy would not build a file name from.
+   */
+  type PlaySessionsReadResult = { ok: true; sessions: PlaySession[] } | { ok: false; reason: "newer-format" | "unreadable" | "refused" }
+
+  /**
    * ENSURE_BACKGROUND's verdict for one catalog scene.
    *
    * Three outcomes, not two, because the two callers need different halves of the answer. The
