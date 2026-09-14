@@ -1,7 +1,15 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { BACKLOG_TOAST_DURATION, MAX_CENTER_HISTORY, MAX_TOAST_BACKLOG, backlogToastDuration, capNotificationRecords } from "../../../src/domain/notifications/toastQueue"
+import {
+  BACKLOG_TOAST_DURATION,
+  MAX_CENTER_HISTORY,
+  MAX_TOAST_BACKLOG,
+  MAX_VISIBLE_TOASTS,
+  backlogToastDuration,
+  capNotificationRecords,
+  waitingBehindStack
+} from "../../../src/domain/notifications/toastQueue"
 
 /** A record shaped the way the provider's records are, reduced to what these two rules read. */
 function record(id: string, toastOnly: boolean): { id: string; toastOnly: boolean } {
@@ -63,6 +71,27 @@ describe("backlogToastDuration", () => {
   })
 })
 
+describe("waitingBehindStack", () => {
+  it("counts nothing as waiting while the stack still has a free place for it", () => {
+    assert.equal(waitingBehindStack(1, 0), 0)
+    assert.equal(waitingBehindStack(1, MAX_VISIBLE_TOASTS - 1), 0)
+  })
+
+  it("counts nothing as waiting when the queue exactly fills the free places", () => {
+    assert.equal(waitingBehindStack(MAX_VISIBLE_TOASTS, 0), 0)
+  })
+
+  it("counts only what is still queued once the stack is full", () => {
+    assert.equal(waitingBehindStack(MAX_VISIBLE_TOASTS + 2, 0), 2)
+    assert.equal(waitingBehindStack(2, MAX_VISIBLE_TOASTS), 2)
+  })
+
+  it("never reads a stack somehow over its own limit as negative waiting", () => {
+    assert.equal(waitingBehindStack(0, MAX_VISIBLE_TOASTS + 1), 0)
+    assert.equal(waitingBehindStack(3, MAX_VISIBLE_TOASTS + 1), 3)
+  })
+})
+
 describe("capNotificationRecords", () => {
   it("returns the very same array when both budgets have room, so React can bail out", () => {
     const kept = records(3, 2)
@@ -75,10 +104,27 @@ describe("capNotificationRecords", () => {
     assert.equal(capped[0]?.id, "c3")
   })
 
-  it("with nothing on screen keeps a full backlog plus the one about to take the screen", () => {
-    const capped = capNotificationRecords(records(0, MAX_TOAST_BACKLOG + 4), isToastOnly)
-    assert.equal(capped.length, MAX_TOAST_BACKLOG + 1)
+  it("with nothing on screen keeps a full backlog plus the whole stack about to fill", () => {
+    const capped = capNotificationRecords(records(0, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS + 3), isToastOnly)
+    assert.equal(capped.length, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS)
     assert.equal(capped[0]?.id, "t3")
+  })
+
+  /**
+   * The burst that lands on an empty overlay. Every free place in the stack is filled on the
+   * next render, so the cap has to leave room for all of them: budgeting for one meant a burst
+   * of three had its second and third dropped before either ever reached the screen.
+   */
+  it("keeps a burst that exactly fills the stack, with nothing on screen yet", () => {
+    const burst = records(0, MAX_VISIBLE_TOASTS)
+    assert.equal(capNotificationRecords(burst, isToastOnly), burst)
+  })
+
+  it("gives back a place in the toast budget for every banner already up", () => {
+    const isPinned = (entry: { id: string }): boolean => entry.id === "t0" || entry.id === "t1"
+    const full = records(0, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS)
+    assert.equal(capNotificationRecords(full, isToastOnly, isPinned), full)
+    assert.equal(capNotificationRecords(records(0, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS + 1), isToastOnly, isPinned).length, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS)
   })
 
   /**
@@ -88,10 +134,10 @@ describe("capNotificationRecords", () => {
    */
   it("never drops the pinned toast on screen, and drops the oldest waiting one instead", () => {
     const isPinned = (entry: { id: string }): boolean => entry.id === "t0"
-    const capped = capNotificationRecords(records(0, MAX_TOAST_BACKLOG + 2), isToastOnly, isPinned)
+    const capped = capNotificationRecords(records(0, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS + 2), isToastOnly, isPinned)
     assert.deepEqual(
       capped.map((entry) => entry.id),
-      ["t0", "t2", "t3", "t4", "t5"]
+      ["t0", "t3", "t4", "t5", "t6", "t7", "t8"]
     )
   })
 
@@ -114,17 +160,17 @@ describe("capNotificationRecords", () => {
     )
   })
 
-  it("keeps exactly the on screen toast plus a full backlog when one is pinned", () => {
+  it("keeps exactly the on screen toast, the places still free and a full backlog when one is pinned", () => {
     const isPinned = (entry: { id: string }): boolean => entry.id === "t0"
-    const full = records(0, MAX_TOAST_BACKLOG + 1)
+    const full = records(0, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS)
     assert.equal(capNotificationRecords(full, isToastOnly, isPinned), full)
-    assert.equal(capNotificationRecords(records(0, MAX_TOAST_BACKLOG + 2), isToastOnly, isPinned).length, MAX_TOAST_BACKLOG + 1)
+    assert.equal(capNotificationRecords(records(0, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS + 1), isToastOnly, isPinned).length, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS)
   })
 
-  it("counts a pinned center record as the toast on screen, so only a full backlog waits behind it", () => {
+  it("counts a pinned center record as a banner on screen, so it takes a place in the stack too", () => {
     const isPinned = (entry: { id: string }): boolean => entry.id === "c0"
-    const capped = capNotificationRecords(records(1, MAX_TOAST_BACKLOG + 1), isToastOnly, isPinned)
-    assert.equal(capped.filter((entry) => entry.toastOnly).length, MAX_TOAST_BACKLOG)
+    const capped = capNotificationRecords(records(1, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS), isToastOnly, isPinned)
+    assert.equal(capped.filter((entry) => entry.toastOnly).length, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS - 1)
     assert.equal(capped[0]?.id, "c0")
   })
 
@@ -137,13 +183,13 @@ describe("capNotificationRecords", () => {
   })
 
   it("trims both budgets in one pass when both are over", () => {
-    const capped = capNotificationRecords(records(MAX_CENTER_HISTORY + 2, MAX_TOAST_BACKLOG + 2), isToastOnly)
+    const capped = capNotificationRecords(records(MAX_CENTER_HISTORY + 2, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS + 2), isToastOnly)
     assert.equal(capped.filter((entry) => !entry.toastOnly).length, MAX_CENTER_HISTORY)
-    assert.equal(capped.filter((entry) => entry.toastOnly).length, MAX_TOAST_BACKLOG + 1)
+    assert.equal(capped.filter((entry) => entry.toastOnly).length, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS)
   })
 
   it("leaves a list sitting exactly on both budgets alone", () => {
-    const kept = records(MAX_CENTER_HISTORY, MAX_TOAST_BACKLOG + 1)
+    const kept = records(MAX_CENTER_HISTORY, MAX_TOAST_BACKLOG + MAX_VISIBLE_TOASTS)
     assert.equal(capNotificationRecords(kept, isToastOnly), kept)
   })
 })

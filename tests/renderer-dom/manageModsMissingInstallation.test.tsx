@@ -43,7 +43,8 @@ describe("ManageMods without an installation", () => {
 
     await user.click(reload)
 
-    await waitFor(() => expect(screen.getByText("No Installation selected.")).toBeTruthy())
+    // Both attempts raise the same message, and the stack shows both banners.
+    await waitFor(() => expect(screen.getAllByText("No Installation selected.")).toHaveLength(2))
     expect(screen.getByTitle("Reload").querySelector(".animate-spin")).toBeNull()
     expect(getInstalledMods).not.toHaveBeenCalled()
   })
