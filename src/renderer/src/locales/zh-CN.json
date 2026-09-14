@@ -112,6 +112,12 @@
       "loginPrivacyGame": "启动游戏时，Vintage Story 所需的会话数据会写入所选安装。",
       "loginPrivacyPolicy": "阅读隐私政策",
       "removeAccountAction": "移除账户"
+    },
+    "servers": {
+      "addServer": "添加服务器",
+      "join": "加入",
+      "importServersAdd": "添加所选服务器",
+      "importServersSkip": "跳过服务器"
     }
   },
   "components": {

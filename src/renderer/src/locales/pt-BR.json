@@ -327,6 +327,12 @@
       "thisFolder": "esta pasta",
       "includeLogs": "Envie-nos os arquivos de log que estão na pasta <folderlink /> para nos ajudar ainda mais!",
       "debugInfoDesc": "Copie as informações a seguir e envie-as juntamente com as informações de erro para nos ajudar a encontrar o problema!"
+    },
+    "servers": {
+      "addServer": "Adicionar um servidor",
+      "join": "Entrar",
+      "importServersAdd": "Adicionar os servidores escolhidos",
+      "importServersSkip": "Ignorar os servidores"
     }
   },
   "components": {
