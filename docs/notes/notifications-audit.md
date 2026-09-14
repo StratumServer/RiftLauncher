@@ -268,3 +268,54 @@ as the other dropdowns, the toast slides in from `x: 400`. **fine**
 - Dropping the success toast that repeats the Completed row.
 - The `cmpressTaskName` typo, which is a fourteen-locale rename.
 - The mid-sentence capitalisation convention.
+
+## The follow-ups, and the rules they settled on (#402)
+
+Everything above under "What it leaves" but the last two has landed. The rules are in
+`src/domain/notifications/`, one module each, and the components only render them.
+
+**Three banners, not one** (`toastQueue.ts`). `MAX_VISIBLE_TOASTS` is three, oldest at the top,
+newest at the bottom nearest the corner the eye is already on. Each banner runs its own countdown
+and holds it on its own: the pointer over one no longer stops the two beside it. Three and not
+more because the region is a fixed-width column at the bottom right of the main area, and a stack
+nobody can take in at a glance is the same puzzle as a message that arrives late.
+
+Two rules came out of that and both are pinned. The record cap leaves room for every free place in
+the stack, or a burst landing on an empty overlay loses records before they ever reach the screen.
+And `waitingBehindStack` says a queued toast a free place is about to take is not a backlog: without
+it, a second message shortened the banner already up even though both had a place.
+
+The hover hand-off of #398 grew a wrinkle worth writing down. The banner the pointer sits on can
+still be dismissed under a pointer that never moves, and no `mouseover` follows. Which banner takes
+that place is not something the overlay can work out without layout, so the whole stack is held
+until the pointer moves and names one again. A banner that waits is better than one pulled out from
+under someone reading it.
+
+**A failed row says why** (`failureReason.ts`). The catch site is the only place that ever sees a
+raw error, and a raw error is the one thing that must never reach a player: untranslated, written
+for whoever wrote the library, and carrying paths and host names. It is classified into one of
+eight tokens there, once, and the token rides on the task (`TaskType.reason`) and on the message
+the task runner raises (`NotificationOptions.reason`). `failureReasonKey` is the only door from a
+token to the screen, which is what stops an error's own words getting onto a row. Anything the
+classifier cannot place keeps the sentence the row already had.
+
+Matching is on the message text rather than on a code, on purpose: an error crossing the IPC
+boundary arrives as text with the original wrapped in the remote-call one, and its `code` does not
+survive the trip.
+
+**A repeat folds into the banner already up** (`duplicateToast.ts`). Same translation key and same
+interpolation values, which comparing the finished sentence and the severity comes to. The banner
+restarts its turn, because the repeat arrived just now, and wears a count so a folded message does
+not read as one that went missing. A question is never folded in either direction: two questions
+that read alike are still two answers owed. A centre-only record is left alone, because the centre
+is history and history is meant to hold both entries.
+
+**"Clear all"** (`bulkClear.ts`). Both halves of the panel in one press: every finished task row,
+every message, and the toasts still waiting behind the stack. A banner on screen survives, so does
+a question still owed an answer, and so does work still running, which is not a leftover and cannot
+be put back. An undo banner stands five seconds and restores exactly what was taken; it is raised
+by the panel rather than by either provider, because it is the one thing that puts both back.
+
+What this leaves after it: the `cmpressTaskName` typo, the mid-sentence capitalisation convention,
+and dropping the success toast that repeats the Completed row, which the stack and the fold have
+made much less of a nuisance than it was.
