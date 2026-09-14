@@ -663,6 +663,56 @@ describe("the brand accent where it carries text", () => {
  * changing either one has to come back through here. State fills are included because a hover or
  * active colour that lightens past the text floor is still the same readable control to the player.
  */
+/**
+ * #461: the play session rows and the chart they open.
+ *
+ * The chart is two polylines with no fill and no library behind it, and both strokes take their
+ * colour from a `text-zinc-NNN` class on the group so they can be read here the same way every
+ * other colour in this file is. Strokes are graphical objects, so they are held to the 3:1
+ * non-text floor; the text beside them is held to the text floor like everything else.
+ *
+ * The two series are also told apart by shape, not by colour alone: memory is solid, CPU is
+ * dashed. A reader who cannot separate two greys still gets two lines.
+ */
+describe("play session rows and their chart", () => {
+  const SESSION_CHART = "features/installations/components/SessionMemoryChart.tsx"
+  const SESSION_SECTION = "features/installations/components/RecentSessionsSection.tsx"
+
+  /** The resting row fill. The hover fill is heavier, so under light text it can only read better. */
+  const sessionRow = [ZINC["zinc-800"], Number(match(SESSION_SECTION, /rounded-sm p-2 text-left text-sm text-zinc-\d+ bg-zinc-800\/(\d+)/)[1]) / 100] as const
+  const SESSION_ROW = [shell, section, sessionRow] as const
+
+  it("keeps both chart strokes visible on the dialog they are drawn in", () => {
+    const memory = foreground(SESSION_CHART, /<g className="text-(zinc-\d+)(?:\/(\d+))?">\s*<polyline points=\{memoryPoints\}/)
+    const cpu = foreground(SESSION_CHART, /<g className="text-(zinc-\d+)(?:\/(\d+))?">\s*<polyline points=\{cpuPoints\}/)
+
+    assertReadable("session chart memory stroke", memory, POPUP, NON_TEXT_FLOOR)
+    assertReadable("session chart CPU stroke", cpu, POPUP, NON_TEXT_FLOOR)
+
+    // Colour is not the only thing separating the two series, so the pair survives a reader who
+    // cannot tell two greys apart.
+    match(SESSION_CHART, /strokeDasharray="4 3"/)
+  })
+
+  it("keeps the sparkline visible on the row it sits in", () => {
+    const sparkline = foreground(SESSION_CHART, /className="w-24 h-6 shrink-0 text-(zinc-\d+)(?:\/(\d+))?"/)
+    assertReadable("session sparkline", sparkline, SESSION_ROW, NON_TEXT_FLOOR)
+  })
+
+  it("keeps a session row's own text readable on the row fill", () => {
+    const rowText = foreground(SESSION_SECTION, /rounded-sm p-2 text-left text-sm text-(zinc-\d+)(?:\/(\d+))?/)
+    const secondary = foreground(SESSION_SECTION, /<span className="shrink-0 text-(zinc-\d+)(?:\/(\d+))?">\{formatDuration/)
+
+    assertReadable("session row date", rowText, SESSION_ROW, TEXT_FLOOR)
+    assertReadable("session row length and peak", secondary, SESSION_ROW, TEXT_FLOOR)
+  })
+
+  it("keeps the chart legend readable in the dialog", () => {
+    const legend = foreground(SESSION_CHART, /className="text-xs text-(zinc-\d+)(?:\/(\d+))? text-left"/)
+    assertReadable("session chart legend", legend, POPUP, TEXT_FLOOR)
+  })
+})
+
 describe("button labels on the fill they ship on", () => {
   it("reads Tailwind's OKLCH palette the same way the sRGB table above does", () => {
     // zinc-200 is in both the hand-maintained table at the top of this file and Tailwind's own

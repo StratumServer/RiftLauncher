@@ -98,9 +98,6 @@ export function SessionMemoryChart({ session }: Readonly<{ session: PlaySession 
         className="w-full h-56"
         preserveAspectRatio="none"
       >
-        <g className="text-zinc-600">
-          <line x1={CHART_PADDING} y1={CHART_HEIGHT - CHART_PADDING} x2={CHART_WIDTH - CHART_PADDING} y2={CHART_HEIGHT - CHART_PADDING} stroke="currentColor" strokeWidth="1" />
-        </g>
         {hasCpu && (
           <g className="text-zinc-400">
             <polyline points={cpuPoints} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
