@@ -645,7 +645,17 @@
       "panelSummary": "{{active}} running, {{unread}} unread",
       "answeredWith": "Answered: {{action}}",
       "restartAndUpdate": "Restart and update",
-      "viewUpdates": "View updates"
+      "viewUpdates": "View updates",
+      "failureReasons": {
+        "network": "The connection failed. Check your connection or firewall, then try again.",
+        "no-space": "The drive has no room left. Free some space, then try again.",
+        "no-permission": "RiftLauncher is not allowed to write there. Check that folder's permissions, then try again.",
+        "missing-file": "A file it needed was not there any more. Try again, and reinstall if it keeps happening.",
+        "damaged-archive": "The archive would not open, so it is probably damaged. Download it again.",
+        "timed-out": "It ran too long and was stopped. Try again.",
+        "unsupported-platform": "This step only runs on Windows.",
+        "unknown": "This task stopped before it finished. The log has the details."
+      }
     }
   },
   "notifications": {

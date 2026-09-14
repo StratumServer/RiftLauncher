@@ -53,7 +53,17 @@
       "panelSummary": "{{active}} in corso, {{unread}} da leggere",
       "answeredWith": "Risposta: {{action}}",
       "restartAndUpdate": "Riavvia e aggiorna",
-      "viewUpdates": "Visualizza aggiornamenti"
+      "viewUpdates": "Visualizza aggiornamenti",
+      "failureReasons": {
+        "network": "La connessione non è riuscita. Controlla la connessione o il firewall, poi riprova.",
+        "no-space": "Non c'è più spazio sul disco. Libera dello spazio, poi riprova.",
+        "no-permission": "RiftLauncher non può scrivere lì. Controlla i permessi della cartella, poi riprova.",
+        "missing-file": "Un file necessario non c'era più. Riprova, e reinstalla se succede ancora.",
+        "damaged-archive": "L'archivio non si è aperto, probabilmente è danneggiato. Scaricalo di nuovo.",
+        "timed-out": "L'operazione ha impiegato troppo tempo ed è stata interrotta. Riprova.",
+        "unsupported-platform": "Questo passaggio funziona solo su Windows.",
+        "unknown": "Questa attività si è fermata prima di finire. I dettagli sono nel registro."
+      }
     }
   },
   "features": {

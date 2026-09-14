@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
+import { type FailureReason } from "@domain/notifications/failureReason"
 import { MAX_VISIBLE_TOASTS, backlogToastDuration, capNotificationRecords, waitingBehindStack } from "@domain/notifications/toastQueue"
 
 export type NotificationTypes = "success" | "error" | "info" | "warning"
@@ -18,6 +19,12 @@ export interface NotificationOptions {
   duration?: number | null
   actions?: NotificationAction[]
   presentation?: NotificationPresentation
+  /**
+   * Why this failed, as a token the locale turns into a sentence under the
+   * message in the Activity Center. Set by the call site that caught the error,
+   * which is the only place that ever sees the raw text.
+   */
+  reason?: FailureReason
 }
 
 export interface NotificationType {

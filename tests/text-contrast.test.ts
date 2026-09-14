@@ -543,6 +543,21 @@ describe("prompts the player is meant to read and act on", () => {
   })
 
   /**
+   * #390 put a second red line in the panel: the cause under a failed message, beside the one a
+   * failed task row already carries. It is the line a player opened the panel to read, so it
+   * takes the text floor rather than the weaker non-text one, and it is read out of the
+   * component so a shade that moves fails here instead of shipping.
+   */
+  it("keeps the cause under a failed notification readable on both row tints", () => {
+    const cause = paletteForeground("components/ui/ActivityCenter.tsx", /mt-0\.5 text-xs break-words text-([a-z]+-\d+)"/)
+    const taskCause = paletteForeground("components/ui/ActivityCenter.tsx", /task.status === "failed" && <p className="text-xs text-([a-z]+-\d+)"/)
+
+    assertReadable("failed notification cause", cause, TASKS_ROW, TEXT_FLOOR)
+    // The two say the same kind of thing in the same panel, so they wear the same red.
+    assert.deepEqual(cause, taskCause, "the cause under a failed message should carry the same red as the one on a failed task row")
+  })
+
+  /**
    * An action that ships `icon` renders the icon and its label as one control, and the label's
    * colour comes from the button variant. An icon that sets a `text-zinc-*` of its own there is
    * always the dimmer of the two, which reads as a disabled control sitting next to live text.
