@@ -223,9 +223,17 @@ export function validateGameVersion(value: unknown): Pick<GameVersionType, "vers
   }
 }
 
-export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper: string; gameVersionId?: string | null } {
+export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & {
+  launchWrapper: string
+  gameVersionId?: string | null
+  id?: string
+} {
   if (!isRecord(value)) throw new TypeError("Invalid installation")
   return {
+    // Optional the same way gameVersionId is, and for the same reason: every caller in the app
+    // sends the whole Installation, but nothing here depends on the id being there. It is the key
+    // EXECUTE_GAME looks a server bookmark up by, so a request with no id simply cannot name one.
+    ...(value.id === undefined ? {} : { id: assertString(value.id, "installation id", 128) }),
     path: assertNonRootPath(value.path, "installation path"),
     startParams: assertBoundedString(value.startParams, "start parameters", 8_192),
     mesaGlThread: assertBoolean(value.mesaGlThread, "MESA GL thread flag"),

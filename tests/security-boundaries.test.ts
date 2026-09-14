@@ -74,6 +74,20 @@ describe("process and navigation boundaries", () => {
     assert.throws(() => validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "", launchWrapper: "x".repeat(4_097) }), /Invalid launch wrapper/)
   })
 
+  /**
+   * The Installation id is the key EXECUTE_GAME looks a server bookmark up by, so it goes through
+   * the same shape check every other field does rather than being read straight off the request.
+   * A request that carries no id simply cannot name a bookmark, which is why it stays optional.
+   */
+  it("validates the installation id a server bookmark is looked up under", () => {
+    const base = { path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "" }
+
+    assert.equal(validateGameInstallation({ ...base, id: "i-1" }).id, "i-1")
+    assert.equal("id" in validateGameInstallation(base), false)
+    assert.throws(() => validateGameInstallation({ ...base, id: 42 }), /Invalid installation id/)
+    assert.throws(() => validateGameInstallation({ ...base, id: "x".repeat(129) }), /Invalid installation id/)
+  })
+
   it("accepts only the exact renderer document or development origin", () => {
     const packagedPath = resolve("/tmp/out/renderer/index.html")
     assert.equal(isAllowedRendererUrl(`${pathToFileURL(packagedPath).toString()}#/home`, undefined, packagedPath), true)
