@@ -17,7 +17,8 @@ import {
   isSafeArchiveEntry,
   isSafeTarEntryType,
   isTarGzName,
-  resolveContainedPath
+  resolveContainedPath,
+  toWireBuildVariant
 } from "../src/ipc/validation"
 import { redactSensitiveText } from "../src/utils/logManager"
 
@@ -36,6 +37,18 @@ describe("IPC boundary validators", () => {
     assert.throws(() => assertAllowedBrowserUrl("javascript:alert(1)"), /Invalid URL/)
     assert.throws(() => assertAllowedBrowserUrl("https://discord.gg/RtWpYBRRUz"), /URL is not allowed/)
     assert.throws(() => assertAllowedBrowserUrl("https://ko-fi.com/zaldaryon"), /URL is not allowed/)
+  })
+
+  it("lets only a known build variant with a real version cross to the renderer", () => {
+    assert.deepEqual(toWireBuildVariant({ name: "Optimum", version: "0.3.14" }), { name: "Optimum", version: "0.3.14" })
+
+    // Everything below comes off the stdout of a binary the launcher did not build.
+    assert.equal(toWireBuildVariant({ name: "Sodium", version: "0.3.14" }), undefined)
+    assert.equal(toWireBuildVariant({ name: "Optimum", version: "0.3.14.1" }), undefined)
+    assert.equal(toWireBuildVariant({ name: "Optimum", version: "127.0.0.1" }), undefined)
+    assert.equal(toWireBuildVariant({ name: "Optimum" }), undefined)
+    assert.equal(toWireBuildVariant("Optimum v0.3.14"), undefined)
+    assert.equal(toWireBuildVariant(undefined), undefined)
   })
 
   it("confines protocol paths to their intended root", () => {

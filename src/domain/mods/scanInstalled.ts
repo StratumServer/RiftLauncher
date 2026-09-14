@@ -49,6 +49,8 @@ export interface ScannedMod {
   authors?: string[]
   contributors?: string[]
   type?: string
+  /** Mod id to lowest acceptable version, as the archive declared it. See {@link parseModInfo}. */
+  dependencies?: Record<string, string>
   /** Name the mod's icon was stored under, absent when it has none. */
   image?: string
 }

@@ -12,9 +12,10 @@ import type { InstalledModCopy, InstallModFailure, InstallModResult, ModReleaseT
  * the whole decision as data: {@link planModpackImport} is pure, so what the import will do to a
  * folder is a value a test can read.
  *
- * Dependencies are deliberately absent. The launcher resolves none today, and a modpack manifest
- * lists every mod it wants explicitly, so nothing here needs them. A plan entry is the obvious place
- * to hang them from if that ever changes.
+ * Dependencies are deliberately absent here. A modpack manifest lists every mod it wants
+ * explicitly, so an import has nothing to resolve. What a Mod declares is read (modinfo.ts) and
+ * checked against an Installation's folder one level deep (health.ts), never resolved into a plan:
+ * a plan entry is still the obvious place to hang that from if a pack ever needs it.
  */
 
 /** One line of a modpack manifest, or one Mod picked on the browse page. */

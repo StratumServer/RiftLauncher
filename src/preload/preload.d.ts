@@ -69,7 +69,7 @@ declare global {
     }
     gameManager: {
       executeGame: (version: GameVersionType, installation: InstallationType) => Promise<GameExecutionResult>
-      lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }>
+      lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }>
       /** Reads the last session's own log files out of one Installation and answers the report built from them. See #462. */
       getGameLogReport: (installationPath: string) => Promise<GameLogReportResult>
     }

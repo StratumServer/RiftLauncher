@@ -106,6 +106,18 @@ declare global {
     | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean }
     | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response" | "session-store-unreadable"; account?: undefined }
 
+  /**
+   * A fork of Vintage Story that named itself when the launcher probed it.
+   *
+   * Declared here so the domain, the preload bridge and the renderer spell it
+   * once. `name` is a fixed token the launcher chose, never text echoed from a
+   * binary it did not build: see toWireBuildVariant in src/ipc/validation.ts.
+   */
+  type GameBuildVariantType = {
+    name: "Optimum"
+    version: string
+  }
+
   type GameVersionType = {
     /** Stable technical identity; independent from the displayed label and version number. */
     id: string
@@ -191,6 +203,12 @@ declare global {
     authors?: string[]
     contributors?: string[]
     type?: string
+    /**
+     * Mod ids this Mod declares it needs, each mapped to the lowest version that satisfies it, as
+     * the archive's own modinfo.json wrote them. Bounded and NUL checked by parseModInfo in the
+     * main process, where the file is read. `"*"` and `""` both mean any version.
+     */
+    dependencies?: Record<string, string>
     _image?: string
     _mod?: DownloadableModType
     _updatableTo?: string

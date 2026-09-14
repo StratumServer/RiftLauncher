@@ -244,4 +244,137 @@ describe("ListVersions", () => {
     await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
     expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
   })
+
+  it("renames a version, keeping its number and its folder", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ id: "gv-optimum", label: "1.22.7", version: "1.22.7", path: "/versions/optimum" }] })),
+        saveConfig
+      }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    await screen.findByText("1.22.7")
+    await user.click(screen.getByTitle("Rename VS Version"))
+
+    const name = await screen.findByDisplayValue("1.22.7")
+    await user.clear(name)
+    await user.type(name, "1.22.7 Optimum 0.3.14")
+    await user.click(screen.getByTitle("Save"))
+
+    await screen.findByText("1.22.7 Optimum 0.3.14")
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled())
+    const savedConfig = (saveConfig.mock.calls.at(-1) as unknown as [ConfigType])[0]
+    expect(savedConfig.gameVersions[0]).toMatchObject({ id: "gv-optimum", label: "1.22.7 Optimum 0.3.14", version: "1.22.7", path: "/versions/optimum" })
+  })
+
+  it("ends the rename on Enter, with the field focused and named", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ id: "gv-a", label: "My build", version: "1.22.7", path: "/versions/a" }] })),
+        saveConfig
+      }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    await screen.findByText("My build")
+    await user.click(screen.getByTitle("Rename VS Version"))
+
+    // Named by a label of its own, not by its placeholder, and ready to type in.
+    const name = await screen.findByRole("textbox", { name: "Name" })
+    await waitFor(() => expect(document.activeElement).toBe(name))
+
+    await user.clear(name)
+    await user.type(name, "Renamed by keyboard{Enter}")
+
+    await screen.findByText("Renamed by keyboard")
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled())
+    const savedConfig = (saveConfig.mock.calls.at(-1) as unknown as [ConfigType])[0]
+    expect(savedConfig.gameVersions[0]).toMatchObject({ label: "Renamed by keyboard", version: "1.22.7" })
+  })
+
+  it("stops the typed name at the length the config keeps", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ id: "gv-a", label: "My build", version: "1.22.7", path: "/versions/a" }] })),
+        saveConfig
+      }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    await screen.findByText("My build")
+    await user.click(screen.getByTitle("Rename VS Version"))
+
+    const name = await screen.findByDisplayValue("My build")
+    await user.clear(name)
+    await user.type(name, "n".repeat(300))
+    await user.click(screen.getByTitle("Save"))
+
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled())
+    const savedConfig = (saveConfig.mock.calls.at(-1) as unknown as [ConfigType])[0]
+    // normalizeGameVersion drops a longer label for the bare version number, so a
+    // name the field let through would be a rename that reports success and is
+    // thrown away on the next load.
+    expect(savedConfig.gameVersions[0]?.label).toHaveLength(256)
+  })
+
+  it("falls back to the version number when the name is cleared", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ id: "gv-a", label: "My build", version: "1.22.7", path: "/versions/a" }] })),
+        saveConfig
+      }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    await screen.findByText("My build")
+    await user.click(screen.getByTitle("Rename VS Version"))
+
+    const name = await screen.findByDisplayValue("My build")
+    await user.clear(name)
+    await user.type(name, "   ")
+    await user.click(screen.getByTitle("Save"))
+
+    await screen.findByText("1.22.7")
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled())
+    const savedConfig = (saveConfig.mock.calls.at(-1) as unknown as [ConfigType])[0]
+    expect(savedConfig.gameVersions[0]).toMatchObject({ label: "1.22.7", version: "1.22.7" })
+  })
+
+  it("changes nothing when the rename is cancelled", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ id: "gv-a", label: "My build", version: "1.22.7", path: "/versions/a" }] })),
+        saveConfig
+      }
+    })
+
+    renderWithProviders(<ListVersions />, { route: "/versions" })
+
+    await screen.findByText("My build")
+    await user.click(screen.getByTitle("Rename VS Version"))
+
+    const name = await screen.findByDisplayValue("My build")
+    await user.clear(name)
+    await user.type(name, "Something else")
+    await user.click(screen.getByTitle("Cancel"))
+
+    await waitFor(() => expect(screen.queryByDisplayValue("Something else")).toBeNull())
+    expect(screen.getByText("My build")).toBeTruthy()
+    expect(saveConfig).not.toHaveBeenCalled()
+  })
 })
