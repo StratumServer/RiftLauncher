@@ -389,12 +389,23 @@
       "discardTask": "Descartar tarefa",
       "markAllRead": "Marcar todas como lidas",
       "clearRead": "Limpar lidas",
+      "clearAll": "Limpar tudo",
       "markRead": "Marcar como lida",
       "markUnread": "Marcar como não lida",
       "panelSummary": "{{active}} em andamento, {{unread}} não lidas",
       "answeredWith": "Resposta: {{action}}",
       "restartAndUpdate": "Reiniciar e atualizar",
-      "viewUpdates": "Ver atualizações"
+      "viewUpdates": "Ver atualizações",
+      "failureReasons": {
+        "network": "A conexão falhou. Verifique sua conexão ou seu firewall e tente de novo.",
+        "no-space": "Não há mais espaço no disco. Libere espaço e tente de novo.",
+        "no-permission": "O RiftLauncher não tem permissão para gravar ali. Verifique as permissões dessa pasta e tente de novo.",
+        "missing-file": "Um arquivo necessário não estava mais lá. Tente de novo, e reinstale se continuar acontecendo.",
+        "damaged-archive": "O arquivo compactado não abriu, provavelmente está danificado. Baixe de novo.",
+        "timed-out": "Demorou demais e foi interrompido. Tente de novo.",
+        "unsupported-platform": "Esta etapa só funciona no Windows.",
+        "unknown": "Esta tarefa parou antes de terminar. Os detalhes estão no registro."
+      }
     }
   },
   "notifications": {

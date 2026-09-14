@@ -839,12 +839,23 @@
       "discardTask": "Ignorer la tâche",
       "markAllRead": "Tout marquer comme lu",
       "clearRead": "Effacer les notifications lues",
+      "clearAll": "Tout effacer",
       "markRead": "Marquer comme lue",
       "markUnread": "Marquer comme non lue",
       "panelSummary": "{{active}} en cours, {{unread}} non lues",
       "answeredWith": "Réponse : {{action}}",
       "restartAndUpdate": "Redémarrer et mettre à jour",
-      "viewUpdates": "Voir les mises à jour"
+      "viewUpdates": "Voir les mises à jour",
+      "failureReasons": {
+        "network": "La connexion a échoué. Vérifiez votre connexion ou votre pare-feu, puis réessayez.",
+        "no-space": "Il n'y a plus de place sur le disque. Libérez de l'espace, puis réessayez.",
+        "no-permission": "RiftLauncher n'a pas le droit d'écrire à cet endroit. Vérifiez les permissions du dossier, puis réessayez.",
+        "missing-file": "Un fichier nécessaire n'était plus là. Réessayez, et réinstallez si cela se reproduit.",
+        "damaged-archive": "L'archive n'a pas pu être ouverte, elle est probablement endommagée. Téléchargez-la à nouveau.",
+        "timed-out": "L'opération a duré trop longtemps et a été arrêtée. Réessayez.",
+        "unsupported-platform": "Cette étape ne fonctionne que sous Windows.",
+        "unknown": "Cette tâche s'est arrêtée avant la fin. Les détails sont dans le journal."
+      }
     }
   },
   "notifications": {
@@ -881,15 +892,18 @@
       "iconAddFailed": "Un problème est survenu pendant l'ajout de cette icône. Redémarrez RiftLauncher, et dites-le-nous si cela se reproduit.",
       "backgroundDownloadFailed": "Cet arrière-plan n'a pas pu être téléchargé. Vérifiez votre connexion et réessayez.",
       "backgroundCopyFailed": "Cette image n'a pas pu servir d'arrière-plan. Elle doit être au format JPEG et faire moins de 2 Mo.",
-      "appClosePrevented": "RiftLauncher ne peut pas encore se fermer : soit Vintage Story tourne, soit une tâche est toujours en cours."
+      "appClosePrevented": "RiftLauncher ne peut pas encore se fermer : soit Vintage Story tourne, soit une tâche est toujours en cours.",
+      "activityCleared": "Le centre d'activité a été vidé."
     },
     "actions": {
       "openInstallGuide": "Ouvrir le guide d'installation",
       "updateNow": "Mettre à jour maintenant",
       "notNow": "Pas maintenant",
+      "undo": "Annuler",
       "seeWhatWentWrong": "Voir ce qui s'est passé"
     },
-    "discard": "Ignorer la notification"
+    "discard": "Ignorer la notification",
+    "repeats": "x{{count}}"
   },
   "breadcrumbs": {
     "mods": "Mods",

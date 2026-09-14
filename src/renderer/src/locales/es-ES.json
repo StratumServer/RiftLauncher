@@ -48,12 +48,23 @@
       "discardTask": "Descartar tarea",
       "markAllRead": "Marcar todas como leídas",
       "clearRead": "Limpiar leídas",
+      "clearAll": "Borrar todo",
       "markRead": "Marcar como leída",
       "markUnread": "Marcar como no leída",
       "panelSummary": "{{active}} en curso, {{unread}} sin leer",
       "answeredWith": "Respondido: {{action}}",
       "restartAndUpdate": "Reiniciar y actualizar",
-      "viewUpdates": "Ver actualizaciones"
+      "viewUpdates": "Ver actualizaciones",
+      "failureReasons": {
+        "network": "La conexión ha fallado. Comprueba tu conexión o tu cortafuegos y vuelve a intentarlo.",
+        "no-space": "No queda espacio en el disco. Libera espacio y vuelve a intentarlo.",
+        "no-permission": "RiftLauncher no tiene permiso para escribir ahí. Comprueba los permisos de esa carpeta y vuelve a intentarlo.",
+        "missing-file": "Un archivo necesario ya no estaba. Vuelve a intentarlo, y reinstala si se repite.",
+        "damaged-archive": "El archivo comprimido no se pudo abrir, probablemente está dañado. Descárgalo de nuevo.",
+        "timed-out": "Ha tardado demasiado y se ha detenido. Vuelve a intentarlo.",
+        "unsupported-platform": "Este paso solo funciona en Windows.",
+        "unknown": "Esta tarea se detuvo antes de terminar. Los detalles están en el registro."
+      }
     }
   },
   "features": {

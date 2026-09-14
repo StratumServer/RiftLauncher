@@ -5,6 +5,8 @@ import { PiBoxArrowDownDuotone, PiBoxArrowUpDuotone, PiDownloadDuotone, PiEnvelo
 import clsx from "clsx"
 import { useTranslation } from "react-i18next"
 
+import { BULK_CLEAR_UNDO_DURATION, taskSurvivesBulkClear } from "@domain/notifications/bulkClear"
+import { failureReasonKey } from "@domain/notifications/failureReason"
 import { awaitsAnswer, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext, type TaskType } from "@renderer/contexts/TaskManagerContext"
 import { NormalButton } from "./Buttons"
@@ -52,7 +54,7 @@ function ActivityTask({ task, removeTask }: Readonly<{ task: TaskType; removeTas
               {t(OPERATION_LABELS[task.type])} · {t(statusKey)}
             </p>
             {task.desc && task.desc !== task.name && <p className="text-xs text-zinc-400 line-clamp-2">{task.desc}</p>}
-            {task.status === "failed" && <p className="text-xs text-red-400">{t("components.tasksMenu.error")}</p>}
+            {task.status === "failed" && <p className="text-xs text-red-400">{t(failureReasonKey(task.reason))}</p>}
           </div>
         </div>
         {terminal && (
@@ -107,8 +109,9 @@ function ActivityPanel(): JSX.Element {
   const { t } = useTranslation()
   const reduceMotion = useReducedMotion()
   const panelRef = useRef<HTMLDivElement>(null)
-  const { tasks, activeTaskCount, removeTask } = useTaskContext()
-  const { history, unreadCount, markAllSeen, markAllRead, setNotificationRead, clearReadNotifications, invokeAction, removeNotification } = useNotificationsContext()
+  const { tasks, activeTaskCount, removeTask, clearFinishedTasks } = useTaskContext()
+  const { addNotification, history, unreadCount, markAllSeen, markAllRead, setNotificationRead, clearReadNotifications, clearAllNotifications, invokeAction, removeNotification } =
+    useNotificationsContext()
 
   // Mounting means the center is open; a record arriving while it is open is on
   // screen, so it counts as seen too.
@@ -128,6 +131,31 @@ function ActivityPanel(): JSX.Element {
   const failedTasks = tasks.filter((task) => task.status === "failed")
   const completedTasks = tasks.filter((task) => task.status === "completed")
   const hasClearableRead = history.some((notification) => notification.read && !awaitsAnswer(notification))
+  const hasAnythingToClear = history.some((notification) => !awaitsAnswer(notification)) || tasks.some((task) => !taskSurvivesBulkClear(task.status))
+
+  /**
+   * Both halves of the panel in one press, with one way back. The undo toast is
+   * raised here rather than inside either provider because it is the one thing
+   * that puts both of them back, and neither knows about the other.
+   */
+  const clearEverything = (): void => {
+    const undoTasks = clearFinishedTasks()
+    const undoNotifications = clearAllNotifications()
+    addNotification(t("notifications.body.activityCleared"), "info", {
+      presentation: "toast",
+      duration: BULK_CLEAR_UNDO_DURATION,
+      actions: [
+        {
+          id: "undo-clear-all",
+          label: t("notifications.actions.undo"),
+          onClick: (): void => {
+            undoTasks()
+            undoNotifications()
+          }
+        }
+      ]
+    })
+  }
 
   return (
     <motion.div
@@ -144,9 +172,16 @@ function ActivityPanel(): JSX.Element {
         <h2 id="activity-center-title" className="font-bold leading-tight">
           {t("components.activityCenter.title")}
         </h2>
-        <span className="text-xs text-zinc-400 leading-tight" aria-live="polite" aria-atomic="true">
-          {t("components.activityCenter.panelSummary", { active: activeTaskCount, unread: unreadCount })}
-        </span>
+        <div className="flex flex-wrap items-center justify-between gap-x-2">
+          <span className="text-xs text-zinc-400 leading-tight" aria-live="polite" aria-atomic="true">
+            {t("components.activityCenter.panelSummary", { active: activeTaskCount, unread: unreadCount })}
+          </span>
+          {hasAnythingToClear && (
+            <NormalButton className="px-1 text-xs text-zinc-400" title={t("components.activityCenter.clearAll")} ariaLabel={t("components.activityCenter.clearAll")} onClick={() => clearEverything()}>
+              {t("components.activityCenter.clearAll")}
+            </NormalButton>
+          )}
+        </div>
       </div>
       {/* Failures first. The one section a player has to act on used to sit under the one they can
           only watch, which is the wrong way round for a panel opened because something went wrong. */}
@@ -190,7 +225,10 @@ function ActivityPanel(): JSX.Element {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2 min-w-0">
                         {!notification.read && <span className="mt-1 w-1.5 h-1.5 rounded-full bg-vsl shrink-0" aria-hidden="true" />}
-                        <p className="text-xs break-words text-zinc-400">{notification.body}</p>
+                        <div className="flex flex-col items-start min-w-0">
+                          <p className="text-xs break-words text-zinc-400">{notification.body}</p>
+                          {notification.options?.reason && <p className="mt-0.5 text-xs break-words text-red-400">{t(failureReasonKey(notification.options.reason))}</p>}
+                        </div>
                       </div>
                       <div className="flex items-start gap-1 shrink-0">
                         <NormalButton className="p-1 text-zinc-400" title={toggleLabel} ariaLabel={toggleLabel} onClick={() => setNotificationRead(notification.id, !notification.read)}>

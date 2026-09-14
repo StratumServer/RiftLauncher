@@ -324,7 +324,6 @@ describe("EditInstallation", () => {
     await user.click(screen.getByTitle("Save"))
 
     await screen.findByText("Installation edited successfully.")
-    await user.click(screen.getByRole("button", { name: "Discard notification" }))
     await screen.findByText(VERSION_LEFT_UNCHANGED)
     await screen.findByText("installations-list")
 
@@ -358,7 +357,6 @@ describe("EditInstallation", () => {
     await user.click(screen.getByTitle("Save"))
 
     await screen.findByText("Installation edited successfully.")
-    await user.click(screen.getByRole("button", { name: "Discard notification" }))
     await screen.findByText(UNLINKED_LEFT_UNCHANGED)
     await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.name === "Renamed Install")).toBe(true))
     expect(savedConfigs.every((config) => config.installations.every((installation) => installation.gameVersionId === "deleted-build"))).toBe(true)
@@ -385,7 +383,6 @@ describe("EditInstallation", () => {
     await user.click(screen.getByTitle("Save"))
 
     await screen.findByText("Installation edited successfully.")
-    await user.click(screen.getByRole("button", { name: "Discard notification" }))
     await screen.findByText(UNSET_LEFT_UNCHANGED)
     await screen.findByText("installations-list")
 
