@@ -120,6 +120,16 @@ function ConfigPage(): JSX.Element {
                 <BetaUpdatesToggle />
               </FormBody>
             </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.measurePlaySessions")} className="max-h-6" />
+              </FormHead>
+
+              <FormBody>
+                <MeasurePlaySessionsToggle />
+              </FormBody>
+            </FromGroup>
           </FormGroupWrapper>
 
           <FormGroupWrapper title={t("generic.folders")}>
@@ -226,6 +236,31 @@ function BetaUpdatesToggle(): JSX.Element {
         onChange={(value) => configDispatch({ type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: value })}
       />
       <FormFieldDescription content={t("features.config.receiveBetaUpdatesDesc")} />
+    </FormFieldGroupWithDescription>
+  )
+}
+
+/**
+ * Whether the launcher measures the game process while it runs (#461).
+ *
+ * On by default. What it costs is one timer and a small file under the launcher's own user data,
+ * and the description says the only thing a player needs to know about it: none of it leaves the
+ * machine.
+ */
+function MeasurePlaySessionsToggle(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { measurePlaySessions } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+
+  return (
+    <FormFieldGroupWithDescription alignment="x">
+      <FormToggle
+        title={t("features.config.measurePlaySessionsDesc")}
+        value={measurePlaySessions}
+        onChange={(value) => configDispatch({ type: CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS, payload: value })}
+      />
+      <FormFieldDescription content={t("features.config.measurePlaySessionsDesc")} />
     </FormFieldGroupWithDescription>
   )
 }

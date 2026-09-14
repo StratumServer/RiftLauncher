@@ -116,6 +116,37 @@ describe("Recent sessions", () => {
     expect(notice.textContent).not.toMatch(/crash|error|failed/i)
   })
 
+  /**
+   * A session the rule flags, and the two things the wording must never do: name a cause, or say
+   * anything about a Mod. The launcher measures the whole game from outside; a curve cannot say
+   * what inside it grew.
+   */
+  it("flags a steady climb without ever naming a cause", async () => {
+    const user = userEvent.setup()
+    mountWith({ ok: true, sessions: [aSession({}, { count: 240, minutes: 60, baseMiB: 1_000, stepMiB: 4 })] })
+
+    await user.click(await screen.findByTitle("Open this session"))
+
+    expect(await screen.findByText("Memory only went up during this session.")).toBeTruthy()
+
+    const meaning = screen.getByText(/cannot say what used the memory/).textContent ?? ""
+    expect(meaning).toMatch(/A mod, the game itself and a large world all look the same from here/)
+    expect(meaning).not.toMatch(/\bleak/i)
+    expect(meaning).not.toMatch(/at fault|blame|caused by|responsible/i)
+  })
+
+  it("says nothing at all about a session it did not flag", async () => {
+    const user = userEvent.setup()
+    mountWith({ ok: true, sessions: [aSession({}, { count: 240, minutes: 60, baseMiB: 2_000, stepMiB: 0 })] })
+
+    await user.click(await screen.findByTitle("Open this session"))
+
+    await screen.findByRole("img", { name: /Memory and CPU/ })
+    // Not flagged is not the same as cleared, so nothing reassuring is printed either.
+    expect(screen.queryByText(/Memory only went up/)).toBeNull()
+    expect(screen.queryByText(/fine|healthy|no problem|nothing wrong/i)).toBeNull()
+  })
+
   it("leaves a file it cannot read alone and says so", async () => {
     mountWith({ ok: false, reason: "newer-format" })
 
