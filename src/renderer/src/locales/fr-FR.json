@@ -711,7 +711,10 @@
         "ask": "Demander à chaque version",
         "always": "Toujours me compter",
         "never": "Ne jamais compter"
-      }
+      },
+      "allowBasicSessionStore": "Retenir la session sans trousseau système",
+      "allowBasicSessionStoreDesc": "Vous garde connecté sur un ordinateur sans trousseau système. La session est alors écrite sur le disque, scellée avec une clé intégrée au launcher : n'importe quel programme lancé sous votre compte peut la lire. Laissez ce réglage désactivé si cela ne vous convient pas sur cet ordinateur. Prend effet au prochain démarrage de RiftLauncher.",
+      "allowBasicSessionStoreRestart": "Ce réglage prendra effet au prochain démarrage de RiftLauncher."
     },
     "backups": {
       "backupInProgress": "Une sauvegarde est déjà en cours.",

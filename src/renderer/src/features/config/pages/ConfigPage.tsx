@@ -17,6 +17,7 @@ import { backgroundThumbnailSource } from "@renderer/utils/backgroundThumbnail"
 import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
 import defaultBackground from "@renderer/assets/background.jpg"
 
@@ -139,6 +140,16 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <ModDbCountPicker />
+              </FormBody>
+            </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.allowBasicSessionStore")} className="max-h-6" />
+              </FormHead>
+
+              <FormBody>
+                <AllowBasicSessionStoreToggle />
               </FormBody>
             </FromGroup>
           </FormGroupWrapper>
@@ -333,6 +344,40 @@ function ModDbCountPicker(): JSX.Element {
       </Listbox>
 
       <FormFieldDescription content={t("features.config.moddbCountDesc")} />
+    </FormFieldGroupWithDescription>
+  )
+}
+
+/**
+ * Whether a session may be kept on a machine with no system keyring (#481).
+ *
+ * Off in every config that has not been asked, and only ever turned on here. The description is
+ * the whole point of the setting: with no keyring the only store left seals the session with a key
+ * that ships in the binary, so anything running as the player can read it. Some people want the
+ * convenience on a machine they alone use, and that is theirs to decide, but not to stumble into.
+ *
+ * Chromium picks its password store as the process starts, so the answer is read at the next
+ * launch and not on the next login. The toggle says so, and says it again when touched, rather
+ * than leaving someone to wonder why nothing changed.
+ */
+function AllowBasicSessionStoreToggle(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { allowBasicSessionStore } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+  const { addNotification } = useNotificationsContext()
+
+  return (
+    <FormFieldGroupWithDescription alignment="x">
+      <FormToggle
+        title={t("features.config.allowBasicSessionStoreDesc")}
+        value={allowBasicSessionStore}
+        onChange={(value) => {
+          configDispatch({ type: CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE, payload: value })
+          addNotification(t("features.config.allowBasicSessionStoreRestart"), "info")
+        }}
+      />
+      <FormFieldDescription content={t("features.config.allowBasicSessionStoreDesc")} />
     </FormFieldGroupWithDescription>
   )
 }

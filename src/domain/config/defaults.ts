@@ -1,4 +1,5 @@
 import { DEFAULT_ACCENT_ID } from "../accentColors"
+import { DEFAULT_ALLOW_BASIC_SESSION_STORE } from "../account/sessionStorage"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "../appUpdate/betaUpdates"
 import { DEFAULT_BACKGROUND_ID } from "../backgrounds"
 import { defaultModDbVisibility } from "../moddbVisibility"
@@ -32,6 +33,7 @@ export const DEFAULT_CONFIG_BASE: Omit<ConfigType, "schemaVersion" | "defaultIns
   moddbVisibility: defaultModDbVisibility(),
   receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
   measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
+  allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
   lastSeenChangelogVersion: "",
   customIcons: []
 }

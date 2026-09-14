@@ -19,6 +19,7 @@ import { isTrustedIpcSender, registerTrustedWebContents } from "@src/ipc/ipcSecu
 import { assertAllowedBrowserUrl, isAllowedRendererUrl, resolveContainedPath } from "@src/ipc/validation"
 import { terminateActiveWorkers } from "@src/ipc/workerManager"
 import { registerAutoUpdaterEvents, scheduleUpdateCheck } from "@src/main/autoUpdaterEvents"
+import { basicPasswordStoreSwitch } from "@domain/account/sessionStorage"
 import { canAutoUpdate } from "@domain/appUpdate/canAutoUpdate"
 import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
@@ -53,6 +54,31 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
 }
 
 logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
+
+/**
+ * The one setting that has to be answered before Electron starts.
+ *
+ * Chromium chooses its password store while the process comes up, well before `whenReady` and so
+ * before `ensureConfig()` has read anything, and it never revisits the choice. So this reads the
+ * single field straight off config.json rather than through configManager, which needs a running
+ * app to resolve its own path and would be a cycle from here anyway. Anything unreadable, a file
+ * that does not exist yet included, is a no: the switch weakens where a session is kept, so it is
+ * only ever appended for a config that explicitly says yes. The toggle that writes it says a
+ * restart is needed for exactly this reason.
+ */
+function storedAllowBasicSessionStore(): boolean {
+  try {
+    return (fse.readJSONSync(join(userDataSetup.path, "config.json")) as { allowBasicSessionStore?: unknown }).allowBasicSessionStore === true
+  } catch {
+    return false
+  }
+}
+
+const passwordStore = basicPasswordStoreSwitch(process.platform, storedAllowBasicSessionStore())
+if (passwordStore) {
+  app.commandLine.appendSwitch("password-store", passwordStore)
+  logMessage("info", "[back] [index] [main/index.ts] [passwordStore] Starting with the basic password store, as this launcher's session storage setting asks.")
+}
 
 let mainWindow: BrowserWindow
 let hasSweptOrphanedTempFiles = false

@@ -16,6 +16,7 @@ export enum CONFIG_ACTIONS {
   SET_MODDB_VISIBILITY = "SET_MODDB_VISIBILITY",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
   SET_MEASURE_PLAY_SESSIONS = "SET_MEASURE_PLAY_SESSIONS",
+  SET_ALLOW_BASIC_SESSION_STORE = "SET_ALLOW_BASIC_SESSION_STORE",
   SET_LAST_SEEN_CHANGELOG_VERSION = "SET_LAST_SEEN_CHANGELOG_VERSION",
 
   ADD_INSTALLATION = "ADD_INSTALLATION",
@@ -140,6 +141,16 @@ export interface SetReceiveBetaUpdates {
 /** Whether the launcher measures the game process while it runs. See src/domain/sessions/sampling.ts. */
 export interface SetMeasurePlaySessions {
   type: CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS
+  payload: boolean
+}
+
+/**
+ * Whether a session may be kept on a machine with no system keyring, where the store left seals it
+ * with a key that ships in the binary. The next launch is what acts on it, since Chromium picks
+ * its password store before any config read. See src/domain/account/sessionStorage.ts.
+ */
+export interface SetAllowBasicSessionStore {
+  type: CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE
   payload: boolean
 }
 
@@ -314,6 +325,7 @@ export type ConfigAction =
   | SetModDbVisibility
   | SetReceiveBetaUpdates
   | SetMeasurePlaySessions
+  | SetAllowBasicSessionStore
   | SetLastSeenChangelogVersion
   | AddInstallation
   | DeleteInstallation
@@ -376,6 +388,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, receiveBetaUpdates: action.payload }
     case CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS:
       return { ...config, measurePlaySessions: action.payload }
+    case CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE:
+      return { ...config, allowBasicSessionStore: action.payload }
     case CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION:
       return { ...config, lastSeenChangelogVersion: action.payload }
     case CONFIG_ACTIONS.ADD_INSTALLATION:

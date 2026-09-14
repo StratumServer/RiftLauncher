@@ -481,6 +481,10 @@ export function normalizeConfig(config: unknown): ConfigType {
     receiveBetaUpdates: normalizeReceiveBetaUpdates(rawConfig.receiveBetaUpdates),
     // A config written before this setting existed reads as the shipped default, which is on.
     measurePlaySessions: asBoolean(rawConfig.measurePlaySessions, defaultConfig.measurePlaySessions),
+    // Anything that is not an explicit `true`, missing included, is off. A hand-edited config that
+    // says "yes" in any other spelling does not count: this one weakens where a session is kept,
+    // so it takes a real answer from the toggle and nothing else.
+    allowBasicSessionStore: asBoolean(rawConfig.allowBasicSessionStore, defaultConfig.allowBasicSessionStore),
     // Empty for anything unreadable, a config written before this field existed included: the
     // "what's new" dialog reads that the same way it reads a fresh install, showing only the
     // running version's own notes rather than guessing at a history it was never told.

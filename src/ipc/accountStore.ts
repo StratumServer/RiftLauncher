@@ -133,9 +133,27 @@ function isMissingFileError(error: unknown): boolean {
   return isRecord(error) && error.code === "ENOENT"
 }
 
+/**
+ * Whether this process was started asking Chromium for the basic password store.
+ *
+ * The command line is the state that matters, not the config value behind it: Chromium reads the
+ * switch while it starts and never looks again, so a config that says yes to a process that was
+ * launched without it is a config describing the next run, not this one. `src/main/index.ts`
+ * appends the switch at startup from the stored setting, and this reads back what actually
+ * happened. Somebody passing `--password-store=basic` on the command line themselves lands here
+ * too, which is the same explicit choice made a different way.
+ */
+function allowsBasicPasswordStore(): boolean {
+  return app.commandLine.getSwitchValue("password-store") === "basic"
+}
+
 function assertSecureStorage(): void {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure account storage is unavailable")
-  if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") throw new Error("A system password store is required for account storage")
+  // `basic_text` still encrypts, with a key compiled into the binary, so anything running as this
+  // user can read what it seals. Refused unless the player asked for it: see
+  // src/domain/account/sessionStorage.ts for what they are agreeing to.
+  if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text" && !allowsBasicPasswordStore())
+    throw new Error("A system password store is required for account storage")
 }
 
 /** The same rule as {@link assertSecureStorage}, as a question rather than a demand. */
