@@ -1270,14 +1270,17 @@ describe("Clear all empties the centre in one action", () => {
     })
     expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["first", "second", "third"])
 
-    act(() => result.current.clearAllNotifications())
+    let undo = () => {}
+    act(() => {
+      undo = result.current.clearAllNotifications()
+    })
     // The three on screen stay; only the one still queued is taken.
     expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["first", "second", "third"])
 
     act(() => result.current.dismissToast(result.current.activeToasts[0]!.record.id))
     expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["second", "third"])
 
-    act(() => result.current.undoClearAllNotifications())
+    act(() => undo())
     expect(result.current.activeToasts.map((entry) => entry.record.body)).toEqual(["second", "third", "waiting"])
   })
 
@@ -1287,14 +1290,42 @@ describe("Clear all empties the centre in one action", () => {
     const { result } = renderHook(() => useNotificationsContext(), { wrapper })
 
     act(() => result.current.addNotification("from the first clear", "info", { presentation: "center" }))
-    act(() => result.current.clearAllNotifications())
+    let undoFirst = () => {}
+    act(() => {
+      undoFirst = result.current.clearAllNotifications()
+    })
     expect(result.current.history).toHaveLength(0)
 
     // A second clear with nothing left to take, and then an undo of that one.
-    act(() => result.current.clearAllNotifications())
-    act(() => result.current.undoClearAllNotifications())
-
+    let undo = () => {}
+    act(() => {
+      undo = result.current.clearAllNotifications()
+    })
+    act(() => undo())
     expect(result.current.history).toHaveLength(0)
+    act(() => undoFirst())
+    expect(result.current.history).toHaveLength(1)
+  })
+
+  it("keeps each bulk-clear undo tied to the clear that raised it", () => {
+    installMockWindowApi()
+    const { result } = renderHook(() => useNotificationsContext(), { wrapper })
+
+    act(() => result.current.addNotification("from A", "info", { presentation: "center" }))
+    let undoA: () => void = () => {}
+    act(() => {
+      undoA = result.current.clearAllNotifications()
+    })
+    act(() => result.current.addNotification("from B", "info", { presentation: "center" }))
+    let undoB: () => void = () => {}
+    act(() => {
+      undoB = result.current.clearAllNotifications()
+    })
+
+    act(() => undoA())
+    expect(result.current.history.map((entry) => entry.body)).toEqual(["from A"])
+    act(() => undoB())
+    expect(result.current.history.map((entry) => entry.body)).toEqual(["from A", "from B"])
   })
 
   it("offers nothing to clear when there is nothing there", () => {

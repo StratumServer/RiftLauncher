@@ -40,7 +40,6 @@ const REASON_NEEDLES: ReadonlyArray<readonly [string, FailureReason]> = [
   ["EACCES", "no-permission"],
   ["EPERM", "no-permission"],
   ["EROFS", "no-permission"],
-  ["EMFILE", "no-permission"],
   // The network, in every spelling the stack uses for it.
   ["ENOTFOUND", "network"],
   ["EAI_AGAIN", "network"],
@@ -56,7 +55,6 @@ const REASON_NEEDLES: ReadonlyArray<readonly [string, FailureReason]> = [
   ["ETIMEDOUT", "timed-out"],
   ["ESOCKETTIMEDOUT", "timed-out"],
   // An archive that will not open. The task runners throw these sentences themselves.
-  ["Extraction failed", "damaged-archive"],
   ["end of central directory", "damaged-archive"],
   ["invalid or unsupported zip", "damaged-archive"],
   ["invalid signature", "damaged-archive"]

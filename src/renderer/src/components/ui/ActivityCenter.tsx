@@ -109,7 +109,7 @@ function ActivityPanel(): JSX.Element {
   const { t } = useTranslation()
   const reduceMotion = useReducedMotion()
   const panelRef = useRef<HTMLDivElement>(null)
-  const { tasks, activeTaskCount, removeTask, clearFinishedTasks, undoClearFinishedTasks } = useTaskContext()
+  const { tasks, activeTaskCount, removeTask, clearFinishedTasks } = useTaskContext()
   const {
     addNotification,
     history,
@@ -119,7 +119,6 @@ function ActivityPanel(): JSX.Element {
     setNotificationRead,
     clearReadNotifications,
     clearAllNotifications,
-    undoClearAllNotifications,
     invokeAction,
     removeNotification
   } = useNotificationsContext()
@@ -150,8 +149,8 @@ function ActivityPanel(): JSX.Element {
    * that puts both of them back, and neither knows about the other.
    */
   const clearEverything = (): void => {
-    clearFinishedTasks()
-    clearAllNotifications()
+    const undoTasks = clearFinishedTasks()
+    const undoNotifications = clearAllNotifications()
     addNotification(t("notifications.body.activityCleared"), "info", {
       presentation: "toast",
       duration: BULK_CLEAR_UNDO_DURATION,
@@ -160,8 +159,8 @@ function ActivityPanel(): JSX.Element {
           id: "undo-clear-all",
           label: t("notifications.actions.undo"),
           onClick: (): void => {
-            undoClearFinishedTasks()
-            undoClearAllNotifications()
+            undoTasks()
+            undoNotifications()
           }
         }
       ]
