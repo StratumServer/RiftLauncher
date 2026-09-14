@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -38,6 +38,7 @@ import { ACCENT_PRESETS, DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
+import { DEFAULT_ALLOW_BASIC_SESSION_STORE } from "@domain/account/sessionStorage"
 import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
 import { CURRENT_CONFIG_SCHEMA, legacyGameVersionId } from "@domain/config/migrations"
 
@@ -91,6 +92,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
+    allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
     lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides
@@ -610,6 +612,43 @@ describe("normalizeConfig: receiveBetaUpdates", () => {
     for (const value of ["true", "false", "yes", 1, 0, null, {}, [true]]) {
       assert.equal(normalizeConfig({ receiveBetaUpdates: value }).receiveBetaUpdates, DEFAULT_RECEIVE_BETA_UPDATES, String(value))
     }
+  })
+})
+
+/**
+ * The opt-in that lets a session be kept without a system keyring (#481). It weakens where a
+ * session lives, so the only thing that may turn it on is the toggle writing a real `true`: every
+ * other spelling, and every config that has never been asked, reads as off.
+ */
+describe("normalizeConfig: allowBasicSessionStore", () => {
+  it("reads a config written before the setting existed as off", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).allowBasicSessionStore, DEFAULT_ALLOW_BASIC_SESSION_STORE)
+    assert.equal(DEFAULT_ALLOW_BASIC_SESSION_STORE, false, "the shipped default is off, and a change here is a change to what a fresh install stores")
+  })
+
+  it("keeps an explicit answer, both ways round", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({ allowBasicSessionStore: true }).allowBasicSessionStore, true)
+    assert.equal(normalizeConfig({ allowBasicSessionStore: false }).allowBasicSessionStore, false)
+  })
+
+  it("stays off for anything that is not a boolean, a hand-edited yes included", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const value of ["true", "yes", "on", 1, null, {}, [true]]) {
+      assert.equal(normalizeConfig({ allowBasicSessionStore: value }).allowBasicSessionStore, false, String(value))
+    }
+  })
+
+  it("round trips through a save and a fresh read, which is what the next startup reads the switch off", async () => {
+    const { saveConfig, normalizeConfig } = await freshConfigManager()
+
+    assert.equal(await saveConfig(normalizeConfig({ allowBasicSessionStore: true })), true)
+
+    const { getConfig } = await freshConfigManager()
+    assert.equal((await getConfig()).allowBasicSessionStore, true)
+    assert.equal(JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8")).allowBasicSessionStore, true, "and it is on disk, where main/index.ts reads it before Electron starts")
   })
 })
 

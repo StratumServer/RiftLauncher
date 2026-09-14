@@ -47,6 +47,14 @@ declare global {
      */
     measurePlaySessions: boolean
     /**
+     * Whether the launcher may keep a session on a machine with no system keyring, where the only
+     * store left seals it with a key that ships in the binary and so is readable by any program
+     * running as the player. Off unless the player turns it on, and read at startup rather than on
+     * change, since Chromium picks its password store before any config read. See
+     * src/domain/account/sessionStorage.ts.
+     */
+    allowBasicSessionStore: boolean
+    /**
      * The version the "what's new" dialog last showed notes up to, empty for a fresh install or
      * a config written before this field existed. Compared against the running version by
      * useWhatsNew.ts to decide whether there is anything left to show. See

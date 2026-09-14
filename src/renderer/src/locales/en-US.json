@@ -677,7 +677,10 @@
         "rose": "Rose"
       },
       "measurePlaySessions": "Measure sessions",
-      "measurePlaySessionsDesc": "Measure memory while the game runs. Kept on this computer and never sent anywhere."
+      "measurePlaySessionsDesc": "Measure memory while the game runs. Kept on this computer and never sent anywhere.",
+      "allowBasicSessionStore": "Remember the session without a system keyring",
+      "allowBasicSessionStoreDesc": "Keeps you logged in on a computer with no system keyring. The session is then written to disk sealed with a key built into the launcher, so any program running as you can read it. Leave this off unless that is fine on this computer. Takes effect the next time RiftLauncher starts.",
+      "allowBasicSessionStoreRestart": "This setting takes effect the next time RiftLauncher starts."
     },
     "backups": {
       "backupInProgress": "There is a backup already in progress.",

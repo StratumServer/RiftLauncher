@@ -39,6 +39,8 @@ const mockState = vi.hoisted(() => ({
   userDataDir: "",
   encryptionAvailable: true,
   storageBackend: "gnome_libsecret",
+  /** What `--password-store` this process was started with, which is the only thing that can admit the basic backend. */
+  passwordStoreSwitch: "",
   /** Set by the overlapping-mutation cases to hold a write open; every other case leaves the real writer alone. */
   beforeWrite: undefined as (() => Promise<void>) | undefined
 }))
@@ -49,7 +51,10 @@ const mockState = vi.hoisted(() => ({
  * platform's crypto.
  */
 vi.mock("electron", () => ({
-  app: { getPath: (): string => mockState.userDataDir },
+  app: {
+    getPath: (): string => mockState.userDataDir,
+    commandLine: { getSwitchValue: (name: string): string => (name === "password-store" ? mockState.passwordStoreSwitch : "") }
+  },
   safeStorage: {
     isEncryptionAvailable: (): boolean => mockState.encryptionAvailable,
     getSelectedStorageBackend: (): string => mockState.storageBackend,
@@ -116,6 +121,7 @@ beforeEach(() => {
   mockState.userDataDir = mkdtempSync(join(tmpdir(), "rift-account-store-test-"))
   mockState.encryptionAvailable = true
   mockState.storageBackend = "gnome_libsecret"
+  mockState.passwordStoreSwitch = ""
   mockState.beforeWrite = undefined
 })
 
@@ -209,6 +215,37 @@ describe("saveAccountSecrets", () => {
     // it still encrypts, with a hardcoded key, which is not storage a session
     // key belongs in. The rule is Linux-only, and so is the case.
     mockState.storageBackend = "basic_text"
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")
+    assert.equal(existsSync(storePath()), false)
+  })
+
+  it.skipIf(process.platform !== "linux")("writes to the basic backend once the process was started asking for it", async () => {
+    // The opt-in (#481): the player answered the settings toggle, so startup appended
+    // `--password-store=basic` and the backend safeStorage picked is the one they asked for.
+    // Reading the command line rather than the config is deliberate: Chromium chose its store as
+    // this process came up, and a config edited since describes the next run, not this one.
+    mockState.storageBackend = "basic_text"
+    mockState.passwordStoreSwitch = "basic"
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved")
+    assert.deepEqual(await (await loadStore()).getAccountSecrets("uid-a"), ACCOUNT_A, "and it is still there in the next run, which is the whole point of the setting")
+  })
+
+  it.skipIf(process.platform !== "linux")("still writes nothing to the basic backend when the switch names some other store", async () => {
+    mockState.storageBackend = "basic_text"
+    mockState.passwordStoreSwitch = "gnome-libsecret"
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")
+    assert.equal(existsSync(storePath()), false)
+  })
+
+  it("never accepts the basic backend on the strength of the switch alone, when there is no encryption at all", async () => {
+    mockState.encryptionAvailable = false
+    mockState.passwordStoreSwitch = "basic"
     const store = await loadStore()
 
     assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")

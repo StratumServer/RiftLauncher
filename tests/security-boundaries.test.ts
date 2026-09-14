@@ -149,6 +149,25 @@ describe("startup network boundaries", () => {
     assert.equal(MAIN_SOURCE.slice(windowClosedStart).includes("clearModIconMemoryCache(modIconMemoryCache)"), true, "src/main/index.ts stopped clearing the mod icon cache when all windows close")
   })
 
+  /**
+   * The basic password store seals a session with a key that ships in the binary, so the launcher
+   * asks Chromium for it only when the player turned the setting on (#481). Two things have to
+   * hold, and neither survives a careless edit: the switch is never appended unconditionally, and
+   * it is appended before app.whenReady, since Chromium reads it as the process starts and never
+   * looks again. A switch appended inside whenReady would store sessions in the clear on the next
+   * launch while doing nothing on this one.
+   */
+  it("asks for the basic password store only from the stored setting, and before the app is ready", () => {
+    const appendStart = MAIN_SOURCE.indexOf('app.commandLine.appendSwitch("password-store"')
+    assert.notEqual(appendStart, -1, "src/main/index.ts stopped appending the password-store switch")
+    assert.equal(MAIN_SOURCE.includes("basicPasswordStoreSwitch(process.platform, storedAllowBasicSessionStore())"), true, "the password-store switch no longer comes from the stored setting")
+    assert.equal(MAIN_SOURCE.includes('appendSwitch("password-store", "basic")'), false, "the password-store switch is appended unconditionally")
+
+    const readyStart = MAIN_SOURCE.indexOf("app.whenReady()")
+    assert.notEqual(readyStart, -1, "src/main/index.ts stopped calling app.whenReady")
+    assert.ok(appendStart < readyStart, "the password-store switch is appended after app.whenReady, where Chromium has already chosen a store")
+  })
+
   // An offline launch of a packaged build rejects the update check, and a
   // rejection nobody catches takes the main process down with it. The check
   // itself lives in autoUpdaterEvents.ts, which tests/main/autoUpdaterEvents.test.ts

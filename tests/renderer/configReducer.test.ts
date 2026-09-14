@@ -17,6 +17,7 @@ import { DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
+import { DEFAULT_ALLOW_BASIC_SESSION_STORE } from "@domain/account/sessionStorage"
 import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
 
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "../../src/renderer/src/features/config/contexts/configReducer"
@@ -40,6 +41,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
+    allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
     lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides
@@ -181,6 +183,17 @@ describe("configReducer: scalar setters", () => {
     const optedOut = configReducer(config, { type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: false })
     assert.equal(optedOut.receiveBetaUpdates, false)
     assert.equal(optedOut.installations, config.installations)
+  })
+
+  it("SET_ALLOW_BASIC_SESSION_STORE stores the answer, and starts from off", () => {
+    const config = baseConfig()
+    assert.equal(config.allowBasicSessionStore, false, "nothing but this action turns it on")
+
+    const optedIn = configReducer(config, { type: CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE, payload: true })
+    assert.equal(optedIn.allowBasicSessionStore, true)
+    assert.equal(optedIn.installations, config.installations)
+
+    assert.equal(configReducer(optedIn, { type: CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE, payload: false }).allowBasicSessionStore, false)
   })
 
   it("SET_LAST_SEEN_CHANGELOG_VERSION records the running version and touches nothing else", () => {
