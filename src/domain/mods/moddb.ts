@@ -142,7 +142,7 @@ export interface ModDbModDetail extends Record<string, unknown> {
  * the array and with `null` under `tags`, which is what took the Manage Mods page down in beta.7.
  *
  * `modversion` is coerced to an empty string rather than dropping the release, because
- * {@link newestReleaseFileId} reads `releases[0]` to build the download URL for the newest file:
+ * `src/domain/mods/importModpack.ts` falls back on `releases[0]` when no version matches:
  * removing an entry here would silently shift which file "install newest" picks. Every reader
  * already treats a falsy `modversion` as unusable, so an empty one costs that release nothing but
  * the version comparisons it could never have taken part in anyway.
@@ -242,14 +242,19 @@ export function parseModDetailResponse(rawText: string): ModDbResponse<ModDbModD
 }
 
 /**
- * The file id of the newest release on a `/api/mod/{id}` detail, when it carries a usable one.
+ * The file id of the release named `modversion` on a `/api/mod/{id}` detail, when it carries a
+ * usable one.
  *
- * `releases[0]` is the newest: the API serves them newest first, which is the same ordering
- * `src/domain/mods/importModpack.ts` falls back on when no version matches. The id is checked
- * rather than trusted because it ends up in a URL.
+ * By name rather than by position: the launcher's own listing counter (#477) has to reach the
+ * entry for the version being run, and `releases[0]` is whichever entry was uploaded last, which
+ * is a different one on every launch during a beta. A version with no entry answers undefined,
+ * which is a normal state rather than a failure: the entry is uploaded after the release.
+ *
+ * The id is checked rather than trusted because it ends up in a URL.
  */
-export function newestReleaseFileId(detail: ModDbModDetail): number | undefined {
-  const fileId = detail.releases[0]?.["fileid"]
+export function releaseFileIdForVersion(detail: ModDbModDetail, modversion: string): number | undefined {
+  if (modversion.length === 0) return undefined
+  const fileId = detail.releases.find((release) => release["modversion"] === modversion)?.["fileid"]
   return typeof fileId === "number" && Number.isSafeInteger(fileId) && fileId > 0 ? fileId : undefined
 }
 

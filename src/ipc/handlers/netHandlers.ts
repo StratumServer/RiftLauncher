@@ -6,8 +6,18 @@ import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { BoundedResponseError, requestBoundedBuffer, requestBoundedText } from "@src/ipc/network"
 import { assertAllowedApiUrl, assertAllowedDownloadUrl, getApiUrlMaxBytes, isRecord, MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"
-import { newestReleaseFileId, parseModDetailResponse } from "@domain/mods/moddb"
-import { MODDB_LISTING_DETAIL_URL, moddbListingDownloadUrl, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_UNASKED } from "@domain/moddbVisibility"
+import { parseModDetailResponse, releaseFileIdForVersion } from "@domain/mods/moddb"
+import {
+  answerModDbVisibility,
+  MODDB_LISTING_DETAIL_URL,
+  moddbLaunchAction,
+  moddbListingDownloadUrl,
+  moddbListingVersion,
+  MODDB_VISIBILITY_ALWAYS,
+  MODDB_VISIBILITY_ONCE,
+  rememberCountedVersion,
+  type ModDbVisibilityConsent
+} from "@domain/moddbVisibility"
 import { getConfig, saveConfig } from "@src/config/configManager"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
@@ -84,48 +94,45 @@ export async function queryUrl(url: unknown): Promise<string> {
 }
 
 /**
- * Whether this process has already made the courtesy request. Guards a double click on a prompt
- * that is only meant to be answerable once; the config answer is what stops it happening on any
- * later launch. Never reset: one increment per player, ever (#219).
+ * Whether this process has already tried to count. One attempt per launch, whatever asks and
+ * whatever came of it: a listing that is unreachable, or that has no entry for this version yet,
+ * is retried on a later launch rather than on a loop inside this one. The config's own
+ * `countedVersions` is what stops a version being counted twice across launches (#477).
  */
-let listingArchiveRequested = false
+let listingCountAttempted = false
 
 /**
- * Fetches the launcher's own ModDB listing archive once, which is what registers a download
- * against that listing (see src/domain/moddbVisibility.ts for why it is the only URL that counts).
+ * Fetches the launcher's own listing entry for `listingVersion`, which is what registers a
+ * download against that entry (see src/domain/moddbVisibility.ts for why it is the only URL that
+ * counts).
  *
- * Only ever reached through {@link acceptModDbVisibility}, which means only from an explicit click
- * on the prompt and only once the acceptance is on disk. Nothing calls it at startup, on update, or
- * on any schedule.
- *
- * Everything it can go wrong on is swallowed: an unreachable API, a listing with no readable
- * release, a refused download, a redirect (`requestBoundedBuffer` follows none, and the counter has
- * already been incremented by the time the site issues one, so the CDN bytes are never even
- * transferred). This is a courtesy the player offered, not a task they are waiting on, so a failure
- * is logged at debug and forgotten rather than retried or reported.
+ * The entry is resolved by name rather than taken from the top of the list: the point of #477 is
+ * that the count lands on the version being run, and the newest entry is a different one on every
+ * launch of a beta. A version with no entry yet answers `no-entry`, which is the ordinary state
+ * for the first launches after a release and not a failure.
  *
  * The two requests get a `try` each rather than sharing one, so which of them failed is never in
  * doubt. Only the second can be a counted outcome: the first runs before any file id exists, and a
  * redirect out of it means the API moved, not that anything was registered.
  */
-export async function fetchModDbListingArchive(): Promise<void> {
-  if (listingArchiveRequested) return
-  listingArchiveRequested = true
-
+export async function fetchModDbListingArchive(listingVersion: string): Promise<ModDbCountReason> {
   let fileId: number | undefined
 
   try {
     const detailUrl = assertAllowedApiUrl(MODDB_LISTING_DETAIL_URL)
     const detail = parseModDetailResponse(await requestBoundedText(detailUrl, { maxBytes: getApiUrlMaxBytes(detailUrl) }))
-    if (detail.ok) fileId = newestReleaseFileId(detail.payload)
+    if (!detail.ok) return "unreachable"
+    fileId = releaseFileIdForVersion(detail.payload, listingVersion)
   } catch (err) {
-    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [ACCEPT_MODDB_VISIBILITY] ${getErrorMessage(err)}`)
+    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [COUNT_MODDB_DOWNLOAD] ${getErrorMessage(err)}`)
+    return "unreachable"
   }
 
-  if (fileId === undefined) return
+  if (fileId === undefined) return "no-entry"
 
   try {
     await requestBoundedBuffer(assertAllowedDownloadUrl(moddbListingDownloadUrl(fileId)), { maxBytes: MAX_MODDB_LISTING_RESPONSE_BYTES })
+    return "counted"
   } catch (err) {
     const message = getErrorMessage(err)
 
@@ -137,47 +144,74 @@ export async function fetchModDbListingArchive(): Promise<void> {
     if (message.toLowerCase().includes("redirect")) {
       logMessage(
         "debug",
-        "[back] [ipc] [ipc/handlers/netHandlers.ts] [ACCEPT_MODDB_VISIBILITY] The listing download endpoint answered with its redirect, which is the counted outcome. Not followed on purpose."
+        "[back] [ipc] [ipc/handlers/netHandlers.ts] [COUNT_MODDB_DOWNLOAD] The listing download endpoint answered with its redirect, which is the counted outcome. Not followed on purpose."
       )
-      return
+      return "counted"
     }
 
-    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [ACCEPT_MODDB_VISIBILITY] ${message}`)
+    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [COUNT_MODDB_DOWNLOAD] ${message}`)
+    return "unreachable"
   }
 }
 
-/**
- * Writes the accepted answer to the config, and only then makes the one courtesy request.
- *
- * The order is the whole point. The answer on disk is the ledger that says this player has had
- * their one chance, so nothing may be requested until that ledger entry is durable: a crash, or a
- * disk that refuses the write, between the request and the write would leave the counter
- * incremented and the question still unanswered, and the next launch would ask and count again.
- *
- * Owned by the main process for the same reason. The renderer's config saves are coalesced and
- * fire-and-forget, which is right for a window size and wrong for a one-per-player promise.
- *
- * Answers whether the acceptance is on disk. False means nothing was requested and nothing was
- * recorded, so the question comes back next launch, which is the honest outcome: no count was
- * registered either. A config that already carries any answer is refused outright, since the one
- * chance was spent on this launch or an earlier one.
- *
- * The reverse loss, a write that lands and a crash before the request, costs the listing one
- * uncounted download. That direction is the acceptable one: the promise is one count per player at
- * most, not at least.
- */
-export async function acceptModDbVisibility(): Promise<boolean> {
-  const config = await getConfig()
-  if (config.moddbVisibilityAnswer !== MODDB_VISIBILITY_UNASKED) return false
-  if (!(await saveConfig({ ...config, moddbVisibilityAnswer: MODDB_VISIBILITY_ACCEPTED }))) return false
-
-  await fetchModDbListingArchive()
-  return true
+/** The player's answer when they just gave one, or null for the silent count a stored `always` owes this launch. */
+function readConsent(value: unknown): ModDbVisibilityConsent | null {
+  return value === MODDB_VISIBILITY_ONCE || value === MODDB_VISIBILITY_ALWAYS ? value : null
 }
 
-ipcMain.handle(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY, async (event): Promise<boolean> => {
+/**
+ * Records the answer, and counts this version on the listing when that answer says to.
+ *
+ * The order is deliberate. The answer on disk is the ledger that says this version has been asked
+ * about, so nothing may be requested until that ledger entry is durable: a crash between the
+ * request and the write would leave the counter incremented and the question unanswered, and the
+ * next launch would ask and count again.
+ *
+ * The counted version is written after the request rather than before, which is the one place this
+ * differs from #219. An entry that does not exist yet is the normal state for the first launches
+ * of a beta, and recording the version as counted before knowing that would burn the count for
+ * that version rather than retry it on the launch after the entry is uploaded. The loss that
+ * direction, a crash between the endpoint answering and the write, costs the listing one double
+ * count for one player rather than every early launcher losing its count.
+ *
+ * Owned by the main process for the same reason it was in #219. The renderer's config saves are
+ * coalesced and fire-and-forget, which is right for a window size and wrong for a promise about
+ * how many times a counter may move. The state this answers with is what the renderer mirrors, so
+ * the two copies of the config cannot disagree about what was counted.
+ */
+export async function countModDbDownload(consent: unknown): Promise<ModDbCountResult> {
+  const runningVersion = app.getVersion()
+  const config = await getConfig()
+  const chosen = readConsent(consent)
+  const answered = chosen === null ? config.moddbVisibility : answerModDbVisibility(config.moddbVisibility, chosen, runningVersion)
+  const owed = moddbLaunchAction(answered, runningVersion) === "count" && !listingCountAttempted
+
+  // An answer is still an answer when nothing is owed (a second click, a version already counted),
+  // so it is recorded either way and only the request is refused.
+  if (chosen !== null || owed) {
+    if (!(await saveConfig({ ...config, moddbVisibility: answered }))) return { reason: "not-saved", visibility: config.moddbVisibility }
+  }
+
+  if (!owed) return { reason: "not-allowed", visibility: answered }
+
+  listingCountAttempted = true
+  const reason = await fetchModDbListingArchive(moddbListingVersion(runningVersion))
+  if (reason !== "counted") return { reason, visibility: answered }
+
+  const counted = rememberCountedVersion(answered, runningVersion)
+  await saveConfig({ ...(await getConfig()), moddbVisibility: counted })
+  return { reason, visibility: counted }
+}
+
+ipcMain.handle(IPC_CHANNELS.NET_MANAGER.COUNT_MODDB_DOWNLOAD, async (event, consent: unknown): Promise<ModDbCountResult> => {
   assertTrustedIpcSender(event)
-  return await acceptModDbVisibility()
+  const result = await countModDbDownload(consent)
+
+  // Fixed text and the outcome's own token only, never a URL or a response body: the provenance
+  // rule tests/log-provenance.test.ts holds every network log in this file to.
+  logMessage("info", `[back] [ipc] [ipc/handlers/netHandlers.ts] [COUNT_MODDB_DOWNLOAD] ModDB listing count for this version: ${result.reason}.`)
+
+  return result
 })
 
 ipcMain.handle(IPC_CHANNELS.NET_MANAGER.QUERY_URL, async (event, url: unknown): Promise<string> => {

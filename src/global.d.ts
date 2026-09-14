@@ -29,11 +29,20 @@ declare global {
      */
     accentColor: string
     /**
-     * What the player answered when asked, once, whether the launcher could fetch its own ModDB
-     * listing archive so that listing's download counter registers it: `unasked` until they answer,
-     * then `accepted`, `declined` or `already-done` forever. See src/domain/moddbVisibility.ts.
+     * What the player answered when asked whether the launcher could fetch its own ModDB listing
+     * entry so that entry's download counter registers this version: which answer and how long it
+     * lasts, the launcher version it was given under, and the versions already counted. Spelled out
+     * here rather than imported because this file declares globals; it is
+     * `ModDbVisibilityState` in src/domain/moddbVisibility.ts, which owns every rule about it.
+     *
+     * Replaces the single `moddbVisibilityAnswer` string of #219, which the config normalizer still
+     * reads under its old name and migrates.
      */
-    moddbVisibilityAnswer: string
+    moddbVisibility: {
+      policy: "ask" | "once" | "always" | "never"
+      answeredVersion: string
+      countedVersions: string[]
+    }
     /**
      * Whether update checks offer prerelease builds: `true` for yes, `false` for no, and `null`
      * while nobody has said, which leaves the running version deciding the way electron-updater
@@ -632,6 +641,22 @@ declare global {
   type FetchReleaseNotesFailureReason = "offline" | "bad-response" | "too-large" | "rate-limited"
 
   type FetchReleaseNotesResult = { ok: true; releases: WhatsNewReleaseInfo[] } | { ok: false; reason: FetchReleaseNotesFailureReason }
+
+  /** The two answers that fetch something. `ModDbVisibilityConsent` in src/domain/moddbVisibility.ts. */
+  type ModDbVisibilityConsentValue = "once" | "always"
+
+  /**
+   * How a COUNT_MODDB_DOWNLOAD call ended: `counted` for a request the counting endpoint answered,
+   * `no-entry` for a listing with no entry named for the running version yet, `unreachable` for a
+   * listing that could not be read or a request that never landed, `not-allowed` for a call that
+   * owed the listing nothing (already counted, already attempted this launch, or an answer that
+   * says no), and `not-saved` for an answer the config refused, where nothing was requested
+   * either. See src/ipc/handlers/netHandlers.ts.
+   */
+  type ModDbCountReason = "counted" | "no-entry" | "unreachable" | "not-allowed" | "not-saved"
+
+  /** The outcome, plus the stored state the main process wrote, for the renderer to mirror. */
+  type ModDbCountResult = { reason: ModDbCountReason; visibility: ConfigType["moddbVisibility"] }
 
   declare module "*.png" {
     const value: string

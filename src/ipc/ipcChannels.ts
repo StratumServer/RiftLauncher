@@ -61,7 +61,7 @@ export const IPC_CHANNELS = {
   },
   NET_MANAGER: {
     QUERY_URL: "query-url",
-    ACCEPT_MODDB_VISIBILITY: "accept-moddb-visibility",
+    COUNT_MODDB_DOWNLOAD: "count-moddb-download",
     FETCH_RELEASE_NOTES: "fetch-release-notes"
   },
   BACKGROUNDS_MANAGER: {

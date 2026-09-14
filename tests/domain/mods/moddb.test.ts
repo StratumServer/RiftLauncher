@@ -4,7 +4,7 @@ import { describe, it } from "vitest"
 import {
   type ModDbModDetail,
   modDescriptionParagraphs,
-  newestReleaseFileId,
+  releaseFileIdForVersion,
   parseAuthorsResponse,
   parseGameVersionsResponse,
   parseModDetailResponse,
@@ -189,10 +189,11 @@ describe("parseModDetailResponse: shapes the ModDB actually sends", () => {
   })
 
   it("reads a release modversion that is not a string as an empty one, rather than dropping the release", () => {
-    // Dropping it would shift releases[0], which newestReleaseFileId turns into the download URL.
+    // Dropping it would shift releases[0], which importModpack.ts falls back on when no version matches.
     const detail = detailOf({ modid: 1, name: "Versionless", releases: [{ fileid: 42, modversion: null }] })
     assert.equal(detail.releases[0]?.["modversion"], "")
-    assert.equal(newestReleaseFileId(detail), 42)
+    // An empty modversion is never a version anyone asks for, so it is never reachable by name.
+    assert.equal(releaseFileIdForVersion(detail, ""), undefined)
   })
 
   it("keeps author, text and side only as strings and counts only as finite numbers", () => {
@@ -228,35 +229,38 @@ describe("parseModDetailResponse: shapes the ModDB actually sends", () => {
   })
 })
 
-describe("newestReleaseFileId", () => {
+describe("releaseFileIdForVersion", () => {
   function detail(releases: unknown[]): ModDbModDetail {
     const result = parseModDetailResponse(JSON.stringify({ statuscode: "200", mod: { modid: 11016, name: "RiftLauncher", releases } }))
     if (!result.ok) throw new Error("unreachable")
     return result.payload
   }
 
-  it("reads the file id off the newest release, which the API serves first", () => {
-    assert.equal(
-      newestReleaseFileId(
-        detail([
-          { releaseid: 9, fileid: 116745 },
-          { releaseid: 8, fileid: 100000 }
-        ])
-      ),
-      116745
-    )
+  const listing = detail([
+    { releaseid: 9, fileid: 122116, modversion: "1.7.0-pre.10" },
+    { releaseid: 8, fileid: 120952, modversion: "1.7.0-pre.9" }
+  ])
+
+  it("reads the file id off the entry named for the version, not off the newest one", () => {
+    assert.equal(releaseFileIdForVersion(listing, "1.7.0-pre.9"), 120952)
+    assert.equal(releaseFileIdForVersion(listing, "1.7.0-pre.10"), 122116)
   })
 
-  it("answers undefined for a listing with no releases at all", () => {
-    assert.equal(newestReleaseFileId(detail([])), undefined)
+  it("answers undefined for a version the listing has no entry for yet, which is a normal state", () => {
+    assert.equal(releaseFileIdForVersion(listing, "1.7.0-pre.11"), undefined)
+    assert.equal(releaseFileIdForVersion(detail([]), "1.7.0-pre.10"), undefined)
+  })
+
+  it("answers undefined for an empty version rather than matching a release with no modversion", () => {
+    assert.equal(releaseFileIdForVersion(detail([{ releaseid: 9, fileid: 42, modversion: null }]), ""), undefined)
   })
 
   it("refuses a file id that is not a usable positive integer, since it ends up in a URL", () => {
     for (const fileid of ["116745", 0, -3, 1.5, Number.MAX_SAFE_INTEGER + 2, null, undefined]) {
-      assert.equal(newestReleaseFileId(detail([{ releaseid: 9, fileid }])), undefined, String(fileid))
+      assert.equal(releaseFileIdForVersion(detail([{ releaseid: 9, fileid, modversion: "1.7.0-pre.10" }]), "1.7.0-pre.10"), undefined, String(fileid))
     }
 
-    assert.equal(newestReleaseFileId(detail(["not a release"])), undefined)
+    assert.equal(releaseFileIdForVersion(detail(["not a release"]), "1.7.0-pre.10"), undefined)
   })
 })
 

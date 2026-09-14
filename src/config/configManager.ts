@@ -9,7 +9,7 @@ import { isRecord } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeAccentColorId } from "@domain/accentColors"
 import { normalizeBackgroundId } from "@domain/backgrounds"
-import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
+import { normalizeModDbVisibility } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
@@ -464,9 +464,11 @@ export function normalizeConfig(config: unknown): ConfigType {
     // Anything that does not name a listed preset, missing included, becomes the shipped default:
     // a config written before this field existed paints exactly as it always has.
     accentColor: normalizeAccentColorId(rawConfig.accentColor),
-    // Anything unreadable becomes "not asked yet", which costs one question and never invents a
-    // consent. The prompt is the only thing that ever writes a real answer here.
-    moddbVisibilityAnswer: normalizeModDbVisibilityAnswer(rawConfig.moddbVisibilityAnswer),
+    // Anything unreadable becomes "nobody has answered", which costs one question and never invents
+    // a consent. The prompt and the settings row are the only things that write a real answer here.
+    // `moddbVisibilityAnswer` is the #219 field this replaced, read under its old name so an
+    // install that answered back then migrates rather than being asked as though it never had.
+    moddbVisibility: normalizeModDbVisibility(rawConfig.moddbVisibility ?? (rawConfig as Record<string, unknown>)["moddbVisibilityAnswer"], app.getVersion()),
     // Null for anything that is not an explicit yes or no, which is what every config written
     // before the toggle existed says, and leaves the running version deciding as it always did.
     receiveBetaUpdates: normalizeReceiveBetaUpdates(rawConfig.receiveBetaUpdates),

@@ -26,8 +26,8 @@ export interface ConfigSettingsType {
   backgroundRevision: number
   /** The chosen accent preset id. See src/domain/accentColors.ts. */
   accentColor: string
-  /** The stored answer to the one-time ModDB listing question. See src/domain/moddbVisibility.ts. */
-  moddbVisibilityAnswer: string
+  /** The stored answer to the ModDB listing question, the version it was given under, and what has been counted. See src/domain/moddbVisibility.ts. */
+  moddbVisibility: ConfigType["moddbVisibility"]
   /** Whether update checks may offer betas, or null while nobody has said. See src/domain/appUpdate/betaUpdates.ts. */
   receiveBetaUpdates: boolean | null
   /** Whether the launcher measures the game process while it runs. See src/domain/sessions/sampling.ts. */
@@ -172,7 +172,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       background: config.background,
       backgroundRevision: config._backgroundRevision ?? 0,
       accentColor: config.accentColor,
-      moddbVisibilityAnswer: config.moddbVisibilityAnswer,
+      moddbVisibility: config.moddbVisibility,
       receiveBetaUpdates: config.receiveBetaUpdates,
       measurePlaySessions: config.measurePlaySessions,
       lastSeenChangelogVersion: config.lastSeenChangelogVersion
@@ -187,7 +187,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config.background,
       config._backgroundRevision,
       config.accentColor,
-      config.moddbVisibilityAnswer,
+      config.moddbVisibility,
       config.receiveBetaUpdates,
       config.measurePlaySessions,
       config.lastSeenChangelogVersion

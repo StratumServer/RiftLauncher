@@ -1,5 +1,5 @@
 import { DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
-import { type ModDbVisibilityAnswer } from "@domain/moddbVisibility"
+import { type ModDbVisibilityState } from "@domain/moddbVisibility"
 
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
@@ -13,7 +13,7 @@ export enum CONFIG_ACTIONS {
   SET_ACTIVE_ACCOUNT = "SET_ACTIVE_ACCOUNT",
   SET_BACKGROUND = "SET_BACKGROUND",
   SET_ACCENT_COLOR = "SET_ACCENT_COLOR",
-  SET_MODDB_VISIBILITY_ANSWER = "SET_MODDB_VISIBILITY_ANSWER",
+  SET_MODDB_VISIBILITY = "SET_MODDB_VISIBILITY",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
   SET_MEASURE_PLAY_SESSIONS = "SET_MEASURE_PLAY_SESSIONS",
   SET_LAST_SEEN_CHANGELOG_VERSION = "SET_LAST_SEEN_CHANGELOG_VERSION",
@@ -114,13 +114,16 @@ export interface SetAccentColor {
 }
 
 /**
- * Records the answer to the one-time ModDB listing question, which is what stops it being asked
- * again. Dispatched from the three buttons on the prompt and from nowhere else: closing it without
- * answering must leave the config alone so the question survives to the next launch.
+ * Records the answer to the ModDB listing question: which answer, the version it was given under,
+ * and the versions counted so far. Dispatched from the prompt's own buttons, from the settings row
+ * that changes a lasting answer, and from the main process's answer once a count has landed.
+ *
+ * Never on a prompt closed without an answer: that has to leave the config alone so the question
+ * survives to the next launch of this version.
  */
-export interface SetModDbVisibilityAnswer {
-  type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER
-  payload: ModDbVisibilityAnswer
+export interface SetModDbVisibility {
+  type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY
+  payload: ModDbVisibilityState
 }
 
 /**
@@ -308,7 +311,7 @@ export type ConfigAction =
   | SetActiveAccount
   | SetBackground
   | SetAccentColor
-  | SetModDbVisibilityAnswer
+  | SetModDbVisibility
   | SetReceiveBetaUpdates
   | SetMeasurePlaySessions
   | SetLastSeenChangelogVersion
@@ -367,8 +370,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, background: action.payload, _backgroundRevision: (config._backgroundRevision ?? 0) + 1 }
     case CONFIG_ACTIONS.SET_ACCENT_COLOR:
       return { ...config, accentColor: action.payload }
-    case CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER:
-      return { ...config, moddbVisibilityAnswer: action.payload }
+    case CONFIG_ACTIONS.SET_MODDB_VISIBILITY:
+      return { ...config, moddbVisibility: action.payload }
     case CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES:
       return { ...config, receiveBetaUpdates: action.payload }
     case CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS:

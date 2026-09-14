@@ -670,7 +670,14 @@
         "rose": "Rose"
       },
       "measurePlaySessions": "Measure sessions",
-      "measurePlaySessionsDesc": "Measure memory while the game runs. Kept on this computer and never sent anywhere."
+      "measurePlaySessionsDesc": "Measure memory while the game runs. Kept on this computer and never sent anywhere.",
+      "moddbCount": "ModDB downloads",
+      "moddbCountDesc": "How the launcher answers the ModDB question when a new version arrives. Ask each version puts the question on the first launch of each one, Always counts every new version with no prompt, and Never counts nothing and ends the question.",
+      "moddbCountOptions": {
+        "ask": "Ask each version",
+        "always": "Always count me in",
+        "never": "Never count"
+      }
     },
     "backups": {
       "backupInProgress": "There is a backup already in progress.",
@@ -831,10 +838,11 @@
     },
     "moddbVisibility": {
       "title": "Help other players find RiftLauncher",
-      "body": "RiftLauncher is listed on ModDB, where a listing's download count is most of what decides whether anyone finds it. If you want to help, the launcher can ask ModDB once for that listing's archive, which registers as one download there. The archive is a 315 byte text file pointing at the releases page, not the launcher itself, and the launcher does not keep it. Nothing is installed and nothing else changes.",
-      "accept": "Count me in",
-      "decline": "No thanks",
-      "alreadyDone": "Already did it"
+      "body": "RiftLauncher is listed on ModDB, where every version has its own entry and its own download count, and those counts are most of what decides whether anyone finds the launcher. If you want to help, the launcher can ask ModDB once for this version's entry, which registers as one download there. The entry holds a 315 byte text file pointing at the releases page, not the launcher itself, and the launcher does not keep it. Nothing is installed and nothing else changes.",
+      "countOnce": "Count me in (this version)",
+      "countAlways": "Always count me in",
+      "notThisTime": "Not this time",
+      "neverAsk": "Never ask again"
     },
     "whatsNew": {
       "title": "What's new in {{version}}",

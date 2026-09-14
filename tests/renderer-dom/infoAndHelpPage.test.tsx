@@ -135,7 +135,7 @@ describe("InfoAndHelpPage", () => {
 
     const api = installMockWindowApi({
       utils: { getAppVersion: vi.fn(async () => "1.1.0") },
-      configManager: { getConfig: vi.fn(async () => createMockConfig({ lastSeenChangelogVersion: "1.0.0", moddbVisibilityAnswer: "declined" })) },
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ lastSeenChangelogVersion: "1.0.0", moddbVisibility: { policy: "never", answeredVersion: "", countedVersions: [] } })) },
       netManager: {
         fetchReleaseNotes: vi.fn(
           async () =>

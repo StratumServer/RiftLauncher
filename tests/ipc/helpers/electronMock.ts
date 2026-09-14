@@ -17,8 +17,13 @@ export { createTrustedEvent, createUntrustedEvent } from "./trustedEvent"
  * pathPolicy.ts or configManager.ts need those to be distinguishable folders;
  * everything else keeps the original behavior of collapsing every name onto
  * `userDataPath`, which is what electron-log's own calls rely on.
+ *
+ * `appVersion` is the running version the ModDB listing count and the config's own migration of
+ * the #219 answer are decided against.
  */
-const state = { userDataPath: "" }
+const DEFAULT_APP_VERSION = "0.0.0-test"
+
+const state = { userDataPath: "", appVersion: DEFAULT_APP_VERSION }
 const namedPaths: Record<string, string> = {}
 
 /**
@@ -37,6 +42,15 @@ export function emitAppEvent(event: string, ...args: unknown[]): void {
 /** Drops every recorded `app.on` listener. Call in `beforeEach`, before the module under test re-registers its own. */
 export function clearAppEventListeners(): void {
   appEventListeners.clear()
+}
+
+/**
+ * Points `app.getVersion()` at `version`, for the handlers that read the running version
+ * (src/config/configManager.ts's ModDB migration, src/ipc/handlers/netHandlers.ts's listing
+ * count). Called with nothing, it puts the default back, which `beforeEach` blocks rely on.
+ */
+export function setElectronAppVersion(version: string = DEFAULT_APP_VERSION): void {
+  state.appVersion = version
 }
 
 /** Points `app.getPath("userData")` (and every other path electron-log asks for) at `path`. */
@@ -95,8 +109,8 @@ vi.mock("electron", () => {
     /** electron-log's `getAppName()` falls back to these; only has to be a string. */
     name: "RiftLauncher",
     getName: (): string => "RiftLauncher",
-    /** electron-log's `getAppVersion()`; only has to be a string. */
-    getVersion: (): string => "0.0.0-test",
+    /** electron-log's `getAppVersion()`, and the running version the ModDB count is answered for. */
+    getVersion: (): string => state.appVersion,
     /**
      * electron-log's `onAppReady()`/`onAppEvent()` call these through optional
      * chaining (`this.electron.app?.on`). No-ops are enough: nothing under test

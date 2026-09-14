@@ -52,7 +52,7 @@ export function createMockConfig(overrides: MockConfigOverrides = {}): ConfigTyp
     suspendedModUpdates: [],
     background: "default",
     accentColor: "amber",
-    moddbVisibilityAnswer: "unasked",
+    moddbVisibility: { policy: "ask", answeredVersion: "", countedVersions: [] },
     receiveBetaUpdates: null,
     measurePlaySessions: true,
     lastSeenChangelogVersion: "",
@@ -134,7 +134,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     netManager: {
       queryURL: vi.fn(notMocked("netManager.queryURL")),
-      acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility")),
+      countModDbDownload: vi.fn(notMocked("netManager.countModDbDownload")),
       fetchReleaseNotes: vi.fn(async () => ({ ok: true, releases: [] }) as FetchReleaseNotesResult)
     },
     backgroundsManager: {

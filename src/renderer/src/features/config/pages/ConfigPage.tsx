@@ -9,6 +9,7 @@ import clsx from "clsx"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { ACCENT_PRESETS } from "@domain/accentColors"
 import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
+import { MODDB_VISIBILITY_ALWAYS, MODDB_VISIBILITY_ASK, MODDB_VISIBILITY_NEVER, type ModDbVisibilityPolicy } from "@domain/moddbVisibility"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { backgroundImageSource } from "@renderer/utils/backgroundStyle"
@@ -128,6 +129,16 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <MeasurePlaySessionsToggle />
+              </FormBody>
+            </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.moddbCount")} />
+              </FormHead>
+
+              <FormBody>
+                <ModDbCountPicker />
               </FormBody>
             </FromGroup>
           </FormGroupWrapper>
@@ -261,6 +272,67 @@ function MeasurePlaySessionsToggle(): JSX.Element {
         onChange={(value) => configDispatch({ type: CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS, payload: value })}
       />
       <FormFieldDescription content={t("features.config.measurePlaySessionsDesc")} />
+    </FormFieldGroupWithDescription>
+  )
+}
+
+/**
+ * How the ModDB listing question is answered from now on (#477).
+ *
+ * Three choices rather than the four the prompt offers: the two answers that only settle one
+ * version are the prompt's business, and both of them leave this row reading "ask each version",
+ * which is what they mean for every version after this one. Changing it here never counts
+ * anything on its own; a launch does that, if the answer says to.
+ */
+function ModDbCountPicker(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { moddbVisibility } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+
+  const options: ModDbVisibilityPolicy[] = [MODDB_VISIBILITY_ASK, MODDB_VISIBILITY_ALWAYS, MODDB_VISIBILITY_NEVER]
+  // A pending "count me in" for the running version is still the ask policy for every later one.
+  const selected: ModDbVisibilityPolicy = options.includes(moddbVisibility.policy) ? moddbVisibility.policy : MODDB_VISIBILITY_ASK
+  const label = (policy: ModDbVisibilityPolicy): string => t(`features.config.moddbCountOptions.${policy}`)
+
+  return (
+    <FormFieldGroupWithDescription>
+      <Listbox value={selected} onChange={(policy) => configDispatch({ type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY, payload: { ...moddbVisibility, policy } })}>
+        {({ open }) => (
+          <>
+            <ListboxButton className={clsx(MENU_TRIGGER_STYLES, "w-full")} title={t("features.config.moddbCountDesc")}>
+              <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
+                <span className="text-sm">{label(selected)}</span>
+              </p>
+              <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
+            </ListboxButton>
+
+            <AnimatePresence>
+              {open && (
+                <ListboxOptions static anchor="bottom" className="w-[var(--button-width)] z-600 mt-1 select-none rounded-sm overflow-hidden">
+                  <motion.ul
+                    variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    className="flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
+                  >
+                    {options.map((policy) => (
+                      <ListboxOption key={policy} value={policy} as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
+                        <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
+                          <span className="text-sm">{label(policy)}</span>
+                        </p>
+                      </ListboxOption>
+                    ))}
+                  </motion.ul>
+                </ListboxOptions>
+              )}
+            </AnimatePresence>
+          </>
+        )}
+      </Listbox>
+
+      <FormFieldDescription content={t("features.config.moddbCountDesc")} />
     </FormFieldGroupWithDescription>
   )
 }
