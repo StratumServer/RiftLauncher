@@ -163,7 +163,7 @@ export function countActiveInstalledModFilters(filters: InstalledModFilters): nu
  * whatever casing an author typed at upload time, and a `modinfo.json` can spell its own `ModID` any
  * way it likes.
  */
-function sameModid(a: string, b: string): boolean {
+export function sameModid(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase()
 }
 

@@ -24,7 +24,8 @@ import {
   installedModGameVersions,
   installedModTags,
   matchesModSearch,
-  NO_INSTALLED_MOD_FILTERS
+  NO_INSTALLED_MOD_FILTERS,
+  sameModid
 } from "@domain/mods/installedFilters"
 import type { InstalledModFilters } from "@domain/mods/installedFilters"
 
@@ -42,6 +43,7 @@ import ManageModsActionBar from "@renderer/features/mods/components/ManageModsAc
 import ManageModsSelectionBar from "@renderer/features/mods/components/ManageModsSelectionBar"
 import ModProfilesPopup from "@renderer/features/mods/components/ModProfilesPopup"
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
+import ModHealthPanel from "@renderer/features/mods/components/ModHealthPanel"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
 import ServerModsSection from "@renderer/features/mods/components/ServerModsSection"
 import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
@@ -89,7 +91,7 @@ function ListMods(): JSX.Element {
   const hasActiveFilters = hasActiveInstalledModFilters(filters)
   const nothingMatches = (query.length > 0 || hasActiveFilters) && visibleMods.length < 1 && visibleModsWithErrors.length < 1
 
-  const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, visibleMods)
+  const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
   const actions = useInstalledModActions(installation, refresh)
@@ -102,7 +104,9 @@ function ListMods(): JSX.Element {
   // through the native file dialog.
   const folderInUse = installation ? modsFolderInUse(installation) : false
   const [profilesOpen, setProfilesOpen] = useState(false)
-  const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
+  // A mod id and a name, not a Mod: the install popup already takes a mod id and finds the installed
+  // copy itself, so the health panel can point it at a dependency nobody has installed yet.
+  const [modToUpdate, setModToUpdate] = useState<{ modid: string; name?: string } | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -213,7 +217,7 @@ function ListMods(): JSX.Element {
               <ManageModsActionBar
                 installation={installation}
                 installedMods={visibleMods}
-                onUpdateAll={updateAllMods}
+                onUpdateAll={() => updateAllMods(visibleMods)}
                 onImportModpack={pickModpack}
                 activeProfileName={profiles.activeProfile?.name}
                 onOpenProfiles={() => setProfilesOpen(true)}
@@ -308,6 +312,25 @@ function ListMods(): JSX.Element {
                     </ListWrapper>
                   )}
 
+                  {/*
+                   * Judged against the whole folder rather than the filtered list: a dependency a
+                   * search hides is still missing, and this says what the Installation is, not what
+                   * is on screen. Its Update all is handed that same whole folder, so the button
+                   * under a heading cannot do less than the lines above it just listed. It is above
+                   * "Mods with errors" because it is the one thing here that says the game may not
+                   * start.
+                   */}
+                  <ModHealthPanel
+                    installedMods={installedMods}
+                    unreadableCount={modsWithErrors.length}
+                    gameVersion={installation.version}
+                    suspended={suspendedModUpdates}
+                    labelOf={batch.labelOf}
+                    actions={actions}
+                    onUpdate={setModToUpdate}
+                    onUpdateAll={() => updateAllMods(installedMods)}
+                  />
+
                   {visibleModsWithErrors.length > 0 && (
                     <ListWrapper className="w-full">
                       <ListGroup>
@@ -366,7 +389,13 @@ function ListMods(): JSX.Element {
                     modName={modToUpdate?.name}
                     installation={{
                       installation: installation,
-                      oldMod: installedMods.find((iMod) => iMod.modid === modToUpdate?.modid)
+                      // Case-folded, because this no longer only ever receives a mod id read off an
+                      // installed copy: the Installation check points the popup at a dependency id
+                      // as the declaring author typed it, and the check itself matches those without
+                      // regard for case. An exact compare missed the copy being replaced, so the
+                      // fix for an outdated dependency left the old archive next to the new one and
+                      // the next scan reported the pair as a duplicate mod id.
+                      oldMod: modToUpdate ? installedMods.find((iMod) => sameModid(iMod.modid, modToUpdate.modid)) : undefined
                     }}
                     onFinishInstallation={() => {
                       refresh()

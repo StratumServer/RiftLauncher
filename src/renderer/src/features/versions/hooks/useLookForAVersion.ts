@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
+import { buildGameVersionLabel } from "@domain/naming"
 import { folderIsInUse } from "@domain/paths"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { CONFIG_ACTIONS, useGameVersions, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
@@ -54,7 +55,7 @@ export function useLookForAVersion(): UseLookForAVersionResult {
     }
 
     setVersionFound(res.installedGameVersion)
-    setLabel(res.installedGameVersion)
+    setLabel(buildGameVersionLabel(res.installedGameVersion, res.variant))
   }
 
   async function addVersion(): Promise<void> {

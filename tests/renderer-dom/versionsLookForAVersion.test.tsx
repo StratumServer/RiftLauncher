@@ -89,6 +89,62 @@ describe("LookForAVersion", () => {
     expect(addedVersion).toMatchObject({ version: "1.22.7", label: "Optimum 1.22.7" })
   })
 
+  it("prefills the name with the fork the build named itself as, leaving the version number alone", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      utils: { selectFolderDialog: vi.fn(async () => ["/games/optimum-1.22.7"]) },
+      gameManager: {
+        lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7", variant: { name: "Optimum" as const, version: "0.3.14" } }))
+      }
+    })
+
+    renderWithProviders(<LookForAVersion />, { route: "/versions/look-for-a-version" })
+
+    await user.click(screen.getByTitle("Browse"))
+
+    expect(await screen.findByDisplayValue("1.22.7 Optimum 0.3.14")).toBeTruthy()
+    expect((screen.getByPlaceholderText("VS Version found") as HTMLInputElement).value).toBe("1.22.7")
+  })
+
+  it("registers whatever the player types over the prefilled name", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      utils: { selectFolderDialog: vi.fn(async () => ["/games/optimum-1.22.7"]) },
+      gameManager: {
+        lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7", variant: { name: "Optimum" as const, version: "0.3.14" } }))
+      },
+      configManager: { saveConfig }
+    })
+
+    renderWithProviders(<LookForAVersion />, { route: "/versions/look-for-a-version" })
+
+    await user.click(screen.getByTitle("Browse"))
+    const label = await screen.findByDisplayValue("1.22.7 Optimum 0.3.14")
+    await user.clear(label)
+    await user.type(label, "Fork, for the mod bug")
+    await user.click(screen.getByTitle("Add"))
+
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled())
+    const savedConfig = (saveConfig.mock.calls.at(-1) as unknown as [ConfigType])[0]
+    expect(savedConfig.gameVersions.find((gameVersion) => gameVersion.path === "/games/optimum-1.22.7")).toMatchObject({ version: "1.22.7", label: "Fork, for the mod bug" })
+  })
+
+  it("prefills the name with the bare version number when the build names nothing", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      utils: { selectFolderDialog: vi.fn(async () => ["/games/vanilla-1.22.7"]) },
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7" })) }
+    })
+
+    renderWithProviders(<LookForAVersion />, { route: "/versions/look-for-a-version" })
+
+    await user.click(screen.getByTitle("Browse"))
+    await screen.findByDisplayValue("/games/vanilla-1.22.7")
+
+    expect((screen.getByPlaceholderText("Name") as HTMLInputElement).value).toBe("1.22.7")
+  })
+
   it("fills the folder and version fields once a version is detected", async () => {
     const user = userEvent.setup()
     installMockWindowApi({
