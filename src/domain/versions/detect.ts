@@ -108,7 +108,11 @@ function probeRequestFor(candidate: GameExecutableCandidate, executablePath: str
 const VERSION_TOKEN = /(?<![\d.])\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?!\.?\d)/g
 
 /** The fork marker, built off {@link VERSION_TOKEN} so the two can never drift apart. */
-const OPTIMUM_MARKER = new RegExp(`Optimum v(${VERSION_TOKEN.source})`)
+const OPTIMUM_MARKER_SOURCE = `Optimum v(${VERSION_TOKEN.source})`
+const OPTIMUM_MARKER = new RegExp(OPTIMUM_MARKER_SOURCE)
+
+/** Every occurrence of it, for taking the fork's own number out of the game version's reach. */
+const OPTIMUM_MARKERS = new RegExp(OPTIMUM_MARKER_SOURCE, "g")
 
 /**
  * Reads a version out of probe output.
@@ -129,14 +133,27 @@ const OPTIMUM_MARKER = new RegExp(`Optimum v(${VERSION_TOKEN.source})`)
  * printed as an answer. The scan stays as the fallback for a build that prints
  * its version inside a sentence, where the first token is still the best guess
  * available.
+ *
+ * The marker text is cut out before either pass runs, which is what keeps the
+ * fallback honest. The bare-line rule alone is not enough: Optimum's patch
+ * chatter is printed before the client answers, so on any output with no bare
+ * version line in it, the first token anywhere is the fork's own number, and
+ * the fallback would hand back 0.3.14 as the game version. That happens on a
+ * warm cache, where the patch path is skipped and only the long version line
+ * "1.22.7 + Optimum v0.3.14" carries a number, and on a build that prints the
+ * marker and nothing readable at all, which has to stay unreadable rather than
+ * report the fork's version. A variant is never a substitute for the number
+ * the compatibility checks run on.
  */
 function extractVersion(stdout: string): string | undefined {
-  for (const line of stdout.split("\n")) {
+  const printed = stdout.replace(OPTIMUM_MARKERS, "")
+
+  for (const line of printed.split("\n")) {
     const bare = semver.valid(line.trim())
     if (bare) return bare
   }
 
-  for (const [token] of stdout.matchAll(VERSION_TOKEN)) if (semver.valid(token)) return token
+  for (const [token] of printed.matchAll(VERSION_TOKEN)) if (semver.valid(token)) return token
   return undefined
 }
 

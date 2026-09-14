@@ -295,4 +295,43 @@ describe("detectInstalledGameVersion build variant", () => {
 
     assert.deepEqual(result, { ok: false, reason: "unreadable-version" }, "a variant never substitutes for the number the compatibility checks run on")
   })
+
+  it("refuses a marker version the version grammar accepts and semver does not", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "[Optimum] Optimum v01.02.03\n1.22.7\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7" })
+    assert.equal("variant" in result, false, "leading zeros parse as three dotted numbers and are not a version anyone can order")
+  })
+
+  it("keeps the game version off the marker when nothing is printed on a line of its own", async () => {
+    // What the client prints when it answers -v while the patch path is running:
+    // the fork's own number comes first, and no line holds a bare version.
+    const stdout = ["[Optimum] Optimum v0.3.14", "[Optimum] Patching VintagestoryLib.dll", "1.22.7 + Optimum v0.3.14", ""].join("\n")
+    const { processProbe } = fakeProbe({ ok: true, stdout })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7", variant: { name: "Optimum", version: "0.3.14" } }, "0.3.14 is printed first and is still not the game version")
+  })
+
+  it("stays unreadable when the marker is the only version in the output", async () => {
+    const { processProbe } = fakeProbe({ ok: true, stdout: "[Optimum] Optimum v0.3.14\nno version here\n" })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: false, reason: "unreadable-version" }, "the fork naming itself is not the game answering")
+  })
+
+  it("reads the long version suffix on its own, which is what a warm cache leaves", async () => {
+    // On a cache hit the patch path never runs, so the chatter line is absent and
+    // the documented LongGameVersion suffix is the only signal left.
+    const stdout = ["[Optimum] Cache valid (12ms). Launching...", "1.22.7 + Optimum v0.3.14", ""].join("\n")
+    const { processProbe } = fakeProbe({ ok: true, stdout })
+
+    const result = await detectInstalledGameVersion(fakePorts({ processProbe }), input())
+
+    assert.deepEqual(result, { ok: true, version: "1.22.7", variant: { name: "Optimum", version: "0.3.14" } })
+  })
 })
