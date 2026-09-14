@@ -195,6 +195,24 @@ describe("normalizeServerBookmarks", () => {
     const many = Array.from({ length: MAX_SERVER_BOOKMARKS + 10 }, (_, index) => bookmark({ id: `s-${index}`, host: `h${index}.example.com` }))
     assert.equal(normalizeServerBookmarks(many).length, MAX_SERVER_BOOKMARKS)
   })
+
+  /**
+   * The duplicate check excludes a bookmark's own id on purpose, so an edit does not collide with
+   * itself. That leaves one id twice with two addresses looking like two fine rows, and everything
+   * downstream keys off the id: the import dialog's checkboxes, the row's Edit and its Remove.
+   */
+  it("keeps the first entry for an id and drops a second one wearing it", () => {
+    const list = normalizeServerBookmarks([
+      { id: "same", name: "One", host: "a.example.com", port: DEFAULT_GAME_SERVER_PORT },
+      { id: "same", name: "Two", host: "b.example.com", port: DEFAULT_GAME_SERVER_PORT },
+      { id: "other", name: "Three", host: "c.example.com", port: DEFAULT_GAME_SERVER_PORT }
+    ])
+
+    assert.deepEqual(
+      list.map((server) => server.name),
+      ["One", "Three"]
+    )
+  })
 })
 
 describe("orderServerBookmarks", () => {
