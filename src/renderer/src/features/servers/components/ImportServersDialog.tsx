@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { Input } from "@headlessui/react"
 import { PiCheckCircleDuotone, PiXCircleDuotone } from "react-icons/pi"
 
-import { checkServerBookmark, DEFAULT_GAME_SERVER_PORT, MAX_SERVER_BOOKMARKS } from "@domain/servers/bookmarks"
+import { checkServerBookmark, formatServerAddress, MAX_SERVER_BOOKMARKS } from "@domain/servers/bookmarks"
 
 import { useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -83,7 +83,7 @@ function ImportServersDialog({
               />
               <label htmlFor={`import-server-${server.id}`} className="flex-1 overflow-hidden">
                 <span className="block truncate font-bold">{server.name}</span>
-                <span className="block truncate text-sm text-zinc-300">{server.port === DEFAULT_GAME_SERVER_PORT ? server.host : `${server.host}:${server.port}`}</span>
+                <span className="block truncate text-sm text-zinc-300">{formatServerAddress(server)}</span>
               </label>
             </li>
           ))}
