@@ -174,6 +174,37 @@ describe("startup network boundaries", () => {
     assert.equal(PRELOAD_SOURCE.includes("recordPlaySession"), false, "the preload now exposes a way to write play sessions from the renderer")
   })
 
+  /**
+   * The server-mods channel is read only and never takes a folder: the renderer names the
+   * Installation, the host joins the game's own subfolder onto it. #459 turns on that shape, and a
+   * later change that let the renderer send the folder (or the server's name) would hand it a reach
+   * the path policy is not checking for.
+   */
+  it("holds the server mods channel to a trusted sender and an Installation the config names", () => {
+    const start = MODS_HANDLERS_SOURCE.indexOf("ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS,")
+    assert.notEqual(start, -1, "modsHandlers.ts stopped registering GET_SERVER_MODS")
+    const body = MODS_HANDLERS_SOURCE.slice(start, MODS_HANDLERS_SOURCE.indexOf("\n})", start))
+
+    assert.match(body, /^[^\n]*\n {2}assertTrustedIpcSender\(event\)\n/, "GET_SERVER_MODS no longer checks its sender before anything else")
+    assert.equal(body.includes("await assertConfiguredInstallationPath(installationPath)"), true, "GET_SERVER_MODS stopped deriving the folder from a configured Installation")
+    assert.equal(body.includes("join(installation, MODS_BY_SERVER_FOLDER_NAME)"), true, "GET_SERVER_MODS no longer joins the game's own folder name itself")
+    assert.equal(PRELOAD_SOURCE.includes("ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS,"), true, "the preload stopped exposing GET_SERVER_MODS")
+  })
+
+  // A server folder is named after the server, which on a private one is somebody's address. It is
+  // display text, never a log line, so nothing in the handler may interpolate it.
+  it("keeps the server's name out of every server mods log line", () => {
+    const start = MODS_HANDLERS_SOURCE.indexOf("ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS,")
+    const body = MODS_HANDLERS_SOURCE.slice(start, MODS_HANDLERS_SOURCE.indexOf("\n})", start))
+
+    for (const line of body.split("\n").filter((text) => text.includes("logMessage("))) {
+      // Only what gets interpolated: the fixed English of a line is free to say "folder".
+      for (const [, expression] of line.matchAll(/\$\{([^}]*)\}/g)) {
+        assert.equal(/server|folder|path/i.test(expression ?? ""), false, `a GET_SERVER_MODS log line interpolates a server or a folder: ${line.trim()}`)
+      }
+    }
+  })
+
   it("keeps the local app protocol CORS-aware and records non-renderer child exits", () => {
     assert.equal(MAIN_SOURCE.includes("corsEnabled: true"), true, "the app protocol lost its CORS enforcement for cross-origin renderer paths")
     assert.equal(MAIN_SOURCE.includes('app.on("child-process-gone"'), true, "non-renderer child process failures are no longer logged")

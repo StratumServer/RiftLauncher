@@ -123,6 +123,11 @@
       "loginPrivacyGame": "Wanneer je de game start, worden de sessiegegevens die Vintage Story nodig heeft naar de geselecteerde installatie geschreven.",
       "loginPrivacyPolicy": "Privacybeleid lezen",
       "removeAccountAction": "Account verwijderen"
+    },
+    "sessionReport": {
+      "copyReport": "Rapport kopiëren",
+      "openLogsFolder": "Logmap openen",
+      "lastSessionReport": "Rapport van de laatste sessie"
     }
   },
   "components": {

@@ -11,6 +11,7 @@ import { requestBoundedBuffer } from "@src/ipc/network"
 import { isJpegBytes, isPngBytes } from "@domain/backgrounds"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
+import { MODS_BY_SERVER_FOLDER_NAME, scanServerMods } from "@domain/mods/serverMods"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
 import { MAX_MODPACK_MOD_NAME_LENGTH } from "@domain/mods/importModpack"
 import { emptyModProfilesDocument, MAX_MOD_PROFILES_FILE_BYTES, MOD_PROFILES_FILE_NAME, normalizeModProfilesDocument } from "@domain/mods/profiles"
@@ -117,6 +118,46 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
     logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods.`)
     logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods: ${err}`)
     return { mods: [], errors: [], unreadable: true }
+  }
+})
+
+/**
+ * Reads the Mods Vintage Story downloaded to play on a server, grouped by the server that sent them.
+ *
+ * Read only, and deliberately narrower than GET_INSTALLED_MODS: the renderer names the Installation
+ * and never the folder, so the one subfolder this can ever reach is the game's own `ModsByServer`.
+ * Symlinks are allowed the same way the Mods folder allows them (#237), because a linked data folder
+ * is a setup the launcher already lists happily and this only ever opens the .zip files inside.
+ *
+ * No server name reaches the log. A private server's folder is named after its address, which can be
+ * somebody's home, so what is logged is counts and nothing else.
+ */
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS, async (event, installationPath: string): Promise<ServerModsScan> => {
+  assertTrustedIpcSender(event)
+  const installation = await assertConfiguredInstallationPath(installationPath)
+
+  try {
+    const folder = await assertManagedPath(join(installation, MODS_BY_SERVER_FOLDER_NAME), "server mods path", { allowMissing: true, allowSymlinks: true })
+
+    if (!(await fse.pathExists(folder))) {
+      logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_SERVER_MODS] This installation has no server mods folder.`)
+      return { groups: [] }
+    }
+
+    const scan = await scanServerMods(createScanInstalledModsPorts(), { folder })
+    const scanned = scan.groups.reduce((total, group) => total + group.mods.length, 0)
+
+    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_SERVER_MODS] Found ${scan.groups.length} server folders and ${scanned} mods.`)
+
+    const groups = scan.groups.map((group) => {
+      const wire = { server: group.server, path: group.path, mods: group.mods.map(toWireMod), unreadable: group.unreadable, ...(group.truncated ? { truncated: true as const } : {}) }
+      return group.unlistable ? { ...wire, unlistable: true as const } : wire
+    })
+    return scan.truncated ? { groups, truncated: true } : { groups }
+  } catch (err) {
+    logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_SERVER_MODS] Error getting server mods.`)
+    logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_SERVER_MODS] ${getErrorMessage(err)}`)
+    return { groups: [], unreadable: true }
   }
 })
 

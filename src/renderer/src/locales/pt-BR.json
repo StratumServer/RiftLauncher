@@ -330,6 +330,11 @@
       "thisFolder": "esta pasta",
       "includeLogs": "Envie-nos os arquivos de log que estão na pasta <folderlink /> para nos ajudar ainda mais!",
       "debugInfoDesc": "Copie as informações a seguir e envie-as juntamente com as informações de erro para nos ajudar a encontrar o problema!"
+    },
+    "sessionReport": {
+      "copyReport": "Copiar relatório",
+      "openLogsFolder": "Abrir a pasta de logs",
+      "lastSessionReport": "Relatório da última sessão"
     }
   },
   "components": {

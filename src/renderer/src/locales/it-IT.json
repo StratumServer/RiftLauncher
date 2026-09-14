@@ -261,6 +261,11 @@
       "logsFolderTitle": "Cartella dei registri",
       "thisFolder": "questa cartella",
       "title": "Info & Aiuto RiftLauncher"
+    },
+    "sessionReport": {
+      "copyReport": "Copia il rapporto",
+      "openLogsFolder": "Apri la cartella dei log",
+      "lastSessionReport": "Rapporto dell'ultima sessione"
     }
   },
   "generic": {

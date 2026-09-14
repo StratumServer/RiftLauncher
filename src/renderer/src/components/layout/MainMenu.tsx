@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link, useLocation } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
   PiBoxArrowDownDuotone,
   PiFolderOpenDuotone,
@@ -48,6 +48,7 @@ function MainMenu(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
   const { openOnBrowser: openExternalLink } = useExternalLinks()
+  const goTo = useNavigate()
   const { os } = useAppInfo()
 
   const makeInstallationBackup = useMakeInstallationBackup()
@@ -175,9 +176,22 @@ function MainMenu(): JSX.Element {
 
       const outcomeNotification = pickPlayOutcomeNotification(result, os)
       if (outcomeNotification) {
-        const link = outcomeNotification.link
-        const options = link ? { actions: [{ id: "open-guide", label: t(link.labelKey), onClick: (): void => openExternalLink(link.url) }] } : undefined
-        addNotification(t(outcomeNotification.key), "error", options)
+        const { link, report } = outcomeNotification
+        const actions = [
+          ...(link ? [{ id: "open-guide", label: t(link.labelKey), onClick: (): void => openExternalLink(link.url) }] : []),
+          ...(report
+            ? [
+                {
+                  id: "see-report",
+                  label: t(report.labelKey),
+                  onClick: (): void => {
+                    void goTo(`/installations/report/${selectedInstallation.id}`)
+                  }
+                }
+              ]
+            : [])
+        ]
+        addNotification(t(outcomeNotification.key), "error", actions.length > 0 ? { actions } : undefined)
       }
     } catch (err) {
       logLaunch("error", "[front] [layout] [components/layout/MainMenu.tsx] [MainMenu > PlayHandler] Error executing the game.")

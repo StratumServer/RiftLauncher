@@ -276,6 +276,11 @@
       "logsFolderTitle": "Папка логаў",
       "thisFolder": "гэтая папка",
       "debugInfoDesc": "Скапіруйце наступную інфармацыю і дашліце яе разам са справаздачай аб памылцы!"
+    },
+    "sessionReport": {
+      "copyReport": "Капіяваць справаздачу",
+      "openLogsFolder": "Адкрыць папку логаў",
+      "lastSessionReport": "Справаздача апошняй сесіі"
     }
   },
   "components": {

@@ -39,6 +39,8 @@ declare global {
     }
     modsManager: {
       getInstalledMods: (path: string) => Promise<InstalledModsScan>
+      /** Reads the Installation's ModsByServer tree. The host names the folder; this only names the Installation. */
+      getServerMods: (installationPath: string) => Promise<ServerModsScan>
       setModEnabled: (path: string, enabled: boolean) => Promise<SetModEnabledResult>
       cacheModImage: (url: string) => Promise<string | undefined>
       exportModpack: (manifest: ModpackManifestType) => Promise<{ success: boolean; path?: string }>
@@ -74,6 +76,8 @@ declare global {
       getPlaySessions: (installationId: string) => Promise<PlaySessionsReadResult>
       /** Clears one Installation's recorded sessions. */
       forgetPlaySessions: (installationId: string) => Promise<{ ok: boolean }>
+      /** Reads the last session's own log files out of one Installation and answers the report built from them. See #462. */
+      getGameLogReport: (installationPath: string) => Promise<GameLogReportResult>
     }
     netManager: {
       queryURL: (url: string) => Promise<string>
