@@ -148,10 +148,12 @@ export function useLaunchGame(): LaunchGame {
         // Stamped exactly where lastTimePlayed is, and says exactly as much: the launcher spawned
         // the game with this bookmark's connect argument and the process started. Whether the
         // connection itself landed is something only the game ever learns.
-        if (serverId) {
-          const servers = (installation.servers ?? []).map((server) => (server.id === serverId ? { ...server, lastLaunched: finishedPlaying } : server))
-          configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { servers } } })
-        }
+        //
+        // Its own action rather than an EDIT_INSTALLATION carrying the array: `installation` here
+        // is the one Join closed over, and the window stayed usable for the whole session, so
+        // writing that list back would revert every bookmark added, edited or removed while the
+        // game ran. The reducer stamps the list it currently holds.
+        if (serverId) configDispatch({ type: CONFIG_ACTIONS.STAMP_SERVER_LAUNCH, payload: { id: installation.id, serverId, when: finishedPlaying } })
       }
 
       const outcomeNotification = pickPlayOutcomeNotification(result, os)
