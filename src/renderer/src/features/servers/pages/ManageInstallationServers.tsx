@@ -136,7 +136,10 @@ function ManageInstallationServers(): JSX.Element {
                   <ThinSeparator />
 
                   <p className="shrink-0 w-44 text-sm text-zinc-300 text-center">
-                    {server.lastLaunched === NEVER_LAUNCHED ? t("features.servers.neverLaunched") : t("features.servers.lastLaunched", { when: new Date(server.lastLaunched).toLocaleString("es") })}
+                    {server.lastLaunched === NEVER_LAUNCHED
+                      ? t("features.servers.neverLaunched")
+                      : /* escapeValue: false, or i18next turns the date's own slashes into &#x2F; and React renders the entities. */
+                        t("features.servers.lastLaunched", { when: new Date(server.lastLaunched).toLocaleString("es"), interpolation: { escapeValue: false } })}
                   </p>
 
                   <ThinSeparator />
