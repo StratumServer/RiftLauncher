@@ -154,6 +154,34 @@ describe("Recent sessions", () => {
     expect(screen.queryByTitle("Open this session")).toBeNull()
   })
 
+  it("treats a channel that never answers as a file it could not read", async () => {
+    installMockWindowApi({
+      gameManager: {
+        getPlaySessions: vi.fn(async () => {
+          throw new Error("the bridge went away")
+        })
+      }
+    })
+    renderWithProviders(<RecentSessionsSection installationId="install-a" isPlaying={false} measuring />)
+
+    expect(await screen.findByText(/could not be read/)).toBeTruthy()
+  })
+
+  it("keeps the rows when the file refuses to be cleared", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      gameManager: {
+        getPlaySessions: vi.fn(async () => ({ ok: true as const, sessions: [aSession()] })),
+        forgetPlaySessions: vi.fn(async () => ({ ok: false }))
+      }
+    })
+    renderWithProviders(<RecentSessionsSection installationId="install-a" isPlaying={false} measuring />)
+
+    await user.click(await screen.findByTitle("Forget these sessions"))
+
+    expect(screen.getByTitle("Open this session")).toBeTruthy()
+  })
+
   it("clears the sessions when the player asks it to", async () => {
     const user = userEvent.setup()
     const api = mountWith({ ok: true, sessions: [aSession()] })
