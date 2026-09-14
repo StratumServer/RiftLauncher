@@ -30,6 +30,8 @@ export interface ConfigSettingsType {
   moddbVisibilityAnswer: string
   /** Whether update checks may offer betas, or null while nobody has said. See src/domain/appUpdate/betaUpdates.ts. */
   receiveBetaUpdates: boolean | null
+  /** Whether the launcher measures the game process while it runs. See src/domain/sessions/sampling.ts. */
+  measurePlaySessions: boolean
   /** The version the "what's new" dialog last showed notes up to, or empty. See src/domain/appUpdate/whatsNew.ts. */
   lastSeenChangelogVersion: string
 }
@@ -172,6 +174,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       accentColor: config.accentColor,
       moddbVisibilityAnswer: config.moddbVisibilityAnswer,
       receiveBetaUpdates: config.receiveBetaUpdates,
+      measurePlaySessions: config.measurePlaySessions,
       lastSeenChangelogVersion: config.lastSeenChangelogVersion
     }),
     [
@@ -186,6 +189,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config.accentColor,
       config.moddbVisibilityAnswer,
       config.receiveBetaUpdates,
+      config.measurePlaySessions,
       config.lastSeenChangelogVersion
     ]
   )

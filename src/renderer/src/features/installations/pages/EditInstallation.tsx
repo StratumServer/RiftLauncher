@@ -17,6 +17,7 @@ import { NameAndIconPicker } from "@renderer/features/installations/components/N
 import { GameVersionPicker } from "@renderer/features/installations/components/GameVersionPicker"
 import { BackupsSettingsSection } from "@renderer/features/installations/components/BackupsSettingsSection"
 import { AdvancedSettingsSection } from "@renderer/features/installations/components/AdvancedSettingsSection"
+import { RecentSessionsSection } from "@renderer/features/installations/components/RecentSessionsSection"
 
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -35,7 +36,7 @@ function EditInslallation(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
   const { openOnBrowser: openExternalLink } = useExternalLinks()
-  const { schemaVersion } = useSettingsConfig()
+  const { schemaVersion, measurePlaySessions } = useSettingsConfig()
   const isConfigLoaded = schemaVersion !== 0
 
   const { id } = useParams()
@@ -210,6 +211,8 @@ function EditInslallation(): JSX.Element {
                 launchWrapper={fields.launchWrapper}
                 onLaunchWrapperChange={fields.setLaunchWrapper}
               />
+
+              <RecentSessionsSection installationId={installation.id} isPlaying={installation._playing ?? false} measuring={measurePlaySessions} />
 
               <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
                 <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
