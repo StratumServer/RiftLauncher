@@ -91,24 +91,31 @@ export function checkServerBookmark(input: { id: string; name: string; host: str
   return { ok: true, bookmark: { id: input.id, name, host, port, lastLaunched: previous?.lastLaunched ?? NEVER_LAUNCHED } }
 }
 
-/**
- * The single place the join URL is spelled.
- *
- * Takes parts that have already been through {@link checkServerBookmark}, so nothing here escapes
- * or repairs anything: an IPv6 literal gets its brackets back because that is the only way a URL
- * can tell the address's colons from the port's, and that is the whole of it.
- */
+/** The single place the join URL is spelled. The address inside it comes from {@link formatServerEndpoint}. */
 export function joinTargetUrl(server: Pick<ServerBookmarkType, "host" | "port">): string {
   return `vintagestoryjoin://${formatServerEndpoint(server)}`
 }
 
-/** The host and port a player can paste into a server browser or chat. */
+/**
+ * The host and port a player can paste into a server browser or chat, and the address inside a join
+ * URL. The single place the two are written side by side.
+ *
+ * Takes parts that have already been through {@link checkServerBookmark}, so nothing here escapes or
+ * repairs anything: an IPv6 literal gets its brackets back because that is the only way a reader, or
+ * a URL parser, can tell the address's colons from the port's, and that is the whole of it. One
+ * function rather than one per caller because that rule has to hold in every output a player ends up
+ * holding, and four of them were free to disagree about it.
+ */
 export function formatServerEndpoint(server: Pick<ServerBookmarkType, "host" | "port">): string {
   const host = server.host.includes(":") ? `[${server.host}]` : server.host
   return `${host}:${server.port}`
 }
 
-/** Omits the default port in the compact address shown on a server row. */
+/**
+ * Omits the default port in the compact address shown on a server row, in the import dialog's rows
+ * and on the clipboard. With no port written beside it a bare IPv6 literal is unambiguous on its
+ * own; as soon as a port is there, {@link formatServerEndpoint} brackets it.
+ */
 export function formatServerAddress(server: Pick<ServerBookmarkType, "host" | "port">): string {
   return server.port === DEFAULT_GAME_SERVER_PORT ? server.host : formatServerEndpoint(server)
 }

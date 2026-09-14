@@ -147,12 +147,23 @@ describe("joinTargetUrl", () => {
     assert.equal(joinTargetUrl({ host: "192.168.1.20", port: 42_420 }), "vintagestoryjoin://192.168.1.20:42420")
   })
 
+  it("writes a host name and an IPv4 literal on a non-default port", () => {
+    assert.equal(joinTargetUrl({ host: "play.example.com", port: 30_000 }), "vintagestoryjoin://play.example.com:30000")
+    assert.equal(joinTargetUrl({ host: "192.168.1.20", port: 30_000 }), "vintagestoryjoin://192.168.1.20:30000")
+  })
+
   it("brackets an IPv6 literal so the address's colons cannot be read as the port", () => {
     assert.equal(joinTargetUrl({ host: "2001:db8::1", port: 30_000 }), "vintagestoryjoin://[2001:db8::1]:30000")
     assert.equal(joinTargetUrl({ host: "::1", port: DEFAULT_GAME_SERVER_PORT }), "vintagestoryjoin://[::1]:42420")
   })
 })
 
+/**
+ * The four host shapes, run through both of the outputs a player can end up holding: the URL the
+ * game is handed, and the address the row shows and Copy address puts on the clipboard. They were
+ * two separate spellings, and the IPv6 one on a non-default port disagreed: the URL bracketed, the
+ * copy did not, so the pasted address read as an IPv6 literal with another group glued on the end.
+ */
 describe("server endpoint formatting", () => {
   it("brackets IPv6 when a non-default port is appended", () => {
     assert.equal(formatServerEndpoint({ host: "2001:db8::1", port: 30_000 }), "[2001:db8::1]:30000")
@@ -162,6 +173,37 @@ describe("server endpoint formatting", () => {
   it("keeps the compact default-port address for IPv4 and IPv6", () => {
     assert.equal(formatServerAddress({ host: "2001:db8::1", port: DEFAULT_GAME_SERVER_PORT }), "2001:db8::1")
     assert.equal(formatServerAddress({ host: "play.example.com", port: DEFAULT_GAME_SERVER_PORT }), "play.example.com")
+  })
+
+  it("brackets IPv6 on the default port too, as soon as the port is written beside it", () => {
+    assert.equal(formatServerEndpoint({ host: "2001:db8::1", port: DEFAULT_GAME_SERVER_PORT }), "[2001:db8::1]:42420")
+    assert.equal(formatServerEndpoint({ host: "::1", port: DEFAULT_GAME_SERVER_PORT }), "[::1]:42420")
+  })
+
+  it("leaves a host name and an IPv4 literal alone, on either port", () => {
+    assert.equal(formatServerEndpoint({ host: "play.example.com", port: DEFAULT_GAME_SERVER_PORT }), "play.example.com:42420")
+    assert.equal(formatServerEndpoint({ host: "play.example.com", port: 30_000 }), "play.example.com:30000")
+    assert.equal(formatServerEndpoint({ host: "192.168.1.20", port: DEFAULT_GAME_SERVER_PORT }), "192.168.1.20:42420")
+    assert.equal(formatServerEndpoint({ host: "192.168.1.20", port: 30_000 }), "192.168.1.20:30000")
+  })
+
+  it("keeps a non-default port in the compact address, for every host shape", () => {
+    assert.equal(formatServerAddress({ host: "play.example.com", port: 30_000 }), "play.example.com:30000")
+    assert.equal(formatServerAddress({ host: "192.168.1.20", port: 30_000 }), "192.168.1.20:30000")
+    assert.equal(formatServerAddress({ host: "192.168.1.20", port: DEFAULT_GAME_SERVER_PORT }), "192.168.1.20")
+  })
+
+  it("is what the join URL puts after the scheme, for every host shape", () => {
+    for (const server of [
+      { host: "play.example.com", port: DEFAULT_GAME_SERVER_PORT },
+      { host: "play.example.com", port: 30_000 },
+      { host: "192.168.1.20", port: DEFAULT_GAME_SERVER_PORT },
+      { host: "192.168.1.20", port: 30_000 },
+      { host: "2001:db8::1", port: DEFAULT_GAME_SERVER_PORT },
+      { host: "2001:db8::1", port: 30_000 }
+    ]) {
+      assert.equal(joinTargetUrl(server), `vintagestoryjoin://${formatServerEndpoint(server)}`)
+    }
   })
 })
 

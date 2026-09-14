@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 import { PiCopyDuotone, PiPencilDuotone, PiPlayCircleDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
 
-import { DEFAULT_GAME_SERVER_PORT, formatServerAddress, MAX_SERVER_BOOKMARKS, NEVER_LAUNCHED, orderServerBookmarks } from "@domain/servers/bookmarks"
+import { formatServerAddress, MAX_SERVER_BOOKMARKS, NEVER_LAUNCHED, orderServerBookmarks } from "@domain/servers/bookmarks"
 
 import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -130,7 +130,7 @@ function ManageInstallationServers(): JSX.Element {
                 <div className="h-16 flex gap-2 p-1 justify-between items-center whitespace-nowrap">
                   <div className="w-full flex flex-col items-start justify-center gap-1 overflow-hidden px-2">
                     <p className="font-bold overflow-hidden text-ellipsis w-full text-left">{server.name}</p>
-                    <p className="text-sm text-zinc-300 overflow-hidden text-ellipsis w-full text-left">{server.port === DEFAULT_GAME_SERVER_PORT ? server.host : `${server.host}:${server.port}`}</p>
+                    <p className="text-sm text-zinc-300 overflow-hidden text-ellipsis w-full text-left">{formatServerAddress(server)}</p>
                   </div>
 
                   <ThinSeparator />

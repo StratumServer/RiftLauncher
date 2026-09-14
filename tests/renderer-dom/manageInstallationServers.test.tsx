@@ -283,6 +283,23 @@ describe("ManageInstallationServers", () => {
     expect(copyToClipboard).toHaveBeenCalledWith("[2001:db8::1]:30000")
   })
 
+  it("copies an IPv6 address on the default port bare, since no port sits beside it to misread", async () => {
+    const user = userEvent.setup()
+    const copyToClipboard = vi.fn<BridgeAPI["utils"]["copyToClipboard"]>(async () => true)
+    renderServersPage([{ id: "s-1", name: "Stratum", host: "2001:db8::1", port: 42_420, lastLaunched: -1 }], { utils: { copyToClipboard } })
+
+    await user.click(await screen.findByRole("button", { name: "Copy address" }))
+
+    expect(copyToClipboard).toHaveBeenCalledWith("2001:db8::1")
+  })
+
+  /** The row and the clipboard read one address, so an IPv6 bookmark cannot show one and copy another. */
+  it("shows a non-default IPv6 address on the row with the same brackets it copies", async () => {
+    renderServersPage([{ id: "s-1", name: "Stratum", host: "2001:db8::1", port: 30_000, lastLaunched: -1 }])
+
+    expect(await screen.findByText("[2001:db8::1]:30000")).toBeTruthy()
+  })
+
   it("says so and opens nothing when the host refuses the copy", async () => {
     const user = userEvent.setup()
     const copyToClipboard = vi.fn<BridgeAPI["utils"]["copyToClipboard"]>(async () => false)
