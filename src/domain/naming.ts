@@ -3,6 +3,9 @@ import type { GameBuildVariant } from "./versions/detect"
 /** The longest name assertSafeFileName (src/ipc/validation.ts) lets through. */
 const MAX_FOLDER_NAME_LENGTH = 255
 
+/** The longest label normalizeGameVersion (src/config/configManager.ts) keeps; past it the label is dropped entirely. */
+export const MAX_GAME_VERSION_LABEL_LENGTH = 256
+
 /**
  * Strips characters a folder name cannot carry and collapses the leftovers into
  * single dashes.
@@ -79,10 +82,18 @@ export function formatTimestampForFilename(epochMillis: number): string {
  * The label is a display string and nothing else. Nothing compares versions
  * through it, and nothing logs it: the player can overwrite it with anything.
  *
+ * The result is cut to what the config keeps. normalizeGameVersion drops a
+ * longer label for the bare version number rather than truncating it, so a
+ * label past the cap is not a long name, it is no name at all: the row would
+ * show what was typed until the next load and the version number after it. A
+ * variant version is only bounded by what semver accepts, which is 256
+ * characters of pre-release tail, so a build naming itself at that length can
+ * reach the cap on its own.
+ *
  * @param version The game version number, as detection read it.
  * @param variant The fork that named itself, when one did.
  * @returns "1.22.7", or "1.22.7 Optimum 0.3.14".
  */
 export function buildGameVersionLabel(version: string, variant?: GameBuildVariant): string {
-  return variant ? `${version} ${variant.name} ${variant.version}` : version
+  return (variant ? `${version} ${variant.name} ${variant.version}` : version).slice(0, MAX_GAME_VERSION_LABEL_LENGTH)
 }

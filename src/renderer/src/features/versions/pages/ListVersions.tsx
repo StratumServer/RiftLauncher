@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useId, useRef, useState } from "react"
 import {
   PiFloppyDiskBackDuotone,
   PiFolderOpenDuotone,
@@ -12,6 +12,7 @@ import {
 } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
 
+import { MAX_GAME_VERSION_LABEL_LENGTH } from "@domain/naming"
 import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { CONFIG_ACTIONS, useConfigDispatch, useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -47,6 +48,7 @@ function ListVersions(): JSX.Element {
   const [versionToRename, setVersionToRename] = useState<GameVersionType | null>(null)
   const [newLabel, setNewLabel] = useState<string>("")
 
+  const renameFieldId = useId()
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   function installationsUsing(version: GameVersionType): string[] {
@@ -66,8 +68,12 @@ function ListVersions(): JSX.Element {
    * the folder the game runs from are both left alone. A name that is empty or
    * nothing but spaces falls back to the version number, the same rule
    * registering a build applies, so no row can end up with a blank name.
+   *
+   * Submitted rather than clicked, so the Enter key ends the rename the way it
+   * ends the one in the mod profiles popup.
    */
-  function RenameVersionHandler(): void {
+  function RenameVersionHandler(event: React.FormEvent): void {
+    event.preventDefault()
     if (versionToRename === null) return
 
     const label = newLabel.trim() || versionToRename.version
@@ -203,14 +209,25 @@ function ListVersions(): JSX.Element {
         </PopupDialogPanel>
 
         <PopupDialogPanel title={t("features.versions.renameVersion")} isOpen={versionToRename !== null} close={() => setVersionToRename(null)}>
-          <>
+          <form className="flex flex-col gap-3" onSubmit={RenameVersionHandler}>
             <p className="text-zinc-400">{t("features.versions.renameVersionDesc")}</p>
-            <FormInputText value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={t("generic.name")} className="w-full" />
+            <label htmlFor={renameFieldId} className="sr-only">
+              {t("generic.name")}
+            </label>
+            <FormInputText
+              id={renameFieldId}
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              placeholder={t("generic.name")}
+              maxLength={MAX_GAME_VERSION_LABEL_LENGTH}
+              autoFocus
+              className="w-full"
+            />
             <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
               <FormButton title={t("generic.cancel")} onClick={() => setVersionToRename(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <FormButton title={t("generic.save")} onClick={RenameVersionHandler} variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
+              <FormButton title={t("generic.save")} nativeType="submit" variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
             </ButtonsWrapper>
-          </>
+          </form>
         </PopupDialogPanel>
 
         <PopupDialogPanel title={t("features.versions.versionInUse")} isOpen={versionInUseWarning !== null} close={() => setVersionInUseWarning(null)}>

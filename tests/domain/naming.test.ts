@@ -76,4 +76,14 @@ describe("buildGameVersionLabel", () => {
   it("spells the fork out after the game version it was built against", () => {
     assert.equal(buildGameVersionLabel("1.22.7", { name: "Optimum", version: "0.3.14" }), "1.22.7 Optimum 0.3.14")
   })
+
+  it("stops at the length the config keeps, rather than handing over a label it would drop", () => {
+    // semver takes a pre-release tail this long, so a build naming itself that way
+    // reaches the cap on its own, and normalizeGameVersion answers a longer label
+    // with the bare version number instead of a truncated one.
+    const label = buildGameVersionLabel("1.22.7", { name: "Optimum", version: `0.3.14-${"x".repeat(249)}` })
+
+    assert.equal(label.length, 256)
+    assert.ok(label.startsWith("1.22.7 Optimum 0.3.14-"))
+  })
 })
