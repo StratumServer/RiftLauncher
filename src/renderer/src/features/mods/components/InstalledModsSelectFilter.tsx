@@ -4,6 +4,7 @@ import { PiCaretDownDuotone } from "react-icons/pi"
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
+import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 /**
  * One single-select dropdown over plain strings, used for the author axis and the game version axis
@@ -33,14 +34,8 @@ function InstalledModsSelectFilter({
     <Listbox value={value} onChange={onChange}>
       {({ open }) => (
         <>
-          <ListboxButton
-            className={clsx(
-              "px-2 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
-              size
-            )}
-            title={value || label}
-          >
-            <p className={clsx("overflow-hidden whitespace-nowrap text-ellipsis", !value && "text-zinc-400")}>{value || label}</p>
+          <ListboxButton className={clsx(MENU_TRIGGER_STYLES, size)} title={value || label}>
+            <p className={clsx("overflow-hidden whitespace-nowrap text-ellipsis text-sm", !value && "text-zinc-400")}>{value || label}</p>
             <PiCaretDownDuotone className={clsx("shrink-0 duration-200", open && "-rotate-180")} />
           </ListboxButton>
 
@@ -54,23 +49,12 @@ function InstalledModsSelectFilter({
                   exit="exit"
                   className="w-full max-h-40 flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm overflow-y-scroll"
                 >
-                  <ListboxOption
-                    value=""
-                    as={motion.li}
-                    variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                    className="w-full h-8 px-2 py-1 shrink-0 flex items-center overflow-hidden odd:bg-zinc-800/30 cursor-pointer whitespace-nowrap text-ellipsis text-sm"
-                  >
-                    - {anyLabel} -
+                  <ListboxOption value="" as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30")}>
+                    <p className="overflow-hidden whitespace-nowrap text-ellipsis text-sm">- {anyLabel} -</p>
                   </ListboxOption>
                   {options.map((option) => (
-                    <ListboxOption
-                      key={option}
-                      value={option}
-                      as={motion.li}
-                      variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className="w-full h-8 px-2 py-1 shrink-0 flex items-center overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer whitespace-nowrap text-ellipsis text-sm"
-                    >
-                      {option}
+                    <ListboxOption key={option} value={option} as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
+                      <p className="overflow-hidden whitespace-nowrap text-ellipsis text-sm">{option}</p>
                     </ListboxOption>
                   ))}
                 </motion.ul>
