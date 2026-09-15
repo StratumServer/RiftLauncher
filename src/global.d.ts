@@ -101,6 +101,14 @@ declare global {
      */
     playerEntitlements: string | null
     hostGameServer: boolean
+    /**
+     * Set only on an account whose session is held in the main process because there was no
+     * keyring to write it to (#481). Absent on every other account, so an ordinary record is
+     * byte for byte what earlier builds wrote. The next startup drops the accounts carrying it:
+     * their secrets died with the process, and an account that cannot launch and says nothing
+     * about why is worse than no account at all. See src/config/configManager.ts.
+     */
+    sessionOnly?: true
   }
 
   // Renderer-visible account data. Session credentials are main-process only.

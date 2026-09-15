@@ -83,6 +83,31 @@ describe("SessionButton on a login whose session is only held in memory", () => 
     expect(await screen.findByRole("button", { name: /player/i })).toBeTruthy()
   }, 15000)
 
+  /**
+   * The account has to reach the config, because that list is what names the account the game
+   * launches as. It must not reach it looking like a saved one: the secrets behind it are in
+   * this process and nowhere else, so the record says so and the next startup drops it.
+   */
+  it("marks the stored account as lasting only for this run", async () => {
+    const api = renderWithLoginResult({ status: "success", account: ACCOUNT, sessionInMemoryOnly: true })
+
+    await submitLogin()
+    await screen.findByText(/logged in as player/i)
+
+    const saved = vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0]
+    expect(saved?.accounts).toEqual([{ ...ACCOUNT, sessionOnly: true }])
+  }, 15000)
+
+  it("leaves the mark off an ordinary saved login", async () => {
+    const api = renderWithLoginResult({ status: "success", account: ACCOUNT })
+
+    await submitLogin()
+    await screen.findByText(/logged in as player/i)
+
+    const saved = vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0]
+    expect(saved?.accounts).toEqual([ACCOUNT])
+  }, 15000)
+
   it("says nothing about keyrings on an ordinary saved login", async () => {
     renderWithLoginResult({ status: "success", account: ACCOUNT })
 

@@ -1179,3 +1179,62 @@ describe("getConfig: config.json backup before a schema migration", () => {
     assert.equal(statSync(backupPath()).mode & 0o777, 0o600)
   })
 })
+
+/**
+ * A login on a machine with no keyring keeps its session in the main process and writes no
+ * secrets (#481). The public half still has to reach `config.accounts`, because that list is
+ * where EXECUTE_GAME looks the active account up, so the account carries a mark saying it lasts
+ * as long as the process does. Startup is where the mark is acted on: the next launch has no
+ * secrets for it, and an account that cannot launch and says nothing about why is worse than no
+ * account at all.
+ */
+describe("normalizeConfig: an account kept for this run only (#481)", () => {
+  const sessionOnlyAccount = { email: "player@example.com", playerName: "Player", playerUid: "uid-1", playerEntitlements: null, hostGameServer: false, sessionOnly: true } as const
+  const savedAccount = { email: "other@example.com", playerName: "Other", playerUid: "uid-2", playerEntitlements: null, hostGameServer: false } as const
+
+  it("keeps it in this process, where the game launch can still find it", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    await getConfig()
+    assert.equal(await saveConfig(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accounts: [sessionOnlyAccount], activeAccountId: "uid-1" })), true)
+
+    const config = await getConfig()
+    // The lookup EXECUTE_GAME itself does, in src/ipc/handlers/gameHandlers.ts.
+    assert.deepEqual(
+      config.accounts.find((candidate) => candidate.playerUid === config.activeAccountId),
+      sessionOnlyAccount
+    )
+  })
+
+  it("is gone at the next startup, and the choice of account falls back to one that can still launch", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    await getConfig()
+    await saveConfig(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accounts: [savedAccount, sessionOnlyAccount], activeAccountId: "uid-1" }))
+
+    const restarted = await freshConfigManager()
+    const config = await restarted.getConfig()
+
+    assert.deepEqual(config.accounts, [savedAccount])
+    assert.equal(config.activeAccountId, "uid-2")
+  })
+
+  it("leaves an ordinary saved account alone across the same restart", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    await getConfig()
+    await saveConfig(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accounts: [savedAccount], activeAccountId: "uid-2" }))
+
+    const restarted = await freshConfigManager()
+    const config = await restarted.getConfig()
+
+    assert.deepEqual(config.accounts, [savedAccount])
+    assert.equal(config.activeAccountId, "uid-2")
+  })
+
+  it("only reads a literal true as the mark, so no hand-edited spelling can delete a saved account", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const spelling of ["true", 1, "1", "yes", false, null, {}]) {
+      const config = normalizeConfig({ accounts: [{ ...savedAccount, sessionOnly: spelling }] })
+      assert.deepEqual(config.accounts, [savedAccount], `sessionOnly: ${JSON.stringify(spelling)}`)
+    }
+  })
+})

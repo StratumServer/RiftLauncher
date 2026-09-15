@@ -108,7 +108,7 @@ export async function getConfig(): Promise<ConfigType> {
     const hadLegacyAccountSecrets = await migrateLegacyAccount(config)
     const migration = migrateConfigDocument(config)
     logConfigMigration(migration)
-    const ensuredConfig = normalizeConfig(migration.doc)
+    const ensuredConfig = normalizeConfig(migration.doc, { atStartup: true })
     const reKeyedAccountStore = await migrateAccountStore(config, ensuredConfig)
     // Every path that overwrites config.json gets the same backup, not just the schema pipeline:
     // a re-key or a legacy-secrets migration writes just as real a document as a schema bump does.
@@ -401,12 +401,22 @@ function normalizeIcon(value: unknown): IconType | null {
 /** Ceiling on saved accounts, the same shape as the 1,000-entry caps above: generous for the real use case, not a promise to scale past it. */
 const MAX_STORED_ACCOUNTS = 50
 
-/** Reads the accounts list, dropping anything unreadable and deduplicating by `playerUid`. */
-function normalizeAccounts(value: unknown): AccountPublicType[] {
+/**
+ * Reads the accounts list, dropping anything unreadable and deduplicating by `playerUid`.
+ *
+ * `atStartup` is what acts on the session-only mark (#481). An account carrying it was logged in
+ * on a machine with no keyring: its secrets lived in the previous process and went with it, so on
+ * a later launch it is a name the player cannot launch under and cannot be told why. Dropping it
+ * here means the launcher opens asking for a login, which is the truth. The mark survives every
+ * other normalization, `saveConfig`'s included, because the running process still has those
+ * secrets and `EXECUTE_GAME` still looks the account up in this list.
+ */
+function normalizeAccounts(value: unknown, atStartup: boolean): AccountPublicType[] {
   const seen = new Set<string>()
   return (Array.isArray(value) ? value : [])
     .map(toPublicAccount)
     .filter((account): account is AccountPublicType => account !== null)
+    .filter((account) => !atStartup || account.sessionOnly !== true)
     .filter((account) => {
       if (seen.has(account.playerUid)) return false
       seen.add(account.playerUid)
@@ -415,7 +425,12 @@ function normalizeAccounts(value: unknown): AccountPublicType[] {
     .slice(0, MAX_STORED_ACCOUNTS)
 }
 
-export function normalizeConfig(config: unknown): ConfigType {
+/**
+ * `atStartup` is set on the one read that opens a stored document this process has not written:
+ * `getConfig`'s file read. Everything else (every `saveConfig`, every re-normalization of the
+ * cache) is this process looking at its own config, where a session-only account is still live.
+ */
+export function normalizeConfig(config: unknown, { atStartup = false }: { atStartup?: boolean } = {}): ConfigType {
   const repairedConfig = repairGameVersionIdentity(config)
   const rawConfig = (isRecord(repairedConfig) ? repairedConfig : {}) as Partial<ConfigType>
   const rawWindow = (isRecord(rawConfig.window) ? rawConfig.window : {}) as Partial<WindowType>
@@ -434,7 +449,7 @@ export function normalizeConfig(config: unknown): ConfigType {
     .filter((icon): icon is IconType => icon !== null)
     .slice(0, 1_000)
 
-  const accounts = normalizeAccounts(rawConfig.accounts)
+  const accounts = normalizeAccounts(rawConfig.accounts, atStartup)
 
   const fixedConfig: ConfigType = {
     schemaVersion: clampConfigSchema(rawConfig.schemaVersion),
