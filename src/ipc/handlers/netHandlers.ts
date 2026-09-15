@@ -100,6 +100,7 @@ export async function queryUrl(url: unknown): Promise<string> {
  * `countedVersions` is what stops a version being counted twice across launches (#477).
  */
 let listingCountAttempted = false
+let listingCountPromise: Promise<ModDbCountResult> | null = null
 
 /**
  * Fetches the launcher's own listing entry for `listingVersion`, which is what registers a
@@ -179,7 +180,7 @@ function readConsent(value: unknown): ModDbVisibilityConsent | null {
  * how many times a counter may move. The state this answers with is what the renderer mirrors, so
  * the two copies of the config cannot disagree about what was counted.
  */
-export async function countModDbDownload(consent: unknown): Promise<ModDbCountResult> {
+async function countModDbDownloadOnce(consent: unknown): Promise<ModDbCountResult> {
   const runningVersion = app.getVersion()
   const config = await getConfig()
   const chosen = readConsent(consent)
@@ -201,6 +202,22 @@ export async function countModDbDownload(consent: unknown): Promise<ModDbCountRe
   const counted = rememberCountedVersion(answered, runningVersion)
   await saveConfig({ ...(await getConfig()), moddbVisibility: counted })
   return { reason, visibility: counted }
+}
+
+/**
+ * The renderer normally de-duplicates this call, but the main process is the
+ * authority and must keep the at-most-once promise on its own. Two trusted IPC
+ * invocations can still arrive in the same turn before the network request has
+ * set `listingCountAttempted`; sharing the in-flight result closes that window.
+ */
+export async function countModDbDownload(consent: unknown): Promise<ModDbCountResult> {
+  listingCountPromise ??= countModDbDownloadOnce(consent)
+
+  try {
+    return await listingCountPromise
+  } finally {
+    listingCountPromise = null
+  }
 }
 
 ipcMain.handle(IPC_CHANNELS.NET_MANAGER.COUNT_MODDB_DOWNLOAD, async (event, consent: unknown): Promise<ModDbCountResult> => {

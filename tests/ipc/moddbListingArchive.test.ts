@@ -302,6 +302,24 @@ describe("countModDbDownload", () => {
     assert.equal(mockState.requestBoundedBuffer.mock.calls.length, 1)
   })
 
+  it("shares concurrent count attempts so one version cannot be counted twice", async () => {
+    const { countModDbDownload } = await freshHandlers()
+    let releaseDownload!: (value: Buffer) => void
+    mockState.requestBoundedBuffer.mockImplementation(() => new Promise((resolve) => {
+      releaseDownload = resolve
+    }))
+
+    const first = countModDbDownload(MODDB_VISIBILITY_ONCE)
+    const second = countModDbDownload(MODDB_VISIBILITY_ONCE)
+
+    await vi.waitFor(() => assert.equal(mockState.requestBoundedBuffer.mock.calls.length, 1))
+    releaseDownload(Buffer.from("pointer archive"))
+
+    assert.equal((await first).reason, "counted")
+    assert.equal((await second).reason, "counted")
+    assert.equal(mockState.requestBoundedBuffer.mock.calls.length, 1)
+  })
+
   it("does not retry inside the launch that could not reach the listing", async () => {
     mockState.requestBoundedText.mockRejectedValue(new Error("network down"))
     const { countModDbDownload } = await freshHandlers()
