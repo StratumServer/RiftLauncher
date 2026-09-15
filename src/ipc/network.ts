@@ -4,7 +4,7 @@ import { request as httpsRequest } from "node:https"
 import type { IncomingMessage } from "node:http"
 import type { Socket } from "node:net"
 import { connect as tlsConnect } from "node:tls"
-import { parseProxyResolution } from "@domain/net/proxy"
+import { parseProxyResolution, parseProxyUrl } from "@domain/net/proxy"
 import type { ProxyResolution } from "@domain/net/proxy"
 import { MAX_RESPONSE_BYTES } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
@@ -301,8 +301,8 @@ export function requestBoundedTextViaNode(url: URL, options: BoundedRequestOptio
   })
 }
 
-/** What {@link requestBoundedTextViaNode} does once it knows the proxy for `url`. */
-type ProxyDecision = { kind: "direct" } | { kind: "tunnel"; proxy: { host: string; port: number } } | { kind: "blocked"; error: Error }
+/** What {@link requestBoundedTextViaNode} does once it knows the proxy for `url`. `secure` marks a proxy reached over its own TLS connection (an `https:` proxy URL), as opposed to a plain CONNECT. */
+type ProxyDecision = { kind: "direct" } | { kind: "tunnel"; proxy: { host: string; port: number; secure: boolean } } | { kind: "blocked"; error: Error }
 
 /**
  * Asks Electron's default session how `url` should be reached, the same
@@ -324,15 +324,15 @@ type ProxyDecision = { kind: "direct" } | { kind: "tunnel"; proxy: { host: strin
 async function decideProxy(url: URL): Promise<ProxyDecision> {
   const pacAnswer = await session.defaultSession.resolveProxy(url.toString()).catch(() => "DIRECT")
   const resolution = parseProxyResolution(pacAnswer)
-  const effective = resolution.kind === "direct" ? (environmentProxyResolution(url.hostname) ?? resolution) : resolution
+  const effective = resolution.kind === "direct" ? (environmentProxyResolution(url) ?? resolution) : resolution
 
   if (effective.kind === "direct") {
     logMessage("debug", "[back] [ipc] [network.ts] [PROXY] proxy-direct")
     return { kind: "direct" }
   }
-  if (effective.kind === "http") {
+  if (effective.kind === "http" || effective.kind === "https") {
     logMessage("debug", "[back] [ipc] [network.ts] [PROXY] proxy-used")
-    return { kind: "tunnel", proxy: { host: effective.host, port: effective.port } }
+    return { kind: "tunnel", proxy: { host: effective.host, port: effective.port, secure: effective.kind === "https" } }
   }
   // socks, or a shape this transport does not recognise: neither has a client here.
   return { kind: "blocked", error: new Error(PROXY_UNSUPPORTED_MESSAGE) }
@@ -343,28 +343,23 @@ async function decideProxy(url: URL): Promise<ProxyDecision> {
  * `DIRECT`: Node's `http(s).request` never consults either variable on its
  * own, unlike `net.request`, which is why this transport needed one at all.
  * `NO_PROXY` is checked first and wins outright, matching curl and every
- * other tool that honours the trio. A value that fails to parse as a URL,
- * same as nothing set at all, leaves the caller on the direct path rather
- * than failing a login over a malformed environment variable.
+ * other tool that honours the trio. Parsing itself, scheme included, is
+ * {@link parseProxyUrl}'s job (`src/domain/net/proxy.ts`): this function only
+ * reads the environment and decides whether `NO_PROXY` bypasses it.
  */
-function environmentProxyResolution(targetHost: string): ProxyResolution | undefined {
-  if (hostMatchesNoProxy(targetHost, process.env.NO_PROXY ?? process.env.no_proxy)) return undefined
+function environmentProxyResolution(url: URL): ProxyResolution | undefined {
+  if (hostMatchesNoProxy(url, process.env.NO_PROXY ?? process.env.no_proxy)) return undefined
 
   const raw = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy
   if (!raw) return undefined
 
-  try {
-    const proxyUrl = new URL(raw)
-    return parseProxyResolution(`PROXY ${proxyUrl.hostname}:${proxyUrl.port || "80"}`)
-  } catch {
-    return undefined
-  }
+  return parseProxyUrl(raw)
 }
 
 /** `NO_PROXY=a.example.com,.b.example.com,*`: an exact host, a domain suffix (leading dot optional), or `*` for every host. */
-function hostMatchesNoProxy(host: string, noProxy: string | undefined): boolean {
+function hostMatchesNoProxy(url: URL, noProxy: string | undefined): boolean {
   if (!noProxy) return false
-  const target = host.toLowerCase()
+  const target = url.hostname.toLowerCase()
 
   return noProxy
     .split(",")
@@ -396,13 +391,15 @@ class TunnelAgent extends Agent {
 }
 
 /**
- * Opens the login request's actual connection through an HTTP proxy with a
- * CONNECT tunnel: `node:http`'s own `request` sends the CONNECT, and once the
- * proxy answers 200 the raw socket it hands back either is the connection
- * (a plain-`http` test target) or gets wrapped in TLS to the real origin (an
- * `https:` target, every real login). No new dependency: `node:tls`'s
- * `connect({ socket })` upgrading an already-open socket, and the tiny
- * {@link TunnelAgent} above, are both standard library.
+ * Opens the login request's actual connection through an HTTP or HTTPS proxy
+ * with a CONNECT tunnel: `proxy.secure` picks `node:https`'s `request` over
+ * `node:http`'s to send the CONNECT itself over its own TLS connection to the
+ * proxy (an `https:` proxy URL, issue #481's `HTTPS_PROXY` scheme fix), and
+ * once the proxy answers 200 the raw socket it hands back either is the
+ * connection (a plain-`http` test target) or gets wrapped in a second, separate
+ * TLS layer to the real origin (an `https:` target, every real login). No new
+ * dependency: `node:tls`'s `connect({ socket })` upgrading an already-open
+ * socket, and the tiny {@link TunnelAgent} above, are both standard library.
  *
  * `onAbort` is handed the one thing worth cancelling at each point in time,
  * so `requestBoundedTextViaNode`'s single timeout can reach whichever phase
@@ -414,11 +411,12 @@ class TunnelAgent extends Agent {
  * left on a generic connection failure. Known limit, not a bug: there is no prompt for a
  * proxy password anywhere in this launcher.
  */
-function connectThroughProxy(proxy: { host: string; port: number }, url: URL, onAbort: (abort: () => void) => void): Promise<Agent> {
+function connectThroughProxy(proxy: { host: string; port: number; secure: boolean }, url: URL, onAbort: (abort: () => void) => void): Promise<Agent> {
   const targetPort = Number(url.port) || (url.protocol === "http:" ? 80 : 443)
+  const sendConnect = proxy.secure ? httpsRequest : httpRequest
 
   return new Promise<Socket>((resolve, reject) => {
-    const connectRequest = httpRequest({
+    const connectRequest = sendConnect({
       host: proxy.host,
       port: proxy.port,
       method: "CONNECT",
