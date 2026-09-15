@@ -86,14 +86,24 @@ function SessionButton(): JSX.Element {
       if (result.status === "requires-two-factor") return addNotification(t("features.config.requiresTwoFA"), "error")
       if (result.status === "unexpected-response") return addNotification(t("features.config.unexpectedResponse"), "error")
       if (result.status === "session-store-unreadable") return addNotification(t("features.config.sessionStoreUnreadable"), "error")
+      // These four resolve instead of throwing specifically so they can be told apart here
+      // (issue #481): the login request itself failed, for one of four reasons the main
+      // process already classified. A cause it could not place still throws below, which is
+      // the only path that reaches the catch's generic message.
+      if (result.status === "account-restricted") return addNotification(t("features.config.accountRestricted"), "error")
+      if (result.status === "service-error") return addNotification(t("features.config.serviceError"), "error")
+      if (result.status === "certificate-error") return addNotification(t("features.config.certificateError"), "error")
+      if (result.status === "network-unreachable") return addNotification(t("features.config.networkUnreachable"), "error", { reason: "network" })
       if (result.status !== "success") return
 
       if (result.storeRebuilt) addNotification(t("features.config.sessionStoreRebuilt"), "warning")
       await saveLogin(result.account)
     } catch {
-      // A throw here means the request never produced a verdict (network down,
-      // firewall, service unreachable): the credentials were never judged, so
-      // saying they were wrong sends the user to reset a working password.
+      // A throw here means the request never produced a verdict, for a cause
+      // `loginFailureFamily` could not place among the four above (a storage
+      // failure, or a genuinely unrecognised error): the credentials were
+      // never judged, so saying they were wrong sends the user to reset a
+      // working password.
       addNotification(t("features.config.loginUnreachable"), "error")
     } finally {
       clearTransientLoginFields()

@@ -3,7 +3,7 @@ import { ipcMain } from "electron"
 import { interpretFirstPass, interpretSecondPass } from "@domain/account/login"
 import type { LoginVerdict } from "@domain/account/login"
 import { badCredentialsResult, needsTwoFactorResult, sessionStoreUnreadableResult, twoFactorRejectedResult, unexpectedResponseOutcome } from "@src/ipc/handlers/accountLoginOutcome"
-import { AccountStorageFailure, loginFailureReason } from "@src/ipc/handlers/loginFailureReason"
+import { AccountStorageFailure, loginFailureFamily, loginFailureReason } from "@src/ipc/handlers/loginFailureReason"
 import { buildLoginRequestBody } from "@src/ipc/handlers/loginRequestBody"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
@@ -128,8 +128,19 @@ ipcMain.handle(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, async (event, email: unknown,
     // reports (#352). `loginFailureReason` maps it onto a fixed vocabulary
     // instead, which still tells a network failure from an HTTP status from a
     // keyring that is not there from a disk with no room left on it.
+    const reason = loginFailureReason(error)
     logMessage("error", "[back] [ipc] [accountHandlers.ts] [LOGIN] Login failed.")
-    logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] Login failure reason: ${loginFailureReason(error)}.`)
+    logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] Login failure reason: ${reason}.`)
+
+    // A reason `loginFailureFamily` can place resolves instead of throwing, so the
+    // renderer can say which of DNS/refused/timeout, a certificate, an HTTP error the
+    // service itself answered with, or an HTTP-level account refusal it actually was
+    // (issue #481), rather than folding all four into one generic toast. Anything the
+    // classifier cannot place keeps throwing exactly as before: a storage failure or a
+    // truly unrecognised error is not one of those four, and guessing which would be a
+    // worse lie than the generic message it replaces.
+    const family = loginFailureFamily(reason)
+    if (family !== "unknown") return { status: family }
     throw new Error("Login failed")
   }
 })
