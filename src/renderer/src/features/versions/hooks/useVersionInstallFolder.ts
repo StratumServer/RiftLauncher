@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react"
-import { useTranslation } from "react-i18next"
 
-import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { createPathBuilderPort } from "@renderer/adapters/paths"
+import { usePickEmptyFolder } from "@renderer/features/installations/hooks/usePathActions"
 
 export interface UseVersionInstallFolderResult {
   /** The folder the version installs into, either suggested or user picked. */
@@ -23,8 +22,7 @@ export interface UseVersionInstallFolderResult {
  * only way to change this field now.
  */
 export function useVersionInstallFolder(version: DownloadableGameVersionTypeType | undefined, defaultVersionsFolder: string): UseVersionInstallFolderResult {
-  const { t } = useTranslation()
-  const { addNotification } = useNotificationsContext()
+  const pickEmptyFolder = usePickEmptyFolder()
 
   const [folder, setFolder] = useState<string>("")
   const [folderByUser, setFolderByUser] = useState<boolean>(false)
@@ -37,11 +35,8 @@ export function useVersionInstallFolder(version: DownloadableGameVersionTypeType
   }, [version])
 
   async function browseFolder(): Promise<void> {
-    const path = await window.api.utils.selectFolderDialog()
-    const selectedPath = path[0]
-    if (!selectedPath || selectedPath.length === 0) return
-
-    if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
+    const selectedPath = await pickEmptyFolder()
+    if (!selectedPath) return
 
     setFolder(selectedPath)
     setFolderByUser(true)

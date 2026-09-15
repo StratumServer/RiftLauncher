@@ -973,6 +973,8 @@
       "downloadError": "Impossible de télécharger {{downloadName}}. Vérifiez votre connexion et réessayez.",
       "extracted": "Décompression terminée : {{extractName}}.",
       "extractError": "Impossible de décompresser {{extractName}}. Vérifiez que l'archive n'est pas endommagée et qu'il reste de la place sur le disque.",
+      "installed": "Installation terminée : {{installName}}.",
+      "installError": "Impossible d'installer {{installName}}. Consultez le journal pour plus de détails.",
       "gameExitedWithErrors": "Vintage Story s'est arrêté avec des erreurs. Les détails sont dans le journal.",
       "errorExecutingGame": "Un problème est survenu au démarrage du jeu. Les détails sont dans le journal.",
       "gameLaunchUnsupportedPlatform": "Vintage Story ne peut pas encore tourner sur cette plateforme. Essayez depuis Windows ou Linux.",

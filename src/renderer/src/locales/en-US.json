@@ -973,6 +973,8 @@
       "downloadError": "Couldn't download {{downloadName}}. Check your connection and try again.",
       "extracted": "Unpacked {{extractName}}.",
       "extractError": "Couldn't unpack {{extractName}}. Check that the archive is not damaged and that there is room on the drive.",
+      "installed": "Installed {{installName}}.",
+      "installError": "Couldn't install {{installName}}. The log has the details.",
       "gameExitedWithErrors": "Vintage Story exited with errors. The log has the details.",
       "errorExecutingGame": "Something went wrong starting the game. The log has the details.",
       "gameLaunchUnsupportedPlatform": "Vintage Story can't run on this platform yet. Try it from Windows or Linux.",

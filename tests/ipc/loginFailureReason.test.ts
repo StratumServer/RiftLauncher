@@ -27,7 +27,9 @@ describe("loginFailureReason names what went wrong", () => {
   for (const [message, expected] of [
     ["Network request timed out", "timeout"],
     ["Network response is too large", "response-too-large"],
-    ["Network response was aborted", "response-aborted"]
+    ["Network response was aborted", "response-aborted"],
+    ["Login proxy requires authentication", "proxy-auth-required"],
+    ["Login proxy is not supported", "proxy-unsupported"]
   ] as const) {
     it(`reads "${message}" as ${expected}`, () => {
       assert.equal(loginFailureReason(new Error(message)), expected)
@@ -228,6 +230,10 @@ describe("loginFailureFamily places every token loginFailureReason can emit", ()
     "network-EPROTO": "network-unreachable",
     "network-ERR_SOCKET_CONNECTION_TIMEOUT": "network-unreachable",
     "network-ERR_STREAM_PREMATURE_CLOSE": "network-unreachable",
+    // A proxy-shaped cause the login transport cannot resolve on its own (#481): same family,
+    // since the request never reached the service either way.
+    "proxy-auth-required": "network-unreachable",
+    "proxy-unsupported": "network-unreachable",
     // A certificate this machine would not accept.
     "network-CERT_HAS_EXPIRED": "certificate-error",
     "network-CERT_NOT_YET_VALID": "certificate-error",

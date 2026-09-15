@@ -1,14 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { Route, Routes } from "react-router-dom"
-
-import ManageMods from "@renderer/features/installations/pages/ManageMods"
-import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
-import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
 import { createMockConfig, installMockWindowApi, type WindowApiOverrides } from "./helpers/windowApi"
-import { renderWithProviders } from "./helpers/render"
+import { mountManageMods } from "./helpers/mountManageMods"
 
 const INSTALLATION_PATH = "/games/a"
 const ALPHA_PATH = "/games/a/Mods/alpha-1.0.0.zip"
@@ -188,7 +183,7 @@ function queryModDb(url: string): Promise<string> {
  * to gate mounting behind the Installations being in context, because the scan effect now re-runs
  * once the config's loaded state flips (#58).
  */
-function renderManageMods(overrides: WindowApiOverrides = {}, servers?: ServerBookmarkType[]): ReturnType<typeof renderWithProviders> {
+function renderManageMods(overrides: WindowApiOverrides = {}, servers?: ServerBookmarkType[]): ReturnType<typeof mountManageMods> {
   installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(servers)] })) },
     netManager: { queryURL: vi.fn(queryModDb) },
@@ -198,20 +193,7 @@ function renderManageMods(overrides: WindowApiOverrides = {}, servers?: ServerBo
     modsManager: { getInstalledMods: vi.fn(async () => aModScan()), ...overrides.modsManager }
   })
 
-  return renderWithProviders(
-    <Routes>
-      <Route
-        path="/installations/mods/:id"
-        element={
-          <TaskProvider>
-            <ManageMods />
-            <NotificationsOverlay />
-          </TaskProvider>
-        }
-      />
-    </Routes>,
-    { route: "/installations/mods/install-a" }
-  )
+  return mountManageMods()
 }
 
 /**

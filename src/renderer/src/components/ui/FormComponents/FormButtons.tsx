@@ -1,18 +1,8 @@
-import { Button as HButton } from "@headlessui/react"
 import clsx from "clsx"
 import { forwardRef } from "react"
-import { Link } from "react-router-dom"
 
-import {
-  BUTTON_BASE_STYLES,
-  BUTTON_GROUP_EQUAL_WIDTH_STYLES,
-  BUTTON_LINK_SIZE_STYLES,
-  BUTTON_SIZE_STYLES,
-  BUTTON_VARIANT_STYLES,
-  type ButtonSize,
-  type ButtonVariant
-} from "@renderer/components/ui/buttonStyles"
-import { renderActionContent, useActionBusy } from "@renderer/components/ui/actionContent"
+import { BUTTON_GROUP_EQUAL_WIDTH_STYLES, type ButtonSize, type ButtonVariant } from "@renderer/components/ui/buttonStyles"
+import { Button, ButtonLink } from "@renderer/components/ui/Buttons"
 
 /**
  * A ButtonsWrapper must contain a FormButton or a FormLinkButton.
@@ -94,29 +84,8 @@ type FormButtonProps = Readonly<{
    */
   Readonly<Omit<React.ComponentPropsWithoutRef<"button">, "onClick" | "disabled" | "title" | "className" | "children" | "type">>
 
-export const FormButton = forwardRef<HTMLButtonElement, FormButtonProps>(function FormButton(
-  { children, icon, className, onClick, title, disabled, busy, variant = "secondary", size = "sm", nativeType = "button", ariaLabel, ariaPressed, ariaExpanded, ...rest },
-  ref
-) {
-  const action = useActionBusy(onClick, busy, disabled)
-
-  return (
-    <HButton
-      {...rest}
-      ref={ref}
-      type={nativeType}
-      disabled={disabled || action.busy}
-      onClick={action.onClick}
-      title={!disabled ? title : ""}
-      aria-label={ariaLabel ?? title}
-      aria-busy={action.busy}
-      aria-pressed={ariaPressed}
-      aria-expanded={ariaExpanded}
-      className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}
-    >
-      {renderActionContent(children, icon, title, action.busy)}
-    </HButton>
-  )
+export const FormButton = forwardRef<HTMLButtonElement, FormButtonProps>(function FormButton({ variant = "secondary", size = "sm", ...props }, ref) {
+  return <Button ref={ref} variant={variant} size={size} overflowHidden {...props} />
 })
 
 /**
@@ -149,12 +118,8 @@ export function FormLinkButton({
   size?: ButtonSize
 }>): JSX.Element {
   return (
-    <Link
-      to={to}
-      title={title}
-      className={clsx(BUTTON_BASE_STYLES, variant === "link" ? BUTTON_LINK_SIZE_STYLES : BUTTON_SIZE_STYLES[size], "overflow-hidden", BUTTON_VARIANT_STYLES[variant], className)}
-    >
-      {renderActionContent(children, icon, title)}
-    </Link>
+    <ButtonLink icon={icon} className={className} to={to} title={title} variant={variant} size={size} overflowHidden>
+      {children}
+    </ButtonLink>
   )
 }

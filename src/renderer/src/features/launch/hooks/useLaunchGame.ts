@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 
 import { useGameVersions, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -46,6 +47,7 @@ export function useLaunchGame(): LaunchGame {
   const { addNotification } = useNotificationsContext()
   const { openOnBrowser: openExternalLink } = useExternalLinks()
   const { os } = useAppInfo()
+  const goTo = useNavigate()
 
   const makeInstallationBackup = useMakeInstallationBackup()
 
@@ -158,9 +160,22 @@ export function useLaunchGame(): LaunchGame {
 
       const outcomeNotification = pickPlayOutcomeNotification(result, os)
       if (outcomeNotification) {
-        const link = outcomeNotification.link
-        const options = link ? { actions: [{ id: "open-guide", label: t(link.labelKey), onClick: (): void => openExternalLink(link.url) }] } : undefined
-        addNotification(t(outcomeNotification.key), "error", options)
+        const { link, report } = outcomeNotification
+        const actions = [
+          ...(link ? [{ id: "open-guide", label: t(link.labelKey), onClick: (): void => openExternalLink(link.url) }] : []),
+          ...(report
+            ? [
+                {
+                  id: "see-report",
+                  label: t(report.labelKey),
+                  onClick: (): void => {
+                    void goTo(`/installations/report/${installation.id}`)
+                  }
+                }
+              ]
+            : [])
+        ]
+        addNotification(t(outcomeNotification.key), "error", actions.length > 0 ? { actions } : undefined)
       }
     } catch (err) {
       logLaunch("error", `${LOG_TAG} Error executing the game.`)

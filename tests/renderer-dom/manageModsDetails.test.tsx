@@ -1,14 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
 import { act, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { Route, Routes } from "react-router-dom"
-
-import ManageMods from "@renderer/features/installations/pages/ManageMods"
-import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
-import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
 import { createMockConfig, installMockWindowApi, type WindowApiOverrides } from "./helpers/windowApi"
-import { renderWithProviders } from "./helpers/render"
+import { mountManageMods } from "./helpers/mountManageMods"
 
 const ALPHA_PATH = "/games/a/Mods/alpha-1.0.0.zip"
 const BETA_PATH = "/games/a/Mods/beta-2.0.0.zip"
@@ -110,20 +105,7 @@ function renderManageMods(overrides: WindowApiOverrides = {}): void {
     modsManager: { getInstalledMods: vi.fn(async () => aModScan()), ...overrides.modsManager }
   })
 
-  renderWithProviders(
-    <Routes>
-      <Route
-        path="/installations/mods/:id"
-        element={
-          <TaskProvider>
-            <ManageMods />
-            <NotificationsOverlay />
-          </TaskProvider>
-        }
-      />
-    </Routes>,
-    { route: "/installations/mods/install-a" }
-  )
+  mountManageMods()
 }
 
 function detailsButtonFor(name: string): Promise<HTMLElement> {

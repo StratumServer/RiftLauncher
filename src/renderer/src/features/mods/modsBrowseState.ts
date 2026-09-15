@@ -2,7 +2,8 @@ import type { ModPick } from "@domain/mods/modSelection"
 
 export const DEFAULT_LOADED_MODS = 45
 
-export type ModsBrowseState = {
+/** The nine fields ListMods' filter bar reads and writes, grouped as the one object it now keeps in state. */
+export type ModsFilters = {
   textFilter: string
   authorFilter: DownloadableModAuthorType
   versionsFilter: DownloadableModGameVersionType[]
@@ -12,6 +13,9 @@ export type ModsBrowseState = {
   onlyFav: boolean
   orderBy: string
   orderByOrder: string
+}
+
+export type ModsBrowseState = ModsFilters & {
   visibleMods: number
   scrollTop: number
   /** Selection mode on the browse grid, and the Mods picked in it. Renderer memory only, never config. */

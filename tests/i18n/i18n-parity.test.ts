@@ -1,9 +1,9 @@
 import assert from "node:assert/strict"
-import { readFileSync, readdirSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { describe, it } from "vitest"
 
-import { collectTranslationCalls, flattenTranslationObject, LOCALES_DIR, RENDERER_SRC_DIR, TranslationCall } from "./helpers"
+import { collectTranslationCalls, flattenTranslationObject, listLocaleFiles, LOCALES_DIR, RENDERER_SRC_DIR, TranslationCall } from "./helpers"
 
 /**
  * Guards the translation system (part of issue #15).
@@ -76,7 +76,7 @@ describe("en-US.json integrity", () => {
 })
 
 describe("locale files stay structurally sound", () => {
-  const localeFiles = readdirSync(LOCALES_DIR).filter((file) => file.endsWith(".json"))
+  const localeFiles = listLocaleFiles()
 
   it("every locale file under src/renderer/src/locales parses as JSON", () => {
     const failures = localeFiles
@@ -99,9 +99,7 @@ describe("locale coverage snapshot (report only, does not fail on lag)", () => {
     const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
     const enKeys = new Set(Object.keys(enUS))
 
-    const otherLocales = readdirSync(LOCALES_DIR)
-      .filter((file) => file.endsWith(".json") && file !== "en-US.json")
-      .sort()
+    const otherLocales = listLocaleFiles().filter((file) => file !== "en-US.json")
 
     const rows = otherLocales.map((file) => {
       const locale = basename(file, ".json")
@@ -141,8 +139,7 @@ describe("Activity Center translation contract", () => {
   const activityKeys = Object.keys(enUS).filter((key) => key.startsWith("components.activityCenter."))
 
   it("keeps the new Activity Center namespace complete and non-empty in every locale", () => {
-    const failures = readdirSync(LOCALES_DIR)
-      .filter((file) => file.endsWith(".json"))
+    const failures = listLocaleFiles()
       .map((file) => {
         const locale = flattenTranslationObject(readLocaleJson(file))
         const missing = activityKeys.filter((key) => !(key in locale))

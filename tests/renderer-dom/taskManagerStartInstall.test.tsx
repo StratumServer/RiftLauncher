@@ -112,5 +112,54 @@ describe("TaskManagerContext.startInstall", () => {
 
     await waitFor(() => expect(onFinish).toHaveBeenCalled())
     expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["error"])
+    // startInstall was copied from startExtract and kept its archive wording
+    // (issue #490 item 4): an installer failure is not an archive failure, and
+    // `reason` already carries the specific cause to the Activity Center row,
+    // so the toast should point at the log rather than blame "the archive".
+    const body = result.current.notifications.notifications[0]?.body ?? ""
+    expect(body).toContain("log")
+    expect(body).not.toContain("archive")
+  })
+
+  /**
+   * startInstall was copied from startExtract and kept its locale keys, so it
+   * ran an installer but talked about an archive. These pin the installer's
+   * own wording (#490 item 4) instead of the extractor's.
+   */
+  it("talks about installing, not unpacking, on success", async () => {
+    installMockWindowApi({
+      pathsManager: { runInstaller: vi.fn(async () => ({ ok: true }) as InstallerRunResult) }
+    })
+
+    const { result } = renderHook(() => ({ task: useTaskContext(), notifications: useNotificationsContext() }), { wrapper })
+    const onFinish = vi.fn()
+
+    await act(async () => {
+      await result.current.task.startInstall("Vintage Story 1.20.0", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/setup.exe", "/tmp/out", true, onFinish)
+    })
+
+    await waitFor(() => expect(onFinish).toHaveBeenCalled())
+    const [notification] = result.current.notifications.notifications
+    expect(notification?.body).toContain("Vintage Story 1.20.0")
+    expect(notification?.body.toLowerCase()).not.toContain("unpack")
+  })
+
+  it("points at the log rather than at a damaged archive on failure", async () => {
+    installMockWindowApi({
+      pathsManager: { runInstaller: vi.fn(async () => ({ ok: false, reason: "installer-failed" }) as InstallerRunResult) }
+    })
+
+    const { result } = renderHook(() => ({ task: useTaskContext(), notifications: useNotificationsContext() }), { wrapper })
+    const onFinish = vi.fn()
+
+    await act(async () => {
+      await result.current.task.startInstall("Vintage Story 1.20.0", "desc", TASK_NOTIFICATION_POLICIES.individual, "/tmp/setup.exe", "/tmp/out", true, onFinish)
+    })
+
+    await waitFor(() => expect(onFinish).toHaveBeenCalled())
+    const [notification] = result.current.notifications.notifications
+    expect(notification?.body).toContain("Vintage Story 1.20.0")
+    expect(notification?.body.toLowerCase()).not.toContain("archive")
+    expect(notification?.body.toLowerCase()).not.toContain("unpack")
   })
 })
