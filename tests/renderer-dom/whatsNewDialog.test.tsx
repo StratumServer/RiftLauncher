@@ -11,14 +11,17 @@ import { renderWithProviders } from "./helpers/render"
 
 /**
  * "What's new" after an update (#439): shown once per session when the running version outran
- * `lastSeenChangelogVersion`, gated behind the ModDB prompt's own answer so a fresh install never
- * stacks two full-screen dialogs, and never re-fetched once the module has answered for this
- * session (useWhatsNew.ts's whole reason for existing).
+ * `lastSeenChangelogVersion`, gated behind the ModDB prompt having nothing to ask for the running
+ * version (#477) so a launch never stacks two full-screen dialogs, and never re-fetched once the
+ * module has answered for this session (useWhatsNew.ts's whole reason for existing).
  *
  * `resetWhatsNewCacheForTests` runs before every test: without it the second test to mount this
  * component would see the first test's cached, already-resolved promise instead of its own mock.
  */
-function mountWith(overrides: { lastSeenChangelogVersion?: string; moddbVisibilityAnswer?: string; version?: string; releases?: WhatsNewReleaseInfo[] }): MockedBridgeAPI {
+/** A ModDB answer that has nothing left to ask or count, so only the What's new gate is under test. */
+const ANSWERED: ConfigType["moddbVisibility"] = { policy: "never", answeredVersion: "", countedVersions: [] }
+
+function mountWith(overrides: { lastSeenChangelogVersion?: string; moddbVisibility?: ConfigType["moddbVisibility"]; version?: string; releases?: WhatsNewReleaseInfo[] }): MockedBridgeAPI {
   resetWhatsNewCacheForTests()
 
   const api = installMockWindowApi({
@@ -26,7 +29,7 @@ function mountWith(overrides: { lastSeenChangelogVersion?: string; moddbVisibili
       getConfig: vi.fn(async () =>
         createMockConfig({
           lastSeenChangelogVersion: overrides.lastSeenChangelogVersion ?? "1.0.0",
-          moddbVisibilityAnswer: overrides.moddbVisibilityAnswer ?? "declined"
+          moddbVisibility: overrides.moddbVisibility ?? ANSWERED
         })
       )
     },
@@ -68,8 +71,8 @@ describe("WhatsNewDialog", () => {
     expect(api.netManager.fetchReleaseNotes).not.toHaveBeenCalled()
   })
 
-  it("does not appear while the ModDB prompt has not been answered yet", async () => {
-    const api = mountWith({ lastSeenChangelogVersion: "1.0.0", version: "1.1.0", moddbVisibilityAnswer: "unasked" })
+  it("does not appear while the ModDB prompt still has a question for this version", async () => {
+    const api = mountWith({ lastSeenChangelogVersion: "1.0.0", version: "1.1.0", moddbVisibility: { policy: "ask", answeredVersion: "", countedVersions: [] } })
 
     await waitFor(() => expect(api.netManager.fetchReleaseNotes).toHaveBeenCalled())
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -115,7 +118,7 @@ describe("WhatsNewDialog", () => {
     resetWhatsNewCacheForTests()
 
     const api = installMockWindowApi({
-      configManager: { getConfig: vi.fn(async () => createMockConfig({ lastSeenChangelogVersion: "1.0.0", moddbVisibilityAnswer: "declined" })) },
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ lastSeenChangelogVersion: "1.0.0", moddbVisibility: ANSWERED })) },
       utils: { getAppVersion: vi.fn(async () => "1.1.0") },
       netManager: { fetchReleaseNotes: vi.fn(async () => ({ ok: false, reason: "offline" }) as FetchReleaseNotesResult) }
     })

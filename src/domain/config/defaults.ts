@@ -1,7 +1,7 @@
 import { DEFAULT_ACCENT_ID } from "../accentColors"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "../appUpdate/betaUpdates"
 import { DEFAULT_BACKGROUND_ID } from "../backgrounds"
-import { DEFAULT_MODDB_VISIBILITY_ANSWER } from "../moddbVisibility"
+import { defaultModDbVisibility } from "../moddbVisibility"
 import { DEFAULT_MEASURE_PLAY_SESSIONS } from "../sessions/sampling"
 
 /**
@@ -29,7 +29,7 @@ export const DEFAULT_CONFIG_BASE: Omit<ConfigType, "schemaVersion" | "defaultIns
   suspendedModUpdates: [],
   background: DEFAULT_BACKGROUND_ID,
   accentColor: DEFAULT_ACCENT_ID,
-  moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
+  moddbVisibility: defaultModDbVisibility(),
   receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
   measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
   lastSeenChangelogVersion: "",

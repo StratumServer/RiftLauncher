@@ -69,7 +69,7 @@ function toWhatsNewReleases(releases: readonly WhatsNewReleaseInfo[]): WhatsNewR
  * and there never will be, so the next launch should not ask GitHub again. A failed fetch writes
  * nothing, because that answer may well be different next time.
  */
-export function useWhatsNew(): WhatsNewState & { previousVersion: string; markSeen: () => void } {
+export function useWhatsNew(): WhatsNewState & { previousVersion: string; runningVersion: string; markSeen: () => void } {
   const { vslVersion } = useAppInfo()
   const { schemaVersion, lastSeenChangelogVersion } = useSettingsConfig()
   const dispatch = useConfigDispatch()
@@ -112,8 +112,10 @@ export function useWhatsNew(): WhatsNewState & { previousVersion: string; markSe
   }
 
   // The frozen version rather than the live config value, so the dialog's own title does not
-  // rewrite itself the moment closing it marks the running version seen.
-  return { ...state, previousVersion: previousVersion.current ?? "", markSeen }
+  // rewrite itself the moment closing it marks the running version seen. The running one is handed
+  // out beside it so the dialog can read the ModDB prompt's decision without a second useAppInfo,
+  // whose mount effect costs four IPC calls.
+  return { ...state, previousVersion: previousVersion.current ?? "", runningVersion: vslVersion, markSeen }
 }
 
 /**

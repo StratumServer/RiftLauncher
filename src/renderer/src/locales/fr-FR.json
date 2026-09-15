@@ -697,7 +697,14 @@
         "rose": "Rose"
       },
       "measurePlaySessions": "Mesurer les sessions",
-      "measurePlaySessionsDesc": "Mesure la mémoire pendant que le jeu tourne. Conservé sur cet ordinateur et jamais envoyé nulle part."
+      "measurePlaySessionsDesc": "Mesure la mémoire pendant que le jeu tourne. Conservé sur cet ordinateur et jamais envoyé nulle part.",
+      "moddbCount": "Comptage ModDB",
+      "moddbCountDesc": "Comment le launcher répond à la question ModDB quand une nouvelle version arrive. Demander à chaque version pose la question au premier lancement de chacune, Toujours compte chaque nouvelle version sans rien demander, et Jamais ne compte rien et met fin à la question.",
+      "moddbCountOptions": {
+        "ask": "Demander à chaque version",
+        "always": "Toujours me compter",
+        "never": "Ne jamais compter"
+      }
     },
     "backups": {
       "backupInProgress": "Une sauvegarde est déjà en cours.",
@@ -858,10 +865,11 @@
     },
     "moddbVisibility": {
       "title": "Aidez d'autres joueurs à trouver RiftLauncher",
-      "body": "RiftLauncher est référencé sur ModDB, où le nombre de téléchargements d'une fiche fait presque tout pour qu'on la trouve. Si vous voulez aider, le launcher peut demander une fois à ModDB l'archive de cette fiche, ce qui y compte pour un téléchargement. Cette archive est un fichier texte de 315 octets qui pointe vers la page des versions, pas le launcher lui-même, et le launcher ne la conserve pas. Rien n'est installé et rien d'autre ne change.",
-      "accept": "Je participe",
-      "decline": "Non merci",
-      "alreadyDone": "Déjà fait"
+      "body": "RiftLauncher est référencé sur ModDB, où chaque version a sa propre fiche et son propre compteur de téléchargements, et ces compteurs font presque tout pour qu'on trouve le launcher. Si vous voulez aider, le launcher peut demander une fois à ModDB la fiche de cette version, ce qui y compte pour un téléchargement. Cette fiche contient un fichier texte de 315 octets qui pointe vers la page des versions, pas le launcher lui-même, et le launcher ne le conserve pas. Rien n'est installé et rien d'autre ne change.",
+      "countOnce": "Je participe (cette version)",
+      "countAlways": "Toujours me compter",
+      "notThisTime": "Pas cette fois",
+      "neverAsk": "Ne plus me demander"
     },
     "whatsNew": {
       "title": "Nouveautés de la version {{version}}",

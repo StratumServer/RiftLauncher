@@ -15,7 +15,7 @@ import { describe, it } from "vitest"
 
 import { DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
-import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED } from "@domain/moddbVisibility"
+import { defaultModDbVisibility, MODDB_VISIBILITY_ALWAYS } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
 
@@ -37,7 +37,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
     accentColor: DEFAULT_ACCENT_ID,
-    moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
+    moddbVisibility: defaultModDbVisibility(),
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
     lastSeenChangelogVersion: "",
@@ -91,7 +91,7 @@ describe("configReducer: initialState", () => {
   })
 
   it("starts with the ModDB listing question unanswered", () => {
-    assert.equal(initialState.moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER)
+    assert.deepEqual(initialState.moddbVisibility, defaultModDbVisibility())
   })
 })
 
@@ -163,11 +163,12 @@ describe("configReducer: scalar setters", () => {
     assert.equal(result.installations, config.installations)
   })
 
-  it("SET_MODDB_VISIBILITY_ANSWER records the answer and touches nothing else", () => {
+  it("SET_MODDB_VISIBILITY records the answer and touches nothing else", () => {
     const config = baseConfig()
-    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER, payload: MODDB_VISIBILITY_ACCEPTED })
+    const answer: ConfigType["moddbVisibility"] = { policy: MODDB_VISIBILITY_ALWAYS, answeredVersion: "1.7.0-beta.10", countedVersions: ["1.7.0-beta.10"] }
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY, payload: answer })
 
-    assert.equal(result.moddbVisibilityAnswer, MODDB_VISIBILITY_ACCEPTED)
+    assert.deepEqual(result.moddbVisibility, answer)
     assert.equal(result.background, config.background)
     assert.equal(result.installations, config.installations)
   })

@@ -91,7 +91,7 @@ const api: BridgeAPI = {
   },
   netManager: {
     queryURL: (url: string): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.QUERY_URL, url),
-    acceptModDbVisibility: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.ACCEPT_MODDB_VISIBILITY),
+    countModDbDownload: (consent: ModDbVisibilityConsentValue | null): Promise<ModDbCountResult> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.COUNT_MODDB_DOWNLOAD, consent),
     fetchReleaseNotes: (): Promise<FetchReleaseNotesResult> => ipcRenderer.invoke(IPC_CHANNELS.NET_MANAGER.FETCH_RELEASE_NOTES)
   },
   backgroundsManager: {

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import "./helpers/electronMock"
-import { setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
+import { setElectronAppVersion, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 
 /**
@@ -36,7 +36,7 @@ vi.mock("@src/ipc/accountStore", () => ({
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { ACCENT_PRESETS, DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
-import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
+import { defaultModDbVisibility, MAX_COUNTED_VERSIONS } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
 import { CURRENT_CONFIG_SCHEMA, legacyGameVersionId } from "@domain/config/migrations"
@@ -60,6 +60,7 @@ beforeEach(() => {
   setElectronPath("appData", appDataFolder)
   setElectronPath("home", temporaryRoot)
   setElectronPath("appRoot", join(temporaryRoot, "app"))
+  setElectronAppVersion()
 
   vi.mocked(saveAccountSecrets).mockReset()
   vi.mocked(saveAccountSecrets).mockResolvedValue("saved")
@@ -88,7 +89,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
     accentColor: DEFAULT_ACCENT_ID,
-    moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
+    moddbVisibility: defaultModDbVisibility(),
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
     lastSeenChangelogVersion: "",
@@ -594,26 +595,110 @@ describe("normalizeConfig: lastSeenChangelogVersion", () => {
   })
 })
 
-describe("normalizeConfig: moddbVisibilityAnswer", () => {
-  it("reads a config written before the field existed as not asked yet", async () => {
+describe("normalizeConfig: moddbVisibility", () => {
+  it("reads a config written before the field existed as nobody having answered", async () => {
     const { normalizeConfig } = await freshConfigManager()
-    assert.equal(normalizeConfig({}).moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER)
+    assert.deepEqual(normalizeConfig({}).moddbVisibility, defaultModDbVisibility())
   })
 
-  it("keeps every answer the prompt can record, so none of the three is ever asked twice", async () => {
+  it("keeps a stored answer whole, so a version is neither asked about nor counted twice", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const stored = { policy: "always", answeredVersion: "1.7.0-beta.10", countedVersions: ["1.7.0-beta.9", "1.7.0-beta.10"] }
+
+    assert.deepEqual(normalizeConfig({ moddbVisibility: stored }).moddbVisibility, stored)
+  })
+
+  it("falls back to nobody-has-answered for anything else, rather than inventing a consent", async () => {
     const { normalizeConfig } = await freshConfigManager()
 
-    for (const answer of [MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_DECLINED, MODDB_VISIBILITY_ALREADY_DONE]) {
-      assert.equal(normalizeConfig({ moddbVisibilityAnswer: answer }).moddbVisibilityAnswer, answer)
+    for (const value of [1, true, null, ["always"], { policy: "ALWAYS" }, { policy: "yes" }]) {
+      assert.equal(normalizeConfig({ moddbVisibility: value }).moddbVisibility.policy, "ask", JSON.stringify(value))
     }
   })
 
-  it("falls back to not-asked-yet for anything else, rather than inventing a consent", async () => {
+  it("drops unusable versions out of the counted list and caps what is left", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const raw = [7, "", null, "1.7.0-beta.9", "1.7.0-beta.9", "x".repeat(200), ...Array.from({ length: MAX_COUNTED_VERSIONS }, (_unused, index) => `1.7.0-beta.${index + 10}`)]
+
+    const counted = normalizeConfig({ moddbVisibility: { policy: "always", countedVersions: raw } }).moddbVisibility.countedVersions
+
+    assert.equal(counted.length, MAX_COUNTED_VERSIONS)
+    assert.equal(counted.includes("1.7.0-beta.9"), false, "the oldest entry should have been trimmed off the front")
+    assert.equal(counted.at(-1), `1.7.0-beta.${MAX_COUNTED_VERSIONS + 9}`)
+  })
+
+  /**
+   * #219's single answer, migrated. Nobody recorded which version it was given under, so it reads
+   * as an answer for the version running now: the question comes back on the next new version
+   * rather than on this one, and an acceptance's own count is remembered so switching to "always"
+   * later cannot hit that same listing entry twice.
+   */
+  it("reads a #219 answer as one given for the running version", async () => {
+    setElectronAppVersion("1.7.0-beta.10")
     const { normalizeConfig } = await freshConfigManager()
 
-    for (const value of ["yes", "ACCEPTED", "", 1, true, null, {}, ["accepted"]]) {
-      assert.equal(normalizeConfig({ moddbVisibilityAnswer: value }).moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER, String(value))
+    assert.deepEqual(normalizeConfig({ moddbVisibilityAnswer: "accepted" }).moddbVisibility, {
+      policy: "ask",
+      answeredVersion: "1.7.0-beta.10",
+      countedVersions: ["1.7.0-beta.10"]
+    })
+
+    for (const answer of ["declined", "already-done"]) {
+      assert.deepEqual(normalizeConfig({ moddbVisibilityAnswer: answer }).moddbVisibility, { policy: "ask", answeredVersion: "1.7.0-beta.10", countedVersions: [] }, answer)
     }
+  })
+
+  it("reads a #219 config that was never answered as nobody having answered", async () => {
+    setElectronAppVersion("1.7.0-beta.10")
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const answer of ["unasked", "ACCEPTED", ""]) {
+      assert.deepEqual(normalizeConfig({ moddbVisibilityAnswer: answer }).moddbVisibility, defaultModDbVisibility(), answer)
+    }
+  })
+
+  it("prefers the field over the #219 string when a config somehow carries both", async () => {
+    setElectronAppVersion("1.7.0-beta.10")
+    const { normalizeConfig } = await freshConfigManager()
+    const stored = { policy: "never", answeredVersion: "1.7.0-beta.9", countedVersions: [] }
+
+    assert.deepEqual(normalizeConfig({ moddbVisibility: stored, moddbVisibilityAnswer: "accepted" }).moddbVisibility, stored)
+  })
+
+  /**
+   * Same point accentColor and lastSeenChangelogVersion already make: adding a field must not need
+   * a schema bump. A beta.9 (schema 4) document never heard of this one, and an older build
+   * reading a schema 5 document this launcher wrote drops what it does not recognize and saves
+   * without it. Both land back here with no field at all, and both must read as an unanswered
+   * question rather than fail to migrate or start.
+   */
+  it("keeps a beta.9 (schema 4) document with no moddbVisibility field readable", async () => {
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }) }
+    delete legacyDoc.moddbVisibility
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.deepEqual(config.moddbVisibility, defaultModDbVisibility())
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+
+  it("migrates a beta.9 (schema 4) document that still carries the #219 answer, and writes it back under the new field", async () => {
+    setElectronAppVersion("1.7.0-beta.10")
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }) }
+    delete legacyDoc.moddbVisibility
+    legacyDoc.moddbVisibilityAnswer = "accepted"
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig, saveConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.deepEqual(config.moddbVisibility, { policy: "ask", answeredVersion: "1.7.0-beta.10", countedVersions: ["1.7.0-beta.10"] })
+
+    // The round trip: what a later launch reads back carries the new field and nothing of the old.
+    assert.equal(await saveConfig(config), true)
+    const written = JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8"))
+    assert.deepEqual(written.moddbVisibility, config.moddbVisibility)
+    assert.equal("moddbVisibilityAnswer" in written, false)
   })
 })
 

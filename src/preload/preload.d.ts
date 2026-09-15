@@ -99,13 +99,15 @@ declare global {
     netManager: {
       queryURL: (url: string) => Promise<string>
       /**
-       * Records the accepted answer to the one-time ModDB listing question and, once it is on
-       * disk, requests the listing archive once, which registers one download there. True when the
-       * answer was written; false means nothing was written and nothing was requested, so the
-       * question survives to the next launch. The request itself never fails out loud: it is the
-       * player's courtesy going unnoticed, not their problem.
+       * Records the player's answer to the ModDB listing question and, once it is on disk, counts
+       * the running version on the listing when that answer says to. `consent` is the answer they
+       * just gave, or null for the silent count a stored "always" owes this launch.
+       *
+       * Answers a reason token and the state the main process wrote, which the renderer mirrors so
+       * the two copies of the config agree on what has been counted. The request itself never
+       * fails out loud: it is the player's courtesy going unnoticed, not their problem.
        */
-      acceptModDbVisibility: () => Promise<boolean>
+      countModDbDownload: (consent: ModDbVisibilityConsentValue | null) => Promise<ModDbCountResult>
       /** Fetches this repository's GitHub releases, for the "what's new" dialog and the Info & Help page. See src/domain/appUpdate/whatsNew.ts. */
       fetchReleaseNotes: () => Promise<FetchReleaseNotesResult>
     }
