@@ -44,6 +44,18 @@ describe("release checksum rows", () => {
   })
 })
 
+describe("release tag validation", () => {
+  it("accepts a real release tag", () => {
+    assert.equal(script.validateTag("v1.7.0-beta.10"), "v1.7.0-beta.10")
+  })
+
+  it("refuses a tag carrying shell metacharacters instead of passing it through", () => {
+    assert.throws(() => script.validateTag("v1.0.0$(touch pwned)"), /refusing tag/)
+    assert.throws(() => script.validateTag("v1.0.0`touch pwned`"), /refusing tag/)
+    assert.throws(() => script.validateTag("v1.0.0; rm -rf /"), /refusing tag/)
+  })
+})
+
 describe("release notes section", () => {
   const section = script.buildSection([{ name: "latest.yml", sha256: sha }])
 
@@ -125,8 +137,17 @@ describe("release workflow", () => {
   })
 
   it("calls the script with the dispatched tag or the pushed one", () => {
-    assert.match(workflow, /node scripts\/release-checksums\.js "\$\{\{ inputs\.tag \|\| github\.ref_name \}\}"/)
     assert.match(workflow, /VIRUSTOTAL_API_KEY: \$\{\{ secrets\.VIRUSTOTAL_API_KEY \}\}/)
+  })
+
+  it("passes the tag through the step environment instead of interpolating it into the shell", () => {
+    // A `${{ }}` expression is substituted into the run script's text before
+    // bash parses it, so it must never sit inside the run: line itself; it
+    // has to arrive as an already-set environment variable that the shell
+    // only expands, never re-parses.
+    assert.match(workflow, /RELEASE_TAG: \$\{\{ inputs\.tag \|\| github\.ref_name \}\}/)
+    assert.match(workflow, /run: node scripts\/release-checksums\.js "\$RELEASE_TAG"/)
+    assert.doesNotMatch(workflow, /run:.*\$\{\{.*\}\}/)
   })
 
   // The regexes above pin the lines that matter but would happily pass on a

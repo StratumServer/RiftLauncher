@@ -72,4 +72,12 @@ jobs:
         with:
           node-version: 22
       # No npm ci: the script only uses Node built-ins and the gh CLI.
-      - run: node scripts/release-checksums.js "${{ inputs.tag || github.ref_name }}"
+      # The tag is passed through the step environment rather than interpolated
+      # into the run script: a `${{ }}` expression is substituted into the shell
+      # source before bash ever runs, so a tag carrying shell metacharacters
+      # would execute on the runner (contents: write, VirusTotal key) instead of
+      # reaching Node as an argument. $RELEASE_TAG in double quotes is a plain
+      # variable expansion, not re-parsed for substitutions.
+      - env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: node scripts/release-checksums.js "$RELEASE_TAG"

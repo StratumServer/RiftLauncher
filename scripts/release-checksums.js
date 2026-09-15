@@ -51,6 +51,19 @@ const METADATA_SUFFIXES = [".yml", ".blockmap"]
 const NOTE =
   "`latest.yml`, `latest-linux.yml` and the `.blockmap` are update metadata rather than programs, so they are listed by hash only. To check a download yourself: `certutil -hashfile <file> SHA256` on Windows, `sha256sum <file>` on Linux."
 
+// A release tag of this project looks like v1.7.0-beta.10. This is also the
+// last line of defense against shell metacharacters in the tag: the workflow
+// passes it through an env var (safe on its own), but the tag still reaches
+// `gh release download/view/edit` as a plain argument, so anything outside
+// this shape is refused rather than trusted.
+const TAG_PATTERN = /^[A-Za-z0-9._-]+$/
+
+/** Throws with a clear, printable message when the tag is not a plausible release tag. */
+function validateTag(tag) {
+  if (!TAG_PATTERN.test(tag)) throw new Error(`refusing tag ${JSON.stringify(tag)}: expected only letters, digits, '.', '_', '-' (e.g. v1.7.0-beta.10)`)
+  return tag
+}
+
 /** True when the file has to go through the upload_url dance instead of a direct POST. */
 function needsUploadUrl(sizeBytes) {
   return sizeBytes > DIRECT_UPLOAD_LIMIT
@@ -198,6 +211,12 @@ async function main() {
     console.error("usage: node scripts/release-checksums.js <tag>")
     process.exit(2)
   }
+  try {
+    validateTag(tag)
+  } catch (error) {
+    console.error(`[release-checksums] ${error.message}`)
+    process.exit(2)
+  }
 
   const workdir = mkdtempSync(join(tmpdir(), "release-checksums-"))
   try {
@@ -220,7 +239,7 @@ async function main() {
   }
 }
 
-module.exports = { SECTION_HEADING, DIRECT_UPLOAD_LIMIT, QUOTA_INTERVAL_MS, needsUploadUrl, quotaDelayMs, isMetadata, formatRow, buildSection, withSection }
+module.exports = { SECTION_HEADING, DIRECT_UPLOAD_LIMIT, QUOTA_INTERVAL_MS, TAG_PATTERN, validateTag, needsUploadUrl, quotaDelayMs, isMetadata, formatRow, buildSection, withSection }
 
 if (require.main === module) {
   main().catch((error) => {
