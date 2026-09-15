@@ -541,7 +541,7 @@ function ListMods(): JSX.Element {
               canInstall={installation !== undefined}
               onPickVisible={() => setPicks(addPicks(picks, modsList.slice(0, visibleMods).map(toModPick)))}
               onClear={() => setPicks([])}
-              onInstall={installPicks}
+              onInstall={() => installPicks()}
             />
           )}
         </StickyMenuWrapper>
