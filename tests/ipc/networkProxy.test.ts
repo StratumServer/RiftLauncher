@@ -36,6 +36,7 @@ const openSockets = new Set<Socket>()
 let origin: Server | undefined
 let proxy: Server | undefined
 let secureProxy: HttpsServer | undefined
+let secureOrigin: HttpsServer | undefined
 
 afterEach(async () => {
   for (const socket of openSockets) socket.destroy()
@@ -46,13 +47,14 @@ afterEach(async () => {
   delete process.env.HTTP_PROXY
   delete process.env.NO_PROXY
 
-  for (const server of [origin, proxy, secureProxy]) {
+  for (const server of [origin, proxy, secureProxy, secureOrigin]) {
     if (!server) continue
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
   origin = undefined
   proxy = undefined
   secureProxy = undefined
+  secureOrigin = undefined
 })
 
 function trackSockets(server: Server | HttpsServer): void {
@@ -70,6 +72,19 @@ function startOrigin(handler: (req: IncomingMessage, res: import("node:http").Se
       const address = origin?.address()
       if (address === null || typeof address !== "object") throw new Error("Origin server failed to bind")
       resolve(new URL(`http://127.0.0.1:${address.port}/`))
+    })
+  })
+}
+
+/** Like {@link startOrigin}, but the origin itself is reached over TLS with `cert`/`key`: an `https:` target, the shape a real login always is. */
+function startSecureOrigin(cert: string, key: string, handler: (req: IncomingMessage, res: import("node:http").ServerResponse) => void): Promise<URL> {
+  return new Promise((resolve) => {
+    secureOrigin = createHttpsServer({ cert, key }, handler)
+    trackSockets(secureOrigin)
+    secureOrigin.listen(0, "127.0.0.1", () => {
+      const address = secureOrigin?.address()
+      if (address === null || typeof address !== "object") throw new Error("Secure origin server failed to bind")
+      resolve(new URL(`https://127.0.0.1:${address.port}/`))
     })
   })
 }
@@ -299,5 +314,31 @@ describe("requestBoundedTextViaNode keeps HTTPS_PROXY's own scheme (#481)", () =
     process.env.HTTPS_PROXY = "socks5://127.0.0.1:1"
 
     await assert.rejects(requestBoundedTextViaNode(url), /Login proxy is not supported/)
+  })
+})
+
+describe("requestBoundedTextViaNode reaches an https target through an HTTP proxy's CONNECT tunnel (#481)", () => {
+  it("wraps the tunnelled socket in TLS and posts the login body through it", async () => {
+    const { cert, key } = createSelfSignedCert()
+    let receivedBody = ""
+    const url = await startSecureOrigin(cert, key, (req, res) => {
+      const chunks: Buffer[] = []
+      req.on("data", (chunk: Buffer) => chunks.push(chunk))
+      req.on("end", () => {
+        receivedBody = Buffer.concat(chunks).toString("utf8")
+        res.writeHead(200, { "Content-Type": "text/plain" })
+        res.end("ok")
+      })
+    })
+    const relay = await startRelayProxy()
+    setElectronProxyResolution(`PROXY 127.0.0.1:${relay.port}`)
+    setTrustedCa(cert)
+
+    const body = "email=someone%40example.com&password=hunter2"
+    const result = await requestBoundedTextViaNode(url, { method: "POST", body })
+
+    assert.equal(result, "ok")
+    assert.equal(receivedBody, body)
+    assert.deepEqual(relay.connectTargets, [`127.0.0.1:${url.port}`])
   })
 })
