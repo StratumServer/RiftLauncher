@@ -50,6 +50,32 @@ describe("SessionButton names the family a login request failure belongs to", ()
     })
   }
 
+  /**
+   * The proxy half of #481: a login that failed because of a proxy the main process has no
+   * client for (an authenticated proxy answering 407, or a SOCKS answer) is classified as
+   * `proxy-auth-required`/`proxy-unsupported` in the main process, which join the
+   * `network-unreachable` family the renderer already had a sentence for (issue #482).
+   * Both reason tokens collapse into the same wire status before they ever cross the IPC
+   * boundary, so what a renderer test can prove is this: the sentence the family already
+   * shows names a proxy, not just a connection or a firewall. en-US and fr-FR both carry the
+   * wording already, so no new string was needed for either.
+   */
+  it("mentions a proxy in the network-unreachable sentence, the family a proxy failure joins", async () => {
+    const login = vi.fn(async () => ({ status: "network-unreachable" }) as AccountLoginResult)
+    installMockWindowApi({ accountManager: { login } })
+
+    renderWithProviders(
+      <>
+        <SessionButton />
+        <NotificationsOverlay />
+      </>
+    )
+
+    await submitLogin()
+
+    expect(await screen.findByText(/proxy/i)).toBeTruthy()
+  })
+
   it("still shows the generic message for a request failure loginFailureFamily could not place", async () => {
     const login = vi.fn(async () => {
       throw new Error("Login failed")
