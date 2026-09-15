@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { dirname, extname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -14,17 +14,9 @@ const SOURCE_EXTENSIONS = [".ts", ".tsx"]
  * Recursively lists every file under `dir` whose extension is in `extensions`.
  */
 export function listSourceFiles(dir: string, extensions: string[] = SOURCE_EXTENSIONS): string[] {
-  const files: string[] = []
-
-  for (const entry of readdirSync(dir)) {
-    const fullPath = join(dir, entry)
-    const stats = statSync(fullPath)
-
-    if (stats.isDirectory()) files.push(...listSourceFiles(fullPath, extensions))
-    else if (extensions.includes(extname(fullPath))) files.push(fullPath)
-  }
-
-  return files
+  return readdirSync(dir, { recursive: true, encoding: "utf8" })
+    .filter((entry) => extensions.includes(extname(entry)))
+    .map((entry) => join(dir, entry))
 }
 
 /**
