@@ -15,9 +15,18 @@ on:
   push:
     tags:
       - "v*"
+  # Lets the checksum and scan job be re-run alone against a release that
+  # already exists, without rebuilding or re-uploading anything.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag of an existing release to append checksums and scans to"
+        required: true
+        type: string
 
 jobs:
   build-and-draft:
+    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -42,3 +51,25 @@ jobs:
         run: npx electron-builder --linux AppImage deb rpm pacman --publish always
       - if: runner.os == 'Windows'
         run: npx electron-builder --win --x64 --publish always
+
+  checksums-and-scans:
+    # Runs after the draft exists and holds every asset, and can also be
+    # dispatched on its own against a release that is already published.
+    needs: build-and-draft
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.build-and-draft.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+    # Uploading and scanning five 100 MB installers on the free quota is slow
+    # by design (4 requests per minute), so give the job room to finish.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No npm ci: the script only uses Node built-ins and the gh CLI.
+      - run: node scripts/release-checksums.js "${{ inputs.tag || github.ref_name }}"
