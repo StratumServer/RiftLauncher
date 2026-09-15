@@ -4,7 +4,7 @@
  * A failed row in the Activity Center used to read "An error occurred" for
  * every failure it could possibly show, while the thing that failed knew
  * perfectly well why: a refused connection, a full drive, a folder it may not
- * write to. The audit (`docs/notes/notifications-audit.md`) called that the
+ * write to. The audit (`docs/notes/archive/notifications-audit-2026-08.md`) called that the
  * least useful line in the panel.
  *
  * The catch site knows only a raw error, and a raw error is the one thing that
