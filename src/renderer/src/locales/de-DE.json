@@ -900,6 +900,8 @@
       "downloadError": "{{downloadName}} konnte nicht heruntergeladen werden. Prüfe deine Verbindung und versuche es erneut.",
       "extracted": "{{extractName}} entpackt.",
       "extractError": "{{extractName}} konnte nicht entpackt werden. Prüfe, ob das Archiv unbeschädigt ist und ob auf dem Laufwerk Platz ist.",
+      "installed": "Installation abgeschlossen: {{installName}}!",
+      "installError": "Fehler bei der Installation: {{installName}}!",
       "gameExitedWithErrors": "Vintage Story wurde mit Fehlern beendet. Die Details stehen im Protokoll.",
       "errorExecutingGame": "Beim Starten des Spiels ist etwas schiefgegangen. Die Details stehen im Protokoll.",
       "gameLaunchUnsupportedPlatform": "Vintage Story läuft auf dieser Plattform noch nicht. Versuche es unter Windows oder Linux.",

@@ -900,6 +900,8 @@
       "downloadError": "Letöltési hiba: {{downloadName}}!",
       "extracted": "A kicsomagolás befejeződött: {{extractName}}!",
       "extractError": "Hiba a kicsomagolás közben: {{extractName}}!",
+      "installed": "A telepítés befejeződött: {{installName}}!",
+      "installError": "Hiba a telepítés közben: {{installName}}!",
       "gameExitedWithErrors": "A Vintage Story, hibák következtében kilépett!",
       "errorExecutingGame": "A játék indításakor hibák léptek fel!",
       "gameLaunchUnsupportedPlatform": "A Vintage Story ezen a platformon még nem fut. Próbáld Windowsról vagy Linuxról.",

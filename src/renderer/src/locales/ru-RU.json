@@ -939,6 +939,8 @@
       "downloadError": "Не удалось загрузить {{downloadName}}. Проверьте подключение и попробуйте снова.",
       "extracted": "Извлечение завершено: {{extractName}}.",
       "extractError": "Не удалось распаковать {{extractName}}. Проверьте, что архив не повреждён и что на диске есть место.",
+      "installed": "Установка завершена: {{installName}}!",
+      "installError": "Ошибка установки: {{installName}}!",
       "gameExitedWithErrors": "Vintage Story завершилась с ошибками. Подробности есть в журнале.",
       "errorExecutingGame": "При запуске игры что-то пошло не так. Подробности есть в журнале.",
       "gameLaunchUnsupportedPlatform": "Vintage Story пока не работает на этой платформе. Попробуйте из Windows или Linux.",

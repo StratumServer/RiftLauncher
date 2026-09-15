@@ -900,6 +900,8 @@
       "downloadError": "Не ўдалося спампаваць {{downloadName}}. Праверце злучэнне і паспрабуйце зноў.",
       "extracted": "Распакавана: {{extractName}}.",
       "extractError": "Не ўдалося распакаваць {{extractName}}. Праверце, што архіў не пашкоджаны і што на дыску ёсць месца.",
+      "installed": "Завершана ўстаноўка: {{installName}}!",
+      "installError": "Памылка ўстаноўкі: {{installName}}!",
       "gameExitedWithErrors": "Vintage Story завяршылася з памылкамі. Падрабязнасці ёсць у журнале.",
       "errorExecutingGame": "Нешта пайшло не так пры запуску гульні. Падрабязнасці ёсць у журнале.",
       "gameLaunchUnsupportedPlatform": "Vintage Story пакуль не можа працаваць на гэтай платформе. Паспрабуйце з Windows ці Linux.",

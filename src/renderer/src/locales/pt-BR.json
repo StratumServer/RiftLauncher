@@ -900,6 +900,8 @@
       "downloadError": "Erro ao baixar: {{downloadName}}!",
       "extracted": "Extração concluída: {{extractName}}!",
       "extractError": "Erro na extração: {{extractName}}!",
+      "installed": "Instalação concluída: {{installName}}!",
+      "installError": "Erro na instalação: {{installName}}!",
       "gameExitedWithErrors": "Vintage Story parou com erros!",
       "errorExecutingGame": "Ocorreu um erro ao executar o jogo!",
       "gameLaunchUnsupportedPlatform": "O Vintage Story ainda não pode rodar nesta plataforma. Tente a partir do Windows ou Linux!",

@@ -900,6 +900,8 @@
       "downloadError": "下载出现错误: {{downloadName}}!",
       "extracted": "解压完成: {{extractName}}!",
       "extractError": "解压出现错误: {{extractName}}!",
+      "installed": "安装完成: {{installName}}!",
+      "installError": "安装出现错误: {{installName}}!",
       "gameExitedWithErrors": "《复古物语》因出现错误退出！",
       "errorExecutingGame": "执行游戏时发生错误！",
       "gameLaunchUnsupportedPlatform": "Vintage Story 还不能在这个平台上运行。请在 Windows 或 Linux 上试试。",

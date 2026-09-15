@@ -287,6 +287,70 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     }
   }, [])
 
+  /** The noun each task's prevent-close reason and its "Adding ___ to [PATH]" log use; irregular enough (extraction, installation, compression) that concatenating `type` does not produce them. */
+  const TASK_NOUNS: Record<"download" | "extract" | "install" | "compress", string> = { download: "download", extract: "extraction", install: "installation", compress: "compression" }
+
+  /**
+   * The scaffold startDownload, startExtract, startInstall and startCompress used to each carry
+   * on their own: a uuid, the prevent-close token, the two info logs, ADD_TASK, the awaited
+   * operation, the COMPLETED dispatch and optional toast on success, classifyFailure and the
+   * failed dispatch and optional toast on catch, and releasing the prevent-close token either way.
+   *
+   * The download resolving (or extracting, or installing, or compressing) is what completes the
+   * task, not the progress events a separate listener feeds into the reducer above: a source whose
+   * last tick lands under 100 would otherwise leave the task showing as still running forever, and
+   * dispatching COMPLETED after a 100 tick already did costs nothing (the reducer is idempotent).
+   *
+   * `operation` is the one thing each of the four actually differs on: the host call itself, plus
+   * whatever it alone needs after it (extract's post-await chmod, install's throw-on-!result.ok,
+   * compress's optional compressionLevel). `onFinish` here stays the two-argument (status, error)
+   * shape every non-download caller already has; download's own three-argument contract (status,
+   * path, error) is adapted in its own wrapper, over data (the downloaded file's path) only that
+   * wrapper's closure holds. The raw caught value is handed back as-is, not normalized to an
+   * Error, so a wrapper's own `${err}` in its error message matches exactly what it produced
+   * before this fold.
+   *
+   * Two of the four info logs are worded a little more generically than their old per-function
+   * copies (a shared "runTask" tag instead of "startDownload"/"startExtract"/etc., and compress's
+   * "Adding" log no longer names its source path, only its destination): neither reaches a player,
+   * neither is asserted by a test, and log-provenance.test.ts still passes since nothing here
+   * interpolates a path, a name or any other risky identifier.
+   */
+  async function runTask(
+    config: { type: keyof typeof TASK_NOUNS; name: string; desc: string; notifications: TaskNotificationPolicy; messageKeys: { successKey: string; failureKey: string } },
+    operation: (id: string) => Promise<void>,
+    onFinish: (status: boolean, error: unknown) => void
+  ): Promise<void> {
+    const { type, name, desc, notifications, messageKeys } = config
+    const id = crypto.randomUUID()
+    const noun = TASK_NOUNS[type]
+    const nameParam = `${type}Name`
+    const LOG_TAG = `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > runTask] [${id}] [${type}]`
+
+    try {
+      window.api.utils.setPreventAppClose("add", id, `Started ${noun}.`)
+      window.api.utils.logMessage("info", `${LOG_TAG} Adding ${noun} to [PATH].`)
+      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type, progress: 0, status: "pending" } })
+
+      window.api.utils.logMessage("info", `${LOG_TAG} ${type}ing...`)
+      await operation(id)
+
+      window.api.utils.logMessage("info", `${LOG_TAG} ${type}ed.`)
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
+      if (notifications.completion === "toast") addNotification(t(messageKeys.successKey, { [nameParam]: name }), "success", { presentation: "toast" })
+      onFinish(true, null)
+    } catch (err) {
+      window.api.utils.logMessage("error", `${LOG_TAG} Error ${type}ing.`)
+      window.api.utils.logMessage("debug", `${LOG_TAG} Error ${type}ing: ${err}`)
+      const reason = classifyFailure(err)
+      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
+      if (notifications.failure === "generic") addNotification(t(messageKeys.failureKey, { [nameParam]: name }), "error", { reason })
+      onFinish(false, err)
+    } finally {
+      window.api.utils.setPreventAppClose("remove", id, `Finished ${noun}.`)
+    }
+  }
+
   async function startDownload(
     name: string,
     desc: string,
@@ -296,34 +360,14 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     fileName: string,
     onFinish: (status: boolean, path: string, error: Error | null) => void
   ): Promise<void> {
-    const id = crypto.randomUUID()
-
-    try {
-      window.api.utils.setPreventAppClose("add", id, "Started download.")
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Adding download to [PATH].`)
-      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "download", progress: 0, status: "pending" } })
-
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Downloading...`)
-      const downloadedFile = await window.api.pathsManager.downloadOnPath(id, url, outputPath, fileName)
-
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Downloaded.`)
-      // The download resolving is what completes the task, not the progress
-      // events: a source whose last tick lands at 97 would otherwise leave the
-      // task showing as still running forever. See the reducer above for why
-      // dispatching this after a 100 tick already did costs nothing.
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      if (notifications.completion === "toast") addNotification(t("notifications.body.downloaded", { downloadName: name }), "success", { presentation: "toast" })
-      onFinish(true, downloadedFile, null)
-    } catch (err) {
-      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Error downloading.`)
-      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startDownload] [${id}] [download] Error downloading: ${err}`)
-      const reason = classifyFailure(err)
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
-      if (notifications.failure === "generic") addNotification(t("notifications.body.downloadError", { downloadName: name }), "error", { reason })
-      onFinish(false, "", new Error(`Error downloading ${url}: ${err}`))
-    } finally {
-      window.api.utils.setPreventAppClose("remove", id, "Finished download.")
-    }
+    let downloadedFile = ""
+    await runTask(
+      { type: "download", name, desc, notifications, messageKeys: { successKey: "notifications.body.downloaded", failureKey: "notifications.body.downloadError" } },
+      async (id) => {
+        downloadedFile = await window.api.pathsManager.downloadOnPath(id, url, outputPath, fileName)
+      },
+      (status, err) => onFinish(status, downloadedFile, status ? null : new Error(`Error downloading ${url}: ${err}`))
+    )
   }
 
   async function startExtract(
@@ -336,40 +380,20 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     onFinish: (status: boolean, error: Error | null) => void,
     unwrapSingleRootFolder = false
   ): Promise<void> {
-    const id = crypto.randomUUID()
+    await runTask(
+      { type: "extract", name, desc, notifications, messageKeys: { successKey: "notifications.body.extracted", failureKey: "notifications.body.extractError" } },
+      async (id) => {
+        const result = await window.api.pathsManager.extractOnPath(id, filePath, outputPath, deleteZip, unwrapSingleRootFolder)
+        if (!result) throw new Error("Extraction failed")
 
-    try {
-      window.api.utils.setPreventAppClose("add", id, "Started extraction.")
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Adding extraction to [PATH].`)
-      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "extract", progress: 0, status: "pending" } })
-
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Extracting...`)
-      const result = await window.api.pathsManager.extractOnPath(id, filePath, outputPath, deleteZip, unwrapSingleRootFolder)
-
-      if (!result) throw new Error("Extraction failed")
-
-      // Awaited so a rejected chmod is caught below instead of becoming an unhandled
-      // rejection. A failed chmod fails the task on purpose: an unexecutable game is a
-      // failed install on Linux, not a harmless side note. (On non-Linux platforms the
-      // call resolves `false` without throwing, which is the normal, expected outcome.)
-      await window.api.pathsManager.changePerms([outputPath], 0o755)
-
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Extracted.`)
-      // Completed once the extraction and the chmod are both through, so a
-      // last progress tick under 100 cannot strand the task as running.
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      if (notifications.completion === "toast") addNotification(t("notifications.body.extracted", { extractName: name }), "success", { presentation: "toast" })
-      onFinish(true, null)
-    } catch (err) {
-      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Error extracting.`)
-      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startExtract] [${id}] [extract] Error extracting: ${err}`)
-      const reason = classifyFailure(err)
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
-      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error", { reason })
-      onFinish(false, new Error(`Error extracting ${filePath}: ${err}`))
-    } finally {
-      window.api.utils.setPreventAppClose("remove", id, "Finished extraction.")
-    }
+        // Awaited so a rejected chmod is caught below instead of becoming an unhandled
+        // rejection. A failed chmod fails the task on purpose: an unexecutable game is a
+        // failed install on Linux, not a harmless side note. (On non-Linux platforms the
+        // call resolves `false` without throwing, which is the normal, expected outcome.)
+        await window.api.pathsManager.changePerms([outputPath], 0o755)
+      },
+      (status, err) => onFinish(status, status ? null : new Error(`Error extracting ${filePath}: ${err}`))
+    )
   }
 
   async function startInstall(
@@ -381,39 +405,19 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     deleteInstaller: boolean,
     onFinish: (status: boolean, error: Error | null) => void
   ): Promise<void> {
-    const id = crypto.randomUUID()
+    await runTask(
+      { type: "install", name, desc, notifications, messageKeys: { successKey: "notifications.body.installed", failureKey: "notifications.body.installError" } },
+      async (id) => {
+        const result = await window.api.pathsManager.runInstaller(id, filePath, outputPath, deleteInstaller)
 
-    try {
-      window.api.utils.setPreventAppClose("add", id, "Started installation.")
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Adding installation to [PATH].`)
-      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "install", progress: 0, status: "pending" } })
-
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Installing...`)
-      const result = await window.api.pathsManager.runInstaller(id, filePath, outputPath, deleteInstaller)
-
-      // The wire tells apart why the installer never landed the game (see
-      // InstallerRunResult in global.d.ts), but onFinish here stays the
-      // boolean shape every caller already expects: the reason still rides
-      // along on the thrown Error's message for the log line below.
-      if (!result.ok) throw new Error(`Installation failed: ${result.reason}`)
-
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Installed.`)
-      // The worst of the four for this: an installer that ran to the end sends
-      // a 100 tick, but one whose payload was read out instead reports whatever
-      // the reader last counted, and neither is what says the task is done.
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      if (notifications.completion === "toast") addNotification(t("notifications.body.extracted", { extractName: name }), "success", { presentation: "toast" })
-      onFinish(true, null)
-    } catch (err) {
-      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Error installing.`)
-      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Error installing: ${err}`)
-      const reason = classifyFailure(err)
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
-      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error", { reason })
-      onFinish(false, new Error(`Error installing ${filePath}: ${err}`))
-    } finally {
-      window.api.utils.setPreventAppClose("remove", id, "Finished installation.")
-    }
+        // The wire tells apart why the installer never landed the game (see
+        // InstallerRunResult in global.d.ts), but onFinish here stays the
+        // boolean shape every caller already expects: the reason still rides
+        // along on the thrown Error's message for the log line below.
+        if (!result.ok) throw new Error(`Installation failed: ${result.reason}`)
+      },
+      (status, err) => onFinish(status, status ? null : new Error(`Error installing ${filePath}: ${err}`))
+    )
   }
 
   async function startCompress(
@@ -426,33 +430,14 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     onFinish: (status: boolean, error: Error | null) => void,
     compressionLevel?: number
   ): Promise<void> {
-    const id = crypto.randomUUID()
-
-    try {
-      window.api.utils.setPreventAppClose("add", id, "Started compression.")
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Adding compression of [PATH] to [PATH].`)
-      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type: "compress", progress: 0, status: "pending" } })
-
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Compressing...`)
-      const result = await window.api.pathsManager.compressOnPath(id, inputPath, outputPath, fileName, compressionLevel)
-
-      if (!result) throw new Error("Compression failed")
-
-      window.api.utils.logMessage("info", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Compressed.`)
-      // Same as the other three: the resolved call is the completion signal.
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      if (notifications.completion === "toast") addNotification(t("notifications.body.compressed", { compressName: name }), "success", { presentation: "toast" })
-      onFinish(true, null)
-    } catch (err) {
-      window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Error compressing.`)
-      window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startCompress] [${id}] [compress] Error compressing: ${err}`)
-      const reason = classifyFailure(err)
-      tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
-      if (notifications.failure === "generic") addNotification(t("notifications.body.compressError", { compressName: name }), "error", { reason })
-      onFinish(false, new Error(`Error compressing: ${err}`))
-    } finally {
-      window.api.utils.setPreventAppClose("remove", id, "Finished compression.")
-    }
+    await runTask(
+      { type: "compress", name, desc, notifications, messageKeys: { successKey: "notifications.body.compressed", failureKey: "notifications.body.compressError" } },
+      async (id) => {
+        const result = await window.api.pathsManager.compressOnPath(id, inputPath, outputPath, fileName, compressionLevel)
+        if (!result) throw new Error("Compression failed")
+      },
+      (status, err) => onFinish(status, status ? null : new Error(`Error compressing: ${err}`))
+    )
   }
 
   async function startOptimumPatch(
