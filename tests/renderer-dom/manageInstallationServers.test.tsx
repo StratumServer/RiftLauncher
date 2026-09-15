@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { Route, Routes } from "react-router-dom"
+import { Route, Routes, useLocation } from "react-router-dom"
 
 import ManageInstallationServers from "@renderer/features/servers/pages/ManageInstallationServers"
 import ImportServersDialog from "@renderer/features/servers/components/ImportServersDialog"
@@ -38,6 +38,11 @@ function anInstallation(servers?: ServerBookmarkType[]): InstallationType {
   }
 }
 
+/** Where the page's own navigations land, the session report notice's action among them. */
+function WhereProbe(): JSX.Element {
+  return <output data-testid="where">{useLocation().pathname}</output>
+}
+
 function renderServersPage(servers?: ServerBookmarkType[], overrides: WindowApiOverrides = {}): ReturnType<typeof installMockWindowApi> {
   const api = installMockWindowApi({
     configManager: {
@@ -52,17 +57,20 @@ function renderServersPage(servers?: ServerBookmarkType[], overrides: WindowApiO
   })
 
   renderWithProviders(
-    <Routes>
-      <Route
-        path="/installations/servers/:id"
-        element={
-          <TaskProvider>
-            <ManageInstallationServers />
-            <NotificationsOverlay />
-          </TaskProvider>
-        }
-      />
-    </Routes>,
+    <>
+      <Routes>
+        <Route
+          path="/installations/servers/:id"
+          element={
+            <TaskProvider>
+              <ManageInstallationServers />
+              <NotificationsOverlay />
+            </TaskProvider>
+          }
+        />
+      </Routes>
+      <WhereProbe />
+    </>,
     { route: `/installations/servers/${INSTALLATION_ID}` }
   )
 
@@ -203,6 +211,25 @@ describe("ManageInstallationServers", () => {
     expect(executeGame.mock.calls[0]?.[2]).not.toContain("vintagestoryjoin")
   })
 
+  /**
+   * useLaunchGame is Join's copy of what MainMenu's PlayHandler used to do inline, and the two had
+   * drifted: PlayHandler built a see-report action off pickPlayOutcomeNotification's `report` field,
+   * useLaunchGame dropped it on the floor, so a crash after joining a server offered no report link
+   * (#490 item 1). Mirrors launchPlayGame.test.tsx's "offers the session report" assertion for Play.
+   */
+  it("offers the session report from the exited-with-errors notice and lands on that Installation's page", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn<BridgeAPI["gameManager"]["executeGame"]>(async () => ({ ok: true, exitCode: 1 }) as GameExecutionResult)
+    renderServersPage([{ id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: -1 }], { gameManager: { executeGame } })
+
+    await user.click(await screen.findByRole("button", { name: "Join" }))
+
+    await screen.findByText("Vintage Story exited with errors. The log has the details.")
+    await user.click(await screen.findByRole("button", { name: "See what went wrong" }))
+
+    await vi.waitFor(() => expect(screen.getByTestId("where").textContent).toBe(`/installations/report/${INSTALLATION_ID}`))
+  })
+
   it("stamps the bookmark as launched once the game has run", async () => {
     const user = userEvent.setup()
     const executeGame = vi.fn<BridgeAPI["gameManager"]["executeGame"]>(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
@@ -242,6 +269,24 @@ describe("ManageInstallationServers", () => {
 
     const saved = vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0]
     expect(saved?.installations[0]?.servers?.map((server) => server.name)).toEqual(["Stratum", "Testing"])
+  })
+
+  /**
+   * MainMenu's Play button and this row both go through useLaunchGame (#490 item 1): before that
+   * fold, the report action lived only in MainMenu's own copy, so a crash after joining a server
+   * offered no report link. Mirrors launchPlayGame.test.tsx's "offers the session report" case.
+   */
+  it("offers the session report from the exited-with-errors notice and lands on that Installation's page", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn<BridgeAPI["gameManager"]["executeGame"]>(async () => ({ ok: true, exitCode: 1 }) as GameExecutionResult)
+    renderServersPage([{ id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: -1 }], { gameManager: { executeGame } })
+
+    await user.click(await screen.findByRole("button", { name: "Join" }))
+
+    await screen.findByText("Vintage Story exited with errors. The log has the details.")
+    await user.click(await screen.findByRole("button", { name: "See what went wrong" }))
+
+    await vi.waitFor(() => expect(screen.getByTestId("where").textContent).toBe(`/installations/report/${INSTALLATION_ID}`))
   })
 
   /**

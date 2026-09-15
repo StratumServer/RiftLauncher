@@ -23,7 +23,10 @@ export { createTrustedEvent, createUntrustedEvent } from "./trustedEvent"
  */
 const DEFAULT_APP_VERSION = "0.0.0-test"
 
-const state = { userDataPath: "", appVersion: DEFAULT_APP_VERSION }
+// "DIRECT" so `requestBoundedTextViaNode` (src/ipc/network.ts, issue #481) keeps behaving
+// exactly as it did before it started asking, in every test that never calls
+// `setElectronProxyResolution` itself.
+const state = { userDataPath: "", appVersion: DEFAULT_APP_VERSION, proxyResolution: "DIRECT" }
 const namedPaths: Record<string, string> = {}
 
 /**
@@ -66,6 +69,16 @@ export function setElectronUserDataPath(path: string): void {
  */
 export function setElectronPath(name: "appData" | "home" | "appRoot", path: string): void {
   namedPaths[name] = path
+}
+
+/**
+ * Points `session.defaultSession.resolveProxy(url)` at `answer`, the PAC-style string Electron's
+ * real session answers with (`"DIRECT"`, `"PROXY host:port"`, `"SOCKS5 host:port"`, ...). Tests for
+ * `requestBoundedTextViaNode`'s proxy support (issue #481) set this in place of a real Chromium
+ * session, which nothing under `tests/` runs.
+ */
+export function setElectronProxyResolution(answer: string): void {
+  state.proxyResolution = answer
 }
 
 /**
@@ -137,5 +150,9 @@ vi.mock("electron", () => {
   const dialog = { showSaveDialog: vi.fn(), showOpenDialog: vi.fn() }
   const shell = { showItemInFolder: vi.fn(), openPath: vi.fn(), openExternal: vi.fn() }
 
-  return { app, ipcMain, dialog, shell }
+  // `resolveProxy` is the one `session` member `requestBoundedTextViaNode` reads (issue #481);
+  // nothing else on a real `Session` is touched by anything under test.
+  const session = { defaultSession: { resolveProxy: async (): Promise<string> => state.proxyResolution } }
+
+  return { app, ipcMain, dialog, shell, session }
 })

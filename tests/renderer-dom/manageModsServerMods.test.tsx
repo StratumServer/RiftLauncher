@@ -1,14 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { Route, Routes } from "react-router-dom"
-
-import ManageMods from "@renderer/features/installations/pages/ManageMods"
-import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
-import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
 import { createMockConfig, installMockWindowApi, type MockedBridgeAPI, type WindowApiOverrides } from "./helpers/windowApi"
-import { renderWithProviders } from "./helpers/render"
+import { mountManageMods } from "./helpers/mountManageMods"
 
 /**
  * The Mods a server downloaded, on Manage Mods (#459).
@@ -91,20 +86,7 @@ function renderManageMods(overrides: WindowApiOverrides = {}): MockedBridgeAPI {
     modsManager: { getInstalledMods: vi.fn(async () => ownMods()), getServerMods: vi.fn(async () => serverGroups()), ...overrides.modsManager }
   })
 
-  renderWithProviders(
-    <Routes>
-      <Route
-        path="/installations/mods/:id"
-        element={
-          <TaskProvider>
-            <ManageMods />
-            <NotificationsOverlay />
-          </TaskProvider>
-        }
-      />
-    </Routes>,
-    { route: "/installations/mods/install-a" }
-  )
+  mountManageMods()
 
   return api
 }

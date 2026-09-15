@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, it } from "vitest"
+import { listUnder } from "./ymlBlock"
 
 /**
  * Guards the `electronLanguages` pin in electron-builder.yml.
@@ -14,9 +15,6 @@ import { describe, it } from "vitest"
  * deleted. So the value has to be the exact tag "en-US", and a later edit that
  * "simplifies" it to "en", adds an unintended locale, or drops the rationale
  * has to fail here rather than in a packaged build nobody re-checks.
- *
- * The file is read as text on purpose: js-yaml is only a transitive dependency
- * of electron-updater, and importing it here would be an undeclared dependency.
  */
 describe("electron-builder locale pruning", () => {
   const yml = readFileSync(resolve(__dirname, "../../electron-builder.yml"), "utf8")
@@ -26,14 +24,7 @@ describe("electron-builder locale pruning", () => {
   })
 
   it("keeps exactly the en-US Chromium locale", () => {
-    const block = yml.split(/^electronLanguages:$/m)[1] ?? ""
-    const entries: string[] = []
-    for (const line of block.split("\n").slice(1)) {
-      const value = /^\s+-\s+(\S+)\s*$/.exec(line)?.[1]
-      if (value === undefined) break
-      entries.push(value)
-    }
-    assert.deepEqual(entries, ["en-US"])
+    assert.deepEqual(listUnder(yml, "", "electronLanguages"), ["en-US"])
   })
 
   it("keeps the rationale comment that explains the exact-tag requirement", () => {

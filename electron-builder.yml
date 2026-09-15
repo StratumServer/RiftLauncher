@@ -85,12 +85,14 @@ nsis:
   oneClick: false
   runAfterFinish: true
 mac:
+  # entitlementsInherit points at build/entitlements.mac.plist, which has never
+  # existed in git history. build-macos in CI only ever runs build:unpack:no-typecheck
+  # (electron-builder --dir, unsigned, entitlements never consulted); build:mac
+  # (electron-builder --mac) is the only script that would hit the missing
+  # file, and nobody runs it from CI today. Left open rather than guessed at:
+  # either add the plist or drop entitlementsInherit and notarize below, a
+  # maintainer's call on codesigning intent, not a debt cleanup.
   entitlementsInherit: build/entitlements.mac.plist
-  extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
