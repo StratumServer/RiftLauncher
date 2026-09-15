@@ -371,6 +371,8 @@
       "downloadError": "Ошибка загрузки: {{downloadName}}!",
       "extracted": "Извлечение завершено: {{extractName}}!",
       "extractError": "Ошибка извлечения: {{extractName}}!",
+      "installed": "Установка завершена: {{installName}}!",
+      "installError": "Ошибка установки: {{installName}}!",
       "gameExitedWithErrors": "Vintage Story завершилась с ошибками!",
       "errorExecutingGame": "Произошла ошибка при запуске игры!",
       "missingFields": "Пожалуйста, заполните все поля!",

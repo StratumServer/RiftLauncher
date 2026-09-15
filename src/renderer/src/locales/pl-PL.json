@@ -370,6 +370,8 @@
       "downloaded": "Zakończono pobieranie: {{downloadName}}!",
       "errorExecutingGame": "Podczas uruchamiania gry wystąpił błąd!",
       "extractError": "Błąd wypakowywania: {{extractName}}!",
+      "installed": "Ukończono instalację: {{installName}}!",
+      "installError": "Błąd instalacji: {{installName}}!",
       "extracted": "Ukończono wypakowywanie: {{extractName}}!",
       "folderDoesntExists": "Folder, który próbujesz otworzyć nie istnieje!",
       "gameExitedWithErrors": "Vintage Story zostało zamknięte z błędami!",

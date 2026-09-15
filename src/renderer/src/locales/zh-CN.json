@@ -200,6 +200,8 @@
       "downloadError": "下载出现错误: {{downloadName}}!",
       "extracted": "解压完成: {{extractName}}!",
       "extractError": "解压出现错误: {{extractName}}!",
+      "installed": "安装完成: {{installName}}!",
+      "installError": "安装出现错误: {{installName}}!",
       "gameExitedWithErrors": "《复古物语》因出现错误退出！",
       "errorExecutingGame": "执行游戏时发生错误！",
       "missingFields": "请填写所有字段！"
