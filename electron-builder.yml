@@ -86,7 +86,7 @@ nsis:
   runAfterFinish: true
 mac:
   # entitlementsInherit points at build/entitlements.mac.plist, which has never
-  # existed in git history. build-macos in CI only ever runs build:unpack
+  # existed in git history. build-macos in CI only ever runs build:unpack:no-typecheck
   # (electron-builder --dir, unsigned, entitlements never consulted); build:mac
   # (electron-builder --mac) is the only script that would hit the missing
   # file, and nobody runs it from CI today. Left open rather than guessed at:

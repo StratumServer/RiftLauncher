@@ -55,6 +55,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
+      # Only the ubuntu leg's report is kept: sonarcloud below reads it instead of
+      # regenerating its own, which used to duplicate this same step standalone.
+      - if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-ubuntu
+          path: coverage/
+          retention-days: 1
 
   # `dev` branch protection requires a context literally named `test`, and a
   # matrixed job can't produce one: it reports `test (ubuntu-latest)` and
@@ -75,7 +83,17 @@ jobs:
   # Informational quality scan: never blocks a merge, so a SonarCloud outage
   # or configuration change can't turn the whole run red.
   # Dependabot events carry no secrets so the scan cannot authenticate.
+  #
+  # Reads test-matrix's ubuntu coverage artifact rather than running
+  # npm run test:coverage a second time in this job, which used to duplicate
+  # the identical step test-matrix (ubuntu-latest) already ran. needs:
+  # [test-matrix] means this only runs once every matrix leg has succeeded,
+  # and only within the same workflow run that produced the artifact: a solo
+  # re-run of test-matrix (rather than the whole workflow) produces a fresh
+  # coverage report that this job will not automatically pick back up, so
+  # re-run sonarcloud too whenever test-matrix is re-run on its own.
   sonarcloud:
+    needs: [test-matrix]
     if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]')
     continue-on-error: true
     runs-on: ubuntu-latest
@@ -88,11 +106,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run test:coverage
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-ubuntu
+          path: coverage/
       - uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+  # build:unpack:no-typecheck skips the typecheck npm run build (and so
+  # build:unpack) does on its way to electron-vite build: the standalone
+  # typecheck job above already gates this same commit, so redoing it here
+  # only cost time, on both matrix legs and, when build-macos runs, at its
+  # 10x billing multiplier.
   build:
     strategy:
       fail-fast: false
@@ -108,7 +134,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build:unpack
+      - run: npm run build:unpack:no-typecheck
 
   # macos-latest bills Actions minutes at a 10x multiplier and the launcher
   # can't launch the game on macOS yet, so this build is manual-only.
@@ -127,4 +153,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build:unpack
+      - run: npm run build:unpack:no-typecheck
