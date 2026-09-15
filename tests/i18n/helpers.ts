@@ -55,6 +55,24 @@ export function flattenTranslationObject(value: unknown, prefix = ""): Record<st
   return out
 }
 
+/** i18next v4 cardinal plural suffixes (issue #496: no bare key keeps one of these as a sibling). */
+export const PLURAL_SUFFIXES = ["_zero", "_one", "_two", "_few", "_many", "_other"]
+
+/**
+ * Resolves a t() key against a flattened translation object the way i18next
+ * resolves it at runtime: if `key` itself is not a property, but at least one
+ * of its cardinal-suffixed siblings (key_one, key_other, ...) is, that
+ * sibling's value stands in for it. A plural family never keeps both a bare
+ * and a suffixed key (see no-bare-plural-keys.test.ts), so any one present
+ * suffix is representative enough for the parity checks that call this.
+ * Returns undefined only when neither the bare key nor any suffix exists.
+ */
+export function resolveTranslationValue(flattened: Record<string, unknown>, key: string): unknown {
+  if (key in flattened) return flattened[key]
+  const suffix = PLURAL_SUFFIXES.find((candidate) => `${key}${candidate}` in flattened)
+  return suffix ? flattened[`${key}${suffix}`] : undefined
+}
+
 export type TranslationCall = {
   /** Absolute path to the source file the call was found in. */
   file: string
