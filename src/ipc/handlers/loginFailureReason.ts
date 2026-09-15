@@ -66,7 +66,14 @@ export class AccountStorageFailure extends Error {
 export const NETWORK_MESSAGES = new Map<string, string>([
   ["Network request timed out", "timeout"],
   ["Network response is too large", "response-too-large"],
-  ["Network response was aborted", "response-aborted"]
+  ["Network response was aborted", "response-aborted"],
+  // The system proxy login now goes through (issue #481): Chromium's own proxy resolution
+  // carries no credentials for this transport to answer a 407 with, and a SOCKS (or otherwise
+  // unroutable) proxy answer has no client here. Both are thrown by
+  // `requestBoundedTextViaNode` before or during the CONNECT tunnel, never after, so neither can
+  // be confused with a refusal from the auth service itself.
+  ["Login proxy requires authentication", "proxy-auth-required"],
+  ["Login proxy is not supported", "proxy-unsupported"]
 ])
 
 /** The literals `assertSecureStorage` throws, reached through {@link AccountStorageFailure}. */
@@ -247,6 +254,13 @@ export type LoginFailureFamily = "network-unreachable" | "certificate-error" | "
  * connection, or a round trip that ran out of time. This is also where a
  * proxied network without the proxy configured lands, so the sentence this
  * family picks is the one that tells a player to check one.
+ *
+ * `proxy-auth-required` and `proxy-unsupported` (issue #481) join it for the
+ * same reason: both mean the login never reached the service either, only
+ * for a proxy-shaped cause this launcher cannot resolve on its own (a proxy
+ * asking for credentials nothing here can supply, or a SOCKS/unrouted answer
+ * with no client for it), and the family's own sentence already names a
+ * proxy as something to check.
  */
 const NETWORK_UNREACHABLE_REASONS = new Set<string>([
   "timeout",
@@ -265,7 +279,9 @@ const NETWORK_UNREACHABLE_REASONS = new Set<string>([
   "network-ENETDOWN",
   "network-EPROTO",
   "network-ERR_SOCKET_CONNECTION_TIMEOUT",
-  "network-ERR_STREAM_PREMATURE_CLOSE"
+  "network-ERR_STREAM_PREMATURE_CLOSE",
+  "proxy-auth-required",
+  "proxy-unsupported"
 ])
 
 /** The TLS codes {@link NETWORK_CODES} lists: a certificate this machine will not accept. */
