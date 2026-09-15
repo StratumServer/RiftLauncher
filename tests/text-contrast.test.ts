@@ -334,6 +334,16 @@ describe("text over the player's background image", () => {
     assertReadable("server dialog validation message", problem, POPUP, TEXT_FLOOR)
   })
 
+  it("keeps the build choice's own line readable on the section it sits on", () => {
+    // The sentence under a disabled Optimum choice, and the label it disables
+    // with it (#457). Both land on the same form section the field descriptions do.
+    const line = foreground("features/versions/pages/AddVersion.tsx", /text-xs text-(zinc-\d+)(?:\/(\d+))? pl-1/)
+    const disabledLabel = foreground("features/versions/pages/AddVersion.tsx", /cursor-not-allowed text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("build choice explanation", line, FORM_SECTION, TEXT_FLOOR)
+    assertReadable("disabled build choice label", disabledLabel, FORM_SECTION, TEXT_FLOOR)
+  })
+
   it("keeps the main menu link descriptions readable", () => {
     assertReadable("main menu descriptions", [ZINC["zinc-400"], 1], MAIN_MENU, TEXT_FLOOR)
   })

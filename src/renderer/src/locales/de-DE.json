@@ -98,7 +98,8 @@
       "deleteWhilePlaying": "Du kannst eine VS-Version nicht löschen, während du sie spielst!",
       "installNewVersion": "Installiere eine neue VS-Version",
       "deleteAnyway": "Trotzdem löschen",
-      "removeFromList": "Aus der Liste entfernen"
+      "removeFromList": "Aus der Liste entfernen",
+      "restoreVanilla": "Optimum entfernen"
     },
     "installations": {
       "noInstallationsFound": "Keine Installation gefunden!",

@@ -123,7 +123,8 @@
       "installUnpackFailed": "A Versão {{version}} do VS foi baixada, mas não pôde ser extraída. Instale-a novamente.",
       "installGameNotInFolder": "A Versão {{version}} do VS não foi parar em {{folder}}. Instale-a novamente em uma pasta vazia.",
       "catalogLoadFailed": "Não foi possível carregar a lista de Versões do VS. Verifique sua conexão e tente novamente.",
-      "removeFromList": "Remover da lista"
+      "removeFromList": "Remover da lista",
+      "restoreVanilla": "Remover o Optimum"
     },
     "installations": {
       "noInstallationsFound": "Nenhuma instalação encontrada!",

@@ -83,7 +83,31 @@ export const API_URL_RULES: readonly UrlRule[] = [
 export const DOWNLOAD_URL_RULES: readonly UrlRule[] = [
   { hostname: "cdn.vintagestory.at", pathPrefixes: ["/"] },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/download"] },
-  { hostname: "moddbcdn.vintagestory.at", pathPrefixes: ["/"] }
+  { hostname: "moddbcdn.vintagestory.at", pathPrefixes: ["/"] },
+  // Optimum's overlay archive and the manifest that describes it (#457), the one payload the
+  // launcher fetches from a host that is not Anego's. Narrow on purpose: the release assets of one
+  // repository, not GitHub at large. `latest/download` is the convenience address that names the
+  // newest release without an api.github.com listing call to read and validate first.
+  { hostname: "github.com", pathPrefixes: ["/StratumServer/Optimum/releases/download", "/StratumServer/Optimum/releases/latest/download"] }
+]
+
+/**
+ * Where a download may be redirected to, which is wider than where one may be started.
+ *
+ * GitHub answers a release asset with a 302 to a signed URL on its own asset CDN, so following
+ * that hop is the whole reason the download worker learned to follow any. The CDN is reachable
+ * only as a hop and never as a starting point: nothing in the launcher may ask to download an
+ * arbitrary object off it, and a signed URL is not something a caller could produce anyway.
+ *
+ * Two CDN hostnames because GitHub moved: `objects.githubusercontent.com` is the historical one
+ * and `release-assets.githubusercontent.com` is what a release asset resolves to today (measured
+ * against this repository's own releases). Keeping both means the change back, or a slow rollout,
+ * is not an outage.
+ */
+export const REDIRECT_URL_RULES: readonly UrlRule[] = [
+  ...DOWNLOAD_URL_RULES,
+  { hostname: "objects.githubusercontent.com", pathPrefixes: ["/"] },
+  { hostname: "release-assets.githubusercontent.com", pathPrefixes: ["/"] }
 ]
 
 export const BROWSER_URL_RULES: readonly UrlRule[] = [
@@ -386,8 +410,54 @@ export function getApiUrlMaxBytes(url: URL): number {
   return rule?.maxBytes ?? MAX_RESPONSE_BYTES
 }
 
+/**
+ * A loopback origin the Optimum flow may be pointed at instead of GitHub, so the
+ * whole install can be exercised against a stub overlay on a machine with no
+ * network and, today, against a payload that has never been published.
+ *
+ * Off unless `RIFTLAUNCHER_OPTIMUM_ORIGIN` is set, and even then it is honoured
+ * only for `http://127.0.0.1:<port>` with no path of its own: it can move where
+ * the manifest and the archive come from, and nothing else. Every hash gate,
+ * the file-by-file check of the staged overlay, the path policy and the child
+ * process bounds are untouched, so what an overlay served this way may do is
+ * exactly what one served from GitHub may do.
+ *
+ * It exists for the live check documented in docs/vintage-story-quirks.md.
+ * Nothing in a shipped build sets it, and a build that finds it set says so in
+ * the log.
+ */
+export function optimumTestOrigin(): string | undefined {
+  const value = process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN
+  if (!value) return undefined
+
+  try {
+    const url = new URL(value)
+    if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port || url.pathname !== "/" || url.search || url.username || url.password) return undefined
+    return url.origin
+  } catch {
+    return undefined
+  }
+}
+
+/** The URL as a loopback source URL, when that override is on and this is one. */
+function asTestOriginUrl(value: unknown): URL | undefined {
+  const origin = optimumTestOrigin()
+  if (origin === undefined || typeof value !== "string" || !value.startsWith(`${origin}/`) || value.length > MAX_URL_LENGTH) return undefined
+
+  try {
+    return new URL(value)
+  } catch {
+    return undefined
+  }
+}
+
 export function assertAllowedDownloadUrl(value: unknown): URL {
-  return parseAllowedUrl(value, DOWNLOAD_URL_RULES)
+  return asTestOriginUrl(value) ?? parseAllowedUrl(value, DOWNLOAD_URL_RULES)
+}
+
+/** The same grade of check as {@link assertAllowedDownloadUrl}, applied to every hop a download follows. See {@link REDIRECT_URL_RULES}. */
+export function assertAllowedRedirectUrl(value: unknown): URL {
+  return asTestOriginUrl(value) ?? parseAllowedUrl(value, REDIRECT_URL_RULES)
 }
 
 export function assertAllowedBrowserUrl(value: unknown): URL {

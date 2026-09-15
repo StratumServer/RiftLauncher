@@ -202,7 +202,8 @@
       "installNewVersion": "Instalar una nueva Versión de VS",
       "deleteVersion": "Eliminar Versión",
       "deleteAnyway": "Eliminar de todos modos",
-      "removeFromList": "Quitar de la lista"
+      "removeFromList": "Quitar de la lista",
+      "restoreVanilla": "Quitar Optimum"
     },
     "config": {
       "defaultInstallationsFolder": "Carpeta de Instalaciones",

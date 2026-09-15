@@ -59,6 +59,12 @@ export const IPC_CHANNELS = {
     FORGET_PLAY_SESSIONS: "forget-play-sessions",
     GET_GAME_LOG_REPORT: "get-game-log-report"
   },
+  OPTIMUM_MANAGER: {
+    GET_MANIFEST: "optimum-get-manifest",
+    APPLY_OVERLAY: "optimum-apply-overlay",
+    RESTORE_VANILLA: "optimum-restore-vanilla",
+    PATCH_PROGRESS: "optimum-patch-progress"
+  },
   NET_MANAGER: {
     QUERY_URL: "query-url",
     COUNT_MODDB_DOWNLOAD: "count-moddb-download",

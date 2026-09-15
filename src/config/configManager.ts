@@ -5,7 +5,7 @@ import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
-import { isRecord } from "@src/ipc/validation"
+import { isRecord, toWireBuildVariant } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeAccentColorId } from "@domain/accentColors"
 import { normalizeBackgroundId } from "@domain/backgrounds"
@@ -373,6 +373,13 @@ function normalizeGameVersion(value: unknown): GameVersionType | null {
     label: asString(value.label, "", 256) || asString(value.version, "", 128),
     path: value.path
   }
+  // Same shape as `linked` below: only set when there is one, so a plain build keeps
+  // the record it has always had and no config written before forks were installable
+  // needs migrating. It goes through the same check that lets a variant cross to the
+  // renderer, so a hand-edited config cannot put a name or a version here that the
+  // rest of the launcher would not have accepted off a probe.
+  const variant = toWireBuildVariant(value.variant)
+  if (variant) gameVersion.variant = variant
   // Only set when true so a plain version, or an unset one, doesn't grow a `linked: false`
   // it never had. This flag is what keeps a player's own install off the delete path, so
   // dropping it silently on the next load would turn "remove from list" back into deletion.

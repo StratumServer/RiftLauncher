@@ -453,3 +453,161 @@ describe("runDownload", () => {
     assert.equal(request.destroyed, true)
   })
 })
+
+/**
+ * Following a redirect, which the worker learned to do for one reason: GitHub
+ * answers a release asset with a 302 to a signed URL on its own asset CDN, and
+ * before this the download simply failed on the non-2xx.
+ *
+ * What is pinned here is the bound and the allow-list, not the mechanics: three
+ * hops, every hop re-checked, and a hop to anywhere else refused with nothing
+ * written.
+ */
+describe("runDownload redirects", () => {
+  const OPTIMUM_LATEST = "https://github.com/StratumServer/Optimum/releases/latest/download/optimum-manifest.json"
+  const OPTIMUM_TAGGED = "https://github.com/StratumServer/Optimum/releases/download/v0.3.14/optimum-manifest.json"
+  const ASSET_CDN = "https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sig=abc"
+
+  /** Answers each request in turn from a list, so a chain can be scripted hop by hop. */
+  function chain(responses: FakeResponse[]): { fn: DownloadRequestFn; urls: URL[] } {
+    const queue = [...responses]
+    const transport = new Transport(() => queue.shift())
+    return { fn: transport.fn, urls: transport.urls }
+  }
+
+  function redirect(location: string): FakeResponse {
+    return new FakeResponse(302, { location }, [])
+  }
+
+  it("follows the two hops a GitHub release asset really takes", async () => {
+    const payload = body("the overlay manifest")
+    const transport = chain([redirect(OPTIMUM_TAGGED), redirect(ASSET_CDN), new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks)])
+
+    const result = await runDownload({ url: OPTIMUM_LATEST, outputPath: destination, fileName: "optimum-manifest.json", request: transport.fn })
+
+    assert.equal(readFileSync(result, "utf8"), payload.text)
+    assert.deepEqual(
+      transport.urls.map((url) => url.toString()),
+      [OPTIMUM_LATEST, OPTIMUM_TAGGED, ASSET_CDN]
+    )
+  })
+
+  it("resolves a relative Location against the hop it came from", async () => {
+    const payload = body("relative hop")
+    const transport = chain([redirect("/StratumServer/Optimum/releases/download/v0.3.14/optimum-manifest.json"), new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks)])
+
+    await runDownload({ url: OPTIMUM_LATEST, outputPath: destination, fileName: "optimum-manifest.json", request: transport.fn })
+
+    assert.equal(transport.urls[1]?.toString(), OPTIMUM_TAGGED)
+  })
+
+  for (const [label, location] of [
+    ["a host the launcher never downloads from", "https://evil.example.test/payload.tar.gz"],
+    ["a GitHub path outside Optimum's releases", "https://github.com/StratumServer/RiftLauncher/releases/download/v1/x"],
+    ["a plain-http hop", "http://release-assets.githubusercontent.com/x"],
+    ["a file URL", "file:///etc/passwd"]
+  ] as const) {
+    it(`refuses a redirect to ${label}, and writes nothing`, async () => {
+      const transport = chain([redirect(location), new FakeResponse(200, { "content-length": "7" }, [Buffer.from("payload")])])
+
+      await assert.rejects(runDownload({ url: OPTIMUM_LATEST, outputPath: destination, fileName: "optimum-manifest.json", request: transport.fn }), /Download failed/)
+
+      assert.equal(existsSync(join(destination, "optimum-manifest.json")), false)
+      assert.deepEqual(leftoverParts(), [])
+      assert.equal(transport.urls.length, 1)
+    })
+  }
+
+  it("refuses a redirect that carries no Location at all", async () => {
+    const transport = chain([new FakeResponse(302, {}, [])])
+
+    await assert.rejects(runDownload({ url: OPTIMUM_LATEST, outputPath: destination, fileName: "optimum-manifest.json", request: transport.fn }), /Download failed/)
+  })
+
+  it("gives up on a redirect loop instead of following it round", async () => {
+    const transport = chain([redirect(OPTIMUM_TAGGED), redirect(OPTIMUM_LATEST), redirect(OPTIMUM_TAGGED), redirect(OPTIMUM_LATEST), redirect(OPTIMUM_TAGGED)])
+
+    await assert.rejects(runDownload({ url: OPTIMUM_LATEST, outputPath: destination, fileName: "optimum-manifest.json", request: transport.fn }), /Download failed/)
+
+    // The first request plus three hops, and then it stops.
+    assert.equal(transport.urls.length, 4)
+    assert.equal(existsSync(join(destination, "optimum-manifest.json")), false)
+  })
+})
+
+describe("runDownload SHA-256", () => {
+  const OPTIMUM_OVERLAY = "https://github.com/StratumServer/Optimum/releases/download/v0.3.14/Optimum-v0.3.14-linux-x64-overlay.tar.gz"
+
+  function sha256Of(text: string): string {
+    return createHash("sha256").update(text).digest("hex")
+  }
+
+  it("keeps the file when the SHA-256 matches the one the manifest promised", async () => {
+    const payload = body("the real overlay")
+    const transport = respondWith(new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks))
+
+    const result = await runDownload({
+      url: OPTIMUM_OVERLAY,
+      outputPath: destination,
+      fileName: "overlay.tar.gz",
+      expectedSha256: sha256Of(payload.text).toUpperCase(),
+      request: transport.fn
+    })
+
+    assert.equal(readFileSync(result, "utf8"), payload.text)
+  })
+
+  it("refuses a payload whose SHA-256 is not the one the manifest promised, and writes nothing", async () => {
+    const payload = body("a swapped overlay")
+    const transport = respondWith(new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks))
+
+    await assert.rejects(
+      runDownload({
+        url: OPTIMUM_OVERLAY,
+        outputPath: destination,
+        fileName: "overlay.tar.gz",
+        expectedSha256: sha256Of("what the manifest listed"),
+        request: transport.fn
+      }),
+      /Download failed/
+    )
+
+    assert.equal(existsSync(join(destination, "overlay.tar.gz")), false)
+  })
+
+  it("hashes with SHA-256 rather than MD5 once a SHA-256 is asked for", async () => {
+    // The payload's own MD5, handed in as the SHA-256 it is not: a run that
+    // still hashed with MD5 would accept this.
+    const payload = body("algorithm matters")
+    const transport = respondWith(new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks))
+
+    await assert.rejects(runDownload({ url: OPTIMUM_OVERLAY, outputPath: destination, fileName: "overlay.tar.gz", expectedSha256: payload.md5, request: transport.fn }), /Download failed/)
+  })
+
+  it("leaves the MD5 path alone when no SHA-256 is asked for", async () => {
+    const payload = body("the official build")
+    const transport = respondWith(new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks))
+
+    const result = await runDownload({ url: ALLOWED_URL, outputPath: destination, fileName: "game.tar.gz", expectedMd5: payload.md5, request: transport.fn })
+
+    assert.equal(readFileSync(result, "utf8"), payload.text)
+  })
+
+  it("refuses a response whose declared length exceeds its request-specific ceiling", async () => {
+    const payload = body("too large")
+    const transport = respondWith(new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks))
+
+    await assert.rejects(runDownload({ url: OPTIMUM_OVERLAY, outputPath: destination, fileName: "overlay.tar.gz", maxBytes: 4, request: transport.fn }), /Download failed/)
+
+    assert.equal(existsSync(join(destination, "overlay.tar.gz")), false)
+  })
+
+  it("refuses a streamed response once it exceeds its request-specific ceiling", async () => {
+    const payload = body("too large without a length")
+    const transport = respondWith(new FakeResponse(200, {}, payload.chunks))
+
+    await assert.rejects(runDownload({ url: OPTIMUM_OVERLAY, outputPath: destination, fileName: "overlay.tar.gz", maxBytes: 4, request: transport.fn }), /Download failed/)
+
+    assert.equal(existsSync(join(destination, "overlay.tar.gz")), false)
+  })
+})

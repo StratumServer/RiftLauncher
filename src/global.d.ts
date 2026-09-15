@@ -139,6 +139,15 @@ declare global {
     version: string
     label: string
     path: string
+    /**
+     * The fork this build was patched into, when it is one. Absent means vanilla,
+     * so no config written before this field existed needs migrating.
+     *
+     * Written by the install flow from what the launcher's own probe read back off
+     * the patched folder (#457), never from anything the renderer decided, and
+     * validated by `toWireBuildVariant` on the way in.
+     */
+    variant?: GameBuildVariantType
     /** Registered from a folder the launcher did not install, so removing it must only unregister it. */
     linked?: boolean
     _installing?: boolean
@@ -657,6 +666,88 @@ declare global {
 
   /** The outcome, plus the stored state the main process wrote, for the renderer to mirror. */
   type ModDbCountResult = { reason: ModDbCountReason; visibility: ConfigType["moddbVisibility"] }
+
+  /**
+   * Optimum's published overlay, trimmed to what the renderer decides with.
+   *
+   * The file list, the per-target donors and the archive hash stay in the main
+   * process: the renderer never verifies anything, it only asks whether Optimum
+   * can be offered for a version and, when the player says yes, starts the
+   * download at an address the main process built out of checked fields.
+   */
+  type OptimumManifestInfo = {
+    optimumVersion: string
+    /** Game versions this overlay was published for. The gate is entirely the launcher's; the CLI never enforces it. */
+    supportedGameVersions: string[]
+    /** Where the overlay archive is fetched from. */
+    downloadUrl: string
+    /** Folder the archive is downloaded into: the cache root, not the folder it is later staged into. */
+    downloadFolder: string
+    /** Name the archive is saved under, which is also the stem of the folder inside it. */
+    archiveFileName: string
+  }
+
+  /**
+   * Why no Optimum is offered this session.
+   *
+   * - `unreachable`: the manifest never arrived. One token for the lot, because
+   *   the download worker reports one uniform failure by design, so no
+   *   connection, a refused response and an oversized one are genuinely
+   *   indistinguishable here.
+   * - `unreadable`: it arrived and is not a manifest this build can act on.
+   * - `unsupported-system`: it describes an overlay for another platform. Today
+   *   that is every machine that is not linux-x64, since one manifest is
+   *   published per release under one name.
+   */
+  type OptimumManifestFailureReason = "unreachable" | "unreadable" | "unsupported-system"
+
+  type OptimumManifestResult = { ok: true; manifest: OptimumManifestInfo } | { ok: false; reason: OptimumManifestFailureReason }
+
+  /**
+   * Why a patch or a restore did not happen.
+   *
+   * The first ten are Optimum's own wire tokens, the next four are the ones the
+   * runner owns (src/domain/optimum/ndjson.ts documents both sets), and the last
+   * three belong to the launcher's side of the flow:
+   *
+   * - `manifest-unavailable`: no manifest was read this session, so there is
+   *   nothing to verify the overlay against.
+   * - `overlay-unverified`: the archive or one of the files staged out of it did
+   *   not match the hash the manifest published. Nothing was run.
+   * - `backup-missing`: the folder carries no `.optimum/vanilla/` to restore the
+   *   assemblies from.
+   * - `restore-failed`: the copies back were refused by the file system.
+   *
+   * Nothing here is ever text the CLI wrote: its `message` and `detail` fields
+   * carry absolute paths and are dropped where its output is read.
+   */
+  type OptimumPatchFailureReason =
+    | "bad-input"
+    | "unsupported-version"
+    | "patch-conflict"
+    | "decompile-failed"
+    | "assemble-failed"
+    | "verification-failed"
+    | "output-exists"
+    | "source-unavailable"
+    | "cancelled"
+    | "engine-internal"
+    | "no-result"
+    | "timed-out"
+    | "runtime-missing"
+    | "output-unverified"
+    | "manifest-unavailable"
+    | "overlay-unverified"
+    | "backup-missing"
+    | "restore-failed"
+
+  /**
+   * `rolledBack` says the folder was put back to its vanilla assemblies out of
+   * the patch's own backup after the run failed. It is the difference between a
+   * build that is simply unpatched and one holding two overlay versions at
+   * once, and it is what the sentence the player reads is chosen on.
+   */
+  type OptimumPatchResult = { ok: true } | { ok: false; reason: OptimumPatchFailureReason; rolledBack?: boolean }
 
   declare module "*.png" {
     const value: string

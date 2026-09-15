@@ -6,7 +6,10 @@ import { describe, it } from "vitest"
 import {
   assertAllowedApiUrl,
   assertAllowedBrowserUrl,
+  assertAllowedDownloadUrl,
+  assertAllowedRedirectUrl,
   assertInteger,
+  optimumTestOrigin,
   assertSafeFileName,
   assertSafeTaskId,
   isArchiveSymlink,
@@ -37,6 +40,59 @@ describe("IPC boundary validators", () => {
     assert.throws(() => assertAllowedBrowserUrl("javascript:alert(1)"), /Invalid URL/)
     assert.throws(() => assertAllowedBrowserUrl("https://discord.gg/RtWpYBRRUz"), /URL is not allowed/)
     assert.throws(() => assertAllowedBrowserUrl("https://ko-fi.com/zaldaryon"), /URL is not allowed/)
+  })
+
+  it("downloads Optimum's overlay from one repository's release assets and nowhere else on GitHub", () => {
+    assert.equal(assertAllowedDownloadUrl("https://github.com/StratumServer/Optimum/releases/latest/download/optimum-manifest.json").hostname, "github.com")
+    assert.equal(
+      assertAllowedDownloadUrl("https://github.com/StratumServer/Optimum/releases/download/v0.3.14/Optimum-v0.3.14-linux-x64-overlay.tar.gz").pathname,
+      "/StratumServer/Optimum/releases/download/v0.3.14/Optimum-v0.3.14-linux-x64-overlay.tar.gz"
+    )
+
+    assert.throws(() => assertAllowedDownloadUrl("https://github.com/StratumServer/Optimum/archive/refs/heads/main.tar.gz"), /URL is not allowed/)
+    assert.throws(() => assertAllowedDownloadUrl("https://github.com/someone/Optimum/releases/download/v1/x"), /URL is not allowed/)
+    assert.throws(() => assertAllowedDownloadUrl("https://raw.githubusercontent.com/StratumServer/Optimum/main/x"), /URL is not allowed/)
+    assert.throws(() => assertAllowedDownloadUrl("http://github.com/StratumServer/Optimum/releases/download/v1/x"), /Invalid URL/)
+  })
+
+  it("lets a download hop onto GitHub's asset CDN without letting one start there", () => {
+    assert.equal(assertAllowedRedirectUrl("https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sig=abc").hostname, "release-assets.githubusercontent.com")
+    assert.equal(assertAllowedRedirectUrl("https://objects.githubusercontent.com/github-production-release-asset/1/2").hostname, "objects.githubusercontent.com")
+    // Every host a download may start from stays a host it may be redirected to.
+    assert.equal(assertAllowedRedirectUrl("https://cdn.vintagestory.at/gamefiles/stable/x.tar.gz").hostname, "cdn.vintagestory.at")
+
+    assert.throws(() => assertAllowedDownloadUrl("https://release-assets.githubusercontent.com/github-production-release-asset/1/2"), /URL is not allowed/)
+    assert.throws(() => assertAllowedDownloadUrl("https://objects.githubusercontent.com/anything"), /URL is not allowed/)
+    assert.throws(() => assertAllowedRedirectUrl("https://evil.example.test/payload.tar.gz"), /URL is not allowed/)
+  })
+
+  it("keeps the loopback source override off unless it is set, and narrow when it is", () => {
+    const original = process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN
+    const restore = (): void => {
+      if (original === undefined) delete process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN
+      else process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN = original
+    }
+
+    try {
+      delete process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN
+      assert.equal(optimumTestOrigin(), undefined)
+      assert.throws(() => assertAllowedDownloadUrl("http://127.0.0.1:9631/optimum-manifest.json"), /URL is not allowed|Invalid URL/)
+
+      // Only a loopback http origin with nothing but a port is taken.
+      for (const value of ["https://example.test", "http://127.0.0.1", "http://localhost:9631", "http://127.0.0.1:9631/nested", "http://user:pass@127.0.0.1:9631", "not a url"]) {
+        process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN = value
+        assert.equal(optimumTestOrigin(), undefined, value)
+      }
+
+      process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN = "http://127.0.0.1:9631/"
+      assert.equal(optimumTestOrigin(), "http://127.0.0.1:9631")
+      assert.equal(assertAllowedDownloadUrl("http://127.0.0.1:9631/optimum-manifest.json").pathname, "/optimum-manifest.json")
+      // It moves where Optimum comes from and nothing else.
+      assert.throws(() => assertAllowedDownloadUrl("http://127.0.0.1:9632/payload.tar.gz"), /URL is not allowed|Invalid URL/)
+      assert.throws(() => assertAllowedDownloadUrl("https://evil.example.test/payload.tar.gz"), /URL is not allowed/)
+    } finally {
+      restore()
+    }
   })
 
   it("lets only a known build variant with a real version cross to the renderer", () => {

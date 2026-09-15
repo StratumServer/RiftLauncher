@@ -14,15 +14,31 @@
 import { createWriteStream, lstatSync, renameSync, unlinkSync } from "node:fs"
 import { createHash } from "node:crypto"
 import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http"
+import { request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 import fse from "fs-extra"
 import { join } from "node:path"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
-import { assertAllowedDownloadUrl } from "../validation"
+import { assertAllowedDownloadUrl, assertAllowedRedirectUrl, optimumTestOrigin } from "../validation"
 
 const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 30_000
+
+/**
+ * How many redirects one download follows.
+ *
+ * Three, because that is what the longest real chain needs: GitHub's
+ * `releases/latest/download/<name>` answers with a 302 to
+ * `releases/download/<tag>/<name>`, which answers with a second 302 to the
+ * signed asset CDN. Three leaves one hop of slack and still turns a redirect
+ * loop into a refusal rather than a spin.
+ */
+const MAX_DOWNLOAD_REDIRECTS = 3
+
+function isRedirectStatus(statusCode: number): boolean {
+  return statusCode === 301 || statusCode === 302 || statusCode === 303 || statusCode === 307 || statusCode === 308
+}
 
 /** Namespace used by temporary download siblings and the orphan sweep. */
 export const DOWNLOAD_TEMP_FILE_NAMESPACE = "riftlauncher"
@@ -42,6 +58,16 @@ export function assertSafeFileName(value: unknown): string {
 /** The `https.request` shape, so a test can answer without a socket. */
 export type DownloadRequestFn = (url: URL, options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest
 
+/**
+ * Node's own transport, picked per URL.
+ *
+ * Every real download is `https:`; the `http:` arm exists for the loopback
+ * source override (see `optimumTestOrigin` in src/ipc/validation.ts), which is
+ * the only thing that can produce one, and which the check below re-confirms
+ * before a request is made.
+ */
+const nodeRequest: DownloadRequestFn = (url, options, callback) => (url.protocol === "http:" ? httpRequest : httpsRequest)(url, options, callback)
+
 export interface DownloadOptions {
   /** Download URL. Checked against the allow-list in `src/ipc/validation.ts`. */
   url: unknown
@@ -51,6 +77,23 @@ export interface DownloadOptions {
   fileName: unknown
   /** MD5 the finished file has to match, when the caller knows one. */
   expectedMd5?: unknown
+  /**
+   * SHA-256 the finished file has to match, when the caller knows one.
+   *
+   * Beside the MD5 rather than replacing it: the game catalog publishes MD5 and
+   * nothing else, and Optimum's overlay manifest publishes SHA-256 and nothing
+   * else. Whichever one is set picks the digest the file is hashed with, so
+   * neither source pays for the other's choice, and setting both is a caller
+   * bug that resolves in favour of SHA-256.
+   */
+  expectedSha256?: unknown
+  /**
+   * Ceiling on the response, when the caller knows one smaller than the global
+   * {@link MAX_DOWNLOAD_BYTES}. Checked against the declared length up front and
+   * against the running total as bytes arrive, so a lying `Content-Length` costs
+   * the cap and not the disk.
+   */
+  maxBytes?: number
   /** Transport, defaulting to Node's `https.request`. */
   request?: DownloadRequestFn
   /** Called with 0 to 100 as the bytes arrive, and once with 100 at the end. */
@@ -72,16 +115,18 @@ export interface DownloadOptions {
  * telling the renderer apart.
  */
 export function runDownload(options: DownloadOptions): Promise<string> {
-  const { url, outputPath, fileName, expectedMd5, request = httpsRequest, onProgress } = options
+  const { url, outputPath, fileName, expectedMd5, expectedSha256, maxBytes = MAX_DOWNLOAD_BYTES, request = nodeRequest, onProgress } = options
+  const byteCeiling = Math.min(maxBytes, MAX_DOWNLOAD_BYTES)
   const pathToDownload = join(outputPath, assertSafeFileName(fileName))
   const temporaryPath = `${pathToDownload}.${DOWNLOAD_TEMP_FILE_NAMESPACE}.${process.pid}.${Date.now()}.part`
+  const expectedDigest = typeof expectedSha256 === "string" ? expectedSha256 : expectedMd5
 
   return new Promise<string>((resolvePromise, rejectPromise) => {
     let settled = false
     let activeRequest: ClientRequest | undefined
     let responseStream: IncomingMessage | undefined
     let writer: ReturnType<typeof createWriteStream> | undefined
-    const digest = createHash("md5")
+    const digest = createHash(typeof expectedSha256 === "string" ? "sha256" : "md5")
 
     function fail(): void {
       if (settled) return
@@ -98,83 +143,132 @@ export function runDownload(options: DownloadOptions): Promise<string> {
       if (fse.existsSync(pathToDownload) && lstatSync(pathToDownload).isSymbolicLink()) throw new Error("Refusing to replace a symbolic link")
       if (fse.existsSync(temporaryPath)) unlinkSync(temporaryPath)
 
-      if (parsedUrl.protocol !== "https:") {
+      // TLS for everything but the loopback source override, which has no
+      // certificate to present and nothing on the wire to protect.
+      if (parsedUrl.protocol !== "https:" && parsedUrl.origin !== optimumTestOrigin()) {
         fail()
         return
       }
 
-      activeRequest = request(parsedUrl, { method: "GET", headers: { Accept: "application/octet-stream" } }, (response) => {
-        responseStream = response
-        const statusCode = response.statusCode ?? 0
-        const contentLength = Number(response.headers["content-length"])
+      /**
+       * Makes one request and, when the answer is a redirect, makes the next one.
+       *
+       * Every hop is checked again before it is followed (see
+       * REDIRECT_URL_RULES in src/ipc/validation.ts), so a redirect can only
+       * ever move the download between hosts the launcher already trusts, and
+       * the hop count bounds a loop. No `Authorization` header is ever set on
+       * the first request, so there is none to leak across a hop either.
+       *
+       * A superseded request keeps its own `error` listener, which checks
+       * identity before failing the download: a socket closing behind a
+       * redirect that was already followed is not a failed download.
+       */
+      const send = (target: URL, redirectsLeft: number): void => {
+        const outgoing = request(target, { method: "GET", headers: { Accept: "application/octet-stream" } }, (response) => {
+          if (settled || outgoing !== activeRequest) {
+            response.resume()
+            return
+          }
 
-        if (statusCode < 200 || statusCode >= 300 || (Number.isFinite(contentLength) && (contentLength < 0 || contentLength > MAX_DOWNLOAD_BYTES))) {
-          response.resume()
-          fail()
-          return
-        }
+          responseStream = response
+          const statusCode = response.statusCode ?? 0
+          const contentLength = Number(response.headers["content-length"])
 
-        try {
-          fse.ensureDirSync(outputPath)
-          if (lstatSync(outputPath).isSymbolicLink()) throw new Error("Download destination is a symbolic link")
-          writer = createWriteStream(temporaryPath, { flags: "wx" })
-        } catch {
-          fail()
-          return
-        }
+          if (isRedirectStatus(statusCode)) {
+            response.resume()
+            responseStream = undefined
+            const location = response.headers["location"]
 
-        let downloadedLength = 0
-        let lastReportedProgress = 0
+            if (redirectsLeft <= 0 || typeof location !== "string") {
+              fail()
+              return
+            }
 
-        const reportProgress = (chunk: Buffer): void => {
-          if (settled) return
-          downloadedLength += chunk.length
-          digest.update(chunk)
-          if (downloadedLength > MAX_DOWNLOAD_BYTES) {
+            let nextUrl: URL
+            try {
+              nextUrl = assertAllowedRedirectUrl(new URL(location, target).toString())
+            } catch {
+              fail()
+              return
+            }
+
+            send(nextUrl, redirectsLeft - 1)
+            return
+          }
+
+          if (statusCode < 200 || statusCode >= 300 || (Number.isFinite(contentLength) && (contentLength < 0 || contentLength > byteCeiling))) {
+            response.resume()
             fail()
             return
           }
 
-          if (Number.isFinite(contentLength) && contentLength > 0) {
-            // Keep completion on the single explicit report below. A response can
-            // reach 100% before the writable stream emits its finish event.
-            const progress = Math.min(99, Math.round((downloadedLength / contentLength) * 100))
-            if (progress > lastReportedProgress) {
-              lastReportedProgress = progress
-              onProgress?.(progress)
-            }
-          }
-        }
-
-        response.on("data", reportProgress)
-        response.on("aborted", fail)
-        response.on("error", fail)
-        writer.on("error", fail)
-        writer.on("finish", () => {
-          if (settled) return
           try {
-            if (Number.isFinite(contentLength) && contentLength >= 0 && downloadedLength !== contentLength) throw new Error("Downloaded artifact length mismatch")
-            if (typeof expectedMd5 === "string" && digest.digest("hex") !== expectedMd5.toLowerCase()) throw new Error("Downloaded artifact digest mismatch")
-            if (fse.existsSync(pathToDownload)) {
-              const existing = lstatSync(pathToDownload)
-              if (existing.isDirectory() || existing.isSymbolicLink()) throw new Error("Refusing to replace an unsafe download target")
-              unlinkSync(pathToDownload)
-            }
-            renameSync(temporaryPath, pathToDownload)
-            settled = true
-            onProgress?.(100)
-            resolvePromise(pathToDownload)
+            fse.ensureDirSync(outputPath)
+            if (lstatSync(outputPath).isSymbolicLink()) throw new Error("Download destination is a symbolic link")
+            writer = createWriteStream(temporaryPath, { flags: "wx" })
           } catch {
             fail()
+            return
           }
+
+          let downloadedLength = 0
+          let lastReportedProgress = 0
+
+          const reportProgress = (chunk: Buffer): void => {
+            if (settled) return
+            downloadedLength += chunk.length
+            digest.update(chunk)
+            if (downloadedLength > byteCeiling) {
+              fail()
+              return
+            }
+
+            if (Number.isFinite(contentLength) && contentLength > 0) {
+              // Keep completion on the single explicit report below. A response can
+              // reach 100% before the writable stream emits its finish event.
+              const progress = Math.min(99, Math.round((downloadedLength / contentLength) * 100))
+              if (progress > lastReportedProgress) {
+                lastReportedProgress = progress
+                onProgress?.(progress)
+              }
+            }
+          }
+
+          response.on("data", reportProgress)
+          response.on("aborted", fail)
+          response.on("error", fail)
+          writer.on("error", fail)
+          writer.on("finish", () => {
+            if (settled) return
+            try {
+              if (Number.isFinite(contentLength) && contentLength >= 0 && downloadedLength !== contentLength) throw new Error("Downloaded artifact length mismatch")
+              if (typeof expectedDigest === "string" && digest.digest("hex") !== expectedDigest.toLowerCase()) throw new Error("Downloaded artifact digest mismatch")
+              if (fse.existsSync(pathToDownload)) {
+                const existing = lstatSync(pathToDownload)
+                if (existing.isDirectory() || existing.isSymbolicLink()) throw new Error("Refusing to replace an unsafe download target")
+                unlinkSync(pathToDownload)
+              }
+              renameSync(temporaryPath, pathToDownload)
+              settled = true
+              onProgress?.(100)
+              resolvePromise(pathToDownload)
+            } catch {
+              fail()
+            }
+          })
+
+          response.pipe(writer)
         })
 
-        response.pipe(writer)
-      })
+        activeRequest = outgoing
+        outgoing.setTimeout(DOWNLOAD_TIMEOUT_MS, () => outgoing.destroy(new Error("Download timed out")))
+        outgoing.on("error", () => {
+          if (outgoing === activeRequest) fail()
+        })
+        outgoing.end()
+      }
 
-      activeRequest.setTimeout(DOWNLOAD_TIMEOUT_MS, () => activeRequest?.destroy(new Error("Download timed out")))
-      activeRequest.on("error", fail)
-      activeRequest.end()
+      send(parsedUrl, MAX_DOWNLOAD_REDIRECTS)
     } catch {
       fail()
     }

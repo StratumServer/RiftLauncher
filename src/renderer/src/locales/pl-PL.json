@@ -267,7 +267,8 @@
       "installNewVersion": "Zainstaluj nową wersję VS",
       "deleteVersion": "Usuń wersję",
       "deleteAnyway": "Usuń mimo to",
-      "removeFromList": "Usuń z listy"
+      "removeFromList": "Usuń z listy",
+      "restoreVanilla": "Usuń Optimum"
     },
     "infoAndHelp": {
       "debugInfoTitle": "Informacje debugowania",
