@@ -1,0 +1,62 @@
+name: i18n status
+
+# Comments the translation status table on any pull request that moves the
+# locale files, and checks that the status page under docs/ still matches
+# (issue #496).
+#
+# There is deliberately no job refreshing that page on a push to `dev`: the
+# branch requires a reviewed pull request and enforces it on admins too, so a
+# workflow bot cannot push a commit there. The page is part of the pull request
+# that changes the numbers instead, which is also where a reviewer sees it.
+
+on:
+  pull_request:
+    paths:
+      - "src/renderer/src/locales/**"
+      - "scripts/i18n-status.js"
+      - ".github/workflows/i18n-status.yml"
+
+permissions: {}
+
+jobs:
+  comment:
+    # A pull request from a fork carries a read-only token, so commenting would
+    # 403. Same guard the SonarCloud job in ci.yml uses.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # The script has no dependency, so this job skips `npm ci` entirely.
+      - name: Build the comment
+        run: |
+          node scripts/i18n-status.js --write docs/contribute/translation-status.md > /dev/null
+          {
+            echo '<!-- i18n-status-comment -->'
+            echo '### Translation status'
+            echo
+            node scripts/i18n-status.js
+            echo
+            if ! git diff --quiet -- docs/contribute/translation-status.md; then
+              echo 'The status page is out of date. Refresh it with `npm run i18n:status -- --write docs/contribute/translation-status.md`.'
+              echo
+            fi
+            echo 'Drafted values are the machine-drafted ones still waiting for a native review, listed per locale in `src/renderer/src/locales/drafted.json`. See #496.'
+          } > comment.md
+
+      # One comment per pull request, found by its marker and edited in place.
+      # Newest first, so the job keeps finding its own comment on a long thread.
+      - name: Post or update the comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENTS: repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments
+        run: |
+          id=$(gh api "$COMMENTS?per_page=100&sort=updated&direction=desc" --jq '[.[] | select(.body | startswith("<!-- i18n-status-comment -->")) | .id] | first // empty')
+          if [ -n "$id" ]; then
+            gh api --silent -X PATCH "$COMMENTS/$id" -F body=@comment.md
+          else
+            gh api --silent -X POST "$COMMENTS" -F body=@comment.md
+          fi
