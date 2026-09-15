@@ -14,7 +14,7 @@ import { logMessage } from "@src/utils/logManager"
 import { runCompression } from "@src/ipc/workers/compression"
 import { extractTarGz } from "@src/ipc/workers/extraction"
 import { validateWorldBackupArchive } from "@src/ipc/archiveValidation"
-import { SAVES_FOLDER_NAME, WORLD_FILE_EXTENSION, collisionFreeWorldName, hasWorldSidecars, isSafeWorldName, listWorlds, worldVersionWarning } from "@domain/worlds/worlds"
+import { SAVES_FOLDER_NAME, WORLD_FILE_EXTENSION, canTransferWorld, collisionFreeWorldName, hasWorldSidecars, isSafeWorldName, listWorlds, worldVersionWarning } from "@domain/worlds/worlds"
 
 const WORLD_BACKUPS_FOLDER = "Worlds"
 
@@ -120,6 +120,21 @@ function updateInstallation(config: ConfigType, installationId: string, update: 
   return { ...config, installations: config.installations.map((installation) => (installation.id === installationId ? update(installation) : installation)) }
 }
 
+let worldBackupConfigWriteQueue: Promise<void> = Promise.resolve()
+
+function saveWorldBackupRecord(installationId: string, backup: WorldBackupType): Promise<boolean> {
+  const write = worldBackupConfigWriteQueue.then(async () => {
+    const currentConfig = await getConfig()
+    const nextConfig = updateInstallation(currentConfig, installationId, (current) => ({ ...current, worldBackups: [backup, ...(current.worldBackups ?? [])] }))
+    return saveConfig(nextConfig)
+  })
+  worldBackupConfigWriteQueue = write.then(
+    () => undefined,
+    () => undefined
+  )
+  return write
+}
+
 async function makeWorldBackup(installationId: unknown, requestedName: unknown): Promise<WorldBackupResult> {
   const checked = await checkedInstallation(installationId)
   if ("error" in checked) return checked.error
@@ -141,8 +156,7 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
       try {
         await runCompression({ inputPath: world.path, outputPath: outputFolder, outputFileName: `${backupId}.tar.gz`, compressionLevel: installation.compressionLevel })
         const backup: WorldBackupType = { id: backupId, date: Date.now(), path: archivePath, worldName: world.name }
-        const nextConfig = updateInstallation(config, installation.id, (current) => ({ ...current, worldBackups: [backup, ...(current.worldBackups ?? [])] }))
-        if (!(await saveConfig(nextConfig))) {
+        if (!(await saveWorldBackupRecord(installation.id, backup))) {
           await fse.remove(archivePath).catch(() => undefined)
           return failure("operation-failed")
         }
@@ -247,7 +261,7 @@ async function transferWorld(sourceId: unknown, requestedName: unknown, targetId
   const source = findInstallation(config, sourceId)
   const target = findInstallation(config, targetId)
   if (!source || !target) return failure("installation-not-found")
-  if (source.id === target.id) return failure("invalid-request")
+  if (!canTransferWorld(source.id, target.id)) return failure("invalid-request")
   if (modeValue !== "copy" && modeValue !== "move") return failure("invalid-request")
   if (isInstallationPlaying(source.id) || isInstallationPlaying(target.id)) return failure("installation-playing")
   if (!isSafeWorldName(requestedName)) return failure("world-not-found")

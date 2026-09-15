@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useId, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { PiArrowCounterClockwiseDuotone, PiCopyDuotone, PiFolderOpenDuotone, PiTrashDuotone, PiTruckDuotone } from "react-icons/pi"
+import { PiArrowCounterClockwiseDuotone, PiCopyDuotone, PiFolderOpenDuotone, PiTrashDuotone, PiTruckDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
+import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { NormalButton } from "@renderer/components/ui/Buttons"
+import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
 function formatBytes(bytes: number): string {
@@ -27,6 +29,9 @@ function ManageInstallationWorlds(): JSX.Element {
   const [worlds, setWorlds] = useState<WorldType[]>([])
   const [loading, setLoading] = useState(true)
   const [targetId, setTargetId] = useState("")
+  const [worldToDelete, setWorldToDelete] = useState<WorldType | null>(null)
+  const [deleteName, setDeleteName] = useState("")
+  const deleteNameId = useId()
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -55,8 +60,15 @@ function ManageInstallationWorlds(): JSX.Element {
     return true
   }
 
-  async function remove(world: WorldType): Promise<void> {
-    if (!installation || window.prompt(t("features.worlds.confirmDelete", { name: world.name }), "") !== world.name) return
+  function closeDeleteDialog(): void {
+    setWorldToDelete(null)
+    setDeleteName("")
+  }
+
+  async function deleteWorldHandler(): Promise<void> {
+    if (!installation || !worldToDelete || deleteName !== worldToDelete.name) return
+    const world = worldToDelete
+    closeDeleteDialog()
     const backups = (installation.worldBackups ?? []).filter((backup) => backup.worldName.toLocaleLowerCase("en-US") === world.name.toLocaleLowerCase("en-US"))
     if (backups.length === 0 && window.confirm(t("features.worlds.backupBeforeDelete", { name: world.name }))) {
       if (!(await backup(world, false))) return
@@ -166,7 +178,15 @@ function ManageInstallationWorlds(): JSX.Element {
                       </NormalButton>
                     )}
                     {liveWorld && (
-                      <NormalButton title={t("generic.delete")} variant="ghost" className="p-1" onClick={() => void remove(world)}>
+                      <NormalButton
+                        title={t("generic.delete")}
+                        variant="ghost"
+                        className="p-1"
+                        onClick={() => {
+                          setWorldToDelete(world)
+                          setDeleteName("")
+                        }}
+                      >
                         <PiTrashDuotone />
                       </NormalButton>
                     )}
@@ -187,6 +207,25 @@ function ManageInstallationWorlds(): JSX.Element {
             })}
           </ListGroup>
         </ListWrapper>
+        <PopupDialogPanel title={t("generic.delete")} isOpen={worldToDelete !== null} close={closeDeleteDialog}>
+          <>
+            <div className="flex flex-col gap-1 text-left">
+              <label htmlFor={deleteNameId}>{t("features.worlds.confirmDelete", { name: worldToDelete?.name ?? "" })}</label>
+              <FormInputText id={deleteNameId} value={deleteName} onChange={(event) => setDeleteName(event.target.value)} autoFocus className="w-full" />
+            </div>
+            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
+              <FormButton title={t("generic.cancel")} onClick={closeDeleteDialog} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+              <FormButton
+                title={t("generic.delete")}
+                onClick={deleteWorldHandler}
+                variant="destructive"
+                size="md"
+                icon={<PiTrashDuotone />}
+                disabled={!worldToDelete || deleteName !== worldToDelete.name}
+              />
+            </ButtonsWrapper>
+          </>
+        </PopupDialogPanel>
       </div>
     </ScrollableContainer>
   )
