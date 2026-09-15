@@ -305,9 +305,12 @@ describe("countModDbDownload", () => {
   it("shares concurrent count attempts so one version cannot be counted twice", async () => {
     const { countModDbDownload } = await freshHandlers()
     let releaseDownload!: (value: Buffer) => void
-    mockState.requestBoundedBuffer.mockImplementation(() => new Promise((resolve) => {
-      releaseDownload = resolve
-    }))
+    mockState.requestBoundedBuffer.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseDownload = resolve
+        })
+    )
 
     const first = countModDbDownload(MODDB_VISIBILITY_ONCE)
     const second = countModDbDownload(MODDB_VISIBILITY_ONCE)
