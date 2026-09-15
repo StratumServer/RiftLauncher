@@ -55,13 +55,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
-      # Only the ubuntu leg's report is kept: sonarcloud below reads it instead of
-      # regenerating its own, which used to duplicate this same step standalone.
+      # sonarcloud reads this instead of regenerating the same coverage a
+      # few minutes later: one leg's report is enough for one Sonar scan,
+      # and ubuntu-latest is picked because sonarcloud itself runs on it.
       - if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-ubuntu
-          path: coverage/
+          name: coverage-report
+          path: coverage/lcov.info
           retention-days: 1
 
   # `dev` branch protection requires a context literally named `test`, and a
@@ -84,17 +85,19 @@ jobs:
   # or configuration change can't turn the whole run red.
   # Dependabot events carry no secrets so the scan cannot authenticate.
   #
-  # Reads test-matrix's ubuntu coverage artifact rather than running
-  # npm run test:coverage a second time in this job, which used to duplicate
-  # the identical step test-matrix (ubuntu-latest) already ran. needs:
-  # [test-matrix] means this only runs once every matrix leg has succeeded,
-  # and only within the same workflow run that produced the artifact: a solo
-  # re-run of test-matrix (rather than the whole workflow) produces a fresh
-  # coverage report that this job will not automatically pick back up, so
-  # re-run sonarcloud too whenever test-matrix is re-run on its own.
+  # needs test-matrix rather than running in parallel with it: the coverage
+  # this reads comes from that job's ubuntu-latest leg (uploaded above), on
+  # this same commit, so there is nothing to scan with until it has actually
+  # produced one. A failed test-matrix leaves no artifact to download, and
+  # continue-on-error below is what keeps that from failing the run.
+  # always() is required here: a plain `if:` combined with `needs` defaults
+  # to success() (same rule the `test` job's comment above documents), so
+  # without it a single red or cancelled test-matrix leg (e.g. a
+  # Windows-only flake) would SKIP this job outright instead of letting it
+  # attempt the download and fail gracefully via continue-on-error.
   sonarcloud:
     needs: [test-matrix]
-    if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]')
+    if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]')
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
@@ -108,17 +111,12 @@ jobs:
       - run: npm ci
       - uses: actions/download-artifact@v4
         with:
-          name: coverage-ubuntu
-          path: coverage/
+          name: coverage-report
+          path: coverage
       - uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  # build:unpack:no-typecheck skips the typecheck npm run build (and so
-  # build:unpack) does on its way to electron-vite build: the standalone
-  # typecheck job above already gates this same commit, so redoing it here
-  # only cost time, on both matrix legs and, when build-macos runs, at its
-  # 10x billing multiplier.
   build:
     strategy:
       fail-fast: false
@@ -134,7 +132,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build:unpack:no-typecheck
+      # npm run build:unpack is `npm run build && electron-builder --dir`,
+      # and build is `npm run typecheck && electron-vite build`: run as an
+      # npm script here, that re-runs the full typecheck the dedicated
+      # typecheck job already ran on its own. Calling electron-vite and
+      # electron-builder directly skips the repeat; npm run build:unpack
+      # itself is untouched for a local build outside CI.
+      - shell: bash
+        run: ./node_modules/.bin/electron-vite build && ./node_modules/.bin/electron-builder --dir
 
   # macos-latest bills Actions minutes at a 10x multiplier and the launcher
   # can't launch the game on macOS yet, so this build is manual-only.
@@ -153,4 +158,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build:unpack:no-typecheck
+      - run: npm run build:unpack

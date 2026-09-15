@@ -272,6 +272,24 @@ describe("ManageInstallationServers", () => {
   })
 
   /**
+   * MainMenu's Play button and this row both go through useLaunchGame (#490 item 1): before that
+   * fold, the report action lived only in MainMenu's own copy, so a crash after joining a server
+   * offered no report link. Mirrors launchPlayGame.test.tsx's "offers the session report" case.
+   */
+  it("offers the session report from the exited-with-errors notice and lands on that Installation's page", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn<BridgeAPI["gameManager"]["executeGame"]>(async () => ({ ok: true, exitCode: 1 }) as GameExecutionResult)
+    renderServersPage([{ id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: -1 }], { gameManager: { executeGame } })
+
+    await user.click(await screen.findByRole("button", { name: "Join" }))
+
+    await screen.findByText("Vintage Story exited with errors. The log has the details.")
+    await user.click(await screen.findByRole("button", { name: "See what went wrong" }))
+
+    await vi.waitFor(() => expect(screen.getByTestId("where").textContent).toBe(`/installations/report/${INSTALLATION_ID}`))
+  })
+
+  /**
    * i18next escapes what it interpolates, so a date handed to t() reaches the page as
    * "4&#x2F;9&#x2F;2025" and React renders those entities literally. Every launched row read that
    * way. The date is the launcher's own, not anybody's text, so it goes in unescaped.

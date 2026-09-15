@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, type Dispatch, type SetStateAction } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, type SetStateAction } from "react"
 import { Trans, useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { PiCheckSquareDuotone, PiCheckSquareFill } from "react-icons/pi"
@@ -26,7 +26,7 @@ import ImportModpackPopup from "@renderer/features/mods/components/ImportModpack
 import ModSelectionBar from "@renderer/features/mods/components/ModSelectionBar"
 import type { ModCardAction } from "@renderer/features/mods/components/ModListCard"
 import { FormButton } from "@renderer/components/ui/FormComponents"
-import { DEFAULT_LOADED_MODS, getModsBrowseState, updateModsBrowseState, type ModsBrowseState } from "@renderer/features/mods/modsBrowseState"
+import { DEFAULT_LOADED_MODS, getModsBrowseState, updateModsBrowseState, type ModsBrowseState, type ModsFilters } from "@renderer/features/mods/modsBrowseState"
 import { installedCopiesOf } from "@domain/mods/installedFilters"
 import { findModUpdate } from "@domain/mods/compatibility"
 import { addPicks, modSelectionEntries, togglePick, type ModPick } from "@domain/mods/modSelection"
@@ -90,15 +90,13 @@ function ListMods(): JSX.Element {
   const [modDetails, setModDetails] = useState<ReadonlyMap<number, DownloadableModType>>(() => new Map())
   const requestedModDetails = useRef(new Set<number>())
 
-  const [onlyFav, setOnlyFavState] = useState<boolean>(browseState.onlyFav)
-  const [textFilter, setTextFilterState] = useState<string>(browseState.textFilter)
-  const [authorFilter, setAuthorFilterState] = useState<DownloadableModAuthorType>(browseState.authorFilter)
-  const [versionsFilter, setVersionsFilterState] = useState<DownloadableModGameVersionType[]>(browseState.versionsFilter)
-  const [tagsFilter, setTagsFilterState] = useState<DownloadableModTagType[]>(browseState.tagsFilter)
-  const [sideFilter, setSideFilterState] = useState<string>(browseState.sideFilter)
-  const [installedFilter, setInstalledFilterState] = useState<string>(browseState.installedFilter)
-  const [orderBy, setOrderByState] = useState<string>(browseState.orderBy)
-  const [orderByOrder, setOrderByOrderState] = useState<string>(browseState.orderByOrder)
+  const [filters, setFiltersState] = useState<ModsFilters>(browseState)
+  // Mirrors `filters` synchronously within one event, so a handler that fires setFilter more than
+  // once (OrderFilter's changeOrder sets both orderBy and orderByOrder) resolves its second call
+  // against the first call's result rather than the stale value this render started with. Kept in
+  // step with the committed state on every render; `filters` itself stays the one React reads.
+  const filtersRef = useRef(filters)
+  filtersRef.current = filters
 
   const [searching, setSearching] = useState<boolean>(true)
 
@@ -127,26 +125,20 @@ function ListMods(): JSX.Element {
    *
    * The next value is resolved against the rendered one here, in the event, rather than inside a
    * state updater: an updater runs during render (twice under StrictMode) and is no place for a
-   * scroll or a store write. Every caller sets a given filter at most once per event, so the
-   * rendered value is the one the change applies to.
+   * scroll or a store write. Resolved against `filtersRef`, not `filters`, so a handler that calls
+   * this twice in one event (OrderFilter's changeOrder sets both orderBy and orderByOrder) has its
+   * second call see the first call's change instead of clobbering it with the stale render value.
    */
-  function updateFilter<T>(current: T, setter: Dispatch<SetStateAction<T>>, value: SetStateAction<T>, update: (next: T) => Partial<ModsBrowseState>): void {
-    const next = typeof value === "function" ? (value as (previous: T) => T)(current) : value
+  function setFilter<K extends keyof ModsFilters>(key: K, value: SetStateAction<ModsFilters[K]>): void {
+    const current = filtersRef.current[key]
+    const next = typeof value === "function" ? (value as (previous: ModsFilters[K]) => ModsFilters[K])(current) : value
     if (next === current) return
     resetBrowsePosition()
-    updateModsBrowseState(update(next))
-    setter(next)
+    const updated = { ...filtersRef.current, [key]: next }
+    filtersRef.current = updated
+    updateModsBrowseState(updated)
+    setFiltersState(updated)
   }
-
-  const setTextFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(textFilter, setTextFilterState, value, (next) => ({ textFilter: next }))
-  const setAuthorFilter: Dispatch<SetStateAction<DownloadableModAuthorType>> = (value) => updateFilter(authorFilter, setAuthorFilterState, value, (next) => ({ authorFilter: next }))
-  const setVersionsFilter: Dispatch<SetStateAction<DownloadableModGameVersionType[]>> = (value) => updateFilter(versionsFilter, setVersionsFilterState, value, (next) => ({ versionsFilter: next }))
-  const setTagsFilter: Dispatch<SetStateAction<DownloadableModTagType[]>> = (value) => updateFilter(tagsFilter, setTagsFilterState, value, (next) => ({ tagsFilter: next }))
-  const setSideFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(sideFilter, setSideFilterState, value, (next) => ({ sideFilter: next }))
-  const setInstalledFilter: Dispatch<SetStateAction<string>> = (value) => updateFilter(installedFilter, setInstalledFilterState, value, (next) => ({ installedFilter: next }))
-  const setOnlyFav: Dispatch<SetStateAction<boolean>> = (value) => updateFilter(onlyFav, setOnlyFavState, value, (next) => ({ onlyFav: next }))
-  const setOrderBy: Dispatch<SetStateAction<string>> = (value) => updateFilter(orderBy, setOrderByState, value, (next) => ({ orderBy: next }))
-  const setOrderByOrder: Dispatch<SetStateAction<string>> = (value) => updateFilter(orderByOrder, setOrderByOrderState, value, (next) => ({ orderByOrder: next }))
 
   const handleScroll = (): void => {
     if (!scrollRef.current) return
@@ -186,11 +178,13 @@ function ListMods(): JSX.Element {
     }
     // triggerQueryMods is a plain function redeclared every render, not a useCallback: it
     // always closes over this render's own filter values, so calling it from here already
-    // reads the current textFilter/authorFilter/etc. Listing it as a dependency would only
-    // make this effect refire on ListMods' own re-renders, not on anything it doesn't
-    // already refire on through the filters below.
+    // reads the current filters. Listing it as a dependency would only make this effect
+    // refire on ListMods' own re-renders, not on anything it doesn't already refire on
+    // through `filters` below. `filters` itself is a single dependency now, and setFilter
+    // only ever gives it a new reference on an actual change, so this compares correctly by
+    // identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textFilter, authorFilter, versionsFilter, tagsFilter, sideFilter, installedFilter, onlyFav, orderBy, orderByOrder])
+  }, [filters])
 
   // Keyed on id/path, not on `installation` itself: triggerGetInstalledMods calls
   // syncModsCount, which writes _modsCount back onto this same installation and
@@ -243,13 +237,14 @@ function ListMods(): JSX.Element {
   useEffect(() => {
     if (installationInstalledMods === undefined) return
 
-    if (!installationModsLoadedRef.current || installedFilter !== "all") triggerQueryMods()
+    if (!installationModsLoadedRef.current || filters.installedFilter !== "all") triggerQueryMods()
     installationModsLoadedRef.current = true
     // installedFilter changing on its own is already covered by the debounced-query effect
-    // above (it lists installedFilter in its own deps); this effect exists only to redo an
-    // "installed"/"not-installed" filter once a fresh installationInstalledMods scan comes
-    // in, so listing installedFilter here too would just fire triggerQueryMods twice for
-    // the same change. triggerQueryMods is excluded for the same reason as the effect above.
+    // above (it lists `filters`, installedFilter included, in its own deps); this effect
+    // exists only to redo an "installed"/"not-installed" filter once a fresh
+    // installationInstalledMods scan comes in, so listing filters here too would just fire
+    // triggerQueryMods twice for the same change. triggerQueryMods is excluded for the same
+    // reason as the effect above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installationInstalledMods])
 
@@ -301,22 +296,22 @@ function ListMods(): JSX.Element {
     const queryToken = ++queryTokenRef.current
 
     let mods = await queryMods({
-      textFilter,
-      authorFilter,
-      versionsFilter,
-      tagsFilter,
-      orderBy,
-      orderByOrder
+      textFilter: filters.textFilter,
+      authorFilter: filters.authorFilter,
+      versionsFilter: filters.versionsFilter,
+      tagsFilter: filters.tagsFilter,
+      orderBy: filters.orderBy,
+      orderByOrder: filters.orderByOrder
     })
 
     if (queryToken !== queryTokenRef.current) return
 
-    if (sideFilter !== "any") mods = mods.filter((mod) => mod.side === sideFilter)
+    if (filters.sideFilter !== "any") mods = mods.filter((mod) => mod.side === filters.sideFilter)
 
-    if (installedFilter === "installed") mods = mods.filter((mod) => installedCopiesOf(mod.modidstrs, installationInstalledMods).length > 0)
-    if (installedFilter === "not-installed") mods = mods.filter((mod) => installedCopiesOf(mod.modidstrs, installationInstalledMods).length < 1)
+    if (filters.installedFilter === "installed") mods = mods.filter((mod) => installedCopiesOf(mod.modidstrs, installationInstalledMods).length > 0)
+    if (filters.installedFilter === "not-installed") mods = mods.filter((mod) => installedCopiesOf(mod.modidstrs, installationInstalledMods).length < 1)
 
-    if (onlyFav) mods = mods.filter((mod) => favMods.includes(mod.modid))
+    if (filters.onlyFav) mods = mods.filter((mod) => favMods.includes(mod.modid))
 
     setModsList(mods)
     setSearching(false)
@@ -445,13 +440,13 @@ function ListMods(): JSX.Element {
   )
 
   function clearFilters(): void {
-    setTextFilter("")
-    setAuthorFilter({ userid: "", name: "" })
-    setVersionsFilter([])
-    setTagsFilter([])
-    setSideFilter("any")
-    setInstalledFilter("all")
-    setOnlyFav(false)
+    setFilter("textFilter", "")
+    setFilter("authorFilter", { userid: "", name: "" })
+    setFilter("versionsFilter", [])
+    setFilter("tagsFilter", [])
+    setFilter("sideFilter", "any")
+    setFilter("installedFilter", "all")
+    setFilter("onlyFav", false)
   }
 
   return (
@@ -485,27 +480,7 @@ function ListMods(): JSX.Element {
             </StickyMenuGroup>
           </StickyMenuGroupWrapper>
 
-          <ModsFilterBar
-            textFilter={textFilter}
-            setTextFilter={setTextFilter}
-            authorFilter={authorFilter}
-            setAuthorFilter={setAuthorFilter}
-            versionsFilter={versionsFilter}
-            setVersionsFilter={setVersionsFilter}
-            tagsFilter={tagsFilter}
-            setTagsFilter={setTagsFilter}
-            sideFilter={sideFilter}
-            setSideFilter={setSideFilter}
-            installedFilter={installedFilter}
-            setInstalledFilter={setInstalledFilter}
-            onlyFav={onlyFav}
-            setOnlyFav={setOnlyFav}
-            orderBy={orderBy}
-            setOrderBy={setOrderBy}
-            orderByOrder={orderByOrder}
-            setOrderByOrder={setOrderByOrder}
-            onClearFilters={clearFilters}
-          />
+          <ModsFilterBar filters={filters} setFilter={setFilter} onClearFilters={clearFilters} />
 
           {selecting && (
             <ModSelectionBar
