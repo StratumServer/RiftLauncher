@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { parseModListResponse } from "@domain/mods/moddb"
-import { rankSuggestions, resolveSuggestions, type ResolvedSuggestion, type SuggestionInstallation } from "@domain/mods/suggestions"
+import { MAX_SUGGESTION_DETAIL_LOOKUPS, MAX_SUGGESTIONS, rankSuggestions, resolveSuggestions, type ResolvedSuggestion, type SuggestionInstallation } from "@domain/mods/suggestions"
 import { queryModDb } from "@renderer/features/moddb/adapters/moddb"
 import type { QueryModOutcome } from "@renderer/features/mods/hooks/useQueryMod"
 import { logMods } from "@renderer/features/moddb/adapters/log"
@@ -40,6 +40,8 @@ export function useModSuggestions({
   const installationId = installation?.id
   const installationPath = installation?.path
   const installationVersion = installation?.version
+  const dismissedListingIdsRef = useRef(dismissedListingIds)
+  dismissedListingIdsRef.current = dismissedListingIds
 
   const refresh = useCallback(() => setRefreshNumber((number) => number + 1), [])
 
@@ -83,13 +85,14 @@ export function useModSuggestions({
           installation: current,
           otherInstallations,
           targetGameVersion: installationVersion,
-          dismissedListingIds,
+          dismissedListingIds: dismissedListingIdsRef.current,
           now: Date.now()
         })
 
         const resolved = await resolveSuggestions({
           candidates: ranked,
           targetGameVersion: installationVersion,
+          maxSuggestions: MAX_SUGGESTION_DETAIL_LOOKUPS,
           signal: controller.signal,
           getDetail: async (listingId) => {
             if (controller.signal.aborted) return undefined
@@ -110,7 +113,12 @@ export function useModSuggestions({
     })()
 
     return (): void => controller.abort()
-  }, [consent, installationId, installationPath, installationVersion, installations, installedMods, dismissedListingIds, getInstalledMods, queryMod, refreshNumber])
+  }, [consent, installationId, installationPath, installationVersion, installations, installedMods, getInstalledMods, queryMod, refreshNumber])
 
-  return { suggestions, loading, refresh }
+  const visibleSuggestions = useMemo(() => {
+    const dismissed = new Set(dismissedListingIds)
+    return suggestions.filter(({ mod }) => !dismissed.has(mod.modid)).slice(0, MAX_SUGGESTIONS)
+  }, [dismissedListingIds, suggestions])
+
+  return { suggestions: visibleSuggestions, loading, refresh }
 }

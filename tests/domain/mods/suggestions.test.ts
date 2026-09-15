@@ -255,6 +255,31 @@ describe("resolveSuggestions", () => {
     assert.ok(result.every(({ compatibility }) => compatibility === "declared" || compatibility === "same-minor"))
   })
 
+  it("can resolve accepted candidates past the six-card display cap for local backfill", async () => {
+    const catalog = Array.from({ length: MAX_SUGGESTIONS + 1 }, (_, index) => listing(index + 1, `Mod ${index + 1}`))
+    const ranked = rankSuggestions({
+      catalog,
+      installation: installation("current"),
+      otherInstallations: [],
+      dismissedListingIds: [],
+      targetGameVersion: "1.22.7",
+      now: NOW
+    })
+
+    const result = await resolveSuggestions({
+      candidates: ranked,
+      targetGameVersion: "1.22.7",
+      maxSuggestions: MAX_SUGGESTIONS + 1,
+      getDetail: async (listingId) => compatibleDetail(catalog[listingId - 1]!)
+    })
+
+    assert.equal(result.length, MAX_SUGGESTIONS + 1)
+    assert.deepEqual(
+      result.map(({ mod }) => mod.modid),
+      catalog.map(({ modid }) => modid)
+    )
+  })
+
   it("does not resolve a detail whose releases are undeclared for the target version", async () => {
     const candidate = listing(1, "Undeclared")
     const detail = compatibleDetail(candidate)

@@ -174,6 +174,8 @@ export interface ResolveSuggestionsInput {
   readonly targetGameVersion: string
   readonly getDetail: (listingId: number) => Promise<DownloadableModType | undefined>
   readonly signal?: AbortSignal
+  /** Maximum number of compatible details to retain. Defaults to the visible row size. */
+  readonly maxSuggestions?: number
 }
 
 function isCancelled(signal: AbortSignal | undefined): boolean {
@@ -187,6 +189,7 @@ function isCancelled(signal: AbortSignal | undefined): boolean {
 export async function resolveSuggestions(input: ResolveSuggestionsInput): Promise<ResolvedSuggestion[]> {
   const accepted: ResolvedSuggestion[] = []
   const candidates = input.candidates.slice(0, MAX_SUGGESTION_DETAIL_LOOKUPS)
+  const maxSuggestions = input.maxSuggestions ?? MAX_SUGGESTIONS
 
   for (const candidate of candidates) {
     if (isCancelled(input.signal)) return []
@@ -205,7 +208,7 @@ export async function resolveSuggestions(input: ResolveSuggestionsInput): Promis
     if (!release) continue
 
     accepted.push({ ...candidate, detail, compatibility: evaluateModCompatibility(release.tags, input.targetGameVersion) })
-    if (accepted.length >= MAX_SUGGESTIONS) break
+    if (accepted.length >= maxSuggestions) break
   }
 
   return accepted

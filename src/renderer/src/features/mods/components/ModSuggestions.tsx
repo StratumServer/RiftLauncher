@@ -82,24 +82,24 @@ function ModSuggestions({
   const headingId = "mod-suggestions-heading"
   return (
     <section role="region" aria-labelledby={headingId} className="mx-auto w-full max-w-6xl">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2">
-        <div>
-          <h2 id={headingId} className="text-lg font-bold">
-            {t("features.mods.suggestionsTitle", { installation: installation.name })}
-          </h2>
-          <p className="text-xs text-zinc-400">{t("features.mods.suggestionsFooter")}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <FormButton title={t("features.mods.suggestionsRefresh")} variant="ghost" onClick={onRefresh} disabled={loading}>
-            <PiArrowClockwise />
-          </FormButton>
-          <FormButton title={t("features.mods.suggestionsAddAll")} variant="primary" onClick={() => onAddAll(suggestions.map(({ mod }) => mod))} disabled={loading || suggestions.length === 0}>
-            {t("features.mods.suggestionsAddAll")}
-          </FormButton>
-        </div>
-      </div>
-
       <GridWrapper>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2">
+          <div>
+            <h2 id={headingId} className="text-lg font-bold">
+              {t("features.mods.suggestionsTitle", { installation: installation.name })}
+            </h2>
+            <p className="text-xs text-zinc-400">{t("features.mods.suggestionsFooter")}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <FormButton title={t("features.mods.suggestionsRefresh")} variant="ghost" onClick={onRefresh} disabled={loading}>
+              <PiArrowClockwise />
+            </FormButton>
+            <FormButton title={t("features.mods.suggestionsAddAll")} variant="primary" onClick={() => onAddAll(suggestions.map(({ mod }) => mod))} disabled={loading || suggestions.length === 0}>
+              {t("features.mods.suggestionsAddAll")}
+            </FormButton>
+          </div>
+        </div>
+
         <GridGroup>
           {loading && <FiLoader aria-label={t("features.mods.suggestionsLoading")} className="animate-spin text-3xl text-zinc-400" />}
           {suggestions.map((suggestion) => (

@@ -383,6 +383,15 @@ describe("text over the player's background image", () => {
     for (const notice of foregrounds("features/mods/components/ServerModsSection.tsx")) assertReadable("server Mods section notice", notice, PAGE, TEXT_FLOOR)
   })
 
+  it("keeps the Mod suggestions heading and caption readable on the grid panel", () => {
+    const source = read("features/mods/components/ModSuggestions.tsx")
+    assert.ok(source.indexOf("<GridWrapper>") < source.indexOf('className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2"'), "the suggestions heading should sit inside its grid panel")
+    const caption = foreground("features/mods/components/ModSuggestions.tsx", /text-xs text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("Mod suggestions heading", [ZINC["zinc-200"], 1], [shell, gridPanel], TEXT_FLOOR)
+    assertReadable("Mod suggestions caption", caption, [shell, gridPanel], TEXT_FLOOR)
+  })
+
   it("keeps a server group's text readable on the panel it does sit on", () => {
     for (const text of foregrounds("features/mods/components/ServerModsGroup.tsx")) assertReadable("server Mods group text", text, LIST_PANEL, TEXT_FLOOR)
     for (const text of foregrounds("features/mods/components/ServerModItem.tsx")) assertReadable("server Mod row text", text, LIST_PANEL, TEXT_FLOOR)

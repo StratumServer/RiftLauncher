@@ -47,6 +47,14 @@ const CANDIDATE: DownloadableModOnListType = {
   lastreleased: "2026-09-14"
 }
 
+const BACKFILL_CANDIDATE: DownloadableModOnListType = {
+  ...CANDIDATE,
+  modid: 124,
+  assetid: 124,
+  name: "Backfill Candidate",
+  modidstrs: ["backfillcandidate"]
+}
+
 const DETAIL: DownloadableModType = {
   modid: 123,
   assetid: 123,
@@ -74,10 +82,27 @@ const DETAIL: DownloadableModType = {
   ]
 }
 
-function mount(consent: boolean | null = null): { api: MockedBridgeAPI; queryURL: ReturnType<typeof vi.fn> } {
+function detailFor(candidate: DownloadableModOnListType): DownloadableModType {
+  return {
+    ...DETAIL,
+    modid: candidate.modid,
+    assetid: candidate.assetid,
+    name: candidate.name,
+    releases: [{ ...DETAIL.releases[0]!, modidstr: candidate.modidstrs[0]!, mainfile: `https://mods.example/${candidate.modidstrs[0]}-1.0.0.zip`, filename: `${candidate.modidstrs[0]}-1.0.0.zip` }]
+  }
+}
+
+const MANY_CANDIDATES = [
+  CANDIDATE,
+  BACKFILL_CANDIDATE,
+  ...Array.from({ length: 5 }, (_, index) => ({ ...CANDIDATE, modid: 125 + index, assetid: 125 + index, name: `Suggestion Candidate ${index + 3}`, modidstrs: [`suggestioncandidate${index + 3}`] }))
+]
+
+function mount(consent: boolean | null = null, suggestionCandidates: readonly DownloadableModOnListType[] = [CANDIDATE]): { api: MockedBridgeAPI; queryURL: ReturnType<typeof vi.fn> } {
   const queryURL = vi.fn(async (url: string): Promise<string> => {
-    if (url.endsWith("/api/mods") || url.includes("/api/mods?")) return JSON.stringify({ statuscode: "200", mods: [CANDIDATE] })
-    if (url.endsWith("/api/mod/123")) return JSON.stringify({ statuscode: "200", mod: DETAIL })
+    if (url.endsWith("/api/mods") || url.includes("/api/mods?")) return JSON.stringify({ statuscode: "200", mods: suggestionCandidates })
+    const candidate = suggestionCandidates.find(({ modid }) => url.endsWith(`/api/mod/${modid}`))
+    if (candidate) return JSON.stringify({ statuscode: "200", mod: detailFor(candidate) })
     return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
   })
   const api = installMockWindowApi({
@@ -135,6 +160,26 @@ describe("Mod suggestions", () => {
     await user.click(within(section).getByRole("button", { name: "Dismiss suggestion" }))
     await waitFor(() => expect(screen.queryByRole("region", { name: "Suggested for Install A" })).toBeNull())
     expect(api.configManager.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ dismissedModSuggestions: [123] }))
+  }, 15_000)
+
+  it("dismisses one card locally without rerunning the pipeline and backfills from the ranked pool", async () => {
+    const user = userEvent.setup()
+    const { queryURL } = mount(null, MANY_CANDIDATES)
+
+    await user.click(await screen.findByRole("button", { name: "Turn on Mod suggestions" }, { timeout: 3000 }))
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    await within(section).findByRole("button", { name: "Suggestion Candidate 6, Not installed" })
+    const catalogRequests = (): typeof queryURL.mock.calls => queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))
+    const detailRequests = (): typeof queryURL.mock.calls => queryURL.mock.calls.filter(([url]) => url.includes("/api/mod/"))
+    await waitFor(() => expect(catalogRequests()).toHaveLength(1))
+    const detailsBeforeDismiss = detailRequests().length
+
+    await user.click(within(section).getAllByRole("button", { name: "Dismiss suggestion" })[0]!)
+
+    await waitFor(() => expect(within(section).queryByRole("button", { name: "Suggestion Candidate, Not installed" })).toBeNull())
+    expect(within(section).getByRole("button", { name: "Suggestion Candidate 7, Not installed" })).toBeTruthy()
+    expect(catalogRequests()).toHaveLength(1)
+    expect(detailRequests()).toHaveLength(detailsBeforeDismiss)
   }, 15_000)
 
   it("Add all opens the existing install confirmation without downloading first", async () => {

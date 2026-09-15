@@ -184,6 +184,23 @@ describe("normalizeConfig: the document itself", () => {
     const { normalizeConfig } = await freshConfigManager()
     assert.deepEqual(normalizeConfig({}).suspendedModUpdates, [])
   })
+
+  it("keeps Mod suggestions consent explicit and never regresses it to a missing default", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    assert.equal(normalizeConfig({}).modSuggestionsConsent, null)
+    assert.equal(normalizeConfig({ modSuggestionsConsent: true }).modSuggestionsConsent, true)
+    assert.equal(normalizeConfig({ modSuggestionsConsent: false }).modSuggestionsConsent, false)
+    for (const value of ["true", "yes", 1, {}, []]) assert.equal(normalizeConfig({ modSuggestionsConsent: value }).modSuggestionsConsent, null, String(value))
+  })
+
+  it("keeps valid dismissed Mod suggestions and never regresses them to a missing default", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    assert.deepEqual(normalizeConfig({}).dismissedModSuggestions, [])
+    assert.deepEqual(normalizeConfig({ dismissedModSuggestions: [4, 4, 2.5, "3", 0, -1, 7] }).dismissedModSuggestions, [4, 7])
+    assert.deepEqual(normalizeConfig({ dismissedModSuggestions: "not an array" }).dismissedModSuggestions, [])
+  })
 })
 
 describe("normalizeConfig: installations", () => {
