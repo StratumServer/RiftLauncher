@@ -3,6 +3,8 @@ import { readFileSync, readdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { describe, it } from "vitest"
 
+import { listLocaleFiles } from "./i18n/helpers"
+
 /**
  * An action button that is handed `icon` renders its `title` as visible text rather than as a
  * tooltip, so a key that some locale is missing no longer degrades quietly to a hover string:
@@ -51,9 +53,7 @@ describe("labels a player actually reads on an action button", () => {
     const keys = visibleActionLabelKeys()
     assert.ok(keys.length > 0, "found no action buttons rendering a label, this test has lost its subject")
 
-    const files = readdirSync(LOCALES)
-      .filter((file) => file.endsWith(".json"))
-      .sort()
+    const files = listLocaleFiles()
     assert.ok(files.length > 1, "expected the launcher's locale files under " + LOCALES)
 
     for (const file of files) {
