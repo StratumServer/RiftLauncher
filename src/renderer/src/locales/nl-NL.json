@@ -56,7 +56,8 @@
       "versionFound": "Versie gevonden",
       "installNewVersion": "Nieuwe VS-versie installeren",
       "deleteAnyway": "Toch verwijderen",
-      "removeFromList": "Uit de lijst verwijderen"
+      "removeFromList": "Uit de lijst verwijderen",
+      "restoreVanilla": "Optimum verwijderen"
     },
     "installations": {
       "noInstallationsFound": "Geen installaties gevonden",

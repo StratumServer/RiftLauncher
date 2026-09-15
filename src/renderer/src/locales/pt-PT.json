@@ -113,7 +113,8 @@
       "installNewVersion": "Instale uma nova versão",
       "deleteVersion": "Eliminar Versão",
       "deleteAnyway": "Apagar mesmo assim",
-      "removeFromList": "Remover da lista"
+      "removeFromList": "Remover da lista",
+      "restoreVanilla": "Remover o Optimum"
     },
     "installations": {
       "noInstallationsFound": "Nenhuma instalação encontrada!",

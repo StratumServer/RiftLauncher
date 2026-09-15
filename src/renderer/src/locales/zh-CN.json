@@ -56,7 +56,8 @@
       "versionFound": "找到版本",
       "installNewVersion": "安装新的 VS 版本",
       "deleteAnyway": "仍要删除",
-      "removeFromList": "从列表中移除"
+      "removeFromList": "从列表中移除",
+      "restoreVanilla": "移除 Optimum"
     },
     "installations": {
       "noInstallationsFound": "为找到任何安装！",
