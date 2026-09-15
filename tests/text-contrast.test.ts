@@ -421,8 +421,8 @@ describe("prompts the player is meant to read and act on", () => {
   it("keeps the mod filter prompts readable", () => {
     const prompts: ReadonlyArray<readonly [string, Layer]> = [
       ["author filter placeholder", foreground("features/mods/components/AuthorFilter.tsx", /placeholder:text-(zinc-\d+)(?:\/(\d+))?/)],
-      ["tag filter prompt", foreground("features/mods/components/TagsFilter.tsx", /tagsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
-      ["version filter prompt", foreground("features/mods/components/VersionsFilter.tsx", /versionsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
+      ["tag filter prompt", foreground("components/ui/MultiSelectFilter.tsx", /selected\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
+      ["version filter prompt", foreground("components/ui/MultiSelectFilter.tsx", /selected\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
       ["installed mods select filter prompt", foreground("features/mods/components/InstalledModsSelectFilter.tsx", /!value && "text-(zinc-\d+)(?:\/(\d+))?"/)],
       ["installed mods tag filter prompt", foreground("features/mods/components/InstalledTagsFilter.tsx", /tagsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)]
     ]
