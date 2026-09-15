@@ -592,4 +592,22 @@ describe("runDownload SHA-256", () => {
 
     assert.equal(readFileSync(result, "utf8"), payload.text)
   })
+
+  it("refuses a response whose declared length exceeds its request-specific ceiling", async () => {
+    const payload = body("too large")
+    const transport = respondWith(new FakeResponse(200, { "content-length": String(payload.length) }, payload.chunks))
+
+    await assert.rejects(runDownload({ url: OPTIMUM_OVERLAY, outputPath: destination, fileName: "overlay.tar.gz", maxBytes: 4, request: transport.fn }), /Download failed/)
+
+    assert.equal(existsSync(join(destination, "overlay.tar.gz")), false)
+  })
+
+  it("refuses a streamed response once it exceeds its request-specific ceiling", async () => {
+    const payload = body("too large without a length")
+    const transport = respondWith(new FakeResponse(200, {}, payload.chunks))
+
+    await assert.rejects(runDownload({ url: OPTIMUM_OVERLAY, outputPath: destination, fileName: "overlay.tar.gz", maxBytes: 4, request: transport.fn }), /Download failed/)
+
+    assert.equal(existsSync(join(destination, "overlay.tar.gz")), false)
+  })
 })

@@ -17,7 +17,7 @@ import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, ass
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { getConfig } from "@src/config/configManager"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
-import { getTrustedOverlayHash } from "@src/ipc/optimumManifest"
+import { getCachedOptimumManifest, getTrustedOverlayHash } from "@src/ipc/optimumManifest"
 import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
 import { isPngBytes, PNG_SIGNATURE_BYTES } from "@domain/backgrounds"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
@@ -387,6 +387,8 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   // session manifest does not vouch for: the only thing downstream of that
   // download is a child process, so an unhashed one must never reach the disk.
   const expectedSha256 = await getTrustedOverlayHash(safeUrl)
+  const optimumManifest = expectedSha256 ? await getCachedOptimumManifest() : undefined
+  const maxBytes = optimumManifest?.archive.size
 
   logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DOWNLOAD_ON_PATH] [${safeId}] Starting a bounded download.`)
   const downloadedPath = await downloadConcurrency.run(() => {
@@ -396,7 +398,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
       safeId,
       IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS,
       downloadWorkerPath,
-      { id: safeId, url: safeUrl.toString(), outputPath: safeOutputPath, fileName: safeFileName, expectedMd5, expectedSha256 },
+      { id: safeId, url: safeUrl.toString(), outputPath: safeOutputPath, fileName: safeFileName, expectedMd5, expectedSha256, maxBytes },
       "DOWNLOAD_ON_PATH",
       (message) => {
         if (typeof message.path !== "string") throw new Error("Download returned an invalid path")
