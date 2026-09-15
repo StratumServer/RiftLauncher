@@ -15,6 +15,7 @@ import { createProcessSampler } from "@src/ipc/adapters/processSampler"
 import { createPlaySessionRecorder, forgetPlaySessions, readPlaySessions, recordPlaySession } from "@src/ipc/playSessionsStore"
 import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
+import { clearInstallationPlaying, markInstallationPlaying } from "@src/ipc/installationActivity"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
 import { buildSessionReport, type InstalledModRef } from "@domain/gameLogs/report"
 import { scanInstalledMods } from "@domain/mods/scanInstalled"
@@ -270,6 +271,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   safeVersion.path = await assertManagedPath(safeVersion.path, "game version path")
   safeInstallation.path = await assertManagedPath(safeInstallation.path, "installation path")
   const config = await getConfig()
+  const installationId = config.installations.find((candidate) => comparablePath(candidate.path) === comparablePath(safeInstallation.path))?.id
   const account = config.accounts.find((candidate) => candidate.playerUid === config.activeAccountId) ?? null
   const accountSecrets = account ? await getAccountSecrets(account.playerUid) : null
   logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Trying to run Vintage Story ${safeVersion.version}.`)
@@ -439,24 +441,31 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
 
   // The id comes from the config the launcher wrote, never from the renderer's own object, so the
   // file name a session lands under cannot be chosen by whatever sent the launch.
-  const installationId = config.installations.find((candidate) => comparablePath(candidate.path) === comparablePath(safeInstallation.path))?.id
+  const markedPlaying = installationId ? markInstallationPlaying(installationId) : false
+  if (installationId && !markedPlaying) return invalidRequestResult()
   // Windows has no /proc, so its sampler reads `tasklist` and needs a probe to run it with. Passing
   // it only there keeps macOS on the absent sampler, which is what the factory answers with none.
   const platform = os.platform()
   const samplerOptions = platform === "win32" ? { processProbe: tasklistProbe() } : {}
   const recorder = config.measurePlaySessions && installationId ? createPlaySessionRecorder(createProcessSampler(platform, samplerOptions)) : undefined
 
-  const outcome = await realGameProcess().run({
-    command: plan.command,
-    args: plan.args,
-    env: { ...process.env, ...processEnv, ...plan.env },
-    cwd: plan.cwd,
-    ...(recorder ? { onStarted: recorder.onStarted } : {})
-  })
+  let outcome: GameProcessOutcome
+  let session: PlaySession | undefined
+  try {
+    outcome = await realGameProcess().run({
+      command: plan.command,
+      args: plan.args,
+      env: { ...process.env, ...processEnv, ...plan.env },
+      cwd: plan.cwd,
+      ...(recorder ? { onStarted: recorder.onStarted } : {})
+    })
 
-  // Settles the sampling loop on the same path the launch outcome settles on, whichever way it
-  // went, so the timer cannot outlive this handler.
-  const session = await recorder?.finish()
+    // Settles the sampling loop on the same path the launch outcome settles on, whichever way it
+    // went, so the timer cannot outlive this handler.
+    session = await recorder?.finish()
+  } finally {
+    if (installationId) clearInstallationPlaying(installationId)
+  }
   if (session && installationId) {
     const stored = await recordPlaySession(installationId, session)
     const shape = session.partial ? "partial" : "complete"

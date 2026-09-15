@@ -186,3 +186,13 @@ describe("fr-FR stays in step with en-US", () => {
     assert.deepEqual(orphans, [], `fr-FR keys en-US no longer has: ${orphans.join(", ")}`)
   })
 })
+
+describe("pt-BR worlds namespace", () => {
+  const ptBR = flattenTranslationObject(readLocaleJson("pt-BR.json"))
+
+  it("resolves world strings under features.worlds rather than features.backups", () => {
+    assert.equal(ptBR["features.worlds.title"], "Mundos")
+    assert.equal(ptBR["features.worlds.confirmDelete"], "Digite {{name}} para excluir este mundo permanentemente.")
+    assert.equal(ptBR["features.backups.worlds.title"], undefined)
+  })
+})

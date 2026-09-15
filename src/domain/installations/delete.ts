@@ -6,6 +6,7 @@ import { deleteInstallationBackup } from "./backupDeletion"
 export interface InstallationDeleteSnapshot {
   path: string
   backups: readonly (Pick<BackupRecord, "id" | "path"> & { isDeleting?: boolean; isRestoring?: boolean })[]
+  worldBackups?: readonly (Pick<BackupRecord, "id" | "path"> & { isDeleting?: boolean; isRestoring?: boolean })[]
   isPlaying: boolean
   isBackingUp: boolean
   isRestoringBackup: boolean
@@ -80,7 +81,7 @@ export async function deleteInstallation(ports: DeleteInstallationPorts, input: 
 
   const failedBackupPaths: string[] = []
 
-  for (const backup of installation.backups) {
+  for (const backup of [...installation.backups, ...(installation.worldBackups ?? [])]) {
     const result = await deleteInstallationBackup(
       { fileSystem: ports.fileSystem },
       { backup: { id: backup.id, path: backup.path, isDeleting: backup.isDeleting ?? false, isRestoring: backup.isRestoring ?? false } }

@@ -216,6 +216,25 @@ declare global {
     _restoring?: boolean
   }
 
+  type WorldBackupType = BackupType & {
+    worldName: string
+    _deleting?: boolean
+    _restoring?: boolean
+  }
+
+  type WorldType = {
+    name: string
+    size: number
+    lastModified: number
+    isDefault: boolean
+    backupCount: number
+  }
+
+  type WorldListResult = { ok: true; worlds: WorldType[] } | { ok: false; reason: string }
+  type WorldBackupResult = { ok: true; backup: WorldBackupType } | { ok: false; reason: string }
+  type WorldOperationResult = { ok: true } | { ok: false; reason: string }
+  type WorldTransferResult = { ok: true; targetWorldName: string; warning?: "different-version" } | { ok: false; reason: string }
+
   /**
    * One server an Installation can join straight from the launcher (#460).
    *
@@ -246,6 +265,7 @@ declare global {
     backupsAuto: boolean
     compressionLevel: number
     backups: BackupType[]
+    worldBackups?: WorldBackupType[]
     lastTimePlayed: number
     totalTimePlayed: number
     mesaGlThread: boolean
@@ -263,6 +283,7 @@ declare global {
     _backuping?: boolean
     _restoringBackup?: boolean
     _updatingMods?: boolean
+    _worldsCount?: number
   }
 
   type ConfigType = BasicConfigType & {

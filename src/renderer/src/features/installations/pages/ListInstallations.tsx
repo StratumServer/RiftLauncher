@@ -199,6 +199,9 @@ function ListInslallations(): JSX.Element {
                         <LinkButton to={`/installations/backups/${installation.id}`} className="p-1" title={t("features.backups.manageBackups")} variant="ghost">
                           <PiArrowCounterClockwiseDuotone />
                         </LinkButton>
+                        <LinkButton to={`/installations/worlds/${installation.id}`} className="p-1" title={t("features.worlds.manageWorlds")} variant="ghost">
+                          <PiGlobeDuotone />
+                        </LinkButton>
                       </div>
                       {/* Servers sits beside Manage Mods rather than at the end of the strip: the two are
                           the per-Installation pages a player opens over and over, and the column pairs
