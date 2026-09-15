@@ -12,6 +12,7 @@ import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstall
 import { installedModLookups } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
 import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
 import { useQueryMod } from "@renderer/features/mods/hooks/useQueryMod"
+import { useModSuggestions } from "@renderer/features/mods/hooks/useModSuggestions"
 import { useSyncModsCount } from "@renderer/features/mods/hooks/useSyncModsCount"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
@@ -24,6 +25,7 @@ import ModsGrid from "@renderer/features/mods/components/ModsGrid"
 import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
 import ModSelectionBar from "@renderer/features/mods/components/ModSelectionBar"
+import ModSuggestions from "@renderer/features/mods/components/ModSuggestions"
 import type { ModCardAction } from "@renderer/features/mods/components/ModListCard"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { DEFAULT_LOADED_MODS, getModsBrowseState, updateModsBrowseState, type ModsBrowseState, type ModsFilters } from "@renderer/features/mods/modsBrowseState"
@@ -56,7 +58,7 @@ function ListMods(): JSX.Element {
   const installations = useInstallations()
   const favMods = useFavMods()
   const suspendedModUpdates = useSuspendedModUpdates()
-  const { lastUsedInstallation } = useSettingsConfig()
+  const { lastUsedInstallation, modSuggestionsConsent, dismissedModSuggestions } = useSettingsConfig()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
@@ -82,6 +84,20 @@ function ListMods(): JSX.Element {
 
   const [installationInstalledMods, setInstallationInstalledMods] = useState<InstalledModType[] | undefined>(undefined)
   const installationModsLoadedRef = useRef(false)
+
+  const {
+    suggestions,
+    loading: suggestionsLoading,
+    refresh: refreshSuggestions
+  } = useModSuggestions({
+    consent: modSuggestionsConsent,
+    installation,
+    installations,
+    installedMods: installationInstalledMods,
+    dismissedListingIds: dismissedModSuggestions,
+    getInstalledMods,
+    queryMod
+  })
 
   // The fast scan is this page's refresh: a folder read, with none of the ModDB lookups the
   // Manage Mods scan makes for every installed Mod.
@@ -373,13 +389,13 @@ function ListMods(): JSX.Element {
   }
 
   // Returns its promise so Install selected stays busy, and refuses another press, while the folder is read.
-  async function installPicks(): Promise<void> {
+  async function installPicks(selectedPicks: readonly ModPick[] = picks): Promise<void> {
     if (!installation) return
     const { mods } = await getInstalledMods({ path: installation.path })
     // The sidebar stays live during the read. A switch drops the run rather than opening it on the
     // other Installation; the picks stay, and the next press reads the new folder.
     if (selectedInstallationId.current !== installation.id) return
-    const { entries, leftOut } = modSelectionEntries(picks, mods)
+    const { entries, leftOut } = modSelectionEntries(selectedPicks, mods)
     setPickRun({ installationId: installation.id, request: { name: "", gameVersion: installation.version, mods: entries }, installedMods: mods, leftOut })
   }
 
@@ -439,6 +455,18 @@ function ListMods(): JSX.Element {
     [installNewest, updateMod, toggleEnabled, toggleSuspended, requestDelete, navigate]
   )
 
+  function enableSuggestions(): void {
+    configDispatch({ type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT, payload: true })
+  }
+
+  function dismissSuggestion(listingId: number): void {
+    configDispatch({ type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION, payload: { listingId } })
+  }
+
+  function addAllSuggestions(mods: readonly DownloadableModOnListType[]): Promise<void> {
+    return installPicks(addPicks(picks, mods.map(toModPick)))
+  }
+
   function clearFilters(): void {
     setFilter("textFilter", "")
     setFilter("authorFilter", { userid: "", name: "" })
@@ -488,7 +516,7 @@ function ListMods(): JSX.Element {
               canInstall={installation !== undefined}
               onPickVisible={() => setPicks(addPicks(picks, modsList.slice(0, visibleMods).map(toModPick)))}
               onClear={() => setPicks([])}
-              onInstall={installPicks}
+              onInstall={() => installPicks()}
             />
           )}
         </StickyMenuWrapper>
@@ -512,6 +540,25 @@ function ListMods(): JSX.Element {
             />
           </p>
         )}
+
+        <ModSuggestions
+          consent={modSuggestionsConsent}
+          installation={installation}
+          suggestions={suggestions}
+          loading={suggestionsLoading}
+          selecting={selecting}
+          pickedIds={pickedIds}
+          isModFav={(mod) => favMods.includes(mod.modid)}
+          isBusy={actions.isBusy}
+          onEnable={enableSuggestions}
+          onRefresh={refreshSuggestions}
+          onDismiss={dismissSuggestion}
+          onAddAll={addAllSuggestions}
+          onSelect={selecting ? onTogglePick : onSelectMod}
+          onToggleFav={onToggleFavMod}
+          onOpenModDb={onOpenModDb}
+          onAction={onModAction}
+        />
 
         <ModsGrid
           mods={modsList}

@@ -19,6 +19,7 @@ import { defaultModDbVisibility, MODDB_VISIBILITY_ALWAYS } from "@domain/moddbVi
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_ALLOW_BASIC_SESSION_STORE } from "@domain/account/sessionStorage"
 import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
+import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
 
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "../../src/renderer/src/features/config/contexts/configReducer"
 
@@ -39,6 +40,8 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     background: DEFAULT_BACKGROUND_ID,
     accentColor: DEFAULT_ACCENT_ID,
     moddbVisibility: defaultModDbVisibility(),
+    modSuggestionsConsent: null,
+    dismissedModSuggestions: [],
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
     allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
@@ -102,6 +105,28 @@ describe("configReducer: SET_CONFIG", () => {
     const payload = baseConfig({ schemaVersion: 5 })
     const result = configReducer(initialState, { type: CONFIG_ACTIONS.SET_CONFIG, payload })
     assert.equal(result, payload)
+  })
+})
+
+describe("configReducer: Mod suggestions", () => {
+  it("stores independent consent without touching the ModDB visibility answer", () => {
+    const config = baseConfig()
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT, payload: true })
+
+    assert.equal(result.modSuggestionsConsent, true)
+    assert.deepEqual(result.moddbVisibility, config.moddbVisibility)
+  })
+
+  it("deduplicates dismissed listing ids and never evicts an older dismissal", () => {
+    const config = baseConfig({ dismissedModSuggestions: Array.from({ length: MAX_DISMISSED_MOD_SUGGESTIONS }, (_, index) => index + 1) })
+    const duplicate = configReducer(config, { type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION, payload: { listingId: 12 } })
+    const result = configReducer(duplicate, { type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION, payload: { listingId: MAX_DISMISSED_MOD_SUGGESTIONS + 1 } })
+
+    assert.equal(result.dismissedModSuggestions.length, MAX_DISMISSED_MOD_SUGGESTIONS)
+    assert.equal(result.dismissedModSuggestions.includes(12), true)
+    assert.equal(result.dismissedModSuggestions.includes(1), true)
+    assert.equal(result.dismissedModSuggestions.includes(MAX_DISMISSED_MOD_SUGGESTIONS + 1), false)
+    assert.equal(result.installations, config.installations)
   })
 })
 

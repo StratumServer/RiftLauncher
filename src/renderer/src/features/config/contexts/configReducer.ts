@@ -1,5 +1,6 @@
 import { DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 import { type ModDbVisibilityState } from "@domain/moddbVisibility"
+import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
 
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
@@ -14,6 +15,8 @@ export enum CONFIG_ACTIONS {
   SET_BACKGROUND = "SET_BACKGROUND",
   SET_ACCENT_COLOR = "SET_ACCENT_COLOR",
   SET_MODDB_VISIBILITY = "SET_MODDB_VISIBILITY",
+  SET_MOD_SUGGESTIONS_CONSENT = "SET_MOD_SUGGESTIONS_CONSENT",
+  ADD_DISMISSED_MOD_SUGGESTION = "ADD_DISMISSED_MOD_SUGGESTION",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
   SET_MEASURE_PLAY_SESSIONS = "SET_MEASURE_PLAY_SESSIONS",
   SET_ALLOW_BASIC_SESSION_STORE = "SET_ALLOW_BASIC_SESSION_STORE",
@@ -125,6 +128,18 @@ export interface SetAccentColor {
 export interface SetModDbVisibility {
   type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY
   payload: ModDbVisibilityState
+}
+
+/** Records the separate answer for the opt-in ModDB suggestions row. */
+export interface SetModSuggestionsConsent {
+  type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT
+  payload: boolean | null
+}
+
+/** Remembers one dismissed listing while keeping dismissal history bounded. */
+export interface AddDismissedModSuggestion {
+  type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION
+  payload: { listingId: number }
 }
 
 /**
@@ -323,6 +338,8 @@ export type ConfigAction =
   | SetBackground
   | SetAccentColor
   | SetModDbVisibility
+  | SetModSuggestionsConsent
+  | AddDismissedModSuggestion
   | SetReceiveBetaUpdates
   | SetMeasurePlaySessions
   | SetAllowBasicSessionStore
@@ -384,6 +401,12 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, accentColor: action.payload }
     case CONFIG_ACTIONS.SET_MODDB_VISIBILITY:
       return { ...config, moddbVisibility: action.payload }
+    case CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT:
+      return { ...config, modSuggestionsConsent: action.payload }
+    case CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION: {
+      if (config.dismissedModSuggestions.includes(action.payload.listingId) || config.dismissedModSuggestions.length >= MAX_DISMISSED_MOD_SUGGESTIONS) return config
+      return { ...config, dismissedModSuggestions: [...config.dismissedModSuggestions, action.payload.listingId] }
+    }
     case CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES:
       return { ...config, receiveBetaUpdates: action.payload }
     case CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS:

@@ -13,6 +13,7 @@ import { normalizeModDbVisibility } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
+import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
 
 const defaultConfig: ConfigType = {
   ...DEFAULT_CONFIG_BASE,
@@ -425,6 +426,15 @@ function normalizeAccounts(value: unknown, atStartup: boolean): AccountPublicTyp
     .slice(0, MAX_STORED_ACCOUNTS)
 }
 
+function normalizeModSuggestionsConsent(value: unknown): boolean | null {
+  return value === true || value === false ? value : null
+}
+
+function normalizeDismissedModSuggestions(value: unknown): number[] {
+  const ids = Array.isArray(value) ? value.filter((listingId): listingId is number => typeof listingId === "number" && Number.isSafeInteger(listingId) && listingId > 0) : []
+  return [...new Set(ids)].slice(0, MAX_DISMISSED_MOD_SUGGESTIONS)
+}
+
 /**
  * `atStartup` is set on the one read that opens a stored document this process has not written:
  * `getConfig`'s file read. Everything else (every `saveConfig`, every re-normalization of the
@@ -491,6 +501,8 @@ export function normalizeConfig(config: unknown, { atStartup = false }: { atStar
     // `moddbVisibilityAnswer` is the #219 field this replaced, read under its old name so an
     // install that answered back then migrates rather than being asked as though it never had.
     moddbVisibility: normalizeModDbVisibility(rawConfig.moddbVisibility ?? (rawConfig as Record<string, unknown>)["moddbVisibilityAnswer"], app.getVersion()),
+    modSuggestionsConsent: normalizeModSuggestionsConsent(rawConfig.modSuggestionsConsent),
+    dismissedModSuggestions: normalizeDismissedModSuggestions(rawConfig.dismissedModSuggestions),
     // Null for anything that is not an explicit yes or no, which is what every config written
     // before the toggle existed says, and leaves the running version deciding as it always did.
     receiveBetaUpdates: normalizeReceiveBetaUpdates(rawConfig.receiveBetaUpdates),
