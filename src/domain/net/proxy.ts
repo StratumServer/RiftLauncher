@@ -79,3 +79,37 @@ export function parseProxyUrl(raw: string): ProxyResolution | undefined {
       return { kind: "unsupported" }
   }
 }
+
+/**
+ * `NO_PROXY=a.example.com,.b.example.com,*,auth.vintagestory.at:443` (issue #481's
+ * environment fallback, `src/ipc/network.ts`'s `environmentProxyResolution`): does
+ * `url` match any entry? An entry is an exact host, a domain suffix (leading dot
+ * optional), `*` for every host, or any of those with a `:port` suffix that narrows
+ * the bypass to that port alone. An entry without a port bypasses every port for that
+ * host, matching curl; an entry with one only bypasses `url`'s own effective port
+ * (its `URL.port`, defaulted the same way a missing one is defaulted elsewhere in
+ * this file: 80 for `http:`, 443 for `https:`), so `auth.vintagestory.at:443` matches
+ * `https://auth.vintagestory.at` even though neither ever spells the port out.
+ * Comparison is case-insensitive and tolerant of stray whitespace around an entry.
+ */
+export function matchesNoProxy(url: URL, noProxy: string | undefined): boolean {
+  if (!noProxy) return false
+  const targetHost = url.hostname.toLowerCase()
+  const targetPort = Number(url.port) || (url.protocol === "http:" ? 80 : 443)
+
+  return noProxy
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean)
+    .some((entry) => {
+      if (entry === "*") return true
+
+      const portSeparator = entry.lastIndexOf(":")
+      const entryPort = portSeparator === -1 ? undefined : Number(entry.slice(portSeparator + 1))
+      const hasEntryPort = entryPort !== undefined && Number.isInteger(entryPort) && entryPort > 0
+      if (hasEntryPort && entryPort !== targetPort) return false
+
+      const entryHost = (hasEntryPort ? entry.slice(0, portSeparator) : entry).replace(/^\./, "")
+      return targetHost === entryHost || targetHost.endsWith(`.${entryHost}`)
+    })
+}

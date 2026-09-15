@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { parseProxyResolution } from "@domain/net/proxy"
+import { matchesNoProxy, parseProxyResolution } from "@domain/net/proxy"
 
 describe("parseProxyResolution reads one session.resolveProxy answer (#481)", () => {
   it("reads DIRECT, case and whitespace insensitive", () => {
@@ -42,5 +42,43 @@ describe("parseProxyResolution reads one session.resolveProxy answer (#481)", ()
   it("treats an empty answer as direct rather than throwing", () => {
     assert.deepEqual(parseProxyResolution(""), { kind: "direct" })
     assert.deepEqual(parseProxyResolution("   "), { kind: "direct" })
+  })
+})
+
+describe("matchesNoProxy reads one NO_PROXY entry list (#481)", () => {
+  it("matches a bare host by exact name", () => {
+    assert.equal(matchesNoProxy(new URL("https://auth.vintagestory.at"), "auth.vintagestory.at"), true)
+    assert.equal(matchesNoProxy(new URL("https://other.example.com"), "auth.vintagestory.at"), false)
+  })
+
+  it("matches a host with a port only when the target's own effective port agrees", () => {
+    // https://auth.vintagestory.at never spells out :443, but that is its effective port.
+    assert.equal(matchesNoProxy(new URL("https://auth.vintagestory.at"), "auth.vintagestory.at:443"), true)
+    assert.equal(matchesNoProxy(new URL("http://auth.vintagestory.at"), "auth.vintagestory.at:443"), false)
+    assert.equal(matchesNoProxy(new URL("https://auth.vintagestory.at:8443"), "auth.vintagestory.at:443"), false)
+    assert.equal(matchesNoProxy(new URL("https://auth.vintagestory.at:443"), "auth.vintagestory.at:443"), true)
+  })
+
+  it("matches a domain suffix, leading dot optional", () => {
+    assert.equal(matchesNoProxy(new URL("https://api.vintagestory.at"), ".vintagestory.at"), true)
+    assert.equal(matchesNoProxy(new URL("https://api.vintagestory.at"), "vintagestory.at"), true)
+    assert.equal(matchesNoProxy(new URL("https://vintagestory.at.evil.com"), "vintagestory.at"), false)
+  })
+
+  it("matches every host on the * entry", () => {
+    assert.equal(matchesNoProxy(new URL("https://anything.example.com"), "*"), true)
+  })
+
+  it("tolerates spaces around an entry in a comma-separated list", () => {
+    assert.equal(matchesNoProxy(new URL("https://auth.vintagestory.at"), "other.example.com,  auth.vintagestory.at  ,third.example.com"), true)
+  })
+
+  it("matches regardless of case", () => {
+    assert.equal(matchesNoProxy(new URL("https://Auth.VintageStory.at"), "AUTH.vintagestory.AT"), true)
+  })
+
+  it("returns false for an empty or unset NO_PROXY", () => {
+    assert.equal(matchesNoProxy(new URL("https://auth.vintagestory.at"), undefined), false)
+    assert.equal(matchesNoProxy(new URL("https://auth.vintagestory.at"), ""), false)
   })
 })

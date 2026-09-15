@@ -4,7 +4,7 @@ import { request as httpsRequest } from "node:https"
 import type { IncomingMessage } from "node:http"
 import type { Socket } from "node:net"
 import { connect as tlsConnect } from "node:tls"
-import { parseProxyResolution, parseProxyUrl } from "@domain/net/proxy"
+import { matchesNoProxy, parseProxyResolution, parseProxyUrl } from "@domain/net/proxy"
 import type { ProxyResolution } from "@domain/net/proxy"
 import { MAX_RESPONSE_BYTES } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
@@ -343,29 +343,18 @@ async function decideProxy(url: URL): Promise<ProxyDecision> {
  * `DIRECT`: Node's `http(s).request` never consults either variable on its
  * own, unlike `net.request`, which is why this transport needed one at all.
  * `NO_PROXY` is checked first and wins outright, matching curl and every
- * other tool that honours the trio. Parsing itself, scheme included, is
- * {@link parseProxyUrl}'s job (`src/domain/net/proxy.ts`): this function only
- * reads the environment and decides whether `NO_PROXY` bypasses it.
+ * other tool that honours the trio; the match itself, port included, is
+ * {@link matchesNoProxy}'s job. Parsing the proxy URL, scheme included, is
+ * {@link parseProxyUrl}'s job (both `src/domain/net/proxy.ts`): this function
+ * only reads the environment and wires the two together.
  */
 function environmentProxyResolution(url: URL): ProxyResolution | undefined {
-  if (hostMatchesNoProxy(url, process.env.NO_PROXY ?? process.env.no_proxy)) return undefined
+  if (matchesNoProxy(url, process.env.NO_PROXY ?? process.env.no_proxy)) return undefined
 
   const raw = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy
   if (!raw) return undefined
 
   return parseProxyUrl(raw)
-}
-
-/** `NO_PROXY=a.example.com,.b.example.com,*`: an exact host, a domain suffix (leading dot optional), or `*` for every host. */
-function hostMatchesNoProxy(url: URL, noProxy: string | undefined): boolean {
-  if (!noProxy) return false
-  const target = url.hostname.toLowerCase()
-
-  return noProxy
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase().replace(/^\./, ""))
-    .filter(Boolean)
-    .some((entry) => entry === "*" || target === entry || target.endsWith(`.${entry}`))
 }
 
 /**
