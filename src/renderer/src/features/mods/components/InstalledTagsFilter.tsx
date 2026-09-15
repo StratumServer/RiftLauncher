@@ -5,6 +5,7 @@ import { PiCaretDownDuotone, PiCheckFatDuotone } from "react-icons/pi"
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
 
 import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
+import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 function InstalledTagsFilter({
   tagsFilter,
@@ -23,13 +24,7 @@ function InstalledTagsFilter({
     <Listbox value={tagsFilter} onChange={setTagsFilter} multiple>
       {({ open }) => (
         <>
-          <ListboxButton
-            className={clsx(
-              "px-2 flex items-center justify-between gap-2 rounded-sm overflow-hidden border border-zinc-400/5 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 hover:shadow-none cursor-pointer",
-              size
-            )}
-            title={tagsFilter.join(" · ") || t("generic.tags")}
-          >
+          <ListboxButton className={clsx(MENU_TRIGGER_STYLES, size)} title={tagsFilter.join(" · ") || t("generic.tags")}>
             <p className={clsx("flex gap-1 items-center overflow-hidden whitespace-nowrap text-ellipsis overflow-x-scroll scrollbar-none", tagsFilter.length < 1 && "text-zinc-400")}>
               {tagsFilter.length < 1
                 ? t("generic.tags")
@@ -58,9 +53,9 @@ function InstalledTagsFilter({
                       value={tag}
                       as={motion.li}
                       variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className="w-full h-8 px-2 py-1 shrink-0 flex items-center overflow-hidden odd:bg-zinc-800/30 even:bg-zinc-950/30 cursor-pointer whitespace-nowrap text-ellipsis text-sm before:content-['#'] before:relative before:mr-1"
+                      className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30 before:content-['#'] before:relative before:mr-1")}
                     >
-                      <p className="flex items-center gap-1">
+                      <p className="flex items-center gap-1 text-sm">
                         <span className="whitespace-nowrap overflow-hidden text-ellipsis">{tag}</span>
                         {tagsFilter.includes(tag) && <PiCheckFatDuotone className="text-zinc-400" />}
                       </p>

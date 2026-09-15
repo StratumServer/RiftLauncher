@@ -211,6 +211,25 @@ describe("ManageInstallationServers", () => {
     expect(executeGame.mock.calls[0]?.[2]).not.toContain("vintagestoryjoin")
   })
 
+  /**
+   * useLaunchGame is Join's copy of what MainMenu's PlayHandler used to do inline, and the two had
+   * drifted: PlayHandler built a see-report action off pickPlayOutcomeNotification's `report` field,
+   * useLaunchGame dropped it on the floor, so a crash after joining a server offered no report link
+   * (#490 item 1). Mirrors launchPlayGame.test.tsx's "offers the session report" assertion for Play.
+   */
+  it("offers the session report from the exited-with-errors notice and lands on that Installation's page", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn<BridgeAPI["gameManager"]["executeGame"]>(async () => ({ ok: true, exitCode: 1 }) as GameExecutionResult)
+    renderServersPage([{ id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: -1 }], { gameManager: { executeGame } })
+
+    await user.click(await screen.findByRole("button", { name: "Join" }))
+
+    await screen.findByText("Vintage Story exited with errors. The log has the details.")
+    await user.click(await screen.findByRole("button", { name: "See what went wrong" }))
+
+    await vi.waitFor(() => expect(screen.getByTestId("where").textContent).toBe(`/installations/report/${INSTALLATION_ID}`))
+  })
+
   it("stamps the bookmark as launched once the game has run", async () => {
     const user = userEvent.setup()
     const executeGame = vi.fn<BridgeAPI["gameManager"]["executeGame"]>(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)

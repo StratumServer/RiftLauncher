@@ -22,12 +22,12 @@
     "test:coverage": "vitest run --coverage",
     "audit:prod": "npm audit --omit=dev",
     "i18n:status": "node scripts/i18n-status.js",
-    "benchmark:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/measure-windows-runtime.ps1",
     "start": "electron-vite preview",
     "dev": "electron-vite dev --watch",
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps && node scripts/fix-native-deps.js",
     "build:unpack": "npm run build && electron-builder --dir",
+    "build:unpack:no-typecheck": "electron-vite build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win --x64",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux"
@@ -46,7 +46,6 @@
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^2.0.0",
     "@electron-toolkit/eslint-config-ts": "^2.0.0",
-    "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/tsconfig": "^1.0.1",
     "@headlessui/react": "^2.2.0",
     "@tailwindcss/postcss": "^4.1.11",

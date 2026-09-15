@@ -30,9 +30,9 @@ function MainMenu(): JSX.Element {
   const installations = useInstallations()
   const { lastUsedInstallation } = useSettingsConfig()
   const { addNotification } = useNotificationsContext()
+  const { launchGame, skipBackupPromptOpen, answerSkipBackupPrompt } = useLaunchGame()
 
   const makeInstallationBackup = useMakeInstallationBackup()
-  const { launchGame, skipBackupPromptOpen, answerSkipBackupPrompt } = useLaunchGame()
 
   const [selectedInstallation, setSelectedInstallation] = useState<InstallationType | undefined>(undefined)
 

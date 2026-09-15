@@ -287,65 +287,60 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     }
   }, [])
 
-  /** The noun each task's prevent-close reason and its "Adding ___ to [PATH]" log use; irregular enough (extraction, installation, compression) that concatenating `type` does not produce them. */
-  const TASK_NOUNS: Record<"download" | "extract" | "install" | "compress", string> = { download: "download", extract: "extraction", install: "installation", compress: "compression" }
-
   /**
-   * The scaffold startDownload, startExtract, startInstall and startCompress used to each carry
-   * on their own: a uuid, the prevent-close token, the two info logs, ADD_TASK, the awaited
-   * operation, the COMPLETED dispatch and optional toast on success, classifyFailure and the
-   * failed dispatch and optional toast on catch, and releasing the prevent-close token either way.
+   * The scaffold startDownload/startExtract/startInstall/startCompress below share: a log tag and
+   * function name derived from `type`, the "adding" log line, the prevent-close token, the pending
+   * dispatch, then `operation`, then completion (dispatch, optional toast) or, on a throw,
+   * `classifyFailure` and a failed dispatch with an optional error toast. `operation` keeps
+   * everything actually specific to one task: its own "running"/"done" log line (it gets `tag` for
+   * that), the host call, and any post-processing (startExtract's chmod, startInstall's ok-check)
+   * that has to run before the task counts as done.
    *
-   * The download resolving (or extracting, or installing, or compressing) is what completes the
-   * task, not the progress events a separate listener feeds into the reducer above: a source whose
-   * last tick lands under 100 would otherwise leave the task showing as still running forever, and
-   * dispatching COMPLETED after a 100 tick already did costs nothing (the reducer is idempotent).
-   *
-   * `operation` is the one thing each of the four actually differs on: the host call itself, plus
-   * whatever it alone needs after it (extract's post-await chmod, install's throw-on-!result.ok,
-   * compress's optional compressionLevel). `onFinish` here stays the two-argument (status, error)
-   * shape every non-download caller already has; download's own three-argument contract (status,
-   * path, error) is adapted in its own wrapper, over data (the downloaded file's path) only that
-   * wrapper's closure holds. The raw caught value is handed back as-is, not normalized to an
-   * Error, so a wrapper's own `${err}` in its error message matches exactly what it produced
-   * before this fold.
-   *
-   * Two of the four info logs are worded a little more generically than their old per-function
-   * copies (a shared "runTask" tag instead of "startDownload"/"startExtract"/etc., and compress's
-   * "Adding" log no longer names its source path, only its destination): neither reaches a player,
-   * neither is asserted by a test, and log-provenance.test.ts still passes since nothing here
-   * interpolates a path, a name or any other risky identifier.
+   * `onFinish`'s own shape stays a wrapper concern: startDownload's is a three-argument contract
+   * (status, path, error) where the other three take two, so each wrapper turns this function's
+   * `{ ok, result }` / `{ ok: false, error }` outcome into whatever its own `onFinish` expects,
+   * rather than forcing every caller through one widest shape.
    */
-  async function runTask(
-    config: { type: keyof typeof TASK_NOUNS; name: string; desc: string; notifications: TaskNotificationPolicy; messageKeys: { successKey: string; failureKey: string } },
-    operation: (id: string) => Promise<void>,
-    onFinish: (status: boolean, error: unknown) => void
-  ): Promise<void> {
-    const { type, name, desc, notifications, messageKeys } = config
-    const id = crypto.randomUUID()
-    const noun = TASK_NOUNS[type]
-    const nameParam = `${type}Name`
-    const LOG_TAG = `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > runTask] [${id}] [${type}]`
+  async function runTask<T>(
+    id: string,
+    config: {
+      type: TaskType["type"]
+      /** Noun form where it differs from `type`: "extraction", "installation", "compression". */
+      noun?: string
+      name: string
+      desc: string
+      notifications: TaskNotificationPolicy
+      successKey: string
+      failureKey: string
+      interpKey: string
+      operation: (tag: string) => Promise<T>
+    }
+  ): Promise<{ ok: true; result: T } | { ok: false; error: unknown }> {
+    const noun = config.noun ?? config.type
+    const fnName = `start${config.type[0]!.toUpperCase()}${config.type.slice(1)}`
+    const tag = `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > ${fnName}] [${id}] [${config.type}]`
 
     try {
       window.api.utils.setPreventAppClose("add", id, `Started ${noun}.`)
-      window.api.utils.logMessage("info", `${LOG_TAG} Adding ${noun} to [PATH].`)
-      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name, desc, type, progress: 0, status: "pending" } })
+      window.api.utils.logMessage("info", `${tag} Adding ${noun} to [PATH].`)
+      tasksDispatch({ type: ACTIONS.ADD_TASK, payload: { id, name: config.name, desc: config.desc, type: config.type, progress: 0, status: "pending" } })
 
-      window.api.utils.logMessage("info", `${LOG_TAG} ${type}ing...`)
-      await operation(id)
+      const result = await config.operation(tag)
 
-      window.api.utils.logMessage("info", `${LOG_TAG} ${type}ed.`)
+      // Whichever host call `operation` awaited resolving is what completes the task, not the
+      // progress events: a source whose last tick lands under 100 would otherwise leave the task
+      // showing as still running forever. See the reducer above for why dispatching this after a
+      // 100 tick already did costs nothing.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      if (notifications.completion === "toast") addNotification(t(messageKeys.successKey, { [nameParam]: name }), "success", { presentation: "toast" })
-      onFinish(true, null)
+      if (config.notifications.completion === "toast") addNotification(t(config.successKey, { [config.interpKey]: config.name }), "success", { presentation: "toast" })
+      return { ok: true, result }
     } catch (err) {
-      window.api.utils.logMessage("error", `${LOG_TAG} Error ${type}ing.`)
-      window.api.utils.logMessage("debug", `${LOG_TAG} Error ${type}ing: ${err}`)
+      window.api.utils.logMessage("error", `${tag} Error ${config.type}ing.`)
+      window.api.utils.logMessage("debug", `${tag} Error ${config.type}ing: ${err}`)
       const reason = classifyFailure(err)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
-      if (notifications.failure === "generic") addNotification(t(messageKeys.failureKey, { [nameParam]: name }), "error", { reason })
-      onFinish(false, err)
+      if (config.notifications.failure === "generic") addNotification(t(config.failureKey, { [config.interpKey]: config.name }), "error", { reason })
+      return { ok: false, error: err }
     } finally {
       window.api.utils.setPreventAppClose("remove", id, `Finished ${noun}.`)
     }
@@ -360,14 +355,26 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     fileName: string,
     onFinish: (status: boolean, path: string, error: Error | null) => void
   ): Promise<void> {
-    let downloadedFile = ""
-    await runTask(
-      { type: "download", name, desc, notifications, messageKeys: { successKey: "notifications.body.downloaded", failureKey: "notifications.body.downloadError" } },
-      async (id) => {
-        downloadedFile = await window.api.pathsManager.downloadOnPath(id, url, outputPath, fileName)
-      },
-      (status, err) => onFinish(status, downloadedFile, status ? null : new Error(`Error downloading ${url}: ${err}`))
-    )
+    const id = crypto.randomUUID()
+
+    const outcome = await runTask(id, {
+      type: "download",
+      name,
+      desc,
+      notifications,
+      successKey: "notifications.body.downloaded",
+      failureKey: "notifications.body.downloadError",
+      interpKey: "downloadName",
+      operation: async (tag) => {
+        window.api.utils.logMessage("info", `${tag} Downloading...`)
+        const downloadedFile = await window.api.pathsManager.downloadOnPath(id, url, outputPath, fileName)
+        window.api.utils.logMessage("info", `${tag} Downloaded.`)
+        return downloadedFile
+      }
+    })
+
+    if (outcome.ok) onFinish(true, outcome.result, null)
+    else onFinish(false, "", new Error(`Error downloading ${url}: ${outcome.error}`))
   }
 
   async function startExtract(
@@ -380,10 +387,21 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     onFinish: (status: boolean, error: Error | null) => void,
     unwrapSingleRootFolder = false
   ): Promise<void> {
-    await runTask(
-      { type: "extract", name, desc, notifications, messageKeys: { successKey: "notifications.body.extracted", failureKey: "notifications.body.extractError" } },
-      async (id) => {
+    const id = crypto.randomUUID()
+
+    const outcome = await runTask(id, {
+      type: "extract",
+      noun: "extraction",
+      name,
+      desc,
+      notifications,
+      successKey: "notifications.body.extracted",
+      failureKey: "notifications.body.extractError",
+      interpKey: "extractName",
+      operation: async (tag) => {
+        window.api.utils.logMessage("info", `${tag} Extracting...`)
         const result = await window.api.pathsManager.extractOnPath(id, filePath, outputPath, deleteZip, unwrapSingleRootFolder)
+
         if (!result) throw new Error("Extraction failed")
 
         // Awaited so a rejected chmod is caught below instead of becoming an unhandled
@@ -391,9 +409,15 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
         // failed install on Linux, not a harmless side note. (On non-Linux platforms the
         // call resolves `false` without throwing, which is the normal, expected outcome.)
         await window.api.pathsManager.changePerms([outputPath], 0o755)
-      },
-      (status, err) => onFinish(status, status ? null : new Error(`Error extracting ${filePath}: ${err}`))
-    )
+
+        // Completed once the extraction and the chmod are both through, so a
+        // last progress tick under 100 cannot strand the task as running.
+        window.api.utils.logMessage("info", `${tag} Extracted.`)
+      }
+    })
+
+    if (outcome.ok) onFinish(true, null)
+    else onFinish(false, new Error(`Error extracting ${filePath}: ${outcome.error}`))
   }
 
   async function startInstall(
@@ -405,9 +429,19 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     deleteInstaller: boolean,
     onFinish: (status: boolean, error: Error | null) => void
   ): Promise<void> {
-    await runTask(
-      { type: "install", name, desc, notifications, messageKeys: { successKey: "notifications.body.installed", failureKey: "notifications.body.installError" } },
-      async (id) => {
+    const id = crypto.randomUUID()
+
+    const outcome = await runTask(id, {
+      type: "install",
+      noun: "installation",
+      name,
+      desc,
+      notifications,
+      successKey: "notifications.body.installed",
+      failureKey: "notifications.body.installError",
+      interpKey: "installName",
+      operation: async (tag) => {
+        window.api.utils.logMessage("info", `${tag} Installing...`)
         const result = await window.api.pathsManager.runInstaller(id, filePath, outputPath, deleteInstaller)
 
         // The wire tells apart why the installer never landed the game (see
@@ -415,9 +449,16 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
         // boolean shape every caller already expects: the reason still rides
         // along on the thrown Error's message for the log line below.
         if (!result.ok) throw new Error(`Installation failed: ${result.reason}`)
-      },
-      (status, err) => onFinish(status, status ? null : new Error(`Error installing ${filePath}: ${err}`))
-    )
+
+        // The worst of the four for this: an installer that ran to the end sends
+        // a 100 tick, but one whose payload was read out instead reports whatever
+        // the reader last counted, and neither is what says the task is done.
+        window.api.utils.logMessage("info", `${tag} Installed.`)
+      }
+    })
+
+    if (outcome.ok) onFinish(true, null)
+    else onFinish(false, new Error(`Error installing ${filePath}: ${outcome.error}`))
   }
 
   async function startCompress(
@@ -430,14 +471,30 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
     onFinish: (status: boolean, error: Error | null) => void,
     compressionLevel?: number
   ): Promise<void> {
-    await runTask(
-      { type: "compress", name, desc, notifications, messageKeys: { successKey: "notifications.body.compressed", failureKey: "notifications.body.compressError" } },
-      async (id) => {
+    const id = crypto.randomUUID()
+
+    const outcome = await runTask(id, {
+      type: "compress",
+      noun: "compression",
+      name,
+      desc,
+      notifications,
+      successKey: "notifications.body.compressed",
+      failureKey: "notifications.body.compressError",
+      interpKey: "compressName",
+      operation: async (tag) => {
+        window.api.utils.logMessage("info", `${tag} Compressing...`)
         const result = await window.api.pathsManager.compressOnPath(id, inputPath, outputPath, fileName, compressionLevel)
+
         if (!result) throw new Error("Compression failed")
-      },
-      (status, err) => onFinish(status, status ? null : new Error(`Error compressing: ${err}`))
-    )
+
+        // Same as the other three: the resolved call is the completion signal.
+        window.api.utils.logMessage("info", `${tag} Compressed.`)
+      }
+    })
+
+    if (outcome.ok) onFinish(true, null)
+    else onFinish(false, new Error(`Error compressing: ${outcome.error}`))
   }
 
   async function startOptimumPatch(
