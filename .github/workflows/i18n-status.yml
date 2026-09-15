@@ -48,15 +48,23 @@ jobs:
           } > comment.md
 
       # One comment per pull request, found by its marker and edited in place.
-      # Newest first, so the job keeps finding its own comment on a long thread.
+      # Newest first, so if several carry the marker the job updates the most
+      # recently updated one and leaves the rest alone.
+      #
+      # Listing and creating comments are issue-scoped
+      # (/repos/{owner}/{repo}/issues/{number}/comments), but updating one is
+      # not: GitHub addresses a single comment by its own id under
+      # /repos/{owner}/{repo}/issues/comments/{comment_id}, with no issue
+      # number in the path.
       - name: Post or update the comment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMMENTS: repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments
+          COMMENT: repos/${{ github.repository }}/issues/comments
         run: |
           id=$(gh api "$COMMENTS?per_page=100&sort=updated&direction=desc" --jq '[.[] | select(.body | startswith("<!-- i18n-status-comment -->")) | .id] | first // empty')
           if [ -n "$id" ]; then
-            gh api --silent -X PATCH "$COMMENTS/$id" -F body=@comment.md
+            gh api --silent -X PATCH "$COMMENT/$id" -F body=@comment.md
           else
             gh api --silent -X POST "$COMMENTS" -F body=@comment.md
           fi
