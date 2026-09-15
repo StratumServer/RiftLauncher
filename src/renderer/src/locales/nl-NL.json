@@ -210,6 +210,8 @@
       "downloadError": "Fout downloaden: {{downloadName}}!",
       "extracted": "Uitpakken voltooid: {{extractName}}!",
       "extractError": "Fout uitpakken: {{extractName}}!",
+      "installed": "Installatie voltooid: {{installName}}!",
+      "installError": "Fout bij installeren: {{installName}}!",
       "gameExitedWithErrors": "Vintage Story gesloten met fouten!",
       "errorExecutingGame": "Er is een fout opgetreden terwijl het spel gestart werd",
       "missingFields": "Vul alle velden in alsjeblieft",

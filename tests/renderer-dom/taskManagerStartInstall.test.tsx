@@ -112,5 +112,12 @@ describe("TaskManagerContext.startInstall", () => {
 
     await waitFor(() => expect(onFinish).toHaveBeenCalled())
     expect(result.current.notifications.notifications.map((n) => n.type)).toEqual(["error"])
+    // startInstall was copied from startExtract and kept its archive wording
+    // (issue #490 item 4): an installer failure is not an archive failure, and
+    // `reason` already carries the specific cause to the Activity Center row,
+    // so the toast should point at the log rather than blame "the archive".
+    const body = result.current.notifications.notifications[0]?.body ?? ""
+    expect(body).toContain("log")
+    expect(body).not.toContain("archive")
   })
 })

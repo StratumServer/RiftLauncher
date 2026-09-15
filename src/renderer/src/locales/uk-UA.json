@@ -371,6 +371,8 @@
       "downloadError": "Помилка під час завантаження: {{downloadName}}!",
       "extracted": "Видобуток завершено: {{extractName}}!",
       "extractError": "Помилка під час видобутку: {{extractName}}!",
+      "installed": "Встановлення завершено: {{installName}}!",
+      "installError": "Помилка під час встановлення: {{installName}}!",
       "gameExitedWithErrors": "Vintage Story вийшов з помилками!",
       "errorExecutingGame": "Під час виконання гри сталася помилка!",
       "missingFields": "Будь ласка, заповніть всі поля!",

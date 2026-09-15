@@ -371,6 +371,8 @@
       "downloadError": "Памылка спампоўкі: {{downloadName}}!",
       "extracted": "Завершана выманне: {{extractName}}!",
       "extractError": "Памылка вымання: {{extractName}}!",
+      "installed": "Завершана ўстаноўка: {{installName}}!",
+      "installError": "Памылка ўстаноўкі: {{installName}}!",
       "gameExitedWithErrors": "Vintage Story завяршылася з памылкамі!",
       "errorExecutingGame": "Адбылася памылка пры запуску гульні!",
       "missingFields": "Запоўніце ўсе палі!",

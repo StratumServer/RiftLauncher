@@ -367,6 +367,8 @@
       "errorExecutingGame": "C'è stato un errore nell'esecuzione del gioco!",
       "extractError": "Errore estraendo: {{extractName}}!",
       "extracted": "Finita estrazione: {{extractName}}!",
+      "installed": "Installazione completata: {{installName}}!",
+      "installError": "Errore durante l'installazione: {{installName}}!",
       "folderDoesntExists": "La cartella che stai provando ad aprire non esiste!",
       "gameExitedWithErrors": "Vintage Story si è chiuso con errori!",
       "missingFields": "Per favore compila tutti i campi!",

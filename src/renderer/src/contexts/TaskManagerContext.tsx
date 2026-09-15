@@ -402,14 +402,14 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }): JSX.E
       // a 100 tick, but one whose payload was read out instead reports whatever
       // the reader last counted, and neither is what says the task is done.
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: COMPLETED } })
-      if (notifications.completion === "toast") addNotification(t("notifications.body.extracted", { extractName: name }), "success", { presentation: "toast" })
+      if (notifications.completion === "toast") addNotification(t("notifications.body.installed", { installName: name }), "success", { presentation: "toast" })
       onFinish(true, null)
     } catch (err) {
       window.api.utils.logMessage("error", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Error installing.`)
       window.api.utils.logMessage("debug", `[front] [tasks] [contexts/TaskManagercontext.tsx] [TaskProvider > startInstall] [${id}] [install] Error installing: ${err}`)
       const reason = classifyFailure(err)
       tasksDispatch({ type: ACTIONS.UPDATE_TASK, payload: { id, updates: { status: "failed", reason } } })
-      if (notifications.failure === "generic") addNotification(t("notifications.body.extractError", { extractName: name }), "error", { reason })
+      if (notifications.failure === "generic") addNotification(t("notifications.body.installError", { installName: name }), "error", { reason })
       onFinish(false, new Error(`Error installing ${filePath}: ${err}`))
     } finally {
       window.api.utils.setPreventAppClose("remove", id, "Finished installation.")
