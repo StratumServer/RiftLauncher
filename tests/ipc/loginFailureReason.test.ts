@@ -244,7 +244,7 @@ describe("loginFailureFamily places every token loginFailureReason can emit", ()
     // An HTTP-level refusal of the account itself, outside the ordinary envelope.
     "http-unauthorized": "account-restricted",
     "http-forbidden": "account-restricted",
-    "http-rate-limited": "account-restricted",
+    "http-rate-limited": "service-error",
     // Everything else: not confidently any of the four, so the generic failure stands.
     "response-too-large": "unknown",
     "http-bad-request": "unknown",

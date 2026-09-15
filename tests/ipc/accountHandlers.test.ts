@@ -539,7 +539,7 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
     // needs. All three resolve rather than throw, each into its own family.
     for (const [status, expectedReason, expectedStatus] of [
       ["401", "http-unauthorized", "account-restricted"],
-      ["429", "http-rate-limited", "account-restricted"],
+      ["429", "http-rate-limited", "service-error"],
       ["503", "http-unavailable", "service-error"]
     ] as const) {
       vi.mocked(requestBoundedTextViaNode)

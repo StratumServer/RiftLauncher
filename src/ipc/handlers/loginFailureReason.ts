@@ -280,10 +280,10 @@ const CERTIFICATE_REASONS = new Set<string>([
 ])
 
 /** The service itself answered, but with a failure that is its own to fix, not the player's. */
-const SERVICE_ERROR_REASONS = new Set<string>(["http-server-error", "http-bad-gateway", "http-unavailable", "http-5xx"])
+const SERVICE_ERROR_REASONS = new Set<string>(["http-rate-limited", "http-server-error", "http-bad-gateway", "http-unavailable", "http-5xx"])
 
 /** An HTTP-level refusal rather than the ordinary `valid: 0` envelope: the account itself, not the password, is what the service objects to. */
-const ACCOUNT_RESTRICTED_REASONS = new Set<string>(["http-unauthorized", "http-forbidden", "http-rate-limited"])
+const ACCOUNT_RESTRICTED_REASONS = new Set<string>(["http-unauthorized", "http-forbidden"])
 
 /**
  * Groups a {@link loginFailureReason} token into the family the renderer
