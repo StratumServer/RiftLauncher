@@ -91,6 +91,8 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     background: DEFAULT_BACKGROUND_ID,
     accentColor: DEFAULT_ACCENT_ID,
     moddbVisibility: defaultModDbVisibility(),
+    modSuggestionsConsent: null,
+    dismissedModSuggestions: [],
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
     allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
