@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { describe, it } from "vitest"
 
-import { collectTranslationCalls, flattenTranslationObject, listLocaleFiles, LOCALES_DIR, RENDERER_SRC_DIR, TranslationCall } from "./helpers"
+import { collectTranslationCalls, flattenTranslationObject, listLocaleFiles, LOCALES_DIR, RENDERER_SRC_DIR, resolveTranslationValue, TranslationCall } from "./helpers"
 
 /**
  * Guards the translation system (part of issue #15).
@@ -38,8 +38,12 @@ describe("t() keys referenced in src/renderer/** exist in en-US.json", () => {
   })
 
   it("every statically referenced key exists in en-US.json", () => {
+    // A plural family (issue #496) never keeps a bare key beside its
+    // _zero/_one/_two/_few/_many/_other siblings, so a call site referencing
+    // the bare family name is resolved the way i18next resolves it at
+    // runtime: through resolveTranslationValue, not a literal `in` check.
     const uniqueKeys = [...new Set(calls.map((call) => call.key))]
-    const missing = uniqueKeys.filter((key) => !(key in enUS))
+    const missing = uniqueKeys.filter((key) => resolveTranslationValue(enUS, key) === undefined)
 
     assert.deepEqual(missing, [], `t() keys referenced in code but missing from en-US.json: ${missing.join(", ")}`)
   })
@@ -51,7 +55,7 @@ describe("t() keys referenced in src/renderer/** exist in en-US.json", () => {
     // t(dynamicKey) sites are already excluded by the collector itself, since
     // their key cannot be resolved statically.
     const offenders = calls.filter((call) => {
-      const value = enUS[call.key]
+      const value = resolveTranslationValue(enUS, call.key)
       return typeof value === "string" && /\{\{\s*[\w.]+\s*\}\}/.test(value) && !call.hasInterpolationArg
     })
 

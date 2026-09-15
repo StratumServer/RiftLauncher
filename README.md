@@ -47,7 +47,7 @@ We've made a little tutorial on how to use RiftLauncher here: [How to use RiftLa
 
 ## Can I translate RiftLauncher to another language?
 
-Yes, thanks to i18n you can translate it to any language. Here is the guide: [How to translate RiftLauncher](docs/get-started/translation/README.md).
+Yes, thanks to i18n you can translate it to any language. Here is the guide: [How to translate RiftLauncher](docs/get-started/translation/README.md). Translation happens on [Weblate](https://hosted.weblate.org/projects/riftlauncher/), where anyone with a GitHub account can help. The guide stays for people who prefer a pull request.
 
 ## Where can I ask for help?
 
