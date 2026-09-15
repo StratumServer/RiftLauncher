@@ -90,9 +90,14 @@ jobs:
   # this same commit, so there is nothing to scan with until it has actually
   # produced one. A failed test-matrix leaves no artifact to download, and
   # continue-on-error below is what keeps that from failing the run.
+  # always() is required here: a plain `if:` combined with `needs` defaults
+  # to success() (same rule the `test` job's comment above documents), so
+  # without it a single red or cancelled test-matrix leg (e.g. a
+  # Windows-only flake) would SKIP this job outright instead of letting it
+  # attempt the download and fail gracefully via continue-on-error.
   sonarcloud:
     needs: [test-matrix]
-    if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]')
+    if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]')
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
