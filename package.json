@@ -21,6 +21,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "audit:prod": "npm audit --omit=dev",
+    "i18n:status": "node scripts/i18n-status.js",
     "benchmark:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/measure-windows-runtime.ps1",
     "start": "electron-vite preview",
     "dev": "electron-vite dev --watch",
