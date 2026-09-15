@@ -56,6 +56,14 @@ declare global {
      */
     measurePlaySessions: boolean
     /**
+     * Whether the launcher may keep a session on a machine with no system keyring, where the only
+     * store left seals it with a key that ships in the binary and so is readable by any program
+     * running as the player. Off unless the player turns it on, and read at startup rather than on
+     * change, since Chromium picks its password store before any config read. See
+     * src/domain/account/sessionStorage.ts.
+     */
+    allowBasicSessionStore: boolean
+    /**
      * The version the "what's new" dialog last showed notes up to, empty for a fresh install or
      * a config written before this field existed. Compared against the running version by
      * useWhatsNew.ts to decide whether there is anything left to show. See
@@ -93,6 +101,14 @@ declare global {
      */
     playerEntitlements: string | null
     hostGameServer: boolean
+    /**
+     * Set only on an account whose session is held in the main process because there was no
+     * keyring to write it to (#481). Absent on every other account, so an ordinary record is
+     * byte for byte what earlier builds wrote. The next startup drops the accounts carrying it:
+     * their secrets died with the process, and an account that cannot launch and says nothing
+     * about why is worse than no account at all. See src/config/configManager.ts.
+     */
+    sessionOnly?: true
   }
 
   // Renderer-visible account data. Session credentials are main-process only.
@@ -122,12 +138,27 @@ declare global {
    * throw and collapse into one generic toast no matter the cause (issue
    * #481). They carry `loginFailureFamily`'s classification of whatever
    * `src/ipc/handlers/loginFailureReason.ts` named the error, so the
-   * renderer can say which of the four it was without the raw error message
+   * renderer can say which of them it was without the raw error message
    * ever crossing the IPC boundary. A cause that classifier does not
    * recognise still throws the generic failure, unchanged.
+   *
+   * `no-keyring` is the same mechanism for the one failure that is neither
+   * the network nor the service: this machine has no system keyring, so
+   * there is nowhere safe to keep a session. It is what a Debian KDE player
+   * with no wallet actually hit, while the generic connection sentence sent
+   * them looking at a firewall that was never involved. The ordinary path for
+   * it is now a success carrying `sessionInMemoryOnly`, since the credentials
+   * were accepted and only the saving failed; the status is what is left for a
+   * keyring failure reaching the handler's catch some other way.
+   *
+   * `sessionInMemoryOnly` flags exactly that success: the player is logged in
+   * and can play, the secrets are held in the main process and were never
+   * written, and quitting ends the session. Not a status of its own, for the
+   * same reason `storeRebuilt` is not: the login succeeded, and a separate
+   * status would have every `status === "success"` check drop the account.
    */
   type AccountLoginResult =
-    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean }
+    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean; sessionInMemoryOnly?: boolean }
     | {
         status:
           | "invalid-credentials"
@@ -139,6 +170,7 @@ declare global {
           | "certificate-error"
           | "service-error"
           | "account-restricted"
+          | "no-keyring"
         account?: undefined
       }
 

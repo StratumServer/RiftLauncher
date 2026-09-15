@@ -776,6 +776,36 @@ describe("EXECUTE_GAME", () => {
     assert.deepEqual(vi.mocked(writeJsonAtomic).mock.calls.filter((call) => call[0] === join(installationFolder, "clientsettings.json")).length, 1)
   })
 
+  /**
+   * A login with no keyring behind it holds its secrets in the main process, and its public half
+   * is marked as lasting only for this run (#481). The mark is for the next startup to act on,
+   * not for the launch: this session is perfectly good right now, and the game must be able to
+   * start under it.
+   */
+  it("launches under an account that is only kept for this run", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
+    writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    // Through saveConfig, the way the renderer puts it there: the account lives in this process's
+    // config and never came off disk, which is the whole point of the mark.
+    const { getConfig, saveConfig } = await import("@src/config/configManager")
+    await saveConfig({
+      ...(await getConfig()),
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false, sessionOnly: true }],
+      activeAccountId: "1"
+    })
+
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+
+    const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
+    assert.equal(settings.stringSettings.sessionkey, "session-key")
+  })
+
   // chmod 0o500 on the installation folder does not stop the write on Windows,
   // which gates writes on the file's own read-only attribute rather than on
   // POSIX write bits of the folder containing it.

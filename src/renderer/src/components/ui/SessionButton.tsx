@@ -36,6 +36,9 @@ import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 const ADD_ACCOUNT_OPTION = "__add-account__"
 const REMOVE_ACCOUNT_OPTION = "__remove-account__"
 const PRIVACY_POLICY_URL = "https://github.com/StratumServer/RiftLauncher/blob/main/PRIVACY.md"
+// The Linux install guide's keyring section. Fixed here, never built from anything that crossed
+// the IPC boundary, and already covered by BROWSER_URL_RULES (src/ipc/validation.ts).
+const KEYRING_GUIDE_URL = "https://riftlauncher.stratumvs.dev/docs/get-started/installation/linux#session-storage-and-keyrings"
 
 function SessionButton(): JSX.Element {
   const { t } = useTranslation()
@@ -54,6 +57,14 @@ function SessionButton(): JSX.Element {
   const [loggingIn, setLoggingIn] = useState(false)
   const [logInOpen, setLogInOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
+
+  /**
+   * A keyring message is never the end of it: the player is told what is missing and handed the
+   * page that says how to set one up, the same shape the missing-.NET notification uses.
+   */
+  function keyringGuideOptions(): { actions: { id: string; label: string; onClick: () => void }[] } {
+    return { actions: [{ id: "open-keyring-guide", label: t("features.config.noKeyringGuide"), onClick: (): void => openOnBrowser(KEYRING_GUIDE_URL) }] }
+  }
 
   function clearTransientLoginFields(): void {
     setPassword("")
@@ -94,10 +105,20 @@ function SessionButton(): JSX.Element {
       if (result.status === "service-error") return addNotification(t("features.config.serviceError"), "error")
       if (result.status === "certificate-error") return addNotification(t("features.config.certificateError"), "error")
       if (result.status === "network-unreachable") return addNotification(t("features.config.networkUnreachable"), "error", { reason: "network" })
+      // The Debian KDE case: nothing on this machine can hold a session, which the log named
+      // plainly while the toast blamed the connection. Same guide as the successful-but-unsaved
+      // login below, because it is the same missing keyring either way.
+      if (result.status === "no-keyring") return addNotification(t("features.config.noKeyring"), "error", keyringGuideOptions())
       if (result.status !== "success") return
 
       if (result.storeRebuilt) addNotification(t("features.config.sessionStoreRebuilt"), "warning")
-      await saveLogin(result.account)
+      // Logged in, and staying logged in until the launcher is closed. Said out loud rather than
+      // left to be discovered on the next start, and pointed at the guide that makes it stick.
+      if (result.sessionInMemoryOnly) addNotification(t("features.config.sessionNotRemembered"), "warning", keyringGuideOptions())
+      // The account still has to reach the config: that list is what names the account the game
+      // launches as. Marked, so it does not outlive the secrets behind it. configManager drops
+      // the marked ones at the next startup rather than opening on an account that cannot launch.
+      await saveLogin(result.sessionInMemoryOnly ? { ...result.account, sessionOnly: true } : result.account)
     } catch {
       // A throw here means the request never produced a verdict, for a cause
       // `loginFailureFamily` could not place among the four above (a storage

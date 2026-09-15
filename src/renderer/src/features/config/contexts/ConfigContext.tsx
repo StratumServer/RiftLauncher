@@ -32,6 +32,8 @@ export interface ConfigSettingsType {
   receiveBetaUpdates: boolean | null
   /** Whether the launcher measures the game process while it runs. See src/domain/sessions/sampling.ts. */
   measurePlaySessions: boolean
+  /** Whether a session may be kept without a system keyring. See src/domain/account/sessionStorage.ts. */
+  allowBasicSessionStore: boolean
   /** The version the "what's new" dialog last showed notes up to, or empty. See src/domain/appUpdate/whatsNew.ts. */
   lastSeenChangelogVersion: string
 }
@@ -175,6 +177,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       moddbVisibility: config.moddbVisibility,
       receiveBetaUpdates: config.receiveBetaUpdates,
       measurePlaySessions: config.measurePlaySessions,
+      allowBasicSessionStore: config.allowBasicSessionStore,
       lastSeenChangelogVersion: config.lastSeenChangelogVersion
     }),
     [
@@ -190,6 +193,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config.moddbVisibility,
       config.receiveBetaUpdates,
       config.measurePlaySessions,
+      config.allowBasicSessionStore,
       config.lastSeenChangelogVersion
     ]
   )

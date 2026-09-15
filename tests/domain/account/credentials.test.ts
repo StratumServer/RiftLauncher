@@ -193,6 +193,17 @@ describe("toPublicAccount", () => {
     assert.deepEqual(account, { email: EMAIL, playerName: "Player", playerUid: "uid-1", playerEntitlements: null, hostGameServer: true })
   })
 
+  it("carries the mark that says this account lasts only as long as the process does", () => {
+    const base = { email: EMAIL, playerName: "Player", playerUid: "uid-1", playerEntitlements: null, hostGameServer: false }
+
+    assert.deepEqual(toPublicAccount({ ...base, sessionOnly: true }), { ...base, sessionOnly: true })
+    // Absent, not false: an ordinary account's record is byte for byte what older builds wrote.
+    assert.equal("sessionOnly" in (toPublicAccount(base) as object), false)
+    for (const spelling of ["true", 1, "1", "yes", false, null]) {
+      assert.equal("sessionOnly" in (toPublicAccount({ ...base, sessionOnly: spelling }) as object), false, `sessionOnly: ${JSON.stringify(spelling)}`)
+    }
+  })
+
   it("returns null when the stored account is not usable", () => {
     assert.equal(toPublicAccount(null), null)
     assert.equal(toPublicAccount({ email: EMAIL }), null)

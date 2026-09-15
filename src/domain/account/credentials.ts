@@ -236,6 +236,12 @@ export function parseStoredSecretsById(value: unknown): Map<string, AccountSecre
  * Reads the renderer-visible half out of stored config, dropping anything else
  * the object carried. A config file that still holds legacy session fields
  * loses them here, so they cannot ride along into the renderer.
+ *
+ * `sessionOnly` is the one optional field, and only a literal `true` sets it:
+ * the launcher is the only thing that ever writes it, and reading a hand-edited
+ * "yes" or 1 as the mark would delete a perfectly good saved account at the next
+ * startup. Absent rather than false when it does not apply, so an ordinary
+ * account's record stays exactly what earlier builds wrote.
  */
 export function toPublicAccount(value: unknown): AccountPublicType | null {
   if (!isRecord(value)) return null
@@ -246,7 +252,8 @@ export function toPublicAccount(value: unknown): AccountPublicType | null {
       playerName: accountString(value.playerName, "player name", 256),
       playerUid: accountString(value.playerUid, "player uid", 256),
       playerEntitlements: nullableAccountString(value.playerEntitlements, "entitlements"),
-      hostGameServer: accountBoolean(value.hostGameServer, "game server flag")
+      hostGameServer: accountBoolean(value.hostGameServer, "game server flag"),
+      ...(value.sessionOnly === true ? { sessionOnly: true as const } : {})
     }
   } catch {
     return null

@@ -79,7 +79,18 @@ async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
       if (outcome === "saved-after-rebuild")
         logMessage("warn", "[back] [ipc] [accountHandlers.ts] [LOGIN] The account store could not be read; it was copied aside and rebuilt around this login. Other saved accounts must log in again.")
 
-      return { status: "success", account: verdict.credentials.publicAccount, ...(outcome === "saved-after-rebuild" ? { storeRebuilt: true } : {}) }
+      // No keyring on this machine, so nothing was written and the session lives in this process
+      // only (#481). The login itself stands: the service accepted these credentials, and refusing
+      // to report that left the player unable to play at all over a missing wallet.
+      if (outcome === "saved-in-memory")
+        logMessage("warn", "[back] [ipc] [accountHandlers.ts] [LOGIN] No system keyring is available, so this session is held in memory for this run and was not written to disk.")
+
+      return {
+        status: "success",
+        account: verdict.credentials.publicAccount,
+        ...(outcome === "saved-after-rebuild" ? { storeRebuilt: true } : {}),
+        ...(outcome === "saved-in-memory" ? { sessionInMemoryOnly: true } : {})
+      }
     }
     case "needs-two-factor":
       return needsTwoFactorResult()

@@ -107,6 +107,46 @@ appImage:
   artifactName: ${name}-${version}.${ext}
 deb:
   artifactName: ${name}-${version}.${ext}
+  # Spelled out rather than left to electron-builder's defaults, which this list otherwise
+  # reproduces exactly (app-builder-lib, FpmTarget.getDefaultDepends). libsecret-1-0 is the reason:
+  # Electron's safeStorage reaches the session keyring through it, and with nothing answering, it
+  # falls back to a store whose key ships in the binary, which the account store refuses
+  # (src/ipc/accountStore.ts). A default is a thing that can change under us; this one decides
+  # whether a login can be remembered at all (#481), so it is declared here.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+  # libappindicator3-1 is electron-builder's own default recommends and is kept; declaring this key
+  # replaces the list rather than adding to it. gnome-keyring is the daemon behind libsecret, and it
+  # is a recommends rather than a depends on purpose: a KDE session has KWallet answering the same
+  # interface, and pulling GNOME Keyring onto it would install the wrong daemon for that desktop. A
+  # desktop with neither gets one that works, and anyone who wants neither can still refuse it.
+  recommends:
+    - libappindicator3-1
+    - gnome-keyring
+rpm:
+  # electron-builder's rpm defaults, which do not carry libsecret, plus libsecret. Same list
+  # replacement rule as the deb above, so the defaults are repeated here to keep them.
+  # gnome-keyring is not here: electron-builder has no weak-dependency key for rpm, so it cannot be
+  # a Recommends the way it is for the deb, and a hard Requires would be the wrong daemon on a KDE
+  # spin. The keyring section of docs/get-started/installation/linux.md carries it instead.
+  depends:
+    - gtk3
+    - libnotify
+    - nss
+    - libXScrnSaver
+    - "(libXtst or libXtst6)"
+    - xdg-utils
+    - at-spi2-core
+    - "(libuuid or libuuid1)"
+    - libsecret
 npmRebuild: false
 electronFuses:
   runAsNode: false

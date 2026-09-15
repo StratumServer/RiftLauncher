@@ -38,6 +38,7 @@ import { ACCENT_PRESETS, DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { defaultModDbVisibility, MAX_COUNTED_VERSIONS } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
+import { DEFAULT_ALLOW_BASIC_SESSION_STORE } from "@domain/account/sessionStorage"
 import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
 import { CURRENT_CONFIG_SCHEMA, legacyGameVersionId } from "@domain/config/migrations"
 
@@ -92,6 +93,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     moddbVisibility: defaultModDbVisibility(),
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
+    allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
     lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides
@@ -723,6 +725,43 @@ describe("normalizeConfig: receiveBetaUpdates", () => {
   })
 })
 
+/**
+ * The opt-in that lets a session be kept without a system keyring (#481). It weakens where a
+ * session lives, so the only thing that may turn it on is the toggle writing a real `true`: every
+ * other spelling, and every config that has never been asked, reads as off.
+ */
+describe("normalizeConfig: allowBasicSessionStore", () => {
+  it("reads a config written before the setting existed as off", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).allowBasicSessionStore, DEFAULT_ALLOW_BASIC_SESSION_STORE)
+    assert.equal(DEFAULT_ALLOW_BASIC_SESSION_STORE, false, "the shipped default is off, and a change here is a change to what a fresh install stores")
+  })
+
+  it("keeps an explicit answer, both ways round", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({ allowBasicSessionStore: true }).allowBasicSessionStore, true)
+    assert.equal(normalizeConfig({ allowBasicSessionStore: false }).allowBasicSessionStore, false)
+  })
+
+  it("stays off for anything that is not a boolean, a hand-edited yes included", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const value of ["true", "yes", "on", 1, null, {}, [true]]) {
+      assert.equal(normalizeConfig({ allowBasicSessionStore: value }).allowBasicSessionStore, false, String(value))
+    }
+  })
+
+  it("round trips through a save and a fresh read, which is what the next startup reads the switch off", async () => {
+    const { saveConfig, normalizeConfig } = await freshConfigManager()
+
+    assert.equal(await saveConfig(normalizeConfig({ allowBasicSessionStore: true })), true)
+
+    const { getConfig } = await freshConfigManager()
+    assert.equal((await getConfig()).allowBasicSessionStore, true)
+    assert.equal(JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8")).allowBasicSessionStore, true, "and it is on disk, where main/index.ts reads it before Electron starts")
+  })
+})
+
 describe("ensureConfig", () => {
   it("creates the default config when none exists yet", async () => {
     const { ensureConfig, getConfig } = await freshConfigManager()
@@ -1138,5 +1177,64 @@ describe("getConfig: config.json backup before a schema migration", () => {
     await getConfig()
 
     assert.equal(statSync(backupPath()).mode & 0o777, 0o600)
+  })
+})
+
+/**
+ * A login on a machine with no keyring keeps its session in the main process and writes no
+ * secrets (#481). The public half still has to reach `config.accounts`, because that list is
+ * where EXECUTE_GAME looks the active account up, so the account carries a mark saying it lasts
+ * as long as the process does. Startup is where the mark is acted on: the next launch has no
+ * secrets for it, and an account that cannot launch and says nothing about why is worse than no
+ * account at all.
+ */
+describe("normalizeConfig: an account kept for this run only (#481)", () => {
+  const sessionOnlyAccount = { email: "player@example.com", playerName: "Player", playerUid: "uid-1", playerEntitlements: null, hostGameServer: false, sessionOnly: true } as const
+  const savedAccount = { email: "other@example.com", playerName: "Other", playerUid: "uid-2", playerEntitlements: null, hostGameServer: false } as const
+
+  it("keeps it in this process, where the game launch can still find it", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    await getConfig()
+    assert.equal(await saveConfig(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accounts: [sessionOnlyAccount], activeAccountId: "uid-1" })), true)
+
+    const config = await getConfig()
+    // The lookup EXECUTE_GAME itself does, in src/ipc/handlers/gameHandlers.ts.
+    assert.deepEqual(
+      config.accounts.find((candidate) => candidate.playerUid === config.activeAccountId),
+      sessionOnlyAccount
+    )
+  })
+
+  it("is gone at the next startup, and the choice of account falls back to one that can still launch", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    await getConfig()
+    await saveConfig(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accounts: [savedAccount, sessionOnlyAccount], activeAccountId: "uid-1" }))
+
+    const restarted = await freshConfigManager()
+    const config = await restarted.getConfig()
+
+    assert.deepEqual(config.accounts, [savedAccount])
+    assert.equal(config.activeAccountId, "uid-2")
+  })
+
+  it("leaves an ordinary saved account alone across the same restart", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    await getConfig()
+    await saveConfig(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accounts: [savedAccount], activeAccountId: "uid-2" }))
+
+    const restarted = await freshConfigManager()
+    const config = await restarted.getConfig()
+
+    assert.deepEqual(config.accounts, [savedAccount])
+    assert.equal(config.activeAccountId, "uid-2")
+  })
+
+  it("only reads a literal true as the mark, so no hand-edited spelling can delete a saved account", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const spelling of ["true", 1, "1", "yes", false, null, {}]) {
+      const config = normalizeConfig({ accounts: [{ ...savedAccount, sessionOnly: spelling }] })
+      assert.deepEqual(config.accounts, [savedAccount], `sessionOnly: ${JSON.stringify(spelling)}`)
+    }
   })
 })

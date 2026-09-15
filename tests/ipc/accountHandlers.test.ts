@@ -271,15 +271,6 @@ describe("LOGIN", () => {
     await assert.rejects(loginHandler()(trustedEvent, EMAIL, PASSWORD, TWO_FACTOR_CODE), /Login failed/)
   })
 
-  it("fails the login when the secrets cannot be stored", async () => {
-    transportAnswers(SUCCESS_BODY)
-    vi.mocked(saveAccountSecrets).mockRejectedValueOnce(new Error("Secure account storage is unavailable"))
-
-    // A success the launcher cannot persist is not a success: reporting one
-    // would leave a session that vanishes on the next start.
-    await assert.rejects(loginHandler()(trustedEvent, EMAIL, PASSWORD), /Login failed/)
-  })
-
   it("flags a login that rebuilt the account store, rather than reporting an ordinary success", async () => {
     transportAnswers(SUCCESS_BODY)
     vi.mocked(saveAccountSecrets).mockResolvedValueOnce("saved-after-rebuild")
@@ -291,6 +282,29 @@ describe("LOGIN", () => {
       account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false },
       storeRebuilt: true
     })
+  })
+
+  it("reports a login whose session is only held in memory, rather than an ordinary success", async () => {
+    // #481: the credentials were accepted and there is no keyring to write them to. The login
+    // stands, the account is usable, and the renderer is told the session ends with this run.
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockResolvedValueOnce("saved-in-memory")
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.deepEqual(result, {
+      status: "success",
+      account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false },
+      sessionInMemoryOnly: true
+    })
+  })
+
+  it("does not flag an ordinary save as a session held in memory", async () => {
+    transportAnswers(SUCCESS_BODY)
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.equal(result.status === "success" && result.sessionInMemoryOnly, undefined)
   })
 
   it("reports an unreadable, unpreservable store as its own status instead of a generic failure", async () => {
@@ -327,15 +341,36 @@ describe("LOGIN resolves a family status for a request failure it can classify",
     })
   }
 
-  it("still throws the generic failure for a cause none of the four families fit", async () => {
-    // A full disk during the account-store write is a real failure, but not one of the four
-    // request-failure families: guessing which would tell a player with no disk space left to
-    // check their firewall instead.
+  it("still throws the generic failure for a cause none of the families fit", async () => {
+    // A full disk during the account-store write is a real failure, but not one of the
+    // request-failure families and not a missing keyring: guessing which would tell a player with
+    // no disk space left to check their firewall, or send them to set up a wallet they have.
     transportAnswers(SUCCESS_BODY)
     vi.mocked(saveAccountSecrets).mockRejectedValueOnce(Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" }))
 
     await assert.rejects(loginHandler()(trustedEvent, EMAIL, PASSWORD), /Login failed/)
   })
+
+  /**
+   * The Debian KDE report: the log said `secure-storage-unavailable` and the player was shown the
+   * generic connection sentence. Both messages `assertSecureStorage` throws have to reach the
+   * renderer as the keyring status, whichever of the two the machine produced. This replaces the
+   * old "fails the login when the secrets cannot be stored" case: the failure is the same, and
+   * what changed is that the player is now told which failure it was.
+   */
+  for (const [label, message] of [
+    ["a platform with no encryption at all", "Secure account storage is unavailable"],
+    ["a Linux session that would fall back to the basic store", "A system password store is required for account storage"]
+  ] as const) {
+    it(`reports ${label} as no-keyring, not the generic failure`, async () => {
+      transportAnswers(SUCCESS_BODY)
+      vi.mocked(saveAccountSecrets).mockRejectedValueOnce(new Error(message))
+
+      const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+      assert.deepEqual(result, { status: "no-keyring" })
+    })
+  }
 })
 
 /**

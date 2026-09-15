@@ -39,6 +39,8 @@ const mockState = vi.hoisted(() => ({
   userDataDir: "",
   encryptionAvailable: true,
   storageBackend: "gnome_libsecret",
+  /** What `--password-store` this process was started with, which is the only thing that can admit the basic backend. */
+  passwordStoreSwitch: "",
   /** Set by the overlapping-mutation cases to hold a write open; every other case leaves the real writer alone. */
   beforeWrite: undefined as (() => Promise<void>) | undefined
 }))
@@ -49,7 +51,10 @@ const mockState = vi.hoisted(() => ({
  * platform's crypto.
  */
 vi.mock("electron", () => ({
-  app: { getPath: (): string => mockState.userDataDir },
+  app: {
+    getPath: (): string => mockState.userDataDir,
+    commandLine: { getSwitchValue: (name: string): string => (name === "password-store" ? mockState.passwordStoreSwitch : "") }
+  },
   safeStorage: {
     isEncryptionAvailable: (): boolean => mockState.encryptionAvailable,
     getSelectedStorageBackend: (): string => mockState.storageBackend,
@@ -116,6 +121,7 @@ beforeEach(() => {
   mockState.userDataDir = mkdtempSync(join(tmpdir(), "rift-account-store-test-"))
   mockState.encryptionAvailable = true
   mockState.storageBackend = "gnome_libsecret"
+  mockState.passwordStoreSwitch = ""
   mockState.beforeWrite = undefined
 })
 
@@ -195,24 +201,121 @@ describe("saveAccountSecrets", () => {
     assert.equal(payload.accounts.length, 1, "one entry replaced in place, not a second one appended")
   })
 
-  it("refuses to write when the platform offers no encryption", async () => {
+  it("writes nothing when the platform offers no encryption, and holds the session for this run instead", async () => {
     mockState.encryptionAvailable = false
     const store = await loadStore()
 
-    await assert.rejects(store.saveAccountSecrets("uid-a", ACCOUNT_A), /Secure account storage is unavailable/)
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")
 
     assert.equal(existsSync(storePath()), false)
   })
 
-  it.skipIf(process.platform !== "linux")("refuses to write when Linux would fall back to an unencrypted backend", async () => {
+  it.skipIf(process.platform !== "linux")("writes nothing when Linux would fall back to an unencrypted backend", async () => {
     // `basic_text` is safeStorage's answer for a Linux session with no keyring:
     // it still encrypts, with a hardcoded key, which is not storage a session
     // key belongs in. The rule is Linux-only, and so is the case.
     mockState.storageBackend = "basic_text"
     const store = await loadStore()
 
-    await assert.rejects(store.saveAccountSecrets("uid-a", ACCOUNT_A), /A system password store is required/)
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")
     assert.equal(existsSync(storePath()), false)
+  })
+
+  it.skipIf(process.platform !== "linux")("writes to the basic backend once the process was started asking for it", async () => {
+    // The opt-in (#481): the player answered the settings toggle, so startup appended
+    // `--password-store=basic` and the backend safeStorage picked is the one they asked for.
+    // Reading the command line rather than the config is deliberate: Chromium chose its store as
+    // this process came up, and a config edited since describes the next run, not this one.
+    mockState.storageBackend = "basic_text"
+    mockState.passwordStoreSwitch = "basic"
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved")
+    assert.deepEqual(await (await loadStore()).getAccountSecrets("uid-a"), ACCOUNT_A, "and it is still there in the next run, which is the whole point of the setting")
+  })
+
+  it.skipIf(process.platform !== "linux")("still writes nothing to the basic backend when the switch names some other store", async () => {
+    mockState.storageBackend = "basic_text"
+    mockState.passwordStoreSwitch = "gnome-libsecret"
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")
+    assert.equal(existsSync(storePath()), false)
+  })
+
+  it("never accepts the basic backend on the strength of the switch alone, when there is no encryption at all", async () => {
+    mockState.encryptionAvailable = false
+    mockState.passwordStoreSwitch = "basic"
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")
+    assert.equal(existsSync(storePath()), false)
+  })
+})
+
+/**
+ * #481: a machine with no keyring used to fail the login outright, with credentials the service
+ * had already accepted, so the player could not play at all over a missing wallet. The session is
+ * held in this process instead. What must stay true is that it is only ever in this process: never
+ * on disk, never in a file a later run could read, and gone when the process is.
+ */
+describe("saveAccountSecrets with no keyring at all", () => {
+  it("hands the session back to every reader for as long as this run lasts", async () => {
+    mockState.encryptionAvailable = false
+    const store = await loadStore()
+
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    assert.deepEqual(await store.getAccountSecrets("uid-a"), ACCOUNT_A, "the account is usable, so the game can be launched as it")
+  })
+
+  it("writes no file at all, not even an empty or unencrypted one", async () => {
+    mockState.encryptionAvailable = false
+    const store = await loadStore()
+
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    assert.deepEqual(readdirSync(mockState.userDataDir), [], "nothing was left behind in the user data folder")
+  })
+
+  it("is gone in the next process, which is what quitting does to it", async () => {
+    mockState.encryptionAvailable = false
+    const writer = await loadStore()
+    await writer.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    // A fresh module instance over the same folder: the same thing the next launch sees.
+    const nextRun = await loadStore()
+
+    assert.equal(await nextRun.getAccountSecrets("uid-a"), null)
+  })
+
+  it("leaves a store that is merely locked exactly where it is, and reads the keyring one back once it opens", async () => {
+    const writer = await loadStore()
+    await writer.saveAccountSecrets("uid-a", ACCOUNT_A)
+    const onDisk = readFileSync(storePath(), "utf8")
+
+    mockState.encryptionAvailable = false
+    const lockedRun = await loadStore()
+    await lockedRun.saveAccountSecrets("uid-b", ACCOUNT_B)
+
+    assert.equal(readFileSync(storePath(), "utf8"), onDisk, "the account it could not open was not overwritten by the one it could not save")
+
+    mockState.encryptionAvailable = true
+    const unlockedRun = await loadStore()
+    assert.deepEqual(await unlockedRun.getAccountSecrets("uid-a"), ACCOUNT_A)
+    assert.equal(await unlockedRun.getAccountSecrets("uid-b"), null, "and the in-memory one did not survive into it")
+  })
+
+  it("lets the player remove an account it is only holding in memory", async () => {
+    // The store on disk is unreadable here, which is the state that makes removeAccountSecrets
+    // refuse. It has nothing to say about a session that was never in it.
+    writeStoreFile({ version: 2, ciphertext: Buffer.from("someone else's bytes", "utf8").toString("base64") })
+    mockState.encryptionAvailable = false
+    const store = await loadStore()
+    await store.saveAccountSecrets("uid-a", ACCOUNT_A)
+
+    assert.equal(await store.removeAccountSecrets("uid-a"), true)
+    assert.equal(await store.getAccountSecrets("uid-a"), null)
   })
 })
 
@@ -344,8 +447,8 @@ describe("saveAccountSecrets rebuilding an unreadable store", () => {
 
   it("does not snapshot or touch an intact store when only the keyring is locked", async () => {
     // A locked keyring reads as unreadable-adjacent, but the file is fine: readStore returns
-    // early with unreadable:false so a later unlock still reaches it, and writeAccounts throws
-    // before it could overwrite anything. Without that split, the first locked-keyring login
+    // early with unreadable:false so a later unlock still reaches it, and the save stops at the
+    // keyring check before it could overwrite anything. Without that split, the first login
     // would copy the intact store to the one-shot snapshot slot and then fail the login anyway,
     // stranding a stale copy where a genuine corruption event would later need one (#261 review).
     const writer = await loadStore()
@@ -357,7 +460,7 @@ describe("saveAccountSecrets rebuilding an unreadable store", () => {
     mockState.encryptionAvailable = false
     const store = await loadStore()
 
-    await assert.rejects(store.saveAccountSecrets("uid-c", ACCOUNT_A), /Secure account storage is unavailable/)
+    assert.equal(await store.saveAccountSecrets("uid-c", ACCOUNT_A), "saved-in-memory")
 
     assert.equal(existsSync(unreadableBackupPath()), false, "a locked keyring is not a corruption event")
     assert.equal(readFileSync(storePath(), "utf8"), onDisk, "the real store is left byte-for-byte")

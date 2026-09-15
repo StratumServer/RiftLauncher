@@ -248,6 +248,34 @@ Note, that this will enable appimages system-wide, and all appimages will have d
 
 ---
 
+## Session storage and keyrings
+
+When you log in, RiftLauncher hands your session to the desktop's own keyring instead of keeping it in a file of its own. On Linux that is GNOME Keyring or KWallet, reached through `libsecret`. The `.deb` and `.rpm` packages already depend on `libsecret`, and the `.deb` recommends `gnome-keyring` for desktops that have no wallet of their own, so most installs need nothing here.
+
+If no keyring answers, Electron falls back to a store that seals the session with a key built into the launcher, which means any program running as you can read it. RiftLauncher refuses that store by default. You can still log in and play: the session is kept in memory for as long as the launcher is open, and you log in again next time. The launcher says so when it happens.
+
+### GNOME, Cinnamon, Budgie and friends
+
+GNOME Keyring is installed and unlocked with your session by default, so there is nothing to do. If you removed it, `sudo apt install gnome-keyring` or `sudo dnf install gnome-keyring` puts it back.
+
+### KDE Plasma
+
+KWallet is installed with Plasma but it can be switched off, and a wallet that does not exist is the same as no keyring at all. Open **System Settings**, go to **KDE Wallet**, tick **Enable the KDE wallet subsystem**, and create a wallet if there is none. Blowfish and GPG both work. If you give the wallet a password, you will be asked for it once per session, the first time something reads it.
+
+`kwalletmanager` is worth installing if you want to look at what is stored: it lists the wallets, shows the entries in them, and can create a wallet without going through System Settings.
+
+### Other desktops, tiling window managers, and machines with no desktop at all
+
+Sway, i3, Hyprland and the like start nothing of this sort on their own. Install `gnome-keyring` and have your session start the daemon, for example by launching your window manager through `dbus-run-session -- gnome-keyring-daemon --start --components=secrets` or by adding the daemon to whatever your session already starts. What matters is that the daemon is running and unlocked in the same session as the launcher.
+
+### If you would rather not have a keyring
+
+There is a setting for it. In **Settings**, turn on **Remember the session without a system keyring**, then restart RiftLauncher: Chromium picks its storage as it starts, so the setting only takes effect on the next launch.
+
+Be clear about the trade. With that setting on, your session is written to disk sealed with a key that ships inside the launcher, the same key in every copy of it. Anyone who can read your files, and any program running under your account, can read the session and use it as you. On a machine you alone use, that may well be a fair price for not logging in again every time. On a shared or managed machine it is not. That is why the setting is off until you turn it on.
+
+---
+
 ## Where RiftLauncher keeps its data
 
 Every Linux build stores its config, the list of your game versions and the list of your Installations in `/home/username/.config/RiftLauncher/`. Switching between the AppImage and a packaged build changes nothing about that, so you keep everything either way.
