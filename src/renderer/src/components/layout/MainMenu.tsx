@@ -1,34 +1,19 @@
-import { ReactNode, useEffect, useRef, useState } from "react"
+import { ReactNode, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link, useLocation, useNavigate } from "react-router-dom"
-import {
-  PiBoxArrowDownDuotone,
-  PiFolderOpenDuotone,
-  PiGearDuotone,
-  PiWrenchDuotone,
-  PiGitForkDuotone,
-  PiHouseLineDuotone,
-  PiPencilDuotone,
-  PiPlusCircleDuotone,
-  PiInfoDuotone,
-  PiXCircleDuotone,
-  PiPlayCircleDuotone
-} from "react-icons/pi"
+import { Link, useLocation } from "react-router-dom"
+import { PiBoxArrowDownDuotone, PiFolderOpenDuotone, PiGearDuotone, PiWrenchDuotone, PiGitForkDuotone, PiHouseLineDuotone, PiPencilDuotone, PiPlusCircleDuotone, PiInfoDuotone } from "react-icons/pi"
 import clsx from "clsx"
 
-import { useInstallations, useGameVersions, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
-import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
-import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
-import { checkInstallationPathExists, logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
-import { getInstallationVersionStatus } from "@domain/installations/versionReference"
+import { useLaunchGame } from "@renderer/features/launch/hooks/useLaunchGame"
+import { checkInstallationPathExists } from "@renderer/features/launch/adapters/launch"
 
 import InstallationsDropdownMenu from "@renderer/features/installations/components/InstallationsDropdownMenu"
 import ActivityCenter from "@renderer/components/ui/ActivityCenter"
-import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
+import LaunchBackupPrompt from "@renderer/features/launch/components/LaunchBackupPrompt"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import { FormButton, FormLinkButton } from "@renderer/components/ui/FormComponents"
 import SessionButton from "../ui/SessionButton"
@@ -43,56 +28,18 @@ interface MainMenuLinkProps {
 function MainMenu(): JSX.Element {
   const { t } = useTranslation()
   const installations = useInstallations()
-  const gameVersions = useGameVersions()
   const { lastUsedInstallation } = useSettingsConfig()
-  const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
-  const { openOnBrowser: openExternalLink } = useExternalLinks()
-  const goTo = useNavigate()
-  const { os } = useAppInfo()
+  const { launchGame, skipBackupPromptOpen, answerSkipBackupPrompt } = useLaunchGame()
 
   const makeInstallationBackup = useMakeInstallationBackup()
 
   const [selectedInstallation, setSelectedInstallation] = useState<InstallationType | undefined>(undefined)
 
-  // #338's question is awaited from inside PlayHandler rather than driven from a
-  // click handler, so the launch stays one linear function: the finally block
-  // still owns clearing _playing and releasing the close guard on every path.
-  // Both stay held while the question is on screen, which is what a launch
-  // waiting on an answer is.
-  const [skipBackupPromptOpen, setSkipBackupPromptOpen] = useState(false)
-  const skipBackupAnswerRef = useRef<((launchAnyway: boolean) => void) | null>(null)
-
-  /** Closes the prompt and hands the answer to the PlayHandler call waiting on it. */
-  function answerSkipBackupPrompt(launchAnyway: boolean): void {
-    setSkipBackupPromptOpen(false)
-    skipBackupAnswerRef.current?.(launchAnyway)
-    skipBackupAnswerRef.current = null
-  }
-
-  /** Asks whether to launch without a backup. Cancel, Escape and a click outside all answer no. */
-  function askToLaunchWithoutBackup(): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      skipBackupAnswerRef.current = resolve
-      setSkipBackupPromptOpen(true)
-    })
-  }
-
   useEffect(() => {
     const si = installations.find((i) => i.id === lastUsedInstallation)
     setSelectedInstallation(si)
   }, [lastUsedInstallation, installations])
-
-  // App.tsx keeps MainMenu mounted for as long as the launcher runs, so this
-  // only fires on teardown. It answers "do not launch" rather than leaving
-  // PlayHandler parked on a promise nobody can resolve, which would hold the
-  // close guard until the process exits.
-  useEffect(() => {
-    return (): void => {
-      skipBackupAnswerRef.current?.(false)
-      skipBackupAnswerRef.current = null
-    }
-  }, [])
 
   const GROUP_1: MainMenuLinkProps[] = [
     { icon: <PiHouseLineDuotone />, text: t("components.mainMenu.homeTitle"), desc: t("components.mainMenu.homeDesc"), to: "/" },
@@ -102,110 +49,6 @@ function MainMenu(): JSX.Element {
     { icon: <PiGearDuotone />, text: t("components.mainMenu.configTitle"), desc: t("components.mainMenu.configDesc"), to: "/config" },
     { icon: <PiInfoDuotone />, text: t("components.mainMenu.infoAndHelpTitle"), desc: t("components.mainMenu.infoAndHelpDesc"), to: "/info-and-help" }
   ]
-
-  async function PlayHandler(): Promise<void> {
-    const id = crypto.randomUUID()
-    preventAppClose("add", id, "Started playing Vintage Story.")
-
-    // Only set once _playing has actually been flipped to true below, so the
-    // finally block never clears a flag this call did not set itself (the
-    // early "already playing" guard reads someone else's _playing, and must
-    // not stomp on it if this call unwinds before ever taking it over).
-    let playingInstallationId: string | undefined
-    let playingGameVersionId: string | undefined
-
-    try {
-      if (!selectedInstallation) return addNotification(t("features.installations.noInstallationSelected"), "error")
-      if (selectedInstallation._playing) return addNotification(t("features.installations.gameAlreadyRunning"), "error")
-      // Update all deletes each old archive before downloading its replacement, so a game started
-      // mid-run would load a Mods folder with some of its Mods missing.
-      if (selectedInstallation._updatingMods) return addNotification(t("features.mods.cantPlayWhileUpdatingMods"), "error")
-
-      const gameVersionToRun = selectedInstallation.version ? gameVersions.find((gv) => gv.id === selectedInstallation.gameVersionId) : undefined
-      if (!gameVersionToRun) {
-        // An Installation with no version at all reaches here too (configManager normalizes a
-        // missing version to ""), and interpolating that into versionNotInstalled reads as
-        // "VS Version  not installed." with a blank name (#118).
-        const status = getInstallationVersionStatus(selectedInstallation, gameVersions)
-        const message =
-          status === "unset"
-            ? t("features.versions.noVersionSet")
-            : status === "unlinked"
-              ? t("features.versions.versionUnlinked")
-              : t("features.versions.versionNotInstalled", { version: selectedInstallation.version })
-        return addNotification(message, "error")
-      }
-      if (gameVersionToRun._installing) return addNotification(t("features.versions.versionInstalling", { version: selectedInstallation.version }), "error")
-      if (gameVersionToRun._deleting) return addNotification(t("features.versions.versionDeleting", { version: selectedInstallation.version }), "error")
-      if (gameVersionToRun._playing) return addNotification(t("features.versions.versionPlaying", { version: selectedInstallation.version }), "error")
-
-      playingInstallationId = selectedInstallation.id
-      playingGameVersionId = gameVersionToRun.id
-
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: selectedInstallation.id, updates: { _playing: true } } })
-      configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: gameVersionToRun.id, updates: { _playing: true } } })
-
-      if (selectedInstallation.backupsAuto) {
-        const backupOutcome = await makeInstallationBackup(selectedInstallation.id)
-
-        // Only an archive compression or pruning failure is recoverable: the
-        // installation still exists and the player can knowingly launch
-        // without this backup (#338). Busy, playing, restoring, and missing
-        // installation states are hard stops and must not offer an override.
-        if (!backupOutcome.ok) {
-          const canLaunchWithoutBackup = backupOutcome.reason === "compress-failed" || backupOutcome.reason === "prune-failed"
-          if (!canLaunchWithoutBackup) return
-
-          const launchAnyway = await askToLaunchWithoutBackup()
-          if (!launchAnyway) return
-        }
-      }
-
-      const startedPlaying = Date.now()
-      const result = await runGame(gameVersionToRun, selectedInstallation)
-
-      // Playtime is only recorded once the game actually ran: a launch that
-      // never started played for 0 seconds, and crediting it with the sliver
-      // of time between the two Date.now() calls would misreport "just
-      // played" for a session that never happened.
-      if (result.ok) {
-        const finishedPlaying = Date.now()
-        const ttp = finishedPlaying - startedPlaying + selectedInstallation.totalTimePlayed
-        configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: selectedInstallation.id, updates: { lastTimePlayed: finishedPlaying, totalTimePlayed: ttp } } })
-      }
-
-      const outcomeNotification = pickPlayOutcomeNotification(result, os)
-      if (outcomeNotification) {
-        const { link, report } = outcomeNotification
-        const actions = [
-          ...(link ? [{ id: "open-guide", label: t(link.labelKey), onClick: (): void => openExternalLink(link.url) }] : []),
-          ...(report
-            ? [
-                {
-                  id: "see-report",
-                  label: t(report.labelKey),
-                  onClick: (): void => {
-                    void goTo(`/installations/report/${selectedInstallation.id}`)
-                  }
-                }
-              ]
-            : [])
-        ]
-        addNotification(t(outcomeNotification.key), "error", actions.length > 0 ? { actions } : undefined)
-      }
-    } catch (err) {
-      logLaunch("error", "[front] [layout] [components/layout/MainMenu.tsx] [MainMenu > PlayHandler] Error executing the game.")
-      logLaunch("debug", `[front] [layout] [components/layout/MainMenu.tsx] [MainMenu > PlayHandler] Error executing the game: ${err}`)
-      addNotification(t("notifications.body.errorExecutingGame"), "error")
-    } finally {
-      // Runs on every outcome, the two early-return backup and error paths
-      // included, so a failed launch never leaves the installation and game
-      // version stuck at _playing: true until the app restarts (issue #40).
-      if (playingInstallationId) configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: playingInstallationId, updates: { _playing: false } } })
-      if (playingGameVersionId) configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: playingGameVersionId, updates: { _playing: false } } })
-      preventAppClose("remove", id, "Finished playing vintage Story.")
-    }
-  }
 
   return (
     <header className="z-99 w-72 shrink-0 flex flex-col gap-4 p-2 bg-zinc-950/50 shadow-sm shadow-zinc-950/50 backdrop-blur-sm border-r border-zinc-400/5">
@@ -226,7 +69,7 @@ function MainMenu(): JSX.Element {
         <InstallationsDropdownMenu />
 
         <div className="w-full flex gap-2 items-center">
-          <NormalButton title={t("generic.play")} disabled={!selectedInstallation} onClick={PlayHandler} variant="primary" size="lg" className="h-14 w-full text-2xl">
+          <NormalButton title={t("generic.play")} disabled={!selectedInstallation} onClick={() => launchGame(selectedInstallation)} variant="primary" size="lg" className="h-14 w-full text-2xl">
             <p>{t("generic.play")}</p>
           </NormalButton>
 
@@ -257,23 +100,7 @@ function MainMenu(): JSX.Element {
         </div>
       </div>
 
-      {/* Cancel comes first in the DOM because HeadlessUI's focus trap focuses
-          the first focusable child, so Enter on a freshly opened prompt keeps
-          the launch stopped. The restore and delete confirms order themselves
-          the same way for the same reason. */}
-      <PopupDialogPanel title={t("features.backups.backupFailedTitle")} isOpen={skipBackupPromptOpen} close={() => answerSkipBackupPrompt(false)}>
-        <>
-          <p>{t("features.backups.backupFailedSkipLaunch")}</p>
-          <div className="flex gap-4 items-center justify-center text-lg">
-            <FormButton title={t("generic.cancel")} className="p-2" onClick={() => answerSkipBackupPrompt(false)} variant="secondary">
-              <PiXCircleDuotone />
-            </FormButton>
-            <FormButton title={t("features.backups.launchAnyway")} className="p-2" onClick={() => answerSkipBackupPrompt(true)} variant="destructive">
-              <PiPlayCircleDuotone />
-            </FormButton>
-          </div>
-        </>
-      </PopupDialogPanel>
+      <LaunchBackupPrompt isOpen={skipBackupPromptOpen} answer={answerSkipBackupPrompt} />
     </header>
   )
 }
