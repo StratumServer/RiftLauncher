@@ -62,7 +62,7 @@ function InstallationsDropdownMenu(): JSX.Element {
 
                       <div className="shrink-0 text-zinc-400 flex gap-2 items-start">
                         <p>{current.version}</p>
-                        <p>{t("features.mods.modsCount", { count: current._modsCount })}</p>
+                        <p>{t("features.mods.modsCount", { count: current._modsCount ?? 0 })}</p>
                       </div>
                     </div>
                     <PiCaretUpDuotone className={clsx("duration-200 shrink-0", open && "-rotate-180")} />
@@ -94,7 +94,7 @@ function InstallationsDropdownMenu(): JSX.Element {
 
                             <div className="shrink-0 text-zinc-400 flex gap-2 items-start">
                               <p>{current.version}</p>
-                              <p>{t("features.mods.modsCount", { count: current._modsCount })}</p>
+                              <p>{t("features.mods.modsCount", { count: current._modsCount ?? 0 })}</p>
                             </div>
                           </div>
                         </ListboxOption>
