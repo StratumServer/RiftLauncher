@@ -64,13 +64,44 @@ export const PLURAL_SUFFIXES = ["_zero", "_one", "_two", "_few", "_many", "_othe
  * of its cardinal-suffixed siblings (key_one, key_other, ...) is, that
  * sibling's value stands in for it. A plural family never keeps both a bare
  * and a suffixed key (see no-bare-plural-keys.test.ts), so any one present
- * suffix is representative enough for the parity checks that call this.
+ * suffix answers the only question this is asked: whether the key resolves to
+ * anything at all. What the resolved sibling happens to contain is NOT a
+ * statement about the family -- one variant can carry no {{placeholder}} while
+ * the rest do -- so the checks that care about how a plural family is called
+ * go through collectPluralFamilies and the count contract instead.
  * Returns undefined only when neither the bare key nor any suffix exists.
  */
 export function resolveTranslationValue(flattened: Record<string, unknown>, key: string): unknown {
   if (key in flattened) return flattened[key]
   const suffix = PLURAL_SUFFIXES.find((candidate) => `${key}${candidate}` in flattened)
   return suffix ? flattened[`${key}${suffix}`] : undefined
+}
+
+/** The cardinal plural categories `locale` actually selects between, e.g. ["one", "other"] for en-US, ["few", "many", "one", "other"] for ru-RU. */
+export function requiredPluralCategories(locale: string): string[] {
+  return [...new Intl.PluralRules(locale).resolvedOptions().pluralCategories]
+}
+
+/**
+ * Groups a flattened translation object's plural keys by family: the map goes
+ * from the bare family name (e.g. "features.mods.modsCount") to the set of
+ * categories it defines (e.g. {"zero", "one", "two", "few", "many", "other"}).
+ * A key with no cardinal suffix belongs to no family and is left out.
+ */
+export function collectPluralFamilies(flattened: Record<string, unknown>): Map<string, Set<string>> {
+  const families = new Map<string, Set<string>>()
+
+  for (const key of Object.keys(flattened)) {
+    const suffix = PLURAL_SUFFIXES.find((candidate) => key.endsWith(candidate))
+    if (!suffix) continue
+
+    const family = key.slice(0, -suffix.length)
+    const categories = families.get(family) ?? new Set<string>()
+    categories.add(suffix.slice(1))
+    families.set(family, categories)
+  }
+
+  return families
 }
 
 export type TranslationCall = {
@@ -80,6 +111,32 @@ export type TranslationCall = {
   key: string
   /** Whether the call passed a second argument, e.g. t("key", { count }). */
   hasInterpolationArg: boolean
+  /** Whether that second argument names `count`, which is the only thing i18next selects a plural form by. */
+  hasCountArg: boolean
+}
+
+/**
+ * Returns the source text of everything the t( call passes after its key,
+ * starting at the comma, by counting brackets until the one that closes t(.
+ *
+ * ponytail: bracket counting ignores string literals, so an argument holding an
+ * unbalanced bracket inside a string (t("k", { name: ")" })) would cut the slice
+ * short. No call site in this repo does that, and the only thing read back out
+ * of the slice is whether it names `count`; switch to a real parse if that stops
+ * being true.
+ */
+function readCallArguments(content: string, start: number): string {
+  let depth = 1
+  let cursor = start
+
+  while (cursor < content.length && depth > 0) {
+    const char = content[cursor]!
+    if (char === "(" || char === "{" || char === "[") depth++
+    else if (char === ")" || char === "}" || char === "]") depth--
+    cursor++
+  }
+
+  return content.slice(start, cursor)
 }
 
 // Matches t("some.key" possibly followed by more arguments. Only string-literal
@@ -108,7 +165,11 @@ export function collectTranslationCalls(dir: string): TranslationCall[] {
       let cursor = T_CALL_RE.lastIndex
       // `cursor < content.length` guards the indexed access from being out of bounds.
       while (cursor < content.length && /\s/.test(content[cursor]!)) cursor++
-      calls.push({ file, key, hasInterpolationArg: content[cursor] === "," })
+      const hasInterpolationArg = content[cursor] === ","
+      const args = hasInterpolationArg ? readCallArguments(content, cursor) : ""
+      // Matches both `{ count: total }` and the `{ count }` shorthand, and no
+      // longer name that merely ends in count (totalCount: ...).
+      calls.push({ file, key, hasInterpolationArg, hasCountArg: /(^|[^\w$])count\s*[:,}]/.test(args) })
     }
   }
 
