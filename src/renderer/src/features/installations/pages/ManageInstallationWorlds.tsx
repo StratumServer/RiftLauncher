@@ -26,9 +26,12 @@ function ManageInstallationWorlds(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
   const installation = installations.find((candidate) => candidate.id === id)
+  const isPlaying = Boolean(installation?._playing)
   const [worlds, setWorlds] = useState<WorldType[]>([])
   const [loading, setLoading] = useState(true)
   const [targetId, setTargetId] = useState("")
+  const target = installations.find((candidate) => candidate.id === targetId)
+  const isTargetPlaying = Boolean(target?._playing)
   const [worldToDelete, setWorldToDelete] = useState<WorldType | null>(null)
   const [deleteName, setDeleteName] = useState("")
   const deleteNameId = useId()
@@ -48,7 +51,7 @@ function ManageInstallationWorlds(): JSX.Element {
   }, [refresh])
 
   async function backup(world: WorldType, askConfirmation = true): Promise<boolean> {
-    if (!installation || (askConfirmation && !window.confirm(t("features.worlds.confirmBackup", { name: world.name })))) return false
+    if (!installation || isPlaying || (askConfirmation && !window.confirm(t("features.worlds.confirmBackup", { name: world.name })))) return false
     const result = await window.api.worldsManager.backup(installation.id, world.name)
     if (!result.ok) {
       addNotification(t(`features.worlds.error.${result.reason}`), "error")
@@ -66,7 +69,7 @@ function ManageInstallationWorlds(): JSX.Element {
   }
 
   async function deleteWorldHandler(): Promise<void> {
-    if (!installation || !worldToDelete || deleteName !== worldToDelete.name) return
+    if (!installation || isPlaying || !worldToDelete || deleteName !== worldToDelete.name) return
     const world = worldToDelete
     closeDeleteDialog()
     const backups = (installation.worldBackups ?? []).filter((backup) => backup.worldName.toLocaleLowerCase("en-US") === world.name.toLocaleLowerCase("en-US"))
@@ -80,7 +83,7 @@ function ManageInstallationWorlds(): JSX.Element {
   }
 
   async function restore(backup: WorldBackupType): Promise<void> {
-    if (!installation || !window.confirm(t("features.worlds.confirmRestore", { name: backup.worldName }))) return
+    if (!installation || isPlaying || !window.confirm(t("features.worlds.confirmRestore", { name: backup.worldName }))) return
     const result = await window.api.worldsManager.restore(installation.id, backup.id)
     if (!result.ok) return addNotification(t(`features.worlds.error.${result.reason}`), "error")
     addNotification(t("features.worlds.restoreDone"), "success")
@@ -88,8 +91,7 @@ function ManageInstallationWorlds(): JSX.Element {
   }
 
   async function transfer(world: WorldType, mode: "copy" | "move"): Promise<void> {
-    if (!installation || !targetId || targetId === installation.id) return addNotification(t("features.worlds.chooseTarget"), "error")
-    const target = installations.find((candidate) => candidate.id === targetId)
+    if (!installation || isPlaying || isTargetPlaying || !targetId || targetId === installation.id) return addNotification(t("features.worlds.chooseTarget"), "error")
     if (!target || !window.confirm(t("features.worlds.confirmTransfer", { name: world.name, target: target.name }))) return
     if (mode === "move" && !window.confirm(t("features.worlds.confirmMove", { name: world.name, target: target.name }))) return
     const result = await window.api.worldsManager.transfer(installation.id, world.name, target.id, mode)
@@ -163,17 +165,17 @@ function ManageInstallationWorlds(): JSX.Element {
                       </p>
                     </div>
                     {liveWorld && (
-                      <NormalButton title={t("features.worlds.backup")} variant="ghost" className="p-1" onClick={() => void backup(world)}>
+                      <NormalButton title={t("features.worlds.backup")} variant="ghost" className="p-1" disabled={isPlaying} onClick={() => void backup(world)}>
                         <PiCopyDuotone />
                       </NormalButton>
                     )}
                     {liveWorld && (
-                      <NormalButton title={t("features.worlds.copy")} variant="ghost" className="p-1" onClick={() => void transfer(world, "copy")}>
+                      <NormalButton title={t("features.worlds.copy")} variant="ghost" className="p-1" disabled={isPlaying || isTargetPlaying} onClick={() => void transfer(world, "copy")}>
                         <PiCopyDuotone />
                       </NormalButton>
                     )}
                     {liveWorld && (
-                      <NormalButton title={t("features.worlds.move")} variant="ghost" className="p-1" onClick={() => void transfer(world, "move")}>
+                      <NormalButton title={t("features.worlds.move")} variant="ghost" className="p-1" disabled={isPlaying || isTargetPlaying} onClick={() => void transfer(world, "move")}>
                         <PiTruckDuotone />
                       </NormalButton>
                     )}
@@ -182,6 +184,7 @@ function ManageInstallationWorlds(): JSX.Element {
                         title={t("generic.delete")}
                         variant="ghost"
                         className="p-1"
+                        disabled={isPlaying}
                         onClick={() => {
                           setWorldToDelete(world)
                           setDeleteName("")
@@ -194,7 +197,7 @@ function ManageInstallationWorlds(): JSX.Element {
                   {backups.map((backup) => (
                     <div key={backup.id} className="flex items-center justify-end gap-2 px-3 pb-2 text-sm text-zinc-400">
                       <span>{new Date(backup.date).toLocaleString()}</span>
-                      <NormalButton title={t("generic.restore")} variant="ghost" className="p-1" onClick={() => void restore(backup)}>
+                      <NormalButton title={t("generic.restore")} variant="ghost" className="p-1" disabled={isPlaying} onClick={() => void restore(backup)}>
                         <PiArrowCounterClockwiseDuotone />
                       </NormalButton>
                       <NormalButton title={t("generic.openOnFileExplorer")} variant="ghost" className="p-1" onClick={() => void window.api.pathsManager.openPathOnFileExplorer(backup.path)}>

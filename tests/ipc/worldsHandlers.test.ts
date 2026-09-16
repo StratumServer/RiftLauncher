@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -30,9 +30,11 @@ const extractTarGz = vi.hoisted(() =>
   })
 )
 
+const validateWorldBackupArchive = vi.hoisted(() => vi.fn(async () => undefined))
+
 vi.mock("@src/ipc/workers/compression", () => ({ runCompression }))
 vi.mock("@src/ipc/workers/extraction", () => ({ extractTarGz }))
-vi.mock("@src/ipc/archiveValidation", () => ({ validateWorldBackupArchive: vi.fn(async () => undefined) }))
+vi.mock("@src/ipc/archiveValidation", () => ({ validateWorldBackupArchive }))
 
 const CURRENT_SCHEMA = 6
 let temporaryRoot: string
@@ -41,6 +43,10 @@ let installationsRoot: string
 let backupsFolder: string
 let markInstallationPlaying: typeof import("@src/ipc/installationActivity").markInstallationPlaying
 let clearInstallationPlaying: typeof import("@src/ipc/installationActivity").clearInstallationPlaying
+let pathPolicy: typeof import("@src/ipc/pathPolicy")
+let realAssertManagedPath: (typeof import("@src/ipc/pathPolicy"))["assertManagedPath"]
+let assertManagedPathSpy: ReturnType<typeof vi.spyOn>
+let assertManagedDeletionPathSpy: ReturnType<typeof vi.spyOn>
 
 type WorldsHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown>
 
@@ -115,8 +121,14 @@ beforeEach(async () => {
   compressionState.release = []
   runCompression.mockClear()
   extractTarGz.mockClear()
+  validateWorldBackupArchive.mockReset()
+  validateWorldBackupArchive.mockResolvedValue(undefined)
 
   vi.resetModules()
+  pathPolicy = await import("@src/ipc/pathPolicy")
+  realAssertManagedPath = pathPolicy.assertManagedPath
+  assertManagedPathSpy = vi.spyOn(pathPolicy, "assertManagedPath")
+  assertManagedDeletionPathSpy = vi.spyOn(pathPolicy, "assertManagedDeletionPath")
   ;({ markInstallationPlaying, clearInstallationPlaying } = await import("@src/ipc/installationActivity"))
   await import("@src/ipc/handlers/worldsHandlers")
 })
@@ -141,23 +153,36 @@ describe("worlds IPC handlers", () => {
     const savesPath = join(installationPath, "Saves")
     mkdirSync(savesPath, { recursive: true })
     writeFileSync(join(savesPath, "World.vcdbs"), "world", "utf8")
+    writeFileSync(join(savesPath, "default.vcdbs"), "default-world", "utf8")
     writeFileSync(join(savesPath, "notes.txt"), "not a world", "utf8")
     writeFileSync(join(savesPath, "unsafe.vcdbs "), "unsafe", "utf8")
-    writeConfig([installation("install-a", installationPath)])
+    writeConfig([installation("install-a", installationPath, "1.22.7", [{ id: "backup-default", date: 1, path: join(backupsFolder, "Worlds", "backup-default.tar.gz"), worldName: "default.vcdbs" }])])
+
+    const statWorld = statSync(join(savesPath, "World.vcdbs"))
+    const statDefault = statSync(join(savesPath, "default.vcdbs"))
 
     const result = await handler("worlds-list")(await createTrustedEvent(), "install-a")
 
+    const expectedWorlds = [
+      {
+        name: "World.vcdbs",
+        size: statWorld.size,
+        lastModified: statWorld.mtimeMs,
+        isDefault: false,
+        backupCount: 0
+      },
+      {
+        name: "default.vcdbs",
+        size: statDefault.size,
+        lastModified: statDefault.mtimeMs,
+        isDefault: true,
+        backupCount: 1
+      }
+    ].sort((left, right) => right.lastModified - left.lastModified || left.name.localeCompare(right.name))
+
     assert.deepEqual(result, {
       ok: true,
-      worlds: [
-        {
-          name: "World.vcdbs",
-          size: 5,
-          lastModified: (result as WorldListResult & { ok: true }).worlds[0]?.lastModified,
-          isDefault: false,
-          backupCount: 0
-        }
-      ]
+      worlds: expectedWorlds
     })
   })
 
@@ -218,20 +243,102 @@ describe("worlds IPC handlers", () => {
     const backupResult = (await handler("worlds-backup")(event, "install-a", "World.vcdbs")) as WorldBackupResult
     assert.equal(backupResult.ok, true)
     if (!backupResult.ok) return
+    expect(assertManagedPathSpy).toHaveBeenCalledWith(sourceWorld, "world")
     const configAfterBackup = JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType
     assert.equal(configAfterBackup.installations[0]?.worldBackups?.[0]?.id, backupResult.backup.id)
 
     const restoreResult = await handler("worlds-restore")(event, "install-a", backupResult.backup.id)
     assert.deepEqual(restoreResult, { ok: true })
+    expect(validateWorldBackupArchive).toHaveBeenCalledWith(backupResult.backup.path, "World.vcdbs")
     assert.equal(readFileSync(sourceWorld, "utf8"), "restored")
 
     const transferResult = await handler("worlds-transfer")(event, "install-a", "World.vcdbs", "install-b", "copy")
     assert.deepEqual(transferResult, { ok: true, targetWorldName: "World.vcdbs", warning: "different-version" })
+    expect(assertManagedPathSpy).toHaveBeenCalledWith(join(targetPath, "Saves", "World.vcdbs"), "destination world", { allowMissing: true })
     expect(existsSync(join(targetPath, "Saves", "World.vcdbs"))).toBe(true)
 
     const deleteResult = await handler("worlds-delete")(event, "install-a", "World.vcdbs")
     assert.deepEqual(deleteResult, { ok: true })
+    expect(assertManagedDeletionPathSpy).toHaveBeenCalledWith(sourceWorld)
     expect(existsSync(sourceWorld)).toBe(false)
+  })
+
+  it("refuses restore when archive validation rejects", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    const sourceWorld = join(sourcePath, "Saves", "World.vcdbs")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    writeFileSync(sourceWorld, "world", "utf8")
+    const backupId = "backup-fail-validation"
+    const backupArchive = join(backupsFolder, "Worlds", `${backupId}.tar.gz`)
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
+    writeFileSync(backupArchive, "dummy", "utf8")
+    writeConfig([installation("install-a", sourcePath, "1.22.7", [{ id: backupId, date: 1, path: backupArchive, worldName: "World.vcdbs" }])])
+    const event = await createTrustedEvent()
+    validateWorldBackupArchive.mockRejectedValueOnce(new Error("corrupt archive"))
+
+    const result = await handler("worlds-restore")(event, "install-a", backupId)
+    assert.deepEqual(result, { ok: false, reason: "operation-failed" })
+  })
+
+  it("refuses restore when extracted archive contains multiple files or an unsafe file", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    const sourceWorld = join(sourcePath, "Saves", "World.vcdbs")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    writeFileSync(sourceWorld, "world", "utf8")
+    const backupId = "backup-multi-entry"
+    const backupArchive = join(backupsFolder, "Worlds", `${backupId}.tar.gz`)
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
+    writeFileSync(backupArchive, "dummy", "utf8")
+    writeConfig([installation("install-a", sourcePath, "1.22.7", [{ id: backupId, date: 1, path: backupArchive, worldName: "World.vcdbs" }])])
+    const event = await createTrustedEvent()
+
+    // Multiple entries extracted
+    extractTarGz.mockImplementationOnce(async (_archivePath, outputPath) => {
+      writeFileSync(join(outputPath, "World.vcdbs"), "data", "utf8")
+      writeFileSync(join(outputPath, "Extra.vcdbs"), "extra", "utf8")
+    })
+    const multiResult = await handler("worlds-restore")(event, "install-a", backupId)
+    assert.deepEqual(multiResult, { ok: false, reason: "operation-failed" })
+
+    // Unsafe entry name
+    extractTarGz.mockImplementationOnce(async (_archivePath, outputPath) => {
+      writeFileSync(join(outputPath, "unsafe.txt"), "unsafe", "utf8")
+    })
+    const unsafeResult = await handler("worlds-restore")(event, "install-a", backupId)
+    assert.deepEqual(unsafeResult, { ok: false, reason: "operation-failed" })
+  })
+
+  it("fails mutating operations when path assertions reject", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    const targetPath = join(installationsRoot, "install-b")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    mkdirSync(join(targetPath, "Saves"), { recursive: true })
+    writeFileSync(join(sourcePath, "Saves", "World.vcdbs"), "world", "utf8")
+    writeConfig([installation("install-a", sourcePath), installation("install-b", targetPath)])
+    const event = await createTrustedEvent()
+
+    // Backup fails when assertManagedPath rejects on world.path
+    assertManagedPathSpy.mockImplementation(async (value: unknown, name?: string, options?: Parameters<typeof realAssertManagedPath>[2]) => {
+      if (name === "world") throw new TypeError("Unmanaged world path")
+      return realAssertManagedPath(value, name, options)
+    })
+    const backupFail = await handler("worlds-backup")(event, "install-a", "World.vcdbs")
+    assert.deepEqual(backupFail, { ok: false, reason: "operation-failed" })
+    assertManagedPathSpy.mockImplementation(realAssertManagedPath)
+
+    // Delete fails when assertManagedDeletionPath rejects on world.path
+    assertManagedDeletionPathSpy.mockRejectedValueOnce(new TypeError("Protected path"))
+    const deleteFail = await handler("worlds-delete")(event, "install-a", "World.vcdbs")
+    assert.deepEqual(deleteFail, { ok: false, reason: "operation-failed" })
+
+    // Transfer fails when assertManagedPath rejects on destination world
+    assertManagedPathSpy.mockImplementation(async (value: unknown, name?: string, options?: Parameters<typeof realAssertManagedPath>[2]) => {
+      if (name === "destination world") throw new TypeError("Unmanaged destination world")
+      return realAssertManagedPath(value, name, options)
+    })
+    const transferFail = await handler("worlds-transfer")(event, "install-a", "World.vcdbs", "install-b", "copy")
+    assert.deepEqual(transferFail, { ok: false, reason: "operation-failed" })
+    assertManagedPathSpy.mockImplementation(realAssertManagedPath)
   })
 
   it("refuses every mutating worlds channel while an installation is playing", async () => {
@@ -285,9 +392,7 @@ describe("worlds IPC handlers", () => {
     const first = handler("worlds-backup")(event, "install-a", "First.vcdbs")
     const second = handler("worlds-backup")(event, "install-b", "Second.vcdbs")
     await waitFor(() => compressionState.calls.length === 2)
-    compressionState.release.shift()?.()
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    compressionState.release.shift()?.()
+    while (compressionState.release.length) compressionState.release.shift()?.()
 
     const results = await Promise.all([first, second])
     expect(results.every((result) => (result as WorldBackupResult).ok)).toBe(true)

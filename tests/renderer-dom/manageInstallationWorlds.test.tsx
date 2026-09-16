@@ -107,4 +107,36 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     expect((within(reopenedDialog).getByRole("textbox") as HTMLInputElement).value).toBe("")
     expect((within(reopenedDialog).getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(true)
   })
+
+  it("disables world mutation buttons while the installation is playing", async () => {
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [{ ...anInstallation(), _playing: true }] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 1 }]
+        })),
+        delete: vi.fn(async () => ({ ok: true as const }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const backupButton = (await screen.findByRole("button", { name: "Back up this world" })) as HTMLButtonElement
+    const copyButton = (await screen.findByRole("button", { name: "Copy world" })) as HTMLButtonElement
+    const moveButton = (await screen.findByRole("button", { name: "Move world" })) as HTMLButtonElement
+    const deleteButton = (await screen.findByRole("button", { name: "Delete" })) as HTMLButtonElement
+    const restoreButton = (await screen.findByRole("button", { name: "Restore" })) as HTMLButtonElement
+
+    expect(backupButton.disabled).toBe(true)
+    expect(copyButton.disabled).toBe(true)
+    expect(moveButton.disabled).toBe(true)
+    expect(deleteButton.disabled).toBe(true)
+    expect(restoreButton.disabled).toBe(true)
+  })
 })

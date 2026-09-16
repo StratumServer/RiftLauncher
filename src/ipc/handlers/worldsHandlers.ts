@@ -166,6 +166,8 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
         return failure("operation-failed")
       }
     })
+  } catch {
+    return failure("operation-failed")
   } finally {
     lease.release()
   }
@@ -189,6 +191,8 @@ async function deleteWorld(installationId: unknown, requestedName: unknown): Pro
     } catch {
       return failure("operation-failed")
     }
+  } catch {
+    return failure("operation-failed")
   } finally {
     lease.release()
   }
