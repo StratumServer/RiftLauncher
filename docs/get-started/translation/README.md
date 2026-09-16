@@ -4,6 +4,8 @@ description: Guide for those that want to translate RiftLauncher to another lang
 
 # 🌐 Translation
 
+Translation happens on [Weblate](https://hosted.weblate.org/projects/riftlauncher/), where anyone with a GitHub account can help. This guide stays for people who prefer a pull request.
+
 RiftLauncher is developed using i18next which makes it translatable to any language.\
 In this guide you will see the 2 ways to translate RiftLauncher.
 
