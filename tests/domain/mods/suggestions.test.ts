@@ -196,6 +196,25 @@ describe("rankSuggestions", () => {
       [10, 20]
     )
   })
+
+  it("selects the explanation from the largest weighted contribution, not the raw signal", () => {
+    // categoryOverlap with 1 tag is 1/3 (raw ~0.333), weighted at 32 = 10.67.
+    // trending with trendingpoints 10 gives log10(11)/log10(1000) ~0.347 (raw ~0.347 > 0.333),
+    // but weighted at 24 = 8.33 (< 10.67).
+    // The weighted calculation must choose matching-tags, not trending.
+    const installedListing = listing(99, "Installed Mod", { modidstrs: ["installed-mod"], tags: ["qol"] })
+    const candidate = listing(1, "Candidate", { tags: ["qol"], trendingpoints: 10 })
+    const [ranked] = rankSuggestions({
+      catalog: [installedListing, candidate],
+      installation: installation("current", "1.22.7", [copy("installed-mod")]),
+      otherInstallations: [],
+      dismissedListingIds: [],
+      targetGameVersion: "1.22.7",
+      now: NOW
+    })
+    assert.ok(ranked)
+    assert.deepEqual(ranked.reason, { kind: "matching-tags", tags: ["qol"] })
+  })
 })
 
 describe("resolveSuggestions", () => {
@@ -278,6 +297,31 @@ describe("resolveSuggestions", () => {
       result.map(({ mod }) => mod.modid),
       catalog.map(({ modid }) => modid)
     )
+  })
+
+  it("caps resolution at MAX_SUGGESTION_DETAIL_LOOKUPS even with more compatible candidates available", async () => {
+    const catalog = Array.from({ length: MAX_SUGGESTION_DETAIL_LOOKUPS + 10 }, (_, index) => listing(index + 1, `Mod ${index + 1}`))
+    const ranked = rankSuggestions({
+      catalog,
+      installation: installation("current"),
+      otherInstallations: [],
+      dismissedListingIds: [],
+      targetGameVersion: "1.22.7",
+      now: NOW
+    })
+    const requested: number[] = []
+    const result = await resolveSuggestions({
+      candidates: ranked,
+      targetGameVersion: "1.22.7",
+      maxSuggestions: MAX_SUGGESTION_DETAIL_LOOKUPS,
+      getDetail: async (listingId) => {
+        requested.push(listingId)
+        return compatibleDetail(catalog[listingId - 1]!)
+      }
+    })
+
+    assert.equal(result.length, MAX_SUGGESTION_DETAIL_LOOKUPS)
+    assert.equal(requested.length, MAX_SUGGESTION_DETAIL_LOOKUPS)
   })
 
   it("does not resolve a detail whose releases are undeclared for the target version", async () => {

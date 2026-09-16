@@ -116,10 +116,10 @@ function reasonFor(signals: SuggestionSignals, matchingTags: readonly string[]):
   if (signals.otherInstallation) return { kind: "other-installation" }
 
   const weighted: Array<{ value: number; reason: SuggestionReason }> = [
-    { value: signals.categoryOverlap, reason: { kind: "matching-tags", tags: matchingTags } },
-    { value: signals.trending, reason: { kind: "trending" } },
-    { value: signals.popularity, reason: { kind: "popular" } },
-    { value: signals.recency, reason: { kind: "recent" } }
+    { value: signals.categoryOverlap * SUGGESTION_SCORE_WEIGHTS.categoryOverlap, reason: { kind: "matching-tags", tags: matchingTags } },
+    { value: signals.trending * SUGGESTION_SCORE_WEIGHTS.trending, reason: { kind: "trending" } },
+    { value: signals.popularity * SUGGESTION_SCORE_WEIGHTS.popularity, reason: { kind: "popular" } },
+    { value: signals.recency * SUGGESTION_SCORE_WEIGHTS.recency, reason: { kind: "recent" } }
   ]
   const winning = weighted.reduce((best, signal) => (signal.value > best.value ? signal : best), { value: 0, reason: { kind: "catalog" } })
   return winning.reason

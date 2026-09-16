@@ -43,10 +43,28 @@ export function useModSuggestions({
   const dismissedListingIdsRef = useRef(dismissedListingIds)
   dismissedListingIdsRef.current = dismissedListingIds
 
+  const installationsRef = useRef(installations)
+  installationsRef.current = installations
+  const installedModsRef = useRef(installedMods)
+  installedModsRef.current = installedMods
+
+  // Stable key for other installations: id, path, version. Does not change when _modsCount or unrelated fields mutate.
+  const otherInstallationsKey = useMemo(
+    () =>
+      installations
+        .filter((item) => item.id !== installationId)
+        .map((item) => `${item.id}:${item.path}:${item.version}`)
+        .join(";"),
+    [installations, installationId]
+  )
+
+  // Stable key for current installed mods: modid, version, enabled. Does not change on array recreation with identical mod list.
+  const installedModsKey = useMemo(() => (installedMods ? installedMods.map((mod) => `${mod.modid}:${mod.version}:${mod.enabled}`).join(";") : null), [installedMods])
+
   const refresh = useCallback(() => setRefreshNumber((number) => number + 1), [])
 
   useEffect(() => {
-    if (consent !== true || !installationId || !installationPath || !installationVersion || !installedMods) {
+    if (consent !== true || !installationId || !installationPath || !installationVersion || installedModsKey === null) {
       setSuggestions([])
       setLoading(false)
       return
@@ -70,7 +88,7 @@ export function useModSuggestions({
         }
 
         const otherInstallations: SuggestionInstallation[] = []
-        for (const other of installations) {
+        for (const other of installationsRef.current) {
           if (other.id === installationId) continue
           if (controller.signal.aborted) return
 
@@ -79,7 +97,7 @@ export function useModSuggestions({
           otherInstallations.push({ id: other.id, version: other.version, mods: scanned.mods })
         }
 
-        const current: SuggestionInstallation = { id: installationId, version: installationVersion, mods: installedMods }
+        const current: SuggestionInstallation = { id: installationId, version: installationVersion, mods: installedModsRef.current ?? [] }
         const ranked = rankSuggestions({
           catalog: catalog.payload as unknown as DownloadableModOnListType[],
           installation: current,
@@ -113,7 +131,7 @@ export function useModSuggestions({
     })()
 
     return (): void => controller.abort()
-  }, [consent, installationId, installationPath, installationVersion, installations, installedMods, getInstalledMods, queryMod, refreshNumber])
+  }, [consent, installationId, installationPath, installationVersion, otherInstallationsKey, installedModsKey, getInstalledMods, queryMod, refreshNumber])
 
   const visibleSuggestions = useMemo(() => {
     const dismissed = new Set(dismissedListingIds)

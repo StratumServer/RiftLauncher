@@ -83,7 +83,7 @@ function ModSuggestions({
   return (
     <section role="region" aria-labelledby={headingId} className="mx-auto w-full max-w-6xl">
       <GridWrapper>
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2">
+        <div className="relative mb-2 flex flex-wrap items-center justify-between gap-2 px-2">
           <div>
             <h2 id={headingId} className="text-lg font-bold">
               {t("features.mods.suggestionsTitle", { installation: installation.name })}

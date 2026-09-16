@@ -117,16 +117,21 @@ describe("configReducer: Mod suggestions", () => {
     assert.deepEqual(result.moddbVisibility, config.moddbVisibility)
   })
 
-  it("deduplicates dismissed listing ids and never evicts an older dismissal", () => {
-    const config = baseConfig({ dismissedModSuggestions: Array.from({ length: MAX_DISMISSED_MOD_SUGGESTIONS }, (_, index) => index + 1) })
+  it("deduplicates dismissed listing ids below the cap", () => {
+    const config = baseConfig({ dismissedModSuggestions: [12, 34] })
     const duplicate = configReducer(config, { type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION, payload: { listingId: 12 } })
-    const result = configReducer(duplicate, { type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION, payload: { listingId: MAX_DISMISSED_MOD_SUGGESTIONS + 1 } })
+    assert.deepEqual(duplicate.dismissedModSuggestions, [12, 34])
+    assert.equal(duplicate, config)
+  })
+
+  it("never exceeds the maximum dismissed listing ids cap and never evicts an older dismissal", () => {
+    const config = baseConfig({ dismissedModSuggestions: Array.from({ length: MAX_DISMISSED_MOD_SUGGESTIONS }, (_, index) => index + 1) })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION, payload: { listingId: MAX_DISMISSED_MOD_SUGGESTIONS + 1 } })
 
     assert.equal(result.dismissedModSuggestions.length, MAX_DISMISSED_MOD_SUGGESTIONS)
-    assert.equal(result.dismissedModSuggestions.includes(12), true)
     assert.equal(result.dismissedModSuggestions.includes(1), true)
     assert.equal(result.dismissedModSuggestions.includes(MAX_DISMISSED_MOD_SUGGESTIONS + 1), false)
-    assert.equal(result.installations, config.installations)
+    assert.equal(result, config)
   })
 })
 

@@ -195,4 +195,24 @@ describe("Mod suggestions", () => {
     expect(within(dialog).getByText("Suggestion Candidate")).toBeTruthy()
     expect(downloadOnPath).not.toHaveBeenCalled()
   }, 15_000)
+
+  it("mounts with consent and 30 candidates runs the pipeline once and caps detail lookups at 20", async () => {
+    const candidates30 = Array.from({ length: 30 }, (_, index) => ({
+      ...CANDIDATE,
+      modid: 200 + index,
+      assetid: 200 + index,
+      name: `Candidate ${index + 1}`,
+      modidstrs: [`candidate${index + 1}`]
+    }))
+    const { queryURL } = mount(true, candidates30)
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    await within(section).findByRole("button", { name: "Candidate 1, Not installed" })
+
+    const catalogRequests = (): typeof queryURL.mock.calls => queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))
+    const detailRequests = (): typeof queryURL.mock.calls => queryURL.mock.calls.filter(([url]) => url.includes("/api/mod/"))
+
+    await waitFor(() => expect(catalogRequests()).toHaveLength(1))
+    expect(detailRequests()).toHaveLength(20)
+  }, 15_000)
 })
