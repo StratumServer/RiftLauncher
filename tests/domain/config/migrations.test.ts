@@ -9,6 +9,7 @@ import {
   FIRST_INTEGER_CONFIG_SCHEMA,
   FLOAT_ERA_CONFIG_SCHEMA,
   floatMarkerToIntegerSchema,
+  addModSuggestionsPreferences,
   legacyGameVersionId,
   MAX_CONFIG_SCHEMA,
   migrateConfigDocument,
@@ -96,6 +97,22 @@ describe("clampConfigSchema", () => {
   })
 })
 
+describe("addModSuggestionsPreferences", () => {
+  it("migrates a config written before suggestions existed without inventing consent", () => {
+    const before = { schemaVersion: 5, favMods: [12] }
+    const after = addModSuggestionsPreferences.migrate(before) as Record<string, unknown>
+
+    assert.deepEqual(after, { schemaVersion: 5, favMods: [12], modSuggestionsConsent: null, dismissedModSuggestions: [] })
+    assert.deepEqual(before, { schemaVersion: 5, favMods: [12] })
+  })
+
+  it("keeps valid consent and dismissal history while the migration fills nothing missing", () => {
+    const after = addModSuggestionsPreferences.migrate({ modSuggestionsConsent: true, dismissedModSuggestions: [9, 10] })
+
+    assert.deepEqual(after, { modSuggestionsConsent: true, dismissedModSuggestions: [9, 10] })
+  })
+})
+
 describe("floatMarkerToIntegerSchema", () => {
   it("steps from the float era to the first integer schema", () => {
     assert.equal(floatMarkerToIntegerSchema.fromSchema, FLOAT_ERA_CONFIG_SCHEMA)
@@ -153,8 +170,8 @@ describe("migrateConfigDocument on real configs", () => {
     const repeatedDoc = repeated.doc as { gameVersions: Array<Record<string, unknown>> }
 
     assert.equal(result.outcome, "migrated")
-    assert.equal(result.schema, 5)
-    assert.deepEqual(result.applied.at(-1), { fromSchema: 4, toSchema: 5 })
+    assert.equal(result.schema, 6)
+    assert.deepEqual(result.applied.at(-1), { fromSchema: 5, toSchema: 6 })
     assert.equal(doc.gameVersions[0]!.label, "1.22.7")
     assert.equal(typeof doc.gameVersions[0]!.id, "string")
     assert.equal(doc.gameVersions[0]!.id, repeatedDoc.gameVersions[0]!.id, "legacy ids are deterministic")
@@ -262,7 +279,8 @@ describe("migrateConfigDocument on real configs", () => {
       { fromSchema: 1, toSchema: 2 },
       { fromSchema: 2, toSchema: 3 },
       { fromSchema: 3, toSchema: 4 },
-      { fromSchema: 4, toSchema: 5 }
+      { fromSchema: 4, toSchema: 5 },
+      { fromSchema: 5, toSchema: 6 }
     ])
 
     const doc = result.doc as Record<string, unknown>
@@ -328,7 +346,8 @@ describe("migrateConfigDocument on real configs", () => {
         [FLOAT_ERA_CONFIG_SCHEMA, FIRST_INTEGER_CONFIG_SCHEMA],
         [2, 3],
         [3, 4],
-        [4, 5]
+        [4, 5],
+        [5, 6]
       ]
     )
     assert.equal(CONFIG_MIGRATIONS[CONFIG_MIGRATIONS.length - 1]?.toSchema, CURRENT_CONFIG_SCHEMA)

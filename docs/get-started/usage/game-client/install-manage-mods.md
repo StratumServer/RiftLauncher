@@ -19,6 +19,18 @@ Installing mods is sooo easy. Just go to the **Mods** page, click on the mod you
 
 This will install the **Mod** on the **Installation** you've selected on the left menu.
 
+### Suggested Mods
+
+The **Mods** page can offer a small row of compatible Mods above the normal catalog. The first time
+you use it, RiftLauncher asks separately for permission to check the ModDB catalog; it does not
+turn on just because you answered another ModDB question. Each suggestion explains why it was
+shown, such as being enabled in another compatible Installation, matching categories, trending,
+popular, or recently updated.
+
+Use **Refresh suggestions** to check again, or **Dismiss suggestion** to hide a listing. **Add all
+suggestions** opens the same confirmation table used by the regular multi-select install flow;
+nothing is downloaded until you confirm the table.
+
 Check out this little guide explaining how to do it:
 
 {% embed url="https://www.youtube.com/watch?v=aKqQLtS2WF0" %}
