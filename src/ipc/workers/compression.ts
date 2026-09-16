@@ -14,7 +14,7 @@
  */
 
 import fse from "fs-extra"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import * as tar from "tar"
 
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
@@ -124,7 +124,7 @@ export function assertRoomForArchive(outputPath: string, requiredBytes: number, 
 }
 
 export interface CompressionOptions {
-  /** Folder whose contents are archived. Its own name is not kept. */
+  /** Folder whose contents are archived, or one plain file archived by its basename. */
   inputPath: string
   /** Folder the archive is written into. Created when missing. */
   outputPath: string
@@ -162,7 +162,9 @@ export async function runCompression(options: CompressionOptions): Promise<void>
   // under the same pair, which is what keeps the two ends honest.
   const oversized = describeOversizedBackupSource(totalBytes, MAX_BACKUP_TOTAL_BYTES)
   if (oversized) throw new Error(oversized)
-  if (!fse.existsSync(inputPath) || !fse.lstatSync(inputPath).isDirectory()) throw new Error("Compression source must be a directory")
+  if (!fse.existsSync(inputPath)) throw new Error("Compression source does not exist")
+  const sourceStats = fse.lstatSync(inputPath)
+  if (!sourceStats.isDirectory() && !sourceStats.isFile()) throw new Error("Compression source is unsafe")
   if (!fse.existsSync(outputPath)) fse.mkdirSync(outputPath, { recursive: true })
   if (fse.lstatSync(outputPath).isSymbolicLink() || !fse.lstatSync(outputPath).isDirectory()) throw new Error("Compression destination is unsafe")
   // After the destination exists, since that is the path whose filesystem is asked.
@@ -174,7 +176,9 @@ export async function runCompression(options: CompressionOptions): Promise<void>
     if (archiveStats.isSymbolicLink() || archiveStats.isDirectory()) throw new Error("Compression archive target is unsafe")
   }
 
-  const entries = fse.readdirSync(inputPath)
+  const sourceIsFile = sourceStats.isFile()
+  const archiveCwd = sourceIsFile ? dirname(inputPath) : inputPath
+  const entries = sourceIsFile ? [basename(inputPath)] : fse.readdirSync(inputPath)
   let writtenBytes = 0
   let lastReportedProgress = 0
 
@@ -182,7 +186,7 @@ export async function runCompression(options: CompressionOptions): Promise<void>
     await tar.create(
       {
         file: archivePath,
-        cwd: inputPath,
+        cwd: archiveCwd,
         gzip: { level: compressionLevel },
         portable: true,
         // Two names for one inode would otherwise become a Link entry the

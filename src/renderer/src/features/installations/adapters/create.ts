@@ -19,7 +19,7 @@ export function toFoldersInUse({ backupsFolder, installations, gameVersions }: F
 
 /** Turns the built record into the full config shape, with the runtime flags a fresh installation starts without. */
 export function toInstallationType(installation: CreatedInstallation): InstallationType {
-  return { ...installation, _modsCount: 0 }
+  return { ...installation, worldBackups: [], _modsCount: 0 }
 }
 
 export interface InstallationFailureFeedback {

@@ -18,7 +18,7 @@
  */
 
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 5
+export const CURRENT_CONFIG_SCHEMA = 6
 
 /**
  * First schema expressed as an integer.
@@ -339,8 +339,22 @@ export const addGameVersionIdentity: ConfigMigration = {
   }
 }
 
+/** Gives every installation its own durable world-backup record collection. */
+export const addWorldBackupRecords: ConfigMigration = {
+  fromSchema: 5,
+  toSchema: 6,
+  migrate(doc: unknown): unknown {
+    if (!isRecord(doc) || !Array.isArray(doc.installations)) return { ...(doc as Record<string, unknown>) }
+    const installations = doc.installations.map((entry) => {
+      if (!isRecord(entry)) return entry
+      return Array.isArray(entry.worldBackups) ? entry : { ...entry, worldBackups: [] }
+    })
+    return { ...doc, installations }
+  }
+}
+
 /** Every migration the launcher knows, lowest schema first. */
-export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions, singleAccountToAccountList, addGameVersionIdentity]
+export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions, singleAccountToAccountList, addGameVersionIdentity, addWorldBackupRecords]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {
   return new Map(migrations.map((migration) => [migration.fromSchema, migration]))

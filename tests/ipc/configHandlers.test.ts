@@ -157,6 +157,73 @@ describe("SAVE_CONFIG", () => {
     assert.equal(reread.defaultInstallationsFolder, join(appDataFolder, "RiftLauncherInstallations"))
   })
 
+  it("reconciles worldBackups from current config when the renderer saves an installation", async () => {
+    const event = await createTrustedEvent()
+    const validPath = join(appDataFolder, "RiftLauncherInstallations", "test-install")
+    mkdirSync(validPath, { recursive: true })
+
+    const existingBackup: WorldBackupType = {
+      id: "backup-1",
+      worldName: "MyWorld.vcdbs",
+      path: join(validPath, "backup-1.tar.gz"),
+      date: 123456789
+    }
+
+    const initialConfig = minimalConfig({
+      installations: [
+        {
+          id: "inst-1",
+          name: "Inst 1",
+          icon: "",
+          path: validPath,
+          version: "1.20.0",
+          startParams: "",
+          backupsLimit: 3,
+          backupsAuto: false,
+          compressionLevel: 4,
+          backups: [],
+          worldBackups: [existingBackup],
+          lastTimePlayed: -1,
+          totalTimePlayed: 0,
+          mesaGlThread: false,
+          envVars: ""
+        }
+      ] as unknown as ConfigType["installations"]
+    })
+    await saveConfigHandler()(event, initialConfig)
+
+    // Renderer dispatches SAVE_CONFIG with empty worldBackups array
+    const rendererConfig = minimalConfig({
+      installations: [
+        {
+          id: "inst-1",
+          name: "Inst 1 Renamed",
+          icon: "",
+          path: validPath,
+          version: "1.20.0",
+          startParams: "",
+          backupsLimit: 3,
+          backupsAuto: false,
+          compressionLevel: 4,
+          backups: [],
+          worldBackups: [],
+          lastTimePlayed: -1,
+          totalTimePlayed: 0,
+          mesaGlThread: false,
+          envVars: ""
+        }
+      ] as unknown as ConfigType["installations"]
+    })
+
+    const result = await saveConfigHandler()(event, rendererConfig)
+    assert.deepEqual(result, { ok: true })
+
+    const reread = await getConfigHandler()(event)
+    const install = reread.installations.find((i) => i.id === "inst-1")
+    assert.ok(install)
+    assert.deepEqual(install.worldBackups, [existingBackup])
+  })
+
   // chmod 0o500 does not stop a write on Windows: NTFS enforces read-only
   // through the file attribute, not POSIX write bits on the containing folder.
   it.skipIf(process.platform === "win32")("reports write-failed when the config file cannot be written", async () => {

@@ -122,6 +122,13 @@ declare global {
       /** Drops one saved account's secrets, by its `playerUid`. */
       removeAccount: (accountId: string) => Promise<boolean>
     }
+    worldsManager: {
+      list: (installationId: string) => Promise<WorldListResult>
+      backup: (installationId: string, worldName: string) => Promise<WorldBackupResult>
+      restore: (installationId: string, backupId: string) => Promise<WorldOperationResult>
+      delete: (installationId: string, worldName: string) => Promise<WorldOperationResult>
+      transfer: (sourceId: string, worldName: string, targetId: string, mode: "copy" | "move") => Promise<WorldTransferResult>
+    }
   }
 
   interface Window {
