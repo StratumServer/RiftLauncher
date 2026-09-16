@@ -158,7 +158,7 @@ function ListInslallations(): JSX.Element {
                         {isVersionMissing && <PiWarningDuotone className="shrink-0" />}
                         {gameVersion?.label ?? installation.version}
                       </p>
-                      <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount as number })}</p>
+                      <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount ?? 0 })}</p>
                     </div>
 
                     <ThinSeparator />
