@@ -8,6 +8,17 @@ module.exports = {
   },
   overrides: [
     {
+      // @electron-toolkit/eslint-config-ts turns explicit-function-return-type off for plain
+      // *.js (see its eslint-recommended.js), which is why scripts/fix-native-deps.js and its
+      // siblings never had to annotate every function. The headless tooling is .mjs, for the
+      // top-level await its CDP driver and seed script both need, so it falls outside that
+      // built-in carve-out and needs the same relief spelled out here instead.
+      files: ["scripts/headless/**/*.mjs"],
+      rules: {
+        "@typescript-eslint/explicit-function-return-type": "off"
+      }
+    },
+    {
       // src/domain holds pure business logic. It reaches the outside world only
       // through the ports in src/domain/ports.ts, never through a host API.
       files: ["src/domain/**/*.ts"],
