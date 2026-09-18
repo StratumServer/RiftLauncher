@@ -13,15 +13,23 @@ const FIXED_NOW = new Date(2025, 7, 16, 1, 20, 0).getTime()
 /** Everything the fakes wrote down, in the order it happened. */
 let trace: string[] = []
 
-function fakeFileSystem(options: { exists?: boolean; removals?: Record<string, boolean> } = {}): FileSystem {
+/**
+ * `missing` holds archive paths that are no longer on disk: the host refuses to
+ * delete a path it cannot find (assertManagedDeletionPath in ipc/pathPolicy.ts
+ * runs with allowMissing false), so those answer false to both calls.
+ */
+function fakeFileSystem(options: { exists?: boolean; removals?: Record<string, boolean>; missing?: readonly string[] } = {}): FileSystem {
   const removals = options.removals ?? {}
+  const missing = new Set(options.missing ?? [])
   return {
     exists: async (path: string): Promise<boolean> => {
       trace.push(`exists:${path}`)
+      if (missing.has(path)) return false
       return options.exists ?? true
     },
     remove: async (path: string): Promise<boolean> => {
       trace.push(`remove:${path}`)
+      if (missing.has(path)) return false
       return removals[path] ?? true
     },
     move: async (from: string, to: string): Promise<boolean> => {
@@ -234,6 +242,25 @@ describe("makeInstallationBackup pruning", () => {
     assert.deepEqual(
       trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
       ["remove:/backups/b4.tar.gz", "deleted:b4", "remove:/backups/b2.tar.gz", "deleted:b2"]
+    )
+  })
+
+  it("makes the backup when the oldest record's archive is already gone from disk", async () => {
+    // Reported on Discord: six records, the two oldest deleted from the Backups
+    // folder by hand, so the player counted four archives. The prune could not
+    // remove a file that was not there and the whole backup was refused.
+    const installation = snapshot({ backupsLimit: 6, backups: [backup("b1"), backup("b2"), backup("b3"), backup("b4"), backup("b5"), backup("b6")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/backups/b5.tar.gz", "/backups/b6.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    // The stale record comes off with the archives: reporting it as deleted is
+    // what drops it from the installation, so it stops taking a slot.
+    assert.deepEqual(result.deletedBackupIds, ["b6"])
+    assert.equal(
+      trace.some((entry) => entry.startsWith("compress:")),
+      true
     )
   })
 

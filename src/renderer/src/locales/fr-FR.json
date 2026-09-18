@@ -724,7 +724,7 @@
       "compressUnsafeEntry": "Aucune sauvegarde faite : le dossier de cette installation contient un lien symbolique ou un fichier spécial qui ne peut pas être archivé.",
       "compressTooManyFiles": "Aucune sauvegarde faite : le dossier de cette installation contient trop de fichiers à archiver.",
       "compressWriteFailed": "Aucune sauvegarde faite : l'archive de sauvegarde n'a pas pu être écrite. Vérifiez que le dossier des sauvegardes est sur un disque accessible en écriture et qu'il y reste de la place.",
-      "pruneFailed": "Aucune sauvegarde faite : une ancienne sauvegarde n'a pas pu être retirée pour faire de la place à la nouvelle.",
+      "pruneFailed": "Aucune sauvegarde faite : un ancien fichier de sauvegarde n'a pas pu être supprimé pour faire de la place à la nouvelle. Vérifiez qu'il n'est pas ouvert dans un autre programme, puis réessayez.",
       "errorRestoringBackup": "La sauvegarde n'a pas pu être restaurée, votre installation est restée telle quelle.",
       "restoreLeftDataAside": "La sauvegarde n'a pas pu être restaurée et vos anciennes données d'installation se trouvent maintenant dans {{path}}. Remettez ce dossier en place vous-même avant de jouer.",
       "backupsAmount": "Nombre maximum",

@@ -23,7 +23,7 @@ export type DeleteInstallationResult =
   | { ok: false; reason: DeleteInstallationFailure }
 
 export interface DeleteInstallationPorts {
-  fileSystem: Pick<FileSystem, "remove">
+  fileSystem: Pick<FileSystem, "exists" | "remove">
 }
 
 export interface DeleteInstallationInput {
