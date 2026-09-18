@@ -117,6 +117,32 @@ sudo ./dotnet-install.sh --channel 8.0 --install-dir /usr/lib/dotnet
 sudo ./dotnet-install.sh --channel 10.0 --install-dir /usr/lib/dotnet
 ```
 
+`dotnet-install.sh` only adds `/usr/lib/dotnet` to the current shell's `PATH`, and that's gone the moment you close the terminal. It doesn't matter anyway: Vintage Story starts through its own .NET apphost, not through a shell, and the apphost never looks at `PATH`. It checks `DOTNET_ROOT` first, then the location registered in `/etc/dotnet/install_location`, then falls back to its compiled-in default (`/usr/share/dotnet/` on Linux x64). `dotnet-install.sh` sets none of those, so register the install yourself:
+
+```sh
+echo /usr/lib/dotnet | sudo tee /etc/dotnet/install_location
+```
+
+This is the file the game's .NET host actually reads, so without it the runtimes you just installed stay invisible to Vintage Story.
+
+```sh
+sudo ln -s /usr/lib/dotnet/dotnet /usr/bin/dotnet
+```
+
+This just puts `dotnet` itself on your `PATH`, which you need for the check below and for any other tool that expects `dotnet` to exist.
+
+**Check it**
+
+```sh
+dotnet --list-runtimes
+```
+
+should list a `Microsoft.NETCore.App` entry for whichever major version, 7, 8 or 10, the game version you play needs.
+
+{% hint style="warning" %}
+If RiftLauncher says a .NET runtime is missing and a copy of the game ran fine before, that older copy most likely shipped its own runtime alongside the game files. The versions RiftLauncher lists as installed come from the system-wide .NET install above, not from a bundled copy, so the two don't tell you the same thing. The exact locations the .NET host searched and didn't find anything are printed in `verbose.log` if you want to see them. If your runtime lives somewhere `/etc/dotnet/install_location` doesn't point to, you can also set `DOTNET_ROOT` for a single Installation from its **ENV variables** field in the Advanced section, instead of changing the system-wide registration.
+{% endhint %}
+
 {% endstep %}
 
 {% step %}
@@ -164,6 +190,8 @@ You'll have to look up how to do this for your graphics card and your Linux dist
 ```sh
 sudo pacman -S dotnet-runtime-7.0 dotnet-runtime-8.0 dotnet-runtime glibc openal opengl-driver mono
 ```
+
+Unlike the script-based install above, there's nothing to register by hand here: Arch's `dotnet-runtime` packages write `/etc/dotnet/install_location` themselves as part of installation.
 
 {% endstep %}
 {% endstepper %}
