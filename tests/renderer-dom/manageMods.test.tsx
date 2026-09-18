@@ -17,6 +17,8 @@ const ALPHA_LOGO = "https://moddbcdn.vintagestory.at/alpha.png"
 const BETA_LOGO = "https://moddbcdn.vintagestory.at/beta.png"
 const DISABLE_TITLE = "Disable this Mod: it stays installed, Vintage Story just won't load it"
 const ENABLE_TITLE = "Enable this Mod: Vintage Story will load it again"
+// The tooltip/accessible name stays the full sentence (#loneFolderIcon); only the visible label is new.
+const OPEN_FOLDER_TITLE = "Open the folder where the Mods for this Installation are"
 
 function anInstallation(servers?: ServerBookmarkType[]): InstallationType {
   return {
@@ -566,6 +568,35 @@ describe("ManageMods: the action bar after #431", () => {
     await user.click(await screen.findByRole("option", { name: "Ann" }))
 
     expect(screen.getByText("Filters (1)")).toBeTruthy()
+  })
+
+  /**
+   * The folder button used to be an icon alone, styled ghost and sized to just fit it: the one
+   * control on the bar with no visible label, sitting apart from Update all, No profile and
+   * Modpack. It gets the same shape as those neighbours now, in the same group so spacing matches.
+   */
+  it("labels the folder button like its neighbours, in the same group as Modpack", async () => {
+    renderManageMods()
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+
+    const modpackTrigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
+    const folderButton = screen.getByTitle(OPEN_FOLDER_TITLE) as HTMLButtonElement
+
+    // A short visible label next to the icon, like every other button on the bar.
+    expect(within(folderButton).getByText("Open folder")).toBeTruthy()
+
+    // Same variant and size as Modpack, and the same immediate group, so spacing matches.
+    expect(folderButton.className).toBe(modpackTrigger.className)
+    expect(folderButton.parentElement).toBe(modpackTrigger.parentElement)
+
+    // The tooltip and the accessible name stay exactly what they were.
+    expect(folderButton.title).toBe(OPEN_FOLDER_TITLE)
+    expect(folderButton.getAttribute("aria-label")).toBe(OPEN_FOLDER_TITLE)
+
+    // Still one Tab stop, reachable and operable from the keyboard.
+    folderButton.focus()
+    expect(document.activeElement).toBe(folderButton)
   })
 })
 
