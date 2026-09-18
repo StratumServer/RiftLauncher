@@ -316,6 +316,7 @@
       "exportModpackSuccess": "整合包导出成功。",
       "exportModpackError": "整合包导出失败。详情见日志。",
       "openModsFolder": "打开该安装存放模组的文件夹",
+      "openModsFolderButton": "打开文件夹",
       "importModpack": "导入整合包文件，安装其中的所有模组",
       "importModpackButton": "导入整合包",
       "importModpackTitle": "导入整合包",
