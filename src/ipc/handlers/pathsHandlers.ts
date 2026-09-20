@@ -28,6 +28,8 @@ import innoExtractWorker from "@src/ipc/workers/innoExtractWorker?modulePath"
 import changePermsWorker from "@src/ipc/workers/changePermsWorker?modulePath"
 import downloadWorkerPath from "@src/ipc/workers/downloadWorker?modulePath"
 
+const LOG_PREFIX = "[back] [ipc] [ipc/handlers/pathsHandlers.ts]"
+
 const WORKER_TIMEOUTS_MS: Record<string, number> = {
   DOWNLOAD_ON_PATH: 45 * 60 * 1_000,
   EXTRACT_ON_PATH: 30 * 60 * 1_000,
@@ -248,8 +250,8 @@ function runTrackedWorker<T>(
     }
 
     const onError = (error: Error): void => {
-      logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operation}] Worker error.`)
-      logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operation}] ${getErrorMessage(error)}`)
+      logMessage("error", `${LOG_PREFIX} [${operation}] Worker error.`)
+      logMessage("debug", `${LOG_PREFIX} [${operation}] ${getErrorMessage(error)}`)
       rejectOnce(error)
     }
 
@@ -277,12 +279,12 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH, async (event, pathValue: 
 
   try {
     const safePath = await assertManagedDeletionPath(pathValue)
-    logMessage("info", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DELETE_PATH] Deleting an approved path.")
+    logMessage("info", `${LOG_PREFIX} [DELETE_PATH] Deleting an approved path.`)
     await fse.remove(safePath)
     return true
   } catch (err) {
-    logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DELETE_PATH] Error deleting path.")
-    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DELETE_PATH] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [DELETE_PATH] Error deleting path.`)
+    logMessage("debug", `${LOG_PREFIX} [DELETE_PATH] ${getErrorMessage(err)}`)
     return false
   }
 })
@@ -298,12 +300,12 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.MOVE_PATH, async (event, fromPath: str
     if (safeFromPath === safeToPath) throw new TypeError("Source and destination paths must differ")
     if (await fse.pathExists(safeToPath)) throw new TypeError("Destination path already exists")
 
-    logMessage("info", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] Moving an approved path.")
+    logMessage("info", `${LOG_PREFIX} [MOVE_PATH] Moving an approved path.`)
     await fse.move(safeFromPath, safeToPath)
     return true
   } catch (err) {
-    logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] Error moving path.")
-    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [MOVE_PATH] Error moving path.`)
+    logMessage("debug", `${LOG_PREFIX} [MOVE_PATH] ${getErrorMessage(err)}`)
     return false
   }
 })
@@ -364,8 +366,8 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
     await fse.ensureDir(await assertManagedPath(pathValue, "path", { allowMissing: true }))
     return true
   } catch (err) {
-    logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [ENSURE_PATH_EXISTS] Error ensuring path.")
-    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [ENSURE_PATH_EXISTS] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] Error ensuring path.`)
+    logMessage("debug", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] ${getErrorMessage(err)}`)
     return false
   }
 })
@@ -390,7 +392,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   const optimumManifest = expectedSha256 ? await getCachedOptimumManifest() : undefined
   const maxBytes = optimumManifest?.archive.size
 
-  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DOWNLOAD_ON_PATH] [${safeId}] Starting a bounded download.`)
+  logMessage("info", `${LOG_PREFIX} [DOWNLOAD_ON_PATH] [${safeId}] Starting a bounded download.`)
   const downloadedPath = await downloadConcurrency.run(() => {
     sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS, safeId, 0)
     return runTrackedWorker(
@@ -457,7 +459,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
 
   const isBackupArchive = await isLauncherBackupArchive(safeFilePath)
 
-  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
+  logMessage("info", `${LOG_PREFIX} [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
   await archiveConcurrency.run(() => {
     sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
     return runTrackedWorker(
@@ -524,7 +526,7 @@ async function extractInstallerPayload(
   safeOutputPath: string,
   shouldDeleteInstaller: boolean
 ): Promise<"extracted" | "failed" | "format-refused"> {
-  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracting the installer payload instead of running it.`)
+  logMessage("info", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Extracting the installer payload instead of running it.`)
 
   try {
     return await archiveConcurrency.run(() => {
@@ -543,18 +545,18 @@ async function extractInstallerPayload(
         (message) => {
           if (message.verdict === "format-refused") {
             const reason = typeof message.reason === "string" ? message.reason : "no reason given"
-            logMessage("warn", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
+            logMessage("warn", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
             return "format-refused"
           }
           if (message.verdict !== "extracted") throw new Error("Installer payload extraction returned an unknown verdict")
-          logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
+          logMessage("info", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
           return "extracted"
         }
       )
     })
   } catch (err) {
-    logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Installer payload extraction failed.`)
-    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Installer payload extraction failed.`)
+    logMessage("debug", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
     return "failed"
   }
 }
@@ -587,15 +589,12 @@ function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath:
       const installer = spawn(exePath, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/NOICONS", `/DIR=${safeOutputPath}`], { shell: false, windowsHide: true })
 
       const timeoutHandle = setTimeout(() => {
-        logMessage(
-          "error",
-          `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Timed out after ${RUN_INSTALLER_TIMEOUT_MS}ms waiting on the installer; killing its process tree. reason=installer-timed-out`
-        )
+        logMessage("error", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Timed out after ${RUN_INSTALLER_TIMEOUT_MS}ms waiting on the installer; killing its process tree. reason=installer-timed-out`)
         attemptInstallerTreeKill(
           installer.pid,
           process.platform,
           (command, args) => spawn(command, args, { shell: false, windowsHide: true }),
-          (level, message) => logMessage(level, `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${message}`)
+          (level, message) => logMessage(level, `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] ${message}`)
         )
         finish("timed-out")
       }, RUN_INSTALLER_TIMEOUT_MS)
@@ -610,14 +609,14 @@ function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath:
       }
 
       installer.on("error", (error) => {
-        logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Error launching installer.`)
-        logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(error)}`)
+        logMessage("error", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Error launching installer.`)
+        logMessage("debug", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] ${getErrorMessage(error)}`)
         finish("failed")
       })
       installer.on("close", (code) => finish(code === 0 ? "installed" : "failed"))
     } catch (err) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Installer setup failed.`)
-      logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
+      logMessage("error", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Installer setup failed.`)
+      logMessage("debug", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
       resolvePromise(spawnInstallerOutcomeToResult("failed"))
     }
   })
@@ -633,7 +632,7 @@ ipcMain.handle(
     const safeOutputFileName = assertSafeFileName(outputFileName, "output file name")
     const safeCompressionLevel = assertInteger(compressionLevel, "compression level", 0, 9)
 
-    logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
+    logMessage("info", `${LOG_PREFIX} [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
     await archiveConcurrency.run(() => {
       sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS, safeId, 0)
       return runTrackedWorker(
@@ -668,7 +667,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS, async (event, paths: str
  * the log afterwards needs, and it is the half that was missing entirely.
  */
 function refuseIconCopy(reason: CustomIconCopyFailureReason, cause: unknown): { status: false; reason: CustomIconCopyFailureReason } {
-  logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COPY_TO_ICONS] Refused an icon (${reason}): ${cause instanceof Error ? cause.message : String(cause)}.`)
+  logMessage("debug", `${LOG_PREFIX} [COPY_TO_ICONS] Refused an icon (${reason}): ${cause instanceof Error ? cause.message : String(cause)}.`)
   return { status: false, reason }
 }
 
