@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url"
 import semver from "semver"
 
 import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
+import { isRecord } from "../domain/records"
+
+// Re-exported unchanged so the host code and the tests that reach for it here keep doing so.
+export { isRecord }
 
 export const MAX_IPC_STRING_LENGTH = 8_192
 export const MAX_PATH_LENGTH = 4_096
@@ -119,10 +123,6 @@ export const BROWSER_URL_RULES: readonly UrlRule[] = [
   { hostname: "wiki.vintagestory.at", pathPrefixes: ["/"] },
   { hostname: "www.youtube.com", pathPrefixes: ["/watch"] }
 ]
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 export function assertString(value: unknown, name: string, maxLength = MAX_IPC_STRING_LENGTH): string {
   if (typeof value !== "string" || value.length === 0 || value.length > maxLength || value.includes("\0")) {

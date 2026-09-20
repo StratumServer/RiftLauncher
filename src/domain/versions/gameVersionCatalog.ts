@@ -5,6 +5,8 @@
  * Shape: { [version]: { [platform]: { filename, filesize, md5, urls: { cdn, local }, ... } } }
  */
 
+import { isRecord } from "../records"
+
 /** Where one build is downloaded from, tolerant of every field beyond the one the installer reads. */
 export interface RawPlatformUrls extends Record<string, unknown> {
   cdn: string
@@ -28,10 +30,6 @@ export type RawVersions = Record<string, RawVersion>
 
 /** The four keys the install picker reads. Any other key on a row is carried through unchecked. */
 const PLATFORM_KEYS = new Set(["windows", "linux", "mac-arm64", "mac-x64"])
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 /**
  * Reads one platform's build.

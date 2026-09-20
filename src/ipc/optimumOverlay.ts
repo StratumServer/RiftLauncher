@@ -26,6 +26,7 @@ import { join, relative, sep } from "node:path"
 
 import { type OptimumManifest } from "@domain/optimum/manifest"
 import { OPTIMUM_STATE_FOLDER } from "@domain/optimum/plan"
+import { isRecord } from "@domain/records"
 
 /** The one file the archive carries that `files[]` never names: the walk that built the list ran before it was written. */
 const UNLISTED_ARCHIVE_FILE = "optimum-manifest.json"
@@ -34,10 +35,6 @@ const OPTIMUM_STATE_MANIFEST = join(OPTIMUM_STATE_FOLDER, "manifest.json")
 
 /** The file the patch leaves at the game root, which the launcher's own rollback has to take back out. */
 export const OPTIMUM_CONTRACTS_ASSEMBLY = "Optimum.Api.Contracts.dll"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 /** Streams a file through SHA-256, so a 200 MB assembly is never held in memory to be hashed. */
 export function sha256File(path: string): Promise<string> {
