@@ -15,6 +15,8 @@
  * the notes players will read rather than against invented input.
  */
 
+import semver from "semver"
+
 import { isPrereleaseVersion } from "./betaUpdates"
 
 export interface WhatsNewBlock {
@@ -266,32 +268,6 @@ function stripVersionPrefix(version: string): string {
   return version.trim().replace(/^v/i, "")
 }
 
-/** One dot-separated run of a version, numeric parts included, and its prerelease identifiers (if any), split the same way semver does. */
-function parseWhatsNewVersion(version: string): { release: number[]; prerelease: string[] | null } {
-  const bare = stripVersionPrefix(version).split("+", 1)[0] ?? ""
-  const dashIndex = bare.indexOf("-")
-  const releasePart = dashIndex === -1 ? bare : bare.slice(0, dashIndex)
-  const prereleasePart = dashIndex === -1 ? null : bare.slice(dashIndex + 1)
-
-  return {
-    release: releasePart.split(".").map((part) => Number(part) || 0),
-    prerelease: prereleasePart && prereleasePart.length > 0 ? prereleasePart.split(".") : null
-  }
-}
-
-/** Compares two prerelease identifiers the way semver precedence does: numeric identifiers sort as numbers, and a numeric one always sorts before an alphanumeric one. */
-function compareIdentifiers(a: string, b: string): number {
-  const numA = Number(a)
-  const numB = Number(b)
-  const aIsNumeric = a !== "" && Number.isFinite(numA)
-  const bIsNumeric = b !== "" && Number.isFinite(numB)
-
-  if (aIsNumeric && bIsNumeric) return numA - numB
-  if (aIsNumeric) return -1
-  if (bIsNumeric) return 1
-  return a < b ? -1 : a > b ? 1 : 0
-}
-
 /**
  * Orders two version strings, prerelease suffix included: `1.7.0-beta.9` sorts before
  * `1.7.0-beta.10`, which sorts before `1.7.0`.
@@ -299,33 +275,23 @@ function compareIdentifiers(a: string, b: string): number {
  * src/domain/versionNumbers.ts's compareVersions deliberately drops the prerelease suffix instead
  * of ranking it, which is right for the game catalog and the ModDB but wrong here: selecting the
  * releases between two beta versions is the one thing in the launcher that does have to decide
- * whether beta.10 outranks beta.9. Written by hand rather than by adding a `semver` dependency to
- * this file, the same way betaUpdates.ts reads a prerelease with a plain string check instead of
- * one.
+ * whether beta.10 outranks beta.9. That is semver's own precedence rule, and `semver` is already
+ * how src/domain/versions/detect.ts, src/domain/mods/compatibility.ts and src/domain/mods/health.ts
+ * read a version in this same layer.
+ *
+ * A tag semver refuses sorts before every tag it accepts, so it lands last newest-first and never
+ * falls inside the dialog's window; among themselves those sort alphabetically, so the order is the
+ * same on every render. That guard is the shape src/renderer/src/utils/gameVersionOrder.ts already
+ * ships for the same problem, and it is what keeps a throw out of a sort callback.
  */
 function compareWhatsNewVersions(a: string, b: string): number {
-  const left = parseWhatsNewVersion(a)
-  const right = parseWhatsNewVersion(b)
+  const left = semver.valid(a)
+  const right = semver.valid(b)
 
-  for (let index = 0; index < Math.max(left.release.length, right.release.length); index++) {
-    const difference = (left.release[index] ?? 0) - (right.release[index] ?? 0)
-    if (difference !== 0) return difference
-  }
-
-  if (left.prerelease === null && right.prerelease === null) return 0
-  if (left.prerelease === null) return 1 // a plain release outranks any prerelease of the same version
-  if (right.prerelease === null) return -1
-
-  for (let index = 0; index < Math.max(left.prerelease.length, right.prerelease.length); index++) {
-    const leftIdentifier = left.prerelease[index]
-    const rightIdentifier = right.prerelease[index]
-    if (leftIdentifier === undefined) return -1
-    if (rightIdentifier === undefined) return 1
-    const difference = compareIdentifiers(leftIdentifier, rightIdentifier)
-    if (difference !== 0) return difference
-  }
-
-  return 0
+  if (left && right) return semver.compare(left, right)
+  if (left) return 1
+  if (right) return -1
+  return a.localeCompare(b)
 }
 
 /** Newest tag first, the one order both screens list releases in. */
