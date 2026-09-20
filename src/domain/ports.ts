@@ -6,6 +6,17 @@
  * this folder may reach for Electron, Node, React or the DOM.
  */
 
+/**
+ * How one attempt on a host port ended.
+ *
+ * Four ports answer with this shape and each restated it once (#484). They stay four ports: only
+ * the shape is shared, and every one of them keeps the name it already answered under.
+ */
+export interface HostOutcome {
+  ok: boolean
+  error?: string
+}
+
 /** Storage the host exposes to the domain. */
 export interface FileSystem {
   /** Resolves true when `path` points at something that exists. */
@@ -32,10 +43,7 @@ export interface CompressRequest {
 }
 
 /** How a compression attempt ended. */
-export interface CompressOutcome {
-  ok: boolean
-  error?: string
-}
+export type CompressOutcome = HostOutcome
 
 /** Produces archives. Progress reporting and task UI stay on the host side. */
 export interface Archiver {
@@ -57,10 +65,7 @@ export interface ExtractRequest {
 }
 
 /** How an extraction attempt ended. */
-export interface ExtractOutcome {
-  ok: boolean
-  error?: string
-}
+export type ExtractOutcome = HostOutcome
 
 /**
  * Unpacks archives. Kept apart from {@link Archiver} because no service does
@@ -86,11 +91,9 @@ export interface DownloadRequest {
 }
 
 /** How a download attempt ended. */
-export interface DownloadOutcome {
-  ok: boolean
+export interface DownloadOutcome extends HostOutcome {
   /** Where the file landed. Only meaningful when `ok` is true. */
   filePath?: string
-  error?: string
 }
 
 /** Fetches files. Progress reporting and task UI stay on the host side. */
@@ -112,10 +115,7 @@ export interface UnpackRequest {
 }
 
 /** How an unpacking attempt ended. */
-export interface UnpackOutcome {
-  ok: boolean
-  error?: string
-}
+export type UnpackOutcome = HostOutcome
 
 /**
  * The two ways a downloaded game build becomes an installed folder.
