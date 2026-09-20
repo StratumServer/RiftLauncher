@@ -4,6 +4,7 @@ import tseslint from "typescript-eslint"
 import react from "eslint-plugin-react"
 import reactHooks from "eslint-plugin-react-hooks"
 import prettierConfig from "eslint-config-prettier"
+import oxlint from "eslint-plugin-oxlint"
 
 // Flat config replacing the .eslintrc.cjs this repository used under ESLint 8,
 // which has been end of life since 2024-10-05. The two @electron-toolkit
@@ -19,7 +20,17 @@ export default tseslint.config(
   // Was .eslintignore. `coverage` joins the list: `eslint .` walked into the
   // generated HTML report under ESLint 8 too, found nothing in it, and only
   // spent time doing so.
-  { ignores: ["node_modules/**", "dist/**", "out/**", "coverage/**"] },
+  {
+    ignores: [
+      "node_modules/**",
+      "dist/**",
+      "out/**",
+      "coverage/**",
+      // Violations on purpose, linted by tests/config/lint-guards.test.ts from a
+      // copy it drops into the tree the rules actually target.
+      "tests/fixtures/lint/**"
+    ]
+  },
 
   // `eslint .` with a flat config lints .js/.cjs/.mjs and nothing else unless a
   // config block names more, which is what the old `--ext` list did.
@@ -115,6 +126,42 @@ export default tseslint.config(
       ]
     }
   },
+
+  // Everything .oxlintrc.json enforces is switched off here, so the two linters
+  // never report the same problem twice. One block is dropped on the way in,
+  // by name rather than by the presence of an `ignores` key: two of the six
+  // blocks carry one, and dropping both kept no-unused-vars and
+  // rules-of-hooks enabled on this side while oxlint already denies them.
+  ...oxlint
+    .buildFromOxlintConfigFile(".oxlintrc.json")
+    // oxlint skips src/global.d.ts because its own parser trips over an ambient
+    // `declare` that tsc accepts, and that is no reason for ESLint to stop
+    // reading the file.
+    .filter((config) => config.name !== "oxlint/oxlint-config-ignore-patterns"),
+
+  // oxlint's typescript/explicit-function-return-type only fires on TypeScript
+  // files, so handing the rule over wholesale would drop it for .jsx, .cjs and
+  // .mjs. The old config exempted plain *.js and nothing else, so ESLint keeps
+  // the rule for the extensions oxlint cannot reach.
+  {
+    files: ["**/*.{jsx,cjs,mjs}"],
+    ignores: ["scripts/headless/**/*.mjs"],
+    rules: { "@typescript-eslint/explicit-function-return-type": "error" }
+  },
+
+  // The price of splitting the rules across two linters: an inline
+  // `eslint-disable-next-line @typescript-eslint/no-explicit-any` now silences
+  // a rule ESLint no longer runs, and ESLint 9 turns unused-directive reporting
+  // on by default, so it would flag five of them. oxlint has the mirror problem
+  // with the exhaustive-deps directives in ListMods.tsx. Neither linter can
+  // judge a directive it does not own, so the check is off on both sides.
+  { linterOptions: { reportUnusedDisableDirectives: "off" } },
+
+  // react-hooks/exhaustive-deps is the one rule kept on this side, so it comes
+  // back after the block above. oxlint reports the same 13 files but 15
+  // findings at different lines, and "the 14 known warnings" is the number this
+  // repository reads its lint output against.
+  { rules: { "react-hooks/exhaustive-deps": "error" } },
   {
     // Pre-existing exhaustive-deps violations from before this rule was turned on (21
     // total, measured with a one-off trial install against this exact tree). Each is a

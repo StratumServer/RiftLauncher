@@ -1,0 +1,111 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Written by hand: @oxlint/migrate ported two rules and dropped every
+  // `extends` and both `overrides` blocks of the old .eslintrc.cjs.
+  //
+  // Only the rules ESLint already enforced are switched on here, at the
+  // severity ESLint gave them. Everything oxlint turns on by itself that
+  // reports beyond the 14 known warnings is switched off below and triaged in
+  // its own issue, so this change stays a migration and not a code sweep.
+  // oxlint only exits non-zero on errors, and its default severity for the
+  // whole correctness category is a warning. Left at the default, the ~107
+  // rules ESLint used to fail CI on through eslint:recommended and
+  // typescript-eslint would still be reported but would no longer gate a
+  // merge, because eslint-plugin-oxlint hands every one of them over to
+  // oxlint. Raising the category matches the severity ESLint gave them.
+  "categories": { "correctness": "error" },
+  "plugins": ["react", "typescript"],
+  "env": { "browser": true, "commonjs": true, "es2021": true, "node": true },
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "out/**",
+    "coverage/**",
+    // Violations on purpose, linted by tests/config/lint-guards.test.ts from a
+    // copy it drops into the tree the rules actually target.
+    "tests/fixtures/lint/**",
+    // Two `error TS(1038)` diagnostics from oxlint's own parser, on `declare`
+    // inside an ambient block. tsc accepts the file (npm run typecheck is
+    // green on it) and they are not rule violations, so there is no rule to
+    // switch off: the file itself is the narrowest thing we can skip.
+    "src/global.d.ts"
+  ],
+  "rules": {
+    "react-hooks/rules-of-hooks": "error",
+    // On by default here, but as a warning, while ESLint raised it to an error
+    // through @typescript-eslint/recommended. eslint-plugin-oxlint hands the
+    // rule over to oxlint, so the severity has to be restored or an unused
+    // variable would stop failing CI. The repo reports none today.
+    "no-unused-vars": "error",
+    "typescript/ban-ts-comment": ["error", { "ts-ignore": "allow-with-description" }],
+    "typescript/explicit-function-return-type": "error",
+    "typescript/no-empty-function": ["error", { "allow": ["arrowFunctions"] }],
+    "typescript/no-empty-interface": ["error", { "allowSingleExtends": true }],
+    "typescript/no-explicit-any": "error",
+
+    // react-hooks/exhaustive-deps deliberately stays with ESLint. oxlint's
+    // implementation reports the same 13 files but 15 findings at different
+    // lines and columns (StickyMenu.tsx alone splits into three where ESLint
+    // sees two), so running it here would change the count the team reads as
+    // "the 14 known warnings". eslint.config.mjs re-enables it after
+    // eslint-plugin-oxlint, which is what keeps that count at 14.
+    "react-hooks/exhaustive-deps": "off",
+
+    // On by default in oxlint, never enforced by our ESLint config, and each
+    // reports beyond the 14. Triaged in the "Triage what oxlint sees and
+    // ESLint did not" issue rather than switched on or fixed blind here.
+    "react/set-state-in-effect": "off",
+    "react/refs": "off",
+    "react/immutability": "off",
+    "react/globals": "off",
+    "react/no-did-update-set-state": "off",
+
+    // Different case: eslint:recommended did have this one at error, and it
+    // reports nothing on this tree because ESLint stops at the `as` cast the
+    // four findings in #521 hide behind. So it stays with ESLint at the
+    // severity it had, and only oxlint's wider reading is deferred. The key is
+    // deliberately unprefixed: eslint-plugin-oxlint reads a bare rule name as
+    // an opt-out and leaves the rule to ESLint, but does not recognise the
+    // `eslint/`-prefixed form, and would switch it off on both sides.
+    "no-unsafe-optional-chaining": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.js"],
+      "rules": { "typescript/explicit-function-return-type": "off" }
+    },
+    {
+      // Same carve-out the ESLint config spells out for the headless tooling:
+      // .mjs for its top-level await, so it misses the plain-*.js exemption.
+      "files": ["scripts/headless/**/*.mjs"],
+      "rules": { "typescript/explicit-function-return-type": "off" }
+    },
+    {
+      // src/domain holds pure business logic. It reaches the outside world only
+      // through the ports in src/domain/ports.ts, never through a host API.
+      "files": ["src/domain/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              { "name": "electron", "message": "src/domain must stay free of Electron. Add a port instead." },
+              { "name": "fs", "message": "src/domain must stay free of Node. Use the FileSystem port." },
+              { "name": "fs/promises", "message": "src/domain must stay free of Node. Use the FileSystem port." },
+              { "name": "fs-extra", "message": "src/domain must stay free of Node. Use the FileSystem port." },
+              { "name": "path", "message": "src/domain must stay free of Node. Use the PathBuilder port." },
+              { "name": "child_process", "message": "src/domain must stay free of Node. Add a port instead." },
+              { "name": "react", "message": "src/domain must stay free of React." },
+              { "name": "react-dom", "message": "src/domain must stay free of React." }
+            ],
+            "patterns": [
+              { "group": ["node:*"], "message": "src/domain must stay free of Node built-ins. Add a port instead." },
+              { "group": ["electron/*"], "message": "src/domain must stay free of Electron. Add a port instead." },
+              { "group": ["@renderer/*", "@src/ipc/*"], "message": "src/domain must not depend on the renderer or the IPC layer." }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
