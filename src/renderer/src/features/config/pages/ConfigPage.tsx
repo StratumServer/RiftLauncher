@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { FiLoader } from "react-icons/fi"
-import { PiCaretDownDuotone, PiMagnifyingGlassDuotone } from "react-icons/pi"
-import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
-import { AnimatePresence, motion } from "motion/react"
+import { PiMagnifyingGlassDuotone } from "react-icons/pi"
 import clsx from "clsx"
 
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
@@ -11,10 +9,8 @@ import { ACCENT_PRESETS } from "@domain/accentColors"
 import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
 import { MODDB_VISIBILITY_ALWAYS, MODDB_VISIBILITY_ASK, MODDB_VISIBILITY_NEVER, type ModDbVisibilityPolicy } from "@domain/moddbVisibility"
 
-import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { backgroundImageSource } from "@renderer/utils/backgroundStyle"
 import { backgroundThumbnailSource } from "@renderer/utils/backgroundThumbnail"
-import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -38,6 +34,7 @@ import {
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import LanguagesMenu from "@renderer/components/ui/LanguagesMenu"
+import SelectMenu from "@renderer/components/ui/SelectMenu"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 import { useConfigFolderPicker } from "@renderer/features/config/hooks/useConfigFolderPicker"
 import { useBackgroundCatalog } from "@renderer/features/config/hooks/useBackgroundCatalog"
@@ -308,40 +305,13 @@ function ModDbCountPicker(): JSX.Element {
 
   return (
     <FormFieldGroupWithDescription>
-      <Listbox value={selected} onChange={(policy) => configDispatch({ type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY, payload: { ...moddbVisibility, policy } })}>
-        {({ open }) => (
-          <>
-            <ListboxButton className={clsx(MENU_TRIGGER_STYLES, "w-full")} title={t("features.config.moddbCountDesc")}>
-              <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
-                <span className="text-sm">{label(selected)}</span>
-              </p>
-              <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
-            </ListboxButton>
-
-            <AnimatePresence>
-              {open && (
-                <ListboxOptions static anchor="bottom" className="w-[var(--button-width)] z-600 mt-1 select-none rounded-sm overflow-hidden">
-                  <motion.ul
-                    variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    className="flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
-                  >
-                    {options.map((policy) => (
-                      <ListboxOption key={policy} value={policy} as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
-                        <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
-                          <span className="text-sm">{label(policy)}</span>
-                        </p>
-                      </ListboxOption>
-                    ))}
-                  </motion.ul>
-                </ListboxOptions>
-              )}
-            </AnimatePresence>
-          </>
-        )}
-      </Listbox>
+      <SelectMenu
+        value={selected}
+        options={options.map((policy) => ({ key: policy, label: label(policy) }))}
+        onChange={(policy) => configDispatch({ type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY, payload: { ...moddbVisibility, policy } })}
+        size="w-full"
+        title={t("features.config.moddbCountDesc")}
+      />
 
       <FormFieldDescription content={t("features.config.moddbCountDesc")} />
     </FormFieldGroupWithDescription>
@@ -558,11 +528,11 @@ function UIScale(): JSX.Element {
   const { t } = useTranslation()
 
   const SCALE_OPTIONS = [
-    { key: 50, value: "50%" },
-    { key: 75, value: "75%" },
-    { key: 100, value: "100%" },
-    { key: 125, value: "125%" },
-    { key: 150, value: "150%" }
+    { key: 50, label: "50%" },
+    { key: 75, label: "75%" },
+    { key: 100, label: "100%", hint: t("generic.default") },
+    { key: 125, label: "125%" },
+    { key: 150, label: "150%" }
   ]
 
   const [selectedScale, setSelectedScale] = useState<number>(Number(window.localStorage.getItem("uiScale")) || 100)
@@ -572,52 +542,7 @@ function UIScale(): JSX.Element {
     window.localStorage.setItem("uiScale", selectedScale.toString())
   }, [selectedScale])
 
-  return (
-    <Listbox value={selectedScale} onChange={setSelectedScale}>
-      {({ open }) => (
-        <>
-          {SCALE_OPTIONS.filter((scale) => scale.key === selectedScale).map((scale) => (
-            <ListboxButton key={scale.key} className={clsx(MENU_TRIGGER_STYLES, "w-full")}>
-              <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
-                <span className="text-sm">{scale.value}</span>
-                {scale.key === 100 && <span className="text-ellipsis overflow-hidden text-zinc-400 text-xs">{t("generic.default")}</span>}
-              </p>
-              <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
-            </ListboxButton>
-          ))}
-
-          <AnimatePresence>
-            {open && (
-              <ListboxOptions static anchor="bottom" className="w-[var(--button-width)] z-600 mt-1 select-none rounded-sm overflow-hidden">
-                <motion.ul
-                  variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className="flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
-                >
-                  {SCALE_OPTIONS.map((scale) => (
-                    <ListboxOption
-                      key={scale.key}
-                      value={scale.key}
-                      as={motion.li}
-                      variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
-                    >
-                      <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
-                        <span className="text-sm">{scale.value}</span>
-                        {scale.key === 100 && <span className="text-ellipsis overflow-hidden text-zinc-400 text-xs">{t("generic.default")}</span>}
-                      </p>
-                    </ListboxOption>
-                  ))}
-                </motion.ul>
-              </ListboxOptions>
-            )}
-          </AnimatePresence>
-        </>
-      )}
-    </Listbox>
-  )
+  return <SelectMenu value={selectedScale} options={SCALE_OPTIONS} onChange={setSelectedScale} size="w-full" />
 }
 
 export default ConfigPage
