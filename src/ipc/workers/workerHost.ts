@@ -3,11 +3,11 @@
  * `workerData` and lets the thread fall idle so the parent can terminate it: it waits on
  * `parentPort` for one task at a time and stays alive for the next one.
  *
- * All five worker shims are this function plus a handler, so the protocol lives in exactly
+ * All four worker shims are this function plus a handler, so the protocol lives in exactly
  * one place on this side of the port: the token echo that lets the parent tell a live
  * task's messages from an abandoned one's, the guard that drops a progress report arriving
- * after its own task already settled, and the promise-or-value handling that lets the
- * synchronous permissions handler share a shape with the four asynchronous ones.
+ * after its own task already settled, and the promise-or-value handling that accepts a
+ * handler that answers without awaiting anything.
  *
  * Attaching the "message" listener is also what keeps the thread alive between tasks: a
  * started MessagePort refs the worker's event loop.
@@ -25,7 +25,7 @@ export type TaskHandler = (payload: Record<string, unknown>, onProgress: Progres
 
 /**
  * Turns a rejection into the message text the parent sees. Per worker on purpose:
- * extraction forwards its own reason, the other four report a fixed one, matching what
+ * extraction forwards its own reason, the other three report a fixed one, matching what
  * each already did before this file existed.
  */
 export type FailureDescriber = (error: unknown) => string
