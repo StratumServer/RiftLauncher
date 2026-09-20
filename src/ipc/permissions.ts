@@ -31,7 +31,11 @@ export interface ChangePermissionsOptions {
   paths: readonly string[]
   /** Mode passed straight to `chmod`. */
   perms: number
-  /** Stops the walk before its next entry. The caller's bound on a tree that never ends. */
+  /**
+   * The caller's bound on a tree that never ends. Checked before each entry, so a walk still
+   * making progress stops without touching the rest of the tree, and raced against the walk
+   * as a whole, so one syscall that never answers still settles the call.
+   */
   signal?: AbortSignal
   /** Filesystem to act on, defaulting to the real one. */
   fileSystem?: PermissionsFileSystem
@@ -88,5 +92,21 @@ export async function changePermissions(options: ChangePermissionsOptions): Prom
     await fileSystem.chmod(path, perms)
   }
 
-  for (const path of paths) await visit(path)
+  const walk = (async (): Promise<void> => {
+    for (const path of paths) await visit(path)
+  })()
+
+  if (!signal) return walk
+
+  // The check at the top of visit stops a walk that is still making syscalls. It never runs
+  // again once a single syscall stops answering, which is what a hard NFS or FUSE mount that
+  // goes away leaves behind, so the signal has to settle this call on its own as well.
+  // The walk is then abandoned rather than stopped, the same standing the worker thread this
+  // replaced had: its timeout fired on the main thread too, and the thread it gave up on was
+  // discarded rather than waited for.
+  const aborted = new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+  })
+
+  return Promise.race([walk, aborted])
 }

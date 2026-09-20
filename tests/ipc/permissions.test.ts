@@ -198,4 +198,19 @@ describe("changePermissions", () => {
 
     assert.deepEqual(fileSystem.chmodCalls, [])
   })
+
+  // And the case the check between entries cannot reach: a hard NFS or FUSE mount that goes
+  // away leaves a syscall that never answers, so the walk never gets back to the check. The
+  // bound has to hold there too, or the handler's promise stays pending and the renderer's
+  // extract task shows as running for good.
+  it("rejects on the signal even when a syscall never answers", async () => {
+    const wedged: PermissionsFileSystem = {
+      lstat: () => new Promise(() => {}),
+      readdir: async (): Promise<string[]> => [],
+      chmod: async (): Promise<void> => {},
+      access: async (): Promise<void> => {}
+    }
+
+    await assert.rejects(() => changePermissions({ paths: ["/mnt/wedged"], perms: 0o755, signal: AbortSignal.timeout(20), fileSystem: wedged }), /aborted due to timeout/)
+  })
 })
