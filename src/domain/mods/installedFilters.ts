@@ -146,7 +146,8 @@ export function filterInstalledMods(mods: readonly InstalledModType[], filters: 
  * about which controls are touched, not how many values sit inside one of them.
  *
  * This is also the single definition of "an axis is set": {@link hasActiveInstalledModFilters} asks
- * it rather than restating the three conditions, so a fourth axis cannot land in one and not the other.
+ * it rather than restating the three conditions, so a fourth axis cannot land in one and not the
+ * other.
  */
 export function countActiveInstalledModFilters(filters: InstalledModFilters): number {
   return (filters.author !== "" ? 1 : 0) + (filters.tags.length > 0 ? 1 : 0) + (filters.gameVersion !== "" ? 1 : 0)

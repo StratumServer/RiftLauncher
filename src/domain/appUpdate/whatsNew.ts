@@ -34,9 +34,9 @@ const MAX_BLOCKS = 120
 const MAX_BLOCK_LENGTH = 2000
 
 /**
- * The block that replaces everything past {@link MAX_BLOCKS}, so a body that was cut says so instead of
- * ending mid-thought. A bare ellipsis rather than a sentence: both screens already sit above an
- * "All releases" button that is where the rest of the notes live.
+ * The block that replaces everything past {@link MAX_BLOCKS}, so a body that was cut says so
+ * instead of ending mid-thought. A bare ellipsis rather than a sentence: both screens already sit
+ * above an "All releases" button that is where the rest of the notes live.
  */
 export const MORE_ON_THE_RELEASES_PAGE = "…"
 
@@ -123,8 +123,7 @@ function toPlainText(raw: string): string {
 }
 
 /**
- * One block's text, cut at a word boundary with an ellipsis when it runs past
- * {@link MAX_BLOCK_LENGTH}.
+ * One block's text, cut at a word boundary with an ellipsis when it runs past {@link MAX_BLOCK_LENGTH}.
  *
  * The cut never lands between a surrogate pair's two halves, which would leave a lone half that
  * renders as a replacement character: the last space inside the budget is the normal cut, and the
@@ -311,9 +310,9 @@ function isShowable(release: WhatsNewReleaseInfo, currentIsPrerelease: boolean):
 
 /**
  * The releases to show after an update: tag versions strictly after `previousVersion` and up to
- * and including `currentVersion`, newest first, capped to {@link DEFAULT_MAX_RELEASES_TO_SHOW}. This is
- * the dialog's window; the Info & Help section uses
- * {@link selectLatestReleases}, which has no window at all.
+ * and including `currentVersion`, newest first, capped to {@link DEFAULT_MAX_RELEASES_TO_SHOW}.
+ * This is the dialog's window; the Info & Help section uses {@link selectLatestReleases}, which has
+ * no window at all.
  *
  * A `v` prefix on either version, or on a release's tag, is tolerated throughout.
  *
