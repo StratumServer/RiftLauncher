@@ -1,4 +1,5 @@
 import type { FileSystem } from "../ports"
+import { refuse } from "../refusal"
 
 /** The game version state an uninstall decision needs, copied out of wherever it lives. */
 export interface GameVersionSnapshot {
@@ -37,10 +38,6 @@ export interface UninstallGameVersionEvents {
   onStarted?(): void
   /** Fired once the work is over, success or not. */
   onFinished?(): void
-}
-
-function refuse(reason: UninstallGameVersionFailure): UninstallGameVersionResult {
-  return { ok: false, reason }
 }
 
 /**
