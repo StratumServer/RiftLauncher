@@ -6,7 +6,8 @@ import semver from "semver"
 import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
 import { isRecord } from "../domain/records"
 
-// Re-exported unchanged so the host code and the tests that reach for it here keep doing so.
+// The guard moved to the domain (#484). Re-exported unchanged so every caller that reaches for it
+// here, tests included, keeps its import path.
 export { isRecord }
 
 export const MAX_IPC_STRING_LENGTH = 8_192
