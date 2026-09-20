@@ -282,6 +282,13 @@ function stripVersionPrefix(version: string): string {
  * falls inside the dialog's window; among themselves those sort alphabetically, so the order is the
  * same on every render. That guard is the shape src/renderer/src/utils/gameVersionOrder.ts already
  * ships for the same problem, and it is what keeps a throw out of a sort callback.
+ *
+ * It is stricter than the coerced parse it replaces, on purpose. That parse read the leading run of
+ * a tag as a number, so `1.8` ranked between `1.9.0` and `1.7.0` and `2024-06-01` ranked above every
+ * 1.x tag; semver wants three parts, and a tag that does not have them now sorts below all of them
+ * instead of being guessed at. Nothing upstream constrains the shape: src/ipc/handlers/netHandlers.ts
+ * keeps any non-empty tag_name of up to 128 characters. Every tag this project has published is
+ * valid semver, so no published release moves.
  */
 function compareWhatsNewVersions(a: string, b: string): number {
   const left = semver.valid(a)

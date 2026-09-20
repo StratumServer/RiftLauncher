@@ -386,6 +386,19 @@ describe("selectReleasesToShow", () => {
   it("shows nothing once the current version is already the last one seen", () => {
     assert.deepEqual(selectReleasesToShow([release({ tag: "1.0.0" })], "1.0.0", "1.0.0"), [])
   })
+
+  it("leaves a tag semver refuses outside the window rather than guessing at its number", () => {
+    // Nothing upstream constrains the shape of a tag: src/ipc/handlers/netHandlers.ts keeps any
+    // non-empty tag_name of up to 128 characters, so `v1.8` can arrive. semver wants three parts
+    // and refuses it, which ranks it below every tag semver does read, so it cannot fall between
+    // two of them however large the number it opens with looks.
+    const releases = [release({ tag: "v1.9.0" }), release({ tag: "v1.8" }), release({ tag: "v1.7.0" })]
+
+    assert.deepEqual(
+      selectReleasesToShow(releases, "1.7.0", "1.9.0").map((r) => r.tag),
+      ["v1.9.0"]
+    )
+  })
 })
 
 describe("selectLatestReleases", () => {
@@ -427,6 +440,23 @@ describe("selectLatestReleases", () => {
     assert.deepEqual(
       selectLatestReleases(releases, "1.1.0").map((r) => r.tag),
       ["1.1.0", "1.0.0"]
+    )
+  })
+
+  it("lists every tag semver refuses last, in the same order on every render", () => {
+    // Below the tags semver reads, and alphabetically among themselves, so a list holding more
+    // than one of them does not shuffle between renders. Only letters here: two tags that sort
+    // against each other through localeCompare, with no punctuation whose collation could differ
+    // between the Linux and Windows runners.
+    const releases = [release({ tag: "nightly" }), release({ tag: "alpha" }), release({ tag: "1.2.0" })]
+
+    assert.deepEqual(
+      selectLatestReleases(releases, "1.2.0").map((r) => r.tag),
+      ["1.2.0", "nightly", "alpha"]
+    )
+    assert.deepEqual(
+      selectLatestReleases([...releases].reverse(), "1.2.0").map((r) => r.tag),
+      ["1.2.0", "nightly", "alpha"]
     )
   })
 })
