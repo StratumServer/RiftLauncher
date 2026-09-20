@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from "node:path"
 import { getConfig } from "@src/config/configManager"
 import { MODS_FOLDER_NAME } from "@domain/mods/folder"
 import type { PathGrant } from "@src/ipc/validation"
-import { assertNonRootPath, comparablePath, isPathGranted, isRestoreWorkspaceName } from "@src/ipc/validation"
+import { assertNonRootPath, assertNoSymlinkComponents, comparablePath, isPathGranted, isRestoreWorkspaceName } from "@src/ipc/validation"
 
 type ApprovedPath = PathGrant & {
   expiresAt: number
@@ -153,27 +153,6 @@ function getProtectedPaths(config: ConfigType): string[] {
   return [app.getPath("userData"), app.getPath("appData"), app.getPath("home"), app.getAppPath(), ...getConfiguredFolders(config), ...getLauncherFolders()]
 }
 
-function assertNoSymlinkComponents(pathValue: string): void {
-  let current = resolve(pathValue)
-  let parent = dirname(current)
-
-  while (!fse.existsSync(current)) {
-    if (parent === current) break
-    current = parent
-    parent = dirname(current)
-  }
-
-  while (current !== parent) {
-    const stats = fse.lstatSync(current)
-    if (stats.isSymbolicLink()) throw new TypeError("Symbolic links are not allowed for managed paths")
-    current = parent
-    parent = dirname(current)
-  }
-
-  const rootStats = fse.lstatSync(current)
-  if (rootStats.isSymbolicLink()) throw new TypeError("Symbolic links are not allowed for managed paths")
-}
-
 export async function assertManagedPath(value: unknown, name = "path", options: PathPolicyOptions = {}): Promise<string> {
   const pathValue = resolve(assertNonRootPath(value, name))
   const config = await getConfig()
@@ -183,7 +162,7 @@ export async function assertManagedPath(value: unknown, name = "path", options: 
   if (!isConfiguredPath && !isApprovedPath && !isRestoreWorkspace) throw new TypeError(`Unmanaged ${name}`)
 
   if (!options.allowMissing && !fse.existsSync(pathValue)) throw new TypeError(`Missing ${name}`)
-  if (!options.allowSymlinks) assertNoSymlinkComponents(pathValue)
+  if (!options.allowSymlinks) assertNoSymlinkComponents(pathValue, "Symbolic links are not allowed for managed paths")
   return pathValue
 }
 

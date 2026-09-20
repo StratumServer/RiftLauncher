@@ -1,4 +1,5 @@
-import { isAbsolute, relative, resolve, sep } from "node:path"
+import { existsSync, lstatSync } from "node:fs"
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import semver from "semver"
@@ -169,6 +170,40 @@ export function comparablePath(value: string): string {
 export function isPathWithin(root: string, candidate: string, allowRoot = true): boolean {
   const relativePath = relative(comparablePath(root), comparablePath(candidate))
   return (allowRoot && relativePath === "") || (relativePath !== "" && relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath))
+}
+
+/**
+ * Refuses a path any of whose existing ancestors is a symbolic link.
+ *
+ * The walk starts at the deepest component that exists, because a caller may
+ * name a file it is about to create, and climbs to the filesystem root, which
+ * is checked too. A link anywhere on that chain means the path the caller
+ * vetted and the path the filesystem opens are not the same path.
+ *
+ * Both sides of the host call this one: the path policy before it hands a
+ * managed path to a handler, and the extraction workers around every write
+ * they make. Two copies is how one side gets tightened and the other left
+ * stale, the same reason the archive size ceilings moved here in #362.
+ *
+ * @param message Wording for the refusal, so the path policy keeps its own.
+ */
+export function assertNoSymlinkComponents(pathValue: string, message = "Symbolic links are not allowed"): void {
+  let current = resolve(pathValue)
+  let parent = dirname(current)
+
+  while (!existsSync(current)) {
+    if (parent === current) return
+    current = parent
+    parent = dirname(current)
+  }
+
+  while (current !== parent) {
+    if (lstatSync(current).isSymbolicLink()) throw new TypeError(message)
+    current = parent
+    parent = dirname(current)
+  }
+
+  if (lstatSync(current).isSymbolicLink()) throw new TypeError(message)
 }
 
 /**
