@@ -300,13 +300,10 @@ export function validateGameInstallation(value: unknown): Pick<InstallationType,
     mesaGlThread: assertBoolean(value.mesaGlThread, "MESA GL thread flag"),
     envVars: assertBoundedString(value.envVars, "environment variables", 8_192),
     launchWrapper: assertBoundedString(value.launchWrapper ?? "", "launch wrapper", 4_096).trim(),
-    ...(value.gameVersionId === null
-      ? { gameVersionId: null }
-      : typeof value.gameVersionId === "string"
-        ? { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) }
-        : value.gameVersionId === undefined
-          ? {}
-          : { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) })
+    // Three outcomes, and only three: missing stays missing, so EXECUTE_GAME's correlation check
+    // can tell "no id sent" from "no version linked"; an explicit null is carried through; and
+    // anything else goes to assertString, which is what rejects a non-string rather than dropping it.
+    ...(value.gameVersionId === undefined ? {} : { gameVersionId: value.gameVersionId === null ? null : assertString(value.gameVersionId, "installation game version id", 128) })
   }
 }
 
