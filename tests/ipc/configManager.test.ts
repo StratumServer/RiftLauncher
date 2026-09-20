@@ -825,9 +825,16 @@ describe("saveConfig and flushConfigWrites", () => {
     assert.equal(result, true, "the write itself landed; only its own best-effort cleanup failed")
   })
 
+  /**
+   * The normaliser is what drops these, not the writer: it builds a fixed literal field by field,
+   * so a key it does not name cannot come out the other side. Asserted on both, because the day
+   * `normalizeConfig` grows a spread of its input is the day a session-only marker reaches disk.
+   */
   it("strips underscore-prefixed session-only fields before writing to disk", async () => {
-    const { saveConfig, flushConfigWrites } = await freshConfigManager()
+    const { saveConfig, flushConfigWrites, normalizeConfig } = await freshConfigManager()
     const withSessionField = { ...minimalConfig(), _notifiedModUpdatesInstallations: ["install-1"] }
+
+    assert.equal("_notifiedModUpdatesInstallations" in normalizeConfig(withSessionField), false)
 
     await saveConfig(withSessionField)
     await flushConfigWrites()

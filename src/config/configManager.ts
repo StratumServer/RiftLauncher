@@ -47,16 +47,6 @@ let configWriteQueue: Promise<void> = Promise.resolve()
 let pendingConfig: ConfigType | null = null
 let scheduledConfigWrite: Promise<void> | null = null
 
-async function writeConfig(normalizedConfig: ConfigType): Promise<void> {
-  const cleanedConfig = JSON.parse(
-    JSON.stringify(normalizedConfig, (key, value) => {
-      return key.startsWith("_") ? undefined : value
-    })
-  )
-
-  await writeJsonAtomic(configPath, cleanedConfig)
-}
-
 function scheduleConfigWrite(): Promise<void> {
   // Compared against null rather than tested for truthiness: the question is whether a write is already scheduled, not whether a promise is truthy (it always is).
   if (scheduledConfigWrite !== null) return scheduledConfigWrite
@@ -67,7 +57,10 @@ function scheduleConfigWrite(): Promise<void> {
     while (pendingConfig) {
       const nextConfig = pendingConfig
       pendingConfig = null
-      await writeConfig(nextConfig)
+      // Written as it stands: the only thing that ever reaches here is a normalizeConfig result,
+      // and that builds a fixed literal field by field, so the renderer's session-only markers
+      // (`_notifiedModUpdatesInstallations`, `_backgroundRevision`) are already gone.
+      await writeJsonAtomic(configPath, nextConfig)
     }
   })
 
