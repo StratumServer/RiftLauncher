@@ -301,13 +301,12 @@ function ModDbCountPicker(): JSX.Element {
   const options: ModDbVisibilityPolicy[] = [MODDB_VISIBILITY_ASK, MODDB_VISIBILITY_ALWAYS, MODDB_VISIBILITY_NEVER]
   // A pending "count me in" for the running version is still the ask policy for every later one.
   const selected: ModDbVisibilityPolicy = options.includes(moddbVisibility.policy) ? moddbVisibility.policy : MODDB_VISIBILITY_ASK
-  const label = (policy: ModDbVisibilityPolicy): string => t(`features.config.moddbCountOptions.${policy}`)
 
   return (
     <FormFieldGroupWithDescription>
       <SelectMenu
         value={selected}
-        options={options.map((policy) => ({ key: policy, label: label(policy) }))}
+        options={options.map((policy) => ({ key: policy, label: t(`features.config.moddbCountOptions.${policy}`) }))}
         onChange={(policy) => configDispatch({ type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY, payload: { ...moddbVisibility, policy } })}
         size="w-full"
         title={t("features.config.moddbCountDesc")}
