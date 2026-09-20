@@ -22,21 +22,17 @@ export interface WhatsNewBlock {
   text: string
 }
 
-export interface WhatsNewLimits {
-  maxBlocks: number
-  maxBlockLength: number
-}
-
 /**
  * 120 blocks and 2000 characters each covers the longest release this project has published
  * (beta.7, thirty-six changes, lands well inside both), while still refusing to render a body
  * written to exhaust the dialog: past the block count the last block becomes
  * {@link MORE_ON_THE_RELEASES_PAGE} and the rest is left on the releases page.
  */
-export const DEFAULT_WHATS_NEW_LIMITS: WhatsNewLimits = { maxBlocks: 120, maxBlockLength: 2000 }
+const MAX_BLOCKS = 120
+const MAX_BLOCK_LENGTH = 2000
 
 /**
- * The block that replaces everything past `maxBlocks`, so a body that was cut says so instead of
+ * The block that replaces everything past {@link MAX_BLOCKS}, so a body that was cut says so instead of
  * ending mid-thought. A bare ellipsis rather than a sentence: both screens already sit above an
  * "All releases" button that is where the rest of the notes live.
  */
@@ -125,16 +121,17 @@ function toPlainText(raw: string): string {
 }
 
 /**
- * One block's text, cut at a word boundary with an ellipsis when it runs past the limit.
+ * One block's text, cut at a word boundary with an ellipsis when it runs past
+ * {@link MAX_BLOCK_LENGTH}.
  *
  * The cut never lands between a surrogate pair's two halves, which would leave a lone half that
  * renders as a replacement character: the last space inside the budget is the normal cut, and the
  * hard cut backs up one unit when it would split a pair.
  */
-function capBlockText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
+function capBlockText(text: string): string {
+  if (text.length <= MAX_BLOCK_LENGTH) return text
 
-  const room = maxLength - MORE_ON_THE_RELEASES_PAGE.length
+  const room = MAX_BLOCK_LENGTH - MORE_ON_THE_RELEASES_PAGE.length
   const lastSpace = text.slice(0, room).lastIndexOf(" ")
   let cut = lastSpace > 0 ? lastSpace : room
   const previous = text.charCodeAt(cut - 1)
@@ -170,9 +167,8 @@ function boundInput(markdown: string): string {
  * render it as any.
  *
  * @param markdown The release's `body` field. Anything that is not a string, missing included, is no notes at all.
- * @param limits Caps on how much of a body reaches the screen. Defaults to {@link DEFAULT_WHATS_NEW_LIMITS}.
  */
-export function releaseNotesToBlocks(markdown: unknown, limits: WhatsNewLimits = DEFAULT_WHATS_NEW_LIMITS): WhatsNewBlock[] {
+export function releaseNotesToBlocks(markdown: unknown): WhatsNewBlock[] {
   if (typeof markdown !== "string" || markdown.length === 0) return []
 
   const body = boundInput(markdown).replace(HTML_COMMENT, "").replace(SCRIPT_OR_STYLE, "")
@@ -184,7 +180,7 @@ export function releaseNotesToBlocks(markdown: unknown, limits: WhatsNewLimits =
 
   const push = (kind: WhatsNewBlock["kind"], raw: string, prefix = ""): void => {
     const text = toPlainText(raw)
-    if (text.length > 0) blocks.push({ kind, text: capBlockText(`${prefix}${text}`, limits.maxBlockLength) })
+    if (text.length > 0) blocks.push({ kind, text: capBlockText(`${prefix}${text}`) })
   }
 
   const flushParagraph = (kind: WhatsNewBlock["kind"] = "paragraph"): void => {
@@ -196,7 +192,7 @@ export function releaseNotesToBlocks(markdown: unknown, limits: WhatsNewLimits =
 
   for (const rawLine of lines) {
     // One past the cap: enough to know the body was cut without reading the rest of it.
-    if (blocks.length > limits.maxBlocks) break
+    if (blocks.length > MAX_BLOCKS) break
 
     // Left-trimmed only: a nested bullet flattens onto the same level, while the trailing space
     // of a line a whole-body comment strip emptied out (`# ` from `# <!-- ... -->`) still lets the
@@ -261,7 +257,7 @@ export function releaseNotesToBlocks(markdown: unknown, limits: WhatsNewLimits =
 
   flushParagraph()
 
-  if (blocks.length > limits.maxBlocks) return [...blocks.slice(0, limits.maxBlocks - 1), { kind: "paragraph", text: MORE_ON_THE_RELEASES_PAGE }]
+  if (blocks.length > MAX_BLOCKS) return [...blocks.slice(0, MAX_BLOCKS - 1), { kind: "paragraph", text: MORE_ON_THE_RELEASES_PAGE }]
 
   return blocks
 }
@@ -332,10 +328,6 @@ function compareWhatsNewVersions(a: string, b: string): number {
   return 0
 }
 
-export interface SelectReleasesOptions {
-  maxReleases?: number
-}
-
 /** Newest tag first, the one order both screens list releases in. */
 function newestTagFirst(a: WhatsNewReleaseInfo, b: WhatsNewReleaseInfo): number {
   return compareWhatsNewVersions(stripVersionPrefix(b.tag), stripVersionPrefix(a.tag))
@@ -353,8 +345,8 @@ function isShowable(release: WhatsNewReleaseInfo, currentIsPrerelease: boolean):
 
 /**
  * The releases to show after an update: tag versions strictly after `previousVersion` and up to
- * and including `currentVersion`, newest first, capped to {@link DEFAULT_MAX_RELEASES_TO_SHOW} by
- * default. This is the dialog's window; the Info & Help section uses
+ * and including `currentVersion`, newest first, capped to {@link DEFAULT_MAX_RELEASES_TO_SHOW}. This is
+ * the dialog's window; the Info & Help section uses
  * {@link selectLatestReleases}, which has no window at all.
  *
  * A `v` prefix on either version, or on a release's tag, is tolerated throughout.
@@ -364,7 +356,7 @@ function isShowable(release: WhatsNewReleaseInfo, currentIsPrerelease: boolean):
  * `currentVersion` is shown, never the whole history: nobody who just installed the launcher
  * needs to be told about every release that ever shipped.
  */
-export function selectReleasesToShow(releases: readonly WhatsNewReleaseInfo[], previousVersion: string, currentVersion: string, options: SelectReleasesOptions = {}): WhatsNewReleaseInfo[] {
+export function selectReleasesToShow(releases: readonly WhatsNewReleaseInfo[], previousVersion: string, currentVersion: string): WhatsNewReleaseInfo[] {
   const current = stripVersionPrefix(currentVersion)
   const previous = previousVersion.trim().length > 0 ? stripVersionPrefix(previousVersion) : ""
   const currentIsPrerelease = isPrereleaseVersion(current)
@@ -378,7 +370,7 @@ export function selectReleasesToShow(releases: readonly WhatsNewReleaseInfo[], p
     return compareWhatsNewVersions(tag, previous) > 0 && compareWhatsNewVersions(tag, current) <= 0
   })
 
-  return inRange.sort(newestTagFirst).slice(0, options.maxReleases ?? DEFAULT_MAX_RELEASES_TO_SHOW)
+  return inRange.sort(newestTagFirst).slice(0, DEFAULT_MAX_RELEASES_TO_SHOW)
 }
 
 /**
@@ -392,11 +384,11 @@ export function selectReleasesToShow(releases: readonly WhatsNewReleaseInfo[], p
  * `currentVersion` is still read, for the prerelease rule alone: a stable build never lists beta
  * notes.
  */
-export function selectLatestReleases(releases: readonly WhatsNewReleaseInfo[], currentVersion: string, options: SelectReleasesOptions = {}): WhatsNewReleaseInfo[] {
+export function selectLatestReleases(releases: readonly WhatsNewReleaseInfo[], currentVersion: string): WhatsNewReleaseInfo[] {
   const currentIsPrerelease = isPrereleaseVersion(stripVersionPrefix(currentVersion))
 
   return releases
     .filter((release) => isShowable(release, currentIsPrerelease))
     .sort(newestTagFirst)
-    .slice(0, options.maxReleases ?? DEFAULT_MAX_RELEASES_TO_SHOW)
+    .slice(0, DEFAULT_MAX_RELEASES_TO_SHOW)
 }
