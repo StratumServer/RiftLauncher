@@ -47,7 +47,9 @@ function fakeTree(lstat: (path: string) => FakeStats, readdir: (path: string) =>
     readdir: async (path): Promise<string[]> => readdir(path),
     chmod: async (path, mode): Promise<void> => {
       chmodCalls.push({ path, mode })
-    }
+    },
+    // Nothing these fake trees describe is a symbolic link, so the walk never asks.
+    access: async (): Promise<void> => {}
   }
 }
 
@@ -129,6 +131,19 @@ describe("changePermissions", () => {
     await assert.rejects(() => changePermissions({ paths: [installation], perms: 0o777 }), /Symbolic links are not allowed/)
 
     assert.equal(modeOf(outsider), 0o600)
+  })
+
+  // The other half of that rule. A link pointing at nothing has no target for chmod to
+  // resolve it to, so it is skipped the way a missing path is, and the install it sits in
+  // finishes. A stale link left behind in a game folder is ordinary, and failing the whole
+  // extract task over one would be a refusal the player cannot act on.
+  it.skipIf(process.platform === "win32")("skips a symbolic link whose target cannot be reached, and walks the rest", async () => {
+    symlinkSync(workspacePath("never-written.txt"), join(installation, "dangling"))
+
+    await assert.doesNotReject(() => changePermissions({ paths: [installation], perms: 0o755 }))
+
+    assert.equal(modeOf(installation, "Vintagestory"), 0o755)
+    assert.equal(modeOf(installation, "assets", "version.txt"), 0o755)
   })
 
   it("refuses an entry that is neither a file nor a folder", async () => {

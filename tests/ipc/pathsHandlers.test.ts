@@ -1024,7 +1024,11 @@ describe.skipIf(process.platform === "win32")("CHANGE_PERMS: the walk itself", (
   // and the handler now fixes in its place.
   it("reports a refusal under one fixed message rather than the reason behind it", async () => {
     const event = await createTrustedEvent()
-    symlinkSync(join(temporaryRoot, "outsider.txt"), join(managedFolder, "shortcut"))
+    // The target has to be there: a link pointing at nothing is skipped rather than refused,
+    // so without this the walk would finish and there would be no refusal to report.
+    const outsider = join(temporaryRoot, "outsider.txt")
+    writeFileSync(outsider, "not the launcher's file", { mode: 0o600 })
+    symlinkSync(outsider, join(managedFolder, "shortcut"))
 
     await assert.rejects(() => handler(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [managedFolder], 0o755), /^Error: Changing permissions failed$/)
   })

@@ -5,13 +5,14 @@
  * archive without the execute bit. A symbolic link inside the tree stops the
  * whole run rather than being followed: chmod resolves links, so following one
  * would apply the launcher's bits to a file outside the folder the user picked.
+ * A link that resolves to nothing has no such file behind it and is skipped.
  *
  * The walk is I/O and nothing else, so it runs on the main thread's event loop
  * rather than in a worker: every step is an awaited syscall, and none of them
  * holds the loop. Nothing here touches Electron.
  */
 
-import { chmod, lstat, readdir } from "node:fs/promises"
+import { access, chmod, lstat, readdir } from "node:fs/promises"
 import { join } from "node:path"
 
 const MAX_ITEMS = 100_000
@@ -21,6 +22,8 @@ export interface PermissionsFileSystem {
   lstat(path: string): Promise<{ isSymbolicLink(): boolean; isDirectory(): boolean; isFile(): boolean }>
   readdir(path: string): Promise<string[]>
   chmod(path: string, mode: number): Promise<void>
+  /** Follows links, unlike `lstat`. Refusing is what tells a link with nothing on the other end apart from a live one. */
+  access(path: string): Promise<void>
 }
 
 export interface ChangePermissionsOptions {
@@ -41,13 +44,13 @@ export interface ChangePermissionsOptions {
  * union of the paths a Linux install might use without checking each one first.
  *
  * @param options Roots, mode, abort signal, and the filesystem to act on.
- * @throws On a symbolic link, on an entry that is neither a file nor a folder,
- * once the tree passes the entry cap, and on an aborted signal. Nothing is
- * rolled back: the caller reports the failure and the bits already applied stay
- * applied.
+ * @throws On a symbolic link whose target can be reached, on an entry that is
+ * neither a file nor a folder, once the tree passes the entry cap, and on an
+ * aborted signal. Nothing is rolled back: the caller reports the failure and
+ * the bits already applied stay applied.
  */
 export async function changePermissions(options: ChangePermissionsOptions): Promise<void> {
-  const { paths, perms, signal, fileSystem = { lstat, readdir, chmod } } = options
+  const { paths, perms, signal, fileSystem = { lstat, readdir, chmod, access } } = options
   let itemCount = 0
 
   const visit = async (path: string): Promise<void> => {
@@ -59,7 +62,21 @@ export async function changePermissions(options: ChangePermissionsOptions): Prom
     const stats = await fileSystem.lstat(path).catch(() => null)
     if (!stats) return
 
-    if (stats.isSymbolicLink()) throw new Error("Symbolic links are not allowed")
+    if (stats.isSymbolicLink()) {
+      // A link with nothing reachable on the other end is skipped rather than refused: a
+      // dangling target, a loop, a target behind a folder with no execute bit. The rule this
+      // guard exists for is about what chmod would resolve the link to, and there is nothing
+      // to resolve it to here, so a Linux install into a folder holding one stale link
+      // completes the way it always has. Neither answer applies a bit, so the gap between
+      // this call and the lstat above leaves nothing for the tree to change under.
+      const targetReachable = await fileSystem.access(path).then(
+        () => true,
+        () => false
+      )
+      if (targetReachable) throw new Error("Symbolic links are not allowed")
+      return
+    }
+
     itemCount++
     if (itemCount > MAX_ITEMS) throw new Error("Too many filesystem entries")
 
