@@ -1,9 +1,8 @@
 import { useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
+import { PiTrashDuotone } from "react-icons/pi"
 
-import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
-import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
+import ConfirmDialog from "@renderer/components/ui/ConfirmDialog"
 
 /**
  * Calls `onGone` once it has left the page. The timer puts the call after the microtask in which the
@@ -40,24 +39,25 @@ function DeleteModDialog({
   const sortedNames = names && [...names].sort((a, b) => a.localeCompare(b))
 
   return (
-    <PopupDialogPanel title={sortedNames ? t("features.mods.deleteSelectedTitle", { count: sortedNames.length }) : t("features.mods.deleteMod")} isOpen={isOpen} close={close}>
-      <>
-        <p>{sortedNames ? t("features.mods.areYouSureDeleteSelected", { count: sortedNames.length }) : t("features.mods.areYouSureDelete")}</p>
-        {sortedNames && (
-          <ul className="max-h-48 overflow-y-auto text-left px-2">
-            {sortedNames.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
-        )}
-        <p className="text-zinc-400">{t("features.mods.deletingNotReversible")}</p>
-        {onClosed && <OnGone onGone={onClosed} />}
-        <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-          <FormButton title={t("generic.cancel")} onClick={close} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-          <FormButton title={t("generic.delete")} onClick={onConfirm} variant="destructive" size="md" icon={<PiTrashDuotone />} />
-        </ButtonsWrapper>
-      </>
-    </PopupDialogPanel>
+    <ConfirmDialog
+      title={sortedNames ? t("features.mods.deleteSelectedTitle", { count: sortedNames.length }) : t("features.mods.deleteMod")}
+      isOpen={isOpen}
+      close={close}
+      question={sortedNames ? t("features.mods.areYouSureDeleteSelected", { count: sortedNames.length }) : t("features.mods.areYouSureDelete")}
+      consequence={t("features.mods.deletingNotReversible")}
+      confirmLabel={t("generic.delete")}
+      confirmIcon={<PiTrashDuotone />}
+      onConfirm={onConfirm}
+    >
+      {sortedNames && (
+        <ul className="max-h-48 overflow-y-auto text-left px-2">
+          {sortedNames.map((name) => (
+            <li key={name}>{name}</li>
+          ))}
+        </ul>
+      )}
+      {onClosed && <OnGone onGone={onClosed} />}
+    </ConfirmDialog>
   )
 }
 

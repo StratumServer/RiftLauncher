@@ -1,7 +1,7 @@
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { PiCopyDuotone, PiPencilDuotone, PiPlayCircleDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
+import { PiCopyDuotone, PiPencilDuotone, PiPlayCircleDuotone, PiPlusCircleDuotone, PiTrashDuotone } from "react-icons/pi"
 
 import { formatServerAddress, MAX_SERVER_BOOKMARKS, NEVER_LAUNCHED, orderServerBookmarks } from "@domain/servers/bookmarks"
 
@@ -13,9 +13,8 @@ import LaunchBackupPrompt from "@renderer/features/launch/components/LaunchBacku
 import ServerBookmarkDialog from "@renderer/features/servers/components/ServerBookmarkDialog"
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
+import ConfirmDialog from "@renderer/components/ui/ConfirmDialog"
 import { NormalButton } from "@renderer/components/ui/Buttons"
-import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -174,15 +173,15 @@ function ManageInstallationServers(): JSX.Element {
 
         <ServerBookmarkDialog isOpen={dialogOpen} close={() => setDialogOpen(false)} onSave={saveServer} server={serverToEdit} existing={servers} />
 
-        <PopupDialogPanel title={t("features.servers.removeServer")} isOpen={serverToRemove !== null} close={() => setServerToRemove(null)}>
-          <>
-            <p>{t("features.servers.removeServerConfirm")}</p>
-            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <FormButton title={t("generic.cancel")} onClick={() => setServerToRemove(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <FormButton title={t("generic.delete")} onClick={removeServer} variant="destructive" size="md" icon={<PiTrashDuotone />} />
-            </ButtonsWrapper>
-          </>
-        </PopupDialogPanel>
+        <ConfirmDialog
+          title={t("features.servers.removeServer")}
+          isOpen={serverToRemove !== null}
+          close={() => setServerToRemove(null)}
+          question={t("features.servers.removeServerConfirm")}
+          confirmLabel={t("generic.delete")}
+          confirmIcon={<PiTrashDuotone />}
+          onConfirm={removeServer}
+        />
 
         <LaunchBackupPrompt isOpen={skipBackupPromptOpen} answer={answerSkipBackupPrompt} />
       </div>
