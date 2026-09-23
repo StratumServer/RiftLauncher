@@ -53,6 +53,8 @@ export function createMockConfig(overrides: MockConfigOverrides = {}): ConfigTyp
     background: "default",
     accentColor: "amber",
     moddbVisibility: { policy: "ask", answeredVersion: "", countedVersions: [] },
+    modSuggestionsConsent: null,
+    dismissedModSuggestions: [],
     receiveBetaUpdates: null,
     measurePlaySessions: true,
     allowBasicSessionStore: false,
