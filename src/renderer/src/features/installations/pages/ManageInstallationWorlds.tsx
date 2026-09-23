@@ -84,7 +84,12 @@ function ManageInstallationWorlds(): JSX.Element {
 
   async function restore(backup: WorldBackupType): Promise<void> {
     if (!installation || isPlaying || !window.confirm(t("features.worlds.confirmRestore", { name: backup.worldName }))) return
-    const result = await window.api.worldsManager.restore(installation.id, backup.id)
+    let result: WorldOperationResult
+    try {
+      result = await window.api.worldsManager.restore(installation.id, backup.id)
+    } catch {
+      return addNotification(t("features.worlds.error.operation-failed"), "error")
+    }
     if (!result.ok) return addNotification(t(`features.worlds.error.${result.reason}`), "error")
     addNotification(t("features.worlds.restoreDone"), "success")
     await refresh()
@@ -102,12 +107,13 @@ function ManageInstallationWorlds(): JSX.Element {
 
   if (!installation) return <div className="p-8">{t("features.installations.noInstallationFound")}</div>
 
-  const displayWorlds: WorldType[] = [
-    ...worlds,
-    ...(installation.worldBackups ?? [])
-      .filter((backup) => !worlds.some((world) => world.name.toLocaleLowerCase("en-US") === backup.worldName.toLocaleLowerCase("en-US")))
-      .map((backup) => ({ name: backup.worldName, size: 0, lastModified: backup.date, isDefault: false, backupCount: 1 }))
-  ]
+  const backupOnly = new Map<string, WorldType>()
+  for (const backup of installation.worldBackups ?? []) {
+    const key = backup.worldName.toLocaleLowerCase("en-US")
+    if (worlds.some((world) => world.name.toLocaleLowerCase("en-US") === key) || backupOnly.has(key)) continue
+    backupOnly.set(key, { name: backup.worldName, size: 0, lastModified: backup.date, isDefault: false, backupCount: 1 })
+  }
+  const displayWorlds: WorldType[] = [...worlds, ...backupOnly.values()]
 
   return (
     <ScrollableContainer ref={scrollRef}>

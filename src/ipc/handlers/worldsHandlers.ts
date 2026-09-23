@@ -215,9 +215,10 @@ async function restoreWorld(installationId: unknown, backupIdValue: unknown): Pr
     const world = await findWorld(savesPath, backup.worldName)
     if (world && !(await assertWorldWritable(world))) return failure("world-has-sidecars")
     const result = await withCloseGuard("Restoring a world backup.", async () => {
-      await fse.ensureDir(savesPath)
-      const tempRoot = await fse.mkdtemp(join(savesPath, ".rift-world-restore-"))
+      let tempRoot: string | null = null
       try {
+        await fse.ensureDir(savesPath)
+        tempRoot = await fse.mkdtemp(join(savesPath, ".rift-world-restore-"))
         await assertManagedPath(backup.path, "world backup")
         await validateWorldBackupArchive(backup.path, backup.worldName)
         await extractTarGz(backup.path, tempRoot)
@@ -251,7 +252,7 @@ async function restoreWorld(installationId: unknown, backupIdValue: unknown): Pr
       } catch {
         return failure("operation-failed")
       } finally {
-        await fse.remove(tempRoot).catch(() => undefined)
+        if (tempRoot) await fse.remove(tempRoot).catch(() => undefined)
       }
     })
     return result as WorldOperationResult

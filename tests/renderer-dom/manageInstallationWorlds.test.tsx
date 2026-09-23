@@ -139,4 +139,90 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     expect(deleteButton.disabled).toBe(true)
     expect(restoreButton.disabled).toBe(true)
   })
+  it("disables transfer buttons for a playing target installation", async () => {
+    const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b", _playing: true }
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(), second] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        })),
+        delete: vi.fn(async () => ({ ok: true as const }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const copyButton = await screen.findByRole("button", { name: "Copy world" })
+    const moveButton = await screen.findByRole("button", { name: "Move world" })
+    const backupButton = await screen.findByRole("button", { name: "Back up this world" })
+    const select = await screen.findByRole("combobox")
+    await userEvent.selectOptions(select, "install-b")
+
+    await waitFor(() => {
+      expect((copyButton as HTMLButtonElement).disabled).toBe(true)
+      expect((moveButton as HTMLButtonElement).disabled).toBe(true)
+      expect((backupButton as HTMLButtonElement).disabled).toBe(false)
+    })
+  })
+
+  it("renders one row per backup-only world name even with several archives", async () => {
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            installations: [
+              {
+                ...anInstallation(),
+                worldBackups: [
+                  { id: "b1", date: 3, path: "/backups/b1.tar.gz", worldName: "Gone.vcdbs" },
+                  { id: "b2", date: 1, path: "/backups/b2.tar.gz", worldName: "Gone.vcdbs" }
+                ]
+              }
+            ]
+          })
+        )
+      },
+      worldsManager: {
+        list: vi.fn(async () => ({ ok: true as const, worlds: [] })),
+        delete: vi.fn(async () => ({ ok: true as const }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    expect((await screen.findAllByText("Gone.vcdbs")).length).toBe(1)
+    expect(screen.getAllByTitle("Restore").length).toBe(2)
+  })
+})
+it("does not refetch in a loop when listing fails", async () => {
+  const list = vi.fn(async () => ({ ok: false as const, reason: "saves-unavailable" }))
+  installMockWindowApi({
+    configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
+    worldsManager: {
+      list,
+      delete: vi.fn(async () => ({ ok: true as const }))
+    }
+  })
+
+  renderWithProviders(
+    <Routes>
+      <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+    </Routes>,
+    { route: "/installations/worlds/install-a" }
+  )
+
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  expect(list).toHaveBeenCalledTimes(1)
 })

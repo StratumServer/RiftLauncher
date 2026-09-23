@@ -9,9 +9,11 @@ moving to another Installation adds a numeric suffix when the destination
 already has a world with that name. Transfers between different Vintage Story
 versions are allowed but show a warning.
 
-World changes are disabled while either Installation is playing. The launcher
-also refuses to change a world while Vintage Story has its SQLite `-wal` or
-`-shm` sidecar open; close the game first so no recent save data is lost.
+The launcher refuses every world change while Vintage Story is running in the
+same session: close the game first. A session already closed before the launcher
+restarted is not tracked, so the launcher also refuses to change a world while
+Vintage Story has its SQLite `-wal` or `-shm` sidecar open. Both guards depend
+on the live `Saves` folder being free of the game's own locks.
 
 World backups are stored beneath the configured Backups folder and survive
 deleting the live world. A restore replaces only the selected `.vcdbs` file;

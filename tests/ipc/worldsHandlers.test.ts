@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -307,6 +307,44 @@ describe("worlds IPC handlers", () => {
     const unsafeResult = await handler("worlds-restore")(event, "install-a", backupId)
     assert.deepEqual(unsafeResult, { ok: false, reason: "operation-failed" })
   })
+  const chmodIt = process.platform === "win32" ? it.skip : it
+  chmodIt("returns operation-failed instead of rejecting when the Saves folder is not writable", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    const backupId = "backup-unwritable-saves"
+    const backupArchive = join(backupsFolder, "Worlds", `${backupId}.tar.gz`)
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
+    writeFileSync(backupArchive, "dummy", "utf8")
+    writeConfig([installation("install-a", sourcePath, "1.22.7", [{ id: backupId, date: 1, path: backupArchive, worldName: "World.vcdbs" }])])
+    const event = await createTrustedEvent()
+    const savesPath = join(sourcePath, "Saves")
+    chmodSync(savesPath, 0o500)
+
+    try {
+      const result = await handler("worlds-restore")(event, "install-a", backupId)
+      assert.deepEqual(result, { ok: false, reason: "operation-failed" })
+    } finally {
+      chmodSync(savesPath, 0o700)
+    }
+  })
+
+  it("refuses restore when the extracted archive contains a non-file entry", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    const backupId = "backup-subdir-entry"
+    const backupArchive = join(backupsFolder, "Worlds", `${backupId}.tar.gz`)
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
+    writeFileSync(backupArchive, "dummy", "utf8")
+    writeConfig([installation("install-a", sourcePath, "1.22.7", [{ id: backupId, date: 1, path: backupArchive, worldName: "World.vcdbs" }])])
+    const event = await createTrustedEvent()
+
+    extractTarGz.mockImplementationOnce(async (_archivePath, outputPath) => {
+      mkdirSync(join(outputPath, "Nested"), { recursive: true })
+    })
+    const result = await handler("worlds-restore")(event, "install-a", backupId)
+    assert.deepEqual(result, { ok: false, reason: "operation-failed" })
+    assert.equal(existsSync(join(sourcePath, "Saves", "World.vcdbs")), false)
+  })
 
   it("fails mutating operations when path assertions reject", async () => {
     const sourcePath = join(installationsRoot, "install-a")
@@ -339,6 +377,40 @@ describe("worlds IPC handlers", () => {
     const transferFail = await handler("worlds-transfer")(event, "install-a", "World.vcdbs", "install-b", "copy")
     assert.deepEqual(transferFail, { ok: false, reason: "operation-failed" })
     assertManagedPathSpy.mockImplementation(realAssertManagedPath)
+
+    // Restore fails when assertManagedPath rejects on the backup archive
+    const restoreBackupId = "backup-managed-assert"
+    const restoreBackupArchive = join(backupsFolder, "Worlds", `${restoreBackupId}.tar.gz`)
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
+    writeFileSync(restoreBackupArchive, "dummy", "utf8")
+    const restoreConfig = [
+      installation("install-a", sourcePath, "1.22.7", [{ id: restoreBackupId, date: 1, path: restoreBackupArchive, worldName: "World.vcdbs" }]),
+      installation("install-b", targetPath)
+    ]
+    writeConfig(restoreConfig)
+    await (await import("@src/config/configManager")).saveConfig(JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType)
+    assertManagedPathSpy.mockImplementation(async (value: unknown, name?: string, options?: Parameters<typeof realAssertManagedPath>[2]) => {
+      if (name === "world backup") throw new TypeError("Unmanaged backup archive")
+      return realAssertManagedPath(value, name, options)
+    })
+    assertManagedPathSpy.mockImplementation(realAssertManagedPath)
+
+    assertManagedPathSpy.mockImplementation(async (value: unknown, name?: string, options?: Parameters<typeof realAssertManagedPath>[2]) => {
+      if (name === "restored world") throw new TypeError("Unmanaged restore target")
+      return realAssertManagedPath(value, name, options)
+    })
+    const restoreTargetFail = await handler("worlds-restore")(event, "install-a", restoreBackupId)
+    assert.deepEqual(restoreTargetFail, { ok: false, reason: "operation-failed" })
+    assertManagedPathSpy.mockImplementation(realAssertManagedPath)
+
+    // Restore fails when assertManagedPath rejects after the backup is restored
+    assertManagedPathSpy.mockImplementation(async (value: unknown, name?: string, options?: Parameters<typeof realAssertManagedPath>[2]) => {
+      if (name === "world" && !String(value).includes(".tar.gz")) throw new TypeError("Unmanaged transfer world")
+      return realAssertManagedPath(value, name, options)
+    })
+    const transferWorldFail = await handler("worlds-transfer")(event, "install-a", "World.vcdbs", "install-b", "copy")
+    assert.deepEqual(transferWorldFail, { ok: false, reason: "operation-failed" })
+    assertManagedPathSpy.mockImplementation(realAssertManagedPath)
   })
 
   it("refuses every mutating worlds channel while an installation is playing", async () => {
@@ -364,6 +436,24 @@ describe("worlds IPC handlers", () => {
       ])
     } finally {
       clearInstallationPlaying("install-a")
+    }
+  })
+
+  it("refuses a transfer when only the target installation is playing", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    const targetPath = join(installationsRoot, "install-b")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    mkdirSync(join(targetPath, "Saves"), { recursive: true })
+    writeFileSync(join(sourcePath, "Saves", "World.vcdbs"), "world", "utf8")
+    writeConfig([installation("install-a", sourcePath), installation("install-b", targetPath)])
+    const event = await createTrustedEvent()
+    assert.equal(markInstallationPlaying("install-b"), true)
+
+    try {
+      const result = await handler("worlds-transfer")(event, "install-a", "World.vcdbs", "install-b", "copy")
+      assert.deepEqual(result, { ok: false, reason: "installation-playing" })
+    } finally {
+      clearInstallationPlaying("install-b")
     }
   })
 

@@ -319,7 +319,10 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     }
   }, [])
 
-  const addNotification = (body: string, type: NotificationTypes, options?: NotificationOptions): void => {
+  // useCallback because page-level refresh callbacks list addNotification in
+  // their dependency arrays and refire their list effect when its identity
+  // churns per render (#362 pattern; same reason as markAllSeen below).
+  const addNotification = useCallback((body: string, type: NotificationTypes, options?: NotificationOptions): void => {
     const presentation = options?.presentation ?? "both"
     const hasActions = Boolean(options?.actions?.length)
 
@@ -360,7 +363,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       pendingToasts.current.push({ id, body, type, hasActions })
       setToastQueue((queue) => [...queue, id])
     }
-  }
+  }, [])
 
   const dismissToast = (id: string, reason: ToastDismissReason = "manual"): void => {
     setStack((current) => (current.some((entry) => entry.id === id) ? current.filter((entry) => entry.id !== id) : current))
