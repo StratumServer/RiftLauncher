@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import { execFileSync } from "node:child_process"
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve as resolvePath, sep } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -33,7 +33,7 @@ import { MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
  * worker_thread or child_process. That includes `runTrackedWorker`'s own
  * message-handling logic (progress validation, "finished"/"error"/unknown
  * message shapes, the worker's own "error" event), which DOWNLOAD_ON_PATH/
- * EXTRACT_ON_PATH/COMPRESS_ON_PATH/CHANGE_PERMS all funnel through:
+ * EXTRACT_ON_PATH/COMPRESS_ON_PATH all funnel through:
  * `@src/ipc/workerManager` is mocked so `acquireWorker` hands back a lease
  * wrapping a plain `EventEmitter` a test drives directly instead of a real
  * `worker_threads.Worker`, which is what runTrackedWorker only ever calls
@@ -52,7 +52,6 @@ import { MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
 vi.mock("@src/ipc/workers/compressWorker?modulePath", () => ({ default: "compressWorker-path" }))
 vi.mock("@src/ipc/workers/extractWorker?modulePath", () => ({ default: "extractWorker-path" }))
 vi.mock("@src/ipc/workers/innoExtractWorker?modulePath", () => ({ default: "innoExtractWorker-path" }))
-vi.mock("@src/ipc/workers/changePermsWorker?modulePath", () => ({ default: "changePermsWorker-path" }))
 vi.mock("@src/ipc/workers/downloadWorker?modulePath", () => ({ default: "downloadWorker-path" }))
 
 vi.mock("@src/ipc/workerManager", () => ({
@@ -1005,17 +1004,33 @@ describe("COMPRESS_ON_PATH: runTrackedWorker via a fake worker", () => {
 })
 
 // Same Linux-only early return: on Windows the handler resolves false without
-// ever starting a worker, so the fake worker this waits for never arrives.
-describe.skipIf(process.platform === "win32")("CHANGE_PERMS: runTrackedWorker via a fake worker", () => {
-  it("resolves true once the worker finishes", async () => {
+// walking anything, so the mode these read back would mean nothing.
+describe.skipIf(process.platform === "win32")("CHANGE_PERMS: the walk itself", () => {
+  it("resolves true once the tree has been walked, and applies the mode", async () => {
     const event = await createTrustedEvent()
-    const workerPromise = nextTrackedWorker()
-    const resultPromise = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [managedFolder], 0o755)
+    const target = join(managedFolder, "Vintagestory")
+    writeFileSync(target, "elf", { mode: 0o600 })
 
-    const worker = await workerPromise
-    worker.emit("message", { type: "finished" })
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [managedFolder], 0o755), true)
 
-    assert.equal(await resultPromise, true)
+    assert.equal(statSync(target).mode & 0o777, 0o755)
+
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0, "the walk runs on this thread, not in a worker")
+  })
+
+  // The refusal is changePermissions', and permissions.test.ts pins it there. What this
+  // adds is the text the renderer's extract task sees, which the pooled worker used to fix
+  // and the handler now fixes in its place.
+  it("reports a refusal under one fixed message rather than the reason behind it", async () => {
+    const event = await createTrustedEvent()
+    // The target has to be there: a link pointing at nothing is skipped rather than refused,
+    // so without this the walk would finish and there would be no refusal to report.
+    const outsider = join(temporaryRoot, "outsider.txt")
+    writeFileSync(outsider, "not the launcher's file", { mode: 0o600 })
+    symlinkSync(outsider, join(managedFolder, "shortcut"))
+
+    await assert.rejects(() => handler(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [managedFolder], 0o755), /^Error: Changing permissions failed$/)
   })
 })
 

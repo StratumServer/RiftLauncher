@@ -15,6 +15,7 @@ import type { WorkerDisposition } from "@src/ipc/workerManager"
 import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, comparablePath, isRecord, MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
+import { changePermissions } from "@src/ipc/permissions"
 import { getConfig } from "@src/config/configManager"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
 import { getCachedOptimumManifest, getTrustedOverlayHash } from "@src/ipc/optimumManifest"
@@ -25,14 +26,12 @@ import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
 import innoExtractWorker from "@src/ipc/workers/innoExtractWorker?modulePath"
-import changePermsWorker from "@src/ipc/workers/changePermsWorker?modulePath"
 import downloadWorkerPath from "@src/ipc/workers/downloadWorker?modulePath"
 
 const WORKER_TIMEOUTS_MS: Record<string, number> = {
   DOWNLOAD_ON_PATH: 45 * 60 * 1_000,
   EXTRACT_ON_PATH: 30 * 60 * 1_000,
   COMPRESS_ON_PATH: 30 * 60 * 1_000,
-  CHANGE_PERMS: 10 * 60 * 1_000,
   // Reading the payload out of the Windows installer. Measured at 41 seconds
   // for the 598 MB installer of 1.22.6 on a developer machine, so this leaves
   // room for a slow disk without leaving a stuck worker running for an hour.
@@ -68,6 +67,15 @@ const EXTRACT_INSTALLER_PAYLOAD = true
  * had no bound of its own.
  */
 const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
+
+/**
+ * Same standing as RUN_INSTALLER_TIMEOUT_MS: CHANGE_PERMS walks the tree on this thread
+ * rather than in a worker, so it is not the pool's timeout that bounds it. The value is the
+ * one the table used to carry. The entry cap in changePermissions bounds how many entries
+ * the walk may touch; this bounds how long it may take to touch them, which is the case a
+ * filesystem that stops answering produces.
+ */
+const CHANGE_PERMS_TIMEOUT_MS = 10 * 60 * 1_000
 
 /**
  * Nothing capped how many DOWNLOAD_ON_PATH/EXTRACT_ON_PATH/COMPRESS_ON_PATH calls the
@@ -114,19 +122,18 @@ app.on("before-quit", () => {
  * compression share a two-slot archive lane but use different worker scripts, so one idle
  * worker per archive operation keeps the combined idle count within that shared limit.
  *
- * CHANGE_PERMS and RUN_INSTALLER are 0 on purpose. Both run once per install with no burst
- * behind them, so pooling either would buy one saved worker spawn per game install and pay
- * for it with a resident idle isolate. They still go through the pooled protocol below so
- * there is only one worker protocol in the app; 0 just means every release terminates,
- * exactly like before this file started pooling anything. RUN_INSTALLER joining the archive
- * lane leaves those sums alone for the same reason: at 0 it never contributes an idle worker
- * to weigh against the two-slot limit.
+ * RUN_INSTALLER is 0 on purpose. It runs once per install with no burst behind it, so
+ * pooling it would buy one saved worker spawn per game install and pay for it with a
+ * resident idle isolate. It still goes through the pooled protocol below so there is only
+ * one worker protocol in the app; 0 just means every release terminates, exactly like
+ * before this file started pooling anything. RUN_INSTALLER joining the archive lane leaves
+ * those sums alone for the same reason: at 0 it never contributes an idle worker to weigh
+ * against the two-slot limit.
  */
 const WORKER_POOL_MAX_IDLE: Record<string, number> = {
   DOWNLOAD_ON_PATH: DOWNLOAD_CONCURRENCY_LIMIT,
   EXTRACT_ON_PATH: 1,
   COMPRESS_ON_PATH: 1,
-  CHANGE_PERMS: 0,
   RUN_INSTALLER: 0
 }
 
@@ -657,8 +664,18 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS, async (event, paths: str
 
   const safePaths = await Promise.all(paths.map((pathValue) => assertManagedPath(pathValue, "permissions path")))
   const safePerms = assertInteger(perms, "permissions", 0, 0o777)
+  const timeout = AbortSignal.timeout(CHANGE_PERMS_TIMEOUT_MS)
 
-  await runTrackedWorker(event, "permissions", undefined, changePermsWorker, { paths: safePaths, perms: safePerms }, "CHANGE_PERMS", () => true)
+  try {
+    await changePermissions({ paths: safePaths, perms: safePerms, signal: timeout })
+  } catch (err) {
+    // Same two texts the pooled worker reported, so the renderer's extract task reads a
+    // refusal exactly as it did. The reason behind them used to be dropped on the way out
+    // of the worker; at debug it is there for whoever reads the log afterwards.
+    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [CHANGE_PERMS] ${getErrorMessage(err)}`)
+    throw new Error(timeout.aborted ? "CHANGE_PERMS timed out" : "Changing permissions failed")
+  }
+
   return true
 })
 

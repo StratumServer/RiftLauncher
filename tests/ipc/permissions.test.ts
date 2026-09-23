@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 
-import { changePermissions, type PermissionsFileSystem } from "@src/ipc/workers/permissions"
+import { changePermissions, type PermissionsFileSystem } from "@src/ipc/permissions"
 
 /**
  * The Linux permission pass, run against a real temporary tree.
@@ -43,12 +43,13 @@ function fakeTree(lstat: (path: string) => FakeStats, readdir: (path: string) =>
 
   return {
     chmodCalls,
-    existsSync: (): boolean => true,
-    lstatSync: lstat,
-    readdirSync: readdir,
-    chmodSync: (path, mode): void => {
+    lstat: async (path): Promise<FakeStats> => lstat(path),
+    readdir: async (path): Promise<string[]> => readdir(path),
+    chmod: async (path, mode): Promise<void> => {
       chmodCalls.push({ path, mode })
-    }
+    },
+    // Nothing these fake trees describe is a symbolic link, so the walk never asks.
+    access: async (): Promise<void> => {}
   }
 }
 
@@ -83,8 +84,8 @@ describe("changePermissions", () => {
   // POSIX mode bits like 0o755 or 0o600, so the mode a real tree ends up with
   // has nothing to do with what changePermissions asked for. These read the
   // mode back off disk, so they only mean anything on a POSIX filesystem.
-  it.skipIf(process.platform === "win32")("applies the mode to the root, its files and everything nested under it", () => {
-    changePermissions({ paths: [installation], perms: 0o755 })
+  it.skipIf(process.platform === "win32")("applies the mode to the root, its files and everything nested under it", async () => {
+    await changePermissions({ paths: [installation], perms: 0o755 })
 
     assert.equal(modeOf(installation), 0o755)
     assert.equal(modeOf(installation, "Vintagestory"), 0o755)
@@ -92,59 +93,72 @@ describe("changePermissions", () => {
     assert.equal(modeOf(installation, "assets", "version.txt"), 0o755)
   })
 
-  it.skipIf(process.platform === "win32")("applies the mode to a single file given directly", () => {
-    changePermissions({ paths: [join(installation, "Vintagestory")], perms: 0o750 })
+  it.skipIf(process.platform === "win32")("applies the mode to a single file given directly", async () => {
+    await changePermissions({ paths: [join(installation, "Vintagestory")], perms: 0o750 })
 
     assert.equal(modeOf(installation, "Vintagestory"), 0o750)
     assert.equal(modeOf(installation, "assets", "version.txt"), 0o600)
   })
 
-  it.skipIf(process.platform === "win32")("walks every root it is given", () => {
+  it.skipIf(process.platform === "win32")("walks every root it is given", async () => {
     const second = workspacePath("data")
     mkdirSync(second)
     writeFileSync(join(second, "clientsettings.json"), "{}", { mode: 0o600 })
 
-    changePermissions({ paths: [installation, second], perms: 0o755 })
+    await changePermissions({ paths: [installation, second], perms: 0o755 })
 
     assert.equal(modeOf(installation, "Vintagestory"), 0o755)
     assert.equal(modeOf(second, "clientsettings.json"), 0o755)
   })
 
-  it.skipIf(process.platform === "win32")("skips a path that is not there", () => {
-    assert.doesNotThrow(() => changePermissions({ paths: [workspacePath("never-installed"), installation], perms: 0o755 }))
+  it.skipIf(process.platform === "win32")("skips a path that is not there", async () => {
+    await assert.doesNotReject(() => changePermissions({ paths: [workspacePath("never-installed"), installation], perms: 0o755 }))
 
     assert.equal(modeOf(installation, "Vintagestory"), 0o755)
   })
 
-  it.skipIf(process.platform === "win32")("does nothing at all when given no paths", () => {
-    changePermissions({ paths: [], perms: 0o755 })
+  it.skipIf(process.platform === "win32")("does nothing at all when given no paths", async () => {
+    await changePermissions({ paths: [], perms: 0o755 })
 
     assert.equal(modeOf(installation, "Vintagestory"), 0o600)
   })
 
-  it.skipIf(process.platform === "win32")("refuses a symbolic link rather than applying the mode to what it points at", () => {
+  it.skipIf(process.platform === "win32")("refuses a symbolic link rather than applying the mode to what it points at", async () => {
     const outsider = workspacePath("outsider.txt")
     writeFileSync(outsider, "not the launcher's file", { mode: 0o600 })
     symlinkSync(outsider, join(installation, "shortcut"))
 
-    assert.throws(() => changePermissions({ paths: [installation], perms: 0o777 }), /Symbolic links are not allowed/)
+    await assert.rejects(() => changePermissions({ paths: [installation], perms: 0o777 }), /Symbolic links are not allowed/)
 
     assert.equal(modeOf(outsider), 0o600)
   })
 
-  it("refuses an entry that is neither a file nor a folder", () => {
+  // The other half of that rule. A link pointing at nothing has no target for chmod to
+  // resolve it to, so it is skipped the way a missing path is, and the install it sits in
+  // finishes. A stale link left behind in a game folder is ordinary, and failing the whole
+  // extract task over one would be a refusal the player cannot act on.
+  it.skipIf(process.platform === "win32")("skips a symbolic link whose target cannot be reached, and walks the rest", async () => {
+    symlinkSync(workspacePath("never-written.txt"), join(installation, "dangling"))
+
+    await assert.doesNotReject(() => changePermissions({ paths: [installation], perms: 0o755 }))
+
+    assert.equal(modeOf(installation, "Vintagestory"), 0o755)
+    assert.equal(modeOf(installation, "assets", "version.txt"), 0o755)
+  })
+
+  it("refuses an entry that is neither a file nor a folder", async () => {
     const socket = fakeStats("other")
     const fileSystem = fakeTree(
       () => socket,
       () => []
     )
 
-    assert.throws(() => changePermissions({ paths: [FAKE_ROOT], perms: 0o755, fileSystem }), /Unsupported filesystem entry/)
+    await assert.rejects(() => changePermissions({ paths: [FAKE_ROOT], perms: 0o755, fileSystem }), /Unsupported filesystem entry/)
 
     assert.deepEqual(fileSystem.chmodCalls, [])
   })
 
-  it("refuses a tree with more entries than the cap allows", () => {
+  it("refuses a tree with more entries than the cap allows", async () => {
     // A real tree of 100 001 entries costs more to build than the whole suite
     // costs to run, so the walk is pointed at a fake one that claims to hold them.
     const children = Array.from({ length: 100_001 }, (_, index) => `child-${index}`)
@@ -153,10 +167,10 @@ describe("changePermissions", () => {
       () => children
     )
 
-    assert.throws(() => changePermissions({ paths: [FAKE_ROOT], perms: 0o755, fileSystem }), /Too many filesystem entries/)
+    await assert.rejects(() => changePermissions({ paths: [FAKE_ROOT], perms: 0o755, fileSystem }), /Too many filesystem entries/)
   })
 
-  it("descends before it touches the folder it descended into", () => {
+  it("descends before it touches the folder it descended into", async () => {
     // The order matters on a folder whose current mode would stop the walk: the
     // children are reached with the permissions the extraction left behind.
     const fileSystem = fakeTree(
@@ -164,11 +178,39 @@ describe("changePermissions", () => {
       () => ["Vintagestory"]
     )
 
-    changePermissions({ paths: [FAKE_ROOT], perms: 0o755, fileSystem })
+    await changePermissions({ paths: [FAKE_ROOT], perms: 0o755, fileSystem })
 
     assert.deepEqual(fileSystem.chmodCalls, [
       { path: join(FAKE_ROOT, "Vintagestory"), mode: 0o755 },
       { path: FAKE_ROOT, mode: 0o755 }
     ])
+  })
+
+  // The caller's bound on a filesystem that stops answering. The check sits before each
+  // entry, so an aborted walk stops rather than running to the end of the tree.
+  it("stops on an aborted signal, leaving the entries it has not reached alone", async () => {
+    const fileSystem = fakeTree(
+      (path) => (path === FAKE_ROOT ? FAKE_DIRECTORY : FAKE_FILE),
+      () => ["Vintagestory", "assets"]
+    )
+
+    await assert.rejects(() => changePermissions({ paths: [FAKE_ROOT], perms: 0o755, signal: AbortSignal.abort(), fileSystem }))
+
+    assert.deepEqual(fileSystem.chmodCalls, [])
+  })
+
+  // And the case the check between entries cannot reach: a hard NFS or FUSE mount that goes
+  // away leaves a syscall that never answers, so the walk never gets back to the check. The
+  // bound has to hold there too, or the handler's promise stays pending and the renderer's
+  // extract task shows as running for good.
+  it("rejects on the signal even when a syscall never answers", async () => {
+    const wedged: PermissionsFileSystem = {
+      lstat: () => new Promise(() => {}),
+      readdir: async (): Promise<string[]> => [],
+      chmod: async (): Promise<void> => {},
+      access: async (): Promise<void> => {}
+    }
+
+    await assert.rejects(() => changePermissions({ paths: ["/mnt/wedged"], perms: 0o755, signal: AbortSignal.timeout(20), fileSystem: wedged }), /aborted due to timeout/)
   })
 })

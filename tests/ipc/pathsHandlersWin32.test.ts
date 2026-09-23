@@ -42,7 +42,6 @@ import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
 vi.mock("@src/ipc/workers/compressWorker?modulePath", () => ({ default: "compressWorker-path" }))
 vi.mock("@src/ipc/workers/extractWorker?modulePath", () => ({ default: "extractWorker-path" }))
 vi.mock("@src/ipc/workers/innoExtractWorker?modulePath", () => ({ default: "innoExtractWorker-path" }))
-vi.mock("@src/ipc/workers/changePermsWorker?modulePath", () => ({ default: "changePermsWorker-path" }))
 vi.mock("@src/ipc/workers/downloadWorker?modulePath", () => ({ default: "downloadWorker-path" }))
 
 vi.mock("@src/ipc/workerManager", () => ({
@@ -543,7 +542,7 @@ describe("RUN_INSTALLER on win32: format-refused falls back to spawning the inst
 })
 
 describe("CHANGE_PERMS on win32", () => {
-  it("returns false before any worker runs, since the permissions worker is Linux-only", async () => {
+  it("returns false before anything is walked, since POSIX mode bits are Linux-only", async () => {
     const event = await createTrustedEvent()
     const result = await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [managedFolder], 0o755)
     assert.equal(result, false)
