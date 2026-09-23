@@ -43,6 +43,10 @@ declare global {
       answeredVersion: string
       countedVersions: string[]
     }
+    /** Whether the player has independently opted into ModDB suggestions for the Mods browser. */
+    modSuggestionsConsent: boolean | null
+    /** Listing ids dismissed from the suggestions row, bounded and retained once recorded. */
+    dismissedModSuggestions: number[]
     /**
      * Whether update checks offer prerelease builds: `true` for yes, `false` for no, and `null`
      * while nobody has said, which leaves the running version deciding the way electron-updater
