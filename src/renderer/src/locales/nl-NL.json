@@ -316,6 +316,7 @@
       "exportModpackSuccess": "Modpack geëxporteerd.",
       "exportModpackError": "Het modpack kon niet worden geëxporteerd. De details staan in het logboek.",
       "openModsFolder": "De map openen waar de Mods van deze installatie staan",
+      "openModsFolderButton": "Map openen",
       "importModpack": "Een modpackbestand importeren om alle Mods erin te installeren",
       "importModpackButton": "Modpack importeren",
       "importModpackTitle": "Modpack importeren",

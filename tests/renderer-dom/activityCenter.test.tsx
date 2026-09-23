@@ -1353,10 +1353,15 @@ describe("Activity Center keyboard reach", () => {
 
     render(<ActivityCenter />, { wrapper })
     openCenter()
+    const trigger = screen.getByRole("button", { name: /^Activity Center:/ })
     fireEvent.keyDown(panel(), { key: "Escape" })
 
-    await waitFor(() => expect(screen.queryByRole("region", { name: "Activity Center" })).toBeNull(), { timeout: 5_000 })
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Activity Center:/ }))
+    // Escape closes the popover and returns focus synchronously (see Popover.Panel's onKeyDown
+    // in @headlessui/react); the region only leaves the DOM once AnimatePresence's exit animation
+    // finishes, which is what made this case flake under CI load (#504). Assert on what Escape
+    // actually controls instead of on that animation's timing.
+    await waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("false"))
+    expect(document.activeElement).toBe(trigger)
   })
 })
 

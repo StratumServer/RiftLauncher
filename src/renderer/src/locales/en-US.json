@@ -316,6 +316,7 @@
       "exportModpackSuccess": "Modpack exported successfully.",
       "exportModpackError": "The modpack couldn't be exported. The log has the details.",
       "openModsFolder": "Open the folder where the Mods for this Installation are",
+      "openModsFolderButton": "Open folder",
       "importModpack": "Import a modpack file to install all its Mods",
       "importModpackButton": "Import Modpack",
       "importModpackTitle": "Import Modpack",
