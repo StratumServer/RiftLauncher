@@ -181,14 +181,12 @@ declare global {
   /**
    * A fork of Vintage Story that named itself when the launcher probed it.
    *
-   * Declared here so the domain, the preload bridge and the renderer spell it
-   * once. `name` is a fixed token the launcher chose, never text echoed from a
-   * binary it did not build: see toWireBuildVariant in src/ipc/validation.ts.
+   * The ambient name the preload bridge and the renderer reach the domain's own
+   * declaration under, so the token and the rule behind it are written once: see
+   * GameBuildVariant in src/domain/versions/detect.ts, and toWireBuildVariant in
+   * src/ipc/validation.ts for what holds the wire value to it.
    */
-  type GameBuildVariantType = {
-    name: "Optimum"
-    version: string
-  }
+  type GameBuildVariantType = import("./domain/versions/detect").GameBuildVariant
 
   type GameVersionType = {
     /** Stable technical identity; independent from the displayed label and version number. */

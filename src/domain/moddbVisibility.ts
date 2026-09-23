@@ -28,6 +28,8 @@
  *    the first launches of a beta routinely land before it.
  */
 
+import { isRecord } from "./records"
+
 /** The launcher's own entry on the ModDB. */
 export const MODDB_LISTING_MOD_ID = 11016
 
@@ -149,10 +151,6 @@ export function moddbListingVersion(version: string): string {
 /** The answers #219 stored, one string covering the whole install's lifetime. */
 const LEGACY_ANSWERED = new Set(["accepted", "declined", "already-done"])
 const LEGACY_ACCEPTED = "accepted"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 function readVersion(value: unknown): string {
   return typeof value === "string" && value.length > 0 && value.length <= MAX_VERSION_LENGTH ? value : ""

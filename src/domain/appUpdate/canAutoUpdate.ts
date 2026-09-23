@@ -11,6 +11,8 @@
  * marker stays refused. Nothing is published for macOS at all.
  */
 
+import { refuse } from "../refusal"
+
 /** Why the updater stays off. */
 export type CanAutoUpdateFailure = "updates-disabled" | "linux-unsupported-package" | "unsupported-platform"
 
@@ -25,10 +27,6 @@ export interface CanAutoUpdateInput {
 
 /** The package-type marker values electron-updater has a Linux updater for. */
 const SUPPORTED_LINUX_PACKAGE_TYPES: ReadonlySet<string> = new Set(["deb", "rpm", "pacman"])
-
-function refuse(reason: CanAutoUpdateFailure): CanAutoUpdateResult {
-  return { ok: false, reason }
-}
 
 /**
  * Says whether this run can check for, download and apply updates.

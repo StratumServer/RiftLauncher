@@ -1,4 +1,5 @@
 import type { DownloadOutcome, Downloader, FileSystem, PathBuilder } from "../ports"
+import { refuse } from "../refusal"
 import { modsFolder } from "./folder"
 import { MOD_DISABLED_SUFFIX } from "./scanInstalled"
 
@@ -99,10 +100,6 @@ export interface InstallModEvents {
  */
 export function modArchiveFileName(release: ModReleaseToInstall, disabled = false): string {
   return `${release.modidstr}-${release.modversion}${MOD_ARCHIVE_EXTENSION}${disabled ? MOD_DISABLED_SUFFIX : ""}`
-}
-
-function refuse(reason: InstallModFailure): InstallModResult {
-  return { ok: false, reason }
 }
 
 /**

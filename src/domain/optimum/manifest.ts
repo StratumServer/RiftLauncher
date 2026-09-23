@@ -22,6 +22,8 @@
 
 import semver from "semver"
 
+import { isRecord } from "../records"
+
 /** The platforms an overlay is published for. A label on the wire, a closed set here. */
 export const OPTIMUM_RIDS = ["linux-x64", "win-x64"] as const
 
@@ -76,10 +78,6 @@ export interface OptimumManifest {
   archive: OptimumArchive
   targets: OptimumTarget[]
   files: OptimumFile[]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 /** The bare hex of a `sha256:`-prefixed field, or undefined when it is not one. */
