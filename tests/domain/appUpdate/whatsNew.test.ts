@@ -228,48 +228,50 @@ describe("releaseNotesToBlocks", () => {
   })
 
   it("truncates a long block at a word boundary with an ellipsis, heading as well as paragraph", () => {
-    const blocks = releaseNotesToBlocks("# alpha beta gamma delta\n\nalpha beta gamma delta", { maxBlocks: 10, maxBlockLength: 20 })
+    const long = "alpha ".repeat(400).trim()
+    const blocks = releaseNotesToBlocks(`# ${long}\n\n${long}`)
 
-    // 20 characters would land inside "delta", so the cut backs up to the space before it.
+    // 2000 characters would land inside the 334th "alpha", so the cut backs up to the space before it.
+    const cut = `${"alpha ".repeat(333).trim()}${MORE_ON_THE_RELEASES_PAGE}`
     assert.deepEqual(blocks, [
-      { kind: "heading", text: `alpha beta gamma${MORE_ON_THE_RELEASES_PAGE}` },
-      { kind: "paragraph", text: `alpha beta gamma${MORE_ON_THE_RELEASES_PAGE}` }
+      { kind: "heading", text: cut },
+      { kind: "paragraph", text: cut }
     ])
-    assert.ok(blocks.every((block) => block.text.length <= 20))
+    assert.ok(blocks.every((block) => block.text.length <= 2000))
   })
 
   it("cuts a long word with no space to back up to", () => {
-    assert.deepEqual(releaseNotesToBlocks("x".repeat(40), { maxBlocks: 10, maxBlockLength: 8 }), [{ kind: "paragraph", text: `xxxxxxx${MORE_ON_THE_RELEASES_PAGE}` }])
+    assert.deepEqual(releaseNotesToBlocks("x".repeat(3000)), [{ kind: "paragraph", text: `${"x".repeat(1999)}${MORE_ON_THE_RELEASES_PAGE}` }])
   })
 
   it("never truncates through the middle of a surrogate pair", () => {
-    const text = releaseNotesToBlocks("😀".repeat(20), { maxBlocks: 10, maxBlockLength: 6 })[0]?.text ?? ""
+    // The 2000th unit is a high surrogate, so the cut backs up one unit rather than splitting the pair.
+    const text = releaseNotesToBlocks("😀".repeat(2000))[0]?.text ?? ""
 
-    assert.equal(text, `😀😀${MORE_ON_THE_RELEASES_PAGE}`)
+    assert.equal(text, `${"😀".repeat(999)}${MORE_ON_THE_RELEASES_PAGE}`)
     assert.equal(text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "").search(/[\uD800-\uDFFF]/), -1)
   })
 
   it("caps the number of blocks and says the rest was left out", () => {
     const markdown = Array.from({ length: 200 }, (_, index) => `- item ${index}`).join("\n")
-    const blocks = releaseNotesToBlocks(markdown, { maxBlocks: 5, maxBlockLength: 600 })
+    const blocks = releaseNotesToBlocks(markdown)
 
-    assert.equal(blocks.length, 5)
+    assert.equal(blocks.length, 120)
     assert.deepEqual(blocks.slice(0, 4), [
       { kind: "bullet", text: "item 0" },
       { kind: "bullet", text: "item 1" },
       { kind: "bullet", text: "item 2" },
       { kind: "bullet", text: "item 3" }
     ])
-    assert.deepEqual(blocks[4], { kind: "paragraph", text: MORE_ON_THE_RELEASES_PAGE })
+    assert.deepEqual(blocks.at(-2), { kind: "bullet", text: "item 118" })
+    assert.deepEqual(blocks.at(-1), { kind: "paragraph", text: MORE_ON_THE_RELEASES_PAGE })
   })
 
-  it("says nothing extra when the body fits inside the block cap", () => {
-    const blocks = releaseNotesToBlocks("- one\n- two\n- three", { maxBlocks: 3, maxBlockLength: 600 })
-    assert.deepEqual(blocks, [
-      { kind: "bullet", text: "one" },
-      { kind: "bullet", text: "two" },
-      { kind: "bullet", text: "three" }
-    ])
+  it("says nothing extra when the body fills the block cap exactly", () => {
+    const blocks = releaseNotesToBlocks(Array.from({ length: 120 }, (_, index) => `- item ${index}`).join("\n"))
+
+    assert.equal(blocks.length, 120)
+    assert.deepEqual(blocks.at(-1), { kind: "bullet", text: "item 119" })
   })
 
   it("caps a huge body instead of processing all of it", () => {
@@ -378,15 +380,24 @@ describe("selectReleasesToShow", () => {
       selectReleasesToShow(releases, "1.0.0", "1.8.0").map((r) => r.tag),
       ["1.8.0", "1.7.0", "1.6.0", "1.5.0", "1.4.0"]
     )
-    assert.deepEqual(
-      selectReleasesToShow(releases, "1.0.0", "1.8.0", { maxReleases: 2 }).map((r) => r.tag),
-      ["1.8.0", "1.7.0"]
-    )
     assert.equal(selectReleasesToShow(releases, "1.0.0", "1.8.0").length, DEFAULT_MAX_RELEASES_TO_SHOW)
   })
 
   it("shows nothing once the current version is already the last one seen", () => {
     assert.deepEqual(selectReleasesToShow([release({ tag: "1.0.0" })], "1.0.0", "1.0.0"), [])
+  })
+
+  it("leaves a tag semver refuses outside the window rather than guessing at its number", () => {
+    // Nothing upstream constrains the shape of a tag: src/ipc/handlers/netHandlers.ts keeps any
+    // non-empty tag_name of up to 128 characters, so `v1.8` can arrive. semver wants three parts
+    // and refuses it, which ranks it below every tag semver does read, so it cannot fall between
+    // two of them however large the number it opens with looks.
+    const releases = [release({ tag: "v1.9.0" }), release({ tag: "v1.8" }), release({ tag: "v1.7.0" })]
+
+    assert.deepEqual(
+      selectReleasesToShow(releases, "1.7.0", "1.9.0").map((r) => r.tag),
+      ["v1.9.0"]
+    )
   })
 })
 
@@ -400,7 +411,7 @@ describe("selectLatestReleases", () => {
     )
   })
 
-  it("caps the list at five by default, and at a given override", () => {
+  it("caps the list at five", () => {
     const releases = Array.from({ length: 8 }, (_, index) => release({ tag: `1.${index + 1}.0` }))
 
     assert.deepEqual(
@@ -408,7 +419,6 @@ describe("selectLatestReleases", () => {
       ["1.8.0", "1.7.0", "1.6.0", "1.5.0", "1.4.0"]
     )
     assert.equal(selectLatestReleases(releases, "1.8.0").length, DEFAULT_MAX_RELEASES_TO_SHOW)
-    assert.equal(selectLatestReleases(releases, "1.8.0", { maxReleases: 2 }).length, 2)
   })
 
   it("applies the same draft and prerelease rules the dialog does", () => {
@@ -430,6 +440,23 @@ describe("selectLatestReleases", () => {
     assert.deepEqual(
       selectLatestReleases(releases, "1.1.0").map((r) => r.tag),
       ["1.1.0", "1.0.0"]
+    )
+  })
+
+  it("lists every tag semver refuses last, in the same order on every render", () => {
+    // Below the tags semver reads, and alphabetically among themselves, so a list holding more
+    // than one of them does not shuffle between renders. Only letters here: two tags that sort
+    // against each other through localeCompare, with no punctuation whose collation could differ
+    // between the Linux and Windows runners.
+    const releases = [release({ tag: "nightly" }), release({ tag: "alpha" }), release({ tag: "1.2.0" })]
+
+    assert.deepEqual(
+      selectLatestReleases(releases, "1.2.0").map((r) => r.tag),
+      ["1.2.0", "nightly", "alpha"]
+    )
+    assert.deepEqual(
+      selectLatestReleases([...releases].reverse(), "1.2.0").map((r) => r.tag),
+      ["1.2.0", "nightly", "alpha"]
     )
   })
 })

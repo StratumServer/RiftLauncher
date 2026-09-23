@@ -23,27 +23,6 @@ export function toGameOs(platform: string): GameOs {
 }
 
 /**
- * File names that prove the game landed in a folder, in the order the launcher
- * looks for them.
- *
- * Windows only ever ships `Vintagestory.exe`. Linux ships the native
- * `Vintagestory` launcher and, on older builds, the `Vintagestory.exe` that
- * runs under mono, so either one counts. macOS returns nothing: the launcher
- * cannot run a macOS version yet, so it has no expectation to hold a fresh
- * install to.
- */
-export function expectedGameExecutables(os: GameOs): readonly string[] {
-  switch (os) {
-    case "win32":
-      return ["Vintagestory.exe"]
-    case "linux":
-      return ["Vintagestory", "Vintagestory.exe"]
-    case "darwin":
-      return []
-  }
-}
-
-/**
  * How a found executable has to be started.
  *
  * `direct` means the file itself is run. `mono` means the file is a .NET
@@ -51,27 +30,33 @@ export function expectedGameExecutables(os: GameOs): readonly string[] {
  */
 export type GameExecutableLaunchMode = "direct" | "mono"
 
-/** One name from {@link expectedGameExecutables}, paired with how it is launched once found. */
+/** A file name that proves the game landed in a folder, paired with how it is launched. */
 export interface GameExecutableCandidate {
   fileName: string
   launchMode: GameExecutableLaunchMode
 }
 
 /**
- * {@link expectedGameExecutables}, paired with how each entry is launched.
+ * File names that prove the game landed in a folder, in the order the launcher
+ * looks for them, each paired with how it has to be started.
  *
- * Windows' `Vintagestory.exe` and Linux's native `Vintagestory` both run
- * directly. The one exception is `Vintagestory.exe` on Linux: it is the same
- * .NET build Windows ships, kept as a fallback for the older versions that
- * never got a native Linux launcher, and Linux can only run it through `mono`.
- * This is strictly additional information: the file names and their order
- * are still exactly what {@link expectedGameExecutables} returns, so a
- * caller that already verifies against that list keeps seeing the same
- * candidates.
+ * Windows only ever ships `Vintagestory.exe`, which runs directly. Linux ships
+ * the native `Vintagestory` launcher and, on older builds, the same .NET
+ * `Vintagestory.exe` Windows ships, kept as a fallback for the versions that
+ * never got a native Linux launcher; Linux can only run that one through
+ * `mono`. macOS returns nothing: the launcher cannot run a macOS version yet,
+ * so it has no expectation to hold a fresh install to.
  */
 export function gameExecutableCandidates(os: GameOs): readonly GameExecutableCandidate[] {
-  return expectedGameExecutables(os).map((fileName) => ({
-    fileName,
-    launchMode: os === "linux" && fileName.endsWith(".exe") ? "mono" : "direct"
-  }))
+  switch (os) {
+    case "win32":
+      return [{ fileName: "Vintagestory.exe", launchMode: "direct" }]
+    case "linux":
+      return [
+        { fileName: "Vintagestory", launchMode: "direct" },
+        { fileName: "Vintagestory.exe", launchMode: "mono" }
+      ]
+    case "darwin":
+      return []
+  }
 }
