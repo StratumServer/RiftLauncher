@@ -170,6 +170,9 @@ describe("ManageInstallationBackups", () => {
     installMockWindowApi({
       configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallationWithBackup()] })) },
       pathsManager: {
+        // The archive is still on disk, so the refusal is a real one: a path
+        // the host cannot find counts as deleted (see backupDeletion.ts).
+        checkPathExists: vi.fn(async () => true),
         deletePath,
         extractOnPath: vi.fn(async () => true)
       }

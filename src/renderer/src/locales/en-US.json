@@ -739,7 +739,7 @@
       "compressUnsafeEntry": "No backup made: this Installation's folder contains a symlink or a special file that cannot be archived.",
       "compressTooManyFiles": "No backup made: this Installation's folder has too many files to archive.",
       "compressWriteFailed": "No backup made: the backup archive could not be written. Check that the Backups folder is on a writable drive with free space.",
-      "pruneFailed": "No backup made: an old backup could not be removed to make room for the new one.",
+      "pruneFailed": "No backup made: an old backup file could not be deleted to make room for the new one. Check that it is not open in another program, then try again.",
       "errorRestoringBackup": "The Backup could not be restored, so your Installation was left as it was.",
       "restoreLeftDataAside": "The Backup could not be restored and your old Installation data is now in {{path}}. Move that folder back yourself before playing.",
       "backupsAmount": "Backups limit",
