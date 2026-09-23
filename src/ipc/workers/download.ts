@@ -20,7 +20,7 @@ import fse from "fs-extra"
 import { join } from "node:path"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
-import { assertAllowedDownloadUrl, assertAllowedRedirectUrl, optimumTestOrigin } from "../validation"
+import { assertAllowedDownloadUrl, assertAllowedRedirectUrl, assertSafeFileName, optimumTestOrigin } from "../validation"
 
 const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 30_000
@@ -43,18 +43,6 @@ function isRedirectStatus(statusCode: number): boolean {
 /** Namespace used by temporary download siblings and the orphan sweep. */
 export const DOWNLOAD_TEMP_FILE_NAMESPACE = "riftlauncher"
 
-/**
- * The download is saved under exactly the name the caller asked for.
- *
- * It used to gain a `.zip` suffix here whatever the format really was, which is
- * how a Linux `.tar.gz` and a Windows `.exe` both ended up on disk as
- * `<version>.zip` and broke extraction and the installer alike.
- */
-export function assertSafeFileName(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 255 || value === "." || value === ".." || /[\\/\0]/.test(value)) throw new Error("Invalid download file name")
-  return value
-}
-
 /** The `https.request` shape, so a test can answer without a socket. */
 export type DownloadRequestFn = (url: URL, options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest
 
@@ -73,7 +61,12 @@ export interface DownloadOptions {
   url: unknown
   /** Folder the file lands in. Created when missing. */
   outputPath: string
-  /** Name to save under, exactly as given. */
+  /**
+   * Name to save under, exactly as given. It used to gain a `.zip` suffix
+   * whatever the format really was, which is how a Linux `.tar.gz` and a
+   * Windows `.exe` both ended up on disk as `<version>.zip` and broke
+   * extraction and the installer alike.
+   */
   fileName: unknown
   /** MD5 the finished file has to match, when the caller knows one. */
   expectedMd5?: unknown
@@ -117,7 +110,7 @@ export interface DownloadOptions {
 export function runDownload(options: DownloadOptions): Promise<string> {
   const { url, outputPath, fileName, expectedMd5, expectedSha256, maxBytes = MAX_DOWNLOAD_BYTES, request = nodeRequest, onProgress } = options
   const byteCeiling = Math.min(maxBytes, MAX_DOWNLOAD_BYTES)
-  const pathToDownload = join(outputPath, assertSafeFileName(fileName))
+  const pathToDownload = join(outputPath, assertSafeFileName(fileName, "download file name"))
   const temporaryPath = `${pathToDownload}.${DOWNLOAD_TEMP_FILE_NAMESPACE}.${process.pid}.${Date.now()}.part`
   const expectedDigest = typeof expectedSha256 === "string" ? expectedSha256 : expectedMd5
 

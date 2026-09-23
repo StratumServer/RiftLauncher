@@ -104,13 +104,22 @@ describe("requestBoundedTextViaNode enforces its timeout", () => {
 })
 
 describe("requestBoundedTextViaNode rejects a non-2xx status", () => {
-  it("rejects a 404 rather than resolving its body", async () => {
+  it("rejects a 404 carrying the status, which is what classifies a login failure", async () => {
     const url = await startServer((_req, res) => {
       res.writeHead(404, { "Content-Type": "application/json" })
       res.end(JSON.stringify({ valid: 0, reason: "notfound" }))
     })
 
-    await assert.rejects(requestBoundedTextViaNode(url), /404/)
+    await assert.rejects(requestBoundedTextViaNode(url), (error: Error & { statusCode?: number }) => {
+      assert.match(error.message, /404/)
+      // The half the message alone cannot pin (issue #481): since
+      // `loginFailureReason` reads `statusCode` instead of parsing the
+      // message, a transport that answered a plain Error with the same text
+      // would classify a 503 outage as `unclassified` and put "Login failed"
+      // on screen where the player should read that the service is down.
+      assert.equal(error.statusCode, 404)
+      return true
+    })
   })
 })
 

@@ -58,6 +58,64 @@ export class BoundedResponseError extends Error {
   }
 }
 
+/** What {@link collectBounded} reads off a response. Electron's `net` and Node's `http(s)` both answer this shape. */
+type BoundedResponse = NodeJS.EventEmitter & {
+  statusCode?: number
+  headers: Record<string, string | string[] | undefined>
+}
+
+/**
+ * Reads one response into `chunks` under `maxBytes`, then settles `finish`.
+ *
+ * The ceiling is checked twice: against the declared `Content-Length` before a
+ * byte is read, and against the running total as the chunks arrive, so a lying
+ * length costs the cap and not the heap. A non-2xx is a refusal rather than a
+ * body, carrying its status and headers for the callers that classify one (see
+ * {@link BoundedResponseError}); every other caller keeps matching on the
+ * message. Both transports below read through this, so no cap, status rule or
+ * refusal text can be tightened on one side only.
+ *
+ * @param cancel How this transport drops the exchange: `request.abort` for
+ * Electron's `net`, `request.destroy` for Node's `http(s)`.
+ * @param finish The caller's settle-once function, given the error on a refusal.
+ */
+function collectBounded(response: BoundedResponse, maxBytes: number, chunks: Buffer[], cancel: () => void, finish: (error?: Error) => void): void {
+  const contentLengthHeader = response.headers["content-length"]
+  const contentLength = Number(Array.isArray(contentLengthHeader) ? contentLengthHeader[0] : contentLengthHeader)
+
+  const refuse = (error: Error): void => {
+    cancel()
+    finish(error)
+  }
+
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    refuse(new Error("Network response is too large"))
+    return
+  }
+
+  if (response.statusCode === undefined || response.statusCode < 200 || response.statusCode >= 300) {
+    refuse(new BoundedResponseError(`Network request failed with status ${response.statusCode ?? "unknown"}`, response.statusCode, response.headers))
+    return
+  }
+
+  let responseBytes = 0
+
+  response.on("data", (chunk: Buffer | string) => {
+    const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    responseBytes += chunkBuffer.length
+
+    if (responseBytes > maxBytes) {
+      refuse(new Error("Network response is too large"))
+      return
+    }
+
+    chunks.push(chunkBuffer)
+  })
+  response.on("end", () => finish())
+  response.on("aborted", () => finish(new Error("Network response was aborted")))
+  response.on("error", (error: Error) => finish(error))
+}
+
 export function requestBoundedText(url: URL, options: BoundedRequestOptions = {}): Promise<string> {
   return requestBoundedBuffer(url, options).then((bytes) => bytes.toString("utf8"))
 }
@@ -74,7 +132,6 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
 
   return new Promise((resolve, reject) => {
     let settled = false
-    let responseBytes = 0
     const chunks: Buffer[] = []
     const request = net.request({
       url: url.toString(),
@@ -100,39 +157,7 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
       }
     }
 
-    request.on("response", (response) => {
-      const contentLengthHeader = response.headers["content-length"]
-      const contentLengthValue = Array.isArray(contentLengthHeader) ? contentLengthHeader[0] : contentLengthHeader
-      const contentLength = Number(contentLengthValue)
-
-      if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-        request.abort()
-        finish(new Error("Network response is too large"))
-        return
-      }
-
-      if (response.statusCode === undefined || response.statusCode < 200 || response.statusCode >= 300) {
-        request.abort()
-        finish(new BoundedResponseError(`Network request failed with status ${response.statusCode ?? "unknown"}`, response.statusCode, response.headers))
-        return
-      }
-
-      response.on("data", (chunk: Buffer | string) => {
-        const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-        responseBytes += chunkBuffer.length
-
-        if (responseBytes > maxBytes) {
-          request.abort()
-          finish(new Error("Network response is too large"))
-          return
-        }
-
-        chunks.push(chunkBuffer)
-      })
-      response.on("end", () => finish())
-      response.on("aborted", () => finish(new Error("Network response was aborted")))
-      response.on("error", (error) => finish(error))
-    })
+    request.on("response", (response) => collectBounded(response, maxBytes, chunks, () => request.abort(), finish))
 
     request.on("error", (error) => finish(error))
     request.on("login", (_authInfo, callback) => callback())
@@ -159,11 +184,11 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
  * multi-gigabyte file download needs a streamed-to-disk write and a
  * socket-inactivity timeout, not the wall-clock timeout this function keeps.
  *
- * Every guarantee `requestBoundedText` carries is preserved here and no
- * caller of `requestBoundedText` is affected, since that function is
- * untouched:
- *  - the response is capped at `maxBytes`, checked against `Content-Length`
- *    up front and against the running streamed total as chunks arrive;
+ * Every guarantee `requestBoundedText` carries is preserved here, because the
+ * reading itself is the same code: both transports hand their response to
+ * {@link collectBounded}, so the cap, the status rule and the refusal text
+ * cannot be tightened on one side only. What stays split is what genuinely
+ * differs, the transport and how it is cancelled. On top of that:
  *  - the whole exchange is bounded by `REQUEST_TIMEOUT_MS`, the same
  *    wall-clock timeout `requestBoundedText` uses (not `request.setTimeout`,
  *    which only measures socket inactivity and would let a slow-trickling
@@ -208,7 +233,6 @@ export function requestBoundedTextViaNode(url: URL, options: BoundedRequestOptio
 
   return new Promise((resolve, reject) => {
     let settled = false
-    let responseBytes = 0
     const chunks: Buffer[] = []
     // Whichever request is in flight right now (the CONNECT, or the real one), so the
     // one timeout below can abort it without knowing which phase it landed in.
@@ -231,38 +255,7 @@ export function requestBoundedTextViaNode(url: URL, options: BoundedRequestOptio
       finish(new Error("Network request timed out"))
     }, timeoutMs)
 
-    function onResponse(response: IncomingMessage): void {
-      const contentLengthHeader = response.headers["content-length"]
-      const contentLength = Number(contentLengthHeader)
-
-      if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-        abortInFlight()
-        finish(new Error("Network response is too large"))
-        return
-      }
-
-      if (response.statusCode === undefined || response.statusCode < 200 || response.statusCode >= 300) {
-        abortInFlight()
-        finish(new Error(`Network request failed with status ${response.statusCode ?? "unknown"}`))
-        return
-      }
-
-      response.on("data", (chunk: Buffer | string) => {
-        const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-        responseBytes += chunkBuffer.length
-
-        if (responseBytes > maxBytes) {
-          abortInFlight()
-          finish(new Error("Network response is too large"))
-          return
-        }
-
-        chunks.push(chunkBuffer)
-      })
-      response.on("end", () => finish())
-      response.on("aborted", () => finish(new Error("Network response was aborted")))
-      response.on("error", (error) => finish(error))
-    }
+    const onResponse = (response: IncomingMessage): void => collectBounded(response, maxBytes, chunks, () => abortInFlight(), finish)
 
     // A tunneled request is always sent with node:http's own `request`, `agent` and all,
     // never `https.request`: the agent already hands back a socket doing TLS on its own
