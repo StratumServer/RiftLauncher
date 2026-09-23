@@ -947,10 +947,13 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     expect(await screen.findByText("Alpha Mod is disabled and will not be loaded.")).toBeTruthy()
     expect(screen.queryByText("An error has occurred enabling or disabling Alpha Mod.")).toBeNull()
-    await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
+    // Read straight after the act that landed the rename rather than polled: the rescan and every
+    // render it causes hang off that one promise, so they are all in by the time act returns, and
+    // act has no budget of its own for a loaded runner to run out of.
+    expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore)
     // Still one call once everything has settled, and the row is live again for the next real click.
     expect(setModEnabled).toHaveBeenCalledTimes(1)
-    await waitFor(() => expect((within(alphaRow).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false))
+    expect((within(alphaRow).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it("turns a disabled Mod back on from its own row", async () => {
@@ -1843,10 +1846,18 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(
       (path: string) => new Promise<SetModEnabledResult>((resolve) => landings.push(() => resolve({ ok: true, path: `${path}.disabled` })))
     )
+    /*
+     * One gate per held scan, collected, rather than one `releaseScan` variable the next scan
+     * overwrites. The batch's rescan is not the only caller of this bridge method while the page is
+     * held: ConfigProvider counts every Installation's Mods through it 2.5 s after the config loads
+     * (ConfigContext.tsx:122-142). With a single resolver, that pass landing inside the held window
+     * takes the batch's rescan's place, so releasing "the scan" releases the count pass and the
+     * batch is left held for good.
+     */
     let holdScans = false
-    let releaseScan: () => void = () => {}
+    const heldScans: (() => void)[] = []
     const getInstalledMods = vi.fn(async () => {
-      if (holdScans) await new Promise<void>((resolve) => (releaseScan = resolve))
+      if (holdScans) await new Promise<void>((resolve) => heldScans.push(resolve))
       return aModScan()
     })
     renderManageMods({ modsManager: { setModEnabled, getInstalledMods } })
@@ -1881,14 +1892,24 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     })
 
     // The renames are in but the rescan is not, so the page still lists the names from before them.
+    // The rescan is chained off the renames that just landed, so it is already held by the time the
+    // act above returns: counted, not awaited. "One rescan per batch" is pinned by "disables the
+    // checked Mods with one rename each, one notification and one rescan"; here the count is only
+    // "at least one", because ConfigProvider's count pass can add another to it on a slow runner.
     expect(await screen.findByText("2 Mods disabled.")).toBeTruthy()
-    await waitFor(() => expect(getInstalledMods).toHaveBeenCalledTimes(scansBefore + 1))
+    expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore)
     expect(buttonWithText("Update all").disabled).toBe(true)
     expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(true)
     expect((await selectAllBox()).disabled).toBe(true)
 
-    await act(async () => releaseScan())
-    await batchLanded()
+    // Landed inside act and read straight after it, rather than polled: act runs to the end of the
+    // work it started with no deadline of its own, so every render the rescan causes is in before
+    // the next line reads the DOM, however slow the machine is.
+    await act(async () => {
+      for (const land of heldScans.splice(0)) land()
+    })
+
+    expect((await selectAllBox()).disabled).toBe(false)
     expect(buttonWithText("Update all").disabled).toBe(false)
     expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(false)
     expect((within(screen.getByText("Alpha Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false)
@@ -2037,12 +2058,16 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     await check(user, "Beta Mod")
     await user.click(within(screen.getByText("Alpha Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE))
 
+    // Both halves read straight off the DOM: the rename is a promise this test holds, so the hold
+    // is already painted when the click returns, and landing it inside act puts the rescan and its
+    // renders in before the next line. Polling either side would only add waitFor's one-second
+    // budget for a loaded runner to run out of.
     const selectAll = await selectAllBox()
-    await waitFor(() => expect(selectAll.disabled).toBe(true))
+    expect(selectAll.disabled).toBe(true)
     expect(batchButton(DISABLE_SELECTED).disabled).toBe(true)
 
     await act(async () => land({ ok: true, path: `${ALPHA_PATH}.disabled` }))
-    await waitFor(() => expect(selectAll.disabled).toBe(false))
+    expect(selectAll.disabled).toBe(false)
     expect(batchButton(DISABLE_SELECTED).disabled).toBe(false)
     expect(setModEnabled).toHaveBeenCalledTimes(1)
   })
