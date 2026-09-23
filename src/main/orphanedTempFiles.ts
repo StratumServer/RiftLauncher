@@ -5,6 +5,8 @@ import { isRestoreStagingWorkspaceName } from "@src/ipc/validation"
 import { DOWNLOAD_TEMP_FILE_NAMESPACE } from "@src/ipc/workers/download"
 import { logMessage } from "@src/utils/logManager"
 
+const LOG_PREFIX = "[back] [maintenance] [main/orphanedTempFiles.ts]"
+
 /** A week leaves plenty of time for a slow or interrupted download to be resumed manually. */
 export const ORPHANED_TEMP_FILE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000
 
@@ -79,7 +81,7 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
   try {
     entries = await fse.readdir(folder, { withFileTypes: true })
   } catch (error) {
-    if (!isMissing(error)) options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Could not inspect ${folder}: ${error}`)
+    if (!isMissing(error)) options.log("debug", `${LOG_PREFIX} Could not inspect ${folder}: ${error}`)
     return 0
   }
 
@@ -101,7 +103,7 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
       try {
         stats = await fse.lstat(entryPath)
       } catch (error) {
-        if (!isMissing(error)) options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Could not inspect ${entryPath}: ${error}`)
+        if (!isMissing(error)) options.log("debug", `${LOG_PREFIX} Could not inspect ${entryPath}: ${error}`)
         continue
       }
       if (stats.isSymbolicLink() || options.nowMs - stats.mtimeMs <= options.maxAgeMs) continue
@@ -109,9 +111,9 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
       try {
         await fse.remove(entryPath)
         removed += 1
-        options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Removed ${label} ${entryPath}.`)
+        options.log("debug", `${LOG_PREFIX} Removed ${label} ${entryPath}.`)
       } catch (error) {
-        if (!isMissing(error)) options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Could not remove ${entryPath}: ${error}`)
+        if (!isMissing(error)) options.log("debug", `${LOG_PREFIX} Could not remove ${entryPath}: ${error}`)
       }
       continue
     }
@@ -129,7 +131,7 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
       // between readdir and this check.
       stats = await fse.lstat(entryPath)
     } catch (error) {
-      if (!isMissing(error)) options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Could not inspect ${entryPath}: ${error}`)
+      if (!isMissing(error)) options.log("debug", `${LOG_PREFIX} Could not inspect ${entryPath}: ${error}`)
       continue
     }
 
@@ -138,9 +140,9 @@ async function sweepDirectory(target: TemporaryFileSweepTarget, options: Require
     try {
       await fse.unlink(entryPath)
       removed += 1
-      options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Removed orphaned temporary file ${entryPath}.`)
+      options.log("debug", `${LOG_PREFIX} Removed orphaned temporary file ${entryPath}.`)
     } catch (error) {
-      if (!isMissing(error)) options.log("debug", `[back] [maintenance] [orphanedTempFiles.ts] Could not remove ${entryPath}: ${error}`)
+      if (!isMissing(error)) options.log("debug", `${LOG_PREFIX} Could not remove ${entryPath}: ${error}`)
     }
   }
 

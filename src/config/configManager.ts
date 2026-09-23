@@ -15,6 +15,8 @@ import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/d
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
 
+const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
+
 const defaultConfig: ConfigType = {
   ...DEFAULT_CONFIG_BASE,
   schemaVersion: CURRENT_CONFIG_SCHEMA,
@@ -84,8 +86,8 @@ export async function saveConfig(config: ConfigType): Promise<boolean> {
     configReady = true
     return true
   } catch (err) {
-    logMessage("error", "[back] [config] [config/configManager.ts] [saveConfig] Error saving configuration.")
-    logMessage("debug", `[back] [config] [config/configManager.ts] [saveConfig] ${err}`)
+    logMessage("error", `${LOG_PREFIX} [saveConfig] Error saving configuration.`)
+    logMessage("debug", `${LOG_PREFIX} [saveConfig] ${err}`)
     return false
   }
 }
@@ -112,8 +114,8 @@ export async function getConfig(): Promise<ConfigType> {
     if (mustSave) await saveConfig(ensuredConfig)
     return ensuredConfig
   } catch (err) {
-    logMessage("error", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at [PATH]. Using default config.`)
-    logMessage("debug", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at [PATH]: ${err}`)
+    logMessage("error", `${LOG_PREFIX} [getConfig] Error getting config at [PATH]. Using default config.`)
+    logMessage("debug", `${LOG_PREFIX} [getConfig] Error getting config at [PATH]: ${err}`)
     await saveConfig(defaultConfig)
     return defaultConfig
   }
@@ -124,22 +126,22 @@ export async function ensureConfig(): Promise<boolean> {
   configPath = join(app.getPath("userData"), "config.json")
   try {
     if (!(await fse.pathExists(configPath))) {
-      logMessage("info", `[back] [config] [config/configManager.ts] [ensureConfig] Config not found. Creating default config.`)
+      logMessage("info", `${LOG_PREFIX} [ensureConfig] Config not found. Creating default config.`)
       return await saveConfig(defaultConfig)
     }
     configReady = true
-    logMessage("info", `[back] [config] [config/configManager.ts] [ensureConfig] Config found at [PATH].`)
+    logMessage("info", `${LOG_PREFIX} [ensureConfig] Config found at [PATH].`)
     return true
   } catch (err) {
-    logMessage("error", `[back] [config] [config/configManager.ts] [ensureConfig] Error ensuring config.`)
-    logMessage("error", `[back] [config] [config/configManager.ts] [ensureConfig] Error ensuring config at [PATH]: ${err}`)
+    logMessage("error", `${LOG_PREFIX} [ensureConfig] Error ensuring config.`)
+    logMessage("error", `${LOG_PREFIX} [ensureConfig] Error ensuring config at [PATH]: ${err}`)
     return false
   }
 }
 
 /** Says what the schema pipeline did with the stored document, and at what level it deserves saying. */
 function logConfigMigration(migration: ReturnType<typeof migrateConfigDocument>): void {
-  const prefix = "[back] [config] [config/configManager.ts] [getConfig]"
+  const prefix = `${LOG_PREFIX} [getConfig]`
   const steps = migration.applied.map((step) => `${step.fromSchema}->${step.toSchema}`).join(", ")
 
   switch (migration.outcome) {
@@ -183,10 +185,10 @@ async function migrateLegacyAccount(config: unknown): Promise<boolean> {
     try {
       await saveAccountSecrets(legacyAccount.publicAccount.playerUid, legacyAccount.secrets)
     } catch {
-      logMessage("warn", "[back] [config] [configManager.ts] Legacy account credentials were not migrated to secure storage.")
+      logMessage("warn", `${LOG_PREFIX} Legacy account credentials were not migrated to secure storage.`)
     }
   } else {
-    logMessage("warn", "[back] [config] [configManager.ts] Legacy account credentials were invalid and were discarded.")
+    logMessage("warn", `${LOG_PREFIX} Legacy account credentials were invalid and were discarded.`)
   }
 
   return true
@@ -229,7 +231,7 @@ async function migrateAccountStore(legacyDocument: unknown, config: ConfigType):
   try {
     return await adoptLegacySingleAccountSecrets(uid)
   } catch {
-    logMessage("warn", "[back] [config] [configManager.ts] The stored account session was not carried into the multi-account store. Retrying on the next launch.")
+    logMessage("warn", `${LOG_PREFIX} The stored account session was not carried into the multi-account store. Retrying on the next launch.`)
     return false
   }
 }
@@ -293,8 +295,8 @@ async function reconcileConfigBackup(migrationRan: boolean): Promise<void> {
     stripLegacyAccountSecrets(document)
     await writeJsonAtomic(backupPath, document, { mode: 0o600, spaces: 2 })
   } catch (err) {
-    logMessage("warn", "[back] [config] [configManager.ts] Could not reconcile the pre-migration config backup.")
-    logMessage("debug", `[back] [config] [configManager.ts] ${err}`)
+    logMessage("warn", `${LOG_PREFIX} Could not reconcile the pre-migration config backup.`)
+    logMessage("debug", `${LOG_PREFIX} ${err}`)
   }
 }
 
