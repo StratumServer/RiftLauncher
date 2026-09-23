@@ -42,7 +42,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { deflateRawSync, crc32 } from "node:zlib"
 
-const CURRENT_CONFIG_SCHEMA = 5
+// Kept as a plain literal, not an import: scripts/ runs straight through node with no build
+// step, and src/domain/config/migrations.ts is TypeScript. Bump this by hand to match that
+// file's own CURRENT_CONFIG_SCHEMA whenever a schema migration lands, and shape the config
+// object below to match. If it drifts, tests/config/headlessSeed.test.ts fails instead of a
+// reviewer finding out from a broken headless check weeks later.
+const CURRENT_CONFIG_SCHEMA = 6
 const DEFAULT_COMPRESSION_LEVEL = 6
 const DEFAULT_BACKGROUND_ID = "default"
 const DEFAULT_ACCENT_ID = "amber"
@@ -224,6 +229,10 @@ const config = {
   suspendedModUpdates: [],
   background: DEFAULT_BACKGROUND_ID,
   accentColor: DEFAULT_ACCENT_ID,
+  // Added at schema 6 (#498): nobody has answered the mod-suggestions consent question yet,
+  // and none has been dismissed, same as any config written before that field existed.
+  modSuggestionsConsent: null,
+  dismissedModSuggestions: [],
   receiveBetaUpdates: null,
   measurePlaySessions: true,
   allowBasicSessionStore: false,

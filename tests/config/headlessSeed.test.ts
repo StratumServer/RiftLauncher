@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import yauzl from "yauzl"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
+import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
 
 /**
  * scripts/headless/seed.mjs against the repo's own config normalizer.
@@ -82,6 +83,19 @@ function readModinfo(archivePath: string): Promise<unknown> {
 }
 
 describe("headless seed: config.json against normalizeConfig", () => {
+  it("keeps its own CURRENT_CONFIG_SCHEMA in step with the domain's", async () => {
+    const { config } = runSeed({ installations: [] })
+
+    // config.schemaVersion is written straight from seed.mjs's own CURRENT_CONFIG_SCHEMA
+    // constant, so this is that constant, observed the only way a script with no build step
+    // can be observed from a test that spawns it out of process.
+    assert.equal(
+      config.schemaVersion,
+      CURRENT_CONFIG_SCHEMA,
+      "scripts/headless/seed.mjs pins its own CURRENT_CONFIG_SCHEMA constant by hand; bump it (and the shape of the config object it writes) to match @domain/config/migrations' CURRENT_CONFIG_SCHEMA."
+    )
+  })
+
   it("writes a config that normalizeConfig reads back unchanged", async () => {
     const normalizeConfig = await freshNormalizeConfig()
     const { config } = runSeed({
