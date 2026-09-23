@@ -30,6 +30,7 @@
 
 import { MODS_FOLDER_NAME } from "../mods/folder"
 import { normalizeFolderForComparison } from "../paths"
+import { isRecord } from "../records"
 
 /** Key of the section the mod folder list lives in. */
 const STRING_LIST_SETTINGS_SECTION = "stringListSettings"
@@ -59,10 +60,6 @@ export interface RepointModPathsResult {
   /** The document to write. The same reference as the input unless `outcome` is `repointed`. */
   document: unknown
   outcome: RepointModPathsOutcome
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
 /** True for a path the game wrote as an absolute one, on either platform. */
@@ -109,9 +106,10 @@ function defaultShapeAbsoluteEntry(value: unknown): string | null {
  * @param target The installation the game is about to be launched on.
  */
 export function repointModPaths(existingDocument: unknown, target: ModPathsTarget): RepointModPathsResult {
-  const document = asRecord(existingDocument)
-  const section = document && asRecord(document[STRING_LIST_SETTINGS_SECTION])
-  if (!document || !section || !(MOD_PATHS_KEY in section)) return { document: existingDocument, outcome: "unchanged" }
+  if (!isRecord(existingDocument)) return { document: existingDocument, outcome: "unchanged" }
+
+  const section = existingDocument[STRING_LIST_SETTINGS_SECTION]
+  if (!isRecord(section) || !(MOD_PATHS_KEY in section)) return { document: existingDocument, outcome: "unchanged" }
 
   const absolute = defaultShapeAbsoluteEntry(section[MOD_PATHS_KEY])
   if (absolute === null) return { document: existingDocument, outcome: "left-as-found" }
@@ -120,7 +118,7 @@ export function repointModPaths(existingDocument: unknown, target: ModPathsTarge
   const repointed = (section[MOD_PATHS_KEY] as string[]).map((entry) => (entry === absolute ? target.modsPath : entry))
 
   return {
-    document: { ...document, [STRING_LIST_SETTINGS_SECTION]: { ...section, [MOD_PATHS_KEY]: repointed } },
+    document: { ...existingDocument, [STRING_LIST_SETTINGS_SECTION]: { ...section, [MOD_PATHS_KEY]: repointed } },
     outcome: "repointed"
   }
 }

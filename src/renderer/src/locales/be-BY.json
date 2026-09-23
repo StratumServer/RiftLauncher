@@ -316,6 +316,7 @@
       "exportModpackSuccess": "Мадпак паспяхова экспартаваны.",
       "exportModpackError": "Не ўдалося экспартаваць мадпак. Падрабязнасці ёсць у журнале.",
       "openModsFolder": "Адкрыць папку з модамі гэтай усталёўкі",
+      "openModsFolderButton": "Адкрыць папку",
       "importModpack": "Імпартаваць файл мадпака, каб усталяваць усе яго моды",
       "importModpackButton": "Імпарт мадпака",
       "importModpackTitle": "Імпарт мадпака",

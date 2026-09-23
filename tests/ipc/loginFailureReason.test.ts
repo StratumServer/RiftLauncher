@@ -23,6 +23,16 @@ import {
  * Every password below is a placeholder that exists only to be asserted
  * absent.
  */
+/**
+ * What `network.ts` throws for a non-2xx answer, built by hand so this file
+ * stays Electron-free: `BoundedResponseError`'s message, plus the status as a
+ * number. The class sets `statusCode` even when the response carried no status
+ * line, so an undefined one is still an own property here.
+ */
+function refusedWithStatus(statusCode: number | undefined): Error {
+  return Object.assign(new Error(`Network request failed with status ${statusCode ?? "unknown"}`), { statusCode })
+}
+
 describe("loginFailureReason names what went wrong", () => {
   for (const [message, expected] of [
     ["Network request timed out", "timeout"],
@@ -37,27 +47,27 @@ describe("loginFailureReason names what went wrong", () => {
   }
 
   it("names the HTTP failure, so a 503 outage is not read as a wrong password", () => {
-    assert.equal(loginFailureReason(new Error("Network request failed with status 401")), "http-unauthorized")
-    assert.equal(loginFailureReason(new Error("Network request failed with status 429")), "http-rate-limited")
-    assert.equal(loginFailureReason(new Error("Network request failed with status 503")), "http-unavailable")
+    assert.equal(loginFailureReason(refusedWithStatus(401)), "http-unauthorized")
+    assert.equal(loginFailureReason(refusedWithStatus(429)), "http-rate-limited")
+    assert.equal(loginFailureReason(refusedWithStatus(503)), "http-unavailable")
   })
 
   it("never writes the status digits, which the response picks and a password can equal", () => {
-    // `network.ts` builds this message from the response's own status line,
-    // and `assertString` accepts `503` as a password, so a token built by
-    // splicing the digits in puts that password in the log the moment the
-    // service goes down. Every token below is a literal from the module.
-    for (const status of ["401", "403", "429", "500", "503", "418", "599", "302", "unknown"]) {
-      const reason = loginFailureReason(new Error(`Network request failed with status ${status}`))
-      assert.equal(reason.includes(status), false, `the status digits reached the reason: ${reason}`)
+    // The status comes from the response's own status line, and `assertString`
+    // accepts `503` as a password, so a token built by splicing the digits in
+    // puts that password in the log the moment the service goes down. Every
+    // token below is a literal from the module.
+    for (const status of [401, 403, 429, 500, 503, 418, 599, 302]) {
+      const reason = loginFailureReason(refusedWithStatus(status))
+      assert.equal(reason.includes(String(status)), false, `the status digits reached the reason: ${reason}`)
     }
   })
 
   it("degrades an unlisted status to its range, and anything else to http-other", () => {
-    assert.equal(loginFailureReason(new Error("Network request failed with status 418")), "http-4xx")
-    assert.equal(loginFailureReason(new Error("Network request failed with status 599")), "http-5xx")
-    assert.equal(loginFailureReason(new Error("Network request failed with status 302")), "http-other")
-    assert.equal(loginFailureReason(new Error("Network request failed with status unknown")), "http-other")
+    assert.equal(loginFailureReason(refusedWithStatus(418)), "http-4xx")
+    assert.equal(loginFailureReason(refusedWithStatus(599)), "http-5xx")
+    assert.equal(loginFailureReason(refusedWithStatus(302)), "http-other")
+    assert.equal(loginFailureReason(refusedWithStatus(undefined)), "http-other")
   })
 
   it("names the system error code when the socket is what failed", () => {
@@ -175,12 +185,13 @@ describe("loginFailureReason cannot carry a secret out", () => {
     assert.equal(reason, "storage-other")
   })
 
-  it("matches the status message whole, so a longer one is not sliced for its middle", () => {
+  it("reads the status off the error, not out of a message that merely looks like one", () => {
     const reason = loginFailureReason(new Error(`Network request failed with status 500 for body ${PASSWORD}`))
 
     assert.equal(reason.includes(PASSWORD), false)
-    // Anchored, so a message that merely starts like the known one is not
-    // matched and sliced: it falls through to the class name instead.
+    // Nothing is parsed out of the message text, so an error that only reads
+    // like a status refusal is not treated as one: it falls through to the
+    // class name, and no part of the message reaches the answer.
     assert.equal(reason, "unclassified-Error")
   })
 })

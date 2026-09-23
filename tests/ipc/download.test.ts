@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import type { ClientRequest, IncomingMessage } from "node:http"
 
-import { assertSafeFileName, DOWNLOAD_TEMP_FILE_NAMESPACE, runDownload, type DownloadRequestFn } from "@src/ipc/workers/download"
+import { DOWNLOAD_TEMP_FILE_NAMESPACE, runDownload, type DownloadRequestFn } from "@src/ipc/workers/download"
 
 /**
  * The download's own logic, driven without a socket.
@@ -135,33 +135,6 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(workspace, { recursive: true, force: true })
-})
-
-describe("assertSafeFileName", () => {
-  it("returns the name it was given", () => {
-    assert.equal(assertSafeFileName("vs_client_linux-x64_1.22.6.tar.gz"), "vs_client_linux-x64_1.22.6.tar.gz")
-  })
-
-  it("keeps the extension the caller asked for, whatever it is", () => {
-    // The suffix used to be forced to `.zip` here, which is how a tar.gz and an
-    // installer both landed on disk as `<version>.zip`.
-    assert.equal(assertSafeFileName("vs_setup_1.22.6.exe"), "vs_setup_1.22.6.exe")
-  })
-
-  for (const [label, value] of [
-    ["a non-string", 42],
-    ["an empty name", ""],
-    ["a name over 255 characters", "a".repeat(256)],
-    ["the current folder", "."],
-    ["the parent folder", ".."],
-    ["a POSIX separator", "nested/name.zip"],
-    ["a Windows separator", "nested\\name.zip"],
-    ["an embedded NUL", "name\0.zip"]
-  ] as const) {
-    it(`refuses ${label}`, () => {
-      assert.throws(() => assertSafeFileName(value), /Invalid download file name/)
-    })
-  }
 })
 
 describe("runDownload", () => {

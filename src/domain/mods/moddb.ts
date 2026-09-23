@@ -21,6 +21,8 @@
  * both shapes for the same field, not just an object.
  */
 
+import { isRecord } from "../records"
+
 /** Why a v1 response could not be trusted. */
 export type ModDbApiFailure = "api-error" | "malformed-response"
 
@@ -34,10 +36,6 @@ export type ModDbResponse<T> = { ok: true; payload: T } | { ok: false; reason: M
 
 /** The string v1 uses to mean success. Every other value, including a missing field, is a failure. */
 const SUCCESS_STATUS_CODE = "200"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 /** True for a value the ModDB would consider filled in: a non-blank string, or anything else defined. */
 function present(value: unknown): boolean {

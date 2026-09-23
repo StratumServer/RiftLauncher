@@ -8,10 +8,11 @@ function backup(overrides: Partial<BackupSnapshot> = {}): BackupSnapshot {
   return { id: "backup-1", path: "/backups/my-install.zip", isRestoring: false, isDeleting: false, ...overrides }
 }
 
-function ports(options: { removed?: boolean } = {}): { fileSystem: { remove: (path: string) => Promise<boolean> }; removals: string[] } {
+function ports(options: { removed?: boolean; onDisk?: boolean } = {}): { fileSystem: { exists: (path: string) => Promise<boolean>; remove: (path: string) => Promise<boolean> }; removals: string[] } {
   const removals: string[] = []
   return {
     fileSystem: {
+      exists: async (): Promise<boolean> => options.onDisk ?? true,
       remove: async (path: string): Promise<boolean> => {
         removals.push(path)
         return options.removed ?? true
@@ -50,5 +51,11 @@ describe("deleteInstallationBackup", () => {
     const result = await deleteInstallationBackup(ports({ removed: false }), { backup: backup() })
 
     assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
+  })
+
+  it("treats an archive that is no longer on disk as deleted, so its record can go", async () => {
+    const result = await deleteInstallationBackup(ports({ removed: false, onDisk: false }), { backup: backup() })
+
+    assert.deepEqual(result, { ok: true })
   })
 })

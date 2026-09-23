@@ -1,9 +1,15 @@
-import { isAbsolute, relative, resolve, sep } from "node:path"
+import { existsSync, lstatSync } from "node:fs"
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import semver from "semver"
 
 import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
+import { isRecord } from "../domain/records"
+
+// The guard moved to the domain (#484). Re-exported unchanged so every caller that reaches for it
+// here, tests included, keeps its import path.
+export { isRecord }
 
 export const MAX_IPC_STRING_LENGTH = 8_192
 export const MAX_PATH_LENGTH = 4_096
@@ -120,10 +126,6 @@ export const BROWSER_URL_RULES: readonly UrlRule[] = [
   { hostname: "www.youtube.com", pathPrefixes: ["/watch"] }
 ]
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
 export function assertString(value: unknown, name: string, maxLength = MAX_IPC_STRING_LENGTH): string {
   if (typeof value !== "string" || value.length === 0 || value.length > maxLength || value.includes("\0")) {
     throw new TypeError(`Invalid ${name}`)
@@ -169,6 +171,40 @@ export function comparablePath(value: string): string {
 export function isPathWithin(root: string, candidate: string, allowRoot = true): boolean {
   const relativePath = relative(comparablePath(root), comparablePath(candidate))
   return (allowRoot && relativePath === "") || (relativePath !== "" && relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath))
+}
+
+/**
+ * Refuses a path any of whose existing ancestors is a symbolic link.
+ *
+ * The walk starts at the deepest component that exists, because a caller may
+ * name a file it is about to create, and climbs to the filesystem root, which
+ * is checked too. A link anywhere on that chain means the path the caller
+ * vetted and the path the filesystem opens are not the same path.
+ *
+ * Both sides of the host call this one: the path policy before it hands a
+ * managed path to a handler, and the extraction workers around every write
+ * they make. Two copies is how one side gets tightened and the other left
+ * stale, the same reason the archive size ceilings moved here in #362.
+ *
+ * @param message Wording for the refusal, so the path policy keeps its own.
+ */
+export function assertNoSymlinkComponents(pathValue: string, message = "Symbolic links are not allowed"): void {
+  let current = resolve(pathValue)
+  let parent = dirname(current)
+
+  while (!existsSync(current)) {
+    if (parent === current) return
+    current = parent
+    parent = dirname(current)
+  }
+
+  while (current !== parent) {
+    if (lstatSync(current).isSymbolicLink()) throw new TypeError(message)
+    current = parent
+    parent = dirname(current)
+  }
+
+  if (lstatSync(current).isSymbolicLink()) throw new TypeError(message)
 }
 
 /**

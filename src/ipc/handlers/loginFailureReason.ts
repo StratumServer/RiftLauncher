@@ -19,11 +19,10 @@
  * into it. `code` and `name` are both public and writable, so a value that
  * merely looks like a Node enum member proves nothing about where it came
  * from: they are read as lookup keys into the tables below and never copied
- * into the answer. An HTTP status is parsed out of the message as a number
- * and then used the same way, because the message is written from the
- * response and a status the caller can influence is no safer than a field the
- * thrower can set. A key that is not in a table maps to that table's
- * catch-all token.
+ * into the answer. The HTTP status a refused response carries is used the same
+ * way, because it comes from the response and a status the caller can
+ * influence is no safer than a field the thrower can set. A key that is not in
+ * a table maps to that table's catch-all token.
  *
  * The other half of the answer is where the error came from. The handler's
  * catch wraps two very different things: the network round trip and the
@@ -82,23 +81,18 @@ export const STORAGE_MESSAGES = new Map<string, string>([
   ["A system password store is required for account storage", "no-system-password-store"]
 ])
 
-/** `Network request failed with status 503`. The digits are read as a number, never carried over as text. */
-const STATUS_MESSAGE = /^Network request failed with status (\d{3}|unknown)$/
-
 /**
  * The HTTP statuses the auth service actually answers with, each mapped to
  * the token that names it.
  *
- * Not `http-status-${status}`: `network.ts` writes that message from the
- * response's own status line, and `assertString` accepts `503` as a password,
- * so a login with that password and an outage on the other end used to put
- * the password in the log. The status is parsed into a number here and then
- * treated exactly like `code`, as a lookup key whose value never reaches the
- * answer. A status outside the table degrades to its range, which still
- * separates "the service rejected us" from "the service is broken", and
- * anything that is not a 4xx or 5xx (a redirect this transport does not
- * follow, or the literal `unknown` when the response had no status line at
- * all) is `http-other`.
+ * Not `http-status-${status}`: the status comes from the response's own status
+ * line, and `assertString` accepts `503` as a password, so a login with that
+ * password and an outage on the other end used to put the password in the log.
+ * The status is treated exactly like `code`, as a lookup key whose value never
+ * reaches the answer. A status outside the table degrades to its range, which
+ * still separates "the service rejected us" from "the service is broken", and
+ * anything that is not a 4xx or 5xx (a redirect this transport does not follow,
+ * or no status line at all) is `http-other`.
  */
 export const HTTP_STATUSES = new Map<number, string>([
   [400, "http-bad-request"],
@@ -193,15 +187,19 @@ export const ERROR_NAMES = new Map<string, string>([
   ["AbortError", "unclassified-AbortError"]
 ])
 
-/** Names an HTTP failure without ever formatting the status back into a string. */
-function httpReason(status: string | undefined): string {
-  const code = Number(status) // `unknown` and a missing group are both NaN, and every comparison below is false for NaN.
-  const named = HTTP_STATUSES.get(code)
+/** Names an HTTP failure without ever formatting the status back into a string. Every comparison is false for NaN, so a response with no status line lands on `http-other`. */
+function httpReason(status: number): string {
+  const named = HTTP_STATUSES.get(status)
   if (named) return named
-  if (code >= 400 && code < 500) return "http-4xx"
-  if (code >= 500 && code < 600) return "http-5xx"
+  if (status >= 400 && status < 500) return "http-4xx"
+  if (status >= 500 && status < 600) return "http-5xx"
 
   return "http-other"
+}
+
+/** The status a refusal carries, as a lookup key only: `network.ts` sets `statusCode` on every non-2xx it throws (`BoundedResponseError`), including when the response had no status line and `Number` reads it as NaN. Structural rather than `instanceof`, so this module stays Electron-free. */
+function statusOf(error: Error): number | undefined {
+  return "statusCode" in error ? Number((error as { statusCode?: unknown }).statusCode) : undefined
 }
 
 /** The `code` an error carries, as a lookup key only: a non-string is no key at all. */
@@ -228,8 +226,8 @@ export function loginFailureReason(error: unknown): string {
   const known = NETWORK_MESSAGES.get(error.message)
   if (known) return known
 
-  const status = STATUS_MESSAGE.exec(error.message)
-  if (status) return httpReason(status[1])
+  const status = statusOf(error)
+  if (status !== undefined) return httpReason(status)
 
   const code = codeOf(error)
   if (code) return NETWORK_CODES.get(code) ?? "network-other"

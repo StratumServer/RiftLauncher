@@ -1,5 +1,6 @@
 import type { DownloadOutcome, Downloader, FileSystem, PathBuilder, UnpackOutcome, Unpacker } from "../ports"
 import { folderIsInUse } from "../paths"
+import { refuse } from "../refusal"
 import { gameExecutableCandidates, toGameOs } from "./gameExecutable"
 import type { GameOs } from "./gameExecutable"
 
@@ -78,10 +79,6 @@ export interface InstallGameVersionEvents {
    * drop the entry it optimistically added.
    */
   onDiscarded?(reason: InstallGameVersionFailure): void
-}
-
-function refuse(reason: InstallGameVersionFailure): InstallGameVersionResult {
-  return { ok: false, reason }
 }
 
 /**

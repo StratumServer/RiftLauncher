@@ -29,6 +29,7 @@ import { useOptimumManifest } from "@renderer/features/versions/hooks/useOptimum
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
+import ConfirmDialog from "@renderer/components/ui/ConfirmDialog"
 import { LinkButton, NormalButton } from "@renderer/components/ui/Buttons"
 import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
@@ -250,26 +251,16 @@ function ListVersions(): JSX.Element {
           </ListGroup>
         </ListWrapper>
 
-        <PopupDialogPanel
+        <ConfirmDialog
           title={t(versionToDelete?.linked ? "features.versions.removeFromList" : "features.versions.uninstallVersion")}
           isOpen={versionToDelete !== null}
           close={() => setVersionToDelete(null)}
-        >
-          <>
-            <p>{t(versionToDelete?.linked ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall", { version: versionToDelete?.label ?? versionToDelete?.version })}</p>
-            <p className="text-zinc-400">{t(versionToDelete?.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
-            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <FormButton title={t("generic.cancel")} onClick={() => setVersionToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <FormButton
-                title={t(versionToDelete?.linked ? "features.versions.removeFromList" : "generic.uninstall")}
-                onClick={DeleteVersionHandler}
-                variant="destructive"
-                size="md"
-                icon={<PiTrashDuotone />}
-              />
-            </ButtonsWrapper>
-          </>
-        </PopupDialogPanel>
+          question={t(versionToDelete?.linked ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall", { version: versionToDelete?.label ?? versionToDelete?.version })}
+          consequence={t(versionToDelete?.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}
+          confirmLabel={t(versionToDelete?.linked ? "features.versions.removeFromList" : "generic.uninstall")}
+          confirmIcon={<PiTrashDuotone />}
+          onConfirm={DeleteVersionHandler}
+        />
 
         <PopupDialogPanel title={t("features.versions.renameVersion")} isOpen={versionToRename !== null} close={() => setVersionToRename(null)}>
           <form className="flex flex-col gap-3" onSubmit={RenameVersionHandler}>
@@ -293,30 +284,32 @@ function ListVersions(): JSX.Element {
           </form>
         </PopupDialogPanel>
 
-        <PopupDialogPanel title={t("features.versions.restoreVanilla")} isOpen={versionToRestore !== null} close={() => setVersionToRestore(null)}>
-          <>
-            <p>{t("features.versions.areYouSureRestoreVanilla", { version: versionToRestore?.label ?? versionToRestore?.version })}</p>
-            <p className="text-zinc-400">{t("features.versions.restoreVanillaIsPartial")}</p>
-            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <FormButton title={t("generic.cancel")} onClick={() => setVersionToRestore(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <FormButton title={t("features.versions.restoreVanilla")} onClick={RestoreVanillaHandler} variant="primary" size="md" icon={<PiArrowUUpLeftDuotone />} />
-            </ButtonsWrapper>
-          </>
-        </PopupDialogPanel>
+        <ConfirmDialog
+          title={t("features.versions.restoreVanilla")}
+          isOpen={versionToRestore !== null}
+          close={() => setVersionToRestore(null)}
+          question={t("features.versions.areYouSureRestoreVanilla", { version: versionToRestore?.label ?? versionToRestore?.version })}
+          consequence={t("features.versions.restoreVanillaIsPartial")}
+          confirmLabel={t("features.versions.restoreVanilla")}
+          confirmIcon={<PiArrowUUpLeftDuotone />}
+          confirmVariant="primary"
+          onConfirm={RestoreVanillaHandler}
+        />
 
-        <PopupDialogPanel title={t("features.versions.versionInUse")} isOpen={versionInUseWarning !== null} close={() => setVersionInUseWarning(null)}>
-          <>
-            <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
-              <PiWarningDuotone className="text-lg shrink-0" />
-              <span>{t("features.versions.versionInUseByInstallations", { installations: installationsInUseLabel(versionInUseWarning?.usedByInstallations ?? []) })}</span>
-            </div>
-            <p className="text-zinc-400">{t(versionInUseWarning?.version.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
-            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <FormButton title={t("generic.cancel")} onClick={() => setVersionInUseWarning(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <FormButton title={t("features.versions.deleteAnyway")} onClick={DeleteVersionAnywayHandler} variant="destructive" size="md" icon={<PiTrashDuotone />} />
-            </ButtonsWrapper>
-          </>
-        </PopupDialogPanel>
+        <ConfirmDialog
+          title={t("features.versions.versionInUse")}
+          isOpen={versionInUseWarning !== null}
+          close={() => setVersionInUseWarning(null)}
+          consequence={t(versionInUseWarning?.version.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}
+          confirmLabel={t("features.versions.deleteAnyway")}
+          confirmIcon={<PiTrashDuotone />}
+          onConfirm={DeleteVersionAnywayHandler}
+        >
+          <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
+            <PiWarningDuotone className="text-lg shrink-0" />
+            <span>{t("features.versions.versionInUseByInstallations", { installations: installationsInUseLabel(versionInUseWarning?.usedByInstallations ?? []) })}</span>
+          </div>
+        </ConfirmDialog>
       </div>
     </ScrollableContainer>
   )

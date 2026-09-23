@@ -316,6 +316,7 @@
       "exportModpackSuccess": "A modcsomag exportálva.",
       "exportModpackError": "A modcsomagot nem sikerült exportálni. A részletek a naplóban vannak.",
       "openModsFolder": "A Telepítés modjait tartalmazó könyvtár megnyitása",
+      "openModsFolderButton": "Mappa megnyitása",
       "importModpack": "Modcsomag-fájl importálása az összes modjának telepítéséhez",
       "importModpackButton": "Importálás",
       "importModpackTitle": "Modcsomag importálása",

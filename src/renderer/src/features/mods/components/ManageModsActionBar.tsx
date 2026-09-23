@@ -193,14 +193,15 @@ function ManageModsActionBar({
 
         <FormButton
           title={t("features.mods.openModsFolder")}
-          variant="ghost"
-          className="w-8 h-8"
+          variant="secondary"
+          className="p-1 w-fit h-8"
           onClick={async () => {
             const path = await resolveModsFolder(installation.path)
             openPathInExplorer(path, { ensure: true })
           }}
         >
           <PiFolderOpenDuotone className="text-xl" />
+          <p>{t("features.mods.openModsFolderButton")}</p>
         </FormButton>
       </StickyMenuGroup>
     </StickyMenuGroupWrapper>
