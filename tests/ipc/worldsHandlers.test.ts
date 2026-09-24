@@ -230,7 +230,7 @@ describe("worlds IPC handlers", () => {
     assert.deepEqual(result, { ok: false, reason: "world-not-found" })
   })
 
-  it("prefers an exact world-name match when names differ only by case", async () => {
+  it.skipIf(process.platform !== "linux")("prefers an exact world-name match when names differ only by case", async () => {
     const installationPath = join(installationsRoot, "install-a")
     const savesPath = join(installationPath, "Saves")
     mkdirSync(savesPath, { recursive: true })
