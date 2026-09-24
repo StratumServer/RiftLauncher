@@ -104,7 +104,7 @@ async function listWorldEntries(savesPath: string, installation: InstallationTyp
 async function findWorld(savesPath: string, requestedName: unknown): Promise<{ name: string; path: string; names: string[] } | null> {
   if (!isSafeWorldName(requestedName)) return null
   const names = await fse.readdir(savesPath).catch(() => [])
-  const name = names.find((candidate) => candidate.toLocaleLowerCase("en-US") === requestedName.toLocaleLowerCase("en-US"))
+  const name = names.find((candidate) => candidate === requestedName) ?? names.find((candidate) => candidate.toLocaleLowerCase("en-US") === requestedName.toLocaleLowerCase("en-US"))
   if (!name || !isSafeWorldName(name)) return null
   const path = worldPath(savesPath, name)
   const stats = await fse.lstat(path).catch(() => null)

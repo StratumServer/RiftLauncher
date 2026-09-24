@@ -206,6 +206,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   const invokedActions = useRef<Set<string>>(new Set())
   const offeredVersion = useRef("")
   const downloadAccepted = useRef(false)
+  const addNotificationRef = useRef<NotificationsContextType["addNotification"]>(() => {})
 
   const history = useMemo(() => records.filter((record) => !isToastOnly(record)), [records])
   stackRef.current = stack
@@ -278,7 +279,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
 
   useEffect((): (() => void) => {
     const offerDownload = (body: string): void => {
-      addNotification(body, "info", {
+      addNotificationRef.current(body, "info", {
         duration: null,
         actions: [
           {
@@ -305,7 +306,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     })
     const removeUpdateDownloadedListener = window.api.appUpdater.onUpdateDownloaded(() => {
       window.setTimeout(() => {
-        addNotification(t("notifications.body.updateDownloaded"), "success", {
+        addNotificationRef.current(t("notifications.body.updateDownloaded"), "success", {
           duration: null,
           actions: [{ id: "restart-and-update", label: t("components.activityCenter.restartAndUpdate"), onClick: (): void => window.api.appUpdater.updateAndRestart() }]
         })
@@ -317,7 +318,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       removeUpdateErrorListener()
       removeUpdateDownloadedListener()
     }
-  }, [])
+  }, [t])
 
   // useCallback because page-level refresh callbacks list addNotification in
   // their dependency arrays and refire their list effect when its identity
@@ -364,6 +365,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       setToastQueue((queue) => [...queue, id])
     }
   }, [])
+  addNotificationRef.current = addNotification
 
   const dismissToast = (id: string, reason: ToastDismissReason = "manual"): void => {
     setStack((current) => (current.some((entry) => entry.id === id) ? current.filter((entry) => entry.id !== id) : current))

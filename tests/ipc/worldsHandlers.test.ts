@@ -230,6 +230,21 @@ describe("worlds IPC handlers", () => {
     assert.deepEqual(result, { ok: false, reason: "world-not-found" })
   })
 
+  it("prefers an exact world-name match when names differ only by case", async () => {
+    const installationPath = join(installationsRoot, "install-a")
+    const savesPath = join(installationPath, "Saves")
+    mkdirSync(savesPath, { recursive: true })
+    writeFileSync(join(savesPath, "World.vcdbs"), "upper", "utf8")
+    writeFileSync(join(savesPath, "world.vcdbs"), "lower", "utf8")
+    writeConfig([installation("install-a", installationPath)])
+
+    const result = await handler("worlds-delete")(await createTrustedEvent(), "install-a", "world.vcdbs")
+
+    assert.deepEqual(result, { ok: true })
+    assert.equal(existsSync(join(savesPath, "World.vcdbs")), true)
+    assert.equal(existsSync(join(savesPath, "world.vcdbs")), false)
+  })
+
   it("backs up, restores, deletes, and transfers a listed world", async () => {
     const sourcePath = join(installationsRoot, "install-a")
     const targetPath = join(installationsRoot, "install-b")
@@ -393,6 +408,9 @@ describe("worlds IPC handlers", () => {
       if (name === "world backup") throw new TypeError("Unmanaged backup archive")
       return realAssertManagedPath(value, name, options)
     })
+    const restoreArchiveFail = await handler("worlds-restore")(event, "install-a", restoreBackupId)
+    assert.deepEqual(restoreArchiveFail, { ok: false, reason: "operation-failed" })
+    expect(extractTarGz).not.toHaveBeenCalled()
     assertManagedPathSpy.mockImplementation(realAssertManagedPath)
 
     assertManagedPathSpy.mockImplementation(async (value: unknown, name?: string, options?: Parameters<typeof realAssertManagedPath>[2]) => {

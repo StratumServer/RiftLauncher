@@ -8,7 +8,7 @@ import ManageInstallationWorlds from "@renderer/features/installations/pages/Man
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
-function anInstallation(): InstallationType {
+function anInstallation(worldBackups: WorldBackupType[] = [{ id: "backup-1", date: 1, path: "/backups/backup-1.tar.gz", worldName: "World.vcdbs" }]): InstallationType {
   return {
     id: "install-a",
     name: "Install A",
@@ -21,7 +21,7 @@ function anInstallation(): InstallationType {
     backupsAuto: false,
     compressionLevel: 6,
     backups: [],
-    worldBackups: [{ id: "backup-1", date: 1, path: "/backups/backup-1.tar.gz", worldName: "World.vcdbs" }],
+    worldBackups,
     lastTimePlayed: -1,
     totalTimePlayed: 0,
     mesaGlThread: false,
@@ -29,15 +29,20 @@ function anInstallation(): InstallationType {
   }
 }
 
-function renderWorlds(deleteWorld: BridgeAPI["worldsManager"]["delete"]): void {
+function renderWorlds(
+  deleteWorld: BridgeAPI["worldsManager"]["delete"],
+  restoreWorld: BridgeAPI["worldsManager"]["restore"] = vi.fn(async () => ({ ok: true as const })),
+  worldBackups?: WorldBackupType[]
+): void {
   installMockWindowApi({
-    configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
+    configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(worldBackups)] })) },
     worldsManager: {
       list: vi.fn(async () => ({
         ok: true as const,
         worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
       })),
-      delete: deleteWorld
+      delete: deleteWorld,
+      restore: restoreWorld
     }
   })
 
@@ -106,6 +111,38 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     const reopenedDialog = await screen.findByRole("dialog")
     expect((within(reopenedDialog).getByRole("textbox") as HTMLInputElement).value).toBe("")
     expect((within(reopenedDialog).getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it("does not delete the world when the optional backup prompt is cancelled", async () => {
+    const user = userEvent.setup()
+    const deleteWorld = vi.fn<BridgeAPI["worldsManager"]["delete"]>(async () => ({ ok: true }))
+    renderWorlds(deleteWorld, undefined, [])
+
+    await user.click(await screen.findByTitle("Delete"))
+    const dialog = await screen.findByRole("dialog")
+    await user.type(within(dialog).getByRole("textbox"), "World.vcdbs")
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }))
+    const backupDialog = await screen.findByRole("dialog")
+    await user.click(within(backupDialog).getByRole("button", { name: "Cancel" }))
+
+    expect(deleteWorld).not.toHaveBeenCalled()
+  })
+
+  it("reports a rejected restore instead of leaving an unhandled promise", async () => {
+    const user = userEvent.setup()
+    const restoreWorld = vi.fn<BridgeAPI["worldsManager"]["restore"]>(async () => {
+      throw new Error("restore failed")
+    })
+    renderWorlds(
+      vi.fn(async () => ({ ok: true as const })),
+      restoreWorld
+    )
+
+    await user.click(await screen.findByTitle("Restore"))
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByRole("button", { name: "Restore" }))
+
+    expect(restoreWorld).toHaveBeenCalledWith("install-a", "backup-1")
   })
 
   it("disables world mutation buttons while the installation is playing", async () => {
