@@ -13,6 +13,8 @@
  * out of a closed set and a number between 0 and 99.
  */
 
+import { isRecord } from "../records"
+
 /**
  * Why a run did not succeed.
  *
@@ -73,10 +75,6 @@ export interface OptimumOutputReader {
    * anyway, so a second one changes nothing a caller could act on.
    */
   finish(): OptimumRunResult
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 /**

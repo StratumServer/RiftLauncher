@@ -13,6 +13,8 @@
  * src/global.d.ts, because they cross the IPC boundary and both sides have to name them.
  */
 
+import { isRecord } from "../records"
+
 /** How often the game process is read while it runs. */
 export const SAMPLE_INTERVAL_MS = 5_000
 
@@ -42,10 +44,6 @@ const SESSION_ID = /^[A-Za-z0-9_-]+$/
 
 export function emptyPlaySessionsDocument(): PlaySessionsDocument {
   return { format: PLAY_SESSIONS_FORMAT, sessions: [] }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 /** The mean of the readings that carry a CPU figure, or nothing when neither does. */

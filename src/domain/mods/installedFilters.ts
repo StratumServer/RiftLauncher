@@ -139,19 +139,23 @@ export function filterInstalledMods(mods: readonly InstalledModType[], filters: 
   return mods.filter((mod) => matchesInstalledModFilters(mod, filters))
 }
 
-/** True when any axis is set. The empty state and the clear button both key off this. */
-export function hasActiveInstalledModFilters(filters: InstalledModFilters): boolean {
-  return filters.author !== "" || filters.tags.length > 0 || filters.gameVersion !== ""
-}
-
 /**
  * How many of the three axes are set, from 0 to 3. The Filters toggle shows this count rather than
  * a plain on/off state, so a player who set two axes and forgot about one still sees why the list
  * is short. A tag axis with several tags picked still counts as the one axis it is: the toggle is
  * about which controls are touched, not how many values sit inside one of them.
+ *
+ * This is also the single definition of "an axis is set": {@link hasActiveInstalledModFilters} asks
+ * it rather than restating the three conditions, so a fourth axis cannot land in one and not the
+ * other.
  */
 export function countActiveInstalledModFilters(filters: InstalledModFilters): number {
   return (filters.author !== "" ? 1 : 0) + (filters.tags.length > 0 ? 1 : 0) + (filters.gameVersion !== "" ? 1 : 0)
+}
+
+/** True when any axis is set. The empty state and the clear button both key off this. */
+export function hasActiveInstalledModFilters(filters: InstalledModFilters): boolean {
+  return countActiveInstalledModFilters(filters) > 0
 }
 
 /**

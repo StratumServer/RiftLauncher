@@ -33,6 +33,8 @@ import fse from "fs-extra"
 import "@src/ipc"
 import { clearTimeout, setTimeout } from "node:timers"
 
+const LOG_PREFIX = "[back] [index] [main/index.ts]"
+
 // #247: when the terminal that started the launcher exits, the next console write fails, and
 // Node reports that failure as an "error" event on process.stdout with no listener, i.e. an
 // uncaught exception Electron shows as "A JavaScript error occurred in the main process".
@@ -53,7 +55,7 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
   return join(logsPath, `${message.level}.log`)
 }
 
-logMessage("info", `[back] [index] [main/index.ts] [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
+logMessage("info", `${LOG_PREFIX} [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
 
 /**
  * The one setting that has to be answered before Electron starts.
@@ -77,7 +79,7 @@ function storedAllowBasicSessionStore(): boolean {
 const passwordStore = basicPasswordStoreSwitch(process.platform, storedAllowBasicSessionStore())
 if (passwordStore) {
   app.commandLine.appendSwitch("password-store", passwordStore)
-  logMessage("info", "[back] [index] [main/index.ts] [passwordStore] Starting with the basic password store, as this launcher's session storage setting asks.")
+  logMessage("info", `${LOG_PREFIX} [passwordStore] Starting with the basic password store, as this launcher's session storage setting asks.`)
 }
 
 let mainWindow: BrowserWindow
@@ -124,7 +126,7 @@ protocol.registerSchemesAsPrivileged(privilegedSchemes)
 // in Electron's other child processes (GPU, utility, and sandbox helpers) without
 // collecting crash reports or sending telemetry anywhere.
 app.on("child-process-gone", (_event, details) => {
-  logMessage("error", `[back] [index] [main/index.ts] [child-process-gone] ${details.type} process exited: ${details.reason} (exit code ${details.exitCode}).`)
+  logMessage("error", `${LOG_PREFIX} [child-process-gone] ${details.type} process exited: ${details.reason} (exit code ${details.exitCode}).`)
 })
 
 function createWindow(): void {
@@ -162,19 +164,19 @@ function createWindow(): void {
   const isAllowedMainFrameUrl = (url: string): boolean => isAllowedRendererUrl(url, is.dev ? process.env["ELECTRON_RENDERER_URL"] : undefined, packagedRendererPath)
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    logMessage("error", `[back] [index] [main/index.ts] [createWindow] Renderer process exited: ${details.reason}.`)
+    logMessage("error", `${LOG_PREFIX} [createWindow] Renderer process exited: ${details.reason}.`)
   })
 
   mainWindow.webContents.on("unresponsive", () => {
-    logMessage("warn", "[back] [index] [main/index.ts] [createWindow] Renderer became unresponsive.")
+    logMessage("warn", `${LOG_PREFIX} [createWindow] Renderer became unresponsive.`)
   })
 
   mainWindow.webContents.on("responsive", () => {
-    logMessage("info", "[back] [index] [main/index.ts] [createWindow] Renderer became responsive again.")
+    logMessage("info", `${LOG_PREFIX} [createWindow] Renderer became responsive again.`)
   })
 
   mainWindow.on("ready-to-show", async () => {
-    logMessage("info", "[back] [index] [main/index.ts] [createWindow] Main window ready to show. Opening.")
+    logMessage("info", `${LOG_PREFIX} [createWindow] Main window ready to show. Opening.`)
 
     const config = await getConfig()
     const oldWindowsState = config.window
@@ -191,7 +193,7 @@ function createWindow(): void {
     if (!hasSweptOrphanedTempFiles) {
       hasSweptOrphanedTempFiles = true
       void sweepOrphanedTempFiles(getOrphanedTempFileSweepTargets(app.getPath("userData"), config)).catch((error: unknown) => {
-        logMessage("debug", `[back] [index] [main/index.ts] [ready-to-show] Could not sweep orphaned temporary files: ${error}`)
+        logMessage("debug", `${LOG_PREFIX} [ready-to-show] Could not sweep orphaned temporary files: ${error}`)
       })
     }
   })
@@ -201,7 +203,7 @@ function createWindow(): void {
       const safeUrl = assertAllowedBrowserUrl(details.url)
       void shell.openExternal(safeUrl.toString())
     } catch {
-      logMessage("warn", "[back] [index] [main/index.ts] [createWindow] Blocked an unsafe external window URL.")
+      logMessage("warn", `${LOG_PREFIX} [createWindow] Blocked an unsafe external window URL.`)
     }
     return { action: "deny" }
   })
@@ -240,10 +242,10 @@ function createWindow(): void {
     if (getShouldPreventClose()) {
       e.preventDefault()
       if (!mainWindow.isDestroyed()) mainWindow.webContents.send(IPC_CHANNELS.UTILS.PREVENTED_APP_CLOSE)
-      logMessage("info", "[back] [index] [main/index.ts] [createWindow] Main window prevented from closing.")
+      logMessage("info", `${LOG_PREFIX} [createWindow] Main window prevented from closing.`)
       return false
     }
-    logMessage("info", "[back] [index] [main/index.ts] [createWindow] Main window closing.")
+    logMessage("info", `${LOG_PREFIX} [createWindow] Main window closing.`)
     return true
   })
 
@@ -276,7 +278,7 @@ function readLinuxPackageType(): string | undefined {
 
 // This method will be called when Electron has finished initialization and is ready to create browser windows. Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
-  logMessage("info", "[back] [index] [main/index.ts] [whenReady] Electron ready.")
+  logMessage("info", `${LOG_PREFIX} [whenReady] Electron ready.`)
 
   session.defaultSession.setPermissionCheckHandler(() => false)
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
@@ -395,10 +397,10 @@ app.whenReady().then(async () => {
         // A packaged build missing its own updater is a broken package, not a reason to refuse to
         // launch: everything else in the app works without it, and this is the only line that
         // would otherwise have gone unreported now that the import is no longer at module scope.
-        logMessage("error", `[back] [index] [main/index.ts] [whenReady] Could not load the auto-updater: ${getErrorMessage(error)}.`)
+        logMessage("error", `${LOG_PREFIX} [whenReady] Could not load the auto-updater: ${getErrorMessage(error)}.`)
       })
   } else {
-    logMessage("info", `[back] [index] [main/index.ts] [whenReady] Auto-update disabled: ${updateDecision.reason}.`)
+    logMessage("info", `${LOG_PREFIX} [whenReady] Auto-update disabled: ${updateDecision.reason}.`)
   }
 
   app.on("activate", function () {
@@ -411,10 +413,10 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   if (getShouldPreventClose() && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IPC_CHANNELS.UTILS.PREVENTED_APP_CLOSE)
-    return logMessage("info", "[back] [index] [main/index.ts] [window-all-closed] Main window prevented from closing.")
+    return logMessage("info", `${LOG_PREFIX} [window-all-closed] Main window prevented from closing.`)
   }
 
-  logMessage("info", "[back] [index] [main/index.ts] [window-all-closed] All windows closed.")
+  logMessage("info", `${LOG_PREFIX} [window-all-closed] All windows closed.`)
   clearModIconMemoryCache(modIconMemoryCache)
   if (process.platform !== "darwin") {
     app.quit()

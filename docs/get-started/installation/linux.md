@@ -106,16 +106,55 @@ chmod +x ./dotnet-install.sh
 ```
 
 ```sh
-sudo ./dotnet-install.sh --channel 7.0 --install-dir /usr/lib/dotnet
+sudo ./dotnet-install.sh --channel 7.0 --install-dir /usr/share/dotnet
 ```
 
 ```sh
-sudo ./dotnet-install.sh --channel 8.0 --install-dir /usr/lib/dotnet
+sudo ./dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet
 ```
 
 ```sh
-sudo ./dotnet-install.sh --channel 10.0 --install-dir /usr/lib/dotnet
+sudo ./dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
 ```
+
+`/usr/share/dotnet` is the apphost's own compiled-in default, the last place it looks when nothing tells it otherwise, so installing straight there is the simplest option: no registration file to write and nothing that can drift out of sync later.
+
+{% hint style="info" %}
+**Installing somewhere else.** If you'd rather keep the game's .NET out of `/usr/share/dotnet`, install with `--install-dir /usr/lib/dotnet` instead and register that location by hand:
+
+```sh
+echo /usr/lib/dotnet | sudo tee /etc/dotnet/install_location /etc/dotnet/install_location_x64
+```
+
+Newer .NET hosts (10 and later) read the architecture-specific file, `install_location_x64` here, instead of the plain `install_location`, so write both: `dotnet-install.sh` sets neither, and without them the runtimes you just installed stay invisible to Vintage Story. Point the symlink below at `/usr/lib/dotnet/dotnet` instead of `/usr/share/dotnet/dotnet` if you go this route.
+{% endhint %}
+
+```sh
+sudo ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
+```
+
+This just puts `dotnet` itself on your `PATH`, which you need for the check below and for any other tool that expects `dotnet` to exist.
+
+**Check it**
+
+```sh
+dotnet --list-runtimes
+```
+
+should list a `Microsoft.NETCore.App` entry for whichever major version, 7, 8 or 10, the game version you play needs.
+
+{% hint style="warning" %}
+If RiftLauncher says a .NET runtime is missing and a copy of the game ran fine before, that older copy most likely shipped its own runtime alongside the game files. The versions RiftLauncher lists as installed come from the system-wide .NET install above, not from a bundled copy, so the two don't tell you the same thing. The exact locations the .NET host searched and didn't find anything are printed in `verbose.log` if you want to see them, for example:
+
+```
+Environment variable: DOTNET_ROOT_X64 = <not set>
+Environment variable: DOTNET_ROOT = <not set>
+Registered location: /etc/dotnet/install_location_x64 = <not set>
+Default location: /usr/share/dotnet
+```
+
+If your runtime lives somewhere none of those point to, you can set `DOTNET_ROOT` for a single Installation instead of touching the system-wide registration: put `DOTNET_ROOT=/usr/lib/dotnet` (or wherever you installed it) in that Installation's **ENV variables** field in the Advanced section.
+{% endhint %}
 
 {% endstep %}
 
@@ -164,6 +203,8 @@ You'll have to look up how to do this for your graphics card and your Linux dist
 ```sh
 sudo pacman -S dotnet-runtime-7.0 dotnet-runtime-8.0 dotnet-runtime glibc openal opengl-driver mono
 ```
+
+Unlike the script-based install above, there's nothing to register by hand here: Arch's `dotnet-runtime` packages write `/etc/dotnet/install_location` themselves as part of installation.
 
 {% endstep %}
 {% endstepper %}

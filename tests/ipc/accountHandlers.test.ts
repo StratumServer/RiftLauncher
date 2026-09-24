@@ -57,6 +57,11 @@ const EMAIL = "player@example.invalid"
 const PASSWORD = "placeholder-password"
 const TWO_FACTOR_CODE = "123456"
 
+/** What `network.ts` rejects with for a non-2xx answer: the transport's own message, plus the status as a number (`BoundedResponseError`). */
+function refusedWithStatus(statusCode: number): Error {
+  return Object.assign(new Error(`Network request failed with status ${statusCode}`), { statusCode })
+}
+
 /** A body the service answers when the credentials are good. Placeholder values throughout. */
 const SUCCESS_BODY = JSON.stringify({
   valid: 1,
@@ -328,8 +333,8 @@ describe("LOGIN resolves a family status for a request failure it can classify",
   for (const [label, thrown, expectedStatus] of [
     ["a name that will not resolve", Object.assign(new Error("getaddrinfo ENOTFOUND auth3.vintagestory.at"), { code: "ENOTFOUND" }), "network-unreachable"],
     ["a certificate this machine will not accept", Object.assign(new Error("self signed certificate"), { code: "DEPTH_ZERO_SELF_SIGNED_CERT" }), "certificate-error"],
-    ["the service answering with a 503", new Error("Network request failed with status 503"), "service-error"],
-    ["the service answering with a 403", new Error("Network request failed with status 403"), "account-restricted"]
+    ["the service answering with a 503", refusedWithStatus(503), "service-error"],
+    ["the service answering with a 403", refusedWithStatus(403), "account-restricted"]
   ] as const) {
     it(`reports ${label} as ${expectedStatus}, not the generic failure`, async () => {
       vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(thrown)
@@ -463,7 +468,7 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
     // matching status instead of throwing the generic failure (issue #481).
     for (const [thrown, expectedReason, expectedStatus] of [
       [Object.assign(new Error(`getaddrinfo ENOTFOUND while sending ${LEAKY_PASSWORD}`), { code: "ENOTFOUND" }), "network-ENOTFOUND", "network-unreachable"],
-      [new Error("Network request failed with status 503"), "http-unavailable", "service-error"],
+      [refusedWithStatus(503), "http-unavailable", "service-error"],
       [new Error("Network request timed out"), "timeout", "network-unreachable"]
     ] as const) {
       vi.mocked(requestBoundedTextViaNode).mockReset().mockRejectedValueOnce(thrown)
@@ -545,13 +550,12 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
   })
 
   it("logs no credential when the password is the same digits as the HTTP status", async () => {
-    // `assertString` accepts `503` as a password, and `network.ts` writes
-    // "Network request failed with status 503" from the response's own status
-    // line. A reason built by splicing those digits in therefore writes the
-    // password to the log the moment the auth service goes down, without the
-    // thrower doing anything unusual.
+    // `assertString` accepts `503` as a password, and the refusal `network.ts`
+    // throws carries the response's own status. A reason built by splicing
+    // those digits in therefore writes the password to the log the moment the
+    // auth service goes down, without the thrower doing anything unusual.
     const password = "503"
-    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(new Error(`Network request failed with status ${password}`))
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(refusedWithStatus(503))
 
     let result: AccountLoginResult | undefined
     const lines = await logLinesDuring(async () => {
@@ -573,13 +577,11 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
     // and an outage into one line, which is the first split a field report
     // needs. All three resolve rather than throw, each into its own family.
     for (const [status, expectedReason, expectedStatus] of [
-      ["401", "http-unauthorized", "account-restricted"],
-      ["429", "http-rate-limited", "service-error"],
-      ["503", "http-unavailable", "service-error"]
+      [401, "http-unauthorized", "account-restricted"],
+      [429, "http-rate-limited", "service-error"],
+      [503, "http-unavailable", "service-error"]
     ] as const) {
-      vi.mocked(requestBoundedTextViaNode)
-        .mockReset()
-        .mockRejectedValueOnce(new Error(`Network request failed with status ${status}`))
+      vi.mocked(requestBoundedTextViaNode).mockReset().mockRejectedValueOnce(refusedWithStatus(status))
 
       let result: AccountLoginResult | undefined
       const lines = await logLinesDuring(async () => {
@@ -591,7 +593,7 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
         lines.some((line) => line.includes(`Login failure reason: ${expectedReason}.`)),
         `no line named the reason ${expectedReason}: ${lines.join(" / ")}`
       )
-      assertNothingSecretIn(lines, [LEAKY_PASSWORD, status])
+      assertNothingSecretIn(lines, [LEAKY_PASSWORD, String(status)])
     }
   })
 })

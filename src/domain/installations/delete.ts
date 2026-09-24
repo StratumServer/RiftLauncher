@@ -1,4 +1,5 @@
 import type { FileSystem } from "../ports"
+import { refuse } from "../refusal"
 import type { BackupRecord } from "./backup"
 import { deleteInstallationBackup } from "./backupDeletion"
 
@@ -24,7 +25,7 @@ export type DeleteInstallationResult =
   | { ok: false; reason: DeleteInstallationFailure }
 
 export interface DeleteInstallationPorts {
-  fileSystem: Pick<FileSystem, "remove">
+  fileSystem: Pick<FileSystem, "exists" | "remove">
 }
 
 export interface DeleteInstallationInput {
@@ -44,10 +45,6 @@ export interface DeleteInstallationEvents {
   onBackupDeleted?(path: string): void
   /** Fired for each backup archive that could not be removed, in order. Deletion still continues past it. */
   onBackupDeleteFailed?(path: string): void
-}
-
-function refuse(reason: DeleteInstallationFailure): DeleteInstallationResult {
-  return { ok: false, reason }
 }
 
 /**

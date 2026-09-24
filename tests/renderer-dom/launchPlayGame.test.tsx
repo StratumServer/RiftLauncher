@@ -100,7 +100,7 @@ async function clickPlay(user: ReturnType<typeof userEvent.setup>): Promise<void
 }
 
 const BACKUP_WRITE_FAILED = "No backup made: the backup archive could not be written. Check that the Backups folder is on a writable drive with free space."
-const BACKUP_PRUNE_FAILED = "No backup made: an old backup could not be removed to make room for the new one."
+const BACKUP_PRUNE_FAILED = "No backup made: an old backup file could not be deleted to make room for the new one. Check that it is not open in another program, then try again."
 const SKIP_PROMPT = "The backup failed. Launch without a backup this time?"
 
 /**

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import { execFileSync } from "node:child_process"
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve as resolvePath, sep } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -18,6 +18,7 @@ import { shell } from "electron"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
+import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
 
 /**
  * Branch coverage for src/ipc/handlers/pathsHandlers.ts, previously entirely
@@ -33,7 +34,7 @@ import { MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
  * worker_thread or child_process. That includes `runTrackedWorker`'s own
  * message-handling logic (progress validation, "finished"/"error"/unknown
  * message shapes, the worker's own "error" event), which DOWNLOAD_ON_PATH/
- * EXTRACT_ON_PATH/COMPRESS_ON_PATH/CHANGE_PERMS all funnel through:
+ * EXTRACT_ON_PATH/COMPRESS_ON_PATH all funnel through:
  * `@src/ipc/workerManager` is mocked so `acquireWorker` hands back a lease
  * wrapping a plain `EventEmitter` a test drives directly instead of a real
  * `worker_threads.Worker`, which is what runTrackedWorker only ever calls
@@ -52,7 +53,6 @@ import { MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
 vi.mock("@src/ipc/workers/compressWorker?modulePath", () => ({ default: "compressWorker-path" }))
 vi.mock("@src/ipc/workers/extractWorker?modulePath", () => ({ default: "extractWorker-path" }))
 vi.mock("@src/ipc/workers/innoExtractWorker?modulePath", () => ({ default: "innoExtractWorker-path" }))
-vi.mock("@src/ipc/workers/changePermsWorker?modulePath", () => ({ default: "changePermsWorker-path" }))
 vi.mock("@src/ipc/workers/downloadWorker?modulePath", () => ({ default: "downloadWorker-path" }))
 
 vi.mock("@src/ipc/workerManager", () => ({
@@ -95,9 +95,31 @@ let versionsFolder: string
 let backupsFolder: string
 let userDataFolder: string
 
+/**
+ * Writes the fixture config at the current schema, not at an older one.
+ *
+ * Every test here re-imports the handlers after `vi.resetModules()`, so the
+ * first `assertManagedPath` of each test is also the first `getConfig()` of a
+ * cold `configManager`. Handed a stale schema, that call migrates the document
+ * and then has to persist it: a pre-migration snapshot through
+ * `writeJsonAtomic` (`reconcileConfigBackup`), a 100 ms coalescing `setTimeout`
+ * (`scheduleConfigWrite`), and a second `writeJsonAtomic` for `config.json`.
+ * Both writes fsync. That put a 100 ms floor and two disk syncs of unbounded
+ * latency inside every timed test body: measured across nine runs beside a
+ * second test file, bodies ran p50 112 ms / p99 932 ms / max 4605 ms against
+ * vitest's 5 s ceiling, so roughly one run in seven timed out on whichever test
+ * happened to be holding an fsync when the disk stalled.
+ *
+ * At the current schema there is nothing to migrate, so `mustSave` stays false
+ * and neither write happens. The config the handlers read is identical either
+ * way: this fixture carries no `gameVersions` and no legacy `account`, which
+ * makes the 2->3 and 3->4 steps no-ops, and `normalizeConfig` already runs
+ * `repairGameVersionIdentity`, which is the whole of 4->5. The migration
+ * pipeline itself is covered by configManager.test.ts and migrations.test.ts.
+ */
 function writeConfig(config: Partial<ConfigType>): void {
   const fullConfig = {
-    schemaVersion: 2,
+    schemaVersion: CURRENT_CONFIG_SCHEMA,
     lastUsedInstallation: null,
     defaultInstallationsFolder: managedFolder,
     defaultVersionsFolder: versionsFolder,
@@ -1005,17 +1027,33 @@ describe("COMPRESS_ON_PATH: runTrackedWorker via a fake worker", () => {
 })
 
 // Same Linux-only early return: on Windows the handler resolves false without
-// ever starting a worker, so the fake worker this waits for never arrives.
-describe.skipIf(process.platform === "win32")("CHANGE_PERMS: runTrackedWorker via a fake worker", () => {
-  it("resolves true once the worker finishes", async () => {
+// walking anything, so the mode these read back would mean nothing.
+describe.skipIf(process.platform === "win32")("CHANGE_PERMS: the walk itself", () => {
+  it("resolves true once the tree has been walked, and applies the mode", async () => {
     const event = await createTrustedEvent()
-    const workerPromise = nextTrackedWorker()
-    const resultPromise = handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [managedFolder], 0o755)
+    const target = join(managedFolder, "Vintagestory")
+    writeFileSync(target, "elf", { mode: 0o600 })
 
-    const worker = await workerPromise
-    worker.emit("message", { type: "finished" })
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [managedFolder], 0o755), true)
 
-    assert.equal(await resultPromise, true)
+    assert.equal(statSync(target).mode & 0o777, 0o755)
+
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0, "the walk runs on this thread, not in a worker")
+  })
+
+  // The refusal is changePermissions', and permissions.test.ts pins it there. What this
+  // adds is the text the renderer's extract task sees, which the pooled worker used to fix
+  // and the handler now fixes in its place.
+  it("reports a refusal under one fixed message rather than the reason behind it", async () => {
+    const event = await createTrustedEvent()
+    // The target has to be there: a link pointing at nothing is skipped rather than refused,
+    // so without this the walk would finish and there would be no refusal to report.
+    const outsider = join(temporaryRoot, "outsider.txt")
+    writeFileSync(outsider, "not the launcher's file", { mode: 0o600 })
+    symlinkSync(outsider, join(managedFolder, "shortcut"))
+
+    await assert.rejects(() => handler(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS)(event, [managedFolder], 0o755), /^Error: Changing permissions failed$/)
   })
 })
 

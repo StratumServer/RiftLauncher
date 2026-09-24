@@ -17,6 +17,8 @@
  * NAME of the field they refused and never its value.
  */
 
+import { isRecord } from "../records"
+
 /** Session credentials. Main process only: these never cross IPC. */
 export type AccountSecrets = {
   sessionKey: string
@@ -64,10 +66,6 @@ export class AccountFieldError extends TypeError {
 /** Extracts a safe diagnosis string from whatever `parseLoginAccount` threw, or undefined if it was not one of these guards. */
 export function accountFieldDiagnosis(error: unknown): string | undefined {
   return error instanceof AccountFieldError ? error.diagnosis : undefined
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 /** A type-level description of a value: never the value, never its length. */

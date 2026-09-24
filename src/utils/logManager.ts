@@ -14,26 +14,11 @@ export function getErrorMessage(error: unknown): string {
   return redactSensitiveText(error.message)
 }
 
+/**
+ * The five modes are electron-log's own method names, so the mode indexes the logger directly.
+ * The optional call is the old `default:` branch: a mode that slipped past the type reads as an
+ * absent property and the line is dropped, rather than throwing inside a log call.
+ */
 export function logMessage(mode: ErrorTypes, message: string): void {
-  const safeMessage = redactSensitiveText(message)
-
-  switch (mode) {
-    case "error":
-      Logger.error(safeMessage)
-      break
-    case "warn":
-      Logger.warn(safeMessage)
-      break
-    case "info":
-      Logger.info(safeMessage)
-      break
-    case "debug":
-      Logger.debug(safeMessage)
-      break
-    case "verbose":
-      Logger.verbose(safeMessage)
-      break
-    default:
-      break
-  }
+  Logger[mode]?.(redactSensitiveText(message))
 }

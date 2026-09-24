@@ -26,7 +26,8 @@ import { isInnoFormatError } from "../../domain/inno/errors"
 import type { InnoExtractionResult } from "../../domain/inno/extract"
 import type { Lzma2DecoderFactory } from "../../domain/inno/lzma"
 import type { InnoInstallerFile } from "../../domain/inno/ports"
-import { assertNoSymlinkComponents, copyTree, validateTree } from "./extraction"
+import { assertNoSymlinkComponents } from "../validation"
+import { copyTree, validateTree } from "./extraction"
 import { isNativeLzma2Error, loadNativeLzma2DecoderFactory } from "./nativeLzma2"
 
 /**

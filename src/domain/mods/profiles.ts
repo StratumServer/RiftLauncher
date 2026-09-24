@@ -1,3 +1,4 @@
+import { isRecord } from "../records"
 import { MAX_MOD_ARCHIVES, renameModArchiveTo } from "./scanInstalled"
 
 /**
@@ -70,10 +71,6 @@ export interface ModProfileSwitchPlan {
 
 export function emptyModProfilesDocument(): ModProfilesDocument {
   return { format: MOD_PROFILES_FORMAT, activeProfileId: null, profiles: [] }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 /**

@@ -17,6 +17,8 @@
  * strange as it likes and the launcher still starts.
  */
 
+import { isRecord } from "../records"
+
 /** Schema every config the launcher writes today carries. */
 export const CURRENT_CONFIG_SCHEMA = 7
 
@@ -108,10 +110,6 @@ export interface ConfigMigrationOptions {
   readonly migrations?: readonly ConfigMigration[]
   /** Schema to reach. Defaults to {@link CURRENT_CONFIG_SCHEMA}. */
   readonly targetSchema?: number
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 /**

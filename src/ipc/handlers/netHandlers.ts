@@ -21,6 +21,8 @@ import {
 import { getConfig, saveConfig } from "@src/config/configManager"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
+const LOG_PREFIX = "[back] [ipc] [ipc/handlers/netHandlers.ts]"
+
 const MOD_CATALOG_HOSTNAME = "mods.vintagestory.at"
 const MOD_CATALOG_PATHNAME = "/api/mods"
 
@@ -76,7 +78,7 @@ export async function queryUrl(url: unknown): Promise<string> {
     const text = await queryConcurrency.run(() => requestBoundedText(safeUrl, { maxBytes }))
     if (isCatalog) {
       await writeCatalogCache(safeUrl, text).catch((cacheErr: unknown) => {
-        logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] Failed to write mod catalog cache: ${getErrorMessage(cacheErr)}`)
+        logMessage("debug", `${LOG_PREFIX} [QUERY_URL] Failed to write mod catalog cache: ${getErrorMessage(cacheErr)}`)
       })
     }
     return text
@@ -84,8 +86,8 @@ export async function queryUrl(url: unknown): Promise<string> {
     if (isCatalog) {
       const cached = await readCatalogCache(safeUrl)
       if (cached !== null) {
-        logMessage("warn", "[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] Mod catalog fetch failed, serving last good cached response.")
-        logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] ${getErrorMessage(err)}`)
+        logMessage("warn", `${LOG_PREFIX} [QUERY_URL] Mod catalog fetch failed, serving last good cached response.`)
+        logMessage("debug", `${LOG_PREFIX} [QUERY_URL] ${getErrorMessage(err)}`)
         return cached
       }
     }
@@ -125,7 +127,7 @@ export async function fetchModDbListingArchive(listingVersion: string): Promise<
     if (!detail.ok) return "unreachable"
     fileId = releaseFileIdForVersion(detail.payload, listingVersion)
   } catch (err) {
-    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [COUNT_MODDB_DOWNLOAD] ${getErrorMessage(err)}`)
+    logMessage("debug", `${LOG_PREFIX} [COUNT_MODDB_DOWNLOAD] ${getErrorMessage(err)}`)
     return "unreachable"
   }
 
@@ -143,14 +145,11 @@ export async function fetchModDbListingArchive(listingVersion: string): Promise<
     // ever rewords it the request still behaves exactly the same and only this line falls back
     // to the branch below.
     if (message.toLowerCase().includes("redirect")) {
-      logMessage(
-        "debug",
-        "[back] [ipc] [ipc/handlers/netHandlers.ts] [COUNT_MODDB_DOWNLOAD] The listing download endpoint answered with its redirect, which is the counted outcome. Not followed on purpose."
-      )
+      logMessage("debug", `${LOG_PREFIX} [COUNT_MODDB_DOWNLOAD] The listing download endpoint answered with its redirect, which is the counted outcome. Not followed on purpose.`)
       return "counted"
     }
 
-    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [COUNT_MODDB_DOWNLOAD] ${message}`)
+    logMessage("debug", `${LOG_PREFIX} [COUNT_MODDB_DOWNLOAD] ${message}`)
     return "unreachable"
   }
 }
@@ -226,7 +225,7 @@ ipcMain.handle(IPC_CHANNELS.NET_MANAGER.COUNT_MODDB_DOWNLOAD, async (event, cons
 
   // Fixed text and the outcome's own token only, never a URL or a response body: the provenance
   // rule tests/log-provenance.test.ts holds every network log in this file to.
-  logMessage("info", `[back] [ipc] [ipc/handlers/netHandlers.ts] [COUNT_MODDB_DOWNLOAD] ModDB listing count for this version: ${result.reason}.`)
+  logMessage("info", `${LOG_PREFIX} [COUNT_MODDB_DOWNLOAD] ModDB listing count for this version: ${result.reason}.`)
 
   return result
 })
@@ -237,8 +236,8 @@ ipcMain.handle(IPC_CHANNELS.NET_MANAGER.QUERY_URL, async (event, url: unknown): 
   try {
     return await queryUrl(url)
   } catch (err) {
-    logMessage("error", "[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] Network request failed.")
-    logMessage("debug", `[back] [ipc] [ipc/handlers/netHandlers.ts] [QUERY_URL] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [QUERY_URL] Network request failed.`)
+    logMessage("debug", `${LOG_PREFIX} [QUERY_URL] ${getErrorMessage(err)}`)
     throw err
   }
 })
@@ -371,7 +370,7 @@ ipcMain.handle(IPC_CHANNELS.NET_MANAGER.FETCH_RELEASE_NOTES, async (event): Prom
 
   // Fixed text and the failure's own reason token only: never the response body, a release name
   // or the URL, the same provenance rule every other network log in this file already follows.
-  if (!result.ok) logMessage("info", `[back] [ipc] [ipc/handlers/netHandlers.ts] [FETCH_RELEASE_NOTES] Release notes fetch failed: ${result.reason}.`)
+  if (!result.ok) logMessage("info", `${LOG_PREFIX} [FETCH_RELEASE_NOTES] Release notes fetch failed: ${result.reason}.`)
 
   return result
 })
