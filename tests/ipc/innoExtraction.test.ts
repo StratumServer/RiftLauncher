@@ -38,6 +38,10 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(workspace, { recursive: true, force: true })
   vi.unstubAllEnvs()
+  // Without this, a spy planted on the shared fse module (the cleanup-failure tests below)
+  // outlives its own test and reaches whatever runs after it in this file, opt-in real
+  // installer run included.
+  vi.restoreAllMocks()
 })
 
 describe("runInnoExtraction", () => {
@@ -160,8 +164,19 @@ describe("runInnoExtraction: post-copy cleanup is best-effort", () => {
   })
 
   it("still reports extracted, with a warning, when removing the staging folder throws after the copy landed", async () => {
+    // mkdtempSync goes wherever TMPDIR/TMP/TEMP point (see "leaves no temporary folder
+    // behind" above). Pinning it inside workspace means the riftlauncher-inno-* folder
+    // this run creates and then fails to remove is swept up by afterEach's
+    // rmSync(workspace), not left behind in the machine-wide os.tmpdir() every run of
+    // this file shares.
+    const temporaryRoot = workspacePath("temp-root")
+    mkdirSync(temporaryRoot)
+    vi.stubEnv("TMPDIR", temporaryRoot)
+    vi.stubEnv("TMP", temporaryRoot)
+    vi.stubEnv("TEMP", temporaryRoot)
+
     const fse = (await import("fs-extra")).default
-    vi.spyOn(fse, "rmSync").mockImplementation(() => {
+    const rmSpy = vi.spyOn(fse, "rmSync").mockImplementation(() => {
       throw Object.assign(new Error("EPERM: operation not permitted, rmdir"), { code: "EPERM" })
     })
 
@@ -170,6 +185,11 @@ describe("runInnoExtraction: post-copy cleanup is best-effort", () => {
     assert.equal(outcome.verdict, "extracted")
     assert.equal(outcome.cleanupWarning, "installer-cleanup-failed")
     assert.equal(existsSync(workspacePath("target", "Vintagestory.exe")), true)
+    // #528's Windows half: the staging removal went from removeSync's plain rmSync to one
+    // with retries, giving a scanner time to let go of a handle on a file just written.
+    const options = rmSpy.mock.calls[0]?.[1]
+    assert.equal((options?.maxRetries ?? 0) > 0, true)
+    assert.equal((options?.retryDelay ?? 0) > 0, true)
   })
 
   it("stays fatal when the destination cannot be created before any copy has happened", async () => {
