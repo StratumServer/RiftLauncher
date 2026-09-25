@@ -1,5 +1,8 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
@@ -258,5 +261,27 @@ describe("the inno extract worker's own failure describer", () => {
     const message = (lastMessage() as { message: string }).message
     assert.match(message, /ENOENT/, `expected the filesystem's own reason, got: ${message}`)
     assert.notEqual(message, "Installer payload extraction failed")
+
+    // #528: cleanupWarning is the only hop that carries a best-effort cleanup failure
+    // from runInnoExtraction's outcome to the finished message this worker posts back.
+    // Nothing else in the suite runs the worker itself far enough to set it.
+    const workspace = mkdtempSync(join(tmpdir(), "rift-worker-host-test-"))
+    try {
+      const installer = join(workspace, "valid.bin")
+      copyFileSync(join(__dirname, "../fixtures/inno/valid.bin"), installer)
+
+      const fse = (await import("fs-extra")).default
+      vi.spyOn(fse, "unlinkSync").mockImplementation(() => {
+        throw Object.assign(new Error("EBUSY: resource busy or locked, unlink"), { code: "EBUSY" })
+      })
+
+      port.postMessage.mockClear()
+      port.emit("message", { type: "task", token: 2, payload: { filePath: installer, outputPath: join(workspace, "target"), deleteInstaller: true } })
+      await vi.waitFor(() => assert.equal((lastMessage() as { type?: string } | undefined)?.type, "finished"))
+
+      assert.equal((lastMessage() as { cleanupWarning?: string }).cleanupWarning, "installer-cleanup-failed")
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
   })
 })
