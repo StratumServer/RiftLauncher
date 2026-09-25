@@ -254,19 +254,22 @@ describe("the inno extract worker's own failure describer", () => {
   it("forwards the real extraction failure instead of the fixed sentence", async () => {
     await import("@src/ipc/workers/innoExtractWorker")
 
-    const missingInstaller = { filePath: "/nonexistent-riftlauncher-installer.exe", outputPath: "/tmp", deleteInstaller: false }
-    port.emit("message", { type: "task", token: 1, payload: missingInstaller })
-    await vi.waitFor(() => assert.equal(lastMessage() !== undefined, true))
-
-    const message = (lastMessage() as { message: string }).message
-    assert.match(message, /ENOENT/, `expected the filesystem's own reason, got: ${message}`)
-    assert.notEqual(message, "Installer payload extraction failed")
-
-    // #528: cleanupWarning is the only hop that carries a best-effort cleanup failure
-    // from runInnoExtraction's outcome to the finished message this worker posts back.
-    // Nothing else in the suite runs the worker itself far enough to set it.
+    // A per-test workspace, not the literal "/tmp": ensureDirSync(outputPath) runs before
+    // the missing installer is ever opened, and "/tmp" would create \tmp at the drive root
+    // on the Windows matrix and resolve through a symlink on macOS.
     const workspace = mkdtempSync(join(tmpdir(), "rift-worker-host-test-"))
     try {
+      const missingInstaller = { filePath: "/nonexistent-riftlauncher-installer.exe", outputPath: join(workspace, "missing-target"), deleteInstaller: false }
+      port.emit("message", { type: "task", token: 1, payload: missingInstaller })
+      await vi.waitFor(() => assert.equal(lastMessage() !== undefined, true))
+
+      const message = (lastMessage() as { message: string }).message
+      assert.match(message, /ENOENT/, `expected the filesystem's own reason, got: ${message}`)
+      assert.notEqual(message, "Installer payload extraction failed")
+
+      // #528: cleanupWarning is the only hop that carries a best-effort cleanup failure
+      // from runInnoExtraction's outcome to the finished message this worker posts back.
+      // Nothing else in the suite runs the worker itself far enough to set it.
       const installer = join(workspace, "valid.bin")
       copyFileSync(join(__dirname, "../fixtures/inno/valid.bin"), installer)
 
@@ -279,7 +282,7 @@ describe("the inno extract worker's own failure describer", () => {
       port.emit("message", { type: "task", token: 2, payload: { filePath: installer, outputPath: join(workspace, "target"), deleteInstaller: true } })
       await vi.waitFor(() => assert.equal((lastMessage() as { type?: string } | undefined)?.type, "finished"))
 
-      assert.equal((lastMessage() as { cleanupWarning?: string }).cleanupWarning, "installer-cleanup-failed")
+      assert.deepEqual((lastMessage() as { cleanupWarning?: { reason?: string; code?: string } }).cleanupWarning, { reason: "installer-delete-failed", code: "EBUSY" })
     } finally {
       rmSync(workspace, { recursive: true, force: true })
     }
