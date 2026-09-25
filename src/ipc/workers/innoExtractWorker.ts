@@ -7,5 +7,5 @@ serveTasks(
     const outcome = await runInnoExtraction({ filePath, outputPath, deleteInstaller, onProgress })
     return { verdict: outcome.verdict, reason: outcome.reason, filesWritten: outcome.filesWritten, bytesWritten: outcome.bytesWritten }
   },
-  () => "Installer payload extraction failed"
+  (error) => (error instanceof Error ? error.message : "Installer payload extraction failed")
 )

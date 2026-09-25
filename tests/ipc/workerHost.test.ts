@@ -239,3 +239,24 @@ describe("the compress worker's own failure describer", () => {
     assert.notEqual(fileAsSourceMessage, missingSourceMessage)
   })
 })
+
+/**
+ * Issue #527. Same defect as #358 above, in the Inno worker instead of the compress one:
+ * its describer was the fixed constant `() => "Installer payload extraction failed"`, so
+ * every extraction failure logged the exact same sentence regardless of cause. Imported for
+ * real over the same fake port, and the failure is the one the filesystem actually raises
+ * for a missing installer (`open`'s own ENOENT), the shape the linked player report was in.
+ */
+describe("the inno extract worker's own failure describer", () => {
+  it("forwards the real extraction failure instead of the fixed sentence", async () => {
+    await import("@src/ipc/workers/innoExtractWorker")
+
+    const missingInstaller = { filePath: "/nonexistent-riftlauncher-installer.exe", outputPath: "/tmp", deleteInstaller: false }
+    port.emit("message", { type: "task", token: 1, payload: missingInstaller })
+    await vi.waitFor(() => assert.equal(lastMessage() !== undefined, true))
+
+    const message = (lastMessage() as { message: string }).message
+    assert.match(message, /ENOENT/, `expected the filesystem's own reason, got: ${message}`)
+    assert.notEqual(message, "Installer payload extraction failed")
+  })
+})
