@@ -189,6 +189,22 @@ describe("runInnoExtraction: post-copy cleanup is best-effort", () => {
     assert.equal(existsSync(workspacePath("target", "Vintagestory.exe")), true)
   })
 
+  it("keeps an installer reached through a symbolic link, and still reports extracted", async () => {
+    // The other half of the pre-delete safety check, alongside the ENOENT quarantine case
+    // above: assertNoSymlinkComponents(filePath) must itself stay inside the best-effort
+    // try, or an installer reached through a symlinked parent folder gets unlinked in the
+    // link's target folder while the run still reports extracted.
+    mkdirSync(workspacePath("real"))
+    copyFileSync(join(FIXTURES, "valid.bin"), workspacePath("real", "valid.bin"))
+    symlinkSync(workspacePath("real"), workspacePath("link"))
+
+    const outcome = await runInnoExtraction({ filePath: workspacePath("link", "valid.bin"), outputPath: workspacePath("target"), deleteInstaller: true })
+
+    assert.equal(outcome.verdict, "extracted")
+    assert.deepEqual(outcome.cleanupWarning, { reason: "installer-delete-failed", code: "unknown" })
+    assert.equal(existsSync(workspacePath("real", "valid.bin")), true)
+  })
+
   it("still reports extracted, with a warning, when removing the staging folder throws after the copy landed", async () => {
     // mkdtempSync goes wherever TMPDIR/TMP/TEMP point (see "leaves no temporary folder
     // behind" above). Pinning it inside workspace means the riftlauncher-inno-* folder
