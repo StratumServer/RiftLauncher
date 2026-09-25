@@ -57,6 +57,12 @@ export interface InnoExtractionOutcome {
   reason?: string
   filesWritten?: number
   bytesWritten?: number
+  /**
+   * A fixed token, present only on `extracted`, when a post-copy cleanup step (deleting the
+   * installer, removing the temporary staging folder) threw. The game already landed by then,
+   * so that is not this outcome's failure; the caller logs it as a warning instead.
+   */
+  cleanupWarning?: string
 }
 
 /** Reads the installer through a file handle, one range at a time. */
@@ -111,6 +117,12 @@ function payloadSink(root: string): { writeFile(relativePath: string, contents: 
 export async function runInnoExtraction(options: InnoExtractionOptions): Promise<InnoExtractionOutcome> {
   const { filePath, outputPath, deleteInstaller, onProgress } = options
   let temporaryRoot: string | undefined
+  // Set once copyTree lands the game. Only then do the two cleanup steps below (deleting the
+  // installer, removing the staging folder in the finally block) become best-effort: a scanner
+  // holding one of those handles on Windows must not turn a landed install into a failure (#528).
+  // Anything that throws before this point stays fatal.
+  let copySucceeded = false
+  let outcome: InnoExtractionOutcome | undefined
 
   try {
     assertNoSymlinkComponents(outputPath)
@@ -161,17 +173,39 @@ export async function runInnoExtraction(options: InnoExtractionOptions): Promise
 
     validateTree(payloadRoot)
     copyTree(payloadRoot, outputPath)
+    copySucceeded = true
+    outcome = { verdict: "extracted", filesWritten, bytesWritten }
 
     if (deleteInstaller) {
       assertNoSymlinkComponents(filePath)
       const installerStats = fse.lstatSync(filePath)
       if (!installerStats.isFile() || installerStats.isSymbolicLink()) throw new Error("Installer path is unsafe")
-      fse.unlinkSync(filePath)
+      try {
+        fse.unlinkSync(filePath)
+      } catch {
+        // Best-effort: the game is already on disk, so a handle held on the installer (a
+        // scanner, most often on Windows) is not this install's failure.
+        outcome.cleanupWarning = "installer-cleanup-failed"
+      }
     }
 
     onProgress?.(100)
-    return { verdict: "extracted", filesWritten, bytesWritten }
+    return outcome
   } finally {
-    if (temporaryRoot) fse.removeSync(temporaryRoot)
+    if (temporaryRoot) {
+      if (copySucceeded) {
+        try {
+          // maxRetries/retryDelay over fse.removeSync's plain rmSync: the staging folder was
+          // just written to, and a scanner can still be holding a handle on one of its files
+          // on Windows. Mutates `outcome` in place, which `return outcome` above already
+          // captured by reference, so a retry failure here still reaches the caller.
+          fse.rmSync(temporaryRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+        } catch {
+          if (outcome) outcome.cleanupWarning = outcome.cleanupWarning ?? "installer-cleanup-failed"
+        }
+      } else {
+        fse.removeSync(temporaryRoot)
+      }
+    }
   }
 }

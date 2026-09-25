@@ -136,6 +136,56 @@ describe("runInnoExtraction", () => {
 })
 
 /**
+ * Issue #528. Once copyTree has landed the game, the two cleanup calls left
+ * (deleting the installer, removing the temporary staging folder in the
+ * finally block) must not turn that landed install into a failure: a handle
+ * held on either path, most often a Windows scanner reacting to files that
+ * were just written, is not this install's problem. Both are exercised
+ * separately here, each against the tiny valid.bin fixture rather than a real
+ * installer, since the mechanism under test is what happens after copyTree
+ * returns, not the copy itself.
+ */
+describe("runInnoExtraction: post-copy cleanup is best-effort", () => {
+  it("still reports extracted, with a warning, when deleting the installer throws after the copy landed", async () => {
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "unlinkSync").mockImplementation(() => {
+      throw Object.assign(new Error("EBUSY: resource busy or locked, unlink"), { code: "EBUSY" })
+    })
+
+    const outcome = await runInnoExtraction({ filePath: installerFrom("valid.bin"), outputPath: workspacePath("target"), deleteInstaller: true })
+
+    assert.equal(outcome.verdict, "extracted")
+    assert.equal(outcome.cleanupWarning, "installer-cleanup-failed")
+    assert.equal(existsSync(workspacePath("target", "Vintagestory.exe")), true)
+  })
+
+  it("still reports extracted, with a warning, when removing the staging folder throws after the copy landed", async () => {
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "rmSync").mockImplementation(() => {
+      throw Object.assign(new Error("EPERM: operation not permitted, rmdir"), { code: "EPERM" })
+    })
+
+    const outcome = await runInnoExtraction({ filePath: installerFrom("valid.bin"), outputPath: workspacePath("target"), deleteInstaller: false })
+
+    assert.equal(outcome.verdict, "extracted")
+    assert.equal(outcome.cleanupWarning, "installer-cleanup-failed")
+    assert.equal(existsSync(workspacePath("target", "Vintagestory.exe")), true)
+  })
+
+  it("stays fatal when the destination cannot be created before any copy has happened", async () => {
+    // Control: a failure that never reaches copyTree still rejects, same as before #528.
+    // Not a cleanup call at all, but it pins that the best-effort change stayed scoped to
+    // after a successful copy, not to every throw runInnoExtraction can produce.
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "ensureDirSync").mockImplementation(() => {
+      throw Object.assign(new Error("EACCES: permission denied, mkdir"), { code: "EACCES" })
+    })
+
+    await assert.rejects(runInnoExtraction({ filePath: installerFrom("valid.bin"), outputPath: workspacePath("target"), deleteInstaller: false }), /EACCES/)
+  })
+})
+
+/**
  * The real thing. Set RIFT_E2E_INNO to a downloaded Windows installer and
  * RIFT_E2E_VERSION to its version to run it:
  *
