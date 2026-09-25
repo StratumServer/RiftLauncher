@@ -37,11 +37,16 @@ describe("ModDB filter lookups", () => {
    * `useModDbLookups.ts` tells the two apart from `err.message` alone, so this pins the token
    * the log line actually carries for each, without touching what the player sees (still
    * LOOKUP_FAILED either way, since neither is something a retry fixes).
+   *
+   * The rejection here is the shape `ipcRenderer.invoke` actually delivers, the size-refusal
+   * literal wrapped in Electron's own remote-method message (same wrapping as
+   * activityCenter.test.tsx's failed-row fixtures), not the bare literal `collectBounded` throws
+   * on the other side of the bridge.
    */
   it("logs a distinct token for a too-large response instead of the generic request-failed one", async () => {
     const user = userEvent.setup()
     const api = renderAuthorFilter(async () => {
-      throw new Error("Network response is too large")
+      throw new Error("Error invoking remote method 'query-url': Error: Network response is too large")
     })
 
     await user.click(screen.getByRole("button"))
