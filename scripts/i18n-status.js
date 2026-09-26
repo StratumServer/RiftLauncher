@@ -49,9 +49,35 @@ function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"))
 }
 
+// i18next v4 cardinal plural suffixes (issue #496: no bare key keeps one of these as a sibling).
+const PLURAL_SUFFIXES = ["_zero", "_one", "_two", "_few", "_many", "_other"]
+
+// Whole numbers wide enough to hit every cardinal category a language distinguishes for an
+// integer (same probe as tests/i18n/helpers.ts's requiredPluralCategories, duplicated here so
+// this script stays dependency-free and importable from a bare checkout).
+const INTEGER_PLURAL_PROBES = [0, 1, 2, 3, 5, 11, 21, 22, 25, 100, 101, 1_000_000]
+
+/** The cardinal plural categories `locale` selects between for a whole number. */
+function requiredPluralCategories(locale) {
+  const rules = new Intl.PluralRules(locale)
+  return new Set(INTEGER_PLURAL_PROBES.map((count) => rules.select(count)))
+}
+
+/** The bare family name of every plural key in `keys`, e.g. "features.mods.modsCount". */
+function pluralFamiliesOf(keys) {
+  const families = new Set()
+  for (const key of keys) {
+    const suffix = PLURAL_SUFFIXES.find((candidate) => key.endsWith(candidate))
+    if (suffix) families.add(key.slice(0, -suffix.length))
+  }
+  return families
+}
+
 /** One row per locale file in `dir`, en-US excluded (it is the source). */
 function localeRows(dir) {
-  const enKeys = new Set(Object.keys(flattenLocale(readJson(join(dir, SOURCE)))))
+  const enKeys = [...Object.keys(flattenLocale(readJson(join(dir, SOURCE))))]
+  const nonPluralEnKeys = enKeys.filter((key) => !PLURAL_SUFFIXES.some((suffix) => key.endsWith(suffix)))
+  const pluralFamilies = [...pluralFamiliesOf(enKeys)]
 
   let drafted = {}
   try {
@@ -68,18 +94,26 @@ function localeRows(dir) {
       const keys = new Set(Object.keys(flattenLocale(readJson(join(dir, file)))))
       const draftedKeys = Array.isArray(drafted[locale]) ? drafted[locale] : []
 
+      // en-US's key set, expanded to the plural categories this locale's own
+      // grammar selects (Intl.PluralRules), instead of en-US's one/other: a
+      // Slavic locale's _few/_many are real forms it needs, not stale ones,
+      // and Chinese's single _other is all it is missing, not en-US's _one too.
+      const categories = requiredPluralCategories(locale)
+      const expected = new Set(nonPluralEnKeys)
+      for (const family of pluralFamilies) for (const category of categories) expected.add(`${family}_${category}`)
+
       return {
         locale,
         keys: keys.size,
-        missing: [...enKeys].filter((key) => !keys.has(key)).length,
-        stale: [...keys].filter((key) => !enKeys.has(key)).length,
-        // A drafted key en-US has since dropped is counted as stale, not as
-        // review work, so it is not counted twice.
-        drafted: draftedKeys.filter((key) => enKeys.has(key)).length
+        missing: [...expected].filter((key) => !keys.has(key)).length,
+        stale: [...keys].filter((key) => !expected.has(key)).length,
+        // A drafted key this locale's own grammar has no use for is counted as
+        // stale above, not as review work, so it is not counted twice here.
+        drafted: draftedKeys.filter((key) => expected.has(key)).length
       }
     })
 
-  return { sourceKeys: enKeys.size, rows }
+  return { sourceKeys: enKeys.length, rows }
 }
 
 /** Markdown table, padded the way Prettier formats one so `format:check` stays green. */

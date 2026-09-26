@@ -41,6 +41,24 @@ describe("i18n status report", () => {
     assert.match(run("--dir", dir), /^\| es-ES\s+\|\s+2 \|\s+2 \|\s+1 \|\s+0 \|$/m)
   })
 
+  it("expands an en-US plural family into the categories a locale's own grammar selects", () => {
+    const dir = fixture({
+      "en-US.json": { generic: { email: "Email" }, features: { mods: { modsCount_one: "{{count}} mod", modsCount_other: "{{count}} mods" } } },
+      // Russian selects one/few/many for an integer, not en-US's one/other:
+      // carrying all three is complete (missing 0), and none of them is a key
+      // en-US lacks (stale 0), even though none is a literal en-US suffix.
+      "ru-RU.json": {
+        generic: { email: "Почта" },
+        features: { mods: { modsCount_one: "{{count}} мод", modsCount_few: "{{count}} мода", modsCount_many: "{{count}} модов" } }
+      },
+      "drafted.json": { "ru-RU": ["features.mods.modsCount_few", "features.mods.modsCount_two"] }
+    })
+
+    // 4 keys, 0 missing, 0 stale, and only the drafted key ru-RU's own grammar
+    // actually uses (modsCount_two is not one of ru-RU's categories).
+    assert.match(run("--dir", dir), /^\| ru-RU\s+\|\s+4 \|\s+0 \|\s+0 \|\s+1 \|$/m)
+  })
+
   it("renders the table Prettier's way, with drafted counts from drafted.json", () => {
     const dir = fixture({
       "en-US.json": SOURCE,
