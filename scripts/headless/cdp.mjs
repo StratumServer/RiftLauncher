@@ -24,13 +24,18 @@
  *   size <WxH>               Set the viewport size, e.g. size 1024x600.
  *
  * Exit codes: 0 on success, 1 on usage or connection errors, 2 when the
- * requested command found nothing to act on (no matching element, no page
- * target).
+ * requested command found nothing to act on: no matching element, no page
+ * target, or an element that scrolled into view still has no box, sits
+ * outside the viewport, or is covered by something else (an overlay, a
+ * dialog backdrop), so a click on it would not land.
+ *
+ * Every CDP call rejects on its own if the browser never answers it, after
+ * CDP_TIMEOUT_MS (default 15000).
  */
 
 import { writeFileSync } from "node:fs"
 
-const USAGE = `usage: CDP_PORT=<port> node scripts/headless/cdp.mjs <command> [args...]
+const USAGE = `usage: CDP_PORT=<port> [CDP_TIMEOUT_MS=<ms>] node scripts/headless/cdp.mjs <command> [args...]
 
 commands:
   text                    print the page's visible text
@@ -77,13 +82,17 @@ function connect(wsUrl) {
   })
 }
 
-function rpc(ws) {
+const DEFAULT_RPC_TIMEOUT_MS = 15_000
+
+/** A CDP call that never gets a reply (a hung renderer, a dropped socket) used to hang the tool forever. Every call now rejects, naming its own method, after `timeoutMs`. */
+function rpc(ws, timeoutMs = DEFAULT_RPC_TIMEOUT_MS) {
   let id = 0
   const pending = new Map()
   ws.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data)
     if (msg.id !== undefined && pending.has(msg.id)) {
-      const { resolve, reject } = pending.get(msg.id)
+      const { resolve, reject, timer } = pending.get(msg.id)
+      clearTimeout(timer)
       pending.delete(msg.id)
       if (msg.error) reject(new Error(msg.error.message ?? "CDP call failed"))
       else resolve(msg.result)
@@ -92,7 +101,11 @@ function rpc(ws) {
   return function call(method, params = {}) {
     const thisId = ++id
     return new Promise((resolve, reject) => {
-      pending.set(thisId, { resolve, reject })
+      const timer = setTimeout(() => {
+        pending.delete(thisId)
+        reject(new Error(`${method} timed out after ${timeoutMs}ms`))
+      }, timeoutMs)
+      pending.set(thisId, { resolve, reject, timer })
       ws.send(JSON.stringify({ id: thisId, method, params }))
     })
   }
@@ -105,21 +118,57 @@ async function evaluate(call, expression) {
   return result.value
 }
 
-/** Finds the most specific element whose own trimmed text matches exactly, and returns its center in viewport coordinates. */
-async function findTextCenter(call, text) {
+const FIND_BY_TEXT = (text) => `(() => {
+  const target = ${JSON.stringify(text)}
+  const all = Array.from(document.querySelectorAll("body *"))
+  const matches = all.filter((el) => el.textContent && el.textContent.trim() === target)
+  // Prefer the deepest match: a wrapping container's textContent includes the same string.
+  return matches.find((el) => !matches.some((other) => other !== el && el.contains(other))) || null
+})()`
+
+const FIND_BY_SELECTOR = (selector) => `document.querySelector(${JSON.stringify(selector)})`
+
+/**
+ * Resolves a click target found by `findExpr` (a JS expression evaluating to an element or
+ * null) to viewport coordinates, or a reason it cannot be clicked. Scrolls the element into
+ * view first: `getBoundingClientRect()` on an element below the fold used to hand back
+ * coordinates outside the viewport, `Input.dispatchMouseEvent` hit nothing there, and the
+ * command still exited 0 (#536). A box that scrolling still leaves off-screen, has no size
+ * (display:none), or is not what `elementFromPoint` finds at its own centre (covered by an
+ * overlay, a dialog backdrop) is refused the same way, before any mouse event is sent.
+ */
+async function resolveClickTarget(call, findExpr) {
   return evaluate(
     call,
     `(() => {
-      const target = ${JSON.stringify(text)}
-      const all = Array.from(document.querySelectorAll("body *"))
-      const matches = all.filter((el) => el.textContent && el.textContent.trim() === target)
-      // Prefer the deepest match: a wrapping container's textContent includes the same string.
-      const leaf = matches.find((el) => !matches.some((other) => other !== el && el.contains(other)))
-      if (!leaf) return null
-      const rect = leaf.getBoundingClientRect()
-      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+      const el = ${findExpr}
+      if (!el) return { ok: false, reason: "not-found" }
+      el.scrollIntoView({ block: "center" })
+      const rect = el.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return { ok: false, reason: "no-box" }
+      const x = rect.x + rect.width / 2
+      const y = rect.y + rect.height / 2
+      if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) {
+        return { ok: false, reason: "outside-viewport" }
+      }
+      const atPoint = document.elementFromPoint(x, y)
+      if (!atPoint || !(atPoint === el || el.contains(atPoint))) return { ok: false, reason: "covered" }
+      return { ok: true, x, y }
     })()`
   )
+}
+
+/** Resolves `findExpr` to a clickable point, or fails with exit code 2 and a reason a click there would not land. `notFoundMessage` covers the "no element" case; the rest describe an element that was found but is not actually clickable. */
+async function clickTarget(call, findExpr, notFoundMessage) {
+  const result = await resolveClickTarget(call, findExpr)
+  if (result.ok) return result
+  const messages = {
+    "not-found": notFoundMessage,
+    "no-box": "element has no box to click (display:none, or zero size)",
+    "outside-viewport": "element's centre is outside the viewport even after scrolling into view",
+    covered: "element is covered by something else (an overlay, a dialog backdrop) at its own centre point"
+  }
+  fail(messages[result.reason] ?? `element is not clickable (${result.reason})`, 2)
 }
 
 async function clickAt(call, x, y) {
@@ -142,24 +191,14 @@ async function runCommand(call, command, args) {
     }
     case "clickText": {
       if (args.length < 1) fail(USAGE)
-      const center = await findTextCenter(call, args[0])
-      if (!center) fail(`no element with that text was found`, 2)
-      await clickAt(call, center.x, center.y)
+      const { x, y } = await clickTarget(call, FIND_BY_TEXT(args[0]), "no element with that text was found")
+      await clickAt(call, x, y)
       return
     }
     case "click": {
       if (args.length < 1) fail(USAGE)
-      const found = await evaluate(
-        call,
-        `(() => {
-          const el = document.querySelector(${JSON.stringify(args[0])})
-          if (!el) return null
-          const rect = el.getBoundingClientRect()
-          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
-        })()`
-      )
-      if (!found) fail(`no element matched the selector`, 2)
-      await clickAt(call, found.x, found.y)
+      const { x, y } = await clickTarget(call, FIND_BY_SELECTOR(args[0]), "no element matched the selector")
+      await clickAt(call, x, y)
       return
     }
     case "clickxy": {
@@ -205,9 +244,12 @@ async function main() {
   const port = Number(process.env.CDP_PORT)
   if (!port) fail("CDP_PORT must be set to the launched build's --remote-debugging-port.")
 
+  const timeoutMs = process.env.CDP_TIMEOUT_MS === undefined ? DEFAULT_RPC_TIMEOUT_MS : Number(process.env.CDP_TIMEOUT_MS)
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) fail("CDP_TIMEOUT_MS must be a positive number of milliseconds.")
+
   const target = await pickPageTarget(port)
   const ws = await connect(target.webSocketDebuggerUrl)
-  const call = rpc(ws)
+  const call = rpc(ws, timeoutMs)
 
   await call("Page.enable")
   await call("Runtime.enable")
