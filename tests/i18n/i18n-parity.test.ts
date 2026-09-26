@@ -210,15 +210,22 @@ describe("every locale carries the plural categories its own language selects", 
 
 describe("Activity Center translation contract", () => {
   const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
-  const activityKeys = Object.keys(enUS).filter((key) => key.startsWith("components.activityCenter."))
+  // Plural families (issue #506's follow-up) are checked through whichever suffixed sibling a
+  // locale actually carries, not by the literal en-US suffix: en-US only ever needs _one/_other,
+  // but a locale such as ru-RU covers the same family with _one/_few/_many instead.
+  const activityFamilies = [...collectPluralFamilies(enUS).keys()].filter((family) => family.startsWith("components.activityCenter."))
+  const activityBareKeys = Object.keys(enUS).filter((key) => key.startsWith("components.activityCenter.") && !PLURAL_SUFFIXES.some((suffix) => key.endsWith(suffix)))
 
   it("keeps the new Activity Center namespace complete and non-empty in every locale", () => {
     const failures = listLocaleFiles()
       .map((file) => {
         const locale = flattenTranslationObject(readLocaleJson(file))
-        const missing = activityKeys.filter((key) => !(key in locale))
-        const empty = activityKeys.filter((key) => typeof locale[key] !== "string" || locale[key].trim().length === 0)
-        return missing.length === 0 && empty.length === 0 ? null : `${file}: missing=${missing.join(",")}; empty=${empty.join(",")}`
+        const missing = activityBareKeys.filter((key) => typeof locale[key] !== "string" || locale[key].trim().length === 0)
+        const missingFamilies = activityFamilies.filter((family) => {
+          const value = resolveTranslationValue(locale, family)
+          return typeof value !== "string" || value.trim().length === 0
+        })
+        return missing.length === 0 && missingFamilies.length === 0 ? null : `${file}: missing=${missing.join(",")}; incomplete families=${missingFamilies.join(",")}`
       })
       .filter((failure): failure is string => failure !== null)
 

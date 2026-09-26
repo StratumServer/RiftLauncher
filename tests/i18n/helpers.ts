@@ -77,9 +77,29 @@ export function resolveTranslationValue(flattened: Record<string, unknown>, key:
   return suffix ? flattened[`${key}${suffix}`] : undefined
 }
 
-/** The cardinal plural categories `locale` actually selects between, e.g. ["one", "other"] for en-US, ["few", "many", "one", "other"] for ru-RU. */
+/**
+ * Whole numbers wide enough to hit every cardinal category a language
+ * distinguishes for an integer: 2 and 5 separate few from many in the Slavic
+ * locales, and 1000000 is the only thing that selects `many` in French,
+ * Spanish, Italian and Portuguese.
+ */
+export const INTEGER_PLURAL_PROBES = [0, 1, 2, 3, 5, 11, 21, 22, 25, 100, 101, 1_000_000]
+
+/**
+ * The cardinal plural categories `locale` selects between for a whole number,
+ * e.g. ["one", "other"] for en-US, ["few", "many", "one"] for ru-RU.
+ *
+ * This is deliberately narrower than `Intl.PluralRules.resolvedOptions().pluralCategories`,
+ * which always reports Russian, Ukrainian, Polish and Belarusian as having an
+ * `other` category too -- one only a fractional count such as 1.5 ever
+ * selects for them. Every t() call site in this app passes an integer (an
+ * array .length or another whole counter), and Hosted Weblate's writer keeps
+ * only the categories an integer reaches, so probing integers is what both
+ * of them actually need this function to answer.
+ */
 export function requiredPluralCategories(locale: string): string[] {
-  return [...new Intl.PluralRules(locale).resolvedOptions().pluralCategories]
+  const rules = new Intl.PluralRules(locale)
+  return [...new Set(INTEGER_PLURAL_PROBES.map((count) => rules.select(count)))].sort()
 }
 
 /**
@@ -102,6 +122,133 @@ export function collectPluralFamilies(flattened: Record<string, unknown>): Map<s
   }
 
   return families
+}
+
+/**
+ * Recursively walks a parsed locale object and reports every bare key that
+ * sits next to at least one of its own suffixed siblings, as dotted paths
+ * relative to `prefix` (issue #496: i18next never reads that bare key once
+ * any suffixed form exists, so it is dead weight Weblate reads as a duplicate
+ * string carrying the same text as one of the variants).
+ */
+export function findBarePluralKeys(value: unknown, prefix = ""): string[] {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return []
+
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj)
+  const offenses: string[] = []
+
+  for (const key of keys) {
+    if (typeof obj[key] === "string" && PLURAL_SUFFIXES.some((suffix) => keys.includes(key + suffix))) {
+      offenses.push(prefix ? `${prefix}.${key}` : key)
+    }
+  }
+
+  for (const key of keys) {
+    offenses.push(...findBarePluralKeys(obj[key], prefix ? `${prefix}.${key}` : key))
+  }
+
+  return offenses
+}
+
+/**
+ * Parses `text` as JSON well enough to notice a key repeated inside the same
+ * object, as dotted paths, e.g. "features.mods.serverModsTitle". JSON.parse
+ * cannot report this itself: it silently keeps only the last value, which is
+ * exactly how issue #496's 36 duplicated keys sat unnoticed in three locale
+ * files. Locale files hold only objects, arrays, strings and other JSON
+ * scalars, so this does not need to be a general-purpose parser, just enough
+ * of one to walk every object literal once and watch its own keys for
+ * repeats. It assumes well-formed JSON (a separate test already fails first
+ * on anything that does not parse) and does not decode string escapes,
+ * because two differently escaped spellings of the same key are not a
+ * mistake this scanner is asked to catch.
+ */
+export function findDuplicateJsonKeys(text: string): string[] {
+  let i = 0
+  const duplicates: string[] = []
+
+  function skipWs(): void {
+    while (i < text.length && /\s/.test(text[i]!)) i++
+  }
+
+  function parseString(): string {
+    let raw = ""
+    i++ // opening quote
+    while (text[i] !== '"') {
+      if (text[i] === "\\") {
+        raw += text[i]! + text[i + 1]!
+        i += 2
+      } else {
+        raw += text[i]
+        i++
+      }
+    }
+    i++ // closing quote
+    return raw
+  }
+
+  function parseValue(path: string): void {
+    skipWs()
+    if (text[i] === "{") return parseObject(path)
+    if (text[i] === "[") return parseArray(path)
+    if (text[i] === '"') {
+      parseString()
+      return
+    }
+    // A number, true, false or null: skip to the next structural character.
+    while (i < text.length && !",}] \n\r\t".includes(text[i]!)) i++
+  }
+
+  function parseArray(path: string): void {
+    i++ // "["
+    skipWs()
+    if (text[i] === ("]" as string)) {
+      i++
+      return
+    }
+    for (;;) {
+      parseValue(path)
+      skipWs()
+      if (text[i] === ",") {
+        i++
+        continue
+      }
+      break
+    }
+    i++ // "]"
+  }
+
+  function parseObject(path: string): void {
+    i++ // "{"
+    skipWs()
+    const seen = new Set<string>()
+    if (text[i] === "}") {
+      i++
+      return
+    }
+    for (;;) {
+      skipWs()
+      const key = parseString()
+      const keyPath = path ? `${path}.${key}` : key
+      if (seen.has(key)) duplicates.push(keyPath)
+      seen.add(key)
+      skipWs()
+      i++ // ":"
+      parseValue(keyPath)
+      skipWs()
+      if (text[i] === ",") {
+        i++
+        continue
+      }
+      break
+    }
+    skipWs()
+    i++ // "}"
+  }
+
+  parseValue("")
+  return duplicates
 }
 
 export type TranslationCall = {
