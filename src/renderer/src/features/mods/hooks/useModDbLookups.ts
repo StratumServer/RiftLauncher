@@ -47,12 +47,22 @@ function useModDbNamedListLookup(
         }
 
         if (!cancelled) setEntries(transform(parsed.payload))
-      } catch {
+      } catch (err) {
         // A fixed line and one reason token, never the rejection's own text: it carries the URL
         // it was given. The concrete cause (a timeout, a refused connection) is already on the
         // other side of the bridge, where the QUERY_URL handler logs it at debug before it
         // rejects (src/ipc/handlers/netHandlers.ts).
-        logMods("warn", `[front] [mods] [features/mods/hooks/useModDbLookups.ts] [${tag} > queryModDb] Lookup failed: request-failed.`)
+        //
+        // One reason is worth telling apart without reaching back across that bridge for it
+        // (#526): `collectBounded` (src/ipc/network.ts) throws the exact literal
+        // "Network response is too large" for a size refusal, and nothing else in this failure
+        // path throws that literal. It does not arrive unchanged, though: ipcRenderer.invoke
+        // wraps a rejected handler's message in its own, so what actually lands here is
+        // "Error invoking remote method 'query-url': Error: Network response is too large".
+        // A substring match still finds the literal inside that wrapper with no new IPC
+        // plumbing; every other rejection still folds into the generic token.
+        const reason = err instanceof Error && err.message.includes("Network response is too large") ? "response-too-large" : "request-failed"
+        logMods("warn", `[front] [mods] [features/mods/hooks/useModDbLookups.ts] [${tag} > queryModDb] Lookup failed: ${reason}.`)
         if (!cancelled) setFailed(true)
       }
     })()
