@@ -230,6 +230,7 @@ async function runCommand(call, command, args) {
       const match = /^(\d+)x(\d+)$/.exec(args[0])
       if (!match) fail(`size must be WxH, e.g. 1024x600`)
       await call("Emulation.setDeviceMetricsOverride", { width: Number(match[1]), height: Number(match[2]), deviceScaleFactor: 1, mobile: false })
+      console.error("size only overrides the viewport for this invocation; set the seed spec's window field to size it for every later call.")
       return
     }
     default:

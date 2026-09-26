@@ -347,6 +347,14 @@ async function startEchoCdpServer(): Promise<{ port: number; close: () => Promis
         const frame = readClientFrame(buf)
         if (!frame) break
         buf = buf.subarray(frame.consumed)
+        if (frame.opcode === 0x8) {
+          // Ack the client's close frame so its own WebSocket close() resolves instead of
+          // waiting out a close handshake that never arrives: a command that returns normally
+          // (no fail()/process.exit) hangs on that handshake otherwise.
+          socket.write(Buffer.from([0x88, 0x00]))
+          socket.end()
+          return
+        }
         if (frame.opcode !== 0x1) continue
         const msg = JSON.parse(frame.payload.toString("utf-8")) as { id: number }
         socket.write(encodeServerTextFrame(JSON.stringify({ id: msg.id, result: {} })))
@@ -411,6 +419,17 @@ describe("scripts/headless/cdp.mjs", () => {
       const result = await runCdp([command], { ...process.env, CDP_PORT: String(port) })
       assert.equal(result.status, 1, result.stderr)
       assert.match(result.stderr, /usage:/)
+    } finally {
+      await close()
+    }
+  })
+
+  it("warns that a size override only lasts for this invocation", async () => {
+    const { port, close } = await startEchoCdpServer()
+    try {
+      const result = await runCdp(["size", "1024x600"], { ...process.env, CDP_PORT: String(port) })
+      assert.equal(result.status, 0, result.stderr)
+      assert.match(result.stderr, /only overrides the viewport for this invocation/)
     } finally {
       await close()
     }
