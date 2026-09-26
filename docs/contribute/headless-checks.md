@@ -85,7 +85,6 @@ box or across a few reviewers, so give each concurrent check its own (9560, 9561
 CDP_PORT=9561 node scripts/headless/cdp.mjs text
 CDP_PORT=9561 node scripts/headless/cdp.mjs eval "window.location.hash = '/installations/mods/check'"
 CDP_PORT=9561 node scripts/headless/cdp.mjs clickText "Not this time"
-CDP_PORT=9561 node scripts/headless/cdp.mjs size 1024x600
 ```
 
 `node scripts/headless/cdp.mjs --help` lists every command (`text`, `eval`, `clickText`, `click`,
@@ -121,8 +120,11 @@ session end to end rather than two `cdp.mjs` invocations back to back.
 CDP_PORT=9561 node scripts/headless/cdp.mjs shot /tmp/some-profile/shots/home.png
 ```
 
-Set the viewport with `size` first; screenshots are taken at whatever size was last set (or the
-build's default window size otherwise).
+The viewport a screenshot is taken at is the window size, not a `size` call from an earlier, separate
+`cdp.mjs` invocation: that only lasts for the CDP session that made it (see the note in Drive above).
+Set it through the seed spec instead, with a `window` field (`{"width":1024,"height":600}`), so every
+`cdp.mjs` call against that profile, including `shot`, sees it from launch. A `size` call is only
+useful inside a one-off script that also takes the screenshot in the same CDP session.
 
 ## Stop
 
@@ -138,8 +140,10 @@ The argument has to be a bare positive integer greater than 1, no leading zero, 
 whitespace: `stop.sh 0` and other shapes `kill` would otherwise special-case (`0`, a negative pid)
 are refused before anything is signalled, with a usage line on stderr and exit 1. On Linux, the pid
 also has to still be the launcher: `stop.sh` reads `/proc/<pid>/cmdline` and refuses (exit 1) unless
-it names the packaged binary, so a stale pid that the kernel already recycled for something else is
-never signalled by mistake.
+argv[0] is `timeout` and argv[2] is this checkout's exact `dist/linux-unpacked/riftlauncher` path,
+the same two fields `launch.sh` fills in. That is what keeps a stale, recycled pid, another
+checkout's launcher, or anything else whose command line merely mentions the path from being
+signalled.
 
 ## How reviewers use this
 
