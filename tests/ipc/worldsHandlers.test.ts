@@ -50,6 +50,17 @@ let assertManagedDeletionPathSpy: ReturnType<typeof vi.spyOn>
 
 type WorldsHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown>
 
+/** True when two files differing only by case can coexist, which is the only place a case-folding bug is observable. */
+const caseSensitiveFileSystem = ((): boolean => {
+  const probe = mkdtempSync(join(tmpdir(), "case-probe-"))
+  try {
+    writeFileSync(join(probe, "CaseProbe"), "upper", "utf8")
+    return existsSync(join(probe, "caseprobe")) === false
+  } finally {
+    rmSync(probe, { recursive: true, force: true })
+  }
+})()
+
 function installation(id: string, path: string, version = "1.22.7", worldBackups: WorldBackupType[] = []): InstallationType {
   return {
     id,
@@ -243,6 +254,52 @@ describe("worlds IPC handlers", () => {
     assert.deepEqual(result, { ok: true })
     assert.equal(existsSync(join(savesPath, "World.vcdbs")), true)
     assert.equal(existsSync(join(savesPath, "world.vcdbs")), false)
+  })
+
+  it("refuses a world name that differs from the listed file only by case", async () => {
+    const installationPath = join(installationsRoot, "install-a")
+    const savesPath = join(installationPath, "Saves")
+    mkdirSync(savesPath, { recursive: true })
+    writeFileSync(join(savesPath, "World.vcdbs"), "upper", "utf8")
+    writeConfig([installation("install-a", installationPath)])
+
+    const result = await handler("worlds-delete")(await createTrustedEvent(), "install-a", "world.vcdbs")
+
+    assert.deepEqual(result, { ok: false, reason: "world-not-found" })
+    assert.equal(existsSync(join(savesPath, "World.vcdbs")), true)
+  })
+
+  it.skipIf(!caseSensitiveFileSystem)("restores beside a world whose name differs only by case instead of overwriting it", async () => {
+    const installationPath = join(installationsRoot, "install-a")
+    const savesPath = join(installationPath, "Saves")
+    const archivePath = join(backupsFolder, "Worlds", "backup-case.tar.gz")
+    mkdirSync(savesPath, { recursive: true })
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
+    writeFileSync(join(savesPath, "world.vcdbs"), "survivor", "utf8")
+    writeFileSync(archivePath, "archive", "utf8")
+    writeConfig([installation("install-a", installationPath, "1.22.7", [{ id: "backup-case", date: 1, path: archivePath, worldName: "World.vcdbs" }])])
+
+    const result = await handler("worlds-restore")(await createTrustedEvent(), "install-a", "backup-case")
+
+    assert.deepEqual(result, { ok: true })
+    assert.equal(readFileSync(join(savesPath, "world.vcdbs"), "utf8"), "survivor")
+    assert.equal(readFileSync(join(savesPath, "World.vcdbs"), "utf8"), "restored")
+  })
+
+  it("counts backups only for the exact world name", async () => {
+    const installationPath = join(installationsRoot, "install-a")
+    const savesPath = join(installationPath, "Saves")
+    mkdirSync(savesPath, { recursive: true })
+    writeFileSync(join(savesPath, "World.vcdbs"), "world", "utf8")
+    writeConfig([installation("install-a", installationPath, "1.22.7", [{ id: "backup-case", date: 1, path: join(backupsFolder, "Worlds", "backup-case.tar.gz"), worldName: "world.vcdbs" }])])
+
+    const result = (await handler("worlds-list")(await createTrustedEvent(), "install-a")) as { ok: boolean; worlds: Array<{ name: string; backupCount: number }> }
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(
+      result.worlds.map((world) => [world.name, world.backupCount]),
+      [["World.vcdbs", 0]]
+    )
   })
 
   it("backs up, restores, deletes, and transfers a listed world", async () => {

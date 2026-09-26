@@ -128,6 +128,105 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     expect(deleteWorld).not.toHaveBeenCalled()
   })
 
+  it("backs the world up before deleting it when the offer is confirmed", async () => {
+    const user = userEvent.setup()
+    const order: string[] = []
+    const deleteWorld = vi.fn<BridgeAPI["worldsManager"]["delete"]>(async () => {
+      order.push("delete")
+      return { ok: true }
+    })
+    const backupWorld = vi.fn<BridgeAPI["worldsManager"]["backup"]>(async () => {
+      order.push("backup")
+      return { ok: true, backup: { id: "backup-new", date: 2, path: "/backups/backup-new.tar.gz", worldName: "World.vcdbs" } }
+    })
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation([])] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        })),
+        backup: backupWorld,
+        delete: deleteWorld
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    await user.click(await screen.findByTitle("Delete"))
+    const nameDialog = await screen.findByRole("dialog")
+    await user.type(within(nameDialog).getByRole("textbox"), "World.vcdbs")
+    await user.click(within(nameDialog).getByRole("button", { name: "Delete" }))
+
+    const offer = await screen.findByText("There is no backup for World.vcdbs. Create one before deleting it?")
+    expect(deleteWorld).not.toHaveBeenCalled()
+    await user.click(within(offer.closest("div[role=dialog]") as HTMLElement).getByRole("button", { name: "Back up this world" }))
+
+    await waitFor(() => expect(deleteWorld).toHaveBeenCalledWith("install-a", "World.vcdbs"))
+    expect(backupWorld).toHaveBeenCalledWith("install-a", "World.vcdbs")
+    expect(order).toEqual(["backup", "delete"])
+  })
+
+  it("does not treat a backup of a differently cased name as a backup of this world", async () => {
+    const user = userEvent.setup()
+    const deleteWorld = vi.fn<BridgeAPI["worldsManager"]["delete"]>(async () => ({ ok: true }))
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation([{ id: "backup-lower", date: 1, path: "/backups/backup-lower.tar.gz", worldName: "world.vcdbs" }])] }))
+      },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        })),
+        delete: deleteWorld
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    expect((await screen.findAllByText("World.vcdbs")).length).toBe(1)
+    expect(screen.getByText("world.vcdbs")).not.toBeNull()
+
+    await user.click(await screen.findByTitle("Delete"))
+    const nameDialog = await screen.findByRole("dialog")
+    await user.type(within(nameDialog).getByRole("textbox"), "World.vcdbs")
+    await user.click(within(nameDialog).getByRole("button", { name: "Delete" }))
+
+    expect(await screen.findByText("There is no backup for World.vcdbs. Create one before deleting it?")).not.toBeNull()
+    expect(deleteWorld).not.toHaveBeenCalled()
+  })
+
+  it("keeps the empty-state notice above the list backdrop blur", async () => {
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation([])] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({ ok: true as const, worlds: [] })),
+        delete: vi.fn(async () => ({ ok: true as const }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const notice = await screen.findByText("No worlds found in this Installation.")
+    expect(notice.className).toContain("relative")
+  })
+
   it("reports a rejected restore instead of leaving an unhandled promise", async () => {
     const user = userEvent.setup()
     const restoreWorld = vi.fn<BridgeAPI["worldsManager"]["restore"]>(async () => {

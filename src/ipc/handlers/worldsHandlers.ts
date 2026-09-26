@@ -92,7 +92,7 @@ async function listWorldEntries(savesPath: string, installation: InstallationTyp
         size: stats.size,
         lastModified: stats.mtimeMs,
         isDefault: name.toLocaleLowerCase("en-US") === `default${WORLD_FILE_EXTENSION}`,
-        backupCount: (installation.worldBackups ?? []).filter((backup) => backup.worldName.toLocaleLowerCase("en-US") === name.toLocaleLowerCase("en-US")).length
+        backupCount: (installation.worldBackups ?? []).filter((backup) => backup.worldName === name).length
       })
     } catch {
       // A world can disappear while the player is looking at the list.
@@ -104,7 +104,10 @@ async function listWorldEntries(savesPath: string, installation: InstallationTyp
 async function findWorld(savesPath: string, requestedName: unknown): Promise<{ name: string; path: string; names: string[] } | null> {
   if (!isSafeWorldName(requestedName)) return null
   const names = await fse.readdir(savesPath).catch(() => [])
-  const name = names.find((candidate) => candidate === requestedName) ?? names.find((candidate) => candidate.toLocaleLowerCase("en-US") === requestedName.toLocaleLowerCase("en-US"))
+  // Exact only. Two siblings differing only by case can coexist on a case-sensitive
+  // filesystem, and folding case here would let a delete or a restore reach the
+  // wrong one (#465).
+  const name = names.find((candidate) => candidate === requestedName)
   if (!name || !isSafeWorldName(name)) return null
   const path = worldPath(savesPath, name)
   const stats = await fse.lstat(path).catch(() => null)

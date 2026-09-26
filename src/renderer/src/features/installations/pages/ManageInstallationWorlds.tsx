@@ -102,7 +102,7 @@ function ManageInstallationWorlds(): JSX.Element {
     if (!installation || isPlaying || !worldToDelete || deleteName !== worldToDelete.name) return
     const world = worldToDelete
     closeDeleteDialog()
-    const backups = (installation.worldBackups ?? []).filter((backup) => backup.worldName.toLocaleLowerCase("en-US") === world.name.toLocaleLowerCase("en-US"))
+    const backups = (installation.worldBackups ?? []).filter((backup) => backup.worldName === world.name)
     if (backups.length === 0) {
       setPendingConfirmation({
         question: t("features.worlds.backupBeforeDelete", { name: world.name }),
@@ -164,8 +164,8 @@ function ManageInstallationWorlds(): JSX.Element {
 
   const backupOnly = new Map<string, WorldType>()
   for (const backup of installation.worldBackups ?? []) {
-    const key = backup.worldName.toLocaleLowerCase("en-US")
-    if (worlds.some((world) => world.name.toLocaleLowerCase("en-US") === key) || backupOnly.has(key)) continue
+    const key = backup.worldName
+    if (worlds.some((world) => world.name === key) || backupOnly.has(key)) continue
     backupOnly.set(key, { name: backup.worldName, size: 0, lastModified: backup.date, isDefault: false, backupCount: 1 })
   }
   const displayWorlds: WorldType[] = [...worlds, ...backupOnly.values()]
@@ -206,12 +206,12 @@ function ManageInstallationWorlds(): JSX.Element {
                 ))}
             </select>
           </div>
-          {loading && <p className="p-4 text-center text-zinc-400">{t("generic.reloading")}</p>}
-          {!loading && displayWorlds.length === 0 && <p className="p-4 text-center">{t("features.worlds.empty")}</p>}
+          {loading && <p className="relative p-4 text-center text-zinc-400">{t("generic.reloading")}</p>}
+          {!loading && displayWorlds.length === 0 && <p className="relative p-4 text-center">{t("features.worlds.empty")}</p>}
           <ListGroup>
             {displayWorlds.map((world) => {
-              const liveWorld = worlds.some((candidate) => candidate.name.toLocaleLowerCase("en-US") === world.name.toLocaleLowerCase("en-US"))
-              const backups = (installation.worldBackups ?? []).filter((backup) => backup.worldName.toLocaleLowerCase("en-US") === world.name.toLocaleLowerCase("en-US"))
+              const liveWorld = worlds.some((candidate) => candidate.name === world.name)
+              const backups = (installation.worldBackups ?? []).filter((backup) => backup.worldName === world.name)
               return (
                 <ListItem key={world.name}>
                   <div className="flex flex-wrap items-center gap-3 p-2">
