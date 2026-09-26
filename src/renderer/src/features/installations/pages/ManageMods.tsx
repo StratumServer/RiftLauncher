@@ -243,7 +243,7 @@ function ListMods(): JSX.Element {
                         ariaExpanded={filtersOpen}
                       >
                         <PiFunnelDuotone className="text-xl" />
-                        <p>{t("features.mods.filtersToggleButton", { count: activeFilterCount })}</p>
+                        <p>{activeFilterCount > 0 ? t("features.mods.filtersToggleButton", { count: activeFilterCount }) : t("features.mods.filtersToggleButtonNone")}</p>
                       </FormButton>
                     )}
                   </StickyMenuGroup>
