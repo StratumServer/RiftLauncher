@@ -227,6 +227,9 @@ describe("RUN_INSTALLER on win32: payload extraction", () => {
     const installerPath = join(managedFolder, "setup.exe")
     await writeVerifiedInstaller(installerPath)
 
+    const Logger = (await import("electron-log")).default
+    const warn = vi.spyOn(Logger, "warn").mockImplementation(() => undefined)
+
     const event = await createTrustedEvent()
     const workerPromise = nextTrackedWorker()
     const resultPromise = handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-1", installerPath, versionsFolder, false)
@@ -240,6 +243,47 @@ describe("RUN_INSTALLER on win32: payload extraction", () => {
     assert.equal(vi.mocked(acquireWorker).mock.calls.length, 1)
     const { spawn } = await import("child_process")
     assert.equal(vi.mocked(spawn).mock.calls.length, 0)
+
+    // Mutants M11/M13: nothing else in this file checks that a clean run never logs the
+    // cleanup warning line.
+    const warnLines = warn.mock.calls.map((call) => String(call[0]))
+    assert.equal(
+      warnLines.some((line) => line.includes("Cleanup after installer extraction failed")),
+      false,
+      `expected no cleanup warning line, got: ${warnLines.join(" / ")}`
+    )
+  })
+
+  it("still resolves ok, but logs a warning, when the payload reader reports a cleanup failure alongside extracted (#528)", async () => {
+    const installerPath = join(managedFolder, "setup.exe")
+    await writeVerifiedInstaller(installerPath)
+
+    const Logger = (await import("electron-log")).default
+    const warn = vi.spyOn(Logger, "warn").mockImplementation(() => undefined)
+
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-1-warn", installerPath, versionsFolder, false)
+
+    const worker = await workerPromise
+    worker.emit("message", {
+      type: "finished",
+      verdict: "extracted",
+      filesWritten: 12,
+      bytesWritten: 4096,
+      cleanupWarning: { reason: "installer-delete-failed", code: "EBUSY" }
+    })
+
+    // The landed game is what matters: a cleanup step failing after the copy succeeded
+    // must not turn this into installer-failed.
+    assert.deepEqual(await resultPromise, { ok: true })
+
+    const warnLines = warn.mock.calls.map((call) => String(call[0]))
+    assert.equal(
+      warnLines.some((line) => line.includes("[RUN_INSTALLER]") && line.includes("reason=installer-delete-failed") && line.includes("code=EBUSY")),
+      true,
+      `expected a cleanup warning line, got: ${warnLines.join(" / ")}`
+    )
   })
 
   it("treats an extraction error as installer-failed, without falling back to spawning the installer", async () => {

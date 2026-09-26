@@ -150,6 +150,7 @@ type WorkerMessage = {
   reason?: unknown
   filesWritten?: unknown
   bytesWritten?: unknown
+  cleanupWarning?: unknown
 }
 
 function sendProgress(event: IpcMainInvokeEvent, channel: string | undefined, id: string, progress: number): void {
@@ -557,6 +558,17 @@ async function extractInstallerPayload(
           }
           if (message.verdict !== "extracted") throw new Error("Installer payload extraction returned an unknown verdict")
           logMessage("info", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
+          // The game is already on disk by the time this can be set: a failed post-copy
+          // cleanup (installer deletion, staging folder removal) does not turn "extracted"
+          // into "failed" (#528), it only surfaces here as a warning. Two fixed reason
+          // tokens (installer-delete-failed, staging-cleanup-failed) plus the errno the
+          // cleanup call actually failed with, so a support answer does not have to guess.
+          if (message.cleanupWarning && typeof message.cleanupWarning === "object") {
+            const warning = message.cleanupWarning as { reason?: unknown; code?: unknown }
+            const reason = typeof warning.reason === "string" ? warning.reason : "unknown"
+            const code = typeof warning.code === "string" ? warning.code : "unknown"
+            logMessage("warn", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Cleanup after installer extraction failed; the game is installed. reason=${reason} code=${code}`)
+          }
           return "extracted"
         }
       )
