@@ -219,12 +219,18 @@ describe("Activity Center translation contract", () => {
   it("keeps the new Activity Center namespace complete and non-empty in every locale", () => {
     const failures = listLocaleFiles()
       .map((file) => {
-        const locale = flattenTranslationObject(readLocaleJson(file))
-        const missing = activityBareKeys.filter((key) => typeof locale[key] !== "string" || locale[key].trim().length === 0)
-        const missingFamilies = activityFamilies.filter((family) => {
-          const value = resolveTranslationValue(locale, family)
-          return typeof value !== "string" || value.trim().length === 0
-        })
+        const locale = basename(file, ".json")
+        const flattened = flattenTranslationObject(readLocaleJson(file))
+        const missing = activityBareKeys.filter((key) => typeof flattened[key] !== "string" || flattened[key].trim().length === 0)
+        // Every category the locale's own grammar selects has to resolve on its
+        // own: resolveTranslationValue would pass as soon as any one sibling
+        // (e.g. _one) is non-empty, letting an emptied _few or _other through.
+        const missingFamilies = activityFamilies.filter((family) =>
+          [...requiredPluralCategories(locale)].some((category) => {
+            const value = flattened[`${family}_${category}`]
+            return typeof value !== "string" || value.trim().length === 0
+          })
+        )
         return missing.length === 0 && missingFamilies.length === 0 ? null : `${file}: missing=${missing.join(",")}; incomplete families=${missingFamilies.join(",")}`
       })
       .filter((failure): failure is string => failure !== null)
