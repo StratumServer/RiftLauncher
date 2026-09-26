@@ -195,6 +195,9 @@ async function startSilentCdpServer(): Promise<{ port: number; close: () => Prom
   })
   server.on("upgrade", (req, socket: Socket) => {
     upgraded = socket
+    // A socket with no "error" listener crashes the process on one; the client (cdp.mjs) closing
+    // its end abruptly, which every test here does, reads back as ECONNRESET on some platforms.
+    socket.on("error", () => {})
     writeUpgradeResponse(req, socket)
     // No frame is ever read or written back from here on.
   })
@@ -259,6 +262,8 @@ async function startEchoCdpServer(): Promise<{ port: number; close: () => Promis
   server.on("upgrade", (req, socket: Socket) => {
     if (!writeUpgradeResponse(req, socket)) return
     upgraded = socket
+    // See the matching comment in startSilentCdpServer: an abrupt client close must not throw.
+    socket.on("error", () => {})
     let buf = Buffer.alloc(0)
     socket.on("data", (chunk: Buffer) => {
       buf = Buffer.concat([buf, chunk])
