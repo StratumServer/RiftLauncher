@@ -29,13 +29,21 @@ pid="$1"
 # `timeout 600 dist/linux-unpacked/riftlauncher ...` and prints that timeout's
 # pid; the kernel can recycle it for an unrelated process between then and a
 # late stop.sh call, and a raw pid argument alone cannot tell the difference.
+#
+# This checks fixed argv positions (argv[0]=timeout, argv[2]=the absolute
+# binary path launch.sh built), not a substring search: a substring match
+# passes anything whose command line mentions the path anywhere at all, which
+# includes another checkout's headless launcher, an Electron helper process,
+# and even an agent shell whose own command text names this path.
+binary="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/dist/linux-unpacked/riftlauncher"
 if [ -d /proc ]; then
   cmdline="/proc/$pid/cmdline"
   if [ ! -r "$cmdline" ]; then
     echo "error: no such process: $pid" >&2
     exit 1
   fi
-  if ! tr '\0' '\n' <"$cmdline" | grep -qF "dist/linux-unpacked/riftlauncher"; then
+  mapfile -d '' -t argv <"$cmdline"
+  if [ "${argv[0]-}" != "timeout" ] || [ "${argv[2]-}" != "$binary" ]; then
     echo "error: pid $pid is not a headless riftlauncher launch" >&2
     exit 1
   fi

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { Socket } from "node:net"
-import { resolve } from "node:path"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import { afterEach, describe, it } from "vitest"
 
 /**
@@ -56,6 +57,25 @@ function isAlive(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * stop.sh derives the binary path it requires at argv[2] from its own location
+ * (`$(dirname "${BASH_SOURCE[0]}")/../..`), so faking that argv position for real means running a
+ * copy of stop.sh out of a fake checkout that has its own `dist/linux-unpacked/riftlauncher`, not
+ * passing some other path to the real one.
+ */
+function makeFakeCheckout(): { stopScript: string; binary: string; cleanup: () => void } {
+  const root = mkdtempSync(join(tmpdir(), "riftlauncher-stopsh-"))
+  mkdirSync(join(root, "scripts/headless"), { recursive: true })
+  mkdirSync(join(root, "dist/linux-unpacked"), { recursive: true })
+  const fakeStopScript = join(root, "scripts/headless/stop.sh")
+  copyFileSync(stopScript, fakeStopScript)
+  chmodSync(fakeStopScript, 0o755)
+  const binary = join(root, "dist/linux-unpacked/riftlauncher")
+  writeFileSync(binary, "#!/usr/bin/env bash\nsleep 30\n")
+  chmodSync(binary, 0o755)
+  return { stopScript: fakeStopScript, binary, cleanup: () => rmSync(root, { recursive: true, force: true }) }
 }
 
 /**
@@ -126,41 +146,56 @@ describe.skipIf(process.platform !== "linux")("scripts/headless/stop.sh", () => 
     assert.equal(result.status, 1, result.stderr)
   })
 
-  it("stops a live pid whose /proc cmdline names the packaged binary", async () => {
-    // Fakes argv[0] the way launch.sh's real `dist/linux-unpacked/riftlauncher` would read on
-    // /proc/<pid>/cmdline, without an actual packaged build: the live check covers the real one.
-    const child = spawn("bash", ["-c", "exec -a dist/linux-unpacked/riftlauncher sleep 30"], { stdio: "ignore" })
-    assert.ok(child.pid)
-    const pid = child.pid
-    liveSleeps.push(pid)
+  it("stops a live pid whose /proc cmdline is timeout at argv[0] and the exact binary path at argv[2]", async () => {
+    // A real launch.sh backs `timeout 600 <abs binary path> ...`; this recreates those two argv
+    // positions against a fake checkout's own binary, rather than faking argv[0] alone the way an
+    // `exec -a` rename does (that only shows the check reads argv text, not that it checks position
+    // and path together, which is the #537 bug: a substring match anywhere used to pass that too).
+    const fake = makeFakeCheckout()
+    try {
+      const child = spawn("timeout", ["30", fake.binary], { stdio: "ignore" })
+      assert.ok(child.pid)
+      const pid = child.pid
+      liveSleeps.push(pid)
 
-    const cmdlinePath = `/proc/${pid}/cmdline`
-    const deadline = Date.now() + 2000
-    while (Date.now() < deadline) {
-      try {
-        if (readFileSync(cmdlinePath, "utf-8").includes("riftlauncher")) break
-      } catch {
-        // not execed yet
-      }
-      await new Promise((r) => setTimeout(r, 20))
+      // Not spawnSync: this process is `pid`'s real OS parent (it spawned it above), so it alone can
+      // reap it once stop.sh's SIGTERM lands. spawnSync would block this event loop for the entire
+      // call, stop.sh's own `kill -0` wait loop would keep seeing a zombie for all 10s of it, and
+      // stop.sh would fall through to its SIGKILL fallback instead of the quick SIGTERM path this
+      // test means to exercise. An async run keeps this process free to reap it as it happens.
+      const exitedPromise = new Promise<void>((res) => child.once("exit", res))
+      const result = await new Promise<{ status: number | null; stderr: string }>((resolvePromise) => {
+        const stopChild = spawn(fake.stopScript, [String(pid)])
+        let stderr = ""
+        stopChild.stderr.on("data", (chunk: Buffer) => (stderr += chunk))
+        stopChild.on("close", (status) => resolvePromise({ status, stderr }))
+      })
+      assert.equal(result.status, 0, result.stderr)
+
+      const exited = await Promise.race([exitedPromise.then(() => true), new Promise<boolean>((res) => setTimeout(() => res(false), 2000))])
+      assert.ok(exited, "stop.sh reported success but the launcher-like process never exited")
+    } finally {
+      fake.cleanup()
     }
+  })
 
-    // Not spawnSync: this process is `pid`'s real OS parent (it spawned it above), so it alone can
-    // reap it once stop.sh's SIGTERM lands. spawnSync would block this event loop for the entire
-    // call, stop.sh's own `kill -0` wait loop would keep seeing a zombie for all 10s of it, and
-    // stop.sh would fall through to its SIGKILL fallback instead of the quick SIGTERM path this
-    // test means to exercise. An async run keeps this process free to reap it as it happens.
-    const exitedPromise = new Promise<void>((res) => child.once("exit", res))
-    const result = await new Promise<{ status: number | null; stderr: string }>((resolvePromise) => {
-      const stopChild = spawn(stopScript, [String(pid)])
-      let stderr = ""
-      stopChild.stderr.on("data", (chunk: Buffer) => (stderr += chunk))
-      stopChild.on("close", (status) => resolvePromise({ status, stderr }))
-    })
-    assert.equal(result.status, 0, result.stderr)
+  it("refuses a live pid whose cmdline holds the exact binary path outside argv[2], leaving it alive", () => {
+    // argv = [timeout, 30, bash, -c, "sleep 30", <exact binary path>]: the path this fake
+    // checkout's own launch.sh would use is present, verbatim, just at argv[5] instead of argv[2].
+    // The #537 bug (a substring search over the whole cmdline) matched this and killed it.
+    const fake = makeFakeCheckout()
+    try {
+      const child = spawn("timeout", ["30", "bash", "-c", "sleep 30", fake.binary], { stdio: "ignore" })
+      assert.ok(child.pid)
+      const pid = child.pid
+      liveSleeps.push(pid)
 
-    const exited = await Promise.race([exitedPromise.then(() => true), new Promise<boolean>((res) => setTimeout(() => res(false), 2000))])
-    assert.ok(exited, "stop.sh reported success but the launcher-like process never exited")
+      const result = spawnSync(fake.stopScript, [String(pid)], { encoding: "utf-8" })
+      assert.equal(result.status, 1, result.stderr)
+      assert.ok(isAlive(pid), "stop.sh killed a process whose exact binary path was not at argv[2]")
+    } finally {
+      fake.cleanup()
+    }
   })
 })
 
