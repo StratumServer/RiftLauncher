@@ -197,6 +197,47 @@ describe.skipIf(process.platform !== "linux")("scripts/headless/stop.sh", () => 
       fake.cleanup()
     }
   })
+
+  it("refuses a launcher-like pid whose argv[0] was renamed away from timeout, leaving it alive", () => {
+    // exec -a (or spawn's own argv0) can rename argv[0] on an unrelated process while argv[2] still
+    // happens to be this checkout's exact binary path. The #537 fix checks both positions, not just
+    // the path, so a renamed argv[0] alone must not open the door back up.
+    const fake = makeFakeCheckout()
+    try {
+      const child = spawn("timeout", ["30", fake.binary], { stdio: "ignore", argv0: "not-timeout" })
+      assert.ok(child.pid)
+      const pid = child.pid
+      liveSleeps.push(pid)
+
+      const result = spawnSync(fake.stopScript, [String(pid)], { encoding: "utf-8" })
+      assert.equal(result.status, 1, result.stderr)
+      assert.ok(isAlive(pid), "stop.sh killed a process whose argv[0] was not timeout")
+    } finally {
+      fake.cleanup()
+    }
+  })
+
+  it("refuses a live pid backed by a different checkout's own binary, leaving it alive", () => {
+    // Two fake checkouts each have their own dist/linux-unpacked/riftlauncher at a different
+    // absolute path. stop.sh has to compare against its own checkout's exact path, not just
+    // recognise the shape of one: a real headless launcher from a sibling checkout must not be
+    // stoppable from this one.
+    const mine = makeFakeCheckout()
+    const other = makeFakeCheckout()
+    try {
+      const child = spawn("timeout", ["30", other.binary], { stdio: "ignore" })
+      assert.ok(child.pid)
+      const pid = child.pid
+      liveSleeps.push(pid)
+
+      const result = spawnSync(mine.stopScript, [String(pid)], { encoding: "utf-8" })
+      assert.equal(result.status, 1, result.stderr)
+      assert.ok(isAlive(pid), "stop.sh killed a process backed by another checkout's binary")
+    } finally {
+      mine.cleanup()
+      other.cleanup()
+    }
+  })
 })
 
 function computeAcceptKey(key: string): string {
