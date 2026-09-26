@@ -96,6 +96,25 @@ A fresh profile shows the "Help other players find RiftLauncher" ModDB prompt on
 unless the seed spec answered it in advance (`moddbVisibilityAnswer`). `clickText` is how a live
 check answers it without pre-seeding, the same way a first-time player would.
 
+`click` and `clickText` scroll the element into view before measuring it, so a target below the
+fold is reachable rather than silently missed. Either command refuses with a non-zero exit and a
+stderr message instead of dispatching a click that would not land: no matching element (exit 2),
+an element with no box (`display:none`, zero size), one still off-screen after scrolling, or one
+covered by something else at its own centre point (a dialog backdrop, an overlay). A selector that
+matches nothing is the same exit 2 as before; the other refusals are new.
+
+Every CDP call (any command) now times out on its own rather than hanging forever if the app never
+answers: 15 seconds by default, overridable with `CDP_TIMEOUT_MS`. A timeout names the CDP method
+that was stuck, on stderr, and exits 1.
+
+`size` only applies for the CDP session that set it: Chromium clears a `setDeviceMetricsOverride`
+when the DevTools connection making it disconnects, and each `cdp.mjs` invocation is its own
+connection. Running `size 1024x600` and then, in a _separate_ `cdp.mjs` call, `clickText` on
+something that only clears the fold at that size will not see the resize; `window.innerWidth` /
+`innerHeight` are back to the real window's default the moment the process that set them exits. A
+check that depends on a specific viewport size needs its own one-off script driving a single CDP
+session end to end rather than two `cdp.mjs` invocations back to back.
+
 ## Screenshot
 
 ```sh
@@ -114,6 +133,13 @@ scripts/headless/stop.sh <pid>
 The PID `launch.sh` printed, nothing else. This never kills by process name or pattern: more than
 one headless launcher, or a reviewer's own dev instance, can be running on the same machine at the
 same time, and a pattern match cannot tell them apart.
+
+The argument has to be a bare positive integer greater than 1, no leading zero, no surrounding
+whitespace: `stop.sh 0` and other shapes `kill` would otherwise special-case (`0`, a negative pid)
+are refused before anything is signalled, with a usage line on stderr and exit 1. On Linux, the pid
+also has to still be the launcher: `stop.sh` reads `/proc/<pid>/cmdline` and refuses (exit 1) unless
+it names the packaged binary, so a stale pid that the kernel already recycled for something else is
+never signalled by mistake.
 
 ## How reviewers use this
 
