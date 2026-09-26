@@ -170,8 +170,8 @@ describe("migrateConfigDocument on real configs", () => {
     const repeatedDoc = repeated.doc as { gameVersions: Array<Record<string, unknown>> }
 
     assert.equal(result.outcome, "migrated")
-    assert.equal(result.schema, 6)
-    assert.deepEqual(result.applied.at(-1), { fromSchema: 5, toSchema: 6 })
+    assert.equal(result.schema, CURRENT_CONFIG_SCHEMA)
+    assert.deepEqual(result.applied.at(-1), { fromSchema: 6, toSchema: 7 })
     assert.equal(doc.gameVersions[0]!.label, "1.22.7")
     assert.equal(typeof doc.gameVersions[0]!.id, "string")
     assert.equal(doc.gameVersions[0]!.id, repeatedDoc.gameVersions[0]!.id, "legacy ids are deterministic")
@@ -280,7 +280,8 @@ describe("migrateConfigDocument on real configs", () => {
       { fromSchema: 2, toSchema: 3 },
       { fromSchema: 3, toSchema: 4 },
       { fromSchema: 4, toSchema: 5 },
-      { fromSchema: 5, toSchema: 6 }
+      { fromSchema: 5, toSchema: 6 },
+      { fromSchema: 6, toSchema: 7 }
     ])
 
     const doc = result.doc as Record<string, unknown>
@@ -313,11 +314,11 @@ describe("migrateConfigDocument on real configs", () => {
   })
 
   it("never downgrades a config from a newer build", () => {
-    const before = { schemaVersion: 7, somethingThisBuildNeverHeardOf: true }
+    const before = { schemaVersion: CURRENT_CONFIG_SCHEMA + 1, somethingThisBuildNeverHeardOf: true }
     const result = migrateConfigDocument(before)
 
     assert.equal(result.outcome, "future-schema")
-    assert.equal(result.schema, 7)
+    assert.equal(result.schema, CURRENT_CONFIG_SCHEMA + 1)
     assert.deepEqual(result.applied, [])
     assert.equal(result.doc, before)
   })
@@ -347,10 +348,10 @@ describe("migrateConfigDocument on real configs", () => {
         [2, 3],
         [3, 4],
         [4, 5],
-        [5, 6]
+        [5, 6],
+        [6, 7]
       ]
     )
-    assert.equal(CONFIG_MIGRATIONS[CONFIG_MIGRATIONS.length - 1]?.toSchema, CURRENT_CONFIG_SCHEMA)
   })
 })
 

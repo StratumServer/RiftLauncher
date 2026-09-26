@@ -212,9 +212,8 @@ describe("serveTasks", () => {
  * `serveTasks` call and nothing else imports it, so every test above passes one
  * of its own and collapsing the shipped one back to a constant went unnoticed.
  * The worker module is imported for real here, over the same fake port, and the
- * failures are the ones the filesystem actually raises: a missing folder and a
- * source that is a file. Both take the route a full disk (ENOSPC) or a denied
- * write (EACCES) takes, which is the case #337 was reported for.
+ * failures are the ones the filesystem actually raises: a missing folder takes
+ * the failure route while a single file is now a valid world-backup source.
  */
 describe("the compress worker's own failure describer", () => {
   it("forwards each distinct compression failure instead of one constant sentence", async () => {
@@ -231,15 +230,12 @@ describe("the compress worker's own failure describer", () => {
     assert.notEqual(missingSourceMessage, "Compression failed")
 
     port.postMessage.mockClear()
-    // A file rather than a folder: a different throw in compression.ts, and it
-    // has to arrive as a different sentence.
+    // A single file is a valid world-backup source and must finish successfully.
     const fileAsSource = { inputPath: fileURLToPath(import.meta.url), outputPath: "/tmp", outputFileName: "backup.tar.gz" }
     port.emit("message", { type: "task", token: 2, payload: fileAsSource })
     await vi.waitFor(() => assert.equal(lastMessage() !== undefined, true))
 
-    const fileAsSourceMessage = (lastMessage() as { message: string }).message
-    assert.equal(fileAsSourceMessage, "Compression source must be a directory")
-    assert.notEqual(fileAsSourceMessage, missingSourceMessage)
+    assert.equal((lastMessage() as { type: string }).type, "finished")
   })
 })
 

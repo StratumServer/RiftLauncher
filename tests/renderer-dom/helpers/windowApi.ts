@@ -156,6 +156,13 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     accountManager: {
       login: vi.fn(notMocked("accountManager.login")),
       removeAccount: vi.fn(notMocked("accountManager.removeAccount"))
+    },
+    worldsManager: {
+      list: vi.fn(async () => ({ ok: true as const, worlds: [] })),
+      backup: vi.fn(notMocked("worldsManager.backup")),
+      restore: vi.fn(notMocked("worldsManager.restore")),
+      delete: vi.fn(notMocked("worldsManager.delete")),
+      transfer: vi.fn(notMocked("worldsManager.transfer"))
     }
   }
 
