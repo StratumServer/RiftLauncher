@@ -86,7 +86,11 @@ function runStopWithWitness(arg: string): { status: number; witnessAlive: boolea
   return { status: Number(match[1]), witnessAlive: match[2] === "1", raw: result.stderr }
 }
 
-describe("scripts/headless/stop.sh", () => {
+// stop.sh is a bash script signalling real pids: setsid, /proc and POSIX kill semantics are all
+// Linux-specific (setsid does not exist on macOS either, and Windows cannot exec a shebang script
+// through spawnSync at all), matching launch.sh's own scope (a Linux packaged build). The CI
+// matrix's windows-latest leg has nothing here to run.
+describe.skipIf(process.platform !== "linux")("scripts/headless/stop.sh", () => {
   const refused = ["0", "00", "1", "-1", "1e3", " 12", "", "abc", "12x", "9999999999999999999"]
 
   it.each(refused)("refuses %j before signalling anything, leaving the witness alive", (arg) => {
@@ -122,7 +126,7 @@ describe("scripts/headless/stop.sh", () => {
     assert.equal(result.status, 1, result.stderr)
   })
 
-  it.skipIf(process.platform !== "linux")("stops a live pid whose /proc cmdline names the packaged binary", async () => {
+  it("stops a live pid whose /proc cmdline names the packaged binary", async () => {
     // Fakes argv[0] the way launch.sh's real `dist/linux-unpacked/riftlauncher` would read on
     // /proc/<pid>/cmdline, without an actual packaged build: the live check covers the real one.
     const child = spawn("bash", ["-c", "exec -a dist/linux-unpacked/riftlauncher sleep 30"], { stdio: "ignore" })
