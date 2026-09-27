@@ -541,6 +541,7 @@
       "noKeyring": "Não foi encontrado nenhum porta-chaves do sistema para guardar a sessão. No Linux é o GNOME Keyring ou o KWallet, e o guia abaixo explica como configurar um.",
       "noKeyringGuide": "Ler o guia do porta-chaves",
       "sessionNotRemembered": "A sessão foi iniciada, mas não foi encontrado nenhum porta-chaves do sistema para a guardar, por isso dura apenas até fechar o RiftLauncher. No Linux o porta-chaves é o GNOME Keyring ou o KWallet, e o guia abaixo explica como configurar um.",
+      "sessionKeyringSealed": "Iniciou sessão, mas as sessões guardadas no porta-chaves do sistema não podem ser lidas enquanto esta definição estiver ativa, por isso esta dura apenas até fechar o RiftLauncher. Desative a definição para voltar a usar as suas outras contas guardadas.",
       "unexpectedResponse": "O serviço de contas respondeu de uma forma que o launcher não conseguiu interpretar. A sua palavra-passe não foi rejeitada. Tente novamente depois de uma atualização.",
       "sessionStoreUnreadable": "O início de sessão foi bem-sucedido, mas não foi possível ler nem criar uma cópia do ficheiro de contas guardadas. O launcher deixou-o intacto para não o substituir. Nada foi guardado desta vez.",
       "sessionStoreRebuilt": "Não foi possível ler o ficheiro de contas guardadas. Foi conservada uma cópia e o launcher criou um novo ficheiro, por isso as outras contas neste dispositivo terão de iniciar sessão novamente.",
@@ -589,7 +590,7 @@
         "never": "Nunca contar"
       },
       "allowBasicSessionStore": "Guardar a sessão sem porta-chaves do sistema",
-      "allowBasicSessionStoreDesc": "Mantém a sua sessão iniciada num computador sem porta-chaves do sistema. A sessão passa a ser escrita no disco, selada com uma chave incluída no launcher, por isso qualquer programa que corra com o seu utilizador a consegue ler. Deixe isto desativado, a não ser que isso não seja problema neste computador. Aplica-se no próximo arranque do RiftLauncher.",
+      "allowBasicSessionStoreDesc": "Mantém a sua sessão iniciada num computador sem porta-chaves do sistema. A sessão passa a ser escrita no disco, selada com uma chave incluída no launcher, por isso qualquer programa que corra com o seu utilizador a consegue ler. As sessões que um porta-chaves do sistema tenha guardado antes mantêm-se no disco, mas não podem ser lidas enquanto isto estiver ativo. Deixe isto desativado, a não ser que isso não seja problema neste computador. Aplica-se no próximo arranque do RiftLauncher.",
       "allowBasicSessionStoreRestart": "Esta definição aplica-se no próximo arranque do RiftLauncher."
     },
     "backups": {

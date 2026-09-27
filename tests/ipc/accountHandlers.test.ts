@@ -304,6 +304,22 @@ describe("LOGIN", () => {
     })
   })
 
+  it("reports a login held in memory because the store is sealed by a keyring the basic backend cannot reach", async () => {
+    // Regression on #542: this must never be reported as storeRebuilt, and never as the plain
+    // no-keyring sessionInMemoryOnly either, since the player needs the different guidance (turn
+    // the setting off) rather than the keyring setup guide.
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockResolvedValueOnce("saved-in-memory-keyring-sealed")
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.deepEqual(result, {
+      status: "success",
+      account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false },
+      sessionKeyringSealed: true
+    })
+  })
+
   it("does not flag an ordinary save as a session held in memory", async () => {
     transportAnswers(SUCCESS_BODY)
 

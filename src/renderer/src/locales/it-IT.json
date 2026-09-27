@@ -541,6 +541,7 @@
       "noKeyring": "Non è stato trovato nessun portachiavi di sistema in cui salvare la sessione. Su Linux è GNOME Keyring o KWallet, e la guida qui sotto spiega come configurarne uno.",
       "noKeyringGuide": "Leggi la guida al portachiavi",
       "sessionNotRemembered": "Hai effettuato l'accesso, ma non è stato trovato nessun portachiavi di sistema in cui salvare la sessione, quindi dura solo finché non chiudi RiftLauncher. Su Linux il portachiavi è GNOME Keyring o KWallet, e la guida qui sotto spiega come configurarne uno.",
+      "sessionKeyringSealed": "Hai effettuato l'accesso, ma le sessioni salvate nel portachiavi di sistema non possono essere lette finché questa opzione è attiva, quindi questa dura solo finché non chiudi RiftLauncher. Disattiva l'opzione per usare di nuovo gli altri account salvati.",
       "unexpectedResponse": "Il servizio dell'account ha risposto in un modo che il launcher non ha potuto leggere. La password non è stata rifiutata. Riprova dopo un aggiornamento.",
       "sessionStoreUnreadable": "L'accesso è riuscito, ma non è stato possibile leggere o salvare una copia del file degli account salvati. Il launcher lo ha lasciato invariato per non sovrascriverlo. Questa volta non è stato salvato nulla.",
       "sessionStoreRebuilt": "Non è stato possibile leggere il file degli account salvati. Ne è stata conservata una copia e il launcher ne ha creato uno nuovo: gli altri account su questo dispositivo dovranno accedere di nuovo.",
@@ -589,7 +590,7 @@
         "never": "Non contare mai"
       },
       "allowBasicSessionStore": "Ricorda la sessione senza portachiavi di sistema",
-      "allowBasicSessionStoreDesc": "Ti tiene connesso su un computer senza portachiavi di sistema. La sessione viene allora scritta su disco protetta con una chiave integrata nel launcher, quindi qualsiasi programma che gira con il tuo utente può leggerla. Lascia questa opzione disattivata, a meno che su questo computer non sia un problema. Ha effetto al prossimo avvio di RiftLauncher.",
+      "allowBasicSessionStoreDesc": "Ti tiene connesso su un computer senza portachiavi di sistema. La sessione viene allora scritta su disco protetta con una chiave integrata nel launcher, quindi qualsiasi programma che gira con il tuo utente può leggerla. Le sessioni salvate in precedenza da un portachiavi di sistema restano sul disco ma non possono essere lette finché questa opzione è attiva. Lascia questa opzione disattivata, a meno che su questo computer non sia un problema. Ha effetto al prossimo avvio di RiftLauncher.",
       "allowBasicSessionStoreRestart": "Questa impostazione ha effetto al prossimo avvio di RiftLauncher."
     },
     "backups": {

@@ -46,11 +46,19 @@ const LEGACY_ACCOUNT_STORE_VERSION = 1
  *   rebuilds around it the same way `corrupt` does, but its snapshot is kept on
  *   a version-scoped path so it never takes the single slot a genuinely
  *   unrecoverable store needs (#270). `foreignVersion` carries that version.
+ * - `keyring-sealed`: the ciphertext was sealed by a real system keyring
+ *   (Chromium's `v11` prefix), but this process is running the opted-in basic
+ *   backend, which has its own compiled-in key and no way to reach the
+ *   keyring's. Not corruption and not the file's fault, the same way `locked`
+ *   is not: the bytes are intact, they are simply unreachable from this
+ *   backend. Turning the "remember without a system keyring" setting back off
+ *   restores a working keyring backend, which reads them again. A login must
+ *   never rebuild the store around itself over this: see {@link saveAccountSecrets}.
  *
- * Both non-`readable` states hand back an empty map that says nothing about
+ * Every non-`readable` state hands back an empty map that says nothing about
  * what is on disk, so no mutation may treat "not in the map" as "not stored".
  */
-type StoreStatus = "readable" | "locked" | "corrupt" | "foreign-version"
+type StoreStatus = "readable" | "locked" | "corrupt" | "foreign-version" | "keyring-sealed"
 
 /** `undefined` for `cachedRead` means the file has not been read this process. */
 type StoreRead = { accounts: Map<string, AccountSecrets>; status: StoreStatus; foreignVersion?: number }
@@ -163,6 +171,18 @@ function ensureBasicStorePlainTextEncryption(): void {
   if (process.platform === "linux" && allowsBasicPasswordStore()) safeStorage.setUsePlainTextEncryption(true)
 }
 
+/**
+ * Chromium's marker for ciphertext sealed with a key it got from a real OS keyring (`libsecret` or
+ * KWallet on Linux), confirmed against this project's Electron 44.1.1: the opted-in basic backend's
+ * own plain-text encryption always produces a `v10` blob instead (see `ensureBasicStorePlainTextEncryption`),
+ * so a `v11` blob can only have been written while a real keyring was in use.
+ */
+const KEYRING_SEALED_CIPHERTEXT_PREFIX = "v11"
+
+function isKeyringSealedCiphertext(ciphertext: Buffer): boolean {
+  return ciphertext.subarray(0, KEYRING_SEALED_CIPHERTEXT_PREFIX.length).toString("latin1") === KEYRING_SEALED_CIPHERTEXT_PREFIX
+}
+
 function assertSecureStorage(): void {
   ensureBasicStorePlainTextEncryption()
 
@@ -224,7 +244,21 @@ async function readStore(): Promise<StoreRead> {
     }
     if (stored.version !== ACCOUNT_STORE_VERSION || typeof stored.ciphertext !== "string") throw new Error("Invalid account store")
 
-    const decrypted = safeStorage.decryptString(Buffer.from(stored.ciphertext, "base64"))
+    const ciphertext = Buffer.from(stored.ciphertext, "base64")
+    let decrypted: string
+    try {
+      decrypted = safeStorage.decryptString(ciphertext)
+    } catch (decryptError) {
+      // A keyring-sealed blob the opted-in basic backend cannot open is not corruption (see the
+      // `keyring-sealed` status doc above): only claim that for it when the switch that put this
+      // process on the basic backend in the first place is actually the one active, so a real
+      // decrypt failure on a genuinely keyring-backed run still falls through to `corrupt` below.
+      if (allowsBasicPasswordStore() && isKeyringSealedCiphertext(ciphertext)) {
+        cachedRead = { accounts: new Map(), status: "keyring-sealed" }
+        return cachedRead
+      }
+      throw decryptError
+    }
     const payload: unknown = JSON.parse(decrypted)
     // An entry parseStoredSecretsById itself drops is not corruption: a file holding one
     // broken entry beside three good ones is still a store worth writing to. A payload with
@@ -302,10 +336,12 @@ async function writeAccounts(accounts: Map<string, AccountSecrets>): Promise<voi
 
 /**
  * What {@link saveAccountSecrets} actually did: a plain save, a save that first
- * had to rebuild an unreadable store around it, or a session kept in memory
- * because there is no keyring on this machine to write it to.
+ * had to rebuild an unreadable store around it, a session kept in memory
+ * because there is no keyring on this machine to write it to, or a session
+ * kept in memory because the store on disk is sealed by a keyring the opted-in
+ * basic backend cannot reach.
  */
-export type AccountSaveOutcome = "saved" | "saved-after-rebuild" | "saved-in-memory"
+export type AccountSaveOutcome = "saved" | "saved-after-rebuild" | "saved-in-memory" | "saved-in-memory-keyring-sealed"
 
 /**
  * Saves or replaces one account's secrets. Logging into an already-saved
@@ -325,6 +361,14 @@ export type AccountSaveOutcome = "saved" | "saved-after-rebuild" | "saved-in-mem
  * in {@link memorySecrets} for this run instead. Refusing the write is still
  * the rule; what changed is that refusing it no longer throws away credentials
  * the service already accepted. The caller is told, so the player can be.
+ *
+ * A store the opted-in basic backend cannot open because it is sealed by a
+ * real keyring (`keyring-sealed`, see {@link StoreStatus}) gets the same
+ * in-memory treatment, for the same reason plus one more: unlike `corrupt`,
+ * the bytes here are not dead. Turning the setting back off reads them again,
+ * so rebuilding around this login would not just be destroying a copy this
+ * process could have preserved, it would be destroying the one copy that
+ * still works once the player undoes the setting that caused this.
  */
 export function saveAccountSecrets(accountId: string, secrets: AccountSecrets): Promise<AccountSaveOutcome> {
   return serializeMutation(async () => {
@@ -337,6 +381,15 @@ export function saveAccountSecrets(accountId: string, secrets: AccountSecrets): 
     }
 
     const store = await readStore()
+
+    // A keyring-sealed store must never be copied aside or overwritten: the bytes are not dead,
+    // they are only unreachable from the backend this process is running (see the doc above), and
+    // there is nothing here for preserveUnreadableStore to protect them from in the first place.
+    if (store.status === "keyring-sealed") {
+      memorySecrets.set(accountId, secrets)
+      return "saved-in-memory-keyring-sealed"
+    }
+
     const accounts = new Map(store.accounts)
     accounts.set(accountId, secrets)
 

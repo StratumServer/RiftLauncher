@@ -541,6 +541,7 @@
       "noKeyring": "No se ha encontrado ningún llavero del sistema donde guardar la sesión. En Linux es GNOME Keyring o KWallet, y la guía de abajo explica cómo configurar uno.",
       "noKeyringGuide": "Leer la guía del llavero",
       "sessionNotRemembered": "Has iniciado sesión, pero no se ha encontrado ningún llavero del sistema donde guardarla, así que solo durará hasta que cierres RiftLauncher. En Linux el llavero es GNOME Keyring o KWallet, y la guía de abajo explica cómo configurar uno.",
+      "sessionKeyringSealed": "Has iniciado sesión, pero las sesiones guardadas en tu llavero del sistema no se pueden leer mientras esta opción esté activada, así que esta solo durará hasta que cierres RiftLauncher. Desactiva la opción para volver a usar tus otras cuentas guardadas.",
       "unexpectedResponse": "El servicio de cuentas respondió de una forma que el launcher no pudo interpretar. Tu contraseña no fue rechazada. Inténtalo de nuevo después de actualizar.",
       "sessionStoreUnreadable": "El inicio de sesión funcionó, pero no se pudo leer ni guardar una copia del archivo de cuentas guardadas. El launcher lo dejó intacto para no sobrescribirlo. No se guardó nada esta vez.",
       "sessionStoreRebuilt": "No se pudo leer el archivo de cuentas guardadas. Se conservó una copia y el launcher creó uno nuevo; las demás cuentas de este dispositivo tendrán que iniciar sesión de nuevo.",
@@ -589,7 +590,7 @@
         "never": "No contar nunca"
       },
       "allowBasicSessionStore": "Recordar la sesión sin llavero del sistema",
-      "allowBasicSessionStoreDesc": "Te mantiene con la sesión iniciada en un ordenador sin llavero del sistema. La sesión se escribe entonces en el disco sellada con una clave incluida en el launcher, así que cualquier programa que se ejecute con tu usuario puede leerla. Déjalo desactivado salvo que eso te parezca bien en este ordenador. Surte efecto la próxima vez que se inicie RiftLauncher.",
+      "allowBasicSessionStoreDesc": "Te mantiene con la sesión iniciada en un ordenador sin llavero del sistema. La sesión se escribe entonces en el disco sellada con una clave incluida en el launcher, así que cualquier programa que se ejecute con tu usuario puede leerla. Las sesiones que un llavero del sistema haya guardado antes permanecen en el disco, pero no se pueden leer mientras esto esté activado. Déjalo desactivado salvo que eso te parezca bien en este ordenador. Surte efecto la próxima vez que se inicie RiftLauncher.",
       "allowBasicSessionStoreRestart": "Este ajuste surtirá efecto la próxima vez que se inicie RiftLauncher."
     },
     "backups": {

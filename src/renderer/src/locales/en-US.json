@@ -534,6 +534,7 @@
       "noKeyring": "No system keyring was found to store the session. On Linux that is GNOME Keyring or KWallet, and the guide below explains how to set one up.",
       "noKeyringGuide": "Read the keyring guide",
       "sessionNotRemembered": "You are logged in, but no system keyring was found to store the session, so it lasts only until you close RiftLauncher. On Linux the keyring is GNOME Keyring or KWallet, and the guide below explains how to set one up.",
+      "sessionKeyringSealed": "You are logged in, but sessions saved in your system keyring cannot be read while this setting is on, so this one lasts only until you close RiftLauncher. Turn the setting off to use your other saved accounts again.",
       "unexpectedResponse": "The account service answered in a way this launcher couldn't read. Your password was not rejected. Try again after an update.",
       "sessionStoreUnreadable": "Your login worked, but the saved-accounts file can't be read and couldn't be backed up, so the launcher left it alone rather than overwrite it. Nothing was saved this time.",
       "sessionStoreRebuilt": "The saved-accounts file couldn't be read. A copy was kept and the launcher started a fresh one, so any other accounts on this device need to log in again.",
@@ -582,7 +583,7 @@
         "never": "Never count"
       },
       "allowBasicSessionStore": "Remember the session without a system keyring",
-      "allowBasicSessionStoreDesc": "Keeps you logged in on a computer with no system keyring. The session is then written to disk sealed with a key built into the launcher, so any program running as you can read it. Leave this off unless that is fine on this computer. Takes effect the next time RiftLauncher starts.",
+      "allowBasicSessionStoreDesc": "Keeps you logged in on a computer with no system keyring. The session is then written to disk sealed with a key built into the launcher, so any program running as you can read it. Sessions a system keyring saved earlier stay on disk but cannot be read while this is on. Leave this off unless that is fine on this computer. Takes effect the next time RiftLauncher starts.",
       "allowBasicSessionStoreRestart": "This setting takes effect the next time RiftLauncher starts."
     },
     "backups": {

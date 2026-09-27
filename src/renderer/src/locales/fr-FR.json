@@ -556,6 +556,7 @@
       "noKeyring": "Aucun trousseau système n'a été trouvé pour enregistrer la session. Sous Linux il s'agit de GNOME Keyring ou de KWallet, et le guide ci-dessous explique comment en mettre un en place.",
       "noKeyringGuide": "Lire le guide du trousseau",
       "sessionNotRemembered": "Vous êtes connecté, mais aucun trousseau système n'a été trouvé pour enregistrer la session : elle ne durera que jusqu'à la fermeture de RiftLauncher. Sous Linux le trousseau est GNOME Keyring ou KWallet, et le guide ci-dessous explique comment en mettre un en place.",
+      "sessionKeyringSealed": "Vous êtes connecté, mais les sessions enregistrées par votre trousseau système ne peuvent pas être lues tant que ce réglage est activé : celle-ci ne durera que jusqu'à la fermeture de RiftLauncher. Désactivez le réglage pour retrouver vos autres comptes enregistrés.",
       "unexpectedResponse": "Le service des comptes a répondu d'une façon que le launcher n'a pas su lire. Votre mot de passe n'a pas été refusé. Réessayez après une mise à jour.",
       "sessionStoreUnreadable": "Votre connexion a fonctionné, mais le fichier des comptes enregistrés est illisible et n'a pas pu être sauvegardé : le launcher l'a laissé intact plutôt que de l'écraser. Rien n'a été enregistré cette fois-ci.",
       "sessionStoreRebuilt": "Le fichier des comptes enregistrés n'a pas pu être lu. Une copie a été conservée et le launcher en a créé un nouveau, les autres comptes de cet appareil devront donc se reconnecter.",
@@ -604,7 +605,7 @@
         "never": "Ne jamais compter"
       },
       "allowBasicSessionStore": "Retenir la session sans trousseau système",
-      "allowBasicSessionStoreDesc": "Vous garde connecté sur un ordinateur sans trousseau système. La session est alors écrite sur le disque, scellée avec une clé intégrée au launcher : n'importe quel programme lancé sous votre compte peut la lire. Laissez ce réglage désactivé si cela ne vous convient pas sur cet ordinateur. Prend effet au prochain démarrage de RiftLauncher.",
+      "allowBasicSessionStoreDesc": "Vous garde connecté sur un ordinateur sans trousseau système. La session est alors écrite sur le disque, scellée avec une clé intégrée au launcher : n'importe quel programme lancé sous votre compte peut la lire. Les sessions qu'un trousseau système a enregistrées auparavant restent sur le disque mais ne peuvent pas être lues tant que ce réglage est activé. Laissez ce réglage désactivé si cela ne vous convient pas sur cet ordinateur. Prend effet au prochain démarrage de RiftLauncher.",
       "allowBasicSessionStoreRestart": "Ce réglage prendra effet au prochain démarrage de RiftLauncher."
     },
     "backups": {

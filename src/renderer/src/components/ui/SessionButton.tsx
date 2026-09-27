@@ -115,10 +115,15 @@ function SessionButton(): JSX.Element {
       // Logged in, and staying logged in until the launcher is closed. Said out loud rather than
       // left to be discovered on the next start, and pointed at the guide that makes it stick.
       if (result.sessionInMemoryOnly) addNotification(t("features.config.sessionNotRemembered"), "warning", keyringGuideOptions())
+      // A different cause than the one above (the keyring guide would be wrong here: there is a
+      // working keyring, it is just unreachable while this setting is on), so its own message
+      // instead of reusing sessionNotRemembered's.
+      if (result.sessionKeyringSealed) addNotification(t("features.config.sessionKeyringSealed"), "warning")
       // The account still has to reach the config: that list is what names the account the game
       // launches as. Marked, so it does not outlive the secrets behind it. configManager drops
       // the marked ones at the next startup rather than opening on an account that cannot launch.
-      await saveLogin(result.sessionInMemoryOnly ? { ...result.account, sessionOnly: true } : result.account)
+      const sessionOnly = result.sessionInMemoryOnly || result.sessionKeyringSealed
+      await saveLogin(sessionOnly ? { ...result.account, sessionOnly: true } : result.account)
     } catch {
       // A throw here means the request never produced a verdict, for a cause
       // `loginFailureFamily` could not place among the four above (a storage
