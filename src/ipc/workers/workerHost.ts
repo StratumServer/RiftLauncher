@@ -25,8 +25,9 @@ export type TaskHandler = (payload: Record<string, unknown>, onProgress: Progres
 
 /**
  * Turns a rejection into the message text the parent sees. Per worker on purpose:
- * extraction forwards its own reason, the other three report a fixed one, matching what
- * each already did before this file existed.
+ * extraction, compression and Inno extraction all forward their own reason; only the
+ * download worker still reports a fixed one, matching what each already did before this
+ * file existed.
  */
 export type FailureDescriber = (error: unknown) => string
 

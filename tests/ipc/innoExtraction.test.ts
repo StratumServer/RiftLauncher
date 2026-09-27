@@ -38,6 +38,10 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(workspace, { recursive: true, force: true })
   vi.unstubAllEnvs()
+  // Without this, a spy planted on the shared fse module (the cleanup-failure tests below)
+  // outlives its own test and reaches whatever runs after it in this file, opt-in real
+  // installer run included.
+  vi.restoreAllMocks()
 })
 
 describe("runInnoExtraction", () => {
@@ -49,6 +53,9 @@ describe("runInnoExtraction", () => {
     assert.deepEqual(readdirSync(workspacePath("target")).sort(), ["Vintagestory.exe", "assets"])
     assert.equal(readFileSync(workspacePath("target", "Vintagestory.exe"), "utf8"), "MZ fake executable\n")
     assert.equal(readFileSync(workspacePath("target", "assets", "version-1.0.0.txt"), "utf8"), "1.0.0\n")
+    // Mutants M11/M13: nothing else in this file checks that a clean run comes back
+    // without a cleanup warning attached.
+    assert.equal(outcome.cleanupWarning, undefined)
   })
 
   it("reports progress from zero to a hundred", async () => {
@@ -64,10 +71,13 @@ describe("runInnoExtraction", () => {
 
   it("consumes the installer when asked to", async () => {
     const installerPath = installerFrom("valid.bin")
-    await runInnoExtraction({ filePath: installerPath, outputPath: workspacePath("target"), deleteInstaller: true })
+    const outcome = await runInnoExtraction({ filePath: installerPath, outputPath: workspacePath("target"), deleteInstaller: true })
 
     assert.equal(existsSync(installerPath), false)
     assert.equal(existsSync(workspacePath("target", "Vintagestory.exe")), true)
+    // Mutants M11/M13: nothing else in this file checks that a clean run comes back
+    // without a cleanup warning attached.
+    assert.equal(outcome.cleanupWarning, undefined)
   })
 
   it("keeps the installer when not asked to", async () => {
@@ -132,6 +142,124 @@ describe("runInnoExtraction", () => {
     await runInnoExtraction({ filePath: installerFrom("wrong-digest.bin"), outputPath: workspacePath("other"), deleteInstaller: false })
 
     assert.deepEqual(readdirSync(temporaryRoot), [])
+  })
+})
+
+/**
+ * Issue #528. Once copyTree has landed the game, the two cleanup calls left
+ * (deleting the installer, removing the temporary staging folder in the
+ * finally block) must not turn that landed install into a failure: a handle
+ * held on either path, most often a Windows scanner reacting to files that
+ * were just written, is not this install's problem. Both are exercised
+ * separately here, each against the tiny valid.bin fixture rather than a real
+ * installer, since the mechanism under test is what happens after copyTree
+ * returns, not the copy itself.
+ */
+describe("runInnoExtraction: post-copy cleanup is best-effort", () => {
+  it("still reports extracted, with a warning, when deleting the installer throws after the copy landed", async () => {
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "unlinkSync").mockImplementation(() => {
+      throw Object.assign(new Error("EBUSY: resource busy or locked, unlink"), { code: "EBUSY" })
+    })
+
+    const outcome = await runInnoExtraction({ filePath: installerFrom("valid.bin"), outputPath: workspacePath("target"), deleteInstaller: true })
+
+    assert.equal(outcome.verdict, "extracted")
+    assert.deepEqual(outcome.cleanupWarning, { reason: "installer-delete-failed", code: "EBUSY" })
+    assert.equal(existsSync(workspacePath("target", "Vintagestory.exe")), true)
+  })
+
+  it("still reports extracted, with a warning, when the installer is gone by the time it is checked before deletion (antivirus quarantine)", async () => {
+    // The player report behind this: an antivirus quarantined the freshly written installer
+    // between the copy landing and the pre-delete safety check, so lstatSync itself throws
+    // ENOENT rather than unlinkSync. Scoped to the installer path only, since the same spy
+    // sits under this file's own lstatSync(outputPath) symlink check earlier in the run.
+    const installerPath = installerFrom("valid.bin")
+    const fse = (await import("fs-extra")).default
+    const realLstatSync = fse.lstatSync.bind(fse)
+    vi.spyOn(fse, "lstatSync").mockImplementation((path: Parameters<typeof fse.lstatSync>[0]) => {
+      if (path === installerPath) throw Object.assign(new Error("ENOENT: no such file or directory, lstat"), { code: "ENOENT" })
+      return realLstatSync(path)
+    })
+
+    const outcome = await runInnoExtraction({ filePath: installerPath, outputPath: workspacePath("target"), deleteInstaller: true })
+
+    assert.equal(outcome.verdict, "extracted")
+    assert.deepEqual(outcome.cleanupWarning, { reason: "installer-delete-failed", code: "ENOENT" })
+    assert.equal(existsSync(workspacePath("target", "Vintagestory.exe")), true)
+  })
+
+  it("keeps an installer reached through a symbolic link, and still reports extracted", async () => {
+    // The other half of the pre-delete safety check, alongside the ENOENT quarantine case
+    // above: assertNoSymlinkComponents(filePath) must itself stay inside the best-effort
+    // try, or an installer reached through a symlinked parent folder gets unlinked in the
+    // link's target folder while the run still reports extracted.
+    mkdirSync(workspacePath("real"))
+    copyFileSync(join(FIXTURES, "valid.bin"), workspacePath("real", "valid.bin"))
+    symlinkSync(workspacePath("real"), workspacePath("link"))
+
+    const outcome = await runInnoExtraction({ filePath: workspacePath("link", "valid.bin"), outputPath: workspacePath("target"), deleteInstaller: true })
+
+    assert.equal(outcome.verdict, "extracted")
+    assert.deepEqual(outcome.cleanupWarning, { reason: "installer-delete-failed", code: "unknown" })
+    assert.equal(existsSync(workspacePath("real", "valid.bin")), true)
+  })
+
+  it("still reports extracted, with a warning, when removing the staging folder throws after the copy landed", async () => {
+    // mkdtempSync goes wherever TMPDIR/TMP/TEMP point (see "leaves no temporary folder
+    // behind" above). Pinning it inside workspace means the riftlauncher-inno-* folder
+    // this run creates and then fails to remove is swept up by afterEach's
+    // rmSync(workspace), not left behind in the machine-wide os.tmpdir() every run of
+    // this file shares.
+    const temporaryRoot = workspacePath("temp-root")
+    mkdirSync(temporaryRoot)
+    vi.stubEnv("TMPDIR", temporaryRoot)
+    vi.stubEnv("TMP", temporaryRoot)
+    vi.stubEnv("TEMP", temporaryRoot)
+
+    const fse = (await import("fs-extra")).default
+    const rmSpy = vi.spyOn(fse, "rmSync").mockImplementation(() => {
+      throw Object.assign(new Error("EPERM: operation not permitted, rmdir"), { code: "EPERM" })
+    })
+
+    const outcome = await runInnoExtraction({ filePath: installerFrom("valid.bin"), outputPath: workspacePath("target"), deleteInstaller: false })
+
+    assert.equal(outcome.verdict, "extracted")
+    assert.deepEqual(outcome.cleanupWarning, { reason: "staging-cleanup-failed", code: "EPERM" })
+    assert.equal(existsSync(workspacePath("target", "Vintagestory.exe")), true)
+    // #528's Windows half: the staging removal went from removeSync's plain rmSync to one
+    // with retries, giving a scanner time to let go of a handle on a file just written.
+    const options = rmSpy.mock.calls[0]?.[1]
+    assert.equal((options?.maxRetries ?? 0) > 0, true)
+    assert.equal((options?.retryDelay ?? 0) > 0, true)
+  })
+
+  it("stays fatal when the destination cannot be created before any copy has happened", async () => {
+    // Control: a failure that never reaches copyTree still rejects, same as before #528.
+    // Not a cleanup call at all, but it pins that the best-effort change stayed scoped to
+    // after a successful copy, not to every throw runInnoExtraction can produce.
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "ensureDirSync").mockImplementation(() => {
+      throw Object.assign(new Error("EACCES: permission denied, mkdir"), { code: "EACCES" })
+    })
+
+    await assert.rejects(runInnoExtraction({ filePath: installerFrom("valid.bin"), outputPath: workspacePath("target"), deleteInstaller: false }), /EACCES/)
+  })
+
+  it("surfaces the original verdict, not the staging removal error, when a format-refused run's cleanup also throws", async () => {
+    // #527 regression guard: before this round, a removal error in the finally block
+    // replaced whatever the try block had already decided, turning a plain format-refused
+    // (the everyday "run the installer instead" signal) into a hard failure and skipping
+    // the spawn fallback entirely.
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "rmSync").mockImplementation(() => {
+      throw Object.assign(new Error("EPERM: operation not permitted, rmdir"), { code: "EPERM" })
+    })
+
+    const outcome = await runInnoExtraction({ filePath: installerFrom("unsupported-version.bin"), outputPath: workspacePath("target"), deleteInstaller: false })
+
+    assert.equal(outcome.verdict, "format-refused")
+    assert.match(String(outcome.reason), /6\.5\.0/)
   })
 })
 

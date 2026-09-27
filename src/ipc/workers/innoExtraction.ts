@@ -51,12 +51,31 @@ export interface InnoExtractionOptions {
   onProgress?: (progress: number) => void
 }
 
+/** Why a post-copy cleanup step was skipped, plus the errno it failed with. */
+export interface CleanupWarning {
+  reason: "installer-delete-failed" | "staging-cleanup-failed"
+  /** A short errno such as EBUSY, EPERM, ENOENT; "unknown" when the error carried none. */
+  code: string
+}
+
 export interface InnoExtractionOutcome {
   verdict: InnoExtractionVerdict
   /** Why the reader declined, present only on `format-refused`. */
   reason?: string
   filesWritten?: number
   bytesWritten?: number
+  /**
+   * Present only on `extracted`, when a post-copy cleanup step (deleting the installer,
+   * removing the temporary staging folder) threw. The game already landed by then, so
+   * that is not this outcome's failure; the caller logs it as a warning instead.
+   */
+  cleanupWarning?: CleanupWarning
+}
+
+/** The errno off a thrown error, or "unknown" when it did not carry one. */
+function errnoOf(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === "string" && code ? code : "unknown"
 }
 
 /** Reads the installer through a file handle, one range at a time. */
@@ -111,6 +130,11 @@ function payloadSink(root: string): { writeFile(relativePath: string, contents: 
 export async function runInnoExtraction(options: InnoExtractionOptions): Promise<InnoExtractionOutcome> {
   const { filePath, outputPath, deleteInstaller, onProgress } = options
   let temporaryRoot: string | undefined
+  // Set once copyTree lands the game. From that point on, nothing below is allowed to turn
+  // this outcome into a thrown error: a scanner holding a handle on the installer or the
+  // staging folder (most often on Windows) must not turn a landed install into a failure
+  // (#528). Anything that throws before this point stays fatal.
+  let outcome: InnoExtractionOutcome | undefined
 
   try {
     assertNoSymlinkComponents(outputPath)
@@ -161,17 +185,40 @@ export async function runInnoExtraction(options: InnoExtractionOptions): Promise
 
     validateTree(payloadRoot)
     copyTree(payloadRoot, outputPath)
+    outcome = { verdict: "extracted", filesWritten, bytesWritten }
 
     if (deleteInstaller) {
-      assertNoSymlinkComponents(filePath)
-      const installerStats = fse.lstatSync(filePath)
-      if (!installerStats.isFile() || installerStats.isSymbolicLink()) throw new Error("Installer path is unsafe")
-      fse.unlinkSync(filePath)
+      try {
+        // Same best-effort standing as the delete itself below: an antivirus that
+        // quarantined the installer (ENOENT) or a delete-pending handle (EPERM) must not
+        // turn a landed install into a failure, the exact case a player hit (#528).
+        assertNoSymlinkComponents(filePath)
+        const installerStats = fse.lstatSync(filePath)
+        if (!installerStats.isFile() || installerStats.isSymbolicLink()) throw new Error("Installer path is unsafe")
+        fse.unlinkSync(filePath)
+      } catch (error) {
+        outcome.cleanupWarning = { reason: "installer-delete-failed", code: errnoOf(error) }
+      }
     }
 
     onProgress?.(100)
-    return { verdict: "extracted", filesWritten, bytesWritten }
+    return outcome
   } finally {
-    if (temporaryRoot) fse.removeSync(temporaryRoot)
+    if (temporaryRoot) {
+      try {
+        // maxRetries/retryDelay over fse.removeSync's plain rmSync: the staging folder was
+        // just written to, and a scanner can still be holding a handle on one of its files
+        // on Windows. Mutates `outcome` in place, which `return outcome` above already
+        // captured by reference, so a retry failure here still reaches the caller. Wrapped
+        // in a try regardless of whether the copy landed, so a removal error here can never
+        // replace the original extraction error or a format-refused return (#527).
+        fse.rmSync(temporaryRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+      } catch (error) {
+        // Only set when there is an extracted outcome to attach it to: a removal failure
+        // after a format-refused return, or after an error is already propagating, has
+        // nothing of this shape to carry it on.
+        if (outcome) outcome.cleanupWarning = outcome.cleanupWarning ?? { reason: "staging-cleanup-failed", code: errnoOf(error) }
+      }
+    }
   }
 }

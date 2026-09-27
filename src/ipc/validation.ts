@@ -39,6 +39,10 @@ export const MAX_BACKUP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 // list (about 3.5 MB today) can outgrow the generic 4 MB ceiling with no fallback.
 // 16 MB gives years of headroom while staying a bounded, allow-listed exception rather
 // than an unbounded response.
+//
+// The author list (#526) shares this ceiling for the same reason: it has no pagination
+// either, it is already past the generic 4 MB cap at 4,215,149 bytes for 116,847 accounts,
+// and it grows by roughly 1.35 MB a year, so 16 MB is years of headroom here too.
 export const MAX_MODS_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024
 // The background manifest is a list of {id, name, file, thumbnail} rows, about 1 KB for the eleven
 // scenes on the branch today. 32 KB is room for hundreds of them and still refuses anything that
@@ -73,7 +77,7 @@ export type UrlRule = Readonly<{
 
 export const API_URL_RULES: readonly UrlRule[] = [
   { hostname: "api.vintagestory.at", pathPrefixes: ["/stable.json", "/unstable.json"] },
-  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES },
+  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods", "/api/authors"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api"] },
   { hostname: "auth3.vintagestory.at", pathPrefixes: ["/v2/gamelogin"] },
   // The release list FETCH_RELEASE_NOTES reads for the "what's new" dialog and the Info & Help

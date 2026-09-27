@@ -128,6 +128,41 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     expect(deleteWorld).not.toHaveBeenCalled()
   })
 
+  it("keeps the world when the offered backup fails", async () => {
+    const user = userEvent.setup()
+    const deleteWorld = vi.fn<BridgeAPI["worldsManager"]["delete"]>(async () => ({ ok: true }))
+    const backupWorld = vi.fn<BridgeAPI["worldsManager"]["backup"]>(async () => ({ ok: false, reason: "operation-failed" }))
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation([])] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        })),
+        backup: backupWorld,
+        delete: deleteWorld
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    await user.click(await screen.findByTitle("Delete"))
+    const nameDialog = await screen.findByRole("dialog")
+    await user.type(within(nameDialog).getByRole("textbox"), "World.vcdbs")
+    await user.click(within(nameDialog).getByRole("button", { name: "Delete" }))
+
+    const offer = await screen.findByText("There is no backup for World.vcdbs. Create one before deleting it?")
+    await user.click(within(offer.closest("div[role=dialog]") as HTMLElement).getByRole("button", { name: "Back up this world" }))
+
+    await waitFor(() => expect(backupWorld).toHaveBeenCalledWith("install-a", "World.vcdbs"))
+    expect(deleteWorld).not.toHaveBeenCalled()
+  })
+
   it("backs the world up before deleting it when the offer is confirmed", async () => {
     const user = userEvent.setup()
     const order: string[] = []
