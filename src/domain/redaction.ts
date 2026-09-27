@@ -12,7 +12,14 @@ const sensitiveValuePattern = /(\b(?:password|pass|sessionkey|sessionsignature|m
 const sensitiveQueryPattern = /([?&](?:password|pass|sessionkey|sessionsignature|mptoken|prelogintoken|token|signature|authorization|cookie|secret)=)[^&#\s]+/gi
 // Keep path components that contain spaces, but only when another separator proves the space is
 // still inside the path; otherwise a sentence after a path would be swallowed as part of it.
-const absolutePathPattern = /(?:[A-Za-z]:[\\/]|\/(?:home|Users|mnt|tmp|var|opt|root)\/)(?:[^\s\]]+|[ \t]+(?=(?:[^\s\],.;:!?]+[ \t]+){0,8}[^\s\],.;:!?]*[\\/]))+/g
+//
+// Anchors, one of: a drive letter (`C:\`, not preceded by another letter, or the `s` of
+// `https:` would read as one), a backslash UNC prefix (`\\`), a forward-slash UNC prefix (`//`,
+// but not the one in `https://`, hence its own lookbehind), or a known Linux root (`/home/`,
+// `/media/`, `/run/media/`, ...). Each anchor is a fixed marker; the actual path text that
+// follows, UNC host and share included, is consumed by the shared continuation below it.
+const absolutePathPattern =
+  /(?:(?<![A-Za-z])[A-Za-z]:[\\/]|\\\\|(?<!:)\/\/|\/(?:home|Users|mnt|tmp|var|opt|root|media|run\/media)\/)(?:[^\s\]]+|[ \t]+(?=(?:[^\s\],.;:!?]+[ \t]+){0,8}[^\s\],.;:!?]*[\\/]))+/g
 
 export function redactSensitiveText(message: string): string {
   return message.slice(0, 16_384).replace(sensitiveValuePattern, "$1[REDACTED]").replace(sensitiveQueryPattern, "$1[REDACTED]").replace(absolutePathPattern, "[PATH]")
