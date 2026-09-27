@@ -147,13 +147,33 @@ function allowsBasicPasswordStore(): boolean {
   return app.commandLine.getSwitchValue("password-store") === "basic"
 }
 
+/**
+ * Electron 44's basic_text backend starts with `isEncryptionAvailable()` false and
+ * `encryptString`/`decryptString` throwing, until this is called: nothing else in Chromium
+ * flips it on its own. Only worth calling when the player opted into the basic store on Linux,
+ * the same condition `main/index.ts` reads before appending `--password-store=basic`; calling it
+ * unconditionally would make every keyring-less Linux launch fall back to the compiled-in key
+ * this store exists to refuse. Idempotent and run at most once per process: Electron's own docs
+ * do not say a second call is safe, and one flip for the life of the process is all this needs.
+ */
+let hasEnabledBasicStorePlainTextEncryption = false
+function ensureBasicStorePlainTextEncryption(): void {
+  if (hasEnabledBasicStorePlainTextEncryption) return
+  hasEnabledBasicStorePlainTextEncryption = true
+  if (process.platform === "linux" && allowsBasicPasswordStore()) safeStorage.setUsePlainTextEncryption(true)
+}
+
 function assertSecureStorage(): void {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure account storage is unavailable")
+  ensureBasicStorePlainTextEncryption()
+
   // `basic_text` still encrypts, with a key compiled into the binary, so anything running as this
   // user can read what it seals. Refused unless the player asked for it: see
-  // src/domain/account/sessionStorage.ts for what they are agreeing to.
+  // src/domain/account/sessionStorage.ts for what they are agreeing to. Checked before the
+  // general availability test below so a keyring-less, not-opted-in Linux session is refused for
+  // this reason specifically, rather than for the availability test simply failing first.
   if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text" && !allowsBasicPasswordStore())
     throw new Error("A system password store is required for account storage")
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure account storage is unavailable")
 }
 
 /** The same rule as {@link assertSecureStorage}, as a question rather than a demand. */

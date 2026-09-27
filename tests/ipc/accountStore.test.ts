@@ -41,6 +41,14 @@ const mockState = vi.hoisted(() => ({
   storageBackend: "gnome_libsecret",
   /** What `--password-store` this process was started with, which is the only thing that can admit the basic backend. */
   passwordStoreSwitch: "",
+  /**
+   * Mirrors real Electron 44: the basic_text backend only ever encrypts once this has been set,
+   * so `isEncryptionAvailable()` below stays false for it until then, no matter what
+   * `encryptionAvailable` says. Never reset by anything but `beforeEach`, matching the real API's
+   * one-off, process-lifetime switch.
+   */
+  plainTextEncryptionEnabled: false,
+  setUsePlainTextEncryptionCalls: 0,
   /** Set by the overlapping-mutation cases to hold a write open; every other case leaves the real writer alone. */
   beforeWrite: undefined as (() => Promise<void>) | undefined
 }))
@@ -56,8 +64,14 @@ vi.mock("electron", () => ({
     commandLine: { getSwitchValue: (name: string): string => (name === "password-store" ? mockState.passwordStoreSwitch : "") }
   },
   safeStorage: {
-    isEncryptionAvailable: (): boolean => mockState.encryptionAvailable,
+    // `basic_text` reports unavailable until `setUsePlainTextEncryption(true)` is called, exactly
+    // like real Electron 44: `encryptionAvailable` alone is not enough to fake this backend on.
+    isEncryptionAvailable: (): boolean => (mockState.storageBackend === "basic_text" ? mockState.plainTextEncryptionEnabled : mockState.encryptionAvailable),
     getSelectedStorageBackend: (): string => mockState.storageBackend,
+    setUsePlainTextEncryption: (usePlainText: boolean): void => {
+      mockState.setUsePlainTextEncryptionCalls += 1
+      mockState.plainTextEncryptionEnabled = usePlainText
+    },
     encryptString: (text: string): Buffer => Buffer.from(`sealed:${text}`, "utf8"),
     decryptString: (buffer: Buffer): string => {
       const text = buffer.toString("utf8")
@@ -122,6 +136,8 @@ beforeEach(() => {
   mockState.encryptionAvailable = true
   mockState.storageBackend = "gnome_libsecret"
   mockState.passwordStoreSwitch = ""
+  mockState.plainTextEncryptionEnabled = false
+  mockState.setUsePlainTextEncryptionCalls = 0
   mockState.beforeWrite = undefined
 })
 
@@ -210,7 +226,7 @@ describe("saveAccountSecrets", () => {
     assert.equal(existsSync(storePath()), false)
   })
 
-  it.skipIf(process.platform !== "linux")("writes nothing when Linux would fall back to an unencrypted backend", async () => {
+  it.skipIf(process.platform !== "linux")("writes nothing when Linux would fall back to an unencrypted backend, and never asks safeStorage for plain text", async () => {
     // `basic_text` is safeStorage's answer for a Linux session with no keyring:
     // it still encrypts, with a hardcoded key, which is not storage a session
     // key belongs in. The rule is Linux-only, and so is the case.
@@ -219,6 +235,9 @@ describe("saveAccountSecrets", () => {
 
     assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved-in-memory")
     assert.equal(existsSync(storePath()), false)
+    // The default path must stay refused rather than quietly start working: this is the one
+    // guard against a keyring-less Linux launch falling back to the key compiled into the binary.
+    assert.equal(mockState.setUsePlainTextEncryptionCalls, 0)
   })
 
   it.skipIf(process.platform !== "linux")("writes to the basic backend once the process was started asking for it", async () => {
@@ -226,11 +245,16 @@ describe("saveAccountSecrets", () => {
     // `--password-store=basic` and the backend safeStorage picked is the one they asked for.
     // Reading the command line rather than the config is deliberate: Chromium chose its store as
     // this process came up, and a config edited since describes the next run, not this one.
+    //
+    // Real Electron 44 leaves `basic_text` unable to encrypt until `setUsePlainTextEncryption(true)`
+    // is called (see accountStore.ts): a mock that made `basic_text` encrypt on its own, the way
+    // this test's mock used to, would pass against a build that never made that call at all.
     mockState.storageBackend = "basic_text"
     mockState.passwordStoreSwitch = "basic"
     const store = await loadStore()
 
     assert.equal(await store.saveAccountSecrets("uid-a", ACCOUNT_A), "saved")
+    assert.equal(mockState.plainTextEncryptionEnabled, true, "the opt-in must turn plain-text encryption on, or basic_text never actually encrypts")
     assert.deepEqual(await (await loadStore()).getAccountSecrets("uid-a"), ACCOUNT_A, "and it is still there in the next run, which is the whole point of the setting")
   })
 
