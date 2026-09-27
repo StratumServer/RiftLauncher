@@ -162,7 +162,7 @@ declare global {
    * status would have every `status === "success"` check drop the account.
    */
   type AccountLoginResult =
-    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean; sessionInMemoryOnly?: boolean }
+    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean; sessionInMemoryOnly?: boolean; sessionKeyringSealed?: boolean }
     | {
         status:
           | "invalid-credentials"

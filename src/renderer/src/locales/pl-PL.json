@@ -541,6 +541,7 @@
       "noKeyring": "Nie znaleziono systemowego pęku kluczy do przechowania sesji. W systemie Linux jest to GNOME Keyring lub KWallet, a poniższy poradnik wyjaśnia, jak go skonfigurować.",
       "noKeyringGuide": "Przeczytaj poradnik o pęku kluczy",
       "sessionNotRemembered": "Jesteś zalogowany, ale nie znaleziono systemowego pęku kluczy do przechowania sesji, więc potrwa ona tylko do zamknięcia RiftLauncher. W systemie Linux pękiem kluczy jest GNOME Keyring lub KWallet, a poniższy poradnik wyjaśnia, jak go skonfigurować.",
+      "sessionKeyringSealed": "Jesteś zalogowany, ale sesje zapisane w systemowym pęku kluczy nie mogą być odczytane, dopóki ta opcja jest włączona, więc ta potrwa tylko do zamknięcia RiftLauncher. Wyłącz tę opcję, aby ponownie korzystać z innych zapisanych kont.",
       "unexpectedResponse": "Usługa kont odpowiedziała w sposób, którego launcher nie mógł odczytać. Hasło nie zostało odrzucone. Spróbuj ponownie po aktualizacji.",
       "sessionStoreUnreadable": "Logowanie się powiodło, ale nie można odczytać ani wykonać kopii zapasowej pliku zapisanych kont. Launcher pozostawił go bez zmian, aby go nie nadpisać. Tym razem nic nie zapisano.",
       "sessionStoreRebuilt": "Nie można odczytać pliku zapisanych kont. Zachowano jego kopię i utworzono nowy plik, dlatego pozostałe konta na tym urządzeniu muszą zalogować się ponownie.",
@@ -589,7 +590,7 @@
         "never": "Nigdy nie licz"
       },
       "allowBasicSessionStore": "Pamiętaj sesję bez systemowego pęku kluczy",
-      "allowBasicSessionStoreDesc": "Utrzymuje zalogowanie na komputerze bez systemowego pęku kluczy. Sesja jest wtedy zapisywana na dysku i zabezpieczona kluczem wbudowanym w launcher, więc odczyta ją każdy program działający na twoim koncie. Zostaw to wyłączone, chyba że na tym komputerze ci to nie przeszkadza. Zadziała przy następnym uruchomieniu RiftLauncher.",
+      "allowBasicSessionStoreDesc": "Utrzymuje zalogowanie na komputerze bez systemowego pęku kluczy. Sesja jest wtedy zapisywana na dysku i zabezpieczona kluczem wbudowanym w launcher, więc odczyta ją każdy program działający na twoim koncie. Sesje wcześniej zapisane przez systemowy pęk kluczy pozostają na dysku, ale nie można ich odczytać, dopóki to jest włączone. Zostaw to wyłączone, chyba że na tym komputerze ci to nie przeszkadza. Zadziała przy następnym uruchomieniu RiftLauncher.",
       "allowBasicSessionStoreRestart": "To ustawienie zadziała przy następnym uruchomieniu RiftLauncher."
     },
     "backups": {

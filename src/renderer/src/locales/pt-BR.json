@@ -541,6 +541,7 @@
       "noKeyring": "Nenhum chaveiro do sistema foi encontrado para guardar a sessão. No Linux ele é o GNOME Keyring ou o KWallet, e o guia abaixo explica como configurar um.",
       "noKeyringGuide": "Ler o guia do chaveiro",
       "sessionNotRemembered": "Você entrou, mas nenhum chaveiro do sistema foi encontrado para guardar a sessão, então ela dura só até você fechar o RiftLauncher. No Linux o chaveiro é o GNOME Keyring ou o KWallet, e o guia abaixo explica como configurar um.",
+      "sessionKeyringSealed": "Você entrou, mas as sessões salvas no chaveiro do sistema não podem ser lidas enquanto esta configuração estiver ativada, então esta dura só até você fechar o RiftLauncher. Desligue a configuração para voltar a usar suas outras contas salvas.",
       "unexpectedResponse": "O serviço de contas respondeu de uma forma que este launcher não conseguiu interpretar. Sua senha não foi rejeitada. Tente novamente após uma atualização.",
       "sessionStoreUnreadable": "O login funcionou, mas o arquivo de contas salvas não pôde ser lido nem receber uma cópia de segurança. O launcher não o alterou para não sobrescrevê-lo. Nada foi salvo desta vez.",
       "sessionStoreRebuilt": "O arquivo de contas salvas não pôde ser lido. Uma cópia foi preservada e o launcher criou um novo arquivo; por isso, as outras contas deste dispositivo precisarão entrar novamente.",
@@ -589,7 +590,7 @@
         "never": "Nunca contar"
       },
       "allowBasicSessionStore": "Lembrar a sessão sem um chaveiro do sistema",
-      "allowBasicSessionStoreDesc": "Mantém você conectado em um computador sem chaveiro do sistema. A sessão é então gravada no disco, selada com uma chave embutida no launcher, de modo que qualquer programa rodando com o seu usuário consegue lê-la. Deixe isto desligado, a não ser que isso não seja um problema neste computador. Passa a valer na próxima vez que o RiftLauncher iniciar.",
+      "allowBasicSessionStoreDesc": "Mantém você conectado em um computador sem chaveiro do sistema. A sessão é então gravada no disco, selada com uma chave embutida no launcher, de modo que qualquer programa rodando com o seu usuário consegue lê-la. Sessões que um chaveiro do sistema salvou antes continuam no disco, mas não podem ser lidas enquanto isso estiver ativado. Deixe isto desligado, a não ser que isso não seja um problema neste computador. Passa a valer na próxima vez que o RiftLauncher iniciar.",
       "allowBasicSessionStoreRestart": "Esta configuração passa a valer na próxima vez que o RiftLauncher iniciar."
     },
     "backups": {

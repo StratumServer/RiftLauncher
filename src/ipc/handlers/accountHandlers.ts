@@ -86,11 +86,22 @@ async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
       // to report that left the player unable to play at all over a missing wallet.
       if (outcome === "saved-in-memory") logMessage("warn", `${LOG_PREFIX} [LOGIN] No system keyring is available, so this session is held in memory for this run and was not written to disk.`)
 
+      // The store holds other sessions a real system keyring sealed, but this process is running
+      // the opted-in basic backend, which cannot reach them: nothing was written, and this login
+      // lives in this process only, the same as the no-keyring case above, so its bytes are never
+      // put at risk (#regression on #542).
+      if (outcome === "saved-in-memory-keyring-sealed")
+        logMessage(
+          "warn",
+          `${LOG_PREFIX} [LOGIN] The account store holds sessions sealed by a system keyring, unreadable while the basic password store is on; this session is held in memory for this run and was not written to disk.`
+        )
+
       return {
         status: "success",
         account: verdict.credentials.publicAccount,
         ...(outcome === "saved-after-rebuild" ? { storeRebuilt: true } : {}),
-        ...(outcome === "saved-in-memory" ? { sessionInMemoryOnly: true } : {})
+        ...(outcome === "saved-in-memory" ? { sessionInMemoryOnly: true } : {}),
+        ...(outcome === "saved-in-memory-keyring-sealed" ? { sessionKeyringSealed: true } : {})
       }
     }
     case "needs-two-factor":

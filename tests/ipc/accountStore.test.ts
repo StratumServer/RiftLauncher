@@ -493,6 +493,88 @@ describe("saveAccountSecrets rebuilding an unreadable store", () => {
 })
 
 /**
+ * Regression on #542: turning on "Remember the session without a system keyring" on a machine
+ * whose store was saved by a real system keyring put the process on the opted-in basic backend,
+ * which cannot open bytes a keyring sealed (Chromium's `v11` prefix; see accountStore.ts). Before
+ * this fix, that undecryptable-but-intact store was indistinguishable from a genuinely corrupt one,
+ * so the next login copied it aside and rebuilt the file around itself, stranding every other saved
+ * account in a backup nothing restores even after the setting is turned back off.
+ *
+ * The fixture below stands in for a real Electron 44 `v11` blob (see
+ * `review-probe` in the beta.11 hand notes: a `v11`-prefixed buffer always fails
+ * `decryptString` once `password-store=basic` is in effect, whether it holds real ciphertext or
+ * not) without pretending to model the OS keyring itself, the same restraint this file's mock
+ * takes with ordinary encryption everywhere else.
+ */
+describe("saveAccountSecrets against a store sealed by a keyring the basic backend cannot reach", () => {
+  /** A `v2` store whose ciphertext carries Chromium's OS-keyring marker, not this mock's own. */
+  function writeKeyringSealedStoreFile(): Buffer {
+    const ciphertext = Buffer.concat([Buffer.from("v11", "latin1"), Buffer.alloc(32, 7)])
+    writeStoreFile({ version: 2, ciphertext: ciphertext.toString("base64") })
+    return readFileSync(storePath())
+  }
+
+  function turnBasicStoreSettingOn(): void {
+    mockState.storageBackend = "basic_text"
+    mockState.passwordStoreSwitch = "basic"
+  }
+
+  function turnBasicStoreSettingOff(): void {
+    mockState.storageBackend = "gnome_libsecret"
+    mockState.passwordStoreSwitch = ""
+  }
+
+  it.skipIf(process.platform !== "linux")("holds the new login in memory instead of rebuilding the store around it", async () => {
+    writeKeyringSealedStoreFile()
+    turnBasicStoreSettingOn()
+    const store = await loadStore()
+
+    const outcome = await store.saveAccountSecrets("uid-new", ACCOUNT_A)
+
+    assert.equal(outcome, "saved-in-memory-keyring-sealed")
+    assert.deepEqual(await store.getAccountSecrets("uid-new"), ACCOUNT_A, "the new login is still usable for this run")
+  })
+
+  it.skipIf(process.platform !== "linux")("leaves the store byte-identical, with no unreadable-store backup", async () => {
+    const original = writeKeyringSealedStoreFile()
+    turnBasicStoreSettingOn()
+    const store = await loadStore()
+
+    await store.saveAccountSecrets("uid-new", ACCOUNT_A)
+
+    assert.deepEqual(readFileSync(storePath()), original, "not corrupt: nothing here should ever have been rewritten")
+    assert.equal(existsSync(unreadableBackupPath()), false, "nothing to preserve a copy of either, the bytes were never at risk")
+  })
+
+  it.skipIf(process.platform !== "linux")("never treats it as a genuine corruption, even across several logins", async () => {
+    const original = writeKeyringSealedStoreFile()
+    turnBasicStoreSettingOn()
+
+    const first = await loadStore()
+    assert.equal(await first.saveAccountSecrets("uid-new", ACCOUNT_A), "saved-in-memory-keyring-sealed")
+
+    const second = await loadStore()
+    assert.equal(await second.saveAccountSecrets("uid-other", ACCOUNT_B), "saved-in-memory-keyring-sealed", "still not a rebuild the second time either")
+
+    assert.deepEqual(readFileSync(storePath()), original)
+    assert.equal(existsSync(unreadableBackupPath()), false)
+  })
+
+  it.skipIf(process.platform !== "linux")("leaves the original store intact once the setting is turned back off", async () => {
+    const original = writeKeyringSealedStoreFile()
+    turnBasicStoreSettingOn()
+    const onStore = await loadStore()
+    await onStore.saveAccountSecrets("uid-new", ACCOUNT_A)
+
+    turnBasicStoreSettingOff()
+    await loadStore() // A fresh process, the same as the next launch with the setting off.
+
+    assert.deepEqual(readFileSync(storePath()), original, "the keyring-sealed bytes were never touched, on or off")
+    assert.equal(existsSync(unreadableBackupPath()), false)
+  })
+})
+
+/**
  * #291: every mutation here is a read-modify-write over the whole file. Two of
  * them overlapping used to snapshot the same map, and whichever `rename()`
  * landed last then wrote a map that had never seen the other one's change,

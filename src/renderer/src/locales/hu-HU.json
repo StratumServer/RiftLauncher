@@ -519,6 +519,7 @@
       "noKeyring": "Nem találtunk rendszerkulcstartót a munkamenet tárolásához. Linuxon ez a GNOME Keyring vagy a KWallet, és az alábbi útmutató elmagyarázza, hogyan állíthatsz be egyet.",
       "noKeyringGuide": "Kulcstartó útmutató megnyitása",
       "sessionNotRemembered": "Be vagy jelentkezve, de nem találtunk rendszerkulcstartót a munkamenet tárolásához, ezért az csak a RiftLauncher bezárásáig tart. Linuxon a kulcstartó a GNOME Keyring vagy a KWallet, és az alábbi útmutató elmagyarázza, hogyan állíthatsz be egyet.",
+      "sessionKeyringSealed": "Be vagy jelentkezve, de a rendszerkulcstartóban mentett munkamenetek nem olvashatók, amíg ez a beállítás be van kapcsolva, ezért ez csak a RiftLauncher bezárásáig tart. Kapcsold ki a beállítást, hogy újra használhasd a többi mentett fiókodat.",
       "unexpectedResponse": "A fiókszolgáltatás olyan választ adott, amelyet a launcher nem tudott értelmezni. A jelszavadat nem utasította el. Frissítés után próbáld újra.",
       "sessionStoreUnreadable": "A bejelentkezés sikerült, de a mentett fiókok fájlja nem olvasható, és biztonsági másolat sem készíthető róla. A launcher nem írta felül. Ezúttal semmi sem lett mentve.",
       "sessionStoreRebuilt": "A mentett fiókok fájlja nem olvasható. Egy példányt megőriztünk, a launcher pedig újat hozott létre, ezért az eszközön lévő többi fiókba újra be kell jelentkezned.",
@@ -567,7 +568,7 @@
         "never": "Soha ne számoljon"
       },
       "allowBasicSessionStore": "Munkamenet megjegyzése rendszerkulcstartó nélkül",
-      "allowBasicSessionStoreDesc": "Bejelentkezve tart olyan gépen, ahol nincs rendszerkulcstartó. A munkamenet ilyenkor a lemezre kerül, a launcherbe épített kulccsal lezárva, így minden program elolvashatja, amely a te nevedben fut. Hagyd kikapcsolva, hacsak ez nem elfogadható ezen a gépen. A RiftLauncher következő indításakor lép életbe.",
+      "allowBasicSessionStoreDesc": "Bejelentkezve tart olyan gépen, ahol nincs rendszerkulcstartó. A munkamenet ilyenkor a lemezre kerül, a launcherbe épített kulccsal lezárva, így minden program elolvashatja, amely a te nevedben fut. Amit korábban egy rendszerkulcstartó mentett, az a lemezen marad, de nem olvasható, amíg ez be van kapcsolva. Hagyd kikapcsolva, hacsak ez nem elfogadható ezen a gépen. A RiftLauncher következő indításakor lép életbe.",
       "allowBasicSessionStoreRestart": "Ez a beállítás a RiftLauncher következő indításakor lép életbe."
     },
     "backups": {
