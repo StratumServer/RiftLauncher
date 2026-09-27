@@ -138,6 +138,23 @@ describe("what leaves the process", () => {
     assert.match(copied, /\[ACCOUNT\]/)
   })
 
+  it("redacts a UNC path and a non-standard Linux mount too (#534)", () => {
+    const text = [
+      String.raw`1.1.2026 0:00:00 [Error] [ancienttools] failed reading \\server\share\LeonF\Downloads\config.json`,
+      "1.1.2026 0:00:01 [Error] failed reading '/run/media/leonf/SANDISK64/vs_install.exe'"
+    ].join("\n")
+
+    const report = buildSessionReport({
+      mainLog: { fileName: "client-main.log", text },
+      installedMods: INSTALLED
+    })
+    const copied = formatReportText(report)
+
+    assert.ok(!copied.includes("LeonF"), "the UNC path's user name reached the copied report")
+    assert.ok(!copied.includes("leonf"), "the mount's user name reached the copied report")
+    assert.match(copied, /\[PATH\]/)
+  })
+
   it("redacts the blamed Mod and its version too, which the crash file spells as free text", () => {
     const report = buildSessionReport({
       crashFile: {
