@@ -519,6 +519,7 @@
       "noKeyring": "Es wurde kein Systemschlüsselbund gefunden, in dem die Sitzung gespeichert werden könnte. Unter Linux ist das GNOME Keyring oder KWallet, und der Leitfaden unten erklärt, wie du einen einrichtest.",
       "noKeyringGuide": "Leitfaden zum Schlüsselbund lesen",
       "sessionNotRemembered": "Du bist angemeldet, aber es wurde kein Systemschlüsselbund gefunden, in dem die Sitzung gespeichert werden könnte. Sie hält deshalb nur, bis du RiftLauncher schließt. Unter Linux ist der Schlüsselbund GNOME Keyring oder KWallet, und der Leitfaden unten erklärt, wie du einen einrichtest.",
+      "sessionKeyringSealed": "Du bist angemeldet, aber Sitzungen, die dein Systemschlüsselbund gespeichert hat, können nicht gelesen werden, solange diese Einstellung aktiv ist. Diese hier hält deshalb nur, bis du RiftLauncher schließt. Schalte die Einstellung aus, um deine anderen gespeicherten Konten wieder zu nutzen.",
       "unexpectedResponse": "Der Kontodienst hat auf eine Weise geantwortet, die der Launcher nicht lesen konnte. Dein Passwort wurde nicht abgelehnt. Versuche es nach einem Update erneut.",
       "sessionStoreUnreadable": "Die Anmeldung war erfolgreich, aber die Datei mit den gespeicherten Konten konnte nicht gelesen oder gesichert werden. Der Launcher hat sie nicht überschrieben. Diesmal wurde nichts gespeichert.",
       "sessionStoreRebuilt": "Die Datei mit den gespeicherten Konten konnte nicht gelesen werden. Eine Kopie wurde behalten und der Launcher hat eine neue Datei erstellt. Andere Konten auf diesem Gerät müssen sich erneut anmelden.",
@@ -567,7 +568,7 @@
         "never": "Nie zählen"
       },
       "allowBasicSessionStore": "Sitzung ohne Systemschlüsselbund merken",
-      "allowBasicSessionStoreDesc": "Hält dich auf einem Computer ohne Systemschlüsselbund angemeldet. Die Sitzung wird dann auf die Festplatte geschrieben, versiegelt mit einem Schlüssel, der im Launcher steckt: jedes Programm, das unter deinem Konto läuft, kann sie lesen. Lass das aus, wenn dir das auf diesem Computer nicht recht ist. Wirkt beim nächsten Start von RiftLauncher.",
+      "allowBasicSessionStoreDesc": "Hält dich auf einem Computer ohne Systemschlüsselbund angemeldet. Die Sitzung wird dann auf die Festplatte geschrieben, versiegelt mit einem Schlüssel, der im Launcher steckt: jedes Programm, das unter deinem Konto läuft, kann sie lesen. Sitzungen, die ein Systemschlüsselbund vorher gespeichert hat, bleiben auf der Festplatte, können aber nicht gelesen werden, solange das aktiv ist. Lass das aus, wenn dir das auf diesem Computer nicht recht ist. Wirkt beim nächsten Start von RiftLauncher.",
       "allowBasicSessionStoreRestart": "Diese Einstellung wirkt beim nächsten Start von RiftLauncher."
     },
     "backups": {

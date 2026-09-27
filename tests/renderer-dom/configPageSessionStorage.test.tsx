@@ -18,7 +18,7 @@ import { createMockConfig, installMockWindowApi, type MockedBridgeAPI } from "./
 import { renderWithProviders } from "./helpers/render"
 
 const TOGGLE_TITLE =
-  "Keeps you logged in on a computer with no system keyring. The session is then written to disk sealed with a key built into the launcher, so any program running as you can read it. Leave this off unless that is fine on this computer. Takes effect the next time RiftLauncher starts."
+  "Keeps you logged in on a computer with no system keyring. The session is then written to disk sealed with a key built into the launcher, so any program running as you can read it. Sessions a system keyring saved earlier stay on disk but cannot be read while this is on. Leave this off unless that is fine on this computer. Takes effect the next time RiftLauncher starts."
 
 function renderConfigPage(allowBasicSessionStore = false): MockedBridgeAPI {
   const api = installMockWindowApi({

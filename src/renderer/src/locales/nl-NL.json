@@ -519,6 +519,7 @@
       "noKeyring": "Er is geen systeemsleutelring gevonden om de sessie in te bewaren. Op Linux is dat GNOME Keyring of KWallet, en in de uitleg hieronder staat hoe je er een instelt.",
       "noKeyringGuide": "Lees de uitleg over de sleutelring",
       "sessionNotRemembered": "Je bent ingelogd, maar er is geen systeemsleutelring gevonden om de sessie in te bewaren, dus die duurt tot je RiftLauncher afsluit. Op Linux is de sleutelring GNOME Keyring of KWallet, en in de uitleg hieronder staat hoe je er een instelt.",
+      "sessionKeyringSealed": "Je bent ingelogd, maar sessies die in je systeemsleutelring zijn opgeslagen kunnen niet worden gelezen zolang deze instelling aanstaat, dus deze duurt alleen tot je RiftLauncher afsluit. Zet de instelling uit om je andere opgeslagen accounts weer te gebruiken.",
       "unexpectedResponse": "De accountservice gaf een antwoord dat de launcher niet kon lezen. Je wachtwoord is niet afgewezen. Probeer het opnieuw na een update.",
       "sessionStoreUnreadable": "Het inloggen is gelukt, maar het bestand met opgeslagen accounts kon niet worden gelezen of geback-upt. De launcher heeft het daarom niet overschreven. Er is deze keer niets opgeslagen.",
       "sessionStoreRebuilt": "Het bestand met opgeslagen accounts kon niet worden gelezen. Er is een kopie bewaard en de launcher heeft een nieuw bestand gemaakt. Andere accounts op dit apparaat moeten opnieuw inloggen.",
@@ -567,7 +568,7 @@
         "never": "Nooit meetellen"
       },
       "allowBasicSessionStore": "Sessie onthouden zonder systeemsleutelring",
-      "allowBasicSessionStoreDesc": "Houdt je ingelogd op een computer zonder systeemsleutelring. De sessie wordt dan op schijf geschreven, verzegeld met een sleutel die in de launcher zelf zit, zodat elk programma dat onder jouw account draait die kan lezen. Laat dit uit tenzij dat op deze computer geen bezwaar is. Werkt vanaf de volgende keer dat RiftLauncher start.",
+      "allowBasicSessionStoreDesc": "Houdt je ingelogd op een computer zonder systeemsleutelring. De sessie wordt dan op schijf geschreven, verzegeld met een sleutel die in de launcher zelf zit, zodat elk programma dat onder jouw account draait die kan lezen. Sessies die eerder door een systeemsleutelring zijn opgeslagen, blijven op schijf staan maar kunnen niet worden gelezen zolang dit aanstaat. Laat dit uit tenzij dat op deze computer geen bezwaar is. Werkt vanaf de volgende keer dat RiftLauncher start.",
       "allowBasicSessionStoreRestart": "Deze instelling werkt vanaf de volgende keer dat RiftLauncher start."
     },
     "backups": {

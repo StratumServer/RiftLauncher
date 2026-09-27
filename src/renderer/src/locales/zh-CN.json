@@ -497,6 +497,7 @@
       "noKeyring": "没有找到用来保存会话的系统密钥环。在 Linux 上它是 GNOME Keyring 或 KWallet，下面的指南说明了如何设置。",
       "noKeyringGuide": "阅读密钥环指南",
       "sessionNotRemembered": "您已登录，但没有找到用来保存会话的系统密钥环，因此会话只维持到 RiftLauncher 关闭为止。在 Linux 上密钥环是 GNOME Keyring 或 KWallet，下面的指南说明了如何设置。",
+      "sessionKeyringSealed": "您已登录，但在此设置开启期间无法读取系统密钥环中保存的会话，因此这次登录只会维持到您关闭 RiftLauncher 为止。请关闭该设置以重新使用您保存的其他账户。",
       "unexpectedResponse": "账户服务返回了启动器无法读取的响应。您的密码未被拒绝。请在更新后重试。",
       "sessionStoreUnreadable": "登录成功，但无法读取或备份已保存账户文件。启动器未覆盖该文件，以免造成数据丢失。这次没有保存任何内容。",
       "sessionStoreRebuilt": "无法读取已保存账户文件。启动器保留了一份副本并创建了新文件，因此此设备上的其他账户需要重新登录。",
@@ -545,7 +546,7 @@
         "never": "从不计入"
       },
       "allowBasicSessionStore": "没有系统密钥环时也记住会话",
-      "allowBasicSessionStoreDesc": "在没有系统密钥环的电脑上让您保持登录。此时会话会写到磁盘上，用启动器内置的密钥加密，因此以您的身份运行的任何程序都能读到它。除非您觉得这在这台电脑上没问题，否则请保持关闭。在 RiftLauncher 下次启动时生效。",
+      "allowBasicSessionStoreDesc": "在没有系统密钥环的电脑上让您保持登录。此时会话会写到磁盘上，用启动器内置的密钥加密，因此以您的身份运行的任何程序都能读到它。系统密钥环之前保存的会话仍留在磁盘上，但在此设置开启期间无法读取。除非您觉得这在这台电脑上没问题，否则请保持关闭。在 RiftLauncher 下次启动时生效。",
       "allowBasicSessionStoreRestart": "该设置会在 RiftLauncher 下次启动时生效。"
     },
     "backups": {
