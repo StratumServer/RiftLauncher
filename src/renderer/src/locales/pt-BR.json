@@ -668,14 +668,6 @@
         "operation-failed": "A operação do mundo falhou. Nada mais foi alterado."
       }
     },
-    "infoAndHelp": {
-      "debugInfoTitle": "Informações de depuração",
-      "logsFolderTitle": "Pasta de Logs",
-      "title": "Info e Ajuda do RiftLauncher",
-      "thisFolder": "esta pasta",
-      "includeLogs": "Envie-nos os arquivos de log que estão na pasta <folderlink /> para nos ajudar ainda mais!",
-      "debugInfoDesc": "Copie as informações a seguir e envie-as juntamente com as informações de erro para nos ajudar a encontrar o problema!"
-    },
     "servers": {
       "manageServers": "Gerenciar Servidores",
       "manageServersDesc": "Os servidores que você adiciona aqui são acessados direto pelo launcher.",
@@ -901,7 +893,6 @@
     "home": "Início",
     "config": "Configuração",
     "infoAndHelp": "Info & Ajuda",
-    "installations": "Instalações",
     "addInstallation": "Adicionar instalação",
     "editInstallation": "Editar Instalação",
     "manageMods": "Gerenciar Mods",
