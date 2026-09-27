@@ -4,7 +4,7 @@ import { basename, join } from "node:path"
 import { createInstance } from "i18next"
 import { describe, it } from "vitest"
 
-import { collectPluralFamilies, flattenTranslationObject, listLocaleFiles, LOCALES_DIR, requiredPluralCategories } from "./helpers"
+import { collectPluralFamilies, flattenTranslationObject, INTEGER_PLURAL_PROBES, listLocaleFiles, LOCALES_DIR, requiredPluralCategories } from "./helpers"
 
 /**
  * The runtime half of the plural contract (issue #496).
@@ -33,13 +33,16 @@ function instanceFor(locale: string): ReturnType<typeof createInstance> {
   return i18n
 }
 
-// Counts wide enough to hit every cardinal category CLDR defines for the
-// languages shipped: 2 and 5 separate few from many in the Slavic locales,
-// 1000000 is the only thing that selects `many` in French, Spanish, Italian and
-// Portuguese, and 1.5 is the only thing that selects `other` in Russian,
-// Ukrainian, Belarusian and Polish, where every whole number is already spoken
-// for by one of the other three.
-const PROBE_COUNTS = [0, 1, 1.5, 2, 3, 4, 5, 11, 21, 100, 1_000_000]
+// The same whole numbers requiredPluralCategories probes with, reused here so
+// the two cannot drift apart: every count is deliberately an integer, because
+// every t() call site that passes `count` passes an array .length or another
+// integer counter (grep across src/renderer confirms it). A fractional count
+// such as 1.5 -- the only thing that used to select `other` in Russian,
+// Ukrainian, Belarusian and Polish -- never reaches i18next here, and Hosted
+// Weblate's writer agrees: it keeps only the integer CLDR categories a
+// language selects between, `other` not among them for those four (issue
+// #506's follow-up).
+const PROBE_COUNTS = INTEGER_PLURAL_PROBES
 
 /** One count per category the locale selects, e.g. ru-RU -> { one: 1, few: 2, many: 5, other: 0 }. */
 function countPerCategory(locale: string): Map<string, number> {
