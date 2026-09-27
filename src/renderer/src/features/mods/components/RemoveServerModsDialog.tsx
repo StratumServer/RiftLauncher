@@ -20,11 +20,17 @@ function RemoveServerModsDialog({ group, close, onConfirm }: Readonly<{ group: S
       isOpen={group !== null}
       close={close}
       /* A folder the launcher could not open has no count to state, and "0 Mods" would be a
-         claim about a folder nothing was ever read from. */
+         claim about a folder nothing was ever read from. A folder it could open but found nothing
+         readable in (every archive inside failed to parse) does have a real count of zero: the
+         plural family itself only carries the categories the language's grammar needs, and asking
+         it for zero would hand back "the only Mod" in French or Brazilian Portuguese, so the zero
+         case keeps its own plain key instead of a plural form. */
       question={
         group?.unlistable
           ? t("features.mods.serverModsRemoveUnlistable", { server: group.server, interpolation: { escapeValue: false } })
-          : t("features.mods.serverModsRemoveConfirm", { count: group?.mods.length ?? 0, server: group?.server ?? "", interpolation: { escapeValue: false } })
+          : group && group.mods.length === 0
+            ? t("features.mods.serverModsRemoveConfirmNone", { count: 0, server: group.server, interpolation: { escapeValue: false } })
+            : t("features.mods.serverModsRemoveConfirm", { count: group?.mods.length ?? 0, server: group?.server ?? "", interpolation: { escapeValue: false } })
       }
       consequence={t("features.mods.serverModsRemoveReassurance")}
       /* generic.delete, not a label of this feature's own: a dialog button rendering its title as

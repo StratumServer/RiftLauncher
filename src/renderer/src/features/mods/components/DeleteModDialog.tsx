@@ -36,7 +36,11 @@ function DeleteModDialog({
   onClosed
 }: Readonly<{ isOpen: boolean; close: () => void; onConfirm: () => Promise<void>; names?: readonly string[]; onClosed?: () => void }>): JSX.Element {
   const { t } = useTranslation()
-  const sortedNames = names && [...names].sort((a, b) => a.localeCompare(b))
+  // An empty selection reads as "no names" too: a batch that clears back to zero while this dialog
+  // is still open (see ManageModsSelectionBar) would otherwise pass a plural family a count of zero,
+  // and French and Brazilian Portuguese resolve that to a hardcoded "this Mod" that names one that
+  // is not there.
+  const sortedNames = names && names.length > 0 ? [...names].sort((a, b) => a.localeCompare(b)) : undefined
 
   return (
     <ConfirmDialog

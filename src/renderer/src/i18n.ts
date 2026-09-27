@@ -27,7 +27,8 @@ const languageDefinitions: Record<string, LanguageDefinition> = {
   "pl-PL": { name: "Polski", credits: "by Runo Hawk, Zsuatem", loader: () => import("@renderer/locales/pl-PL.json") },
   "it-IT": { name: "Italiano", credits: "by Pingoda", loader: () => import("@renderer/locales/it-IT.json") },
   "hu-HU": { name: "Magyar", credits: "by dobisan", loader: () => import("@renderer/locales/hu-HU.json") },
-  "uk-UA": { name: "Українська", credits: "by rXelelo", loader: () => import("@renderer/locales/uk-UA.json") }
+  "uk-UA": { name: "Українська", credits: "by rXelelo", loader: () => import("@renderer/locales/uk-UA.json") },
+  "be-BY": { name: "Беларуская", credits: "by Yahor Haurylenka", loader: () => import("@renderer/locales/be-BY.json") }
 }
 
 const resources: Record<string, LanguageResource> = Object.fromEntries(

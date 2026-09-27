@@ -8,7 +8,50 @@
 # Usage: scripts/headless/stop.sh <pid>
 set -euo pipefail
 
-pid="${1:?usage: stop.sh <pid>}"
+usage() {
+  echo "usage: stop.sh <pid>" >&2
+  exit 1
+}
+
+[ $# -eq 1 ] || usage
+
+pid="$1"
+
+# Digits only, no leading zero, greater than 1, before anything is signalled.
+# kill(2) treats a pid of 0 (or a negative pid) as "every process in a group",
+# which is how "stop.sh 0" has taken down a caller's whole session before;
+# pid 1 is init, never a headless launcher. This also refuses "00", "1e3",
+# " 12", "-1" and empty input, none of which are a bare positive pid.
+[[ "$pid" =~ ^[1-9][0-9]{0,9}$ ]] || usage
+[ "$pid" -gt 1 ] || usage
+
+# Confirm the pid is still the launcher before signalling it. launch.sh backs
+# `timeout 600 dist/linux-unpacked/riftlauncher ...` and prints that timeout's
+# pid; the kernel can recycle it for an unrelated process between then and a
+# late stop.sh call, and a raw pid argument alone cannot tell the difference.
+#
+# This checks fixed argv positions (argv[0]=timeout, argv[2]=the absolute
+# binary path launch.sh built), not a substring search: a substring match
+# passes anything whose command line mentions the path anywhere at all, which
+# includes another checkout's headless launcher, an Electron helper process,
+# and even an agent shell whose own command text names this path.
+binary="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/dist/linux-unpacked/riftlauncher"
+if [ -d /proc ]; then
+  cmdline="/proc/$pid/cmdline"
+  if [ ! -r "$cmdline" ]; then
+    echo "error: no such process: $pid" >&2
+    exit 1
+  fi
+  mapfile -d '' -t argv <"$cmdline"
+  if [ "${argv[0]-}" != "timeout" ] || [ "${argv[2]-}" != "$binary" ]; then
+    echo "error: pid $pid is not a headless riftlauncher launch" >&2
+    exit 1
+  fi
+else
+  # No /proc on this platform (e.g. macOS): nothing to read the command line
+  # from, so the pid is trusted once it has passed the argument check above.
+  :
+fi
 
 if ! kill "$pid" 2>/dev/null; then
   echo "error: no such process: $pid" >&2
