@@ -532,6 +532,45 @@ describe("worlds IPC handlers", () => {
     }
   })
 
+  it("refuses backup, restore, delete, and copy or move transfers when a world has SQLite sidecars", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    const targetPath = join(installationsRoot, "install-b")
+    const savesPath = join(sourcePath, "Saves")
+    const targetSavesPath = join(targetPath, "Saves")
+    const archivePath = join(backupsFolder, "Worlds", "backup-sidecars.tar.gz")
+    const walName = "World.vcdbs-wal"
+    const shmName = "World.vcdbs-shm"
+    const sidecarNames = [walName, shmName]
+    mkdirSync(savesPath, { recursive: true })
+    mkdirSync(targetSavesPath, { recursive: true })
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
+    writeFileSync(join(savesPath, "World.vcdbs"), "world", "utf8")
+    writeFileSync(join(savesPath, walName), "wal", "utf8")
+    writeFileSync(join(savesPath, shmName), "shm", "utf8")
+    writeFileSync(archivePath, "archive", "utf8")
+    writeConfig([installation("install-a", sourcePath, "1.22.7", [{ id: "backup-sidecars", date: 1, path: archivePath, worldName: "World.vcdbs" }]), installation("install-b", targetPath)])
+    await (await import("@src/config/configManager")).getConfig()
+    const beforeFiles = ["World.vcdbs", ...sidecarNames].map((name) => [name, readFileSync(join(savesPath, name), "utf8")])
+    const beforeConfig = readFileSync(join(userDataPath, "config.json"), "utf8")
+    const event = await createTrustedEvent()
+
+    const results = [
+      await handler("worlds-backup")(event, "install-a", "World.vcdbs"),
+      await handler("worlds-delete")(event, "install-a", "World.vcdbs"),
+      await handler("worlds-restore")(event, "install-a", "backup-sidecars"),
+      await handler("worlds-transfer")(event, "install-a", "World.vcdbs", "install-b", "copy"),
+      await handler("worlds-transfer")(event, "install-a", "World.vcdbs", "install-b", "move")
+    ]
+
+    expect(results).toEqual(Array.from({ length: 5 }, () => ({ ok: false, reason: "world-has-sidecars" })))
+    expect(runCompression).not.toHaveBeenCalled()
+    expect(extractTarGz).not.toHaveBeenCalled()
+    expect(readFileSync(join(userDataPath, "config.json"), "utf8")).toBe(beforeConfig)
+    expect(["World.vcdbs", ...sidecarNames].map((name) => [name, readFileSync(join(savesPath, name), "utf8")])).toEqual(beforeFiles)
+    expect(existsSync(archivePath)).toBe(true)
+    await expect((await import("node:fs/promises")).readdir(targetSavesPath)).resolves.toEqual([])
+  })
+
   it("routes same-installation transfer refusal through the domain rule", async () => {
     const installationPath = join(installationsRoot, "install-a")
     mkdirSync(join(installationPath, "Saves"), { recursive: true })
