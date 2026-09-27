@@ -572,6 +572,24 @@ describe("saveAccountSecrets against a store sealed by a keyring the basic backe
     assert.deepEqual(readFileSync(storePath()), original, "the keyring-sealed bytes were never touched, on or off")
     assert.equal(existsSync(unreadableBackupPath()), false)
   })
+
+  it.skipIf(process.platform !== "linux")("still rebuilds a genuinely undecryptable store under the opted-in basic backend", async () => {
+    const original = JSON.stringify({ version: 2, ciphertext: Buffer.concat([Buffer.from("v10", "latin1"), Buffer.alloc(32, 7)]).toString("base64") })
+    writeStoreFile(original)
+    turnBasicStoreSettingOn()
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-new", ACCOUNT_A), "saved-after-rebuild")
+    assert.equal(readFileSync(unreadableBackupPath(), "utf8"), original)
+  })
+
+  it("still rebuilds a keyring-prefixed store that fails to decrypt on a keyring-backed run", async () => {
+    const original = writeKeyringSealedStoreFile()
+    const store = await loadStore()
+
+    assert.equal(await store.saveAccountSecrets("uid-new", ACCOUNT_A), "saved-after-rebuild")
+    assert.deepEqual(readFileSync(unreadableBackupPath()), original)
+  })
 })
 
 /**
