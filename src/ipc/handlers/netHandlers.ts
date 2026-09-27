@@ -5,7 +5,7 @@ import { readCatalogCache, writeCatalogCache } from "@src/ipc/catalogCache"
 import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { BoundedResponseError, requestBoundedBuffer, requestBoundedText } from "@src/ipc/network"
-import { assertAllowedApiUrl, assertAllowedDownloadUrl, getApiUrlMaxBytes, isRecord, MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"
+import { assertAllowedApiUrl, assertAllowedDownloadUrl, getApiUrlMaxBytes, getApiUrlTimeoutMs, isRecord, MAX_MODDB_LISTING_RESPONSE_BYTES } from "@src/ipc/validation"
 import { parseModDetailResponse, releaseFileIdForVersion } from "@domain/mods/moddb"
 import {
   answerModDbVisibility,
@@ -64,18 +64,20 @@ app.on("before-quit", () => {
 })
 
 /**
- * Validates and fetches a bounded API response, applying the per-rule ceiling (see
- * API_URL_RULES) and taking a slot in {@link queryConcurrency} for the request itself. The mods-catalog endpoint additionally serves its last good disk-cached
+ * Validates and fetches a bounded API response, applying the per-rule byte ceiling and overall
+ * wall-clock ceiling (see API_URL_RULES) and taking a slot in {@link queryConcurrency} for the
+ * request itself. The mods-catalog endpoint additionally serves its last good disk-cached
  * response, with a logged warning, when the fresh fetch fails for any reason (network
  * down, ceiling tripped, non-2xx status). Every other endpoint fails as before.
  */
 export async function queryUrl(url: unknown): Promise<string> {
   const safeUrl = assertAllowedApiUrl(url)
   const maxBytes = getApiUrlMaxBytes(safeUrl)
+  const timeoutMs = getApiUrlTimeoutMs(safeUrl)
   const isCatalog = isModCatalogUrl(safeUrl)
 
   try {
-    const text = await queryConcurrency.run(() => requestBoundedText(safeUrl, { maxBytes }))
+    const text = await queryConcurrency.run(() => requestBoundedText(safeUrl, { maxBytes, timeoutMs }))
     if (isCatalog) {
       await writeCatalogCache(safeUrl, text).catch((cacheErr: unknown) => {
         logMessage("debug", `${LOG_PREFIX} [QUERY_URL] Failed to write mod catalog cache: ${getErrorMessage(cacheErr)}`)
