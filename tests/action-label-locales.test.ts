@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
-import { readFileSync, readdirSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { describe, it } from "vitest"
+import { listLocaleFiles, listSourceFiles } from "./i18n/helpers"
 
 /**
  * An action button that is handed `icon` renders its `title` as visible text rather than as a
@@ -21,17 +22,9 @@ const LOCALES = join(RENDERER, "locales")
 const ACTION = /<(?:FormButton|FormLinkButton|NormalButton|LinkButton)\b((?:[^<>]|\{[^{}]*\})*?)\/>/gs
 const TRANSLATION_KEY = /"([a-zA-Z]+(?:\.[a-zA-Z]+)+)"/g
 
-function tsxFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name)
-    if (entry.isDirectory()) return tsxFiles(path)
-    return entry.name.endsWith(".tsx") ? [path] : []
-  })
-}
-
 function visibleActionLabelKeys(): string[] {
   const keys = new Set<string>()
-  for (const file of tsxFiles(RENDERER)) {
+  for (const file of listSourceFiles(RENDERER, [".tsx"])) {
     const source = readFileSync(file, "utf8")
     for (const action of source.matchAll(ACTION)) {
       const attrs = action[1] as string
@@ -51,9 +44,7 @@ describe("labels a player actually reads on an action button", () => {
     const keys = visibleActionLabelKeys()
     assert.ok(keys.length > 0, "found no action buttons rendering a label, this test has lost its subject")
 
-    const files = readdirSync(LOCALES)
-      .filter((file) => file.endsWith(".json"))
-      .sort()
+    const files = listLocaleFiles()
     assert.ok(files.length > 1, "expected the launcher's locale files under " + LOCALES)
 
     for (const file of files) {

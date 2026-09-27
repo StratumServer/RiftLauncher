@@ -15,8 +15,10 @@ import type { WorkerDisposition } from "@src/ipc/workerManager"
 import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, comparablePath, isRecord, MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
 import { assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
+import { changePermissions } from "@src/ipc/permissions"
 import { getConfig } from "@src/config/configManager"
 import { assertVerifiedArtifact, getTrustedDownloadHash, recordVerifiedArtifact } from "@src/ipc/artifactVerification"
+import { getCachedOptimumManifest, getTrustedOverlayHash } from "@src/ipc/optimumManifest"
 import { attemptInstallerTreeKill, extractionOutcomeToResult, installerMissingResult, notWindowsResult, spawnInstallerOutcomeToResult } from "@src/ipc/handlers/installerTimeoutOutcome"
 import { isPngBytes, PNG_SIGNATURE_BYTES } from "@domain/backgrounds"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
@@ -24,14 +26,14 @@ import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 import compressWorker from "@src/ipc/workers/compressWorker?modulePath"
 import extractWorker from "@src/ipc/workers/extractWorker?modulePath"
 import innoExtractWorker from "@src/ipc/workers/innoExtractWorker?modulePath"
-import changePermsWorker from "@src/ipc/workers/changePermsWorker?modulePath"
 import downloadWorkerPath from "@src/ipc/workers/downloadWorker?modulePath"
+
+const LOG_PREFIX = "[back] [ipc] [ipc/handlers/pathsHandlers.ts]"
 
 const WORKER_TIMEOUTS_MS: Record<string, number> = {
   DOWNLOAD_ON_PATH: 45 * 60 * 1_000,
   EXTRACT_ON_PATH: 30 * 60 * 1_000,
   COMPRESS_ON_PATH: 30 * 60 * 1_000,
-  CHANGE_PERMS: 10 * 60 * 1_000,
   // Reading the payload out of the Windows installer. Measured at 41 seconds
   // for the 598 MB installer of 1.22.6 on a developer machine, so this leaves
   // room for a slow disk without leaving a stuck worker running for an hour.
@@ -67,6 +69,15 @@ const EXTRACT_INSTALLER_PAYLOAD = true
  * had no bound of its own.
  */
 const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
+
+/**
+ * Same standing as RUN_INSTALLER_TIMEOUT_MS: CHANGE_PERMS walks the tree on this thread
+ * rather than in a worker, so it is not the pool's timeout that bounds it. The value is the
+ * one the table used to carry. The entry cap in changePermissions bounds how many entries
+ * the walk may touch; this bounds how long it may take to touch them, which is the case a
+ * filesystem that stops answering produces.
+ */
+const CHANGE_PERMS_TIMEOUT_MS = 10 * 60 * 1_000
 
 /**
  * Nothing capped how many DOWNLOAD_ON_PATH/EXTRACT_ON_PATH/COMPRESS_ON_PATH calls the
@@ -113,19 +124,18 @@ app.on("before-quit", () => {
  * compression share a two-slot archive lane but use different worker scripts, so one idle
  * worker per archive operation keeps the combined idle count within that shared limit.
  *
- * CHANGE_PERMS and RUN_INSTALLER are 0 on purpose. Both run once per install with no burst
- * behind them, so pooling either would buy one saved worker spawn per game install and pay
- * for it with a resident idle isolate. They still go through the pooled protocol below so
- * there is only one worker protocol in the app; 0 just means every release terminates,
- * exactly like before this file started pooling anything. RUN_INSTALLER joining the archive
- * lane leaves those sums alone for the same reason: at 0 it never contributes an idle worker
- * to weigh against the two-slot limit.
+ * RUN_INSTALLER is 0 on purpose. It runs once per install with no burst behind it, so
+ * pooling it would buy one saved worker spawn per game install and pay for it with a
+ * resident idle isolate. It still goes through the pooled protocol below so there is only
+ * one worker protocol in the app; 0 just means every release terminates, exactly like
+ * before this file started pooling anything. RUN_INSTALLER joining the archive lane leaves
+ * those sums alone for the same reason: at 0 it never contributes an idle worker to weigh
+ * against the two-slot limit.
  */
 const WORKER_POOL_MAX_IDLE: Record<string, number> = {
   DOWNLOAD_ON_PATH: DOWNLOAD_CONCURRENCY_LIMIT,
   EXTRACT_ON_PATH: 1,
   COMPRESS_ON_PATH: 1,
-  CHANGE_PERMS: 0,
   RUN_INSTALLER: 0
 }
 
@@ -140,6 +150,7 @@ type WorkerMessage = {
   reason?: unknown
   filesWritten?: unknown
   bytesWritten?: unknown
+  cleanupWarning?: unknown
 }
 
 function sendProgress(event: IpcMainInvokeEvent, channel: string | undefined, id: string, progress: number): void {
@@ -152,10 +163,10 @@ function runTrackedWorker<T>(
   progressChannel: string | undefined,
   workerPath: string,
   workerData: object,
-  operationName: string,
+  operation: string,
   onFinished: (message: WorkerMessage) => T
 ): Promise<T> {
-  const lease = acquireWorker(workerPath, WORKER_POOL_MAX_IDLE[operationName] ?? 0)
+  const lease = acquireWorker(workerPath, WORKER_POOL_MAX_IDLE[operation] ?? 0)
   const worker = lease.worker
 
   return new Promise((resolvePromise, rejectPromise) => {
@@ -166,9 +177,9 @@ function runTrackedWorker<T>(
         // Never reused: the abandoned task is still running inside this thread (still
         // holding a socket or an open archive), so its eventual message could still arrive
         // after some later task has been dispatched to the same worker.
-        rejectOnce(new Error(`${operationName} timed out`), "discard")
+        rejectOnce(new Error(`${operation} timed out`), "discard")
       },
-      WORKER_TIMEOUTS_MS[operationName] ?? 30 * 60 * 1_000
+      WORKER_TIMEOUTS_MS[operation] ?? 30 * 60 * 1_000
     )
 
     // Named removals, never removeAllListeners(): the pool keeps its own "error" and
@@ -194,12 +205,12 @@ function runTrackedWorker<T>(
       if (settled) return
       settled = true
       cleanup(disposition)
-      rejectPromise(error instanceof Error ? error : new Error(`${operationName} failed`))
+      rejectPromise(error instanceof Error ? error : new Error(`${operation} failed`))
     }
 
     const onMessage = (message: unknown): void => {
       if (!isRecord(message) || typeof message.type !== "string") {
-        rejectOnce(new Error(`${operationName} returned an invalid worker message`))
+        rejectOnce(new Error(`${operation} returned an invalid worker message`))
         return
       }
 
@@ -214,7 +225,7 @@ function runTrackedWorker<T>(
 
       if (workerMessage.type === "progress") {
         if (typeof workerMessage.progress !== "number" || !Number.isFinite(workerMessage.progress) || workerMessage.progress < 0 || workerMessage.progress > 100) {
-          rejectOnce(new Error(`${operationName} returned invalid progress`))
+          rejectOnce(new Error(`${operation} returned invalid progress`))
           return
         }
 
@@ -239,21 +250,21 @@ function runTrackedWorker<T>(
         // module under src/ipc/workers/ releases its temp dir, file handle, or partial
         // download in a finally block or its own fail() path, so the worker is fit to
         // reuse unless it says otherwise with retire.
-        rejectOnce(new Error(typeof workerMessage.message === "string" ? workerMessage.message : `${operationName} failed`), workerMessage.retire === true ? "discard" : "reuse")
+        rejectOnce(new Error(typeof workerMessage.message === "string" ? workerMessage.message : `${operation} failed`), workerMessage.retire === true ? "discard" : "reuse")
         return
       }
 
-      rejectOnce(new Error(`${operationName} returned an unknown worker message`))
+      rejectOnce(new Error(`${operation} returned an unknown worker message`))
     }
 
     const onError = (error: Error): void => {
-      logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operationName}] Worker error.`)
-      logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [${operationName}] ${getErrorMessage(error)}`)
+      logMessage("error", `${LOG_PREFIX} [${operation}] Worker error.`)
+      logMessage("debug", `${LOG_PREFIX} [${operation}] ${getErrorMessage(error)}`)
       rejectOnce(error)
     }
 
     const onExit = (code: number): void => {
-      if (!settled) rejectOnce(new Error(`${operationName} worker exited with code ${code}`))
+      if (!settled) rejectOnce(new Error(`${operation} worker exited with code ${code}`))
     }
 
     worker.on("message", onMessage)
@@ -276,12 +287,12 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH, async (event, pathValue: 
 
   try {
     const safePath = await assertManagedDeletionPath(pathValue)
-    logMessage("info", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DELETE_PATH] Deleting an approved path.")
+    logMessage("info", `${LOG_PREFIX} [DELETE_PATH] Deleting an approved path.`)
     await fse.remove(safePath)
     return true
   } catch (err) {
-    logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DELETE_PATH] Error deleting path.")
-    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DELETE_PATH] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [DELETE_PATH] Error deleting path.`)
+    logMessage("debug", `${LOG_PREFIX} [DELETE_PATH] ${getErrorMessage(err)}`)
     return false
   }
 })
@@ -297,12 +308,12 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.MOVE_PATH, async (event, fromPath: str
     if (safeFromPath === safeToPath) throw new TypeError("Source and destination paths must differ")
     if (await fse.pathExists(safeToPath)) throw new TypeError("Destination path already exists")
 
-    logMessage("info", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] Moving an approved path.")
+    logMessage("info", `${LOG_PREFIX} [MOVE_PATH] Moving an approved path.`)
     await fse.move(safeFromPath, safeToPath)
     return true
   } catch (err) {
-    logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] Error moving path.")
-    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [MOVE_PATH] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [MOVE_PATH] Error moving path.`)
+    logMessage("debug", `${LOG_PREFIX} [MOVE_PATH] ${getErrorMessage(err)}`)
     return false
   }
 })
@@ -363,8 +374,8 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
     await fse.ensureDir(await assertManagedPath(pathValue, "path", { allowMissing: true }))
     return true
   } catch (err) {
-    logMessage("error", "[back] [ipc] [ipc/handlers/pathsHandlers.ts] [ENSURE_PATH_EXISTS] Error ensuring path.")
-    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [ENSURE_PATH_EXISTS] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] Error ensuring path.`)
+    logMessage("debug", `${LOG_PREFIX} [ENSURE_PATH_EXISTS] ${getErrorMessage(err)}`)
     return false
   }
 })
@@ -382,8 +393,14 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
   const safeOutputPath = await assertManagedPath(outputPath, "output path", { allowMissing: true })
   const safeFileName = assertSafeFileName(fileName)
   const expectedMd5 = await getTrustedDownloadHash(safeUrl)
+  // Throws, rather than answering undefined, for an Optimum release asset the
+  // session manifest does not vouch for: the only thing downstream of that
+  // download is a child process, so an unhashed one must never reach the disk.
+  const expectedSha256 = await getTrustedOverlayHash(safeUrl)
+  const optimumManifest = expectedSha256 ? await getCachedOptimumManifest() : undefined
+  const maxBytes = optimumManifest?.archive.size
 
-  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [DOWNLOAD_ON_PATH] [${safeId}] Starting a bounded download.`)
+  logMessage("info", `${LOG_PREFIX} [DOWNLOAD_ON_PATH] [${safeId}] Starting a bounded download.`)
   const downloadedPath = await downloadConcurrency.run(() => {
     sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS, safeId, 0)
     return runTrackedWorker(
@@ -391,7 +408,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: st
       safeId,
       IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_PROGRESS,
       downloadWorkerPath,
-      { id: safeId, url: safeUrl.toString(), outputPath: safeOutputPath, fileName: safeFileName, expectedMd5 },
+      { id: safeId, url: safeUrl.toString(), outputPath: safeOutputPath, fileName: safeFileName, expectedMd5, expectedSha256, maxBytes },
       "DOWNLOAD_ON_PATH",
       (message) => {
         if (typeof message.path !== "string") throw new Error("Download returned an invalid path")
@@ -450,7 +467,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.EXTRACT_ON_PATH, async (event, id: str
 
   const isBackupArchive = await isLauncherBackupArchive(safeFilePath)
 
-  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
+  logMessage("info", `${LOG_PREFIX} [EXTRACT_ON_PATH] [${safeId}] Starting a bounded extraction.`)
   await archiveConcurrency.run(() => {
     sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.EXTRACT_PROGRESS, safeId, 0)
     return runTrackedWorker(
@@ -517,7 +534,7 @@ async function extractInstallerPayload(
   safeOutputPath: string,
   shouldDeleteInstaller: boolean
 ): Promise<"extracted" | "failed" | "format-refused"> {
-  logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracting the installer payload instead of running it.`)
+  logMessage("info", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Extracting the installer payload instead of running it.`)
 
   try {
     return await archiveConcurrency.run(() => {
@@ -536,18 +553,29 @@ async function extractInstallerPayload(
         (message) => {
           if (message.verdict === "format-refused") {
             const reason = typeof message.reason === "string" ? message.reason : "no reason given"
-            logMessage("warn", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
+            logMessage("warn", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] The installer format was refused, falling back to running it. reason=${reason}`)
             return "format-refused"
           }
           if (message.verdict !== "extracted") throw new Error("Installer payload extraction returned an unknown verdict")
-          logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
+          logMessage("info", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Extracted ${message.filesWritten} files, ${message.bytesWritten} bytes.`)
+          // The game is already on disk by the time this can be set: a failed post-copy
+          // cleanup (installer deletion, staging folder removal) does not turn "extracted"
+          // into "failed" (#528), it only surfaces here as a warning. Two fixed reason
+          // tokens (installer-delete-failed, staging-cleanup-failed) plus the errno the
+          // cleanup call actually failed with, so a support answer does not have to guess.
+          if (message.cleanupWarning && typeof message.cleanupWarning === "object") {
+            const warning = message.cleanupWarning as { reason?: unknown; code?: unknown }
+            const reason = typeof warning.reason === "string" ? warning.reason : "unknown"
+            const code = typeof warning.code === "string" ? warning.code : "unknown"
+            logMessage("warn", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Cleanup after installer extraction failed; the game is installed. reason=${reason} code=${code}`)
+          }
           return "extracted"
         }
       )
     })
   } catch (err) {
-    logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Installer payload extraction failed.`)
-    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Installer payload extraction failed.`)
+    logMessage("debug", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
     return "failed"
   }
 }
@@ -580,15 +608,12 @@ function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath:
       const installer = spawn(exePath, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/NOICONS", `/DIR=${safeOutputPath}`], { shell: false, windowsHide: true })
 
       const timeoutHandle = setTimeout(() => {
-        logMessage(
-          "error",
-          `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Timed out after ${RUN_INSTALLER_TIMEOUT_MS}ms waiting on the installer; killing its process tree. reason=installer-timed-out`
-        )
+        logMessage("error", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Timed out after ${RUN_INSTALLER_TIMEOUT_MS}ms waiting on the installer; killing its process tree. reason=installer-timed-out`)
         attemptInstallerTreeKill(
           installer.pid,
           process.platform,
           (command, args) => spawn(command, args, { shell: false, windowsHide: true }),
-          (level, message) => logMessage(level, `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${message}`)
+          (level, message) => logMessage(level, `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] ${message}`)
         )
         finish("timed-out")
       }, RUN_INSTALLER_TIMEOUT_MS)
@@ -603,14 +628,14 @@ function spawnInstaller(event: IpcMainInvokeEvent, safeId: string, safeFilePath:
       }
 
       installer.on("error", (error) => {
-        logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Error launching installer.`)
-        logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(error)}`)
+        logMessage("error", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Error launching installer.`)
+        logMessage("debug", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] ${getErrorMessage(error)}`)
         finish("failed")
       })
       installer.on("close", (code) => finish(code === 0 ? "installed" : "failed"))
     } catch (err) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] Installer setup failed.`)
-      logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
+      logMessage("error", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Installer setup failed.`)
+      logMessage("debug", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] ${getErrorMessage(err)}`)
       resolvePromise(spawnInstallerOutcomeToResult("failed"))
     }
   })
@@ -626,7 +651,7 @@ ipcMain.handle(
     const safeOutputFileName = assertSafeFileName(outputFileName, "output file name")
     const safeCompressionLevel = assertInteger(compressionLevel, "compression level", 0, 9)
 
-    logMessage("info", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
+    logMessage("info", `${LOG_PREFIX} [COMPRESS_ON_PATH] [${safeId}] Starting bounded compression.`)
     await archiveConcurrency.run(() => {
       sendProgress(event, IPC_CHANNELS.PATHS_MANAGER.COMPRESS_PROGRESS, safeId, 0)
       return runTrackedWorker(
@@ -650,8 +675,18 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS, async (event, paths: str
 
   const safePaths = await Promise.all(paths.map((pathValue) => assertManagedPath(pathValue, "permissions path")))
   const safePerms = assertInteger(perms, "permissions", 0, 0o777)
+  const timeout = AbortSignal.timeout(CHANGE_PERMS_TIMEOUT_MS)
 
-  await runTrackedWorker(event, "permissions", undefined, changePermsWorker, { paths: safePaths, perms: safePerms }, "CHANGE_PERMS", () => true)
+  try {
+    await changePermissions({ paths: safePaths, perms: safePerms, signal: timeout })
+  } catch (err) {
+    // Same two texts the pooled worker reported, so the renderer's extract task reads a
+    // refusal exactly as it did. The reason behind them used to be dropped on the way out
+    // of the worker; at debug it is there for whoever reads the log afterwards.
+    logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [CHANGE_PERMS] ${getErrorMessage(err)}`)
+    throw new Error(timeout.aborted ? "CHANGE_PERMS timed out" : "Changing permissions failed")
+  }
+
   return true
 })
 
@@ -661,7 +696,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.CHANGE_PERMS, async (event, paths: str
  * the log afterwards needs, and it is the half that was missing entirely.
  */
 function refuseIconCopy(reason: CustomIconCopyFailureReason, cause: unknown): { status: false; reason: CustomIconCopyFailureReason } {
-  logMessage("debug", `[back] [ipc] [ipc/handlers/pathsHandlers.ts] [COPY_TO_ICONS] Refused an icon (${reason}): ${cause instanceof Error ? cause.message : String(cause)}.`)
+  logMessage("debug", `${LOG_PREFIX} [COPY_TO_ICONS] Refused an icon (${reason}): ${cause instanceof Error ? cause.message : String(cause)}.`)
   return { status: false, reason }
 }
 

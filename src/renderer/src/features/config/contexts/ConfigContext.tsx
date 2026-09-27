@@ -26,10 +26,18 @@ export interface ConfigSettingsType {
   backgroundRevision: number
   /** The chosen accent preset id. See src/domain/accentColors.ts. */
   accentColor: string
-  /** The stored answer to the one-time ModDB listing question. See src/domain/moddbVisibility.ts. */
-  moddbVisibilityAnswer: string
+  /** The stored answer to the ModDB listing question, the version it was given under, and what has been counted. See src/domain/moddbVisibility.ts. */
+  moddbVisibility: ConfigType["moddbVisibility"]
+  /** Whether the player has opted into the separate ModDB suggestions row, or null while unanswered. */
+  modSuggestionsConsent: boolean | null
+  /** Listing ids dismissed from the suggestions row. */
+  dismissedModSuggestions: number[]
   /** Whether update checks may offer betas, or null while nobody has said. See src/domain/appUpdate/betaUpdates.ts. */
   receiveBetaUpdates: boolean | null
+  /** Whether the launcher measures the game process while it runs. See src/domain/sessions/sampling.ts. */
+  measurePlaySessions: boolean
+  /** Whether a session may be kept without a system keyring. See src/domain/account/sessionStorage.ts. */
+  allowBasicSessionStore: boolean
   /** The version the "what's new" dialog last showed notes up to, or empty. See src/domain/appUpdate/whatsNew.ts. */
   lastSeenChangelogVersion: string
 }
@@ -170,8 +178,12 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       background: config.background,
       backgroundRevision: config._backgroundRevision ?? 0,
       accentColor: config.accentColor,
-      moddbVisibilityAnswer: config.moddbVisibilityAnswer,
+      moddbVisibility: config.moddbVisibility,
+      modSuggestionsConsent: config.modSuggestionsConsent,
+      dismissedModSuggestions: config.dismissedModSuggestions,
       receiveBetaUpdates: config.receiveBetaUpdates,
+      measurePlaySessions: config.measurePlaySessions,
+      allowBasicSessionStore: config.allowBasicSessionStore,
       lastSeenChangelogVersion: config.lastSeenChangelogVersion
     }),
     [
@@ -184,8 +196,12 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config.background,
       config._backgroundRevision,
       config.accentColor,
-      config.moddbVisibilityAnswer,
+      config.moddbVisibility,
+      config.modSuggestionsConsent,
+      config.dismissedModSuggestions,
       config.receiveBetaUpdates,
+      config.measurePlaySessions,
+      config.allowBasicSessionStore,
       config.lastSeenChangelogVersion
     ]
   )

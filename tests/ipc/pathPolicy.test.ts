@@ -102,7 +102,7 @@ beforeEach(async () => {
   fse.writeFileSync(join(gameVersion, "Vintagestory.exe"), "")
   fse.ensureDirSync(join(backupsFolder, "Installations", "Main"))
   fse.writeFileSync(backupArchive, "")
-  for (const folder of ["Logs", "Cache", "Icons"]) fse.ensureDirSync(join(userDataFolder, folder))
+  for (const folder of ["Logs", "Cache", "Icons", "Sessions"]) fse.ensureDirSync(join(userDataFolder, folder))
 
   electronState.userData = userDataFolder
   electronState.appData = join(temporaryRoot, "appData")
@@ -155,6 +155,8 @@ describe("managed path policy: the shapes the launcher legitimately passes", () 
     assert.equal(await admits(join(userDataFolder, "Icons", "icon.png"), { allowMissing: true }), true)
     assert.equal(await admits(join(userDataFolder, "Logs")), true)
     assert.equal(await admits(join(userDataFolder, "Cache")), true)
+    assert.equal(await admits(join(userDataFolder, "Sessions")), true)
+    assert.equal(await admits(join(userDataFolder, "Sessions", "main.json"), { allowMissing: true }), true)
   })
 
   it("admits a backup archive itself", async () => {
@@ -285,7 +287,8 @@ describe("managed path policy: deletion and protected paths", () => {
       backupsFolder,
       join(userDataFolder, "Logs"),
       join(userDataFolder, "Cache"),
-      join(userDataFolder, "Icons")
+      join(userDataFolder, "Icons"),
+      join(userDataFolder, "Sessions")
     ]) {
       await assert.rejects(() => policy.assertManagedDeletionPath(protectedPath), /Protected path|Unmanaged/)
     }
@@ -368,6 +371,7 @@ describe("config path authorization", () => {
     assert.equal(await authorizes({ installations: [{ path: join(userDataFolder, "Cache", "Images"), backups: [] }] as unknown as ConfigType["installations"] }), false)
     assert.equal(await authorizes({ installations: [{ path: join(userDataFolder, "Logs"), backups: [] }] as unknown as ConfigType["installations"] }), false)
     assert.equal(await authorizes({ backupsFolder: join(userDataFolder, "Icons") }), false)
+    assert.equal(await authorizes({ installations: [{ path: join(userDataFolder, "Sessions"), backups: [] }] as unknown as ConfigType["installations"] }), false)
   })
 
   it("refuses an installation declared under a backup archive", async () => {

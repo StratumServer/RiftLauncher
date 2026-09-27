@@ -1,5 +1,10 @@
+import type { GameBuildVariant } from "./versions/detect"
+
 /** The longest name assertSafeFileName (src/ipc/validation.ts) lets through. */
 const MAX_FOLDER_NAME_LENGTH = 255
+
+/** The longest label normalizeGameVersion (src/config/configManager.ts) keeps; past it the label is dropped entirely. */
+export const MAX_GAME_VERSION_LABEL_LENGTH = 256
 
 /**
  * Strips characters a folder name cannot carry and collapses the leftovers into
@@ -63,4 +68,32 @@ export function formatTimestampForFilename(epochMillis: number): string {
   const seconds = pad(date.getSeconds())
 
   return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`
+}
+
+/**
+ * Spells out how a registered build is named in the VS Versions list.
+ *
+ * One place rather than one per caller: the "add an already installed VS
+ * Version" page seeds its Name field with this, and anything that ever labels a
+ * build for the player should read the same way. A build with no variant is
+ * named by its version number alone, which is what every row said before forks
+ * were detected at all.
+ *
+ * The label is a display string and nothing else. Nothing compares versions
+ * through it, and nothing logs it: the player can overwrite it with anything.
+ *
+ * The result is cut to what the config keeps. normalizeGameVersion drops a
+ * longer label for the bare version number rather than truncating it, so a
+ * label past the cap is not a long name, it is no name at all: the row would
+ * show what was typed until the next load and the version number after it. A
+ * variant version is only bounded by what semver accepts, which is 256
+ * characters of pre-release tail, so a build naming itself at that length can
+ * reach the cap on its own.
+ *
+ * @param version The game version number, as detection read it.
+ * @param variant The fork that named itself, when one did.
+ * @returns "1.22.7", or "1.22.7 Optimum 0.3.14".
+ */
+export function buildGameVersionLabel(version: string, variant?: GameBuildVariant): string {
+  return (variant ? `${version} ${variant.name} ${variant.version}` : version).slice(0, MAX_GAME_VERSION_LABEL_LENGTH)
 }

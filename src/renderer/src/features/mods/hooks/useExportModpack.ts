@@ -4,12 +4,28 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { exportModpackArchive } from "@renderer/features/moddb/adapters/modsManager"
 import { toModpackManifest } from "@renderer/features/mods/adapters/importModpack"
 
-export function useExportModpack(): ({ installedMods, installation }: { installedMods: InstalledModType[]; installation: InstallationType }) => Promise<void> {
+export function useExportModpack(): ({
+  installedMods,
+  installation,
+  includeServers
+}: {
+  installedMods: InstalledModType[]
+  installation: InstallationType
+  includeServers?: boolean
+}) => Promise<void> {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
 
-  async function exportModpack({ installedMods, installation }: { installedMods: InstalledModType[]; installation: InstallationType }): Promise<void> {
-    const result = await exportModpackArchive(toModpackManifest(installation, installedMods))
+  async function exportModpack({
+    installedMods,
+    installation,
+    includeServers = false
+  }: {
+    installedMods: InstalledModType[]
+    installation: InstallationType
+    includeServers?: boolean
+  }): Promise<void> {
+    const result = await exportModpackArchive(toModpackManifest(installation, installedMods, includeServers))
 
     if (result.success) {
       addNotification(t("features.mods.exportModpackSuccess"), "success")

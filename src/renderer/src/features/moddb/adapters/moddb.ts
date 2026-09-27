@@ -15,12 +15,13 @@ export function queryModDb(path: string): Promise<string> {
 }
 
 /**
- * Hands the accepted answer to the one-time listing question over to the main process, which
- * writes it and then makes the single request that registers a download on the listing (#219).
+ * Hands the player's answer to the ModDB listing question over to the main process, which writes
+ * it and then counts the running version on the listing when the answer says to (#219, #477).
  *
- * True once that answer is on disk. False means nothing was written and nothing was requested, so
- * the caller has no answer to remember.
+ * `consent` is the answer they just gave, or null for the silent count a stored "always" owes this
+ * launch. Answers the outcome and the state that reached disk, which the caller mirrors into the
+ * config so both copies agree on what has been counted.
  */
-export function acceptModDbVisibility(): Promise<boolean> {
-  return window.api.netManager.acceptModDbVisibility()
+export function countModDbDownload(consent: ModDbVisibilityConsentValue | null): Promise<ModDbCountResult> {
+  return window.api.netManager.countModDbDownload(consent)
 }

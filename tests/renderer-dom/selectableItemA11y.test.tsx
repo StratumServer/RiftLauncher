@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { GridGroup, GridItem, GridWrapper } from "@renderer/components/ui/Grid"
 import { TableBody, TableBodyRow, TableCell, TableWrapper } from "@renderer/components/ui/Table"
+import InstalledModItem from "@renderer/features/mods/components/InstalledModItem"
 import ModListCard from "@renderer/features/mods/components/ModListCard"
 
 import "@renderer/i18n"
@@ -317,6 +318,35 @@ describe("ModListCard accessibility", () => {
     expect(props.onAction).toHaveBeenCalledTimes(1)
     expect(props.onAction).toHaveBeenCalledWith(props.mod, "toggle-enabled")
     expect(props.onSelect).not.toHaveBeenCalled()
+  })
+
+  it("shares the suspend toggle's pressed shape with the Manage Mods row (#450)", () => {
+    const suspendToggleName = "Updates suspended: Update all skips this Mod"
+
+    const card = render(<ModListCard {...installedCard({ suspended: true })} />)
+    const cardToggle = within(card.container).getByRole("button", { name: suspendToggleName })
+    expect(cardToggle.getAttribute("aria-pressed")).toBe("true")
+
+    const row = render(
+      <ul>
+        <InstalledModItem
+          iMod={{ name: "Better Ruins", modid: "betterruins", version: "1.0.0", path: "/mods/betterruins.zip", enabled: true }}
+          suspended
+          checked={false}
+          distinctName="Better Ruins"
+          onCheckedChange={() => {}}
+          onToggleEnabledClick={() => {}}
+          onToggleSuspendClick={() => {}}
+          onDeleteClick={() => {}}
+          onUpdateClick={() => {}}
+        />
+      </ul>
+    )
+    const rowToggle = within(row.container).getByRole("button", { name: suspendToggleName })
+
+    // Same accessible name, same aria-pressed shape: the two surfaces no longer disagree on how
+    // this toggle announces itself.
+    expect(rowToggle.getAttribute("aria-pressed")).toBe(cardToggle.getAttribute("aria-pressed"))
   })
 
   it("announces a disabled copy on the card and on its toggle", () => {

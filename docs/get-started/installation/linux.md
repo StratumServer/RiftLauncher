@@ -106,16 +106,55 @@ chmod +x ./dotnet-install.sh
 ```
 
 ```sh
-sudo ./dotnet-install.sh --channel 7.0 --install-dir /usr/lib/dotnet
+sudo ./dotnet-install.sh --channel 7.0 --install-dir /usr/share/dotnet
 ```
 
 ```sh
-sudo ./dotnet-install.sh --channel 8.0 --install-dir /usr/lib/dotnet
+sudo ./dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet
 ```
 
 ```sh
-sudo ./dotnet-install.sh --channel 10.0 --install-dir /usr/lib/dotnet
+sudo ./dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
 ```
+
+`/usr/share/dotnet` is the apphost's own compiled-in default, the last place it looks when nothing tells it otherwise, so installing straight there is the simplest option: no registration file to write and nothing that can drift out of sync later.
+
+{% hint style="info" %}
+**Installing somewhere else.** If you'd rather keep the game's .NET out of `/usr/share/dotnet`, install with `--install-dir /usr/lib/dotnet` instead and register that location by hand:
+
+```sh
+echo /usr/lib/dotnet | sudo tee /etc/dotnet/install_location /etc/dotnet/install_location_x64
+```
+
+Newer .NET hosts (10 and later) read the architecture-specific file, `install_location_x64` here, instead of the plain `install_location`, so write both: `dotnet-install.sh` sets neither, and without them the runtimes you just installed stay invisible to Vintage Story. Point the symlink below at `/usr/lib/dotnet/dotnet` instead of `/usr/share/dotnet/dotnet` if you go this route.
+{% endhint %}
+
+```sh
+sudo ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
+```
+
+This just puts `dotnet` itself on your `PATH`, which you need for the check below and for any other tool that expects `dotnet` to exist.
+
+**Check it**
+
+```sh
+dotnet --list-runtimes
+```
+
+should list a `Microsoft.NETCore.App` entry for whichever major version, 7, 8 or 10, the game version you play needs.
+
+{% hint style="warning" %}
+If RiftLauncher says a .NET runtime is missing and a copy of the game ran fine before, that older copy most likely shipped its own runtime alongside the game files. The versions RiftLauncher lists as installed come from the system-wide .NET install above, not from a bundled copy, so the two don't tell you the same thing. The exact locations the .NET host searched and didn't find anything are printed in `verbose.log` if you want to see them, for example:
+
+```
+Environment variable: DOTNET_ROOT_X64 = <not set>
+Environment variable: DOTNET_ROOT = <not set>
+Registered location: /etc/dotnet/install_location_x64 = <not set>
+Default location: /usr/share/dotnet
+```
+
+If your runtime lives somewhere none of those point to, you can set `DOTNET_ROOT` for a single Installation instead of touching the system-wide registration: put `DOTNET_ROOT=/usr/lib/dotnet` (or wherever you installed it) in that Installation's **ENV variables** field in the Advanced section.
+{% endhint %}
 
 {% endstep %}
 
@@ -164,6 +203,8 @@ You'll have to look up how to do this for your graphics card and your Linux dist
 ```sh
 sudo pacman -S dotnet-runtime-7.0 dotnet-runtime-8.0 dotnet-runtime glibc openal opengl-driver mono
 ```
+
+Unlike the script-based install above, there's nothing to register by hand here: Arch's `dotnet-runtime` packages write `/etc/dotnet/install_location` themselves as part of installation.
 
 {% endstep %}
 {% endstepper %}
@@ -245,6 +286,34 @@ Appimages require a couple of options to be enabled in order to load, and they c
 {% hint style="info" %}
 Note, that this will enable appimages system-wide, and all appimages will have dotnet available to them.
 {% endhint %}
+
+---
+
+## Session storage and keyrings
+
+When you log in, RiftLauncher hands your session to the desktop's own keyring instead of keeping it in a file of its own. On Linux that is GNOME Keyring or KWallet, reached through `libsecret`. The `.deb` and `.rpm` packages already depend on `libsecret`, and the `.deb` recommends `gnome-keyring` for desktops that have no wallet of their own, so most installs need nothing here.
+
+If no keyring answers, Electron falls back to a store that seals the session with a key built into the launcher, which means any program running as you can read it. RiftLauncher refuses that store by default. You can still log in and play: the session is kept in memory for as long as the launcher is open, and you log in again next time. The launcher says so when it happens.
+
+### GNOME, Cinnamon, Budgie and friends
+
+GNOME Keyring is installed and unlocked with your session by default, so there is nothing to do. If you removed it, `sudo apt install gnome-keyring` or `sudo dnf install gnome-keyring` puts it back.
+
+### KDE Plasma
+
+KWallet is installed with Plasma but it can be switched off, and a wallet that does not exist is the same as no keyring at all. Open **System Settings**, go to **KDE Wallet**, tick **Enable the KDE wallet subsystem**, and create a wallet if there is none. Blowfish and GPG both work. If you give the wallet a password, you will be asked for it once per session, the first time something reads it.
+
+`kwalletmanager` is worth installing if you want to look at what is stored: it lists the wallets, shows the entries in them, and can create a wallet without going through System Settings.
+
+### Other desktops, tiling window managers, and machines with no desktop at all
+
+Sway, i3, Hyprland and the like start nothing of this sort on their own. Install `gnome-keyring` and have your session start the daemon, for example by launching your window manager through `dbus-run-session -- gnome-keyring-daemon --start --components=secrets` or by adding the daemon to whatever your session already starts. What matters is that the daemon is running and unlocked in the same session as the launcher.
+
+### If you would rather not have a keyring
+
+There is a setting for it. In **Settings**, turn on **Remember the session without a system keyring**, then restart RiftLauncher: Chromium picks its storage as it starts, so the setting only takes effect on the next launch.
+
+Be clear about the trade. With that setting on, your session is written to disk sealed with a key that ships inside the launcher, the same key in every copy of it. Anyone who can read your files, and any program running under your account, can read the session and use it as you. On a machine you alone use, that may well be a fair price for not logging in again every time. On a shared or managed machine it is not. That is why the setting is off until you turn it on.
 
 ---
 

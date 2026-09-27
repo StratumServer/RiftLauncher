@@ -6,6 +6,17 @@
  * this folder may reach for Electron, Node, React or the DOM.
  */
 
+/**
+ * How one attempt on a host port ended.
+ *
+ * Four ports answer with this shape and each restated it once (#484). They stay four ports: only
+ * the shape is shared, and every one of them keeps the name it already answered under.
+ */
+export interface HostOutcome {
+  ok: boolean
+  error?: string
+}
+
 /** Storage the host exposes to the domain. */
 export interface FileSystem {
   /** Resolves true when `path` points at something that exists. */
@@ -32,10 +43,7 @@ export interface CompressRequest {
 }
 
 /** How a compression attempt ended. */
-export interface CompressOutcome {
-  ok: boolean
-  error?: string
-}
+export type CompressOutcome = HostOutcome
 
 /** Produces archives. Progress reporting and task UI stay on the host side. */
 export interface Archiver {
@@ -57,10 +65,7 @@ export interface ExtractRequest {
 }
 
 /** How an extraction attempt ended. */
-export interface ExtractOutcome {
-  ok: boolean
-  error?: string
-}
+export type ExtractOutcome = HostOutcome
 
 /**
  * Unpacks archives. Kept apart from {@link Archiver} because no service does
@@ -86,11 +91,9 @@ export interface DownloadRequest {
 }
 
 /** How a download attempt ended. */
-export interface DownloadOutcome {
-  ok: boolean
+export interface DownloadOutcome extends HostOutcome {
   /** Where the file landed. Only meaningful when `ok` is true. */
   filePath?: string
-  error?: string
 }
 
 /** Fetches files. Progress reporting and task UI stay on the host side. */
@@ -112,10 +115,7 @@ export interface UnpackRequest {
 }
 
 /** How an unpacking attempt ended. */
-export interface UnpackOutcome {
-  ok: boolean
-  error?: string
-}
+export type UnpackOutcome = HostOutcome
 
 /**
  * The two ways a downloaded game build becomes an installed folder.
@@ -301,6 +301,26 @@ export interface JsonFile {
   write(path: string, document: unknown): Promise<JsonFileWriteResult>
 }
 
+/** One reading of a running process, as the host's own bookkeeping answers it. */
+export interface ProcessReading {
+  /** Resident memory in bytes. Shared pages count in full, so this is never what a task manager shows. */
+  rssBytes: number
+  /** CPU share since the previous reading, where the host can answer it at all. */
+  cpuPercent?: number
+}
+
+/**
+ * Reads what the operating system says about a process the launcher started.
+ *
+ * Absence is the answer for everything that did not work: a pid that has gone, a platform with no
+ * mechanism, a file that would not read. None of those is an error a player should have to
+ * dismiss, and a caller that cannot tell them apart behaves correctly anyway, by recording less.
+ */
+export interface ProcessSampler {
+  /** Never rejects: anything unreadable resolves undefined. */
+  sample(pid: number): Promise<ProcessReading | undefined>
+}
+
 /** Everything the host needs to start one game process. */
 export interface GameProcessRequest {
   /** Executable to run, already resolved to a real path or a name the host can find on its own. */
@@ -311,6 +331,15 @@ export interface GameProcessRequest {
   env: Readonly<Record<string, string | undefined>>
   /** Working directory the process starts in. */
   cwd: string
+  /**
+   * Called once with the child's pid after a successful spawn, and never on a spawn that failed.
+   *
+   * The pid is the only thing about the running process that leaves the host adapter, and it is
+   * not a handle on the game: under a launch wrapper it is the wrapper's, which stays valid for a
+   * wrapper that execs the game and dies immediately for one that forks. A caller has to treat a
+   * pid that stops existing as the end of what it can measure, never as the end of the session.
+   */
+  onStarted?: (pid: number) => void
 }
 
 /**

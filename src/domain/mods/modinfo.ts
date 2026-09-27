@@ -41,6 +41,8 @@ export interface ModInfo {
   authors?: string[]
   contributors?: string[]
   type?: string
+  /** Declared dependencies: mod id to the lowest version that satisfies it. See {@link readDependencies}. */
+  dependencies?: Record<string, string>
 }
 
 /** Why a `modinfo.json` did not describe a mod. */
@@ -89,6 +91,40 @@ function readTextList(record: Record<string, unknown>, key: string): string[] | 
   if (!Array.isArray(value) || value.length > MAX_LIST_ENTRIES) return undefined
 
   return value.every((entry) => usableText(entry, MAX_LIST_ENTRY_LENGTH)) ? (value as string[]) : undefined
+}
+
+/**
+ * A dependency's version bound: text, bounded, and free of NUL, the empty string included.
+ *
+ * The one field here where "" is a value rather than an absence. The game reads both `""` and `"*"`
+ * as "any version", so an entry carrying either still says the mod has to be there, and dropping it
+ * for being empty would take that presence check away with it.
+ */
+function usableVersionBound(value: unknown): value is string {
+  return typeof value === "string" && value.length <= MAX_IDENTIFIER_LENGTH && !value.includes("\0")
+}
+
+/**
+ * The dependency map: mod id to the lowest version that satisfies it.
+ *
+ * Anything that is not an object is dropped whole, a list included: the game reads a map here, and a
+ * list carries no version to compare against. Past that, one unusable entry is dropped and the rest
+ * are kept, unlike the author list above. A credit list showing half its names says something false
+ * about who wrote the mod; a dependency map missing one entry checks one fewer dependency, which is
+ * what an unreadable entry leaves either way.
+ *
+ * Keys are kept exactly as their author cased them. `parseModInfo` does not lowercase `modid`
+ * either, and how a declared id is matched against an installed one is a rule of its own, tested
+ * where it lives (src/domain/mods/health.ts).
+ */
+function readDependencies(record: Record<string, unknown>): Record<string, string> | undefined {
+  const value = readValue(record, "dependencies")
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+
+  const entries = Object.entries(value)
+  if (entries.length > MAX_LIST_ENTRIES) return undefined
+
+  return Object.fromEntries(entries.filter(([modid, bound]) => usableText(modid, MAX_IDENTIFIER_LENGTH) && usableVersionBound(bound)))
 }
 
 /** `authors` is the documented spelling, `author` a single-name shorthand some files use instead. */
@@ -140,7 +176,8 @@ export function parseModInfo(text: string): ModInfoResult {
       side: readText(record, "side", MAX_KEYWORD_LENGTH),
       authors: readAuthors(record),
       contributors: readTextList(record, "contributors"),
-      type: readText(record, "type", MAX_KEYWORD_LENGTH)
+      type: readText(record, "type", MAX_KEYWORD_LENGTH),
+      dependencies: readDependencies(record)
     }
   }
 }

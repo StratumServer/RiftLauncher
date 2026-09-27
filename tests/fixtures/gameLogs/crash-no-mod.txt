@@ -1,0 +1,6 @@
+Running on 64 bit Linux 6.6.0 with 32000 MB RAM
+Game Version: v1.21.1 (Stable)
+Loaded Mods: game@1.21.1, survival@1.21.1, creative@1.21.1
+System.AccessViolationException: Attempted to read or write protected memory.
+   at Vintagestory.Client.NoObf.ShaderProgram.Use()
+   at Vintagestory.Client.NoObf.ClientMain.RenderToDefaultFramebuffer(Single dt)

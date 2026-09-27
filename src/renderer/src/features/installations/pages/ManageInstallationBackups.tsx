@@ -1,7 +1,7 @@
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { PiArrowCounterClockwiseDuotone, PiFolderOpenDuotone, PiTrashDuotone, PiXCircleDuotone } from "react-icons/pi"
+import { PiArrowCounterClockwiseDuotone, PiFolderOpenDuotone, PiTrashDuotone } from "react-icons/pi"
 
 import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
 import { restoreInstallationBackup } from "@domain/installations/restore"
@@ -17,9 +17,8 @@ import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
+import ConfirmDialog from "@renderer/components/ui/ConfirmDialog"
 import { NormalButton } from "@renderer/components/ui/Buttons"
-import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -182,45 +181,33 @@ function ManageInstallationBackups(): JSX.Element {
           </ListGroup>
         </ListWrapper>
 
-        <PopupDialogPanel title={t("features.backups.restoreBackup")} isOpen={backupToRestore !== null} close={() => setBackupToRestore(null)}>
-          <>
-            <p>{t("features.backups.areYouSureRestoreBackup")}</p>
-            <p className="text-zinc-400">{t("features.backups.restoringNotReversible")}</p>
-            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <FormButton title={t("generic.cancel")} onClick={() => setBackupToRestore(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <FormButton
-                title={t("generic.restore")}
-                size="md"
-                onClick={() => {
-                  RestoreBackupHandler(backupToRestore)
-                  setBackupToRestore(null)
-                }}
-                variant="destructive"
-                icon={<PiArrowCounterClockwiseDuotone />}
-              />
-            </ButtonsWrapper>
-          </>
-        </PopupDialogPanel>
+        <ConfirmDialog
+          title={t("features.backups.restoreBackup")}
+          isOpen={backupToRestore !== null}
+          close={() => setBackupToRestore(null)}
+          question={t("features.backups.areYouSureRestoreBackup")}
+          consequence={t("features.backups.restoringNotReversible")}
+          confirmLabel={t("generic.restore")}
+          confirmIcon={<PiArrowCounterClockwiseDuotone />}
+          onConfirm={() => {
+            RestoreBackupHandler(backupToRestore)
+            setBackupToRestore(null)
+          }}
+        />
 
-        <PopupDialogPanel title={t("features.backups.deleteBackup")} isOpen={backupToDelete !== null} close={() => setBackupToDelete(null)}>
-          <>
-            <p>{t("features.backups.areYouSureDelete")}</p>
-            <p className="text-zinc-400">{t("features.backups.deletingNotReversible")}</p>
-            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <NormalButton title={t("generic.cancel")} onClick={() => setBackupToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <NormalButton
-                title={t("generic.delete")}
-                size="md"
-                onClick={() => {
-                  DeleteBackupHandler(backupToDelete)
-                  setBackupToDelete(null)
-                }}
-                variant="destructive"
-                icon={<PiTrashDuotone />}
-              />
-            </ButtonsWrapper>
-          </>
-        </PopupDialogPanel>
+        <ConfirmDialog
+          title={t("features.backups.deleteBackup")}
+          isOpen={backupToDelete !== null}
+          close={() => setBackupToDelete(null)}
+          question={t("features.backups.areYouSureDelete")}
+          consequence={t("features.backups.deletingNotReversible")}
+          confirmLabel={t("generic.delete")}
+          confirmIcon={<PiTrashDuotone />}
+          onConfirm={() => {
+            DeleteBackupHandler(backupToDelete)
+            setBackupToDelete(null)
+          }}
+        />
       </div>
     </ScrollableContainer>
   )

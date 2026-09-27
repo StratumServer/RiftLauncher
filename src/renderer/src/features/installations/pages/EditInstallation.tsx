@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
+import { PiFileTextDuotone, PiFloppyDiskBackDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH, validateInstallationFields } from "@domain/installations/create"
 import { getInstallationVersionStatus } from "@domain/installations/versionReference"
@@ -17,6 +17,7 @@ import { NameAndIconPicker } from "@renderer/features/installations/components/N
 import { GameVersionPicker } from "@renderer/features/installations/components/GameVersionPicker"
 import { BackupsSettingsSection } from "@renderer/features/installations/components/BackupsSettingsSection"
 import { AdvancedSettingsSection } from "@renderer/features/installations/components/AdvancedSettingsSection"
+import { RecentSessionsSection } from "@renderer/features/installations/components/RecentSessionsSection"
 
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -35,7 +36,7 @@ function EditInslallation(): JSX.Element {
   const configDispatch = useConfigDispatch()
   const navigate = useNavigate()
   const { openOnBrowser: openExternalLink } = useExternalLinks()
-  const { schemaVersion } = useSettingsConfig()
+  const { schemaVersion, measurePlaySessions } = useSettingsConfig()
   const isConfigLoaded = schemaVersion !== 0
 
   const { id } = useParams()
@@ -81,6 +82,11 @@ function EditInslallation(): JSX.Element {
     fields.setEnvVars(installation?.envVars ?? "")
     fields.setLaunchWrapper(installation?.launchWrapper ?? "")
   }, [installation])
+
+  // Read from the live list rather than from the page's own snapshot, which is only refreshed when
+  // the id changes: this flag falling back to false is how the sessions section learns a session
+  // ended, and a stale copy of it never falls back at all.
+  const isPlaying = installations.find((candidate) => candidate.id === id)?._playing ?? false
 
   // Read from the Installation, not from the picker: the warning remains visible after a
   // replacement is picked, until the edit is actually saved (#118).
@@ -210,6 +216,21 @@ function EditInslallation(): JSX.Element {
                 launchWrapper={fields.launchWrapper}
                 onLaunchWrapperChange={fields.setLaunchWrapper}
               />
+
+              <RecentSessionsSection installationId={installation.id} isPlaying={isPlaying} measuring={measurePlaySessions} />
+              {/* Always offered, and it reads nothing until it is opened: one row, and a player
+                  whose session ended badly does not have to remember where the logs live. */}
+              <FormGroupWrapper title={t("features.sessionReport.lastSessionReport")} startOpen={false}>
+                <p className="text-sm text-zinc-400">{t("features.sessionReport.lastSessionReportDesc")}</p>
+                <FormLinkButton
+                  to={`/installations/report/${installation.id}`}
+                  title={t("features.sessionReport.lastSessionReport")}
+                  variant="secondary"
+                  size="md"
+                  className="self-start"
+                  icon={<PiFileTextDuotone />}
+                />
+              </FormGroupWrapper>
 
               <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
                 <FormLinkButton to="/installations" title={t("generic.goBack")} variant="secondary" size="md" icon={<PiXCircleDuotone />} />

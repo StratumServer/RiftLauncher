@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import "./helpers/electronMock"
-import { setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
+import { setElectronAppVersion, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 
 /**
@@ -36,8 +36,10 @@ vi.mock("@src/ipc/accountStore", () => ({
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { ACCENT_PRESETS, DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
-import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_ALREADY_DONE, MODDB_VISIBILITY_DECLINED } from "@domain/moddbVisibility"
+import { defaultModDbVisibility, MAX_COUNTED_VERSIONS } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
+import { DEFAULT_ALLOW_BASIC_SESSION_STORE } from "@domain/account/sessionStorage"
+import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
 import { CURRENT_CONFIG_SCHEMA, legacyGameVersionId } from "@domain/config/migrations"
 
 let temporaryRoot: string
@@ -59,6 +61,7 @@ beforeEach(() => {
   setElectronPath("appData", appDataFolder)
   setElectronPath("home", temporaryRoot)
   setElectronPath("appRoot", join(temporaryRoot, "app"))
+  setElectronAppVersion()
 
   vi.mocked(saveAccountSecrets).mockReset()
   vi.mocked(saveAccountSecrets).mockResolvedValue("saved")
@@ -87,8 +90,12 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
     accentColor: DEFAULT_ACCENT_ID,
-    moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
+    moddbVisibility: defaultModDbVisibility(),
+    modSuggestionsConsent: null,
+    dismissedModSuggestions: [],
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
+    measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
+    allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
     lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides
@@ -176,6 +183,23 @@ describe("normalizeConfig: the document itself", () => {
   it("normalizes a config with no suspendedModUpdates field at all to an empty list", async () => {
     const { normalizeConfig } = await freshConfigManager()
     assert.deepEqual(normalizeConfig({}).suspendedModUpdates, [])
+  })
+
+  it("keeps Mod suggestions consent explicit and never regresses it to a missing default", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    assert.equal(normalizeConfig({}).modSuggestionsConsent, null)
+    assert.equal(normalizeConfig({ modSuggestionsConsent: true }).modSuggestionsConsent, true)
+    assert.equal(normalizeConfig({ modSuggestionsConsent: false }).modSuggestionsConsent, false)
+    for (const value of ["true", "yes", 1, {}, []]) assert.equal(normalizeConfig({ modSuggestionsConsent: value }).modSuggestionsConsent, null, String(value))
+  })
+
+  it("keeps valid dismissed Mod suggestions and never regresses them to a missing default", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    assert.deepEqual(normalizeConfig({}).dismissedModSuggestions, [])
+    assert.deepEqual(normalizeConfig({ dismissedModSuggestions: [4, 4, 2.5, "3", 0, -1, 7] }).dismissedModSuggestions, [4, 7])
+    assert.deepEqual(normalizeConfig({ dismissedModSuggestions: "not an array" }).dismissedModSuggestions, [])
   })
 })
 
@@ -349,6 +373,31 @@ describe("normalizeConfig: game versions", () => {
       [undefined, undefined, undefined]
     )
   })
+
+  // Same kind of loss as `linked` above, in the other direction: a build the player
+  // patched would read as plain again on the next load, and the two actions that only
+  // exist on a patched row would be gone with it.
+  it("keeps a build variant across normalization", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ gameVersions: [{ version: "1.22.7", path: "/v", label: "1.22.7 Optimum 0.3.14", variant: { name: "Optimum", version: "0.3.14" } }] })
+    assert.deepEqual(result.gameVersions[0]!.variant, { name: "Optimum", version: "0.3.14" })
+  })
+
+  it("drops a variant a probe would never have produced", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({
+      gameVersions: [
+        { version: "1.22.7", path: "/v1" },
+        { version: "1.22.7", path: "/v2", variant: { name: "Sodium", version: "0.3.14" } },
+        { version: "1.22.7", path: "/v3", variant: { name: "Optimum", version: "latest" } },
+        { version: "1.22.7", path: "/v4", variant: "Optimum v0.3.14" }
+      ]
+    })
+    assert.deepEqual(
+      result.gameVersions.map((g) => g.variant),
+      [undefined, undefined, undefined, undefined]
+    )
+  })
 })
 
 describe("normalizeConfig: custom icons", () => {
@@ -453,6 +502,73 @@ describe("normalizeConfig: accentColor", () => {
   })
 })
 
+describe("normalizeConfig: installation servers (#460)", () => {
+  function installation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return { id: "i-1", path: join(appDataFolder, "installations", "one"), ...overrides }
+  }
+
+  const server = { id: "s-1", name: "Home", host: "play.example.com", port: 42_420, lastLaunched: -1 }
+
+  it("reads a stored list back unchanged", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const config = normalizeConfig({ installations: [installation({ servers: [server] })] })
+
+    assert.deepEqual(config.installations[0]?.servers, [server])
+  })
+
+  it("leaves the field off entirely for an Installation with no servers, so an older build reads it the same", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const config = normalizeConfig({ installations: [installation(), installation({ id: "i-2", servers: [] })] })
+
+    assert.equal("servers" in (config.installations[0] ?? {}), false)
+    assert.equal("servers" in (config.installations[1] ?? {}), false)
+  })
+
+  it("drops a junk entry and keeps the Installation, never losing it over one bad row", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const config = normalizeConfig({ installations: [installation({ servers: [{ id: "s-2", name: "Broken", host: "not a host", port: 1 }, server] })] })
+
+    assert.deepEqual(
+      config.installations[0]?.servers?.map((entry) => entry.id),
+      ["s-1"]
+    )
+  })
+
+  it("drops a servers field that is not a list", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    for (const value of ["play.example.com", 7, {}, null]) {
+      assert.equal("servers" in (normalizeConfig({ installations: [installation({ servers: value })] }).installations[0] ?? {}), false, String(value))
+    }
+  })
+
+  /**
+   * The field's whole point, same as accentColor's and lastSeenChangelogVersion's: adding it must
+   * not need a schema bump. A beta.9 (schema 4) document never heard of it, and an older build
+   * reading a document this launcher wrote drops the field and saves without it. Both land back
+   * here with no field at all, and both must read as an Installation with no servers.
+   */
+  it("keeps a beta.9 (schema 4) document with no servers field readable, and does not bump the schema for one", async () => {
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }), installations: [installation()] }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+
+    assert.equal(config.installations[0]?.servers, undefined)
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+
+  it("round trips a list through a save and a fresh read", async () => {
+    const doc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA }), installations: [installation({ servers: [server] })] }
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(doc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+
+    assert.deepEqual(config.installations[0]?.servers, [server])
+  })
+})
+
 describe("normalizeConfig: lastSeenChangelogVersion", () => {
   it("defaults to empty when the field is missing, which the what's new dialog reads as a fresh install", async () => {
     const { normalizeConfig } = await freshConfigManager()
@@ -500,26 +616,110 @@ describe("normalizeConfig: lastSeenChangelogVersion", () => {
   })
 })
 
-describe("normalizeConfig: moddbVisibilityAnswer", () => {
-  it("reads a config written before the field existed as not asked yet", async () => {
+describe("normalizeConfig: moddbVisibility", () => {
+  it("reads a config written before the field existed as nobody having answered", async () => {
     const { normalizeConfig } = await freshConfigManager()
-    assert.equal(normalizeConfig({}).moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER)
+    assert.deepEqual(normalizeConfig({}).moddbVisibility, defaultModDbVisibility())
   })
 
-  it("keeps every answer the prompt can record, so none of the three is ever asked twice", async () => {
+  it("keeps a stored answer whole, so a version is neither asked about nor counted twice", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const stored = { policy: "always", answeredVersion: "1.7.0-beta.10", countedVersions: ["1.7.0-beta.9", "1.7.0-beta.10"] }
+
+    assert.deepEqual(normalizeConfig({ moddbVisibility: stored }).moddbVisibility, stored)
+  })
+
+  it("falls back to nobody-has-answered for anything else, rather than inventing a consent", async () => {
     const { normalizeConfig } = await freshConfigManager()
 
-    for (const answer of [MODDB_VISIBILITY_ACCEPTED, MODDB_VISIBILITY_DECLINED, MODDB_VISIBILITY_ALREADY_DONE]) {
-      assert.equal(normalizeConfig({ moddbVisibilityAnswer: answer }).moddbVisibilityAnswer, answer)
+    for (const value of [1, true, null, ["always"], { policy: "ALWAYS" }, { policy: "yes" }]) {
+      assert.equal(normalizeConfig({ moddbVisibility: value }).moddbVisibility.policy, "ask", JSON.stringify(value))
     }
   })
 
-  it("falls back to not-asked-yet for anything else, rather than inventing a consent", async () => {
+  it("drops unusable versions out of the counted list and caps what is left", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const raw = [7, "", null, "1.7.0-beta.9", "1.7.0-beta.9", "x".repeat(200), ...Array.from({ length: MAX_COUNTED_VERSIONS }, (_unused, index) => `1.7.0-beta.${index + 10}`)]
+
+    const counted = normalizeConfig({ moddbVisibility: { policy: "always", countedVersions: raw } }).moddbVisibility.countedVersions
+
+    assert.equal(counted.length, MAX_COUNTED_VERSIONS)
+    assert.equal(counted.includes("1.7.0-beta.9"), false, "the oldest entry should have been trimmed off the front")
+    assert.equal(counted.at(-1), `1.7.0-beta.${MAX_COUNTED_VERSIONS + 9}`)
+  })
+
+  /**
+   * #219's single answer, migrated. Nobody recorded which version it was given under, so it reads
+   * as an answer for the version running now: the question comes back on the next new version
+   * rather than on this one, and an acceptance's own count is remembered so switching to "always"
+   * later cannot hit that same listing entry twice.
+   */
+  it("reads a #219 answer as one given for the running version", async () => {
+    setElectronAppVersion("1.7.0-beta.10")
     const { normalizeConfig } = await freshConfigManager()
 
-    for (const value of ["yes", "ACCEPTED", "", 1, true, null, {}, ["accepted"]]) {
-      assert.equal(normalizeConfig({ moddbVisibilityAnswer: value }).moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER, String(value))
+    assert.deepEqual(normalizeConfig({ moddbVisibilityAnswer: "accepted" }).moddbVisibility, {
+      policy: "ask",
+      answeredVersion: "1.7.0-beta.10",
+      countedVersions: ["1.7.0-beta.10"]
+    })
+
+    for (const answer of ["declined", "already-done"]) {
+      assert.deepEqual(normalizeConfig({ moddbVisibilityAnswer: answer }).moddbVisibility, { policy: "ask", answeredVersion: "1.7.0-beta.10", countedVersions: [] }, answer)
     }
+  })
+
+  it("reads a #219 config that was never answered as nobody having answered", async () => {
+    setElectronAppVersion("1.7.0-beta.10")
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const answer of ["unasked", "ACCEPTED", ""]) {
+      assert.deepEqual(normalizeConfig({ moddbVisibilityAnswer: answer }).moddbVisibility, defaultModDbVisibility(), answer)
+    }
+  })
+
+  it("prefers the field over the #219 string when a config somehow carries both", async () => {
+    setElectronAppVersion("1.7.0-beta.10")
+    const { normalizeConfig } = await freshConfigManager()
+    const stored = { policy: "never", answeredVersion: "1.7.0-beta.9", countedVersions: [] }
+
+    assert.deepEqual(normalizeConfig({ moddbVisibility: stored, moddbVisibilityAnswer: "accepted" }).moddbVisibility, stored)
+  })
+
+  /**
+   * Same point accentColor and lastSeenChangelogVersion already make: adding a field must not need
+   * a schema bump. A beta.9 (schema 4) document never heard of this one, and an older build
+   * reading a schema 5 document this launcher wrote drops what it does not recognize and saves
+   * without it. Both land back here with no field at all, and both must read as an unanswered
+   * question rather than fail to migrate or start.
+   */
+  it("keeps a beta.9 (schema 4) document with no moddbVisibility field readable", async () => {
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }) }
+    delete legacyDoc.moddbVisibility
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.deepEqual(config.moddbVisibility, defaultModDbVisibility())
+    assert.equal(config.schemaVersion, CURRENT_CONFIG_SCHEMA)
+  })
+
+  it("migrates a beta.9 (schema 4) document that still carries the #219 answer, and writes it back under the new field", async () => {
+    setElectronAppVersion("1.7.0-beta.10")
+    const legacyDoc: Record<string, unknown> = { ...minimalConfig({ schemaVersion: 4 }) }
+    delete legacyDoc.moddbVisibility
+    legacyDoc.moddbVisibilityAnswer = "accepted"
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(legacyDoc), "utf-8")
+
+    const { getConfig, saveConfig } = await freshConfigManager()
+    const config = await getConfig()
+    assert.deepEqual(config.moddbVisibility, { policy: "ask", answeredVersion: "1.7.0-beta.10", countedVersions: ["1.7.0-beta.10"] })
+
+    // The round trip: what a later launch reads back carries the new field and nothing of the old.
+    assert.equal(await saveConfig(config), true)
+    const written = JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8"))
+    assert.deepEqual(written.moddbVisibility, config.moddbVisibility)
+    assert.equal("moddbVisibilityAnswer" in written, false)
   })
 })
 
@@ -541,6 +741,43 @@ describe("normalizeConfig: receiveBetaUpdates", () => {
     for (const value of ["true", "false", "yes", 1, 0, null, {}, [true]]) {
       assert.equal(normalizeConfig({ receiveBetaUpdates: value }).receiveBetaUpdates, DEFAULT_RECEIVE_BETA_UPDATES, String(value))
     }
+  })
+})
+
+/**
+ * The opt-in that lets a session be kept without a system keyring (#481). It weakens where a
+ * session lives, so the only thing that may turn it on is the toggle writing a real `true`: every
+ * other spelling, and every config that has never been asked, reads as off.
+ */
+describe("normalizeConfig: allowBasicSessionStore", () => {
+  it("reads a config written before the setting existed as off", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({}).allowBasicSessionStore, DEFAULT_ALLOW_BASIC_SESSION_STORE)
+    assert.equal(DEFAULT_ALLOW_BASIC_SESSION_STORE, false, "the shipped default is off, and a change here is a change to what a fresh install stores")
+  })
+
+  it("keeps an explicit answer, both ways round", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    assert.equal(normalizeConfig({ allowBasicSessionStore: true }).allowBasicSessionStore, true)
+    assert.equal(normalizeConfig({ allowBasicSessionStore: false }).allowBasicSessionStore, false)
+  })
+
+  it("stays off for anything that is not a boolean, a hand-edited yes included", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const value of ["true", "yes", "on", 1, null, {}, [true]]) {
+      assert.equal(normalizeConfig({ allowBasicSessionStore: value }).allowBasicSessionStore, false, String(value))
+    }
+  })
+
+  it("round trips through a save and a fresh read, which is what the next startup reads the switch off", async () => {
+    const { saveConfig, normalizeConfig } = await freshConfigManager()
+
+    assert.equal(await saveConfig(normalizeConfig({ allowBasicSessionStore: true })), true)
+
+    const { getConfig } = await freshConfigManager()
+    assert.equal((await getConfig()).allowBasicSessionStore, true)
+    assert.equal(JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8")).allowBasicSessionStore, true, "and it is on disk, where main/index.ts reads it before Electron starts")
   })
 })
 
@@ -607,9 +844,16 @@ describe("saveConfig and flushConfigWrites", () => {
     assert.equal(result, true, "the write itself landed; only its own best-effort cleanup failed")
   })
 
+  /**
+   * The normaliser is what drops these, not the writer: it builds a fixed literal field by field,
+   * so a key it does not name cannot come out the other side. Asserted on both, because the day
+   * `normalizeConfig` grows a spread of its input is the day a session-only marker reaches disk.
+   */
   it("strips underscore-prefixed session-only fields before writing to disk", async () => {
-    const { saveConfig, flushConfigWrites } = await freshConfigManager()
+    const { saveConfig, flushConfigWrites, normalizeConfig } = await freshConfigManager()
     const withSessionField = { ...minimalConfig(), _notifiedModUpdatesInstallations: ["install-1"] }
+
+    assert.equal("_notifiedModUpdatesInstallations" in normalizeConfig(withSessionField), false)
 
     await saveConfig(withSessionField)
     await flushConfigWrites()
@@ -959,5 +1203,64 @@ describe("getConfig: config.json backup before a schema migration", () => {
     await getConfig()
 
     assert.equal(statSync(backupPath()).mode & 0o777, 0o600)
+  })
+})
+
+/**
+ * A login on a machine with no keyring keeps its session in the main process and writes no
+ * secrets (#481). The public half still has to reach `config.accounts`, because that list is
+ * where EXECUTE_GAME looks the active account up, so the account carries a mark saying it lasts
+ * as long as the process does. Startup is where the mark is acted on: the next launch has no
+ * secrets for it, and an account that cannot launch and says nothing about why is worse than no
+ * account at all.
+ */
+describe("normalizeConfig: an account kept for this run only (#481)", () => {
+  const sessionOnlyAccount = { email: "player@example.com", playerName: "Player", playerUid: "uid-1", playerEntitlements: null, hostGameServer: false, sessionOnly: true } as const
+  const savedAccount = { email: "other@example.com", playerName: "Other", playerUid: "uid-2", playerEntitlements: null, hostGameServer: false } as const
+
+  it("keeps it in this process, where the game launch can still find it", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    await getConfig()
+    assert.equal(await saveConfig(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accounts: [sessionOnlyAccount], activeAccountId: "uid-1" })), true)
+
+    const config = await getConfig()
+    // The lookup EXECUTE_GAME itself does, in src/ipc/handlers/gameHandlers.ts.
+    assert.deepEqual(
+      config.accounts.find((candidate) => candidate.playerUid === config.activeAccountId),
+      sessionOnlyAccount
+    )
+  })
+
+  it("is gone at the next startup, and the choice of account falls back to one that can still launch", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    await getConfig()
+    await saveConfig(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accounts: [savedAccount, sessionOnlyAccount], activeAccountId: "uid-1" }))
+
+    const restarted = await freshConfigManager()
+    const config = await restarted.getConfig()
+
+    assert.deepEqual(config.accounts, [savedAccount])
+    assert.equal(config.activeAccountId, "uid-2")
+  })
+
+  it("leaves an ordinary saved account alone across the same restart", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    await getConfig()
+    await saveConfig(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, accounts: [savedAccount], activeAccountId: "uid-2" }))
+
+    const restarted = await freshConfigManager()
+    const config = await restarted.getConfig()
+
+    assert.deepEqual(config.accounts, [savedAccount])
+    assert.equal(config.activeAccountId, "uid-2")
+  })
+
+  it("only reads a literal true as the mark, so no hand-edited spelling can delete a saved account", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    for (const spelling of ["true", 1, "1", "yes", false, null, {}]) {
+      const config = normalizeConfig({ accounts: [{ ...savedAccount, sessionOnly: spelling }] })
+      assert.deepEqual(config.accounts, [savedAccount], `sessionOnly: ${JSON.stringify(spelling)}`)
+    }
   })
 })

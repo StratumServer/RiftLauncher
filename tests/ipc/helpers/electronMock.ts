@@ -17,8 +17,16 @@ export { createTrustedEvent, createUntrustedEvent } from "./trustedEvent"
  * pathPolicy.ts or configManager.ts need those to be distinguishable folders;
  * everything else keeps the original behavior of collapsing every name onto
  * `userDataPath`, which is what electron-log's own calls rely on.
+ *
+ * `appVersion` is the running version the ModDB listing count and the config's own migration of
+ * the #219 answer are decided against.
  */
-const state = { userDataPath: "" }
+const DEFAULT_APP_VERSION = "0.0.0-test"
+
+// "DIRECT" so `requestBoundedTextViaNode` (src/ipc/network.ts, issue #481) keeps behaving
+// exactly as it did before it started asking, in every test that never calls
+// `setElectronProxyResolution` itself.
+const state = { userDataPath: "", appVersion: DEFAULT_APP_VERSION, proxyResolution: "DIRECT" }
 const namedPaths: Record<string, string> = {}
 
 /**
@@ -39,6 +47,15 @@ export function clearAppEventListeners(): void {
   appEventListeners.clear()
 }
 
+/**
+ * Points `app.getVersion()` at `version`, for the handlers that read the running version
+ * (src/config/configManager.ts's ModDB migration, src/ipc/handlers/netHandlers.ts's listing
+ * count). Called with nothing, it puts the default back, which `beforeEach` blocks rely on.
+ */
+export function setElectronAppVersion(version: string = DEFAULT_APP_VERSION): void {
+  state.appVersion = version
+}
+
 /** Points `app.getPath("userData")` (and every other path electron-log asks for) at `path`. */
 export function setElectronUserDataPath(path: string): void {
   state.userDataPath = path
@@ -52,6 +69,16 @@ export function setElectronUserDataPath(path: string): void {
  */
 export function setElectronPath(name: "appData" | "home" | "appRoot", path: string): void {
   namedPaths[name] = path
+}
+
+/**
+ * Points `session.defaultSession.resolveProxy(url)` at `answer`, the PAC-style string Electron's
+ * real session answers with (`"DIRECT"`, `"PROXY host:port"`, `"SOCKS5 host:port"`, ...). Tests for
+ * `requestBoundedTextViaNode`'s proxy support (issue #481) set this in place of a real Chromium
+ * session, which nothing under `tests/` runs.
+ */
+export function setElectronProxyResolution(answer: string): void {
+  state.proxyResolution = answer
 }
 
 /**
@@ -95,8 +122,8 @@ vi.mock("electron", () => {
     /** electron-log's `getAppName()` falls back to these; only has to be a string. */
     name: "RiftLauncher",
     getName: (): string => "RiftLauncher",
-    /** electron-log's `getAppVersion()`; only has to be a string. */
-    getVersion: (): string => "0.0.0-test",
+    /** electron-log's `getAppVersion()`, and the running version the ModDB count is answered for. */
+    getVersion: (): string => state.appVersion,
     /**
      * electron-log's `onAppReady()`/`onAppEvent()` call these through optional
      * chaining (`this.electron.app?.on`). No-ops are enough: nothing under test
@@ -123,5 +150,9 @@ vi.mock("electron", () => {
   const dialog = { showSaveDialog: vi.fn(), showOpenDialog: vi.fn() }
   const shell = { showItemInFolder: vi.fn(), openPath: vi.fn(), openExternal: vi.fn() }
 
-  return { app, ipcMain, dialog, shell }
+  // `resolveProxy` is the one `session` member `requestBoundedTextViaNode` reads (issue #481);
+  // nothing else on a real `Session` is touched by anything under test.
+  const session = { defaultSession: { resolveProxy: async (): Promise<string> => state.proxyResolution } }
+
+  return { app, ipcMain, dialog, shell, session }
 })

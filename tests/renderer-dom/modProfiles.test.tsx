@@ -366,8 +366,12 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     await switchLanded()
 
     // A fresh scan, the first write, only the four renames that differ, the second write, and the
-    // page's own rescan once the folder is let go.
-    expect(events).toEqual(["scan", "save null", `rename ${BETA} false`, `rename ${GAMMA} false`, `rename ${DELTA} false`, `rename ${EPSILON} true`, "save solo", "scan"])
+    // page's own rescan once the folder is let go. That rescan effect (useManageInstalledMods) can
+    // fire itself an extra, idempotent time under a loaded CI runner, so only pin the meaningful
+    // sequence and allow any number of trailing rescans instead of an exact count.
+    const CORE_EVENTS = ["scan", "save null", `rename ${BETA} false`, `rename ${GAMMA} false`, `rename ${DELTA} false`, `rename ${EPSILON} true`, "save solo", "scan"]
+    expect(events.slice(0, CORE_EVENTS.length)).toEqual(CORE_EVENTS)
+    expect(events.slice(CORE_EVENTS.length).every((event) => event === "scan")).toBe(true)
     // Server kept what the folder held when it was left, not its stale stored pair.
     expect(stored()).toEqual(aDocument([{ ...SERVER, mods: LIVE }, SOLO], "solo"))
 

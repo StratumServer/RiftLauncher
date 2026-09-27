@@ -15,16 +15,13 @@
  * the notes players will read rather than against invented input.
  */
 
+import semver from "semver"
+
 import { isPrereleaseVersion } from "./betaUpdates"
 
 export interface WhatsNewBlock {
   kind: "heading" | "paragraph" | "bullet"
   text: string
-}
-
-export interface WhatsNewLimits {
-  maxBlocks: number
-  maxBlockLength: number
 }
 
 /**
@@ -33,12 +30,13 @@ export interface WhatsNewLimits {
  * written to exhaust the dialog: past the block count the last block becomes
  * {@link MORE_ON_THE_RELEASES_PAGE} and the rest is left on the releases page.
  */
-export const DEFAULT_WHATS_NEW_LIMITS: WhatsNewLimits = { maxBlocks: 120, maxBlockLength: 2000 }
+const MAX_BLOCKS = 120
+const MAX_BLOCK_LENGTH = 2000
 
 /**
- * The block that replaces everything past `maxBlocks`, so a body that was cut says so instead of
- * ending mid-thought. A bare ellipsis rather than a sentence: both screens already sit above an
- * "All releases" button that is where the rest of the notes live.
+ * The block that replaces everything past {@link MAX_BLOCKS}, so a body that was cut says so
+ * instead of ending mid-thought. A bare ellipsis rather than a sentence: both screens already sit
+ * above an "All releases" button that is where the rest of the notes live.
  */
 export const MORE_ON_THE_RELEASES_PAGE = "…"
 
@@ -125,16 +123,16 @@ function toPlainText(raw: string): string {
 }
 
 /**
- * One block's text, cut at a word boundary with an ellipsis when it runs past the limit.
+ * One block's text, cut at a word boundary with an ellipsis when it runs past {@link MAX_BLOCK_LENGTH}.
  *
  * The cut never lands between a surrogate pair's two halves, which would leave a lone half that
  * renders as a replacement character: the last space inside the budget is the normal cut, and the
  * hard cut backs up one unit when it would split a pair.
  */
-function capBlockText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
+function capBlockText(text: string): string {
+  if (text.length <= MAX_BLOCK_LENGTH) return text
 
-  const room = maxLength - MORE_ON_THE_RELEASES_PAGE.length
+  const room = MAX_BLOCK_LENGTH - MORE_ON_THE_RELEASES_PAGE.length
   const lastSpace = text.slice(0, room).lastIndexOf(" ")
   let cut = lastSpace > 0 ? lastSpace : room
   const previous = text.charCodeAt(cut - 1)
@@ -170,9 +168,8 @@ function boundInput(markdown: string): string {
  * render it as any.
  *
  * @param markdown The release's `body` field. Anything that is not a string, missing included, is no notes at all.
- * @param limits Caps on how much of a body reaches the screen. Defaults to {@link DEFAULT_WHATS_NEW_LIMITS}.
  */
-export function releaseNotesToBlocks(markdown: unknown, limits: WhatsNewLimits = DEFAULT_WHATS_NEW_LIMITS): WhatsNewBlock[] {
+export function releaseNotesToBlocks(markdown: unknown): WhatsNewBlock[] {
   if (typeof markdown !== "string" || markdown.length === 0) return []
 
   const body = boundInput(markdown).replace(HTML_COMMENT, "").replace(SCRIPT_OR_STYLE, "")
@@ -184,7 +181,7 @@ export function releaseNotesToBlocks(markdown: unknown, limits: WhatsNewLimits =
 
   const push = (kind: WhatsNewBlock["kind"], raw: string, prefix = ""): void => {
     const text = toPlainText(raw)
-    if (text.length > 0) blocks.push({ kind, text: capBlockText(`${prefix}${text}`, limits.maxBlockLength) })
+    if (text.length > 0) blocks.push({ kind, text: capBlockText(`${prefix}${text}`) })
   }
 
   const flushParagraph = (kind: WhatsNewBlock["kind"] = "paragraph"): void => {
@@ -196,7 +193,7 @@ export function releaseNotesToBlocks(markdown: unknown, limits: WhatsNewLimits =
 
   for (const rawLine of lines) {
     // One past the cap: enough to know the body was cut without reading the rest of it.
-    if (blocks.length > limits.maxBlocks) break
+    if (blocks.length > MAX_BLOCKS) break
 
     // Left-trimmed only: a nested bullet flattens onto the same level, while the trailing space
     // of a line a whole-body comment strip emptied out (`# ` from `# <!-- ... -->`) still lets the
@@ -261,39 +258,13 @@ export function releaseNotesToBlocks(markdown: unknown, limits: WhatsNewLimits =
 
   flushParagraph()
 
-  if (blocks.length > limits.maxBlocks) return [...blocks.slice(0, limits.maxBlocks - 1), { kind: "paragraph", text: MORE_ON_THE_RELEASES_PAGE }]
+  if (blocks.length > MAX_BLOCKS) return [...blocks.slice(0, MAX_BLOCKS - 1), { kind: "paragraph", text: MORE_ON_THE_RELEASES_PAGE }]
 
   return blocks
 }
 
 function stripVersionPrefix(version: string): string {
   return version.trim().replace(/^v/i, "")
-}
-
-/** One dot-separated run of a version, numeric parts included, and its prerelease identifiers (if any), split the same way semver does. */
-function parseWhatsNewVersion(version: string): { release: number[]; prerelease: string[] | null } {
-  const bare = stripVersionPrefix(version).split("+", 1)[0] ?? ""
-  const dashIndex = bare.indexOf("-")
-  const releasePart = dashIndex === -1 ? bare : bare.slice(0, dashIndex)
-  const prereleasePart = dashIndex === -1 ? null : bare.slice(dashIndex + 1)
-
-  return {
-    release: releasePart.split(".").map((part) => Number(part) || 0),
-    prerelease: prereleasePart && prereleasePart.length > 0 ? prereleasePart.split(".") : null
-  }
-}
-
-/** Compares two prerelease identifiers the way semver precedence does: numeric identifiers sort as numbers, and a numeric one always sorts before an alphanumeric one. */
-function compareIdentifiers(a: string, b: string): number {
-  const numA = Number(a)
-  const numB = Number(b)
-  const aIsNumeric = a !== "" && Number.isFinite(numA)
-  const bIsNumeric = b !== "" && Number.isFinite(numB)
-
-  if (aIsNumeric && bIsNumeric) return numA - numB
-  if (aIsNumeric) return -1
-  if (bIsNumeric) return 1
-  return a < b ? -1 : a > b ? 1 : 0
 }
 
 /**
@@ -303,37 +274,30 @@ function compareIdentifiers(a: string, b: string): number {
  * src/domain/versionNumbers.ts's compareVersions deliberately drops the prerelease suffix instead
  * of ranking it, which is right for the game catalog and the ModDB but wrong here: selecting the
  * releases between two beta versions is the one thing in the launcher that does have to decide
- * whether beta.10 outranks beta.9. Written by hand rather than by adding a `semver` dependency to
- * this file, the same way betaUpdates.ts reads a prerelease with a plain string check instead of
- * one.
+ * whether beta.10 outranks beta.9. That is semver's own precedence rule, and `semver` is already
+ * how src/domain/versions/detect.ts, src/domain/mods/compatibility.ts and src/domain/mods/health.ts
+ * read a version in this same layer.
+ *
+ * A tag semver refuses sorts before every tag it accepts, so it lands last newest-first and never
+ * falls inside the dialog's window; among themselves those sort alphabetically, so the order is the
+ * same on every render. That guard is the shape src/renderer/src/utils/gameVersionOrder.ts already
+ * ships for the same problem, and it is what keeps a throw out of a sort callback.
+ *
+ * It is stricter than the coerced parse it replaces, on purpose. That parse read the leading run of
+ * a tag as a number, so `1.8` ranked between `1.9.0` and `1.7.0` and `2024-06-01` ranked above every
+ * 1.x tag; semver wants three parts, and a tag that does not have them now sorts below all of them
+ * instead of being guessed at. Nothing upstream constrains the shape: src/ipc/handlers/netHandlers.ts
+ * keeps any non-empty tag_name of up to 128 characters. Every tag this project has published is
+ * valid semver, so no published release moves.
  */
 function compareWhatsNewVersions(a: string, b: string): number {
-  const left = parseWhatsNewVersion(a)
-  const right = parseWhatsNewVersion(b)
+  const left = semver.valid(a)
+  const right = semver.valid(b)
 
-  for (let index = 0; index < Math.max(left.release.length, right.release.length); index++) {
-    const difference = (left.release[index] ?? 0) - (right.release[index] ?? 0)
-    if (difference !== 0) return difference
-  }
-
-  if (left.prerelease === null && right.prerelease === null) return 0
-  if (left.prerelease === null) return 1 // a plain release outranks any prerelease of the same version
-  if (right.prerelease === null) return -1
-
-  for (let index = 0; index < Math.max(left.prerelease.length, right.prerelease.length); index++) {
-    const leftIdentifier = left.prerelease[index]
-    const rightIdentifier = right.prerelease[index]
-    if (leftIdentifier === undefined) return -1
-    if (rightIdentifier === undefined) return 1
-    const difference = compareIdentifiers(leftIdentifier, rightIdentifier)
-    if (difference !== 0) return difference
-  }
-
-  return 0
-}
-
-export interface SelectReleasesOptions {
-  maxReleases?: number
+  if (left && right) return semver.compare(left, right)
+  if (left) return 1
+  if (right) return -1
+  return a.localeCompare(b)
 }
 
 /** Newest tag first, the one order both screens list releases in. */
@@ -353,9 +317,9 @@ function isShowable(release: WhatsNewReleaseInfo, currentIsPrerelease: boolean):
 
 /**
  * The releases to show after an update: tag versions strictly after `previousVersion` and up to
- * and including `currentVersion`, newest first, capped to {@link DEFAULT_MAX_RELEASES_TO_SHOW} by
- * default. This is the dialog's window; the Info & Help section uses
- * {@link selectLatestReleases}, which has no window at all.
+ * and including `currentVersion`, newest first, capped to {@link DEFAULT_MAX_RELEASES_TO_SHOW}.
+ * This is the dialog's window; the Info & Help section uses {@link selectLatestReleases}, which has
+ * no window at all.
  *
  * A `v` prefix on either version, or on a release's tag, is tolerated throughout.
  *
@@ -364,7 +328,7 @@ function isShowable(release: WhatsNewReleaseInfo, currentIsPrerelease: boolean):
  * `currentVersion` is shown, never the whole history: nobody who just installed the launcher
  * needs to be told about every release that ever shipped.
  */
-export function selectReleasesToShow(releases: readonly WhatsNewReleaseInfo[], previousVersion: string, currentVersion: string, options: SelectReleasesOptions = {}): WhatsNewReleaseInfo[] {
+export function selectReleasesToShow(releases: readonly WhatsNewReleaseInfo[], previousVersion: string, currentVersion: string): WhatsNewReleaseInfo[] {
   const current = stripVersionPrefix(currentVersion)
   const previous = previousVersion.trim().length > 0 ? stripVersionPrefix(previousVersion) : ""
   const currentIsPrerelease = isPrereleaseVersion(current)
@@ -378,7 +342,7 @@ export function selectReleasesToShow(releases: readonly WhatsNewReleaseInfo[], p
     return compareWhatsNewVersions(tag, previous) > 0 && compareWhatsNewVersions(tag, current) <= 0
   })
 
-  return inRange.sort(newestTagFirst).slice(0, options.maxReleases ?? DEFAULT_MAX_RELEASES_TO_SHOW)
+  return inRange.sort(newestTagFirst).slice(0, DEFAULT_MAX_RELEASES_TO_SHOW)
 }
 
 /**
@@ -392,11 +356,11 @@ export function selectReleasesToShow(releases: readonly WhatsNewReleaseInfo[], p
  * `currentVersion` is still read, for the prerelease rule alone: a stable build never lists beta
  * notes.
  */
-export function selectLatestReleases(releases: readonly WhatsNewReleaseInfo[], currentVersion: string, options: SelectReleasesOptions = {}): WhatsNewReleaseInfo[] {
+export function selectLatestReleases(releases: readonly WhatsNewReleaseInfo[], currentVersion: string): WhatsNewReleaseInfo[] {
   const currentIsPrerelease = isPrereleaseVersion(stripVersionPrefix(currentVersion))
 
   return releases
     .filter((release) => isShowable(release, currentIsPrerelease))
     .sort(newestTagFirst)
-    .slice(0, options.maxReleases ?? DEFAULT_MAX_RELEASES_TO_SHOW)
+    .slice(0, DEFAULT_MAX_RELEASES_TO_SHOW)
 }

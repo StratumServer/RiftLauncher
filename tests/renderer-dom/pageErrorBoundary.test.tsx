@@ -62,7 +62,7 @@ function renderApp(): MockedBridgeAPI {
   const api = installMockWindowApi({
     // "asked" keeps the ModDB visibility prompt shut: it is a modal that traps focus, which
     // would make the focus assertion below measure the dialog rather than the fallback.
-    configManager: { getConfig: vi.fn(async () => createMockConfig({ moddbVisibilityAnswer: "asked" })) }
+    configManager: { getConfig: vi.fn(async () => createMockConfig({ moddbVisibility: { policy: "never", answeredVersion: "", countedVersions: [] } })) }
   })
 
   // App builds its own HashRouter, so it is mounted without the helper's MemoryRouter.

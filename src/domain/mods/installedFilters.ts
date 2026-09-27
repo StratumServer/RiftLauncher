@@ -120,6 +120,16 @@ function matchesGameVersion(mod: InstalledModType, gameVersion: string): boolean
   return releasesOf(mod).some((release) => evaluateModCompatibility(textEntries(release.tags), gameVersion) !== "undeclared")
 }
 
+/**
+ * What the player types matched against what they can see of a mod: its name, id, or author.
+ *
+ * `search` arrives trimmed and lower-cased, because the page does that once per keystroke rather
+ * than once per mod. Shared with the server groups (#459), which narrow on the same field.
+ */
+export function matchesModSearch(mod: InstalledModType, search: string): boolean {
+  return mod.name.toLowerCase().includes(search) || mod.modid.toLowerCase().includes(search) || (mod.authors?.some((author) => author.toLowerCase().includes(search)) ?? false)
+}
+
 /** All three axes at once. A mod clears every one of them, so each pick narrows what is left. */
 export function matchesInstalledModFilters(mod: InstalledModType, filters: InstalledModFilters): boolean {
   return matchesAuthor(mod, filters.author) && matchesTags(mod, filters.tags) && matchesGameVersion(mod, filters.gameVersion)
@@ -129,30 +139,48 @@ export function filterInstalledMods(mods: readonly InstalledModType[], filters: 
   return mods.filter((mod) => matchesInstalledModFilters(mod, filters))
 }
 
-/** True when any axis is set. The empty state and the clear button both key off this. */
-export function hasActiveInstalledModFilters(filters: InstalledModFilters): boolean {
-  return filters.author !== "" || filters.tags.length > 0 || filters.gameVersion !== ""
-}
-
 /**
  * How many of the three axes are set, from 0 to 3. The Filters toggle shows this count rather than
  * a plain on/off state, so a player who set two axes and forgot about one still sees why the list
  * is short. A tag axis with several tags picked still counts as the one axis it is: the toggle is
  * about which controls are touched, not how many values sit inside one of them.
+ *
+ * This is also the single definition of "an axis is set": {@link hasActiveInstalledModFilters} asks
+ * it rather than restating the three conditions, so a fourth axis cannot land in one and not the
+ * other.
  */
 export function countActiveInstalledModFilters(filters: InstalledModFilters): number {
   return (filters.author !== "" ? 1 : 0) + (filters.tags.length > 0 ? 1 : 0) + (filters.gameVersion !== "" ? 1 : 0)
 }
 
+/** True when any axis is set. The empty state and the clear button both key off this. */
+export function hasActiveInstalledModFilters(filters: InstalledModFilters): boolean {
+  return countActiveInstalledModFilters(filters) > 0
+}
+
+/**
+ * True when two modids name the same mod.
+ *
+ * A mod id is ASCII by the game's own rules (Vintage Story rejects anything else in `modinfo.json`),
+ * so a plain `toLowerCase` fold is safe here, no locale needed. Neither side is trusted to already be
+ * lowercase: the ModDB documents `modidstrs` as lowercase, but old releases (#454, "CutTheFat") carry
+ * whatever casing an author typed at upload time, and a `modinfo.json` can spell its own `ModID` any
+ * way it likes.
+ */
+export function sameModid(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase()
+}
+
 /**
  * True when a ModDB listing's `modidstrs` name an installed modid.
  *
- * The listing spells its ids in lowercase while a `modinfo.json` may use any casing, so an installed
- * id matches spelled as it is or lowercased. Nothing looser: a prefix or substring match would call
+ * Both sides are case-folded before comparing: relying on the listing's advertised lowercase
+ * convention missed listings like "Cut the Fat" whose `modidstrs` kept an old release's mixed-case
+ * spelling (#454). Nothing looser than a full fold: a prefix or substring match would call
  * "betterruinsplus" installed because "betterruins" is.
  */
 export function listingDeclaresModid(modidstrs: readonly string[], installedModid: string): boolean {
-  return modidstrs.some((modidstr) => modidstr === installedModid.toLocaleLowerCase() || modidstr === installedModid)
+  return modidstrs.some((modidstr) => sameModid(modidstr, installedModid))
 }
 
 /**

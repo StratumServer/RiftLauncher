@@ -9,12 +9,15 @@ type BackupFixture = InstallationDeleteSnapshot["backups"][number]
 /** Everything the fakes wrote down, in the order it happened. */
 let trace: string[] = []
 
-function fakePorts(options: { removals?: Record<string, boolean> } = {}): DeleteInstallationPorts {
+function fakePorts(options: { removals?: Record<string, boolean>; missing?: readonly string[] } = {}): DeleteInstallationPorts {
   const removals = options.removals ?? {}
+  const missing = new Set(options.missing ?? [])
   return {
     fileSystem: {
+      exists: async (path: string): Promise<boolean> => !missing.has(path),
       remove: async (path: string): Promise<boolean> => {
         trace.push(`remove:${path}`)
+        if (missing.has(path)) return false
         return removals[path] ?? true
       }
     }

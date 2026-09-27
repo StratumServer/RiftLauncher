@@ -1,7 +1,18 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { AccountStorageFailure, loginFailureReason } from "@src/ipc/handlers/loginFailureReason"
+import {
+  AccountStorageFailure,
+  ERROR_NAMES,
+  HTTP_STATUSES,
+  loginFailureFamily,
+  loginFailureReason,
+  NETWORK_CODES,
+  NETWORK_MESSAGES,
+  STORAGE_CODES,
+  STORAGE_MESSAGES,
+  type LoginFailureFamily
+} from "@src/ipc/handlers/loginFailureReason"
 
 /**
  * The mapping the LOGIN handler logs instead of the caught error's message
@@ -12,11 +23,23 @@ import { AccountStorageFailure, loginFailureReason } from "@src/ipc/handlers/log
  * Every password below is a placeholder that exists only to be asserted
  * absent.
  */
+/**
+ * What `network.ts` throws for a non-2xx answer, built by hand so this file
+ * stays Electron-free: `BoundedResponseError`'s message, plus the status as a
+ * number. The class sets `statusCode` even when the response carried no status
+ * line, so an undefined one is still an own property here.
+ */
+function refusedWithStatus(statusCode: number | undefined): Error {
+  return Object.assign(new Error(`Network request failed with status ${statusCode ?? "unknown"}`), { statusCode })
+}
+
 describe("loginFailureReason names what went wrong", () => {
   for (const [message, expected] of [
     ["Network request timed out", "timeout"],
     ["Network response is too large", "response-too-large"],
-    ["Network response was aborted", "response-aborted"]
+    ["Network response was aborted", "response-aborted"],
+    ["Login proxy requires authentication", "proxy-auth-required"],
+    ["Login proxy is not supported", "proxy-unsupported"]
   ] as const) {
     it(`reads "${message}" as ${expected}`, () => {
       assert.equal(loginFailureReason(new Error(message)), expected)
@@ -24,27 +47,27 @@ describe("loginFailureReason names what went wrong", () => {
   }
 
   it("names the HTTP failure, so a 503 outage is not read as a wrong password", () => {
-    assert.equal(loginFailureReason(new Error("Network request failed with status 401")), "http-unauthorized")
-    assert.equal(loginFailureReason(new Error("Network request failed with status 429")), "http-rate-limited")
-    assert.equal(loginFailureReason(new Error("Network request failed with status 503")), "http-unavailable")
+    assert.equal(loginFailureReason(refusedWithStatus(401)), "http-unauthorized")
+    assert.equal(loginFailureReason(refusedWithStatus(429)), "http-rate-limited")
+    assert.equal(loginFailureReason(refusedWithStatus(503)), "http-unavailable")
   })
 
   it("never writes the status digits, which the response picks and a password can equal", () => {
-    // `network.ts` builds this message from the response's own status line,
-    // and `assertString` accepts `503` as a password, so a token built by
-    // splicing the digits in puts that password in the log the moment the
-    // service goes down. Every token below is a literal from the module.
-    for (const status of ["401", "403", "429", "500", "503", "418", "599", "302", "unknown"]) {
-      const reason = loginFailureReason(new Error(`Network request failed with status ${status}`))
-      assert.equal(reason.includes(status), false, `the status digits reached the reason: ${reason}`)
+    // The status comes from the response's own status line, and `assertString`
+    // accepts `503` as a password, so a token built by splicing the digits in
+    // puts that password in the log the moment the service goes down. Every
+    // token below is a literal from the module.
+    for (const status of [401, 403, 429, 500, 503, 418, 599, 302]) {
+      const reason = loginFailureReason(refusedWithStatus(status))
+      assert.equal(reason.includes(String(status)), false, `the status digits reached the reason: ${reason}`)
     }
   })
 
   it("degrades an unlisted status to its range, and anything else to http-other", () => {
-    assert.equal(loginFailureReason(new Error("Network request failed with status 418")), "http-4xx")
-    assert.equal(loginFailureReason(new Error("Network request failed with status 599")), "http-5xx")
-    assert.equal(loginFailureReason(new Error("Network request failed with status 302")), "http-other")
-    assert.equal(loginFailureReason(new Error("Network request failed with status unknown")), "http-other")
+    assert.equal(loginFailureReason(refusedWithStatus(418)), "http-4xx")
+    assert.equal(loginFailureReason(refusedWithStatus(599)), "http-5xx")
+    assert.equal(loginFailureReason(refusedWithStatus(302)), "http-other")
+    assert.equal(loginFailureReason(refusedWithStatus(undefined)), "http-other")
   })
 
   it("names the system error code when the socket is what failed", () => {
@@ -162,12 +185,128 @@ describe("loginFailureReason cannot carry a secret out", () => {
     assert.equal(reason, "storage-other")
   })
 
-  it("matches the status message whole, so a longer one is not sliced for its middle", () => {
+  it("reads the status off the error, not out of a message that merely looks like one", () => {
     const reason = loginFailureReason(new Error(`Network request failed with status 500 for body ${PASSWORD}`))
 
     assert.equal(reason.includes(PASSWORD), false)
-    // Anchored, so a message that merely starts like the known one is not
-    // matched and sliced: it falls through to the class name instead.
+    // Nothing is parsed out of the message text, so an error that only reads
+    // like a status refusal is not treated as one: it falls through to the
+    // class name, and no part of the message reaches the answer.
     assert.equal(reason, "unclassified-Error")
+  })
+})
+
+/**
+ * A table walk over every token `loginFailureReason` can actually emit (issue #481), read
+ * straight out of its own tables rather than guessed at, so this list cannot go stale on its
+ * own. `EXPECTED_FAMILY` is written independently of `loginFailureFamily`'s internal sets: a
+ * token missing from it fails the completeness check below before it can silently read as
+ * `unknown`, which is the failure mode this test exists to catch. A future token added to one of
+ * the tables therefore has to be given a family here, even if that family is a deliberate
+ * `unknown`, rather than falling through unnoticed.
+ */
+describe("loginFailureFamily places every token loginFailureReason can emit", () => {
+  const ALL_REASON_TOKENS = new Set<string>([
+    ...NETWORK_MESSAGES.values(),
+    ...NETWORK_CODES.values(),
+    ...HTTP_STATUSES.values(),
+    "http-4xx",
+    "http-5xx",
+    "http-other",
+    ...STORAGE_MESSAGES.values(),
+    ...STORAGE_CODES.values(),
+    "storage-other",
+    ...ERROR_NAMES.values(),
+    "unclassified",
+    "non-error-throw",
+    "network-other"
+  ])
+
+  const EXPECTED_FAMILY: Record<string, LoginFailureFamily> = {
+    // Could not reach the service, or never heard back from it.
+    timeout: "network-unreachable",
+    "response-aborted": "network-unreachable",
+    "http-request-timeout": "network-unreachable",
+    "http-gateway-timeout": "network-unreachable",
+    "network-ENOTFOUND": "network-unreachable",
+    "network-EAI_AGAIN": "network-unreachable",
+    "network-ECONNREFUSED": "network-unreachable",
+    "network-ECONNRESET": "network-unreachable",
+    "network-ECONNABORTED": "network-unreachable",
+    "network-EPIPE": "network-unreachable",
+    "network-ETIMEDOUT": "network-unreachable",
+    "network-EHOSTUNREACH": "network-unreachable",
+    "network-ENETUNREACH": "network-unreachable",
+    "network-ENETDOWN": "network-unreachable",
+    "network-EPROTO": "network-unreachable",
+    "network-ERR_SOCKET_CONNECTION_TIMEOUT": "network-unreachable",
+    "network-ERR_STREAM_PREMATURE_CLOSE": "network-unreachable",
+    // A proxy-shaped cause the login transport cannot resolve on its own (#481): same family,
+    // since the request never reached the service either way.
+    "proxy-auth-required": "network-unreachable",
+    "proxy-unsupported": "network-unreachable",
+    // A certificate this machine would not accept.
+    "network-CERT_HAS_EXPIRED": "certificate-error",
+    "network-CERT_NOT_YET_VALID": "certificate-error",
+    "network-UNABLE_TO_VERIFY_LEAF_SIGNATURE": "certificate-error",
+    "network-UNABLE_TO_GET_ISSUER_CERT_LOCALLY": "certificate-error",
+    "network-SELF_SIGNED_CERT_IN_CHAIN": "certificate-error",
+    "network-DEPTH_ZERO_SELF_SIGNED_CERT": "certificate-error",
+    "network-ERR_TLS_CERT_ALTNAME_INVALID": "certificate-error",
+    // The service answered, but with a failure that is its own to fix.
+    "http-server-error": "service-error",
+    "http-bad-gateway": "service-error",
+    "http-unavailable": "service-error",
+    "http-5xx": "service-error",
+    // An HTTP-level refusal of the account itself, outside the ordinary envelope.
+    "http-unauthorized": "account-restricted",
+    "http-forbidden": "account-restricted",
+    "http-rate-limited": "service-error",
+    // Everything else: not confidently any of the four, so the generic failure stands.
+    "response-too-large": "unknown",
+    "http-bad-request": "unknown",
+    "http-not-found": "unknown",
+    "http-4xx": "unknown",
+    "http-other": "unknown",
+    "network-other": "unknown",
+    // The two keyring messages: no store on this machine can hold a session, one fix for both.
+    "secure-storage-unavailable": "no-keyring",
+    "no-system-password-store": "no-keyring",
+    // Every other storage token stays out: a full disk is not a missing keyring.
+    "storage-no-space": "unknown",
+    "storage-permission": "unknown",
+    "storage-locked": "unknown",
+    "storage-io": "unknown",
+    "storage-other": "unknown",
+    "unclassified-Error": "unknown",
+    "unclassified-TypeError": "unknown",
+    "unclassified-RangeError": "unknown",
+    "unclassified-SyntaxError": "unknown",
+    "unclassified-ReferenceError": "unknown",
+    "unclassified-AbortError": "unknown",
+    unclassified: "unknown",
+    "non-error-throw": "unknown"
+  }
+
+  it("has a recorded expectation for every token the module's own tables can produce", () => {
+    const unrecorded = [...ALL_REASON_TOKENS].filter((token) => !(token in EXPECTED_FAMILY))
+
+    assert.deepEqual(unrecorded, [], `token(s) with no recorded family, so they would silently fall back to "unknown": ${unrecorded.join(", ")}`)
+  })
+
+  it("never records an expectation for a token none of the tables can actually produce", () => {
+    // The other direction: a stale entry here would hide a table entry that was renamed or
+    // removed, and this test would keep passing on a token nothing can emit any more.
+    const stale = Object.keys(EXPECTED_FAMILY).filter((token) => !ALL_REASON_TOKENS.has(token))
+
+    assert.deepEqual(stale, [], `recorded token(s) no table can actually produce: ${stale.join(", ")}`)
+  })
+
+  it("classifies every token exactly as recorded", () => {
+    const mismatched = Object.entries(EXPECTED_FAMILY)
+      .filter(([token, expected]) => loginFailureFamily(token) !== expected)
+      .map(([token, expected]) => `${token}: expected ${expected}, got ${loginFailureFamily(token)}`)
+
+    assert.deepEqual(mismatched, [], mismatched.join("; "))
   })
 })

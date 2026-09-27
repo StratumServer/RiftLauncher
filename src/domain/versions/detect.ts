@@ -35,7 +35,19 @@ import type { GameExecutableCandidate, GameOs } from "./gameExecutable"
  */
 export type DetectInstalledGameVersionFailure = "no-executable" | "probe-failed" | "unreadable-version"
 
-export type DetectInstalledGameVersionResult = { ok: true; version: string } | { ok: false; reason: DetectInstalledGameVersionFailure }
+/**
+ * A fork of Vintage Story that names itself in the version probe's output.
+ *
+ * One variant is known, Optimum, which is why `name` is a literal rather than
+ * a free string: the launcher chose the token, the probe never gets to pick it.
+ * `version` is the fork's own version line (0.3.14 today), never the game's.
+ */
+export interface GameBuildVariant {
+  name: "Optimum"
+  version: string
+}
+
+export type DetectInstalledGameVersionResult = { ok: true; version: string; variant?: GameBuildVariant } | { ok: false; reason: DetectInstalledGameVersionFailure }
 
 export interface DetectInstalledGameVersionPorts {
   paths: PathBuilder
@@ -95,6 +107,13 @@ function probeRequestFor(candidate: GameExecutableCandidate, executablePath: str
  */
 const VERSION_TOKEN = /(?<![\d.])\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?!\.?\d)/g
 
+/** The fork marker, built off {@link VERSION_TOKEN} so the two can never drift apart. */
+const OPTIMUM_MARKER_SOURCE = `Optimum v(${VERSION_TOKEN.source})`
+const OPTIMUM_MARKER = new RegExp(OPTIMUM_MARKER_SOURCE)
+
+/** Every occurrence of it, for taking the fork's own number out of the game version's reach. */
+const OPTIMUM_MARKERS = new RegExp(OPTIMUM_MARKER_SOURCE, "g")
+
 /**
  * Reads a version out of probe output.
  *
@@ -114,15 +133,55 @@ const VERSION_TOKEN = /(?<![\d.])\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]
  * printed as an answer. The scan stays as the fallback for a build that prints
  * its version inside a sentence, where the first token is still the best guess
  * available.
+ *
+ * The marker text is cut out before either pass runs, which is what keeps the
+ * fallback honest. The bare-line rule alone is not enough: Optimum's patch
+ * chatter is printed before the client answers, so on any output with no bare
+ * version line in it, the first token anywhere is the fork's own number, and
+ * the fallback would hand back 0.3.14 as the game version. That happens on a
+ * warm cache, where the patch path is skipped and only the long version line
+ * "1.22.7 + Optimum v0.3.14" carries a number, and on a build that prints the
+ * marker and nothing readable at all, which has to stay unreadable rather than
+ * report the fork's version. A variant is never a substitute for the number
+ * the compatibility checks run on.
  */
 function extractVersion(stdout: string): string | undefined {
-  for (const line of stdout.split("\n")) {
+  const printed = stdout.replace(OPTIMUM_MARKERS, "")
+
+  for (const line of printed.split("\n")) {
     const bare = semver.valid(line.trim())
     if (bare) return bare
   }
 
-  for (const [token] of stdout.matchAll(VERSION_TOKEN)) if (semver.valid(token)) return token
+  for (const [token] of printed.matchAll(VERSION_TOKEN)) if (semver.valid(token)) return token
   return undefined
+}
+
+/**
+ * Reads Optimum's own version out of probe output, when the build is one.
+ *
+ * Optimum's IL patch appends " + Optimum v<version>" to
+ * `GameVersion.LongGameVersion`, and its patch path also logs
+ * "[Optimum] Optimum v<version>". Both spell the marker the same way, so one
+ * literal covers them, and the literal is what keeps this linear: anchoring on
+ * "Optimum v" means the version grammar is only ever tried at the handful of
+ * offsets that text appears at, rather than scanned for across unbounded stdout
+ * and matched backwards to a name.
+ *
+ * The capture goes through the same `semver.valid` gate {@link extractVersion}
+ * uses, off the same grammar, so a marker version detection accepts is one
+ * compareGameVersionsDesc could order. A marker with something else after the
+ * "v" reads as no marker at all.
+ *
+ * The folder's file names are deliberately not consulted. Optimum's packaging
+ * script copies a vanilla-named binary next to the branded one, so a file named
+ * `Optimum` is a side effect of packaging, and a file name is something anyone
+ * can produce. The suffix comes from the patched DLL that actually changes how
+ * the build behaves. One signal, the authoritative one.
+ */
+function extractOptimumVersion(stdout: string): string | undefined {
+  const marker = OPTIMUM_MARKER.exec(stdout)
+  return marker ? (semver.valid(marker[1] ?? "") ?? undefined) : undefined
 }
 
 /**
@@ -140,7 +199,8 @@ function interpretProbe(outcome: ProcessProbeOutcome): DetectInstalledGameVersio
   const version = extractVersion(outcome.stdout)
   if (!version) return { ok: false, reason: "unreadable-version" }
 
-  return { ok: true, version }
+  const variantVersion = extractOptimumVersion(outcome.stdout)
+  return variantVersion ? { ok: true, version, variant: { name: "Optimum", version: variantVersion } } : { ok: true, version }
 }
 
 /**

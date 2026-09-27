@@ -30,6 +30,13 @@ If you have ideas to improve the project, open an issue to discuss them before s
 - Follow the coding standard defined in the project.
 - Ensure your code is clean and well-commented.
 
+## Headless Checks
+
+For a change that could show up on screen, or that a PR description claims changes the app's
+behaviour, [docs/contribute/headless-checks.md](docs/contribute/headless-checks.md) covers driving
+a packaged build with no window: seed a throwaway profile, launch it, read or click through the
+UI over the Chrome DevTools Protocol, and screenshot what it actually shows.
+
 ## Documentation
 
 `docs/` is the single source of truth for RiftLauncher's documentation. Map every claim you write there to the app's current behaviour, the repository, the [releases page](https://github.com/StratumServer/RiftLauncher/releases) or the [issue tracker](https://github.com/StratumServer/RiftLauncher/issues), not to how VS Launcher used to behave. If a step or a claim can't be verified against one of those, treat it as a hypothesis and say so rather than writing it as fact. The same goes for screenshots and embedded videos: note plainly when one predates a UI or branding change instead of leaving the reader to guess why what they see doesn't match.

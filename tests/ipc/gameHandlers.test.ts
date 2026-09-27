@@ -68,6 +68,53 @@ vi.mock("node:child_process", async (importOriginal) => {
   }
 })
 
+/**
+ * Stands one detection result in for the domain's, on demand.
+ *
+ * The boundary check the handler runs on the way out reads the same semver
+ * grammar detection reads on the way in, so no transcript a real probe could
+ * print produces a variant the domain accepts and the check refuses: a test
+ * driving a script can only ever watch the two agree. Queueing a result here is
+ * what hands the handler a variant the check has to catch, which pins the call
+ * itself rather than the function it calls. Off unless a test turns it on, like
+ * the spawn flag above, and consumed by the first detection after it is set.
+ */
+const detectedVersion = vi.hoisted(() => ({ next: null as unknown }))
+
+/**
+ * Stands Windows in for the host, on demand, so the Windows arms of EXECUTE_GAME can be driven
+ * from a Linux runner.
+ *
+ * Only `os.platform()` moves. `comparablePath` and the path policy read `process.platform`
+ * instead, so a fixture path still compares the way the real host compares it, and every other
+ * `node:os` export is the real one. The handler reads the platform for three decisions: the launch
+ * wrapper (Linux only), the launch plan's executable name, and which process sampler the session
+ * recorder gets. That last one is the point: the Windows sampler is a `tasklist` reader, so it only
+ * measures anything if the handler hands the factory a probe to run it with.
+ */
+const hostPlatform = vi.hoisted(() => ({ value: null as NodeJS.Platform | null }))
+
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>()
+  const platform = (): NodeJS.Platform => hostPlatform.value ?? actual.platform()
+  // gameHandlers.ts imports the default, which the interop resolves to the namespace, so both have
+  // to carry the stand-in or the handler keeps reading the real platform.
+  return { ...actual, platform, default: { ...actual, platform } }
+})
+
+vi.mock("@domain/versions/detect", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@domain/versions/detect")>()
+  type Detect = typeof actual.detectInstalledGameVersion
+  return {
+    ...actual,
+    detectInstalledGameVersion: async (...args: Parameters<Detect>): ReturnType<Detect> => {
+      const queued = detectedVersion.next
+      detectedVersion.next = null
+      return queued ? (queued as Awaited<ReturnType<Detect>>) : actual.detectInstalledGameVersion(...args)
+    }
+  }
+})
+
 // Real implementation, wrapped, so the crash-safety guarantee stays covered by
 // atomicJsonFile.test.ts and this file only asserts that the settings write
 // goes through the shared adapter rather than a bare fse.writeJSON.
@@ -76,8 +123,8 @@ vi.mock("@src/ipc/atomicJsonFile", async (importOriginal) => {
   return { writeJsonAtomic: vi.fn(actual.writeJsonAtomic) }
 })
 
-type ExecuteGameHandler = (event: IpcMainInvokeEvent, version: unknown, installation: unknown) => Promise<GameExecutionResult>
-type LookForAGameVersionHandler = (event: IpcMainInvokeEvent, path: unknown) => Promise<{ exists: boolean; installedGameVersion?: string }>
+type ExecuteGameHandler = (event: IpcMainInvokeEvent, version: unknown, installation: unknown, serverId?: unknown) => Promise<GameExecutionResult>
+type LookForAGameVersionHandler = (event: IpcMainInvokeEvent, path: unknown) => Promise<{ exists: boolean; installedGameVersion?: string; variant?: GameBuildVariantType }>
 
 /** The key the game writes after prompting the player, which the launcher has never seen. */
 const GAME_REFRESHED_KEY = "game-session-key"
@@ -145,6 +192,8 @@ beforeEach(async () => {
   // test that turns this on and fails before the spawn consumes it would leave
   // it on for the next test, whose real spawn would then throw.
   spawnThrow.next = false
+  detectedVersion.next = null
+  hostPlatform.value = null
 
   temporaryRoot = mkdtempSync(join(tmpdir(), "game-handlers-"))
   managedFolder = join(temporaryRoot, "Installations")
@@ -343,6 +392,280 @@ describe("EXECUTE_GAME", () => {
   })
 
   /**
+   * The session recorder, end to end on Linux: a real spawn, a real pid, a real `/proc` read.
+   *
+   * The fixture sleeps long enough for the reading taken the moment the process exists to land, so
+   * the file that ends up under the launcher's own Sessions folder carries what the sampler
+   * actually measured rather than an empty series.
+   */
+  it.skipIf(process.platform !== "linux")("records the session it measured under the launcher's own Sessions folder", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "#!/bin/sh\nsleep 1\nexit 0\n")
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+
+    writeConfig({
+      gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+    })
+
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+
+    assert.deepEqual(result, { ok: true, exitCode: 0 })
+    const document = JSON.parse(readFileSync(join(userDataFolder, "Sessions", "main-1.json"), "utf-8"))
+    assert.equal(document.format, 1)
+    assert.equal(document.sessions.length, 1)
+    assert.equal(document.sessions[0].partial, false)
+    assert.ok(document.sessions[0].samples.length >= 1, "the session landed with no readings in it")
+    assert.ok(document.sessions[0].samples[0].rssBytes > 0, "the reading carries no memory")
+  })
+
+  it.skipIf(process.platform !== "linux")("measures nothing at all when the setting is off", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    // The same fixture the test above records a session from, so "nothing was written" can only be
+    // the setting and never the game exiting before a reading could land.
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "#!/bin/sh\nsleep 1\nexit 0\n")
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+
+    writeConfig({
+      measurePlaySessions: false,
+      gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+    })
+
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+
+    assert.equal(existsSync(join(userDataFolder, "Sessions")), false)
+  })
+
+  /**
+   * The Windows sampler, from EXECUTE_GAME rather than from the adapter's own tests.
+   *
+   * The handler builds the sampler itself, so nothing below the handler can prove that a Windows
+   * launch is measured at all: hand `createProcessSampler` no probe and it answers the absent
+   * sampler, the session records nothing, and every test under the handler still passes. These
+   * three drive the real factory, the real `tasklist` adapter and the real probe, with only the
+   * platform and the `tasklist` binary itself standing in.
+   *
+   * Still Linux-only, because the stand-ins are `#!/bin/sh` scripts: the launcher believes it is on
+   * Windows, the runner is not. A launch plan for Windows spawns `Vintagestory.exe` directly, and a
+   * shell script under that name runs perfectly well on Linux.
+   */
+  describe("with a Windows sampler", () => {
+    let tasklistCalls: string
+
+    /**
+     * Puts a stand-in `tasklist` first on PATH, which is where `execFile` looks for a bare command.
+     *
+     * It records the arguments it was given before answering, so a test can tell a sampler that ran
+     * and got nothing usable apart from one that was never built.
+     */
+    function fakeTasklist(body: string): void {
+      const binFolder = join(temporaryRoot, "bin")
+      mkdirSync(binFolder, { recursive: true })
+      tasklistCalls = join(temporaryRoot, "tasklist-calls")
+      writeFileSync(join(binFolder, "tasklist"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${tasklistCalls}'\n${body}`)
+      chmodSync(join(binFolder, "tasklist"), 0o755)
+      process.env.PATH = `${binFolder}:${process.env.PATH ?? ""}`
+    }
+
+    /** A Windows game folder and Installation, with the game itself sleeping long enough to be measured once. */
+    function seedWindowsLaunch(): { gameVersionFolder: string; installationFolder: string } {
+      const gameVersionFolder = join(versionsFolder, "1.20.0")
+      const installationFolder = join(managedFolder, "Main")
+      mkdirSync(gameVersionFolder, { recursive: true })
+      mkdirSync(installationFolder, { recursive: true })
+      writeFileSync(join(gameVersionFolder, "Vintagestory.exe"), "#!/bin/sh\nsleep 1\nexit 0\n")
+      chmodSync(join(gameVersionFolder, "Vintagestory.exe"), 0o755)
+
+      writeConfig({
+        gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+        installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+      })
+      return { gameVersionFolder, installationFolder }
+    }
+
+    async function launch(gameVersionFolder: string, installationFolder: string): Promise<GameExecutionResult> {
+      const event = await createTrustedEvent()
+      return executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+    }
+
+    let originalPath: string | undefined
+
+    beforeEach(() => {
+      originalPath = process.env.PATH
+      hostPlatform.value = "win32"
+    })
+
+    afterEach(() => {
+      process.env.PATH = originalPath
+    })
+
+    it.skipIf(process.platform !== "linux")("stores what tasklist reported for a Windows launch", async () => {
+      fakeTasklist(`echo '"Vintagestory.exe","4242","Console","1","65,536 K"'\n`)
+      const { gameVersionFolder, installationFolder } = seedWindowsLaunch()
+
+      assert.deepEqual(await launch(gameVersionFolder, installationFolder), { ok: true, exitCode: 0 })
+
+      assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+ \/NH \/FO CSV/, "the sampler never ran tasklist for the pid the launcher spawned")
+      const document = JSON.parse(readFileSync(join(userDataFolder, "Sessions", "main-1.json"), "utf-8"))
+      assert.equal(document.sessions.length, 1)
+      assert.equal(document.sessions[0].partial, false)
+      assert.deepEqual(
+        document.sessions[0].samples.map((sample: { rssBytes: number }) => sample.rssBytes),
+        [65_536 * 1024]
+      )
+      // tasklist carries no CPU column, so a Windows reading is memory and nothing else.
+      assert.equal(document.sessions[0].samples[0].cpuPercent, undefined)
+    })
+
+    /**
+     * The game exited between samples: `tasklist` still answers, and answers that the pid is gone.
+     * A session with no reading in it is not written at all, which is the recorder's own answer for
+     * one it never measured, and the launch result reaches the player unchanged.
+     */
+    it.skipIf(process.platform !== "linux")("records no session, and still answers the launch, when the process has gone", async () => {
+      fakeTasklist("echo 'INFO: No tasks are running which match the specified criteria.'\n")
+      const { gameVersionFolder, installationFolder } = seedWindowsLaunch()
+
+      assert.deepEqual(await launch(gameVersionFolder, installationFolder), { ok: true, exitCode: 0 })
+
+      assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+/, "the sampler never ran tasklist for the pid the launcher spawned")
+      assert.equal(existsSync(join(userDataFolder, "Sessions", "main-1.json")), false)
+    })
+
+    /** A process another account owns: `tasklist` refuses it, which is a reading the session does without. */
+    it.skipIf(process.platform !== "linux")("records no session, and still answers the launch, when tasklist is denied the process", async () => {
+      fakeTasklist("echo 'ERROR: Access is denied.' >&2\nexit 1\n")
+      const { gameVersionFolder, installationFolder } = seedWindowsLaunch()
+
+      assert.deepEqual(await launch(gameVersionFolder, installationFolder), { ok: true, exitCode: 0 })
+
+      assert.match(readFileSync(tasklistCalls, "utf-8"), /\/FI PID eq \d+/, "the sampler never ran tasklist for the pid the launcher spawned")
+      assert.equal(existsSync(join(userDataFolder, "Sessions", "main-1.json")), false)
+    })
+  })
+
+  /**
+   * The server-bookmark half of #460, run end to end through the same argv-dumping fixture the
+   * wrapper test uses. What is being pinned is that the handler builds the URL from the record it
+   * finds in ITS OWN config, and that an id naming nothing never reaches a spawn at all.
+   */
+  describe("joining a saved server", () => {
+    const bookmark = { id: "s-1", name: "Home", host: "play.example.com", port: 42_420, lastLaunched: -1 }
+
+    /** Writes a game that dumps its argv, and a config where installation `i-1` owns `bookmark`. */
+    function seedJoinFixture(): { installationFolder: string; gameVersionFolder: string; gameArgvFile: string } {
+      const gameVersionFolder = join(versionsFolder, "1.20.0")
+      const installationFolder = join(managedFolder, "Main")
+      mkdirSync(gameVersionFolder, { recursive: true })
+      mkdirSync(installationFolder, { recursive: true })
+
+      const gameArgvFile = join(temporaryRoot, "game-argv")
+      const executablePath = join(gameVersionFolder, GAME_EXECUTABLE)
+      writeFileSync(executablePath, `#!/bin/sh\nprintf '%s\\n' "$@" > '${gameArgvFile}'\n`)
+      chmodSync(executablePath, 0o755)
+
+      writeConfig({
+        gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+        installations: [
+          { id: "i-1", path: installationFolder, servers: [bookmark] },
+          { id: "i-2", path: join(managedFolder, "Other"), servers: [{ ...bookmark, id: "s-2", host: "other.example.com" }] }
+        ] as unknown as ConfigType["installations"]
+      })
+
+      return { installationFolder, gameVersionFolder, gameArgvFile }
+    }
+
+    function joinRequest(installationFolder: string, gameVersionFolder: string): [unknown, unknown] {
+      return [
+        { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder },
+        { ...baseInstallation({ path: installationFolder, startParams: "--openWorld My World" }), id: "i-1", gameVersionId: "gv-1.20.0" }
+      ]
+    }
+
+    it.skipIf(process.platform !== "linux")("hands the game a connect pair built from the stored bookmark, start parameters still one argument", async () => {
+      const { installationFolder, gameVersionFolder, gameArgvFile } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      const result = await executeGameHandler()(event, version, installation, "s-1")
+
+      assert.deepEqual(result, { ok: true, exitCode: 0 })
+      assert.deepEqual(readFileSync(gameArgvFile, "utf-8").split("\n").slice(0, -1), [`--dataPath=${installationFolder}`, "-c", "vintagestoryjoin://play.example.com:42420", "--openWorld My World"])
+    })
+
+    it.skipIf(process.platform !== "linux")("starts the game with no connect pair when no server was asked for", async () => {
+      const { installationFolder, gameVersionFolder, gameArgvFile } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      const result = await executeGameHandler()(event, version, installation)
+
+      assert.deepEqual(result, { ok: true, exitCode: 0 })
+      assert.deepEqual(readFileSync(gameArgvFile, "utf-8").split("\n").slice(0, -1), [`--dataPath=${installationFolder}`, "--openWorld My World"])
+    })
+
+    it("refuses an id this Installation has not saved, and never spawns anything", async () => {
+      const { installationFolder, gameVersionFolder, gameArgvFile } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      const result = await executeGameHandler()(event, version, installation, "s-does-not-exist")
+
+      assert.deepEqual(result, { ok: false, reason: "invalid-request" })
+      assert.equal(existsSync(gameArgvFile), false, "nothing may be spawned for a bookmark that does not exist")
+    })
+
+    it("refuses another Installation's bookmark id, and never spawns anything", async () => {
+      const { installationFolder, gameVersionFolder, gameArgvFile } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      const result = await executeGameHandler()(event, version, installation, "s-2")
+
+      assert.deepEqual(result, { ok: false, reason: "invalid-request" })
+      assert.equal(existsSync(gameArgvFile), false, "one Installation's servers are not another's")
+    })
+
+    it("refuses a bookmark id when the request carries no Installation id to look it up under", async () => {
+      const { installationFolder, gameVersionFolder } = seedJoinFixture()
+      const event = await createTrustedEvent()
+
+      const result = await executeGameHandler()(
+        event,
+        { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder },
+        { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" },
+        "s-1"
+      )
+
+      assert.deepEqual(result, { ok: false, reason: "invalid-request" })
+    })
+
+    it("throws on a server id that is not a bounded string, which no player can send", async () => {
+      const { installationFolder, gameVersionFolder } = seedJoinFixture()
+      const event = await createTrustedEvent()
+      const [version, installation] = joinRequest(installationFolder, gameVersionFolder)
+
+      for (const bad of [42, null, {}, "x".repeat(129), "vintagestoryjoin://evil.example.com:1"]) {
+        if (bad === "vintagestoryjoin://evil.example.com:1") {
+          // A string of the right shape is not a throw, it is simply an id that names nothing.
+          assert.deepEqual(await executeGameHandler()(event, version, installation, bad), { ok: false, reason: "invalid-request" })
+          continue
+        }
+        await assert.rejects(() => executeGameHandler()(event, version, installation, bad), /Invalid server bookmark id/, String(bad))
+      }
+    })
+  })
+
+  /**
    * A PATH entry that is itself relative used to be checked against the launcher's own working
    * directory and then executed against the spawned process's, which is the version folder. The
    * decoy below is what the old lookup would have run.
@@ -451,6 +774,36 @@ describe("EXECUTE_GAME", () => {
     // a bare truncate write: this is the file that has no defaults to fall
     // back to if a crash mid-write ever left it missing.
     assert.deepEqual(vi.mocked(writeJsonAtomic).mock.calls.filter((call) => call[0] === join(installationFolder, "clientsettings.json")).length, 1)
+  })
+
+  /**
+   * A login with no keyring behind it holds its secrets in the main process, and its public half
+   * is marked as lasting only for this run (#481). The mark is for the next startup to act on,
+   * not for the launch: this session is perfectly good right now, and the game must be able to
+   * start under it.
+   */
+  it("launches under an account that is only kept for this run", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "not a real binary", { mode: 0o644 })
+    writeConfig({ gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"] })
+
+    // Through saveConfig, the way the renderer puts it there: the account lives in this process's
+    // config and never came off disk, which is the whole point of the mark.
+    const { getConfig, saveConfig } = await import("@src/config/configManager")
+    await saveConfig({
+      ...(await getConfig()),
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false, sessionOnly: true }],
+      activeAccountId: "1"
+    })
+
+    const event = await createTrustedEvent()
+    await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+
+    const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
+    assert.equal(settings.stringSettings.sessionkey, "session-key")
   })
 
   // chmod 0o500 on the installation folder does not stop the write on Windows,
@@ -807,6 +1160,54 @@ describe("EXECUTE_GAME", () => {
   })
 })
 
+describe("GET_PLAY_SESSIONS and FORGET_PLAY_SESSIONS", () => {
+  type GetPlaySessionsHandler = (event: IpcMainInvokeEvent, installationId: unknown) => Promise<PlaySessionsReadResult>
+  type ForgetPlaySessionsHandler = (event: IpcMainInvokeEvent, installationId: unknown) => Promise<{ ok: boolean }>
+
+  function getHandler(): GetPlaySessionsHandler {
+    return getIpcHandler<GetPlaySessionsHandler>(IPC_CHANNELS.GAME_MANAGER.GET_PLAY_SESSIONS)
+  }
+
+  function forgetHandler(): ForgetPlaySessionsHandler {
+    return getIpcHandler<ForgetPlaySessionsHandler>(IPC_CHANNELS.GAME_MANAGER.FORGET_PLAY_SESSIONS)
+  }
+
+  function writeSessionsFile(installationId: string, document: unknown): void {
+    mkdirSync(join(userDataFolder, "Sessions"), { recursive: true })
+    writeFileSync(join(userDataFolder, "Sessions", `${installationId}.json`), JSON.stringify(document), "utf-8")
+  }
+
+  const ONE_SESSION = { id: "abc", startedAt: 0, endedAt: 1_000, intervalMs: 5_000, partial: false, samples: [{ t: 0, rssBytes: 1_024 }] }
+
+  it("throws Unauthorized IPC sender for an untrusted caller on both channels", async () => {
+    await assert.rejects(() => getHandler()(createUntrustedEvent(), "main"), /Unauthorized IPC sender/)
+    await assert.rejects(() => forgetHandler()(createUntrustedEvent(), "main"), /Unauthorized IPC sender/)
+  })
+
+  it("reads the sessions recorded for an Installation", async () => {
+    writeConfig({})
+    writeSessionsFile("main", { format: 1, sessions: [ONE_SESSION] })
+
+    assert.deepEqual(await getHandler()(await createTrustedEvent(), "main"), { ok: true, sessions: [ONE_SESSION] })
+  })
+
+  it("refuses an id that is not one the config could have written, on both channels", async () => {
+    writeConfig({})
+    const event = await createTrustedEvent()
+
+    assert.deepEqual(await getHandler()(event, "../../etc/passwd"), { ok: false, reason: "refused" })
+    assert.deepEqual(await forgetHandler()(event, "../../etc/passwd"), { ok: false })
+  })
+
+  it("clears the file the sessions were in", async () => {
+    writeConfig({})
+    writeSessionsFile("main", { format: 1, sessions: [ONE_SESSION] })
+
+    assert.deepEqual(await forgetHandler()(await createTrustedEvent(), "main"), { ok: true })
+    assert.equal(existsSync(join(userDataFolder, "Sessions", "main.json")), false)
+  })
+})
+
 describe("LOOK_FOR_A_GAME_VERSION", () => {
   it("throws Unauthorized IPC sender for an untrusted caller", async () => {
     await assert.rejects(() => lookForAGameVersionHandler()(createUntrustedEvent(), versionsFolder), /Unauthorized IPC sender/)
@@ -859,6 +1260,56 @@ describe("LOOK_FOR_A_GAME_VERSION", () => {
 
     assert.deepEqual(result, { exists: false })
     assert.equal(spawnThrow.next, false, "the throwing spawn is the one this test ran")
+  })
+
+  /**
+   * The two tests below are the only ones here that let a probe run to
+   * completion, so they are also the only place the widened result is checked
+   * end to end: a shell script standing in for the game binary prints the
+   * transcript, the real probe reads it, and the boundary check decides what
+   * crosses. The script lives in this run's own temporary folder, never beside
+   * a real install.
+   */
+  it.skipIf(process.platform !== "linux")("carries the build variant across when the probe names the fork", async () => {
+    const folder = join(versionsFolder, "optimum-build")
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, GAME_EXECUTABLE), "#!/bin/sh\nprintf '%s\\n' '[Optimum] Optimum v0.3.14' '1.22.7 + Optimum v0.3.14' '1.22.7'\n")
+    chmodSync(join(folder, GAME_EXECUTABLE), 0o755)
+    writeConfig({ gameVersions: [{ version: "1.22.7", path: folder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const result = await lookForAGameVersionHandler()(event, folder)
+
+    assert.deepEqual(result, { exists: true, installedGameVersion: "1.22.7", variant: { name: "Optimum", version: "0.3.14" } })
+  })
+
+  it.skipIf(process.platform !== "linux")("sends no variant key at all for a build that names nothing", async () => {
+    const folder = join(versionsFolder, "vanilla-build")
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, GAME_EXECUTABLE), "#!/bin/sh\necho 1.22.7\n")
+    chmodSync(join(folder, GAME_EXECUTABLE), 0o755)
+    writeConfig({ gameVersions: [{ version: "1.22.7", path: folder }] as unknown as ConfigType["gameVersions"] })
+
+    const event = await createTrustedEvent()
+    const result = await lookForAGameVersionHandler()(event, folder)
+
+    assert.deepEqual(result, { exists: true, installedGameVersion: "1.22.7" })
+  })
+
+  it("drops a variant the boundary check refuses before it reaches the renderer", async () => {
+    const folder = join(versionsFolder, "spoofed-variant")
+    mkdirSync(folder, { recursive: true })
+    writeConfig({ gameVersions: [{ version: "1.22.7", path: folder }] as unknown as ConfigType["gameVersions"] })
+
+    // Four dotted numbers: the version grammar reads three of them and semver
+    // refuses the whole, which is what the check is there to catch.
+    detectedVersion.next = { ok: true, version: "1.22.7", variant: { name: "Optimum", version: "0.3.14.7" } }
+
+    const event = await createTrustedEvent()
+    const result = await lookForAGameVersionHandler()(event, folder)
+
+    assert.deepEqual(result, { exists: true, installedGameVersion: "1.22.7" }, "the game version still crosses; the variant does not")
+    assert.equal(detectedVersion.next, null, "the queued result is the one this test ran")
   })
 
   it("reports not found when only the mono fallback candidate (Vintagestory.exe) is present and fails its probe", async () => {

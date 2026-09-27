@@ -1,7 +1,15 @@
-import { isAbsolute, relative, resolve, sep } from "node:path"
+import { existsSync, lstatSync } from "node:fs"
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import semver from "semver"
+
 import { RESTORE_REPLACED_SUFFIX, RESTORE_STAGING_SUFFIX } from "../domain/installations/restore"
+import { isRecord } from "../domain/records"
+
+// The guard moved to the domain (#484). Re-exported unchanged so every caller that reaches for it
+// here, tests included, keeps its import path.
+export { isRecord }
 
 export const MAX_IPC_STRING_LENGTH = 8_192
 export const MAX_PATH_LENGTH = 4_096
@@ -31,7 +39,19 @@ export const MAX_BACKUP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 // list (about 3.5 MB today) can outgrow the generic 4 MB ceiling with no fallback.
 // 16 MB gives years of headroom while staying a bounded, allow-listed exception rather
 // than an unbounded response.
+//
+// The author list (#526) shares this ceiling for the same reason: it has no pagination
+// either, it is already past the generic 4 MB cap at 4,215,149 bytes for 116,847 accounts,
+// and it grows by roughly 1.35 MB a year, so 16 MB is years of headroom here too.
 export const MAX_MODS_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024
+// The same two endpoints (uncompressed, multi-megabyte, no Content-Length) also outgrew the
+// generic 15s request timeout: at ordinary slow ModDB speed the transfer itself takes longer
+// than 15s even though bytes are still arriving throughout, so the wall clock cut it mid-flight.
+// requestBoundedBuffer already resets a 15s inactivity window on every chunk received (see
+// REQUEST_TIMEOUT_MS in network.ts), which is what lets a slow-but-steady transfer finish; this
+// is only the outer ceiling on top of that, six times the generic timeout, mirroring how far
+// above the generic byte ceiling MAX_MODS_CATALOG_RESPONSE_BYTES already sits.
+export const MODS_CATALOG_TIMEOUT_MS = 90_000
 // The background manifest is a list of {id, name, file, thumbnail} rows, about 1 KB for the eleven
 // scenes on the branch today. 32 KB is room for hundreds of them and still refuses anything that
 // is not a small list of names.
@@ -61,11 +81,15 @@ export type UrlRule = Readonly<{
   pathPrefixes: readonly string[]
   // Optional per-rule response ceiling. Falls back to MAX_RESPONSE_BYTES when unset.
   maxBytes?: number
+  // Optional per-rule overall wall-clock ceiling, wider (or tighter) than network.ts's default
+  // REQUEST_TIMEOUT_MS (15s). Falls back to that default when unset, same as maxBytes falls back
+  // to MAX_RESPONSE_BYTES. See getApiUrlTimeoutMs.
+  timeoutMs?: number
 }>
 
 export const API_URL_RULES: readonly UrlRule[] = [
   { hostname: "api.vintagestory.at", pathPrefixes: ["/stable.json", "/unstable.json"] },
-  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES },
+  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods", "/api/authors"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES, timeoutMs: MODS_CATALOG_TIMEOUT_MS },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api"] },
   { hostname: "auth3.vintagestory.at", pathPrefixes: ["/v2/gamelogin"] },
   // The release list FETCH_RELEASE_NOTES reads for the "what's new" dialog and the Info & Help
@@ -81,7 +105,31 @@ export const API_URL_RULES: readonly UrlRule[] = [
 export const DOWNLOAD_URL_RULES: readonly UrlRule[] = [
   { hostname: "cdn.vintagestory.at", pathPrefixes: ["/"] },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/download"] },
-  { hostname: "moddbcdn.vintagestory.at", pathPrefixes: ["/"] }
+  { hostname: "moddbcdn.vintagestory.at", pathPrefixes: ["/"] },
+  // Optimum's overlay archive and the manifest that describes it (#457), the one payload the
+  // launcher fetches from a host that is not Anego's. Narrow on purpose: the release assets of one
+  // repository, not GitHub at large. `latest/download` is the convenience address that names the
+  // newest release without an api.github.com listing call to read and validate first.
+  { hostname: "github.com", pathPrefixes: ["/StratumServer/Optimum/releases/download", "/StratumServer/Optimum/releases/latest/download"] }
+]
+
+/**
+ * Where a download may be redirected to, which is wider than where one may be started.
+ *
+ * GitHub answers a release asset with a 302 to a signed URL on its own asset CDN, so following
+ * that hop is the whole reason the download worker learned to follow any. The CDN is reachable
+ * only as a hop and never as a starting point: nothing in the launcher may ask to download an
+ * arbitrary object off it, and a signed URL is not something a caller could produce anyway.
+ *
+ * Two CDN hostnames because GitHub moved: `objects.githubusercontent.com` is the historical one
+ * and `release-assets.githubusercontent.com` is what a release asset resolves to today (measured
+ * against this repository's own releases). Keeping both means the change back, or a slow rollout,
+ * is not an outage.
+ */
+export const REDIRECT_URL_RULES: readonly UrlRule[] = [
+  ...DOWNLOAD_URL_RULES,
+  { hostname: "objects.githubusercontent.com", pathPrefixes: ["/"] },
+  { hostname: "release-assets.githubusercontent.com", pathPrefixes: ["/"] }
 ]
 
 export const BROWSER_URL_RULES: readonly UrlRule[] = [
@@ -93,10 +141,6 @@ export const BROWSER_URL_RULES: readonly UrlRule[] = [
   { hostname: "wiki.vintagestory.at", pathPrefixes: ["/"] },
   { hostname: "www.youtube.com", pathPrefixes: ["/watch"] }
 ]
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 export function assertString(value: unknown, name: string, maxLength = MAX_IPC_STRING_LENGTH): string {
   if (typeof value !== "string" || value.length === 0 || value.length > maxLength || value.includes("\0")) {
@@ -146,6 +190,40 @@ export function isPathWithin(root: string, candidate: string, allowRoot = true):
 }
 
 /**
+ * Refuses a path any of whose existing ancestors is a symbolic link.
+ *
+ * The walk starts at the deepest component that exists, because a caller may
+ * name a file it is about to create, and climbs to the filesystem root, which
+ * is checked too. A link anywhere on that chain means the path the caller
+ * vetted and the path the filesystem opens are not the same path.
+ *
+ * Both sides of the host call this one: the path policy before it hands a
+ * managed path to a handler, and the extraction workers around every write
+ * they make. Two copies is how one side gets tightened and the other left
+ * stale, the same reason the archive size ceilings moved here in #362.
+ *
+ * @param message Wording for the refusal, so the path policy keeps its own.
+ */
+export function assertNoSymlinkComponents(pathValue: string, message = "Symbolic links are not allowed"): void {
+  let current = resolve(pathValue)
+  let parent = dirname(current)
+
+  while (!existsSync(current)) {
+    if (parent === current) return
+    current = parent
+    parent = dirname(current)
+  }
+
+  while (current !== parent) {
+    if (lstatSync(current).isSymbolicLink()) throw new TypeError(message)
+    current = parent
+    parent = dirname(current)
+  }
+
+  if (lstatSync(current).isSymbolicLink()) throw new TypeError(message)
+}
+
+/**
  * One entry of a path allow list.
  *
  * `descendants` is the whole difference between a folder the launcher owns and
@@ -192,6 +270,17 @@ export function assertSafeTaskId(value: unknown): string {
   return id
 }
 
+/**
+ * An Installation id as the config writes them, checked against a fixed alphabet before it is ever
+ * joined to a path. Nothing here is a path component the caller chose: the channels that take one
+ * build a file name from it, and the built path still goes through the path policy afterwards.
+ */
+export function assertSafeInstallationId(value: unknown): string {
+  const id = assertString(value, "installation id", 64)
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new TypeError("Invalid installation id")
+  return id
+}
+
 export function assertSafeFileName(value: unknown, name = "file name"): string {
   const fileName = assertString(value, name, 255)
   if (fileName === "." || fileName === ".." || fileName.includes("/") || fileName.includes("\\")) throw new TypeError(`Invalid ${name}`)
@@ -214,6 +303,30 @@ export function assertInteger(value: unknown, name: string, min: number, max: nu
   return numberValue
 }
 
+/** The one fork the launcher recognises. A second one is a second token here, never a free string. */
+const KNOWN_BUILD_VARIANT_NAME = "Optimum"
+
+/**
+ * Narrows a detected build variant to the shape the renderer is allowed to see.
+ *
+ * This is the outbound half of a real trust boundary. The variant is read off
+ * the stdout of a binary the launcher did not build, sitting in a folder the
+ * player picked, so nothing from it crosses to the renderer except a value that
+ * passed a fixed-shape check: the name has to be the token this file already
+ * knows, and the version has to be a version, judged by the same semver grammar
+ * detection accepts on the way in. Anything else is no variant at all, which
+ * every caller already handles, since a vanilla build has none.
+ *
+ * @param value The domain's variant, or whatever turned up in its place.
+ * @returns The variant, normalised, or undefined when it is not one.
+ */
+export function toWireBuildVariant(value: unknown): GameBuildVariantType | undefined {
+  if (!isRecord(value) || value.name !== KNOWN_BUILD_VARIANT_NAME || typeof value.version !== "string") return undefined
+
+  const version = semver.valid(value.version)
+  return version ? { name: KNOWN_BUILD_VARIANT_NAME, version } : undefined
+}
+
 export function validateGameVersion(value: unknown): Pick<GameVersionType, "version" | "path"> & { id?: string } {
   if (!isRecord(value)) throw new TypeError("Invalid game version")
   return {
@@ -223,21 +336,26 @@ export function validateGameVersion(value: unknown): Pick<GameVersionType, "vers
   }
 }
 
-export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & { launchWrapper: string; gameVersionId?: string | null } {
+export function validateGameInstallation(value: unknown): Pick<InstallationType, "path" | "startParams" | "mesaGlThread" | "envVars"> & {
+  launchWrapper: string
+  gameVersionId?: string | null
+  id?: string
+} {
   if (!isRecord(value)) throw new TypeError("Invalid installation")
   return {
+    // Optional the same way gameVersionId is, and for the same reason: every caller in the app
+    // sends the whole Installation, but nothing here depends on the id being there. It is the key
+    // EXECUTE_GAME looks a server bookmark up by, so a request with no id simply cannot name one.
+    ...(value.id === undefined ? {} : { id: assertString(value.id, "installation id", 128) }),
     path: assertNonRootPath(value.path, "installation path"),
     startParams: assertBoundedString(value.startParams, "start parameters", 8_192),
     mesaGlThread: assertBoolean(value.mesaGlThread, "MESA GL thread flag"),
     envVars: assertBoundedString(value.envVars, "environment variables", 8_192),
     launchWrapper: assertBoundedString(value.launchWrapper ?? "", "launch wrapper", 4_096).trim(),
-    ...(value.gameVersionId === null
-      ? { gameVersionId: null }
-      : typeof value.gameVersionId === "string"
-        ? { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) }
-        : value.gameVersionId === undefined
-          ? {}
-          : { gameVersionId: assertString(value.gameVersionId, "installation game version id", 128) })
+    // Three outcomes, and only three: missing stays missing, so EXECUTE_GAME's correlation check
+    // can tell "no id sent" from "no version linked"; an explicit null is carried through; and
+    // anything else goes to assertString, which is what rejects a non-string rather than dropping it.
+    ...(value.gameVersionId === undefined ? {} : { gameVersionId: value.gameVersionId === null ? null : assertString(value.gameVersionId, "installation game version id", 128) })
   }
 }
 
@@ -341,8 +459,66 @@ export function getApiUrlMaxBytes(url: URL): number {
   return rule?.maxBytes ?? MAX_RESPONSE_BYTES
 }
 
+/**
+ * Resolves the overall wall-clock ceiling for an already-validated API URL, honoring a per-rule
+ * override (see API_URL_RULES) the same way {@link getApiUrlMaxBytes} does for the byte ceiling.
+ * Undefined when the rule sets none, which is every rule but the mods/authors catalog:
+ * requestBoundedText/Buffer already default to REQUEST_TIMEOUT_MS on their own when handed no
+ * override, so nothing else has to repeat that number here.
+ */
+export function getApiUrlTimeoutMs(url: URL): number | undefined {
+  const rule = findMatchingRule(API_URL_RULES, url.hostname.toLowerCase(), url.pathname)
+  return rule?.timeoutMs
+}
+
+/**
+ * A loopback origin the Optimum flow may be pointed at instead of GitHub, so the
+ * whole install can be exercised against a stub overlay on a machine with no
+ * network and, today, against a payload that has never been published.
+ *
+ * Off unless `RIFTLAUNCHER_OPTIMUM_ORIGIN` is set, and even then it is honoured
+ * only for `http://127.0.0.1:<port>` with no path of its own: it can move where
+ * the manifest and the archive come from, and nothing else. Every hash gate,
+ * the file-by-file check of the staged overlay, the path policy and the child
+ * process bounds are untouched, so what an overlay served this way may do is
+ * exactly what one served from GitHub may do.
+ *
+ * It exists for the live check documented in docs/vintage-story-quirks.md.
+ * Nothing in a shipped build sets it, and a build that finds it set says so in
+ * the log.
+ */
+export function optimumTestOrigin(): string | undefined {
+  const value = process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN
+  if (!value) return undefined
+
+  try {
+    const url = new URL(value)
+    if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port || url.pathname !== "/" || url.search || url.username || url.password) return undefined
+    return url.origin
+  } catch {
+    return undefined
+  }
+}
+
+/** The URL as a loopback source URL, when that override is on and this is one. */
+function asTestOriginUrl(value: unknown): URL | undefined {
+  const origin = optimumTestOrigin()
+  if (origin === undefined || typeof value !== "string" || !value.startsWith(`${origin}/`) || value.length > MAX_URL_LENGTH) return undefined
+
+  try {
+    return new URL(value)
+  } catch {
+    return undefined
+  }
+}
+
 export function assertAllowedDownloadUrl(value: unknown): URL {
-  return parseAllowedUrl(value, DOWNLOAD_URL_RULES)
+  return asTestOriginUrl(value) ?? parseAllowedUrl(value, DOWNLOAD_URL_RULES)
+}
+
+/** The same grade of check as {@link assertAllowedDownloadUrl}, applied to every hop a download follows. See {@link REDIRECT_URL_RULES}. */
+export function assertAllowedRedirectUrl(value: unknown): URL {
+  return asTestOriginUrl(value) ?? parseAllowedUrl(value, REDIRECT_URL_RULES)
 }
 
 export function assertAllowedBrowserUrl(value: unknown): URL {

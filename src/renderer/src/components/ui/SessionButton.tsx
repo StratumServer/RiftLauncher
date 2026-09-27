@@ -36,6 +36,9 @@ import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 const ADD_ACCOUNT_OPTION = "__add-account__"
 const REMOVE_ACCOUNT_OPTION = "__remove-account__"
 const PRIVACY_POLICY_URL = "https://github.com/StratumServer/RiftLauncher/blob/main/PRIVACY.md"
+// The Linux install guide's keyring section. Fixed here, never built from anything that crossed
+// the IPC boundary, and already covered by BROWSER_URL_RULES (src/ipc/validation.ts).
+const KEYRING_GUIDE_URL = "https://riftlauncher.stratumvs.dev/docs/get-started/installation/linux#session-storage-and-keyrings"
 
 function SessionButton(): JSX.Element {
   const { t } = useTranslation()
@@ -54,6 +57,14 @@ function SessionButton(): JSX.Element {
   const [loggingIn, setLoggingIn] = useState(false)
   const [logInOpen, setLogInOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
+
+  /**
+   * A keyring message is never the end of it: the player is told what is missing and handed the
+   * page that says how to set one up, the same shape the missing-.NET notification uses.
+   */
+  function keyringGuideOptions(): { actions: { id: string; label: string; onClick: () => void }[] } {
+    return { actions: [{ id: "open-keyring-guide", label: t("features.config.noKeyringGuide"), onClick: (): void => openOnBrowser(KEYRING_GUIDE_URL) }] }
+  }
 
   function clearTransientLoginFields(): void {
     setPassword("")
@@ -86,14 +97,39 @@ function SessionButton(): JSX.Element {
       if (result.status === "requires-two-factor") return addNotification(t("features.config.requiresTwoFA"), "error")
       if (result.status === "unexpected-response") return addNotification(t("features.config.unexpectedResponse"), "error")
       if (result.status === "session-store-unreadable") return addNotification(t("features.config.sessionStoreUnreadable"), "error")
+      // These four resolve instead of throwing specifically so they can be told apart here
+      // (issue #481): the login request itself failed, for one of four reasons the main
+      // process already classified. A cause it could not place still throws below, which is
+      // the only path that reaches the catch's generic message.
+      if (result.status === "account-restricted") return addNotification(t("features.config.accountRestricted"), "error")
+      if (result.status === "service-error") return addNotification(t("features.config.serviceError"), "error")
+      if (result.status === "certificate-error") return addNotification(t("features.config.certificateError"), "error")
+      if (result.status === "network-unreachable") return addNotification(t("features.config.networkUnreachable"), "error", { reason: "network" })
+      // The Debian KDE case: nothing on this machine can hold a session, which the log named
+      // plainly while the toast blamed the connection. Same guide as the successful-but-unsaved
+      // login below, because it is the same missing keyring either way.
+      if (result.status === "no-keyring") return addNotification(t("features.config.noKeyring"), "error", keyringGuideOptions())
       if (result.status !== "success") return
 
       if (result.storeRebuilt) addNotification(t("features.config.sessionStoreRebuilt"), "warning")
-      await saveLogin(result.account)
+      // Logged in, and staying logged in until the launcher is closed. Said out loud rather than
+      // left to be discovered on the next start, and pointed at the guide that makes it stick.
+      if (result.sessionInMemoryOnly) addNotification(t("features.config.sessionNotRemembered"), "warning", keyringGuideOptions())
+      // A different cause than the one above (the keyring guide would be wrong here: there is a
+      // working keyring, it is just unreachable while this setting is on), so its own message
+      // instead of reusing sessionNotRemembered's.
+      if (result.sessionKeyringSealed) addNotification(t("features.config.sessionKeyringSealed"), "warning")
+      // The account still has to reach the config: that list is what names the account the game
+      // launches as. Marked, so it does not outlive the secrets behind it. configManager drops
+      // the marked ones at the next startup rather than opening on an account that cannot launch.
+      const sessionOnly = result.sessionInMemoryOnly || result.sessionKeyringSealed
+      await saveLogin(sessionOnly ? { ...result.account, sessionOnly: true } : result.account)
     } catch {
-      // A throw here means the request never produced a verdict (network down,
-      // firewall, service unreachable): the credentials were never judged, so
-      // saying they were wrong sends the user to reset a working password.
+      // A throw here means the request never produced a verdict, for a cause
+      // `loginFailureFamily` could not place among the four above (a storage
+      // failure, or a genuinely unrecognised error): the credentials were
+      // never judged, so saying they were wrong sends the user to reset a
+      // working password.
       addNotification(t("features.config.loginUnreachable"), "error")
     } finally {
       clearTransientLoginFields()

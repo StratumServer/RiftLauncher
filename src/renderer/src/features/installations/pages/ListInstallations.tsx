@@ -7,11 +7,11 @@ import {
   PiBoxArrowDownDuotone,
   PiArrowCounterClockwiseDuotone,
   PiWrenchDuotone,
-  PiXCircleDuotone,
   PiTrashDuotone,
   PiWarningDuotone,
   PiArrowUpDuotone,
-  PiArrowDownDuotone
+  PiArrowDownDuotone,
+  PiGlobeDuotone
 } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
 import clsx from "clsx"
@@ -29,8 +29,7 @@ import { useCheckPathExists, useOpenPathInExplorer } from "@renderer/features/in
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
-import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
-import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
+import ConfirmDialog from "@renderer/components/ui/ConfirmDialog"
 import { LinkButton, NormalButton } from "@renderer/components/ui/Buttons"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
@@ -157,7 +156,7 @@ function ListInslallations(): JSX.Element {
                         {isVersionMissing && <PiWarningDuotone className="shrink-0" />}
                         {gameVersion?.label ?? installation.version}
                       </p>
-                      <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount as number })}</p>
+                      <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount ?? 0 })}</p>
                     </div>
 
                     <ThinSeparator />
@@ -199,18 +198,26 @@ function ListInslallations(): JSX.Element {
                           <PiArrowCounterClockwiseDuotone />
                         </LinkButton>
                       </div>
+                      {/* Servers sits beside Manage Mods rather than at the end of the strip: the two are
+                          the per-Installation pages a player opens over and over, and the column pairs
+                          stay two high so the row keeps its height. */}
                       <div className="flex flex-col gap-1">
                         <LinkButton to={`/installations/mods/${installation.id}`} title={t("features.mods.manageMods")} className="p-1" variant="ghost">
                           <PiWrenchDuotone />
                         </LinkButton>
+                        <LinkButton to={`/installations/servers/${installation.id}`} title={t("features.servers.manageServers")} className="p-1" variant="ghost">
+                          <PiGlobeDuotone />
+                        </LinkButton>
+                      </div>
+                      <div className="flex flex-col gap-1">
                         <NormalButton onClick={() => openPathInExplorer(installation.path)} title={`${t("generic.openOnFileExplorer")} · ${installation.path}`} className="p-1" variant="ghost">
                           <PiFolderOpenDuotone />
                         </NormalButton>
-                      </div>
-                      <div className="flex flex-col gap-1">
                         <LinkButton to={`/installations/edit/${installation.id}`} title={t("features.installations.editInstallation")} className="p-1" variant="ghost">
                           <PiPencilDuotone />
                         </LinkButton>
+                      </div>
+                      <div className="flex flex-col gap-1">
                         <NormalButton
                           className="p-1"
                           title={t("features.installations.deleteInstallation")}
@@ -230,20 +237,22 @@ function ListInslallations(): JSX.Element {
           </ListGroup>
         </ListWrapper>
 
-        <PopupDialogPanel title={t("features.installations.deleteInstallation")} isOpen={installationToDelete !== null} close={() => setInstallationToDelete(null)}>
-          <>
-            <p>{t("features.installations.areYouSureDelete")}</p>
-            <p className="text-zinc-400">{t("features.installations.deletingNotReversible")}</p>
+        <ConfirmDialog
+          title={t("features.installations.deleteInstallation")}
+          isOpen={installationToDelete !== null}
+          close={() => setInstallationToDelete(null)}
+          question={t("features.installations.areYouSureDelete")}
+          consequence={t("features.installations.deletingNotReversible")}
+          confirmLabel={t("generic.delete")}
+          confirmIcon={<PiTrashDuotone />}
+          onConfirm={DeleteInstallationHandler}
+          beforeActions={
             <div className="flex gap-2 items-center justify-center">
               <Input id="delete-data" type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} />
               <label htmlFor="delete-data">{t("features.installations.deleteData")}</label>
             </div>
-            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <FormButton title={t("generic.cancel")} onClick={() => setInstallationToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <FormButton title={t("generic.delete")} onClick={DeleteInstallationHandler} variant="destructive" size="md" icon={<PiTrashDuotone />} />
-            </ButtonsWrapper>
-          </>
-        </PopupDialogPanel>
+          }
+        />
       </div>
     </ScrollableContainer>
   )

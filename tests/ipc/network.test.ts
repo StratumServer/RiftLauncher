@@ -7,6 +7,7 @@ import { afterEach, describe, it } from "vitest"
 import "./helpers/electronMock"
 
 import { requestBoundedTextViaNode } from "@src/ipc/network"
+import { assertAllowedApiUrl, getApiUrlMaxBytes } from "@src/ipc/validation"
 
 /**
  * `network.ts` imports `net` from `electron` at module load (for
@@ -104,13 +105,22 @@ describe("requestBoundedTextViaNode enforces its timeout", () => {
 })
 
 describe("requestBoundedTextViaNode rejects a non-2xx status", () => {
-  it("rejects a 404 rather than resolving its body", async () => {
+  it("rejects a 404 carrying the status, which is what classifies a login failure", async () => {
     const url = await startServer((_req, res) => {
       res.writeHead(404, { "Content-Type": "application/json" })
       res.end(JSON.stringify({ valid: 0, reason: "notfound" }))
     })
 
-    await assert.rejects(requestBoundedTextViaNode(url), /404/)
+    await assert.rejects(requestBoundedTextViaNode(url), (error: Error & { statusCode?: number }) => {
+      assert.match(error.message, /404/)
+      // The half the message alone cannot pin (issue #481): since
+      // `loginFailureReason` reads `statusCode` instead of parsing the
+      // message, a transport that answered a plain Error with the same text
+      // would classify a 503 outage as `unclassified` and put "Login failed"
+      // on screen where the player should read that the service is down.
+      assert.equal(error.statusCode, 404)
+      return true
+    })
   })
 })
 
@@ -153,5 +163,41 @@ describe("requestBoundedTextViaNode never sends browser fetch metadata", () => {
 
     assert.equal(receivedHeaders["accept"], "application/json, text/plain;q=0.9")
     assert.equal(receivedHeaders["content-type"], "application/x-www-form-urlencoded")
+  })
+})
+
+/**
+ * The regression this pins (#526): the live `/api/authors` response is 4,215,149 bytes,
+ * sent uncompressed with no Content-Length, which is what made the generic 4 MiB
+ * MAX_RESPONSE_BYTES ceiling trip the streamed-byte check in `collectBounded` for every
+ * player. `api-url-ceiling.test.ts` only pins the ceiling `getApiUrlMaxBytes` resolves to;
+ * this is the one that actually sends that many bytes with no Content-Length through the
+ * real size-checking code and would have caught the too-small cap before it shipped.
+ *
+ * The response is served chunked (no Content-Length, `res.write` in pieces) because that is
+ * how the real ModDB answers this endpoint: `collectBounded`'s upfront Content-Length check
+ * never runs, so only the running-total check while bytes stream in is exercised, same as
+ * production.
+ */
+describe("the authors endpoint's raised ceiling against its real response size (#526)", () => {
+  const AUTHORS_RESPONSE_BYTES = 4_215_149
+
+  it("resolves a chunked, Content-Length-less body of exactly the live response size", async () => {
+    const url = await startServer((_req, res) => {
+      res.writeHead(200)
+      const chunkSize = 64 * 1024
+      let remaining = AUTHORS_RESPONSE_BYTES
+      while (remaining > 0) {
+        const size = Math.min(chunkSize, remaining)
+        res.write("a".repeat(size))
+        remaining -= size
+      }
+      res.end()
+    })
+
+    const maxBytes = getApiUrlMaxBytes(assertAllowedApiUrl("https://mods.vintagestory.at/api/authors"))
+    const result = await requestBoundedTextViaNode(url, { maxBytes })
+
+    assert.equal(result.length, AUTHORS_RESPONSE_BYTES)
   })
 })

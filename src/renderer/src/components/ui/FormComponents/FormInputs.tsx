@@ -6,7 +6,7 @@ const INPUT_BASE_STYLES = `h-8 px-2 py-1 rounded-md placeholder:text-zinc-400 ov
 // `:invalid` matches required empty fields as soon as they mount. The
 // user-invalid variant waits for interaction or form submission, so a newly
 // opened form does not look broken before the player has done anything.
-const INPUT_INVALID_STYLES = "user-invalid:border user-invalid:border-red-800 user-invalid:bg-red-800/20"
+const INPUT_INVALID_STYLES = "user-invalid:border user-invalid:border-red-500 user-invalid:bg-red-500/20"
 const INPUT_VALID_STYLES = ""
 const INPUT_ENABLED_STYLES = "enabled:shadow-sm enabled:shadow-zinc-950/50 enabled:hover:shadow-none"
 const INPUT_DISABLED_STYLES = "disabled:opacity-50"
@@ -102,7 +102,8 @@ export function FormInputNumber({
   max,
   placeholder,
   disabled,
-  readOnly = false
+  readOnly = false,
+  id
 }: Readonly<{
   className?: string
   value: number
@@ -112,6 +113,8 @@ export function FormInputNumber({
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
+  /** Ties the field to its own FormLabel, exactly as FormInputText's does. */
+  id?: string
 }>): JSX.Element {
   return (
     <Input
@@ -124,6 +127,7 @@ export function FormInputNumber({
       max={max}
       disabled={disabled}
       readOnly={readOnly}
+      id={id}
     />
   )
 }

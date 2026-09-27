@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, shell } from "electron"
+import { ipcMain, dialog, app, shell, clipboard } from "electron"
 import { platform } from "node:os"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
@@ -7,6 +7,8 @@ import { assertAllowedBrowserUrl, assertSafeTaskId, assertString, isRecord } fro
 import { logMessage } from "@src/utils/logManager"
 import { setShouldPreventClose } from "@src/utils/shouldPreventClose"
 import { registerUserSelectedPaths } from "@src/ipc/pathPolicy"
+
+const LOG_PREFIX = "[back] [ipc] [ipc/handlers/utilsHandlers.ts]"
 
 ipcMain.handle(IPC_CHANNELS.UTILS.GET_APP_VERSION, (event) => {
   assertTrustedIpcSender(event)
@@ -25,7 +27,7 @@ ipcMain.on(IPC_CHANNELS.UTILS.LOG_MESSAGE, (event, mode: ErrorTypes, message: st
   try {
     logMessage(mode, assertString(message, "log message", 16_384))
   } catch {
-    logMessage("warn", "[back] [ipc] [ipc/handlers/utilsHandlers.ts] [LOG_MESSAGE] Rejected an invalid log message.")
+    logMessage("warn", `${LOG_PREFIX} [LOG_MESSAGE] Rejected an invalid log message.`)
   }
 })
 
@@ -36,7 +38,7 @@ ipcMain.on(IPC_CHANNELS.UTILS.SET_PREVENT_APP_CLOSE, (event, action: "add" | "re
   try {
     setShouldPreventClose(action, assertSafeTaskId(id), assertString(desc, "task description", 256))
   } catch {
-    logMessage("warn", "[back] [ipc] [ipc/handlers/utilsHandlers.ts] [SET_PREVENT_APP_CLOSE] Rejected invalid task state.")
+    logMessage("warn", `${LOG_PREFIX} [SET_PREVENT_APP_CLOSE] Rejected invalid task state.`)
   }
 })
 
@@ -45,18 +47,36 @@ ipcMain.on(IPC_CHANNELS.UTILS.OPEN_ON_BROWSER, (event, url: string): void => {
 
   try {
     const safeUrl = assertAllowedBrowserUrl(url)
-    logMessage("info", "[back] [ipc] [ipc/handlers/utilsHandlers.ts] [OPEN_ON_BROWSER] Opening an approved URL on the default browser.")
+    logMessage("info", `${LOG_PREFIX} [OPEN_ON_BROWSER] Opening an approved URL on the default browser.`)
     void shell.openExternal(safeUrl.toString()).catch(() => {
-      logMessage("warn", "[back] [ipc] [ipc/handlers/utilsHandlers.ts] [OPEN_ON_BROWSER] The default browser rejected the URL.")
+      logMessage("warn", `${LOG_PREFIX} [OPEN_ON_BROWSER] The default browser rejected the URL.`)
     })
   } catch {
-    logMessage("warn", "[back] [ipc] [ipc/handlers/utilsHandlers.ts] [OPEN_ON_BROWSER] Rejected an unsafe URL.")
+    logMessage("warn", `${LOG_PREFIX} [OPEN_ON_BROWSER] Rejected an unsafe URL.`)
+  }
+})
+
+/**
+ * The renderer's own clipboard is closed: the session denies every permission check (see
+ * src/main/index.ts), so navigator.clipboard.writeText rejects with NotAllowedError in every build.
+ * The host writes instead. Nothing about the text reaches the log, since what a player copies here
+ * is a server address.
+ */
+ipcMain.handle(IPC_CHANNELS.UTILS.COPY_TO_CLIPBOARD, (event, text: string): boolean => {
+  assertTrustedIpcSender(event)
+
+  try {
+    clipboard.writeText(assertString(text, "clipboard text", 2_048))
+    return true
+  } catch {
+    logMessage("warn", `${LOG_PREFIX} [COPY_TO_CLIPBOARD] The clipboard refused the write.`)
+    return false
   }
 })
 
 ipcMain.handle(IPC_CHANNELS.UTILS.SELECT_FOLDER_DIALOG, async (event, options?: { type?: "file" | "folder"; mode?: "single" | "multi"; extensions?: string[] }): Promise<string[]> => {
   assertTrustedIpcSender(event)
-  logMessage("info", `[back] [ipc] [ipc/handlers/utilsHandlers.ts] [SELECT_FOLDER_DIALOG] Opening folder selection.`)
+  logMessage("info", `${LOG_PREFIX} [SELECT_FOLDER_DIALOG] Opening folder selection.`)
 
   if (options !== undefined) {
     if (!isRecord(options)) throw new TypeError("Invalid dialog options")
@@ -83,11 +103,11 @@ ipcMain.handle(IPC_CHANNELS.UTILS.SELECT_FOLDER_DIALOG, async (event, options?: 
   })
 
   if (result.canceled) {
-    logMessage("warn", `[back] [ipc] [ipc/handlers/utilsHandlers.ts] [SELECT_FOLDER_DIALOG] Operation cancelled.`)
+    logMessage("warn", `${LOG_PREFIX} [SELECT_FOLDER_DIALOG] Operation cancelled.`)
     return []
   }
 
-  logMessage("info", `[back] [ipc] [ipc/handlers/utilsHandlers.ts] [SELECT_FOLDER_DIALOG] Selection completed with ${result.filePaths.length} path(s).`)
+  logMessage("info", `${LOG_PREFIX} [SELECT_FOLDER_DIALOG] Selection completed with ${result.filePaths.length} path(s).`)
   registerUserSelectedPaths(result.filePaths)
 
   return result.filePaths

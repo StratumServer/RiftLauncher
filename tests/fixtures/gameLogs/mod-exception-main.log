@@ -1,0 +1,11 @@
+ory.Common.ModLoader.TryRunModPhase(Mod mod, ModSystem system, ICoreAPI api, ModRunPhase phase) in VintagestoryLib\Common\API\ModLoader.cs:line 623
+26.4.2025 13:00:01 [Notification] Entering runphase Initialization
+26.4.2025 13:00:02 [Warning] [betterruins] Config key "maxRuins" is missing, using the default.
+26.4.2025 13:00:08 [Error] [ancienttools] An exception was thrown when trying to start the mod:
+26.4.2025 13:00:08 [Error] [ancienttools] Exception: Object reference not set to an instance of an object.
+   at AncientTools.Utility.ModConfig.ReadConfig(ICoreAPI api) in C:\build\AncientTools\src\utility\ModConfig.cs:line 32
+   at Vintagestory.Common.ModLoader.TryRunModPhase(Mod mod, ModSystem system, ICoreAPI api, ModRunPhase phase) in VintagestoryLib\Common\API\ModLoader.cs:line 623
+26.4.2025 13:00:08 [Error] Failed to run mod phase Pre for mod AncientTools.Utility.RegisterConfig
+26.4.2025 13:00:09 [Error] Failed to run mod phase Pre for mod Someone.Unknown.Thing
+26.4.2025 13:00:09 [Error] Texture atlas is full, some blocks will render untextured.
+26.4.2025 13:00:10 [Notification] Entering runphase LoadAssets

@@ -1,6 +1,7 @@
 import type { DownloadOutcome, Downloader, FileSystem, PathBuilder, UnpackOutcome, Unpacker } from "../ports"
 import { folderIsInUse } from "../paths"
-import { expectedGameExecutables, toGameOs } from "./gameExecutable"
+import { refuse } from "../refusal"
+import { gameExecutableCandidates, toGameOs } from "./gameExecutable"
 import type { GameOs } from "./gameExecutable"
 
 /**
@@ -80,10 +81,6 @@ export interface InstallGameVersionEvents {
   onDiscarded?(reason: InstallGameVersionFailure): void
 }
 
-function refuse(reason: InstallGameVersionFailure): InstallGameVersionResult {
-  return { ok: false, reason }
-}
-
 /**
  * Picks the download for a platform.
  *
@@ -98,12 +95,12 @@ function downloadFor(version: DownloadableGameVersion, os: GameOs): GameVersionD
 
 /** True when the target folder holds something the launcher would accept as the game. */
 async function gameLanded(ports: InstallGameVersionPorts, targetFolder: string, os: GameOs): Promise<boolean> {
-  const candidates = expectedGameExecutables(os)
+  const candidates = gameExecutableCandidates(os)
   // macOS has no expectation to check against, so nothing can be disproved.
   if (candidates.length === 0) return true
 
   for (const candidate of candidates) {
-    const path = await ports.paths.join([targetFolder, candidate])
+    const path = await ports.paths.join([targetFolder, candidate.fileName])
     if (await ports.fileSystem.exists(path)) return true
   }
 

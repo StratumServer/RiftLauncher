@@ -22,6 +22,8 @@ declare global {
       logMessage: (mode: ErrorTypes, message: string) => void
       setPreventAppClose: (action: "add" | "remove", id: string, desc: string) => void
       openOnBrowser: (url: string) => void
+      /** Writes one short string to the system clipboard, answering whether it landed. */
+      copyToClipboard: (text: string) => Promise<boolean>
       selectFolderDialog: (options?: { type?: "file" | "folder"; mode?: "single" | "multi"; extensions?: string[] }) => Promise<string[]>
       onPreventedAppClose: (callback: () => void) => Unsubscribe
     }
@@ -39,6 +41,8 @@ declare global {
     }
     modsManager: {
       getInstalledMods: (path: string) => Promise<InstalledModsScan>
+      /** Reads the Installation's ModsByServer tree. The host names the folder; this only names the Installation. */
+      getServerMods: (installationPath: string) => Promise<ServerModsScan>
       setModEnabled: (path: string, enabled: boolean) => Promise<SetModEnabledResult>
       cacheModImage: (url: string) => Promise<string | undefined>
       exportModpack: (manifest: ModpackManifestType) => Promise<{ success: boolean; path?: string }>
@@ -68,19 +72,42 @@ declare global {
       copyToIcons: (path: string, name: string) => Promise<CustomIconCopyResult>
     }
     gameManager: {
-      executeGame: (version: GameVersionType, installation: InstallationType) => Promise<GameExecutionResult>
-      lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }>
+      /**
+       * `serverId` names one of the Installation's OWN stored bookmarks. It is never an address:
+       * the main process looks the id up in the config it already holds and builds the URL from
+       * the record it finds, so nothing typed in the renderer can reach the game's argv.
+       */
+      executeGame: (version: GameVersionType, installation: InstallationType, serverId?: string) => Promise<GameExecutionResult>
+      lookForAGameVersion: (path: string) => Promise<{ exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }>
+      /** The play sessions recorded for one Installation, newest first. Read only: nothing writes samples from here. */
+      getPlaySessions: (installationId: string) => Promise<PlaySessionsReadResult>
+      /** Clears one Installation's recorded sessions. */
+      forgetPlaySessions: (installationId: string) => Promise<{ ok: boolean }>
+      /** Reads the last session's own log files out of one Installation and answers the report built from them. See #462. */
+      getGameLogReport: (installationPath: string) => Promise<GameLogReportResult>
+    }
+    optimumManager: {
+      /** Optimum's published overlay for this machine, or the one reason no Optimum is offered this session. Never rejects. */
+      getManifest: () => Promise<OptimumManifestResult>
+      /** Stages the downloaded overlay, verifies it file by file, and patches the build at `gameDirectory`. Never rejects for anything a player can reach. */
+      applyOverlay: (id: string, gameDirectory: string, gameVersion: string) => Promise<OptimumPatchResult>
+      /** Puts the four assemblies back out of the patch's own backup and takes Optimum's marks off the folder. */
+      restoreVanilla: (id: string, gameDirectory: string) => Promise<OptimumPatchResult>
+      /** The patch's own progress, 0 to 99. The last tick belongs to the task that started it. */
+      onPatchProgress: (callback: ProgressCallback) => Unsubscribe
     }
     netManager: {
       queryURL: (url: string) => Promise<string>
       /**
-       * Records the accepted answer to the one-time ModDB listing question and, once it is on
-       * disk, requests the listing archive once, which registers one download there. True when the
-       * answer was written; false means nothing was written and nothing was requested, so the
-       * question survives to the next launch. The request itself never fails out loud: it is the
-       * player's courtesy going unnoticed, not their problem.
+       * Records the player's answer to the ModDB listing question and, once it is on disk, counts
+       * the running version on the listing when that answer says to. `consent` is the answer they
+       * just gave, or null for the silent count a stored "always" owes this launch.
+       *
+       * Answers a reason token and the state the main process wrote, which the renderer mirrors so
+       * the two copies of the config agree on what has been counted. The request itself never
+       * fails out loud: it is the player's courtesy going unnoticed, not their problem.
        */
-      acceptModDbVisibility: () => Promise<boolean>
+      countModDbDownload: (consent: ModDbVisibilityConsentValue | null) => Promise<ModDbCountResult>
       /** Fetches this repository's GitHub releases, for the "what's new" dialog and the Info & Help page. See src/domain/appUpdate/whatsNew.ts. */
       fetchReleaseNotes: () => Promise<FetchReleaseNotesResult>
     }

@@ -29,32 +29,13 @@ import * as tar from "tar"
 
 // Relative so the module stays importable from a plain test run, like validation.ts.
 import type { ArchiveSizeLimits } from "../validation"
-// The size ceilings used to be re-declared here as local copies of the two in
-// validation.ts. They are imported now: a backup is read under a different pair
-// (#362) and two places to change one number is how the pairs drift apart.
-import { archiveSizeLimits, isSafeTarEntryType, isTarGzName } from "../validation"
+// The size ceilings and the symlink walk used to be local copies of rules
+// validation.ts already states. They are imported now: a backup is read under a
+// different pair (#362) and two places to change one rule is how the pair drifts.
+import { archiveSizeLimits, assertNoSymlinkComponents, isSafeTarEntryType, isTarGzName } from "../validation"
 import { validateArchive } from "../archiveValidation"
 
 const MAX_ARCHIVE_ENTRIES = 100_000
-
-export function assertNoSymlinkComponents(pathValue: string): void {
-  let current = resolve(pathValue)
-  let parent = resolve(current, "..")
-  while (!fse.existsSync(current)) {
-    if (parent === current) return
-    current = parent
-    parent = resolve(current, "..")
-  }
-
-  while (current !== parent) {
-    const stats = fse.lstatSync(current)
-    if (stats.isSymbolicLink()) throw new Error("Symbolic links are not allowed")
-    current = parent
-    parent = resolve(current, "..")
-  }
-
-  if (fse.lstatSync(current).isSymbolicLink()) throw new Error("Symbolic links are not allowed")
-}
 
 export type ArchiveStats = { entries: number; bytes: number }
 

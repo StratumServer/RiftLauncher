@@ -13,8 +13,13 @@ export function preventAppClose(action: "add" | "remove", id: string, desc: stri
   window.api.utils.setPreventAppClose(action, id, desc)
 }
 
-export function runGame(gameVersion: GameVersionType, installation: InstallationType): Promise<GameExecutionResult> {
-  return window.api.gameManager.executeGame(gameVersion, installation)
+/**
+ * `serverId` names one of this Installation's own saved servers, and nothing else ever travels: the
+ * main process looks the id up in the config it already holds and builds the join URL from the
+ * record it finds there, so no address the renderer knows can reach the game's arguments.
+ */
+export function runGame(gameVersion: GameVersionType, installation: InstallationType, serverId?: string): Promise<GameExecutionResult> {
+  return window.api.gameManager.executeGame(gameVersion, installation, serverId)
 }
 
 export function checkInstallationPathExists(path: string): Promise<boolean> {

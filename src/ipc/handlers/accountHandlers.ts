@@ -3,7 +3,7 @@ import { ipcMain } from "electron"
 import { interpretFirstPass, interpretSecondPass } from "@domain/account/login"
 import type { LoginVerdict } from "@domain/account/login"
 import { badCredentialsResult, needsTwoFactorResult, sessionStoreUnreadableResult, twoFactorRejectedResult, unexpectedResponseOutcome } from "@src/ipc/handlers/accountLoginOutcome"
-import { AccountStorageFailure, loginFailureReason } from "@src/ipc/handlers/loginFailureReason"
+import { AccountStorageFailure, loginFailureFamily, loginFailureReason } from "@src/ipc/handlers/loginFailureReason"
 import { buildLoginRequestBody } from "@src/ipc/handlers/loginRequestBody"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
@@ -12,6 +12,8 @@ import { assertString, MAX_LOGIN_RESPONSE_BYTES } from "@src/ipc/validation"
 import { AccountStoreUnreadableError, removeAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import type { AccountSaveOutcome } from "@src/ipc/accountStore"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
+
+const LOG_PREFIX = "[back] [ipc] [ipc/handlers/accountHandlers.ts]"
 
 const LOGIN_URL = new URL("https://auth3.vintagestory.at/v2/gamelogin")
 
@@ -71,15 +73,36 @@ async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
         // socket: `ENOSPC` from a keyring write and `ENOSPC` from a socket look identical
         // by then, and this call site is the only one that knows which it was.
         if (!(error instanceof AccountStoreUnreadableError)) throw new AccountStorageFailure(error)
-        logMessage("error", "[back] [ipc] [accountHandlers.ts] [LOGIN] The account store is unreadable and could not be copied aside, so it was left untouched. The session was not saved.")
-        logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] ${getErrorMessage(error)}`)
+        logMessage("error", `${LOG_PREFIX} [LOGIN] The account store is unreadable and could not be copied aside, so it was left untouched. The session was not saved.`)
+        logMessage("debug", `${LOG_PREFIX} [LOGIN] ${getErrorMessage(error)}`)
         return sessionStoreUnreadableResult()
       }
 
       if (outcome === "saved-after-rebuild")
-        logMessage("warn", "[back] [ipc] [accountHandlers.ts] [LOGIN] The account store could not be read; it was copied aside and rebuilt around this login. Other saved accounts must log in again.")
+        logMessage("warn", `${LOG_PREFIX} [LOGIN] The account store could not be read; it was copied aside and rebuilt around this login. Other saved accounts must log in again.`)
 
-      return { status: "success", account: verdict.credentials.publicAccount, ...(outcome === "saved-after-rebuild" ? { storeRebuilt: true } : {}) }
+      // No keyring on this machine, so nothing was written and the session lives in this process
+      // only (#481). The login itself stands: the service accepted these credentials, and refusing
+      // to report that left the player unable to play at all over a missing wallet.
+      if (outcome === "saved-in-memory") logMessage("warn", `${LOG_PREFIX} [LOGIN] No system keyring is available, so this session is held in memory for this run and was not written to disk.`)
+
+      // The store holds other sessions a real system keyring sealed, but this process is running
+      // the opted-in basic backend, which cannot reach them: nothing was written, and this login
+      // lives in this process only, the same as the no-keyring case above, so its bytes are never
+      // put at risk (#regression on #542).
+      if (outcome === "saved-in-memory-keyring-sealed")
+        logMessage(
+          "warn",
+          `${LOG_PREFIX} [LOGIN] The account store holds sessions sealed by a system keyring, unreadable while the basic password store is on; this session is held in memory for this run and was not written to disk.`
+        )
+
+      return {
+        status: "success",
+        account: verdict.credentials.publicAccount,
+        ...(outcome === "saved-after-rebuild" ? { storeRebuilt: true } : {}),
+        ...(outcome === "saved-in-memory" ? { sessionInMemoryOnly: true } : {}),
+        ...(outcome === "saved-in-memory-keyring-sealed" ? { sessionKeyringSealed: true } : {})
+      }
     }
     case "needs-two-factor":
       return needsTwoFactorResult()
@@ -89,11 +112,11 @@ async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
       // The toast collapses every refusal into "invalid email or password"; the
       // service's own reason string is the only way to tell a real credential
       // mismatch from anything else it may refuse for. Server enum, never user data.
-      logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] Service refused the login, reason: "${verdict.serverReason}".`)
+      logMessage("debug", `${LOG_PREFIX} [LOGIN] Service refused the login, reason: "${verdict.serverReason}".`)
       return badCredentialsResult()
     case "unreadable-response": {
       const outcome = unexpectedResponseOutcome(verdict)
-      logMessage("error", `[back] [ipc] [accountHandlers.ts] [LOGIN] ${outcome.logMessage}`)
+      logMessage("error", `${LOG_PREFIX} [LOGIN] ${outcome.logMessage}`)
       return outcome.result
     }
   }
@@ -128,8 +151,19 @@ ipcMain.handle(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, async (event, email: unknown,
     // reports (#352). `loginFailureReason` maps it onto a fixed vocabulary
     // instead, which still tells a network failure from an HTTP status from a
     // keyring that is not there from a disk with no room left on it.
-    logMessage("error", "[back] [ipc] [accountHandlers.ts] [LOGIN] Login failed.")
-    logMessage("debug", `[back] [ipc] [accountHandlers.ts] [LOGIN] Login failure reason: ${loginFailureReason(error)}.`)
+    const reason = loginFailureReason(error)
+    logMessage("error", `${LOG_PREFIX} [LOGIN] Login failed.`)
+    logMessage("debug", `${LOG_PREFIX} [LOGIN] Login failure reason: ${reason}.`)
+
+    // A reason `loginFailureFamily` can place resolves instead of throwing, so the
+    // renderer can say which of DNS/refused/timeout, a certificate, an HTTP error the
+    // service itself answered with, or an HTTP-level account refusal it actually was
+    // (issue #481), rather than folding all four into one generic toast. Anything the
+    // classifier cannot place keeps throwing exactly as before: a storage failure or a
+    // truly unrecognised error is not one of those four, and guessing which would be a
+    // worse lie than the generic message it replaces.
+    const family = loginFailureFamily(reason)
+    if (family !== "unknown") return { status: family }
     throw new Error("Login failed")
   }
 })

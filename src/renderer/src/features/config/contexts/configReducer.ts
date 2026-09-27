@@ -1,5 +1,6 @@
 import { DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
-import { type ModDbVisibilityAnswer } from "@domain/moddbVisibility"
+import { type ModDbVisibilityState } from "@domain/moddbVisibility"
+import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
 
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
@@ -13,8 +14,12 @@ export enum CONFIG_ACTIONS {
   SET_ACTIVE_ACCOUNT = "SET_ACTIVE_ACCOUNT",
   SET_BACKGROUND = "SET_BACKGROUND",
   SET_ACCENT_COLOR = "SET_ACCENT_COLOR",
-  SET_MODDB_VISIBILITY_ANSWER = "SET_MODDB_VISIBILITY_ANSWER",
+  SET_MODDB_VISIBILITY = "SET_MODDB_VISIBILITY",
+  SET_MOD_SUGGESTIONS_CONSENT = "SET_MOD_SUGGESTIONS_CONSENT",
+  ADD_DISMISSED_MOD_SUGGESTION = "ADD_DISMISSED_MOD_SUGGESTION",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
+  SET_MEASURE_PLAY_SESSIONS = "SET_MEASURE_PLAY_SESSIONS",
+  SET_ALLOW_BASIC_SESSION_STORE = "SET_ALLOW_BASIC_SESSION_STORE",
   SET_LAST_SEEN_CHANGELOG_VERSION = "SET_LAST_SEEN_CHANGELOG_VERSION",
 
   ADD_INSTALLATION = "ADD_INSTALLATION",
@@ -24,6 +29,7 @@ export enum CONFIG_ACTIONS {
   ADD_INSTALLATION_BACKUP = "ADD_INSTALLATION_BACKUP",
   DELETE_INSTALLATION_BACKUP = "DELETE_INSTALLATION_BACKUP",
   EDIT_INSTALLATION_BACKUP = "EDIT_INSTALLATION_BACKUP",
+  STAMP_SERVER_LAUNCH = "STAMP_SERVER_LAUNCH",
 
   ADD_GAME_VERSION = "ADD_GAME_VERSION",
   DELETE_GAME_VERSION = "DELETE_GAME_VERSION",
@@ -112,13 +118,28 @@ export interface SetAccentColor {
 }
 
 /**
- * Records the answer to the one-time ModDB listing question, which is what stops it being asked
- * again. Dispatched from the three buttons on the prompt and from nowhere else: closing it without
- * answering must leave the config alone so the question survives to the next launch.
+ * Records the answer to the ModDB listing question: which answer, the version it was given under,
+ * and the versions counted so far. Dispatched from the prompt's own buttons, from the settings row
+ * that changes a lasting answer, and from the main process's answer once a count has landed.
+ *
+ * Never on a prompt closed without an answer: that has to leave the config alone so the question
+ * survives to the next launch of this version.
  */
-export interface SetModDbVisibilityAnswer {
-  type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER
-  payload: ModDbVisibilityAnswer
+export interface SetModDbVisibility {
+  type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY
+  payload: ModDbVisibilityState
+}
+
+/** Records the separate answer for the opt-in ModDB suggestions row. */
+export interface SetModSuggestionsConsent {
+  type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT
+  payload: boolean | null
+}
+
+/** Remembers one dismissed listing while keeping dismissal history bounded. */
+export interface AddDismissedModSuggestion {
+  type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION
+  payload: { listingId: number }
 }
 
 /**
@@ -129,6 +150,22 @@ export interface SetModDbVisibilityAnswer {
  */
 export interface SetReceiveBetaUpdates {
   type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES
+  payload: boolean
+}
+
+/** Whether the launcher measures the game process while it runs. See src/domain/sessions/sampling.ts. */
+export interface SetMeasurePlaySessions {
+  type: CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS
+  payload: boolean
+}
+
+/**
+ * Whether a session may be kept on a machine with no system keyring, where the store left seals it
+ * with a key that ships in the binary. The next launch is what acts on it, since Chromium picks
+ * its password store before any config read. See src/domain/account/sessionStorage.ts.
+ */
+export interface SetAllowBasicSessionStore {
+  type: CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE
   payload: boolean
 }
 
@@ -186,6 +223,23 @@ export interface DeleteInstallationBackup {
   payload: {
     id: string
     backupId: string
+  }
+}
+
+/**
+ * Marks one server bookmark as the one the launcher last started the game on.
+ *
+ * Its own action rather than an EDIT_INSTALLATION carrying a whole `servers` array: the stamp is
+ * written when the game exits, which can be hours after Join was pressed, and the array a launch
+ * captured back then is a list of bookmarks the player has since added to, edited and removed. The
+ * reducer holds the current one, so the stamp is applied here instead of shipped with the action.
+ */
+export interface StampServerLaunch {
+  type: CONFIG_ACTIONS.STAMP_SERVER_LAUNCH
+  payload: {
+    id: string
+    serverId: string
+    when: number
   }
 }
 
@@ -283,8 +337,12 @@ export type ConfigAction =
   | SetActiveAccount
   | SetBackground
   | SetAccentColor
-  | SetModDbVisibilityAnswer
+  | SetModDbVisibility
+  | SetModSuggestionsConsent
+  | AddDismissedModSuggestion
   | SetReceiveBetaUpdates
+  | SetMeasurePlaySessions
+  | SetAllowBasicSessionStore
   | SetLastSeenChangelogVersion
   | AddInstallation
   | DeleteInstallation
@@ -293,6 +351,7 @@ export type ConfigAction =
   | AddInstallationBackup
   | DeleteInstallationBackup
   | EditInslallationBackup
+  | StampServerLaunch
   | AddCustomIcon
   | DeleteCustomIcon
   | AddGameVersion
@@ -340,10 +399,20 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       return { ...config, background: action.payload, _backgroundRevision: (config._backgroundRevision ?? 0) + 1 }
     case CONFIG_ACTIONS.SET_ACCENT_COLOR:
       return { ...config, accentColor: action.payload }
-    case CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER:
-      return { ...config, moddbVisibilityAnswer: action.payload }
+    case CONFIG_ACTIONS.SET_MODDB_VISIBILITY:
+      return { ...config, moddbVisibility: action.payload }
+    case CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT:
+      return { ...config, modSuggestionsConsent: action.payload }
+    case CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION: {
+      if (config.dismissedModSuggestions.includes(action.payload.listingId) || config.dismissedModSuggestions.length >= MAX_DISMISSED_MOD_SUGGESTIONS) return config
+      return { ...config, dismissedModSuggestions: [...config.dismissedModSuggestions, action.payload.listingId] }
+    }
     case CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES:
       return { ...config, receiveBetaUpdates: action.payload }
+    case CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS:
+      return { ...config, measurePlaySessions: action.payload }
+    case CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE:
+      return { ...config, allowBasicSessionStore: action.payload }
     case CONFIG_ACTIONS.SET_LAST_SEEN_CHANGELOG_VERSION:
       return { ...config, lastSeenChangelogVersion: action.payload }
     case CONFIG_ACTIONS.ADD_INSTALLATION:
@@ -404,6 +473,18 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
             ? {
                 ...installation,
                 backups: installation.backups.map((backup) => (backup.id === action.payload.backupId ? { ...backup, ...action.payload.updates } : backup))
+              }
+            : installation
+        )
+      }
+    case CONFIG_ACTIONS.STAMP_SERVER_LAUNCH:
+      return {
+        ...config,
+        installations: config.installations.map((installation) =>
+          installation.id === action.payload.id && installation.servers
+            ? {
+                ...installation,
+                servers: installation.servers.map((server) => (server.id === action.payload.serverId ? { ...server, lastLaunched: action.payload.when } : server))
               }
             : installation
         )

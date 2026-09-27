@@ -25,6 +25,7 @@ import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { crc32 } from "node:zlib"
 
 import { hasCloseApplicationsFilterExcludes, hasCompactFileLocationRecord, hasFlatWizardColours, headerFlagCount, type InnoSetupVersion } from "../../src/domain/inno/version"
 import { NO_LOCATION } from "../../src/domain/inno/script"
@@ -38,23 +39,6 @@ const BLOCK_CHUNK_BYTES = 4096
 
 /** The compression byte the format defines, in the order src/domain/inno/script.ts reads it. */
 const COMPRESSION_BYTES: Record<string, number> = { stored: 0, zlib: 1, bzip2: 2, lzma1: 3, lzma2: 4 }
-
-/** CRC-32 with the reflected IEEE polynomial, the one Inno Setup guards its blocks with. */
-const CRC_TABLE = ((): Uint32Array => {
-  const table = new Uint32Array(256)
-  for (let i = 0; i < 256; i++) {
-    let entry = i
-    for (let bit = 0; bit < 8; bit++) entry = (entry & 1) !== 0 ? (entry >>> 1) ^ 0xedb88320 : entry >>> 1
-    table[i] = entry >>> 0
-  }
-  return table
-})()
-
-function crc32(data: Buffer): number {
-  let crc = 0xffffffff
-  for (const byte of data) crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8)
-  return (crc ^ 0xffffffff) >>> 0
-}
 
 /**
  * Splits a plain `major.minor.patch[.revision]` string, the same shape

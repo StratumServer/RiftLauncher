@@ -414,3 +414,33 @@ write(
     { name: "Mods/notes\u0000.txt", method: METHOD_STORE, realBytes: Buffer.from("a name no writer produces by accident", "utf8") }
   ])
 )
+
+// --- dependencies-mod.zip -----------------------------------------------
+// A well formed mod declaring the two shapes of dependency bound the game
+// reads: a version floor, and "*" for any version. tests/ipc/modsHandlers.test.ts
+// scans a folder holding this and checks the map reaches the renderer intact.
+write(
+  "dependencies-mod.zip",
+  assembleZip([
+    {
+      name: "modinfo.json",
+      method: METHOD_STORE,
+      realBytes: Buffer.from(JSON.stringify({ modid: "riftdependent", name: "Rift Dependent Mod", version: "1.0.0", dependencies: { game: "1.20.0", riftfixture: "*" } }), "utf8")
+    }
+  ])
+)
+
+// --- bad-dependencies-mod.zip -------------------------------------------
+// The same mod with `dependencies` written as a list, which carries no version
+// to compare against. parseModInfo drops the field whole, so the wire mod
+// arrives with no dependencies at all rather than something half read.
+write(
+  "bad-dependencies-mod.zip",
+  assembleZip([
+    {
+      name: "modinfo.json",
+      method: METHOD_STORE,
+      realBytes: Buffer.from(JSON.stringify({ modid: "riftbaddeps", name: "Rift Bad Deps Mod", version: "1.0.0", dependencies: ["game"] }), "utf8")
+    }
+  ])
+)

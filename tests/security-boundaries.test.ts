@@ -74,6 +74,35 @@ describe("process and navigation boundaries", () => {
     assert.throws(() => validateGameInstallation({ path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "", launchWrapper: "x".repeat(4_097) }), /Invalid launch wrapper/)
   })
 
+  /**
+   * The Installation id is the key EXECUTE_GAME looks a server bookmark up by, so it goes through
+   * the same shape check every other field does rather than being read straight off the request.
+   * A request that carries no id simply cannot name a bookmark, which is why it stays optional.
+   */
+  it("validates the installation id a server bookmark is looked up under", () => {
+    const base = { path: "/tmp/installations/main", startParams: "", mesaGlThread: false, envVars: "" }
+
+    assert.equal(validateGameInstallation({ ...base, id: "i-1" }).id, "i-1")
+    assert.equal("id" in validateGameInstallation(base), false)
+    assert.throws(() => validateGameInstallation({ ...base, id: 42 }), /Invalid installation id/)
+    assert.throws(() => validateGameInstallation({ ...base, id: "x".repeat(129) }), /Invalid installation id/)
+  })
+
+  /**
+   * The renderer-dom tests mock the bridge and the handler tests call the handler directly, so the
+   * preload line between them is the one link nothing else exercises. Dropping the argument there
+   * turns every Join into a plain launch that leaves the player on the main menu, with no failure
+   * anywhere to say so. Pinned by reading the source, the same way the mod profile channels below
+   * are, since the preload cannot be imported outside Electron.
+   */
+  it("keeps handing EXECUTE_GAME the server bookmark id", () => {
+    assert.equal(
+      PRELOAD_SOURCE.includes("ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, version, installation, serverId)"),
+      true,
+      "the preload stopped carrying the server bookmark id to EXECUTE_GAME"
+    )
+  })
+
   it("accepts only the exact renderer document or development origin", () => {
     const packagedPath = resolve("/tmp/out/renderer/index.html")
     assert.equal(isAllowedRendererUrl(`${pathToFileURL(packagedPath).toString()}#/home`, undefined, packagedPath), true)
@@ -120,6 +149,25 @@ describe("startup network boundaries", () => {
     assert.equal(MAIN_SOURCE.slice(windowClosedStart).includes("clearModIconMemoryCache(modIconMemoryCache)"), true, "src/main/index.ts stopped clearing the mod icon cache when all windows close")
   })
 
+  /**
+   * The basic password store seals a session with a key that ships in the binary, so the launcher
+   * asks Chromium for it only when the player turned the setting on (#481). Two things have to
+   * hold, and neither survives a careless edit: the switch is never appended unconditionally, and
+   * it is appended before app.whenReady, since Chromium reads it as the process starts and never
+   * looks again. A switch appended inside whenReady would store sessions in the clear on the next
+   * launch while doing nothing on this one.
+   */
+  it("asks for the basic password store only from the stored setting, and before the app is ready", () => {
+    const appendStart = MAIN_SOURCE.indexOf('app.commandLine.appendSwitch("password-store"')
+    assert.notEqual(appendStart, -1, "src/main/index.ts stopped appending the password-store switch")
+    assert.equal(MAIN_SOURCE.includes("basicPasswordStoreSwitch(process.platform, storedAllowBasicSessionStore())"), true, "the password-store switch no longer comes from the stored setting")
+    assert.equal(MAIN_SOURCE.includes('appendSwitch("password-store", "basic")'), false, "the password-store switch is appended unconditionally")
+
+    const readyStart = MAIN_SOURCE.indexOf("app.whenReady()")
+    assert.notEqual(readyStart, -1, "src/main/index.ts stopped calling app.whenReady")
+    assert.ok(appendStart < readyStart, "the password-store switch is appended after app.whenReady, where Chromium has already chosen a store")
+  })
+
   // An offline launch of a packaged build rejects the update check, and a
   // rejection nobody catches takes the main process down with it. The check
   // itself lives in autoUpdaterEvents.ts, which tests/main/autoUpdaterEvents.test.ts
@@ -145,6 +193,64 @@ describe("startup network boundaries", () => {
     assert.equal(locate.includes("await assertConfiguredInstallationPath(installationPath)"), true, "the profiles file is no longer tied to a configured Installation")
     assert.equal(locate.includes('join(installation, MOD_PROFILES_FILE_NAME), "mod profiles path", { allowMissing: true })'), true, "the profiles file left the strict grade")
     assert.equal(locate.includes("allowSymlinks"), false, "the profiles file may now be read or written through a symbolic link")
+  })
+
+  /**
+   * The play session channels (#461) read and write a file the renderer never names: it names the
+   * Installation, and the id is checked against a fixed alphabet before anything is joined to it.
+   * tests/ipc/playSessionsStore.test.ts proves the refusals; this keeps the order they run in and
+   * keeps the renderer out of the writing half altogether.
+   */
+  it("holds both play session channels to a trusted sender and a checked installation id", () => {
+    const gameHandlers = readFileSync(resolve(__dirname, "../src/ipc/handlers/gameHandlers.ts"), "utf8")
+
+    for (const channel of ["GET_PLAY_SESSIONS", "FORGET_PLAY_SESSIONS"]) {
+      const start = gameHandlers.indexOf(`ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.${channel},`)
+      assert.notEqual(start, -1, `gameHandlers.ts stopped registering ${channel}`)
+      const body = gameHandlers.slice(start, gameHandlers.indexOf("\n})", start))
+      assert.match(body, /^[^\n]*\n {2}assertTrustedIpcSender\(event\)\n/, `${channel} no longer checks its sender before anything else`)
+      assert.equal(PRELOAD_SOURCE.includes(`ipcRenderer.invoke(IPC_CHANNELS.GAME_MANAGER.${channel},`), true, `the preload stopped exposing ${channel}`)
+    }
+
+    const store = readFileSync(resolve(__dirname, "../src/ipc/playSessionsStore.ts"), "utf8")
+    assert.equal(store.includes("assertSafeInstallationId(installationId)"), true, "the sessions file is no longer derived from a checked installation id")
+    assert.equal(store.includes('assertManagedPath(join(folder, `${id}.json`), "play sessions path"'), true, "the sessions file left the managed path policy")
+    assert.equal(store.includes("allowSymlinks"), false, "a sessions file may now be read or written through a symbolic link")
+
+    // Writing samples is EXECUTE_GAME's job alone. A renderer that could append to these files
+    // could write whatever series it liked into a player's history.
+    assert.equal(PRELOAD_SOURCE.includes("recordPlaySession"), false, "the preload now exposes a way to write play sessions from the renderer")
+  })
+
+  /**
+   * The server-mods channel is read only and never takes a folder: the renderer names the
+   * Installation, the host joins the game's own subfolder onto it. #459 turns on that shape, and a
+   * later change that let the renderer send the folder (or the server's name) would hand it a reach
+   * the path policy is not checking for.
+   */
+  it("holds the server mods channel to a trusted sender and an Installation the config names", () => {
+    const start = MODS_HANDLERS_SOURCE.indexOf("ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS,")
+    assert.notEqual(start, -1, "modsHandlers.ts stopped registering GET_SERVER_MODS")
+    const body = MODS_HANDLERS_SOURCE.slice(start, MODS_HANDLERS_SOURCE.indexOf("\n})", start))
+
+    assert.match(body, /^[^\n]*\n {2}assertTrustedIpcSender\(event\)\n/, "GET_SERVER_MODS no longer checks its sender before anything else")
+    assert.equal(body.includes("await assertConfiguredInstallationPath(installationPath)"), true, "GET_SERVER_MODS stopped deriving the folder from a configured Installation")
+    assert.equal(body.includes("join(installation, MODS_BY_SERVER_FOLDER_NAME)"), true, "GET_SERVER_MODS no longer joins the game's own folder name itself")
+    assert.equal(PRELOAD_SOURCE.includes("ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS,"), true, "the preload stopped exposing GET_SERVER_MODS")
+  })
+
+  // A server folder is named after the server, which on a private one is somebody's address. It is
+  // display text, never a log line, so nothing in the handler may interpolate it.
+  it("keeps the server's name out of every server mods log line", () => {
+    const start = MODS_HANDLERS_SOURCE.indexOf("ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS,")
+    const body = MODS_HANDLERS_SOURCE.slice(start, MODS_HANDLERS_SOURCE.indexOf("\n})", start))
+
+    for (const line of body.split("\n").filter((text) => text.includes("logMessage("))) {
+      // Only what gets interpolated: the fixed English of a line is free to say "folder".
+      for (const [, expression] of line.matchAll(/\$\{([^}]*)\}/g)) {
+        assert.equal(/server|folder|path/i.test(expression ?? ""), false, `a GET_SERVER_MODS log line interpolates a server or a folder: ${line.trim()}`)
+      }
+    }
   })
 
   it("keeps the local app protocol CORS-aware and records non-renderer child exits", () => {

@@ -1,12 +1,7 @@
-import clsx from "clsx"
-import { AnimatePresence, motion } from "motion/react"
 import { Dispatch, SetStateAction } from "react"
 import { useTranslation } from "react-i18next"
-import { PiCaretDownDuotone } from "react-icons/pi"
-import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
 
-import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
-import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
+import SelectMenu from "@renderer/components/ui/SelectMenu"
 
 function InstalledFilter({
   installedFilter,
@@ -16,47 +11,12 @@ function InstalledFilter({
   const { t } = useTranslation()
 
   const INSTALLED_FILTERS = [
-    { key: "all", value: t("generic.all") },
-    { key: "installed", value: t("generic.installed") },
-    { key: "not-installed", value: t("generic.notInstalled") }
+    { key: "all", label: t("generic.all") },
+    { key: "installed", label: t("generic.installed") },
+    { key: "not-installed", label: t("generic.notInstalled") }
   ]
 
-  return (
-    <Listbox value={installedFilter} onChange={setInstalledFilter}>
-      {({ open }) => (
-        <>
-          {INSTALLED_FILTERS.filter((i) => i.key === installedFilter).map((lang) => (
-            <ListboxButton key={lang.key} className={clsx(MENU_TRIGGER_STYLES, size)}>
-              <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap text-sm">{lang.value}</p>
-              <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
-            </ListboxButton>
-          ))}
-
-          <AnimatePresence>
-            {open && (
-              <ListboxOptions static anchor="bottom" className="w-[var(--button-width)] z-600 mt-1 select-none rounded-sm overflow-hidden">
-                <motion.ul
-                  variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className="flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
-                >
-                  {INSTALLED_FILTERS.map((i) => (
-                    <ListboxOption key={i.key} value={i.key} as={motion.li} variants={DROPDOWN_MENU_ITEM_VARIANTS} className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}>
-                      <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap text-sm" title={i.value}>
-                        {i.value}
-                      </p>
-                    </ListboxOption>
-                  ))}
-                </motion.ul>
-              </ListboxOptions>
-            )}
-          </AnimatePresence>
-        </>
-      )}
-    </Listbox>
-  )
+  return <SelectMenu value={installedFilter} options={INSTALLED_FILTERS} onChange={setInstalledFilter} size={size} />
 }
 
 export default InstalledFilter

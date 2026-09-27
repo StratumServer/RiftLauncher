@@ -1,23 +1,45 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { assertAllowedApiUrl, getApiUrlMaxBytes, MAX_BACKGROUND_IMAGE_BYTES, MAX_BACKGROUND_MANIFEST_BYTES, MAX_MODS_CATALOG_RESPONSE_BYTES, MAX_RESPONSE_BYTES } from "../../src/ipc/validation"
+import {
+  assertAllowedApiUrl,
+  getApiUrlMaxBytes,
+  getApiUrlTimeoutMs,
+  MAX_BACKGROUND_IMAGE_BYTES,
+  MAX_BACKGROUND_MANIFEST_BYTES,
+  MAX_MODS_CATALOG_RESPONSE_BYTES,
+  MAX_RESPONSE_BYTES,
+  MODS_CATALOG_TIMEOUT_MS
+} from "../../src/ipc/validation"
 import { BACKGROUNDS_MANIFEST_URL, backgroundImageUrl, backgroundThumbnailUrl } from "../../src/domain/backgrounds"
 
 describe("per-endpoint response ceilings (issue #24)", () => {
   it("keeps the generic 4 MB ceiling for ordinary allow-listed API endpoints", () => {
     assert.equal(getApiUrlMaxBytes(assertAllowedApiUrl("https://mods.vintagestory.at/api/tags")), MAX_RESPONSE_BYTES)
-    assert.equal(getApiUrlMaxBytes(assertAllowedApiUrl("https://mods.vintagestory.at/api/authors")), MAX_RESPONSE_BYTES)
     assert.equal(getApiUrlMaxBytes(assertAllowedApiUrl("https://mods.vintagestory.at/api/gameversions")), MAX_RESPONSE_BYTES)
     assert.equal(getApiUrlMaxBytes(assertAllowedApiUrl("https://mods.vintagestory.at/api/mod/123")), MAX_RESPONSE_BYTES)
     assert.equal(getApiUrlMaxBytes(assertAllowedApiUrl("https://auth3.vintagestory.at/v2/gamelogin")), MAX_RESPONSE_BYTES)
   })
 
-  it("raises the ceiling only for the mods-catalog listing endpoint", () => {
+  it("raises the ceiling for the mods-catalog and author-list listing endpoints (#526)", () => {
     assert.equal(MAX_MODS_CATALOG_RESPONSE_BYTES, 16 * 1024 * 1024)
     assert.equal(getApiUrlMaxBytes(assertAllowedApiUrl("https://mods.vintagestory.at/api/mods")), MAX_MODS_CATALOG_RESPONSE_BYTES)
     // Search filters must not fall back to the generic ceiling.
     assert.equal(getApiUrlMaxBytes(assertAllowedApiUrl("https://mods.vintagestory.at/api/mods?text=foo&orderby=follows")), MAX_MODS_CATALOG_RESPONSE_BYTES)
+    // The author list has no pagination either (#526): it was already past the generic 4 MB
+    // ceiling at 4,215,149 bytes the day this was raised.
+    assert.equal(getApiUrlMaxBytes(assertAllowedApiUrl("https://mods.vintagestory.at/api/authors")), MAX_MODS_CATALOG_RESPONSE_BYTES)
+  })
+
+  it("raises the overall timeout for the same two listing endpoints, and only them", () => {
+    assert.equal(MODS_CATALOG_TIMEOUT_MS, 90_000)
+    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/mods")), MODS_CATALOG_TIMEOUT_MS)
+    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/authors")), MODS_CATALOG_TIMEOUT_MS)
+    // Every other allow-listed endpoint sets no override, which is how it keeps
+    // requestBoundedText/Buffer's own default (REQUEST_TIMEOUT_MS, 15s in network.ts).
+    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/tags")), undefined)
+    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/mod/123")), undefined)
+    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://auth3.vintagestory.at/v2/gamelogin")), undefined)
   })
 
   it("still rejects URLs that are not on the API allow-list", () => {

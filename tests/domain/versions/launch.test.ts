@@ -100,6 +100,31 @@ describe("buildGameLaunchPlan arguments", () => {
     assert.deepEqual(plan.args, [`--dataPath=${INSTALLATION_PATH}`, ""])
   })
 
+  it("adds no connect pair at all when there is no server to join", async () => {
+    const plan = await planFor()
+
+    assert.equal(plan.args.includes("-c"), false)
+    assert.deepEqual(plan.args, [`--dataPath=${INSTALLATION_PATH}`, ""])
+  })
+
+  it("passes a connect target as its own pair, in the form the game's own URL handler uses", async () => {
+    const plan = await planFor({ connectTarget: "vintagestoryjoin://play.example.com:42420" })
+
+    assert.deepEqual(plan.args, [`--dataPath=${INSTALLATION_PATH}`, "-c", "vintagestoryjoin://play.example.com:42420", ""])
+  })
+
+  it("keeps the start parameters the single trailing argument when a connect target is there too", async () => {
+    const plan = await planFor({ connectTarget: "vintagestoryjoin://play.example.com:42420", startParams: "--one --two three" })
+
+    assert.deepEqual(plan.args, [`--dataPath=${INSTALLATION_PATH}`, "-c", "vintagestoryjoin://play.example.com:42420", "--one --two three"])
+  })
+
+  it("keeps the executable ahead of the connect pair under mono", async () => {
+    const plan = await planFor({ fileNames: ["Vintagestory.exe"], connectTarget: "vintagestoryjoin://play.example.com:42420" })
+
+    assert.deepEqual(plan.args, [`${VERSION_FOLDER}/Vintagestory.exe`, `--dataPath=${INSTALLATION_PATH}`, "-c", "vintagestoryjoin://play.example.com:42420", ""])
+  })
+
   it("puts a Linux wrapper in front of the native game command without a shell", async () => {
     const plan = await planFor({ launchWrapper: "/usr/bin/gamemoderun" })
 

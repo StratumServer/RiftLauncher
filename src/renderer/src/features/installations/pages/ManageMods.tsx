@@ -23,7 +23,9 @@ import {
   installedModAuthors,
   installedModGameVersions,
   installedModTags,
-  NO_INSTALLED_MOD_FILTERS
+  matchesModSearch,
+  NO_INSTALLED_MOD_FILTERS,
+  sameModid
 } from "@domain/mods/installedFilters"
 import type { InstalledModFilters } from "@domain/mods/installedFilters"
 
@@ -32,6 +34,7 @@ import ModChangeSummaryPopup from "@renderer/features/mods/components/ModChangeS
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
+import ImportServersDialog from "@renderer/features/servers/components/ImportServersDialog"
 import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
 import InstalledModItem from "@renderer/features/mods/components/InstalledModItem"
 import InstalledModDetails from "@renderer/features/mods/components/InstalledModDetails"
@@ -41,17 +44,14 @@ import ManageModsActionBar from "@renderer/features/mods/components/ManageModsAc
 import ManageModsSelectionBar from "@renderer/features/mods/components/ManageModsSelectionBar"
 import ModProfilesPopup from "@renderer/features/mods/components/ModProfilesPopup"
 import InstalledModsFilterBar from "@renderer/features/mods/components/InstalledModsFilterBar"
+import ModHealthPanel from "@renderer/features/mods/components/ModHealthPanel"
 import NoInstalledModsNotice from "@renderer/features/mods/components/NoInstalledModsNotice"
+import ServerModsSection from "@renderer/features/mods/components/ServerModsSection"
 import { FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 
 function byName(a: InstalledModType, b: InstalledModType): number {
   return a.name.localeCompare(b.name)
-}
-
-/** What the player types matched against what they can see of a Mod: its name, id, or author. */
-function matchesSearch(iMod: InstalledModType, search: string): boolean {
-  return iMod.name.toLowerCase().includes(search) || iMod.modid.toLowerCase().includes(search) || (iMod.authors?.some((author) => author.toLowerCase().includes(search)) ?? false)
 }
 
 function ListMods(): JSX.Element {
@@ -66,6 +66,9 @@ function ListMods(): JSX.Element {
   const { installedMods, modsWithErrors, gettingMods, refresh } = useManageInstalledMods(installation)
 
   const [search, setSearch] = useState("")
+  // Counted up by Reload. The Mods a server downloaded are scanned by their own section, which would
+  // otherwise sit on what it read when the page opened while the count above it moves.
+  const [serverModsReload, setServerModsReload] = useState(0)
   const [filters, setFilters] = useState<InstalledModFilters>(NO_INSTALLED_MOD_FILTERS)
   // Collapsed on every fresh visit: the three dropdowns are what pushed the Mod list off the first
   // screen (#431). Search stays out of this, so narrowing by name never needs the extra click.
@@ -81,7 +84,7 @@ function ListMods(): JSX.Element {
   // One list feeds everything below: the three sections, and the buttons that act on the folder at
   // once. What a player sees is what those buttons touch, filtered or not (#228).
   const query = search.trim().toLowerCase()
-  const textFiltered = query ? installedMods.filter((iMod) => matchesSearch(iMod, query)) : installedMods
+  const textFiltered = query ? installedMods.filter((iMod) => matchesModSearch(iMod, query)) : installedMods
   const visibleMods = filterInstalledMods(textFiltered, filters)
   // Unreadable archives carry no author, tag or game version, so the three dropdowns have nothing to
   // judge them by and leave them alone. Only the text query narrows them, by file name.
@@ -89,7 +92,7 @@ function ListMods(): JSX.Element {
   const hasActiveFilters = hasActiveInstalledModFilters(filters)
   const nothingMatches = (query.length > 0 || hasActiveFilters) && visibleMods.length < 1 && visibleModsWithErrors.length < 1
 
-  const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation, visibleMods)
+  const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
   const actions = useInstalledModActions(installation, refresh)
@@ -102,7 +105,12 @@ function ListMods(): JSX.Element {
   // through the native file dialog.
   const folderInUse = installation ? modsFolderInUse(installation) : false
   const [profilesOpen, setProfilesOpen] = useState(false)
-  const [modToUpdate, setModToUpdate] = useState<InstalledModType | null>(null)
+  // The servers a finished import carried, held here so the question comes after the Mods are in
+  // rather than on top of them. Null while there is nothing to ask about.
+  const [importedServers, setImportedServers] = useState<readonly ServerBookmarkType[] | null>(null)
+  // A mod id and a name, not a Mod: the install popup already takes a mod id and finds the installed
+  // copy itself, so the health panel can point it at a dependency nobody has installed yet.
+  const [modToUpdate, setModToUpdate] = useState<{ modid: string; name?: string } | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -185,7 +193,15 @@ function ListMods(): JSX.Element {
           <StickyMenuGroupWrapper>
             <StickyMenuGroup>
               <GoBackButton to="/installations" />
-              <ReloadButton reloading={gettingMods} onClick={() => refresh()} />
+              <ReloadButton
+                reloading={gettingMods}
+                onClick={() => {
+                  // The server folders are read by their own scan, and the game writes them while
+                  // the player is in game, so Reload has to reach both halves of the page.
+                  setServerModsReload((count) => count + 1)
+                  void refresh()
+                }}
+              />
             </StickyMenuGroup>
 
             <StickyMenuBreadcrumbs
@@ -205,7 +221,7 @@ function ListMods(): JSX.Element {
               <ManageModsActionBar
                 installation={installation}
                 installedMods={visibleMods}
-                onUpdateAll={updateAllMods}
+                onUpdateAll={() => updateAllMods(visibleMods)}
                 onImportModpack={pickModpack}
                 activeProfileName={profiles.activeProfile?.name}
                 onOpenProfiles={() => setProfilesOpen(true)}
@@ -227,7 +243,7 @@ function ListMods(): JSX.Element {
                         ariaExpanded={filtersOpen}
                       >
                         <PiFunnelDuotone className="text-xl" />
-                        <p>{t("features.mods.filtersToggleButton", { count: activeFilterCount })}</p>
+                        <p>{activeFilterCount > 0 ? t("features.mods.filtersToggleButton", { count: activeFilterCount }) : t("features.mods.filtersToggleButtonNone")}</p>
                       </FormButton>
                     )}
                   </StickyMenuGroup>
@@ -300,6 +316,25 @@ function ListMods(): JSX.Element {
                     </ListWrapper>
                   )}
 
+                  {/*
+                   * Judged against the whole folder rather than the filtered list: a dependency a
+                   * search hides is still missing, and this says what the Installation is, not what
+                   * is on screen. Its Update all is handed that same whole folder, so the button
+                   * under a heading cannot do less than the lines above it just listed. It is above
+                   * "Mods with errors" because it is the one thing here that says the game may not
+                   * start.
+                   */}
+                  <ModHealthPanel
+                    installedMods={installedMods}
+                    unreadableCount={modsWithErrors.length}
+                    gameVersion={installation.version}
+                    suspended={suspendedModUpdates}
+                    labelOf={batch.labelOf}
+                    actions={actions}
+                    onUpdate={setModToUpdate}
+                    onUpdateAll={() => updateAllMods(installedMods)}
+                  />
+
                   {visibleModsWithErrors.length > 0 && (
                     <ListWrapper className="w-full">
                       <ListGroup>
@@ -347,13 +382,24 @@ function ListMods(): JSX.Element {
                     </ListWrapper>
                   )}
 
+                  {/* Last, and only when the game has actually downloaded something: these are not
+                      the Mods the player came here to manage, they are the ones they did not know
+                      they had. Nothing above reads them. */}
+                  <ServerModsSection installation={installation} search={query} reloadToken={serverModsReload} />
+
                   <InstallModPopup
                     modToInstall={modToUpdate?.modid || null}
                     setModToInstall={() => setModToUpdate(null)}
                     modName={modToUpdate?.name}
                     installation={{
                       installation: installation,
-                      oldMod: installedMods.find((iMod) => iMod.modid === modToUpdate?.modid)
+                      // Case-folded, because this no longer only ever receives a mod id read off an
+                      // installed copy: the Installation check points the popup at a dependency id
+                      // as the declaring author typed it, and the check itself matches those without
+                      // regard for case. An exact compare missed the copy being replaced, so the
+                      // fix for an outdated dependency left the old archive next to the new one and
+                      // the next scan reported the pair as a duplicate mod id.
+                      oldMod: modToUpdate ? installedMods.find((iMod) => sameModid(iMod.modid, modToUpdate.modid)) : undefined
                     }}
                     onFinishInstallation={() => {
                       refresh()
@@ -367,10 +413,15 @@ function ListMods(): JSX.Element {
                     installation={installation}
                     installedMods={installedMods}
                     onFinish={() => {
+                      // Read before clearModpack, which takes the manifest away.
+                      const carried = importManifest?.servers
                       clearModpack()
+                      if (carried && carried.length > 0) setImportedServers(carried)
                       refresh()
                     }}
                   />
+
+                  <ImportServersDialog servers={importedServers} installation={installation} close={() => setImportedServers(null)} />
 
                   <ModChangeSummaryPopup
                     isOpen={showSummary}

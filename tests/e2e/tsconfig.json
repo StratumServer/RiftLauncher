@@ -6,6 +6,11 @@
     "composite": false,
     "noEmit": true,
     "noImplicitAny": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    "baseUrl": "../..",
+    "paths": {
+      "@src/*": ["src/*"],
+      "@domain/*": ["src/domain/*"]
+    }
   }
 }

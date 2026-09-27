@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef } from "react"
+import { memo, useLayoutEffect, useRef, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import {
@@ -66,6 +66,7 @@ function ModListCard({
   busy = false,
   updateTo,
   onAction,
+  footer,
   picked,
   pickDisabled = false
 }: Readonly<{
@@ -86,6 +87,8 @@ function ModListCard({
   /** A newer release tagged for the Installation's game version, once the ModDB details are in. */
   updateTo?: string
   onAction?: (mod: DownloadableModOnListType, action: ModCardAction) => void | Promise<unknown>
+  /** Optional content below the card body, used by the suggestions row for its reason and dismiss action. */
+  footer?: ReactNode
   /** Set only in selection mode: whether this Mod is picked. */
   picked?: boolean
   /** The selection is full and this Mod is not in it, so it cannot be picked. */
@@ -170,6 +173,8 @@ function ModListCard({
           </div>
         </div>
       </div>
+
+      {footer}
 
       <div className="absolute w-full top-0 flex items-center justify-between p-1">
         {/*

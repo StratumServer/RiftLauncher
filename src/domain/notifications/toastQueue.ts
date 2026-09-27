@@ -17,6 +17,19 @@
 export const BACKLOG_TOAST_DURATION = 2_000
 
 /**
+ * Most banners the overlay stacks at once, newest at the bottom.
+ *
+ * One at a time meant a burst could only be read by shortening every turn in
+ * it, which is the trade the backlog rule above makes. Three banners let a
+ * burst of three be read at leisure, side by side, and only what comes after
+ * that pays the backlog turn. Three and not more because the region is a
+ * fixed-width column at the bottom right of the main area: a fourth banner
+ * starts eating the page behind it, and a stack nobody can take in at a glance
+ * is the same puzzle as a message that arrives late.
+ */
+export const MAX_VISIBLE_TOASTS = 3
+
+/**
  * Most toasts kept behind the one on screen. Four at
  * `BACKLOG_TOAST_DURATION` each puts the last of a burst about eight seconds
  * out, which is close enough to the event to still read as its consequence.
@@ -46,6 +59,20 @@ export function backlogToastDuration(duration: number | null, waiting: number, e
 }
 
 /**
+ * How many queued toasts are really waiting, given how much of the stack is
+ * taken.
+ *
+ * A queued toast that a free place is about to take is not a backlog: it is
+ * about to be on screen beside the others. Counting it as one shortened every
+ * banner already up the moment a second message arrived, even though both had a
+ * place. Only what is still queued once the stack is full has to be hurried
+ * along.
+ */
+export function waitingBehindStack(queued: number, visible: number): number {
+  return Math.max(0, queued - Math.max(0, MAX_VISIBLE_TOASTS - visible))
+}
+
+/**
  * Trims a record list to both budgets, oldest first, and returns the very same
  * array when nothing has to go so React can bail out of the render.
  *
@@ -56,11 +83,16 @@ export function backlogToastDuration(duration: number | null, waiting: number, e
  * sitting in the record list forever with no way to ever reach the screen.
  *
  * A pinned record is never dropped and counts against neither budget. The
- * provider pins the toast on screen, whatever its presentation: a toast-only
+ * provider pins every toast on screen, whatever its presentation: a toast-only
  * record leaves the list the moment it is dismissed, so without the pin the
  * oldest survivor is always the one being read, and a `both` record on screen
  * is also the oldest center entry once history fills up. Either cap would
  * unmount it mid-sentence.
+ *
+ * The toast budget also allows for the free places in the stack. Whatever is
+ * not on screen yet takes one on the next render, so a burst arriving at an
+ * empty overlay must keep `MAX_VISIBLE_TOASTS` of its own on top of the
+ * backlog, or the cap drops records that were about to be shown.
  */
 export function capNotificationRecords<T>(records: readonly T[], isToastOnly: (record: T) => boolean, isPinned: (record: T) => boolean = () => false): readonly T[] {
   let centerCount = 0
@@ -75,9 +107,9 @@ export function capNotificationRecords<T>(records: readonly T[], isToastOnly: (r
     else centerCount += 1
   }
   let centerExcess = centerCount - MAX_CENTER_HISTORY
-  // With nothing on screen the next render puts one up, so one more may wait.
-  // A pinned record of any presentation is something on screen.
-  let toastExcess = waitingToasts - (MAX_TOAST_BACKLOG + (pinnedToasts === 0 ? 1 : 0))
+  // Every free place in the stack is filled on the next render, so that many
+  // more may wait. A pinned record of any presentation is something on screen.
+  let toastExcess = waitingToasts - (MAX_TOAST_BACKLOG + Math.max(0, MAX_VISIBLE_TOASTS - pinnedToasts))
   if (centerExcess <= 0 && toastExcess <= 0) return records
 
   return records.filter((record) => {

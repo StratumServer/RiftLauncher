@@ -1,21 +1,19 @@
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { FiLoader } from "react-icons/fi"
-import { PiCaretDownDuotone, PiMagnifyingGlassDuotone } from "react-icons/pi"
-import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react"
-import { AnimatePresence, motion } from "motion/react"
+import { PiMagnifyingGlassDuotone } from "react-icons/pi"
 import clsx from "clsx"
 
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
 import { ACCENT_PRESETS } from "@domain/accentColors"
 import { resolveAllowPrerelease } from "@domain/appUpdate/betaUpdates"
+import { MODDB_VISIBILITY_ALWAYS, MODDB_VISIBILITY_ASK, MODDB_VISIBILITY_NEVER, type ModDbVisibilityPolicy } from "@domain/moddbVisibility"
 
-import { DROPDOWN_MENU_ITEM_VARIANTS, DROPDOWN_MENU_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import { backgroundImageSource } from "@renderer/utils/backgroundStyle"
 import { backgroundThumbnailSource } from "@renderer/utils/backgroundThumbnail"
-import { MENU_OPTION_STYLES, MENU_TRIGGER_STYLES } from "@renderer/components/ui/buttonStyles"
 
 import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 
 import defaultBackground from "@renderer/assets/background.jpg"
 
@@ -36,6 +34,7 @@ import {
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import LanguagesMenu from "@renderer/components/ui/LanguagesMenu"
+import SelectMenu from "@renderer/components/ui/SelectMenu"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton, ReloadButton } from "@renderer/components/ui/StickyMenu"
 import { useConfigFolderPicker } from "@renderer/features/config/hooks/useConfigFolderPicker"
 import { useBackgroundCatalog } from "@renderer/features/config/hooks/useBackgroundCatalog"
@@ -118,6 +117,36 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <BetaUpdatesToggle />
+              </FormBody>
+            </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.measurePlaySessions")} className="max-h-6" />
+              </FormHead>
+
+              <FormBody>
+                <MeasurePlaySessionsToggle />
+              </FormBody>
+            </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.moddbCount")} />
+              </FormHead>
+
+              <FormBody>
+                <ModDbCountPicker />
+              </FormBody>
+            </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.allowBasicSessionStore")} className="max-h-6" />
+              </FormHead>
+
+              <FormBody>
+                <AllowBasicSessionStoreToggle />
               </FormBody>
             </FromGroup>
           </FormGroupWrapper>
@@ -226,6 +255,98 @@ function BetaUpdatesToggle(): JSX.Element {
         onChange={(value) => configDispatch({ type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: value })}
       />
       <FormFieldDescription content={t("features.config.receiveBetaUpdatesDesc")} />
+    </FormFieldGroupWithDescription>
+  )
+}
+
+/**
+ * Whether the launcher measures the game process while it runs (#461).
+ *
+ * On by default. What it costs is one timer and a small file under the launcher's own user data,
+ * and the description says the only thing a player needs to know about it: none of it leaves the
+ * machine.
+ */
+function MeasurePlaySessionsToggle(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { measurePlaySessions } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+
+  return (
+    <FormFieldGroupWithDescription alignment="x">
+      <FormToggle
+        title={t("features.config.measurePlaySessionsDesc")}
+        value={measurePlaySessions}
+        onChange={(value) => configDispatch({ type: CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS, payload: value })}
+      />
+      <FormFieldDescription content={t("features.config.measurePlaySessionsDesc")} />
+    </FormFieldGroupWithDescription>
+  )
+}
+
+/**
+ * How the ModDB listing question is answered from now on (#477).
+ *
+ * Three choices rather than the four the prompt offers: the two answers that only settle one
+ * version are the prompt's business, and both of them leave this row reading "ask each version",
+ * which is what they mean for every version after this one. Changing it here never counts
+ * anything on its own; a launch does that, if the answer says to.
+ */
+function ModDbCountPicker(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { moddbVisibility } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+
+  const options: ModDbVisibilityPolicy[] = [MODDB_VISIBILITY_ASK, MODDB_VISIBILITY_ALWAYS, MODDB_VISIBILITY_NEVER]
+  // A pending "count me in" for the running version is still the ask policy for every later one.
+  const selected: ModDbVisibilityPolicy = options.includes(moddbVisibility.policy) ? moddbVisibility.policy : MODDB_VISIBILITY_ASK
+
+  return (
+    <FormFieldGroupWithDescription>
+      <SelectMenu
+        value={selected}
+        options={options.map((policy) => ({ key: policy, label: t(`features.config.moddbCountOptions.${policy}`) }))}
+        onChange={(policy) => configDispatch({ type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY, payload: { ...moddbVisibility, policy } })}
+        size="w-full"
+        title={t("features.config.moddbCountDesc")}
+      />
+
+      <FormFieldDescription content={t("features.config.moddbCountDesc")} />
+    </FormFieldGroupWithDescription>
+  )
+}
+
+/**
+ * Whether a session may be kept on a machine with no system keyring (#481).
+ *
+ * Off in every config that has not been asked, and only ever turned on here. The description is
+ * the whole point of the setting: with no keyring the only store left seals the session with a key
+ * that ships in the binary, so anything running as the player can read it. Some people want the
+ * convenience on a machine they alone use, and that is theirs to decide, but not to stumble into.
+ *
+ * Chromium picks its password store as the process starts, so the answer is read at the next
+ * launch and not on the next login. The toggle says so, and says it again when touched, rather
+ * than leaving someone to wonder why nothing changed.
+ */
+function AllowBasicSessionStoreToggle(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { allowBasicSessionStore } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+  const { addNotification } = useNotificationsContext()
+
+  return (
+    <FormFieldGroupWithDescription alignment="x">
+      <FormToggle
+        title={t("features.config.allowBasicSessionStoreDesc")}
+        value={allowBasicSessionStore}
+        onChange={(value) => {
+          configDispatch({ type: CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE, payload: value })
+          addNotification(t("features.config.allowBasicSessionStoreRestart"), "info")
+        }}
+      />
+      <FormFieldDescription content={t("features.config.allowBasicSessionStoreDesc")} />
     </FormFieldGroupWithDescription>
   )
 }
@@ -406,11 +527,11 @@ function UIScale(): JSX.Element {
   const { t } = useTranslation()
 
   const SCALE_OPTIONS = [
-    { key: 50, value: "50%" },
-    { key: 75, value: "75%" },
-    { key: 100, value: "100%" },
-    { key: 125, value: "125%" },
-    { key: 150, value: "150%" }
+    { key: 50, label: "50%" },
+    { key: 75, label: "75%" },
+    { key: 100, label: "100%", hint: t("generic.default") },
+    { key: 125, label: "125%" },
+    { key: 150, label: "150%" }
   ]
 
   const [selectedScale, setSelectedScale] = useState<number>(Number(window.localStorage.getItem("uiScale")) || 100)
@@ -420,52 +541,7 @@ function UIScale(): JSX.Element {
     window.localStorage.setItem("uiScale", selectedScale.toString())
   }, [selectedScale])
 
-  return (
-    <Listbox value={selectedScale} onChange={setSelectedScale}>
-      {({ open }) => (
-        <>
-          {SCALE_OPTIONS.filter((scale) => scale.key === selectedScale).map((scale) => (
-            <ListboxButton key={scale.key} className={clsx(MENU_TRIGGER_STYLES, "w-full")}>
-              <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
-                <span className="text-sm">{scale.value}</span>
-                {scale.key === 100 && <span className="text-ellipsis overflow-hidden text-zinc-400 text-xs">{t("generic.default")}</span>}
-              </p>
-              <PiCaretDownDuotone className={clsx("caret-optical shrink-0 duration-200", open && "-rotate-180")} />
-            </ListboxButton>
-          ))}
-
-          <AnimatePresence>
-            {open && (
-              <ListboxOptions static anchor="bottom" className="w-[var(--button-width)] z-600 mt-1 select-none rounded-sm overflow-hidden">
-                <motion.ul
-                  variants={DROPDOWN_MENU_WRAPPER_VARIANTS}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className="flex flex-col bg-zinc-950/50 backdrop-blur-md border border-zinc-400/5 shadow-sm shadow-zinc-950/50 hover:shadow-none rounded-sm"
-                >
-                  {SCALE_OPTIONS.map((scale) => (
-                    <ListboxOption
-                      key={scale.key}
-                      value={scale.key}
-                      as={motion.li}
-                      variants={DROPDOWN_MENU_ITEM_VARIANTS}
-                      className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
-                    >
-                      <p className="flex gap-2 items-center overflow-hidden whitespace-nowrap">
-                        <span className="text-sm">{scale.value}</span>
-                        {scale.key === 100 && <span className="text-ellipsis overflow-hidden text-zinc-400 text-xs">{t("generic.default")}</span>}
-                      </p>
-                    </ListboxOption>
-                  ))}
-                </motion.ul>
-              </ListboxOptions>
-            )}
-          </AnimatePresence>
-        </>
-      )}
-    </Listbox>
-  )
+  return <SelectMenu value={selectedScale} options={SCALE_OPTIONS} onChange={setSelectedScale} size="w-full" />
 }
 
 export default ConfigPage

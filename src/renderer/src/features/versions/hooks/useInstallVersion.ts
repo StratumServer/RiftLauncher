@@ -6,6 +6,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { CONFIG_ACTIONS, useGameVersions, useInstallations, useSettingsConfig, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { createInstallPorts, describeInstallFailure, toDownloadableGameVersion } from "@renderer/features/versions/adapters/install"
+import { useOptimumActions } from "@renderer/features/versions/hooks/useOptimumActions"
 
 const LOG_TAG = "[front] [versions] [features/versions/hooks/useInstallVersion.ts] [useInstallVersion > installVersion]"
 
@@ -16,8 +17,13 @@ const LOG_TAG = "[front] [versions] [features/versions/hooks/useInstallVersion.t
  * `version` is optional because the page can still be waiting on the catalog
  * or have nothing selected; the missing-selection notification is the same
  * one the page used to raise itself.
+ *
+ * `optimum` is the published overlay when the player picked that build instead
+ * of the official one. The vanilla install runs first and unchanged either way:
+ * Optimum patches a build the launcher downloaded itself, so a refused patch
+ * leaves a working official build on the list rather than nothing at all.
  */
-export function useInstallVersion(): (version: DownloadableGameVersionTypeType | undefined, folder: string) => Promise<void> {
+export function useInstallVersion(): (version: DownloadableGameVersionTypeType | undefined, folder: string, optimum?: OptimumManifestInfo) => Promise<void> {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const installedGameVersions = useGameVersions()
@@ -25,9 +31,10 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
   const settings = useSettingsConfig()
   const configDispatch = useConfigDispatch()
   const { startDownload, startExtract, startInstall } = useTaskContext()
+  const { applyOptimum } = useOptimumActions()
   const navigate = useNavigate()
 
-  return async function installVersion(version, folder) {
+  return async function installVersion(version, folder, optimum) {
     if (!version) return addNotification(t("features.versions.noVersionSelected"), "error")
 
     const folderName = folder.split(/[\\/]/).filter(Boolean).at(-1) ?? folder
@@ -60,7 +67,10 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
       }
     )
 
-    if (result.ok) return
+    if (result.ok) {
+      if (optimum) await applyOptimum({ id: gameVersionId, path: folder, version: version.version }, optimum)
+      return
+    }
 
     const { messageKey, logged } = describeInstallFailure(result.reason)
 

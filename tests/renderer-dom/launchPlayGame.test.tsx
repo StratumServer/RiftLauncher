@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest"
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { useLocation } from "react-router-dom"
 
 import MainMenu from "@renderer/components/layout/MainMenu"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
@@ -78,12 +79,18 @@ function readProbe(): ProbeState {
   return JSON.parse(screen.getByTestId("probe").textContent ?? "{}") as ProbeState
 }
 
+/** Where MainMenu's own navigations land, the session report notice's action among them. */
+function WhereProbe(): JSX.Element {
+  return <output data-testid="where">{useLocation().pathname}</output>
+}
+
 function renderMainMenu(): void {
   renderWithProviders(
     <TaskProvider>
       <NotificationsOverlay />
       <MainMenu />
       <ConfigProbe />
+      <WhereProbe />
     </TaskProvider>
   )
 }
@@ -93,7 +100,7 @@ async function clickPlay(user: ReturnType<typeof userEvent.setup>): Promise<void
 }
 
 const BACKUP_WRITE_FAILED = "No backup made: the backup archive could not be written. Check that the Backups folder is on a writable drive with free space."
-const BACKUP_PRUNE_FAILED = "No backup made: an old backup could not be removed to make room for the new one."
+const BACKUP_PRUNE_FAILED = "No backup made: an old backup file could not be deleted to make room for the new one. Check that it is not open in another program, then try again."
 const SKIP_PROMPT = "The backup failed. Launch without a backup this time?"
 
 /**
@@ -179,7 +186,8 @@ describe("MainMenu Play button", () => {
     await clickPlay(user)
 
     await waitFor(() => expect(executeGame).toHaveBeenCalled())
-    expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ id: "gv-optimum", path: "/versions/optimum" }), installation)
+    // The third argument is the server bookmark id (#460), undefined for a plain Play.
+    expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ id: "gv-optimum", path: "/versions/optimum" }), installation, undefined)
   })
 
   it("refuses to launch an Installation whose build id is gone even when its version number remains", async () => {
@@ -240,7 +248,7 @@ describe("MainMenu Play button", () => {
     await clickPlay(user)
 
     // executeGame gets the exact installation and version PlayHandler resolved, not just any object.
-    expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ version: "1.20.0" }), expect.objectContaining({ id: "install-a" }))
+    expect(executeGame).toHaveBeenCalledWith(expect.objectContaining({ version: "1.20.0" }), expect.objectContaining({ id: "install-a" }), undefined)
 
     // Both the installation and its version flip to "playing" while runGame is still pending.
     await waitFor(() => expect(readProbe().installationPlaying).toBe(true))
@@ -289,6 +297,31 @@ describe("MainMenu Play button", () => {
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
     // ok: true still means the game ran, so it is still worth crediting the playtime.
     expect(readProbe().lastTimePlayed).toBeGreaterThan(-1)
+  })
+
+  it("offers the session report from the exited-with-errors notice and lands on that Installation's page", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation()],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      gameManager: { executeGame: vi.fn(async () => ({ ok: true, exitCode: 1 }) as GameExecutionResult) }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText("Vintage Story exited with errors. The log has the details.")
+    await user.click(await screen.findByRole("button", { name: "See what went wrong" }))
+
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/installations/report/install-a"))
   })
 
   it("refuses to play an Installation with no VS Version set and names the state instead of a blank version", async () => {

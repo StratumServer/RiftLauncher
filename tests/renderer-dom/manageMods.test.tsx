@@ -1,30 +1,28 @@
 import { describe, expect, it, vi } from "vitest"
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { Route, Routes } from "react-router-dom"
-
-import ManageMods from "@renderer/features/installations/pages/ManageMods"
-import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
-import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
 import { createMockConfig, installMockWindowApi, type WindowApiOverrides } from "./helpers/windowApi"
-import { renderWithProviders } from "./helpers/render"
+import { mountManageMods } from "./helpers/mountManageMods"
 
 const INSTALLATION_PATH = "/games/a"
 const ALPHA_PATH = "/games/a/Mods/alpha-1.0.0.zip"
 const BETA_PATH = "/games/a/Mods/beta-2.0.0.zip"
 const DELTA_PATH = "/games/a/Mods/delta-4.0.0.zip"
 const SEARCH_PLACEHOLDER = "Search by name, id or author"
-const SUSPEND_TITLE = "Suspend updates for this Mod: Update all will skip it, you can still update it from here"
-const RESUME_TITLE = "Resume updates for this Mod: Update all will include it again"
+// The row's suspend control is a pressed toggle: one fixed name, aria-pressed carries the state (#450).
+const SUSPEND_TOGGLE_TITLE = "Updates suspended: Update all skips this Mod"
 const EPSILON_PATH = "/games/a/Mods/epsilon-5.0.0.zip.disabled"
 const ALPHA_LOGO = "https://moddbcdn.vintagestory.at/alpha.png"
 const BETA_LOGO = "https://moddbcdn.vintagestory.at/beta.png"
 const DISABLE_TITLE = "Disable this Mod: it stays installed, Vintage Story just won't load it"
 const ENABLE_TITLE = "Enable this Mod: Vintage Story will load it again"
+// The tooltip/accessible name stays the full sentence (#loneFolderIcon); only the visible label is new.
+const OPEN_FOLDER_TITLE = "Open the folder where the Mods for this Installation are"
 
-function anInstallation(): InstallationType {
+function anInstallation(servers?: ServerBookmarkType[]): InstallationType {
   return {
+    ...(servers ? { servers } : {}),
     id: "install-a",
     name: "Install A",
     icon: "icon-1",
@@ -187,9 +185,9 @@ function queryModDb(url: string): Promise<string> {
  * to gate mounting behind the Installations being in context, because the scan effect now re-runs
  * once the config's loaded state flips (#58).
  */
-function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof renderWithProviders> {
+function renderManageMods(overrides: WindowApiOverrides = {}, servers?: ServerBookmarkType[]): ReturnType<typeof mountManageMods> {
   installMockWindowApi({
-    configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
+    configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(servers)] })) },
     netManager: { queryURL: vi.fn(queryModDb) },
     ...overrides,
     // Last, and merged rather than replaced: a test overriding one modsManager call still wants the
@@ -197,20 +195,7 @@ function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof
     modsManager: { getInstalledMods: vi.fn(async () => aModScan()), ...overrides.modsManager }
   })
 
-  return renderWithProviders(
-    <Routes>
-      <Route
-        path="/installations/mods/:id"
-        element={
-          <TaskProvider>
-            <ManageMods />
-            <NotificationsOverlay />
-          </TaskProvider>
-        }
-      />
-    </Routes>,
-    { route: "/installations/mods/install-a" }
-  )
+  return mountManageMods()
 }
 
 /**
@@ -435,6 +420,73 @@ describe("ManageMods: the action bar after #431", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("false")
   })
 
+  /**
+   * #460: the export can carry the Installation's servers, and must not do it by default. A modpack
+   * is a file people hand around, so the box starts clear and an address only travels on purpose.
+   */
+  describe("the export's server checkbox", () => {
+    const server = { id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: 1_700_000_000_000 }
+
+    it("is not offered at all when the Installation has no saved servers", async () => {
+      renderManageMods()
+
+      expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+      expect(screen.queryByLabelText("Include servers")).toBeNull()
+    })
+
+    it("starts clear, so an export nobody thought about carries no address", async () => {
+      const user = userEvent.setup()
+      const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+      renderManageMods({ modsManager: { exportModpack } }, [server])
+
+      expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+      expect((screen.getByLabelText("Include servers") as HTMLInputElement).checked).toBe(false)
+
+      await user.click(await modpackMenuItem(user, "Export Modpack"))
+      await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+      expect(exportModpack.mock.calls[0]?.[0].servers).toBe(undefined)
+    })
+
+    it("carries the servers once it is ticked, with the launch stamps left behind", async () => {
+      const user = userEvent.setup()
+      const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+      renderManageMods({ modsManager: { exportModpack } }, [server])
+
+      expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+      await user.click(screen.getByLabelText("Include servers"))
+      await user.click(await modpackMenuItem(user, "Export Modpack"))
+
+      await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+      expect(exportModpack.mock.calls[0]?.[0].servers).toEqual([{ ...server, lastLaunched: -1 }])
+    })
+
+    /**
+     * It sat inside MenuItems, where the arrow keys walk items only and Space is the menu's own
+     * dismiss key, so it could be reached by a mouse and by nothing else. It lives on the bar now,
+     * one Tab from the Modpack button, where a plain checkbox behaves like a plain checkbox.
+     */
+    it("is reachable and ticked from the keyboard, like everything else on this bar", async () => {
+      const user = userEvent.setup()
+      const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
+      renderManageMods({ modsManager: { exportModpack } }, [server])
+
+      expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+      const box = screen.getByLabelText("Include servers") as HTMLInputElement
+      const trigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
+
+      trigger.focus()
+      await user.tab()
+      expect(document.activeElement).toBe(box)
+
+      await user.keyboard("[Space]")
+      expect(box.checked).toBe(true)
+
+      await user.click(await modpackMenuItem(user, "Export Modpack"))
+      await waitFor(() => expect(exportModpack).toHaveBeenCalledTimes(1))
+      expect(exportModpack.mock.calls[0]?.[0].servers).toEqual([{ ...server, lastLaunched: -1 }])
+    })
+  })
+
   it("opens the Modpack menu from a focused trigger with the keyboard and runs an action reached by the arrow keys", async () => {
     const user = userEvent.setup()
     const exportModpack = vi.fn<BridgeAPI["modsManager"]["exportModpack"]>(async () => ({ success: true }))
@@ -517,6 +569,35 @@ describe("ManageMods: the action bar after #431", () => {
 
     expect(screen.getByText("Filters (1)")).toBeTruthy()
   })
+
+  /**
+   * The folder button used to be an icon alone, styled ghost and sized to just fit it: the one
+   * control on the bar with no visible label, sitting apart from Update all, No profile and
+   * Modpack. It gets the same shape as those neighbours now, in the same group so spacing matches.
+   */
+  it("labels the folder button like its neighbours, in the same group as Modpack", async () => {
+    renderManageMods()
+
+    expect(await screen.findByText("Alpha Mod", {}, { timeout: 3000 })).toBeTruthy()
+
+    const modpackTrigger = screen.getByText("Modpack").closest("button") as HTMLButtonElement
+    const folderButton = screen.getByTitle(OPEN_FOLDER_TITLE) as HTMLButtonElement
+
+    // A short visible label next to the icon, like every other button on the bar.
+    expect(within(folderButton).getByText("Open folder")).toBeTruthy()
+
+    // Same variant and size as Modpack, and the same immediate group, so spacing matches.
+    expect(folderButton.className).toBe(modpackTrigger.className)
+    expect(folderButton.parentElement).toBe(modpackTrigger.parentElement)
+
+    // The tooltip and the accessible name stay exactly what they were.
+    expect(folderButton.title).toBe(OPEN_FOLDER_TITLE)
+    expect(folderButton.getAttribute("aria-label")).toBe(OPEN_FOLDER_TITLE)
+
+    // Still one Tab stop, reachable and operable from the keyboard.
+    folderButton.focus()
+    expect(document.activeElement).toBe(folderButton)
+  })
 })
 
 /** Issue #194: a Mod the player holds at its current version, without going blind to what is out there. */
@@ -531,22 +612,26 @@ describe("ManageMods: suspended Mod updates", () => {
     renderManageMods()
 
     const alphaRow = await rowFor("Alpha Mod")
-    const suspendButton = within(alphaRow).getByTitle(SUSPEND_TITLE)
+    const suspendButton = within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE)
+    expect(suspendButton.getAttribute("aria-pressed")).toBe("false")
     expect(suspendButton.querySelector('svg path[opacity="0.2"]')).toBeTruthy()
 
     await user.click(suspendButton)
 
-    const resumeButton = within(alphaRow).getByTitle(RESUME_TITLE)
-    const resumeIcon = resumeButton.querySelector("svg")
-    if (!resumeIcon) throw new Error("resume icon not found")
-    expect(resumeIcon.getAttribute("class")).toContain("text-yellow-400")
-    expect(resumeIcon.querySelector('path[opacity="0.2"]')).toBeNull()
+    // The accessible name never moves: only aria-pressed carries the state (#450).
+    expect(within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE)).toBe(suspendButton)
+    expect(suspendButton.getAttribute("aria-pressed")).toBe("true")
+    const pressedIcon = suspendButton.querySelector("svg")
+    if (!pressedIcon) throw new Error("suspended icon not found")
+    expect(pressedIcon.getAttribute("class")).toContain("text-yellow-400")
+    expect(pressedIcon.querySelector('path[opacity="0.2"]')).toBeNull()
     // Marked at a glance, in the same tint family the row already uses for its update states.
     expect(alphaRow.firstElementChild?.className).toContain("bg-sky-500/25")
 
-    await user.click(resumeButton)
+    await user.click(suspendButton)
 
-    expect(within(alphaRow).getByTitle(SUSPEND_TITLE).querySelector('svg path[opacity="0.2"]')).toBeTruthy()
+    expect(suspendButton.getAttribute("aria-pressed")).toBe("false")
+    expect(suspendButton.querySelector('svg path[opacity="0.2"]')).toBeTruthy()
     expect(alphaRow.firstElementChild?.className).not.toContain("bg-sky-500/25")
   })
 
@@ -559,7 +644,7 @@ describe("ManageMods: suspended Mod updates", () => {
     const alphaRow = await rowFor("Alpha Mod")
     await screen.findByText("Beta Mod")
 
-    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE))
     await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
 
     expect(await screen.findByText("All the Mods were updated successfully.", {}, { timeout: 3000 })).toBeTruthy()
@@ -575,7 +660,7 @@ describe("ManageMods: suspended Mod updates", () => {
     renderManageMods()
 
     const alphaRow = await rowFor("Alpha Mod")
-    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE))
 
     // Watching for the new version is the reason to suspend, so the notice has to survive it.
     const updatesSection = screen.getByText("Mods with updates").closest("ul") as HTMLElement
@@ -589,7 +674,7 @@ describe("ManageMods: suspended Mod updates", () => {
     renderManageMods({ pathsManager: { deletePath, downloadOnPath } })
 
     const alphaRow = await rowFor("Alpha Mod")
-    await user.click(within(alphaRow).getByTitle(SUSPEND_TITLE))
+    await user.click(within(alphaRow).getByTitle(SUSPEND_TOGGLE_TITLE))
 
     await user.click(within(alphaRow).getByTitle("Update"))
 
@@ -600,7 +685,11 @@ describe("ManageMods: suspended Mod updates", () => {
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(ALPHA_PATH))
 
     // The suspension is lifted by the player, never by an update they asked for themselves.
-    expect(within(await rowFor("Alpha Mod")).getByTitle(RESUME_TITLE)).toBeTruthy()
+    expect(
+      within(await rowFor("Alpha Mod"))
+        .getByTitle(SUSPEND_TOGGLE_TITLE)
+        .getAttribute("aria-pressed")
+    ).toBe("true")
   })
 })
 
@@ -858,10 +947,13 @@ describe("ManageMods: enabling and disabling a Mod", () => {
 
     expect(await screen.findByText("Alpha Mod is disabled and will not be loaded.")).toBeTruthy()
     expect(screen.queryByText("An error has occurred enabling or disabling Alpha Mod.")).toBeNull()
-    await waitFor(() => expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore))
+    // Read straight after the act that landed the rename rather than polled: the rescan and every
+    // render it causes hang off that one promise, so they are all in by the time act returns, and
+    // act has no budget of its own for a loaded runner to run out of.
+    expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore)
     // Still one call once everything has settled, and the row is live again for the next real click.
     expect(setModEnabled).toHaveBeenCalledTimes(1)
-    await waitFor(() => expect((within(alphaRow).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false))
+    expect((within(alphaRow).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it("turns a disabled Mod back on from its own row", async () => {
@@ -1730,10 +1822,11 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     expect(batchButton(RESUME_SELECTED).disabled).toBe(true)
     await user.click(batchButton(SUSPEND_SELECTED))
 
-    // Two rows, one modid: suspension is recorded per modid, once.
+    // Two rows, one modid: suspension is recorded per modid, once. Same fixed name on both rows,
+    // aria-pressed is what carries the state now (#450).
     expect(await screen.findByText("Updates suspended for 1 Mod.")).toBeTruthy()
     await waitFor(() => expect(lastSaved()).toEqual(["alpha"]))
-    expect(screen.getAllByTitle(RESUME_TITLE)).toHaveLength(2)
+    expect(screen.getAllByTitle(SUSPEND_TOGGLE_TITLE).map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "true"])
     expect(screen.getByText("0 selected")).toBeTruthy()
     expect(document.activeElement).toBe(await selectAllBox())
     await discardToast(user)
@@ -1744,7 +1837,7 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
 
     expect(await screen.findByText("Updates resumed for 1 Mod.")).toBeTruthy()
     await waitFor(() => expect(lastSaved()).toEqual([]))
-    expect(screen.getAllByTitle(SUSPEND_TITLE)).toHaveLength(2)
+    expect(screen.getAllByTitle(SUSPEND_TOGGLE_TITLE).map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "false"])
   })
 
   it("holds Update all, Import and the rows it is changing while it runs, and a second click sends nothing more", async () => {
@@ -1753,10 +1846,18 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(
       (path: string) => new Promise<SetModEnabledResult>((resolve) => landings.push(() => resolve({ ok: true, path: `${path}.disabled` })))
     )
+    /*
+     * One gate per held scan, collected, rather than one `releaseScan` variable the next scan
+     * overwrites. The batch's rescan is not the only caller of this bridge method while the page is
+     * held: ConfigProvider counts every Installation's Mods through it 2.5 s after the config loads
+     * (ConfigContext.tsx:122-142). With a single resolver, that pass landing inside the held window
+     * takes the batch's rescan's place, so releasing "the scan" releases the count pass and the
+     * batch is left held for good.
+     */
     let holdScans = false
-    let releaseScan: () => void = () => {}
+    const heldScans: (() => void)[] = []
     const getInstalledMods = vi.fn(async () => {
-      if (holdScans) await new Promise<void>((resolve) => (releaseScan = resolve))
+      if (holdScans) await new Promise<void>((resolve) => heldScans.push(resolve))
       return aModScan()
     })
     renderManageMods({ modsManager: { setModEnabled, getInstalledMods } })
@@ -1791,14 +1892,24 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     })
 
     // The renames are in but the rescan is not, so the page still lists the names from before them.
+    // The rescan is chained off the renames that just landed, so it is already held by the time the
+    // act above returns: counted, not awaited. "One rescan per batch" is pinned by "disables the
+    // checked Mods with one rename each, one notification and one rescan"; here the count is only
+    // "at least one", because ConfigProvider's count pass can add another to it on a slow runner.
     expect(await screen.findByText("2 Mods disabled.")).toBeTruthy()
-    await waitFor(() => expect(getInstalledMods).toHaveBeenCalledTimes(scansBefore + 1))
+    expect(getInstalledMods.mock.calls.length).toBeGreaterThan(scansBefore)
     expect(buttonWithText("Update all").disabled).toBe(true)
     expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(true)
     expect((await selectAllBox()).disabled).toBe(true)
 
-    await act(async () => releaseScan())
-    await batchLanded()
+    // Landed inside act and read straight after it, rather than polled: act runs to the end of the
+    // work it started with no deadline of its own, so every render the rescan causes is in before
+    // the next line reads the DOM, however slow the machine is.
+    await act(async () => {
+      for (const land of heldScans.splice(0)) land()
+    })
+
+    expect((await selectAllBox()).disabled).toBe(false)
     expect(buttonWithText("Update all").disabled).toBe(false)
     expect((await modpackMenuItem(user, "Import Modpack")).disabled).toBe(false)
     expect((within(screen.getByText("Alpha Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE) as HTMLButtonElement).disabled).toBe(false)
@@ -1947,12 +2058,16 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     await check(user, "Beta Mod")
     await user.click(within(screen.getByText("Alpha Mod").closest("li") as HTMLElement).getByTitle(DISABLE_TITLE))
 
+    // Both halves read straight off the DOM: the rename is a promise this test holds, so the hold
+    // is already painted when the click returns, and landing it inside act puts the rescan and its
+    // renders in before the next line. Polling either side would only add waitFor's one-second
+    // budget for a loaded runner to run out of.
     const selectAll = await selectAllBox()
-    await waitFor(() => expect(selectAll.disabled).toBe(true))
+    expect(selectAll.disabled).toBe(true)
     expect(batchButton(DISABLE_SELECTED).disabled).toBe(true)
 
     await act(async () => land({ ok: true, path: `${ALPHA_PATH}.disabled` }))
-    await waitFor(() => expect(selectAll.disabled).toBe(false))
+    expect(selectAll.disabled).toBe(false)
     expect(batchButton(DISABLE_SELECTED).disabled).toBe(false)
     expect(setModEnabled).toHaveBeenCalledTimes(1)
   })

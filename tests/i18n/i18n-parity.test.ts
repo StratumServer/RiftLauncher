@@ -1,9 +1,20 @@
 import assert from "node:assert/strict"
-import { readFileSync, readdirSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { describe, it } from "vitest"
 
-import { collectTranslationCalls, flattenTranslationObject, LOCALES_DIR, RENDERER_SRC_DIR, TranslationCall } from "./helpers"
+import {
+  collectPluralFamilies,
+  collectTranslationCalls,
+  flattenTranslationObject,
+  listLocaleFiles,
+  LOCALES_DIR,
+  PLURAL_SUFFIXES,
+  RENDERER_SRC_DIR,
+  requiredPluralCategories,
+  resolveTranslationValue,
+  TranslationCall
+} from "./helpers"
 
 /**
  * Guards the translation system (part of issue #15).
@@ -38,10 +49,37 @@ describe("t() keys referenced in src/renderer/** exist in en-US.json", () => {
   })
 
   it("every statically referenced key exists in en-US.json", () => {
+    // A plural family (issue #496) never keeps a bare key beside its
+    // _zero/_one/_two/_few/_many/_other siblings, so a call site referencing
+    // the bare family name is resolved the way i18next resolves it at
+    // runtime: through resolveTranslationValue, not a literal `in` check.
     const uniqueKeys = [...new Set(calls.map((call) => call.key))]
-    const missing = uniqueKeys.filter((key) => !(key in enUS))
+    const missing = uniqueKeys.filter((key) => resolveTranslationValue(enUS, key) === undefined)
 
     assert.deepEqual(missing, [], `t() keys referenced in code but missing from en-US.json: ${missing.join(", ")}`)
+  })
+
+  it("passes a count at every call site whose key is a plural family", () => {
+    // i18next picks a plural form from `count` and nothing else. With no bare
+    // key left to fall back on (issue #496), a plural-family call that passes
+    // no count renders the literal key. The existence check above cannot see
+    // that: it resolves through whichever sibling happens to be there, so a
+    // family whose _zero form carries no {{placeholder}} would also slip past
+    // the interpolation check below. This is the guard for it.
+    const families = collectPluralFamilies(enUS)
+    const offenders = calls.filter((call) => families.has(call.key) && !call.hasCountArg).map((call) => `"${call.key}" in ${call.file}`)
+
+    assert.deepEqual(offenders, [], `t() calls on a plural family that pass no count, so they render the literal key: ${offenders.join(", ")}`)
+  })
+
+  it("calls every plural family in en-US with a count somewhere in src/renderer", () => {
+    // The other direction: a family that no call site reaches with a count is
+    // either dead weight or, worse, reached through a dynamic key this scan
+    // cannot see, in which case the guard above is not actually covering it.
+    const counted = new Set(calls.filter((call) => call.hasCountArg).map((call) => call.key))
+    const uncalled = [...collectPluralFamilies(enUS).keys()].filter((family) => !counted.has(family))
+
+    assert.deepEqual(uncalled, [], `plural families no t() call site passes a count to: ${uncalled.join(", ")}`)
   })
 
   it("passes an interpolation object at every call site whose en-US string needs one", () => {
@@ -51,7 +89,7 @@ describe("t() keys referenced in src/renderer/** exist in en-US.json", () => {
     // t(dynamicKey) sites are already excluded by the collector itself, since
     // their key cannot be resolved statically.
     const offenders = calls.filter((call) => {
-      const value = enUS[call.key]
+      const value = resolveTranslationValue(enUS, call.key)
       return typeof value === "string" && /\{\{\s*[\w.]+\s*\}\}/.test(value) && !call.hasInterpolationArg
     })
 
@@ -76,7 +114,7 @@ describe("en-US.json integrity", () => {
 })
 
 describe("locale files stay structurally sound", () => {
-  const localeFiles = readdirSync(LOCALES_DIR).filter((file) => file.endsWith(".json"))
+  const localeFiles = listLocaleFiles()
 
   it("every locale file under src/renderer/src/locales parses as JSON", () => {
     const failures = localeFiles
@@ -99,9 +137,7 @@ describe("locale coverage snapshot (report only, does not fail on lag)", () => {
     const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
     const enKeys = new Set(Object.keys(enUS))
 
-    const otherLocales = readdirSync(LOCALES_DIR)
-      .filter((file) => file.endsWith(".json") && file !== "en-US.json")
-      .sort()
+    const otherLocales = listLocaleFiles().filter((file) => file !== "en-US.json")
 
     const rows = otherLocales.map((file) => {
       const locale = basename(file, ".json")
@@ -136,18 +172,66 @@ describe("locale coverage snapshot (report only, does not fail on lag)", () => {
   })
 })
 
+describe("every locale carries the plural categories its own language selects", () => {
+  // With the bare key gone (issue #496) a plural form i18next selects but the
+  // locale does not define no longer resolves inside that locale at all: it
+  // falls through to en-US, so a Russian player reading a count of 2 gets an
+  // English sentence. Which categories a language selects between is not a
+  // judgement call, it is what Intl.PluralRules resolves for that locale, so
+  // that is what this asserts against rather than a hand-kept list.
+  const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
+  const families = [...collectPluralFamilies(enUS).keys()]
+
+  it("found the plural families to check", () => {
+    assert.ok(families.length > 10, `expected more than 10 plural families in en-US.json, found ${families.length}`)
+  })
+
+  it("defines every category Intl.PluralRules requires, in every locale file", () => {
+    const failures = listLocaleFiles().flatMap((file) => {
+      const locale = basename(file, ".json")
+      const flattened = flattenTranslationObject(readLocaleJson(file))
+      const present = collectPluralFamilies(flattened)
+
+      return families.flatMap((family) => {
+        const defined = present.get(family)
+        // A locale is allowed to lag behind en-US entirely (see the coverage
+        // snapshot): only a family it has started translating is held to the
+        // full set, because that is the one that can fall through mid-sentence.
+        if (!defined) return []
+
+        const missing = requiredPluralCategories(locale).filter((category) => !defined.has(category))
+        return missing.length === 0 ? [] : [`${file}: ${family} is missing _${missing.join(", _")}`]
+      })
+    })
+
+    assert.deepEqual(failures, [], `plural families that do not cover their locale's own categories: ${failures.join(" | ")}`)
+  })
+})
+
 describe("Activity Center translation contract", () => {
   const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
-  const activityKeys = Object.keys(enUS).filter((key) => key.startsWith("components.activityCenter."))
+  // Plural families (issue #506's follow-up) are checked through whichever suffixed sibling a
+  // locale actually carries, not by the literal en-US suffix: en-US only ever needs _one/_other,
+  // but a locale such as ru-RU covers the same family with _one/_few/_many instead.
+  const activityFamilies = [...collectPluralFamilies(enUS).keys()].filter((family) => family.startsWith("components.activityCenter."))
+  const activityBareKeys = Object.keys(enUS).filter((key) => key.startsWith("components.activityCenter.") && !PLURAL_SUFFIXES.some((suffix) => key.endsWith(suffix)))
 
   it("keeps the new Activity Center namespace complete and non-empty in every locale", () => {
-    const failures = readdirSync(LOCALES_DIR)
-      .filter((file) => file.endsWith(".json"))
+    const failures = listLocaleFiles()
       .map((file) => {
-        const locale = flattenTranslationObject(readLocaleJson(file))
-        const missing = activityKeys.filter((key) => !(key in locale))
-        const empty = activityKeys.filter((key) => typeof locale[key] !== "string" || locale[key].trim().length === 0)
-        return missing.length === 0 && empty.length === 0 ? null : `${file}: missing=${missing.join(",")}; empty=${empty.join(",")}`
+        const locale = basename(file, ".json")
+        const flattened = flattenTranslationObject(readLocaleJson(file))
+        const missing = activityBareKeys.filter((key) => typeof flattened[key] !== "string" || flattened[key].trim().length === 0)
+        // Every category the locale's own grammar selects has to resolve on its
+        // own: resolveTranslationValue would pass as soon as any one sibling
+        // (e.g. _one) is non-empty, letting an emptied _few or _other through.
+        const missingFamilies = activityFamilies.filter((family) =>
+          [...requiredPluralCategories(locale)].some((category) => {
+            const value = flattened[`${family}_${category}`]
+            return typeof value !== "string" || value.trim().length === 0
+          })
+        )
+        return missing.length === 0 && missingFamilies.length === 0 ? null : `${file}: missing=${missing.join(",")}; incomplete families=${missingFamilies.join(",")}`
       })
       .filter((failure): failure is string => failure !== null)
 
@@ -184,7 +268,16 @@ describe("fr-FR stays in step with en-US", () => {
   })
 
   it("has no key en-US does not have", () => {
-    const orphans = Object.keys(frFR).filter((key) => !(key in enUS))
+    // A plural form is the one thing French may carry alone: it selects a
+    // `many` category English has no word for, so errorCount_many is French
+    // covering its own grammar, not a key left behind by en-US. What has to
+    // exist on the English side is the family, not every one of its forms.
+    const enFamilies = collectPluralFamilies(enUS)
+    const orphans = Object.keys(frFR).filter((key) => {
+      if (key in enUS) return false
+      const suffix = PLURAL_SUFFIXES.find((candidate) => key.endsWith(candidate))
+      return !suffix || !enFamilies.has(key.slice(0, -suffix.length))
+    })
 
     assert.deepEqual(orphans, [], `fr-FR keys en-US no longer has: ${orphans.join(", ")}`)
   })

@@ -13,6 +13,8 @@ import { sweepCacheFolder } from "@src/ipc/cacheSweep"
 import { assertSafeFileName } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
 
+const LOG_PREFIX = "[back] [mods] [ipc/adapters/modScan.ts]"
+
 /** Entry inside a mod archive carrying its metadata. */
 const MODINFO_ENTRY = "modinfo.json"
 
@@ -45,7 +47,7 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
   return new Promise<ModArchiveResult>((resolve) => {
     yauzl.open(archivePath, { lazyEntries: true }, (openErr, zip) => {
       if (openErr || !zip) {
-        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not open a mod archive.`)
+        logMessage("debug", `${LOG_PREFIX} [readModArchive] Could not open a mod archive.`)
         return resolve({ ok: false, problem: "unreadable-archive" })
       }
 
@@ -79,7 +81,7 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
       const collect = (entry: yauzl.Entry, limit: number, onDone: (bytes: Buffer) => void, onOversize: () => void, onUnreadable: () => void): void => {
         zip.openReadStream(entry, (streamErr, stream) => {
           if (streamErr || !stream) {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Could not read a mod archive entry.`)
+            logMessage("debug", `${LOG_PREFIX} [readModArchive] Could not read a mod archive entry.`)
             return onUnreadable()
           }
 
@@ -97,7 +99,7 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
           })
           stream.on("end", () => onDone(Buffer.concat(chunks)))
           stream.on("error", () => {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error reading a mod archive entry.`)
+            logMessage("debug", `${LOG_PREFIX} [readModArchive] Error reading a mod archive entry.`)
             onUnreadable()
           })
         })
@@ -146,7 +148,7 @@ function readModArchive(archivePath: string): Promise<ModArchiveResult> {
 
       zip.on("end", () => settle({ ok: true, content }))
       zip.on("error", () => {
-        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [readModArchive] Error walking a mod archive.`)
+        logMessage("debug", `${LOG_PREFIX} [readModArchive] Error walking a mod archive.`)
         settle({ ok: false, problem: "unreadable-archive" })
       })
 
@@ -194,8 +196,8 @@ export function createIconStorePort(): IconStore {
         }
         return imageName
       } catch (err) {
-        logMessage("error", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon.`)
-        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createIconStorePort] Error saving a mod's icon: ${err}`)
+        logMessage("error", `${LOG_PREFIX} [createIconStorePort] Error saving a mod's icon.`)
+        logMessage("debug", `${LOG_PREFIX} [createIconStorePort] Error saving a mod's icon: ${err}`)
         return undefined
       }
     }
@@ -265,8 +267,8 @@ export function createModImageStorePort(): ModImageCache {
         await writeFileAtomic(target, bytes)
         return name
       } catch (err) {
-        logMessage("error", `[back] [mods] [ipc/adapters/modScan.ts] [createModImageStorePort] Error saving a ModDB logo.`)
-        logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [createModImageStorePort] Error saving a ModDB logo: ${err}`)
+        logMessage("error", `${LOG_PREFIX} [createModImageStorePort] Error saving a ModDB logo.`)
+        logMessage("debug", `${LOG_PREFIX} [createModImageStorePort] Error saving a ModDB logo: ${err}`)
         return undefined
       }
     }
@@ -319,7 +321,7 @@ export async function pruneModIconCache(maxBytes: number = MOD_ICON_CACHE_MAX_BY
 async function doPruneModIconCache(maxBytes: number): Promise<void> {
   await sweepCacheFolder({
     folder: modImagesFolder(),
-    origin: "[back] [mods] [ipc/adapters/modScan.ts] [pruneModIconCache]",
+    origin: `${LOG_PREFIX} [pruneModIconCache]`,
     subject: "the icon cache",
     accepts: (name) => {
       // Throws its own reason rather than returning false, and the sweep logs it.
@@ -363,7 +365,7 @@ export function createModsDirectoryReaderPort(): DirectoryReader {
         try {
           assertSafeFileName(entry)
           if ((await fse.lstat(join(path, entry))).isSymbolicLink()) {
-            logMessage("debug", `[back] [mods] [ipc/adapters/modScan.ts] [listFileNames] Skipping a symbolic link inside the Mods folder.`)
+            logMessage("debug", `${LOG_PREFIX} [listFileNames] Skipping a symbolic link inside the Mods folder.`)
             continue
           }
           names.push(entry)

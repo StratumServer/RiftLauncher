@@ -1,5 +1,5 @@
 import { ipcMain } from "electron"
-import { spawn } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import fse from "fs-extra"
 import { constants } from "node:fs"
@@ -9,12 +9,18 @@ import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
-import { assertManagedPath } from "@src/ipc/pathPolicy"
-import { parseSafeEnvironment, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
+import { assertConfiguredInstallationPath, assertManagedPath } from "@src/ipc/pathPolicy"
+import { assertString, comparablePath, parseSafeEnvironment, toWireBuildVariant, validateGameInstallation, validateGameVersion } from "@src/ipc/validation"
+import { createProcessSampler } from "@src/ipc/adapters/processSampler"
+import { createPlaySessionRecorder, forgetPlaySessions, readPlaySessions, recordPlaySession } from "@src/ipc/playSessionsStore"
 import { getAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { getConfig } from "@src/config/configManager"
 import { detectInstalledGameVersion } from "@domain/versions/detect"
+import { buildSessionReport, type InstalledModRef } from "@domain/gameLogs/report"
+import { scanInstalledMods } from "@domain/mods/scanInstalled"
+import { createScanInstalledModsPorts } from "@src/ipc/adapters/modScan"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
+import { joinTargetUrl, resolveServerBookmark } from "@domain/servers/bookmarks"
 import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
 import { MODS_FOLDER_NAME } from "@domain/mods/folder"
 import {
@@ -40,6 +46,8 @@ import type {
   ProcessProbeOutcome,
   ProcessProbeRequest
 } from "@domain/ports"
+
+const LOG_PREFIX = "[back] [ipc] [ipc/handlers/gameHandlers.ts]"
 
 async function assertExecutable(pathValue: string): Promise<string> {
   const stats = await fse.lstat(pathValue)
@@ -152,14 +160,11 @@ async function adoptRefreshedSession(accountId: string, secrets: AccountSecrets)
   try {
     const outcome = await saveAccountSecrets(accountId, secrets)
     if (outcome === "saved-after-rebuild")
-      logMessage(
-        "warn",
-        `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] The account store could not be read; it was copied aside and rebuilt around this adoption. Other saved accounts must log in again.`
-      )
-    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] The game had already refreshed this account's session. Adopted it instead of overwriting it.`)
+      logMessage("warn", `${LOG_PREFIX} [EXECUTE_GAME] The account store could not be read; it was copied aside and rebuilt around this adoption. Other saved accounts must log in again.`)
+    logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] The game had already refreshed this account's session. Adopted it instead of overwriting it.`)
   } catch (err) {
-    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not store the session the game refreshed. Launching anyway.`)
-    logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Could not store the session the game refreshed. Launching anyway.`)
+    logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] ${getErrorMessage(err)}`)
   }
 }
 
@@ -202,11 +207,16 @@ function realGameProcess(): GameProcess {
           // UNKNOWN, so a truncated or quarantined Vintagestory.exe lands here rather
           // than on the event below; without this the whole handler rejects and the
           // launch stops being a reason the player is told.
-          logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error running Vintage Story.`)
-          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
+          logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Error running Vintage Story.`)
+          logMessage("verbose", `${LOG_PREFIX} [EXECUTE_GAME] ${getErrorMessage(err)}`)
           settle({ started: false, error: getErrorMessage(err) })
           return
         }
+
+        // The one thing about the running child that leaves this closure, and only once the spawn
+        // actually produced a process. Under a launch wrapper this is the wrapper's pid, which is
+        // the caller's problem to survive, not this adapter's to hide.
+        if (externalApp.pid !== undefined) request.onStarted?.(externalApp.pid)
 
         externalApp.stdout.resume()
 
@@ -215,15 +225,15 @@ function realGameProcess(): GameProcess {
         externalApp.stderr.on("data", (data) => {
           const text = data.toString()
           stderrScan = appendStderrScan(stderrScan, text)
-          logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story threw an error! Check verbose logs for more info.`)
-          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${text.slice(0, 2_048)}`)
+          logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Vintage Story threw an error! Check verbose logs for more info.`)
+          logMessage("verbose", `${LOG_PREFIX} [EXECUTE_GAME] ${text.slice(0, 2_048)}`)
         })
 
         externalApp.on("close", (code) => settle({ started: true, exitCode: code, missingRuntime: hasMissingDotnetSentinel(stderrScan) }))
 
         externalApp.on("error", (error) => {
-          logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error running Vintage Story.`)
-          logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${error}`)
+          logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Error running Vintage Story.`)
+          logMessage("verbose", `${LOG_PREFIX} [EXECUTE_GAME] ${error}`)
           settle({ started: false, error: getErrorMessage(error) })
         })
       })
@@ -240,8 +250,16 @@ function realGameProcess(): GameProcess {
  * (trusted sender, request shape, managed paths) stay throws: those guard
  * against a hostile renderer, not against a player whose game would not
  * start, and turning them into reasons would blur that line.
+ *
+ * `serverId` is a bookmark id, never an address. The handler already has the
+ * config open, so it looks the id up in THIS Installation's own stored list
+ * and spells the URL from the record it finds. "Refuses a target that is not
+ * one of the Installation's stored servers" is then true by construction
+ * rather than by a check: there is no path from what the renderer sends to
+ * the game's argv. An id naming nothing is a refusal a player can reach (the
+ * bookmark was removed in another window), so it resolves rather than throws.
  */
-ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: unknown, installation: unknown): Promise<GameExecutionResult> => {
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: unknown, installation: unknown, serverId: unknown): Promise<GameExecutionResult> => {
   assertTrustedIpcSender(event)
   const safeVersion = validateGameVersion(version)
   const safeInstallation = validateGameInstallation(installation)
@@ -253,14 +271,28 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   const config = await getConfig()
   const account = config.accounts.find((candidate) => candidate.playerUid === config.activeAccountId) ?? null
   const accountSecrets = account ? await getAccountSecrets(account.playerUid) : null
-  logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Trying to run Vintage Story ${safeVersion.version}.`)
+  logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Trying to run Vintage Story ${safeVersion.version}.`)
+
+  let connectTarget: string | undefined
+  if (serverId !== undefined) {
+    const safeServerId = assertString(serverId, "server bookmark id", 128)
+    const bookmark = safeInstallation.id ? resolveServerBookmark(config.installations, safeInstallation.id, safeServerId) : null
+    if (!bookmark) {
+      logMessage("warn", `${LOG_PREFIX} [EXECUTE_GAME] Refused a server that is not one this installation has saved.`)
+      return invalidRequestResult()
+    }
+    connectTarget = joinTargetUrl(bookmark)
+    // One fixed line, and nothing of the server in it. A server address is somebody's machine,
+    // often somebody's home, and redactSensitiveText strips paths rather than host names.
+    logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Joining a saved server.`)
+  }
 
   let processEnv: Record<string, string>
   try {
     processEnv = parseSafeEnvironment(safeInstallation.envVars)
   } catch (err) {
-    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused invalid environment variables for this installation.`)
-    logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Refused invalid environment variables for this installation.`)
+    logMessage("verbose", `${LOG_PREFIX} [EXECUTE_GAME] ${getErrorMessage(err)}`)
     return invalidRequestResult()
   }
 
@@ -268,7 +300,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   if (os.platform() === "linux" && safeInstallation.launchWrapper) {
     const resolvedWrapper = await resolveLaunchWrapper(safeInstallation.launchWrapper)
     if (!resolvedWrapper) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused an unavailable or non-executable launch wrapper.`)
+      logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Refused an unavailable or non-executable launch wrapper.`)
       return invalidExecutableResult()
     }
     launchWrapper = resolvedWrapper
@@ -278,8 +310,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   try {
     fileNames = await fse.readdir(safeVersion.path)
   } catch (err) {
-    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story.`)
-    logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error detecting how to run Vintage Story: ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Error detecting how to run Vintage Story.`)
+    logMessage("verbose", `${LOG_PREFIX} [EXECUTE_GAME] Error detecting how to run Vintage Story: ${getErrorMessage(err)}`)
     return noExecutableResult()
   }
 
@@ -292,12 +324,13 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       installationPath: safeInstallation.path,
       startParams: safeInstallation.startParams,
       mesaGlThread: safeInstallation.mesaGlThread,
-      launchWrapper
+      launchWrapper,
+      connectTarget
     }
   )
 
   if (!planned.ok) {
-    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Couldn't find a way to run Vintage Story on ${os.platform()} (${planned.reason}), aborting...`)
+    logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Couldn't find a way to run Vintage Story on ${os.platform()} (${planned.reason}), aborting...`)
     return launchPlanFailureResult(planned.reason)
   }
 
@@ -306,20 +339,20 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   try {
     await assertExecutable(plan.executablePath)
   } catch (err) {
-    logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused to run an invalid game executable.`)
-    logMessage("verbose", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Refused to run an invalid game executable.`)
+    logMessage("verbose", `${LOG_PREFIX} [EXECUTE_GAME] ${getErrorMessage(err)}`)
     return invalidExecutableResult()
   }
 
   if (account && accountSecrets) {
-    logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Logged in. Setting session keys.`)
+    logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Logged in. Setting session keys.`)
 
     let settingsPath: string
     try {
       settingsPath = await assertManagedPath(join(safeInstallation.path, CLIENT_SETTINGS_FILE_NAME), "client settings", { allowMissing: true })
     } catch (err) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
-      logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused the client settings path: ${getErrorMessage(err)}`)
+      logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Error setting login session keys.`)
+      logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] Refused the client settings path: ${getErrorMessage(err)}`)
       return sessionWriteFailedResult()
     }
 
@@ -346,14 +379,10 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     // Never logs what the file held: the path this installation was copied out of is untrusted
     // input and stays out of the log. The path we put there is our own and may be named.
     const modPathsNotice = "modPaths" in written ? written.modPaths : undefined
-    if (modPathsNotice === "repointed") logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Repointed this installation's mod folder list at [PATH].`)
+    if (modPathsNotice === "repointed") logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Repointed this installation's mod folder list at [PATH].`)
     else if (modPathsNotice === "repoint-write-failed")
-      logMessage(
-        "warn",
-        `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] This installation's mod folder list needed repointing but the settings file could not be written; the game's own session was kept.`
-      )
-    else if (modPathsNotice === "left-as-found")
-      logMessage("warn", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] This installation's mod folder list is not the game's default one and was left as found.`)
+      logMessage("warn", `${LOG_PREFIX} [EXECUTE_GAME] This installation's mod folder list needed repointing but the settings file could not be written; the game's own session was kept.`)
+    else if (modPathsNotice === "left-as-found") logMessage("warn", `${LOG_PREFIX} [EXECUTE_GAME] This installation's mod folder list is not the game's default one and was left as found.`)
 
     switch (written.outcome) {
       case "written":
@@ -363,8 +392,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
         break
       case "unreadable-settings":
       case "write-failed":
-        logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys.`)
-        logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error setting login session keys: ${written.outcome}.`)
+        logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Error setting login session keys.`)
+        logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] Error setting login session keys: ${written.outcome}.`)
         return sessionWriteFailedResult()
     }
   } else if (account && !accountSecrets) {
@@ -380,8 +409,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     try {
       settingsPath = await assertManagedPath(join(safeInstallation.path, CLIENT_SETTINGS_FILE_NAME), "client settings", { allowMissing: true })
     } catch (err) {
-      logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Error checking for another player's session keys.`)
-      logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Refused the client settings path: ${getErrorMessage(err)}`)
+      logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Error checking for another player's session keys.`)
+      logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] Refused the client settings path: ${getErrorMessage(err)}`)
       return sessionWriteFailedResult()
     }
 
@@ -389,33 +418,81 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
 
     switch (cleared.outcome) {
       case "cleared":
-        logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Cleared another player's session before launching without one of our own.`)
+        logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Cleared another player's session before launching without one of our own.`)
         break
       case "not-foreign":
         break
       case "unreadable-settings":
       case "write-failed":
-        logMessage("error", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Could not confirm this installation is not still signed in as another player.`)
-        logMessage("debug", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] ${cleared.outcome}.`)
+        logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Could not confirm this installation is not still signed in as another player.`)
+        logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] ${cleared.outcome}.`)
         return sessionWriteFailedResult()
     }
   }
 
-  logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Running Vintagestory with a validated executable${launchWrapper ? ` through ${launchWrapper}` : ""}.`)
+  logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Running Vintagestory with a validated executable${launchWrapper ? ` through ${launchWrapper}` : ""}.`)
 
-  const outcome = await realGameProcess().run({ command: plan.command, args: plan.args, env: { ...process.env, ...processEnv, ...plan.env }, cwd: plan.cwd })
+  // The id comes from the config the launcher wrote, never from the renderer's own object, so the
+  // file name a session lands under cannot be chosen by whatever sent the launch.
+  const installationId = config.installations.find((candidate) => comparablePath(candidate.path) === comparablePath(safeInstallation.path))?.id
+  // Windows has no /proc, so its sampler reads `tasklist` and needs a probe to run it with. Passing
+  // it only there keeps macOS on the absent sampler, which is what the factory answers with none.
+  const platform = os.platform()
+  const samplerOptions = platform === "win32" ? { processProbe: tasklistProbe() } : {}
+  const recorder = config.measurePlaySessions && installationId ? createPlaySessionRecorder(createProcessSampler(platform, samplerOptions)) : undefined
 
-  if (!outcome.started)
-    logMessage(
-      "error",
-      `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Failed to run Vintage Story${launchWrapper ? ` through ${launchWrapper}` : ""}: ${outcome.error ?? "unknown error"}.`
-    )
-  else logMessage("info", `[back] [ipc] [ipc/handlers/gameHandlers.ts] [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
+  const outcome = await realGameProcess().run({
+    command: plan.command,
+    args: plan.args,
+    env: { ...process.env, ...processEnv, ...plan.env },
+    cwd: plan.cwd,
+    ...(recorder ? { onStarted: recorder.onStarted } : {})
+  })
+
+  // Settles the sampling loop on the same path the launch outcome settles on, whichever way it
+  // went, so the timer cannot outlive this handler.
+  const session = await recorder?.finish()
+  if (session && installationId) {
+    const stored = await recordPlaySession(installationId, session)
+    const shape = session.partial ? "partial" : "complete"
+    if (stored) logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Recorded a ${shape} play session of ${session.samples.length} readings.`)
+    else logMessage("warn", `${LOG_PREFIX} [EXECUTE_GAME] Could not record this play session; the sessions file was left as it was.`)
+  }
+
+  if (!outcome.started) logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Failed to run Vintage Story${launchWrapper ? ` through ${launchWrapper}` : ""}: ${outcome.error ?? "unknown error"}.`)
+  else logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
 
   return gameProcessOutcomeToResult(outcome)
 })
 
-type LookForAGameVersionResult = { exists: true; installedGameVersion: string } | { exists: false; installedGameVersion?: undefined }
+/**
+ * The two read-only session channels.
+ *
+ * Both take an Installation id and nothing else, so the renderer never names a file, and both
+ * check it the same way before anything is joined to a path. Nothing writes samples from the
+ * renderer: the only thing that ever appends to one of these files is EXECUTE_GAME above.
+ *
+ * The log lines carry counts and fixed tokens only. A session's own memory numbers, and the
+ * Installation's name, stay out of them.
+ */
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.GET_PLAY_SESSIONS, async (event, installationId: unknown): Promise<PlaySessionsReadResult> => {
+  assertTrustedIpcSender(event)
+
+  const read = await readPlaySessions(installationId)
+  if (!read.ok) logMessage("info", `${LOG_PREFIX} [GET_PLAY_SESSIONS] Refused: ${read.reason}.`)
+  else logMessage("info", `${LOG_PREFIX} [GET_PLAY_SESSIONS] Read ${read.sessions.length} play sessions.`)
+  return read
+})
+
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.FORGET_PLAY_SESSIONS, async (event, installationId: unknown): Promise<{ ok: boolean }> => {
+  assertTrustedIpcSender(event)
+
+  const ok = await forgetPlaySessions(installationId)
+  logMessage("info", `${LOG_PREFIX} [FORGET_PLAY_SESSIONS] Cleared the play sessions: ${ok}.`)
+  return { ok }
+})
+
+type LookForAGameVersionResult = { exists: true; installedGameVersion: string; variant?: GameBuildVariantType } | { exists: false; installedGameVersion?: undefined }
 
 const NOT_FOUND: LookForAGameVersionResult = { exists: false }
 
@@ -444,13 +521,13 @@ function realProcessProbe(): ProcessProbe {
       try {
         await assertExecutable(request.command === "mono" ? (request.args[0] ?? "") : request.command)
       } catch (err) {
-        logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Refused to probe an invalid executable.`)
-        logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
+        logMessage("error", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Refused to probe an invalid executable.`)
+        logMessage("verbose", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
         return { ok: false, stdout: "", error: getErrorMessage(err) }
       }
 
       return new Promise<ProcessProbeOutcome>((resolve) => {
-        logMessage("info", "[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Checking Vintage Story with a validated executable.")
+        logMessage("info", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Checking Vintage Story with a validated executable.`)
 
         let stdout = ""
         let settled = false
@@ -472,14 +549,14 @@ function realProcessProbe(): ProcessProbe {
         } catch (err) {
           // Same throw-instead-of-emit split as EXECUTE_GAME's spawn above, settled
           // the way the "error" event below settles it.
-          logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for the Vintage Story version.`)
-          logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
+          logMessage("error", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Error looking for the Vintage Story version.`)
+          logMessage("verbose", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
           settle({ ok: false, stdout, error: getErrorMessage(err) })
           return
         }
 
         timer = setTimeout(() => {
-          logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Timed out waiting for Vintage Story to report its version.`)
+          logMessage("error", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Timed out waiting for Vintage Story to report its version.`)
           externalApp.kill()
           settle({ ok: false, stdout, error: "Timed out waiting for a response." })
         }, LOOK_FOR_A_GAME_VERSION_PROBE_TIMEOUT_MS)
@@ -489,18 +566,18 @@ function realProcessProbe(): ProcessProbe {
         })
 
         externalApp.stderr.on("data", (data) => {
-          logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintage Story threw an error! Check verbose logs for more info.`)
-          logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${data}`)
+          logMessage("error", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Vintage Story threw an error! Check verbose logs for more info.`)
+          logMessage("verbose", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] ${data}`)
         })
 
         externalApp.on("close", (code) => {
-          logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Vintage Story closed: ${code}`)
+          logMessage("info", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Vintage Story closed: ${code}`)
           settle({ ok: true, stdout })
         })
 
         externalApp.on("error", (error) => {
-          logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error looking for the Vintage Story version.`)
-          logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${error}`)
+          logMessage("error", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Error looking for the Vintage Story version.`)
+          logMessage("verbose", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] ${error}`)
           settle({ ok: false, stdout, error: getErrorMessage(error) })
         })
       })
@@ -508,27 +585,185 @@ function realProcessProbe(): ProcessProbe {
   }
 }
 
+/** A sample is dropped rather than allowed to run into the next one, which the recorder takes every five seconds. */
+const TASKLIST_TIMEOUT_MS = 4_000
+
+/**
+ * Runs `tasklist` for the Windows play session sampler (#461).
+ *
+ * Its own probe rather than {@link realProcessProbe}, for two reasons. That one validates the
+ * command as a game executable, which `tasklist` is not and cannot be made to pass, so sharing it
+ * would mean a flag that turns the validation off; there is nothing to validate here anyway, since
+ * the command and its arguments are fixed in the adapter and no part of either comes from the
+ * renderer or from config. And it logs a line per call under the version-check tag, which at one
+ * sample every five seconds would bury a Windows session's log in several hundred of them.
+ *
+ * `execFile` runs with no shell and kills the child at {@link TASKLIST_TIMEOUT_MS}, and the callback
+ * reports both as `ok: false`, so this keeps the port's promise never to reject. A refused sample
+ * is one reading the session does without, which is the same answer a pid that has gone gives.
+ */
+function tasklistProbe(): ProcessProbe {
+  return {
+    run: async (request: ProcessProbeRequest): Promise<ProcessProbeOutcome> =>
+      new Promise<ProcessProbeOutcome>((resolve) => {
+        execFile(request.command, request.args, { windowsHide: true, timeout: TASKLIST_TIMEOUT_MS }, (err, stdout) => {
+          resolve(err ? { ok: false, stdout: "", error: getErrorMessage(err) } : { ok: true, stdout })
+        })
+      })
+  }
+}
+
 ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.LOOK_FOR_A_GAME_VERSION, async (event, path: unknown): Promise<LookForAGameVersionResult> => {
   assertTrustedIpcSender(event)
   const safePath = await assertManagedPath(path, "game version path", { allowMissing: true })
-  logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Looking for the game at [PATH]`)
+  logMessage("info", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Looking for the game at [PATH]`)
 
   let fileNames: string[]
   try {
     fileNames = await fse.readdir(safePath)
   } catch (err) {
-    logMessage("error", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Error reading the folder.`)
-    logMessage("verbose", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Error reading the folder.`)
+    logMessage("verbose", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] ${getErrorMessage(err)}`)
     return NOT_FOUND
   }
 
   const result = await detectInstalledGameVersion({ paths, processProbe: realProcessProbe() }, { platform: os.platform(), folder: safePath, fileNames })
 
   if (!result.ok) {
-    logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] No version found: ${result.reason}.`)
+    logMessage("info", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] No version found: ${result.reason}.`)
     return NOT_FOUND
   }
 
-  logMessage("info", `[back] [ipc] [gameHandlers.ts] [LOOK_FOR_A_GAME_VERSION] Found Vintage Story ${result.version}.`)
-  return { exists: true, installedGameVersion: result.version }
+  logMessage("info", `${LOG_PREFIX} [LOOK_FOR_A_GAME_VERSION] Found Vintage Story ${result.version}.`)
+  const variant = toWireBuildVariant(result.variant)
+  return variant ? { exists: true, installedGameVersion: result.version, variant } : { exists: true, installedGameVersion: result.version }
+})
+
+/**
+ * Reading the last session's own logs, for the report on `/installations/report/:id` (#462).
+ *
+ * Nothing read here ever reaches the launcher's own log, not even at verbose: these files carry the
+ * player's paths, and the domain redacts every string the report keeps before it crosses IPC. The
+ * one line this logs carries counts and fixed tokens.
+ *
+ * The renderer names an Installation and never a file. The handler joins the two names it knows and
+ * puts each through the read-only grade #237 added for linked data folders, so a player who keeps
+ * their data folder behind a symbolic link still gets a report, while nothing outside the
+ * Installation the config names can be reached. `client-debug.log`, the chat and audit logs and the
+ * server files are not opened at all.
+ */
+const GAME_LOGS_FOLDER_NAME = "Logs"
+const CLIENT_MAIN_LOG_FILE_NAME = "client-main.log"
+const CLIENT_CRASH_FILE_NAME = "client-crash.txt"
+
+/** Under this, the log is read whole. A real session writes a few hundred KiB. */
+const WHOLE_LOG_BYTES = 2 * 1024 * 1024
+/** The phase timeline and the mod roster live at the top of the file. */
+const LOG_HEAD_BYTES = 512 * 1024
+/** The errors and the crash live at the bottom. */
+const LOG_TAIL_BYTES = 1536 * 1024
+/** A crash file is a header and a trace. Past this it is a payload, and only its head is read. */
+const CRASH_FILE_BYTES = 256 * 1024
+
+interface BoundedRead {
+  text: string
+  truncated: boolean
+  lastWrittenAtMs: number
+}
+
+/**
+ * Reads a file whole under `whole` bytes, and head plus tail above it.
+ *
+ * `stat`, not `lstat`: this is the grade that admits a linked data folder, so following the link is
+ * the point. A missing file, a folder, or anything that is not a regular file answers null, which
+ * the caller reads as "there is no such log" rather than as a failure.
+ *
+ * The cut is by bytes, not by lines, so each half can begin or end mid-character and mid-line. A
+ * replacement character inside one line costs that line and nothing else, and the two half lines at
+ * the cuts are dropped here: the head's is a sentence with its end missing, and joining it to the
+ * tail's, which comes from megabytes later in the file, would make one line out of two unrelated
+ * fragments for the line grammar to hand to whichever entry came before.
+ */
+async function readBoundedText(filePath: string, whole: number, head: number, tail: number): Promise<BoundedRead | null> {
+  const stats = await fse.stat(filePath).catch(() => null)
+  if (!stats || !stats.isFile()) return null
+  if (stats.size <= whole) return { text: await fse.readFile(filePath, "utf-8"), truncated: false, lastWrittenAtMs: stats.mtimeMs }
+
+  const handle = await fse.open(filePath, "r")
+  try {
+    const headBuffer = Buffer.alloc(head)
+    await fse.read(handle, headBuffer, 0, head, 0)
+    const headText = headBuffer.toString("utf-8")
+    const headLines = headText.slice(0, Math.max(headText.lastIndexOf("\n"), 0))
+    if (tail <= 0) return { text: headLines, truncated: true, lastWrittenAtMs: stats.mtimeMs }
+
+    const tailBuffer = Buffer.alloc(tail)
+    await fse.read(handle, tailBuffer, 0, tail, stats.size - tail)
+    const tailText = tailBuffer.toString("utf-8")
+    const firstBreak = tailText.indexOf("\n")
+    return { text: `${headLines}\n${firstBreak === -1 ? "" : tailText.slice(firstBreak + 1)}`, truncated: true, lastWrittenAtMs: stats.mtimeMs }
+  } finally {
+    await fse.close(handle)
+  }
+}
+
+/** The Mods the launcher recognises, so an assembly or a Harmony id can be tied to one and a group can carry a name. */
+async function readInstalledModRefs(installationPath: string): Promise<InstalledModRef[]> {
+  try {
+    const folder = await assertManagedPath(join(installationPath, MODS_FOLDER_NAME), "mods path", { allowMissing: true, allowSymlinks: true })
+    if (!(await fse.pathExists(folder))) return []
+    const scan = await scanInstalledMods(createScanInstalledModsPorts(), { folder })
+    return scan.mods.map((mod) => ({ modid: mod.modid, name: mod.name }))
+  } catch {
+    // A Mods folder that cannot be read costs the report its display names and its assembly rule,
+    // and nothing else. The bracket rule reads the log line itself and still works.
+    return []
+  }
+}
+
+ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.GET_GAME_LOG_REPORT, async (event, installationPath: unknown): Promise<GameLogReportResult> => {
+  assertTrustedIpcSender(event)
+
+  let installation: string
+  try {
+    installation = await assertConfiguredInstallationPath(installationPath)
+  } catch {
+    logMessage("info", `${LOG_PREFIX} [GET_GAME_LOG_REPORT] Refused: not a configured Installation.`)
+    return { ok: false, reason: "refused" }
+  }
+
+  let mainLog: BoundedRead | null
+  let crashFile: BoundedRead | null
+  try {
+    const readOnly = { allowMissing: true, allowSymlinks: true } as const
+    const logsFolder = join(installation, GAME_LOGS_FOLDER_NAME)
+    const mainLogPath = await assertManagedPath(join(logsFolder, CLIENT_MAIN_LOG_FILE_NAME), "game log path", readOnly)
+    const crashPath = await assertManagedPath(join(logsFolder, CLIENT_CRASH_FILE_NAME), "game crash path", readOnly)
+    mainLog = await readBoundedText(mainLogPath, WHOLE_LOG_BYTES, LOG_HEAD_BYTES, LOG_TAIL_BYTES)
+    crashFile = await readBoundedText(crashPath, CRASH_FILE_BYTES, CRASH_FILE_BYTES, 0)
+  } catch (err) {
+    logMessage("error", `${LOG_PREFIX} [GET_GAME_LOG_REPORT] Could not read this Installation's logs.`)
+    logMessage("debug", `${LOG_PREFIX} [GET_GAME_LOG_REPORT] ${getErrorMessage(err)}`)
+    return { ok: false, reason: "unreadable" }
+  }
+
+  if (!mainLog && !crashFile) {
+    logMessage("info", `${LOG_PREFIX} [GET_GAME_LOG_REPORT] No session logs to read yet.`)
+    return { ok: false, reason: "no-logs" }
+  }
+
+  const config = await getConfig()
+  const report = buildSessionReport({
+    ...(mainLog ? { mainLog: { fileName: CLIENT_MAIN_LOG_FILE_NAME, text: mainLog.text, lastWrittenAtMs: mainLog.lastWrittenAtMs, truncated: mainLog.truncated } } : {}),
+    ...(crashFile ? { crashFile: { text: crashFile.text } } : {}),
+    installedMods: await readInstalledModRefs(installation),
+    // The pattern redactor cannot recognise an email or a player name, so they are masked by value.
+    accountValues: config.accounts.flatMap((account) => [account.email, account.playerName])
+  })
+
+  logMessage(
+    "info",
+    `${LOG_PREFIX} [GET_GAME_LOG_REPORT] Built a session report: ${report.mods.length} groups, ${report.unattributed.length} other lines, crash ${report.crash ? 1 : 0}, truncated ${report.source.truncated ? 1 : 0}.`
+  )
+  return { ok: true, report }
 })

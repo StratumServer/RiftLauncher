@@ -52,8 +52,12 @@ export function createMockConfig(overrides: MockConfigOverrides = {}): ConfigTyp
     suspendedModUpdates: [],
     background: "default",
     accentColor: "amber",
-    moddbVisibilityAnswer: "unasked",
+    moddbVisibility: { policy: "ask", answeredVersion: "", countedVersions: [] },
+    modSuggestionsConsent: null,
+    dismissedModSuggestions: [],
     receiveBetaUpdates: null,
+    measurePlaySessions: true,
+    allowBasicSessionStore: false,
     lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides,
@@ -77,6 +81,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
       logMessage: vi.fn(),
       setPreventAppClose: vi.fn(),
       openOnBrowser: vi.fn(),
+      copyToClipboard: vi.fn(async () => true),
       selectFolderDialog: vi.fn(async () => []),
       onPreventedAppClose: vi.fn(noopUnsubscribe)
     },
@@ -94,6 +99,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     modsManager: {
       getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })),
+      getServerMods: vi.fn(async () => ({ groups: [] })),
       setModEnabled: vi.fn(notMocked("modsManager.setModEnabled")),
       cacheModImage: vi.fn(async () => undefined),
       exportModpack: vi.fn(notMocked("modsManager.exportModpack")),
@@ -124,11 +130,23 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     gameManager: {
       executeGame: vi.fn(notMocked("gameManager.executeGame")),
-      lookForAGameVersion: vi.fn(async () => ({ exists: false as const }))
+      lookForAGameVersion: vi.fn(async () => ({ exists: false as const })),
+      getPlaySessions: vi.fn(async () => ({ ok: true as const, sessions: [] })),
+      forgetPlaySessions: vi.fn(notMocked("gameManager.forgetPlaySessions")),
+      getGameLogReport: vi.fn(async () => ({ ok: false as const, reason: "no-logs" as const }))
+    },
+    optimumManager: {
+      // No Optimum unless a test says otherwise: a page that mounts without
+      // thinking about forks must render the way it does for a player whose
+      // machine Optimum publishes nothing for.
+      getManifest: vi.fn(async () => ({ ok: false as const, reason: "unsupported-system" as const })),
+      applyOverlay: vi.fn(notMocked("optimumManager.applyOverlay")),
+      restoreVanilla: vi.fn(notMocked("optimumManager.restoreVanilla")),
+      onPatchProgress: vi.fn(noopUnsubscribe)
     },
     netManager: {
       queryURL: vi.fn(notMocked("netManager.queryURL")),
-      acceptModDbVisibility: vi.fn(notMocked("netManager.acceptModDbVisibility")),
+      countModDbDownload: vi.fn(notMocked("netManager.countModDbDownload")),
       fetchReleaseNotes: vi.fn(async () => ({ ok: true, releases: [] }) as FetchReleaseNotesResult)
     },
     backgroundsManager: {

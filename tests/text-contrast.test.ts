@@ -84,6 +84,18 @@ function foreground(file: string, anchor: RegExp): Layer {
   return [zinc(name, `${file} ${anchor}`), found[2] === undefined ? 1 : Number(found[2]) / 100]
 }
 
+/**
+ * Every `text-zinc-NNN` one component ships, as the layers they paint.
+ *
+ * Reading the whole file rather than one anchored class: a component whose prose all sits on the
+ * same backdrop gets every line measured, including the one somebody adds later.
+ */
+function foregrounds(file: string): Layer[] {
+  const found = Array.from(read(file).matchAll(/text-(zinc-\d+)(?:\/(\d+))?/g)).map((hit): Layer => [zinc(hit[1] as string, file), hit[2] === undefined ? 1 : Number(hit[2]) / 100])
+  assert.ok(found.length > 0, `no text-zinc utility left in ${file}, this test has nothing to measure`)
+  return found
+}
+
 /** A `#rrggbb` hex string as the sRGB triplet it actually paints. */
 function hexRgb(hex: string): Rgb {
   const digits = hex.replace("#", "")
@@ -266,6 +278,13 @@ const tasksPanel = scrim("components/ui/ActivityCenter.tsx", /max-h-\[32rem\] fl
 const menuCard = scrim("features/installations/components/InstallationsDropdownMenu.tsx", /backdrop-blur-xs bg-zinc-950\/(\d+) border border-zinc-400\/5 group/)
 
 const LIST_PANEL = [shell, listPanel] as const
+// One row of a list, which carries its own tint on top of the panel: the thinnest stack the
+// servers page's secondary text ever sits on (#460).
+const listRow = scrim("components/ui/List.tsx", /backdrop-blur-xs bg-zinc-950\/(\d+) border border-zinc-400\/5 group/)
+const LIST_ROW = [shell, listPanel, listRow] as const
+// The import dialog lists a pack's servers on their own tinted rows inside the popup panel (#460).
+const importedServerRow = fixed("zinc-950", 0.5) // ImportServersDialog row
+const POPUP_SERVER_ROW = [popupShell, popupPanel, importedServerRow] as const
 const SECTION_TABLE = [shell, section, tableFill] as const
 const MENU_CARD = [shell, menu, menuCard] as const
 const TOAST = [shell, toast] as const
@@ -290,6 +309,39 @@ describe("text over the player's background image", () => {
     // The reported case: the beta updates hint on the settings page.
     const description = foreground("components/ui/FormComponents/FormLayout.tsx", /text-xs text-(zinc-\d+)(?:\/(\d+))? pl-1/)
     assertReadable("form field descriptions", description, FORM_SECTION, TEXT_FLOOR)
+  })
+
+  it("keeps a saved server's address and launch stamp readable on its row", () => {
+    const address = foreground("features/servers/pages/ManageInstallationServers.tsx", /text-sm text-(zinc-\d+)(?:\/(\d+))? overflow-hidden text-ellipsis/)
+    const stamp = foreground("features/servers/pages/ManageInstallationServers.tsx", /shrink-0 w-44 text-sm text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("saved server address", address, LIST_ROW, TEXT_FLOOR)
+    assertReadable("saved server launch stamp", stamp, LIST_ROW, TEXT_FLOOR)
+  })
+
+  it("keeps the servers page's empty state hint readable", () => {
+    const hint = foreground("features/servers/pages/ManageInstallationServers.tsx", /text-sm text-(zinc-\d+)(?:\/(\d+))?">\{t\("features\.servers\.manageServersDesc/)
+    assertReadable("servers empty state hint", hint, LIST_ROW, TEXT_FLOOR)
+  })
+
+  it("keeps the address of a carried server readable on the import dialog's rows", () => {
+    const address = foreground("features/servers/components/ImportServersDialog.tsx", /block truncate text-sm text-(zinc-\d+)(?:\/(\d+))?/)
+    assertReadable("imported server address", address, POPUP_SERVER_ROW, TEXT_FLOOR)
+  })
+
+  it("keeps the server dialog's validation message readable", () => {
+    const problem = paletteForeground("features/servers/components/ServerBookmarkDialog.tsx", /className="text-(orange-\d+)"/)
+    assertReadable("server dialog validation message", problem, POPUP, TEXT_FLOOR)
+  })
+
+  it("keeps the build choice's own line readable on the section it sits on", () => {
+    // The sentence under a disabled Optimum choice, and the label it disables
+    // with it (#457). Both land on the same form section the field descriptions do.
+    const line = foreground("features/versions/pages/AddVersion.tsx", /text-xs text-(zinc-\d+)(?:\/(\d+))? pl-1/)
+    const disabledLabel = foreground("features/versions/pages/AddVersion.tsx", /cursor-not-allowed text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("build choice explanation", line, FORM_SECTION, TEXT_FLOOR)
+    assertReadable("disabled build choice label", disabledLabel, FORM_SECTION, TEXT_FLOOR)
   })
 
   it("keeps the main menu link descriptions readable", () => {
@@ -324,6 +376,28 @@ describe("text over the player's background image", () => {
    * alpha, or that blur has nothing to show. And it has to stay far enough above the resting fill
    * that the bar keeps separating from the rows sliding under it.
    */
+  it("keeps the server Mods notices readable with the shell scrim as their only backdrop", () => {
+    // The cap notice and the one for a ModsByServer folder that will not open sit in the section's
+    // heading block, outside the list panel every group gets, so nothing is under them but the
+    // shell. zinc-400 measures 3.01:1 there, which is what put this test here.
+    for (const notice of foregrounds("features/mods/components/ServerModsSection.tsx")) assertReadable("server Mods section notice", notice, PAGE, TEXT_FLOOR)
+  })
+
+  it("keeps the Mod suggestions heading and caption readable on the grid panel", () => {
+    const source = read("features/mods/components/ModSuggestions.tsx")
+    assert.ok(
+      source.indexOf("<GridWrapper>") < source.indexOf('className="relative mb-2 flex flex-wrap items-center justify-between gap-2 px-2"'),
+      "the suggestions heading should sit inside its grid panel and have relative positioning"
+    )
+    assertReadable("Mod suggestions heading", [ZINC["zinc-200"], 1], [shell, gridPanel], TEXT_FLOOR)
+    for (const text of foregrounds("features/mods/components/ModSuggestions.tsx")) assertReadable("Mod suggestions text", text, [shell, gridPanel], TEXT_FLOOR)
+  })
+
+  it("keeps a server group's text readable on the panel it does sit on", () => {
+    for (const text of foregrounds("features/mods/components/ServerModsGroup.tsx")) assertReadable("server Mods group text", text, LIST_PANEL, TEXT_FLOOR)
+    for (const text of foregrounds("features/mods/components/ServerModItem.tsx")) assertReadable("server Mod row text", text, LIST_PANEL, TEXT_FLOOR)
+  })
+
   it("keeps the sticky bar readable and still see-through once the page is scrolled", () => {
     const label = foreground("components/ui/buttonStyles.ts", /ghost: "[^"]*text-(zinc-\d+)(?:\/(\d+))?/)
     // Nothing in the breadcrumbs sets a colour, so what they paint with is the body's own.
@@ -357,8 +431,8 @@ describe("prompts the player is meant to read and act on", () => {
   it("keeps the mod filter prompts readable", () => {
     const prompts: ReadonlyArray<readonly [string, Layer]> = [
       ["author filter placeholder", foreground("features/mods/components/AuthorFilter.tsx", /placeholder:text-(zinc-\d+)(?:\/(\d+))?/)],
-      ["tag filter prompt", foreground("features/mods/components/TagsFilter.tsx", /tagsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
-      ["version filter prompt", foreground("features/mods/components/VersionsFilter.tsx", /versionsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
+      ["tag filter prompt", foreground("components/ui/MultiSelectFilter.tsx", /selected\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
+      ["version filter prompt", foreground("components/ui/MultiSelectFilter.tsx", /selected\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)],
       ["installed mods select filter prompt", foreground("features/mods/components/InstalledModsSelectFilter.tsx", /!value && "text-(zinc-\d+)(?:\/(\d+))?"/)],
       ["installed mods tag filter prompt", foreground("features/mods/components/InstalledTagsFilter.tsx", /tagsFilter\.length < 1 && "text-(zinc-\d+)(?:\/(\d+))?"/)]
     ]
@@ -443,6 +517,26 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /**
+   * The Installation check repeats those hues on its four section headings, one panel layer up from
+   * the release rows above, and they are plain bold text at the default scale rather than WCAG large
+   * text, so the text floor applies to all four. On the bare panel lime-600 reads 3.98:1 and red-400
+   * 4.22:1, the same shortfall RELEASE_ROW_FILL answers, so the heading row carries a fill of its own.
+   */
+  it("keeps the Installation check's section headings readable on their fill", () => {
+    const file = "features/mods/components/ModHealthPanel.tsx"
+    const headingFill: Layer = [ZINC["zinc-950"], Number(match(file, /const SECTION_HEADING_FILL = "bg-zinc-950\/(\d+)"/)[1]) / 100]
+    // The constant alone proves nothing: the row the headings sit in has to wear it.
+    match(file, /className=\{clsx\("flex flex-wrap[^"]*", SECTION_HEADING_FILL\)\}/)
+
+    const headings = [...(match(file, /const SECTIONS([\s\S]+?)\n\]/)[1] as string).matchAll(/section: "([a-z]+)"[^}]*className: "text-([a-z]+-\d+)"/g)]
+    assert.equal(headings.length, 4, "the Installation check no longer ships four section headings")
+
+    for (const heading of headings) {
+      assertReadable(`the ${heading[1] as string} section heading`, [tailwindColor(heading[2] as string), 1], [shell, listPanel, headingFill], TEXT_FLOOR)
+    }
+  })
+
   it("keeps the icons that stand in for a control above the non-text bar", () => {
     // Each of these is the whole visible content of a button: there is no label beside it, so the
     // icon is the affordance and the 3:1 rule applies. Actions that ship a label are covered by
@@ -503,6 +597,19 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /**
+   * #391 folds a repeated message into the banner already up and marks it with a count. The count
+   * is the only thing on screen that says the message arrived twice, so it is a fill of its own
+   * on the toast scrim and has to clear the text bar on both extremes.
+   */
+  it("keeps the repeat count on a folded banner readable on its own fill", () => {
+    const overlay = "components/layout/NotificationsOverlay.tsx"
+    const badgeFill = foreground(overlay, /rounded-full bg-(zinc-\d+)(?:\/(\d+))? text-\[10px\]/)
+    const badgeText = foreground(overlay, /text-\[10px\] leading-4 text-(zinc-\d+)(?:\/(\d+))?/)
+
+    assertReadable("repeat count", badgeText, [...TOAST, badgeFill], TEXT_FLOOR)
+  })
+
   it("keeps every Activity Center task row readable", () => {
     const panel = "components/ui/ActivityCenter.tsx"
     const operation = foreground(panel, /text-xs text-(zinc-\d+)(?:\/(\d+))? break-words/)
@@ -528,10 +635,28 @@ describe("prompts the player is meant to read and act on", () => {
     }
   })
 
+  /** #392's one new control, which sits on the panel scrim beside the summary rather than on a row. */
+  it("keeps the Clear all control readable on the panel it sits on", () => {
+    const clearAll = foreground("components/ui/ActivityCenter.tsx", /className="px-1 text-xs text-(zinc-\d+)(?:\/(\d+))?"\s+title=\{t\("components\.activityCenter\.clearAll"\)\}/)
+    assertReadable("Clear all", clearAll, TASKS_PANEL, TEXT_FLOOR)
+  })
+
   it("keeps the active task badge readable on the accent fill it sits on", () => {
     const badge = match("components/ui/ActivityCenter.tsx", /rounded-full bg-(vs) text-\[10px\] leading-none text-(white)/)
     assert.equal(badge[2], "white", "the active task count no longer paints its own label")
     assertReadable("active task count", [WHITE, 1], [[themeColor(badge[1] as string), 1]], TEXT_FLOOR)
+  })
+
+  /**
+   * The session report (#462) is the one page that paints a colour of its own: an error count and a
+   * warning count beside each Mod group, on the table fill inside a DropdownSection. Both are read
+   * out of the component rather than written down here, so recolouring them fails this rather than
+   * shipping a count nobody can read.
+   */
+  it("keeps the session report's error and warning counts readable on the panel they sit on", () => {
+    const badges = match("features/installations/pages/SessionReport.tsx", /const SEVERITY_COLORS = \{ error: "text-([a-z]+-\d+)", warning: "text-([a-z]+-\d+)" \}/)
+    assertReadable("session report error count", [tailwindColor(badges[1] as string), 1], SECTION_TABLE, TEXT_FLOOR)
+    assertReadable("session report warning count", [tailwindColor(badges[2] as string), 1], SECTION_TABLE, TEXT_FLOOR)
   })
 
   it("keeps Activity Center history text readable on both row tints", () => {
@@ -540,6 +665,21 @@ describe("prompts the player is meant to read and act on", () => {
 
     assertReadable("Activity Center notification body", historyBody, TASKS_ROW, TEXT_FLOOR)
     assertReadable("Activity Center answered marker", answered, TASKS_ROW, TEXT_FLOOR)
+  })
+
+  /**
+   * #390 put a second red line in the panel: the cause under a failed message, beside the one a
+   * failed task row already carries. It is the line a player opened the panel to read, so it
+   * takes the text floor rather than the weaker non-text one, and it is read out of the
+   * component so a shade that moves fails here instead of shipping.
+   */
+  it("keeps the cause under a failed notification readable on both row tints", () => {
+    const cause = paletteForeground("components/ui/ActivityCenter.tsx", /mt-0\.5 text-xs break-words text-([a-z]+-\d+)"/)
+    const taskCause = paletteForeground("components/ui/ActivityCenter.tsx", /task.status === "failed" && <p className="text-xs text-([a-z]+-\d+)"/)
+
+    assertReadable("failed notification cause", cause, TASKS_ROW, TEXT_FLOOR)
+    // The two say the same kind of thing in the same panel, so they wear the same red.
+    assert.deepEqual(cause, taskCause, "the cause under a failed message should carry the same red as the one on a failed task row")
   })
 
   /**
@@ -637,6 +777,29 @@ describe("the brand accent where it carries text", () => {
     }
   })
 
+  it("keeps the invalid-field border and headline above their floors, on both stacks it ships on", () => {
+    // #447: border-red-800 read 1.97:1 as a border against the panel behind it, below the 3:1
+    // non-text floor, on both the plain form panel FormInputs ships on and the table-backed panel
+    // GameVersionPicker reuses the same pair for (see the comment above its div, which calls out
+    // the reuse on purpose). Read out of both components, so a shade change on either one comes
+    // back through here, and so the two are kept in lockstep with each other.
+    const inputInvalid = match("components/ui/FormComponents/FormInputs.tsx", /user-invalid:border-(red-\d+) user-invalid:bg-(red-\d+)\/(\d+)/)
+    const pickerBox = match("features/installations/components/GameVersionPicker.tsx", /border border-(red-\d+) bg-(red-\d+)\/(\d+)/)
+
+    assert.equal(inputInvalid[1], inputInvalid[2], "FormInputs should paint its invalid border and fill the same red shade")
+    assert.equal(pickerBox[1], pickerBox[2], "GameVersionPicker should paint its invalid box border and fill the same red shade")
+    assert.equal(inputInvalid[1], pickerBox[1], "GameVersionPicker should reuse the same invalid-field border shade FormInputs does")
+
+    const border: Layer = [tailwindColor(inputInvalid[1] as string), 1]
+    assertReadable("invalid-field border on the plain form panel", border, FORM_SECTION, NON_TEXT_FLOOR)
+    assertReadable("invalid-field border on the table-backed panel", border, SECTION_TABLE, NON_TEXT_FLOOR)
+
+    // The headline stays on red-400, the shade every other error already speaks in, but it sits on
+    // top of the invalid fill above, so a fill change still has to clear the text floor here too.
+    const headline = paletteForeground("features/installations/components/GameVersionPicker.tsx", /items-center text-(red-\d+)"/)
+    assertReadable("invalid-field headline on the table-backed panel", headline, SECTION_TABLE, TEXT_FLOOR)
+  })
+
   it("keeps each preset's own ramp dark-to-light in that order", () => {
     for (const preset of ACCENT_PRESETS) {
       const dark = luminance(hexRgb(preset.dark))
@@ -663,6 +826,66 @@ describe("the brand accent where it carries text", () => {
  * changing either one has to come back through here. State fills are included because a hover or
  * active colour that lightens past the text floor is still the same readable control to the player.
  */
+/**
+ * #461: the play session rows and the chart they open.
+ *
+ * The chart is two polylines with no fill and no library behind it, and both strokes take their
+ * colour from a `text-zinc-NNN` class on the group so they can be read here the same way every
+ * other colour in this file is. Strokes are graphical objects, so they are held to the 3:1
+ * non-text floor; the text beside them is held to the text floor like everything else.
+ *
+ * The two series are also told apart by shape, not by colour alone: memory is solid, CPU is
+ * dashed. A reader who cannot separate two greys still gets two lines.
+ */
+describe("play session rows and their chart", () => {
+  const SESSION_CHART = "features/installations/components/SessionMemoryChart.tsx"
+  const SESSION_SECTION = "features/installations/components/RecentSessionsSection.tsx"
+
+  /** The resting row fill. The hover fill is heavier, so under light text it can only read better. */
+  const sessionRow = [ZINC["zinc-800"], Number(match(SESSION_SECTION, /rounded-sm p-2 text-left text-sm text-zinc-\d+ bg-zinc-800\/(\d+)/)[1]) / 100] as const
+  const SESSION_ROW = [shell, section, sessionRow] as const
+
+  it("keeps both chart strokes visible on the dialog they are drawn in", () => {
+    const memory = foreground(SESSION_CHART, /<g className="text-(zinc-\d+)(?:\/(\d+))?">\s*<polyline points=\{memoryPoints\}/)
+    const cpu = foreground(SESSION_CHART, /<g className="text-(zinc-\d+)(?:\/(\d+))?">\s*<polyline points=\{cpuPoints\}/)
+
+    assertReadable("session chart memory stroke", memory, POPUP, NON_TEXT_FLOOR)
+    assertReadable("session chart CPU stroke", cpu, POPUP, NON_TEXT_FLOOR)
+
+    // Colour is not the only thing separating the two series, so the pair survives a reader who
+    // cannot tell two greys apart.
+    match(SESSION_CHART, /strokeDasharray="4 3"/)
+  })
+
+  it("keeps the sparkline visible on the row it sits in", () => {
+    const sparkline = foreground(SESSION_CHART, /className="w-24 h-6 shrink-0 text-(zinc-\d+)(?:\/(\d+))?"/)
+    assertReadable("session sparkline", sparkline, SESSION_ROW, NON_TEXT_FLOOR)
+  })
+
+  it("keeps a session row's own text readable on the row fill", () => {
+    const rowText = foreground(SESSION_SECTION, /rounded-sm p-2 text-left text-sm text-(zinc-\d+)(?:\/(\d+))?/)
+    const secondary = foreground(SESSION_SECTION, /<span className="shrink-0 text-(zinc-\d+)(?:\/(\d+))?">\{formatDuration/)
+
+    assertReadable("session row date", rowText, SESSION_ROW, TEXT_FLOOR)
+    assertReadable("session row length and peak", secondary, SESSION_ROW, TEXT_FLOOR)
+  })
+
+  it("keeps the chart legend readable in the dialog", () => {
+    const legend = foreground(SESSION_CHART, /className="text-xs text-(zinc-\d+)(?:\/(\d+))? text-left"/)
+    assertReadable("session chart legend", legend, POPUP, TEXT_FLOOR)
+  })
+
+  it("keeps the steady climb flag readable, since it is the one sentence a player acts on", () => {
+    const flag = foreground(SESSION_SECTION, /<p className="text-sm text-(zinc-\d+)(?:\/(\d+))? text-left">\{t\("features\.sessions\.steadyClimb"\)\}/)
+    // The sentence under it is a FormFieldDescription, whose own colour the form section test above
+    // already holds; this is the stack it lands on inside the dialog rather than on a page.
+    const meaning = foreground("components/ui/FormComponents/FormLayout.tsx", /text-xs text-(zinc-\d+)(?:\/(\d+))? pl-1/)
+
+    assertReadable("steady climb flag", flag, POPUP, TEXT_FLOOR)
+    assertReadable("what the steady climb flag means", meaning, POPUP, TEXT_FLOOR)
+  })
+})
+
 describe("button labels on the fill they ship on", () => {
   it("reads Tailwind's OKLCH palette the same way the sRGB table above does", () => {
     // zinc-200 is in both the hand-maintained table at the top of this file and Tailwind's own

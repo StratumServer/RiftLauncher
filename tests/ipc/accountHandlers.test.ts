@@ -57,6 +57,11 @@ const EMAIL = "player@example.invalid"
 const PASSWORD = "placeholder-password"
 const TWO_FACTOR_CODE = "123456"
 
+/** What `network.ts` rejects with for a non-2xx answer: the transport's own message, plus the status as a number (`BoundedResponseError`). */
+function refusedWithStatus(statusCode: number): Error {
+  return Object.assign(new Error(`Network request failed with status ${statusCode}`), { statusCode })
+}
+
 /** A body the service answers when the credentials are good. Placeholder values throughout. */
 const SUCCESS_BODY = JSON.stringify({
   valid: 1,
@@ -271,15 +276,6 @@ describe("LOGIN", () => {
     await assert.rejects(loginHandler()(trustedEvent, EMAIL, PASSWORD, TWO_FACTOR_CODE), /Login failed/)
   })
 
-  it("fails the login when the secrets cannot be stored", async () => {
-    transportAnswers(SUCCESS_BODY)
-    vi.mocked(saveAccountSecrets).mockRejectedValueOnce(new Error("Secure account storage is unavailable"))
-
-    // A success the launcher cannot persist is not a success: reporting one
-    // would leave a session that vanishes on the next start.
-    await assert.rejects(loginHandler()(trustedEvent, EMAIL, PASSWORD), /Login failed/)
-  })
-
   it("flags a login that rebuilt the account store, rather than reporting an ordinary success", async () => {
     transportAnswers(SUCCESS_BODY)
     vi.mocked(saveAccountSecrets).mockResolvedValueOnce("saved-after-rebuild")
@@ -293,6 +289,45 @@ describe("LOGIN", () => {
     })
   })
 
+  it("reports a login whose session is only held in memory, rather than an ordinary success", async () => {
+    // #481: the credentials were accepted and there is no keyring to write them to. The login
+    // stands, the account is usable, and the renderer is told the session ends with this run.
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockResolvedValueOnce("saved-in-memory")
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.deepEqual(result, {
+      status: "success",
+      account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false },
+      sessionInMemoryOnly: true
+    })
+  })
+
+  it("reports a login held in memory because the store is sealed by a keyring the basic backend cannot reach", async () => {
+    // Regression on #542: this must never be reported as storeRebuilt, and never as the plain
+    // no-keyring sessionInMemoryOnly either, since the player needs the different guidance (turn
+    // the setting off) rather than the keyring setup guide.
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockResolvedValueOnce("saved-in-memory-keyring-sealed")
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.deepEqual(result, {
+      status: "success",
+      account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false },
+      sessionKeyringSealed: true
+    })
+  })
+
+  it("does not flag an ordinary save as a session held in memory", async () => {
+    transportAnswers(SUCCESS_BODY)
+
+    const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+    assert.equal(result.status === "success" && result.sessionInMemoryOnly, undefined)
+  })
+
   it("reports an unreadable, unpreservable store as its own status instead of a generic failure", async () => {
     transportAnswers(SUCCESS_BODY)
     vi.mocked(saveAccountSecrets).mockRejectedValueOnce(new AccountStoreUnreadableError(new Error("EACCES")))
@@ -303,6 +338,60 @@ describe("LOGIN", () => {
     const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
     assert.deepEqual(result, { status: "session-store-unreadable" })
   })
+})
+
+/**
+ * The request itself failing used to always throw, which `SessionButton.tsx` folded into one
+ * generic toast no matter the cause (issue #481). One representative cause per family pins that
+ * each now resolves its own status instead, and stores nothing.
+ */
+describe("LOGIN resolves a family status for a request failure it can classify", () => {
+  for (const [label, thrown, expectedStatus] of [
+    ["a name that will not resolve", Object.assign(new Error("getaddrinfo ENOTFOUND auth3.vintagestory.at"), { code: "ENOTFOUND" }), "network-unreachable"],
+    ["a certificate this machine will not accept", Object.assign(new Error("self signed certificate"), { code: "DEPTH_ZERO_SELF_SIGNED_CERT" }), "certificate-error"],
+    ["the service answering with a 503", refusedWithStatus(503), "service-error"],
+    ["the service answering with a 403", refusedWithStatus(403), "account-restricted"]
+  ] as const) {
+    it(`reports ${label} as ${expectedStatus}, not the generic failure`, async () => {
+      vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(thrown)
+
+      const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+      assert.deepEqual(result, { status: expectedStatus })
+      assert.equal(vi.mocked(saveAccountSecrets).mock.calls.length, 0)
+    })
+  }
+
+  it("still throws the generic failure for a cause none of the families fit", async () => {
+    // A full disk during the account-store write is a real failure, but not one of the
+    // request-failure families and not a missing keyring: guessing which would tell a player with
+    // no disk space left to check their firewall, or send them to set up a wallet they have.
+    transportAnswers(SUCCESS_BODY)
+    vi.mocked(saveAccountSecrets).mockRejectedValueOnce(Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" }))
+
+    await assert.rejects(loginHandler()(trustedEvent, EMAIL, PASSWORD), /Login failed/)
+  })
+
+  /**
+   * The Debian KDE report: the log said `secure-storage-unavailable` and the player was shown the
+   * generic connection sentence. Both messages `assertSecureStorage` throws have to reach the
+   * renderer as the keyring status, whichever of the two the machine produced. This replaces the
+   * old "fails the login when the secrets cannot be stored" case: the failure is the same, and
+   * what changed is that the player is now told which failure it was.
+   */
+  for (const [label, message] of [
+    ["a platform with no encryption at all", "Secure account storage is unavailable"],
+    ["a Linux session that would fall back to the basic store", "A system password store is required for account storage"]
+  ] as const) {
+    it(`reports ${label} as no-keyring, not the generic failure`, async () => {
+      transportAnswers(SUCCESS_BODY)
+      vi.mocked(saveAccountSecrets).mockRejectedValueOnce(new Error(message))
+
+      const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
+
+      assert.deepEqual(result, { status: "no-keyring" })
+    })
+  }
 })
 
 /**
@@ -387,21 +476,25 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
     assertNothingSecretIn(lines, ["placeholder-session-key", "placeholder-session-signature"])
   })
 
-  it("still says what kind of failure it was, so a field report stays diagnosable", async () => {
+  it("still says what kind of failure it was, so a field report stays diagnosable, and resolves the family it belongs to", async () => {
     // Dropping the message must not mean dropping the diagnostic: an outage,
     // a name that does not resolve and a keyring that is not there have to
-    // stay three different lines in the log.
-    for (const [thrown, expectedReason] of [
-      [Object.assign(new Error(`getaddrinfo ENOTFOUND while sending ${LEAKY_PASSWORD}`), { code: "ENOTFOUND" }), "network-ENOTFOUND"],
-      [new Error("Network request failed with status 503"), "http-unavailable"],
-      [new Error("Network request timed out"), "timeout"]
+    // stay three different lines in the log. Each of these three is also a
+    // reason loginFailureFamily can place, so the handler resolves the
+    // matching status instead of throwing the generic failure (issue #481).
+    for (const [thrown, expectedReason, expectedStatus] of [
+      [Object.assign(new Error(`getaddrinfo ENOTFOUND while sending ${LEAKY_PASSWORD}`), { code: "ENOTFOUND" }), "network-ENOTFOUND", "network-unreachable"],
+      [refusedWithStatus(503), "http-unavailable", "service-error"],
+      [new Error("Network request timed out"), "timeout", "network-unreachable"]
     ] as const) {
       vi.mocked(requestBoundedTextViaNode).mockReset().mockRejectedValueOnce(thrown)
 
+      let result: AccountLoginResult | undefined
       const lines = await logLinesDuring(async () => {
-        await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+        result = await loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD)
       })
 
+      assert.deepEqual(result, { status: expectedStatus })
       assert.ok(
         lines.some((line) => line.includes(`Login failure reason: ${expectedReason}.`)),
         `no line named the reason ${expectedReason}: ${lines.join(" / ")}`
@@ -473,18 +566,21 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
   })
 
   it("logs no credential when the password is the same digits as the HTTP status", async () => {
-    // `assertString` accepts `503` as a password, and `network.ts` writes
-    // "Network request failed with status 503" from the response's own status
-    // line. A reason built by splicing those digits in therefore writes the
-    // password to the log the moment the auth service goes down, without the
-    // thrower doing anything unusual.
+    // `assertString` accepts `503` as a password, and the refusal `network.ts`
+    // throws carries the response's own status. A reason built by splicing
+    // those digits in therefore writes the password to the log the moment the
+    // auth service goes down, without the thrower doing anything unusual.
     const password = "503"
-    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(new Error(`Network request failed with status ${password}`))
+    vi.mocked(requestBoundedTextViaNode).mockRejectedValueOnce(refusedWithStatus(503))
 
+    let result: AccountLoginResult | undefined
     const lines = await logLinesDuring(async () => {
-      await assert.rejects(loginHandler()(trustedEvent, EMAIL, password), /Login failed/)
+      result = await loginHandler()(trustedEvent, EMAIL, password)
     })
 
+    // A 503 resolves as service-error (issue #481): still nothing of the
+    // password's digits anywhere, log or wire result.
+    assert.deepEqual(result, { status: "service-error" })
     assertNothingSecretIn(lines, [password])
     assert.ok(
       lines.some((line) => line.includes("Login failure reason: http-unavailable.")),
@@ -495,25 +591,25 @@ describe("LOGIN keeps credentials out of the log when it fails", () => {
   it("still tells the HTTP failures apart without printing any of their digits", async () => {
     // Dropping the digits must not flatten a rejected credential, a throttle
     // and an outage into one line, which is the first split a field report
-    // needs.
-    for (const [status, expectedReason] of [
-      ["401", "http-unauthorized"],
-      ["429", "http-rate-limited"],
-      ["503", "http-unavailable"]
+    // needs. All three resolve rather than throw, each into its own family.
+    for (const [status, expectedReason, expectedStatus] of [
+      [401, "http-unauthorized", "account-restricted"],
+      [429, "http-rate-limited", "service-error"],
+      [503, "http-unavailable", "service-error"]
     ] as const) {
-      vi.mocked(requestBoundedTextViaNode)
-        .mockReset()
-        .mockRejectedValueOnce(new Error(`Network request failed with status ${status}`))
+      vi.mocked(requestBoundedTextViaNode).mockReset().mockRejectedValueOnce(refusedWithStatus(status))
 
+      let result: AccountLoginResult | undefined
       const lines = await logLinesDuring(async () => {
-        await assert.rejects(loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD), /Login failed/)
+        result = await loginHandler()(trustedEvent, EMAIL, LEAKY_PASSWORD)
       })
 
+      assert.deepEqual(result, { status: expectedStatus })
       assert.ok(
         lines.some((line) => line.includes(`Login failure reason: ${expectedReason}.`)),
         `no line named the reason ${expectedReason}: ${lines.join(" / ")}`
       )
-      assertNothingSecretIn(lines, [LEAKY_PASSWORD, status])
+      assertNothingSecretIn(lines, [LEAKY_PASSWORD, String(status)])
     }
   })
 })

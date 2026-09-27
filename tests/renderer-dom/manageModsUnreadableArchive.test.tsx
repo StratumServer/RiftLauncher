@@ -1,14 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { Route, Routes } from "react-router-dom"
-
-import ManageMods from "@renderer/features/installations/pages/ManageMods"
-import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
-import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
-import { renderWithProviders } from "./helpers/render"
+import { mountManageMods } from "./helpers/mountManageMods"
 
 const BROKEN_PATH = "/games/a/Mods/broken.zip"
 
@@ -41,20 +36,7 @@ async function renderWithUnreadableArchive(deletePath: BridgeAPI["pathsManager"]
     pathsManager: { deletePath }
   })
 
-  renderWithProviders(
-    <Routes>
-      <Route
-        path="/installations/mods/:id"
-        element={
-          <TaskProvider>
-            <ManageMods />
-            <NotificationsOverlay />
-          </TaskProvider>
-        }
-      />
-    </Routes>,
-    { route: "/installations/mods/install-a" }
-  )
+  mountManageMods()
 
   return (await screen.findByText("broken.zip", {}, { timeout: 3000 })).closest("li") as HTMLElement
 }

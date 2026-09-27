@@ -29,17 +29,44 @@ declare global {
      */
     accentColor: string
     /**
-     * What the player answered when asked, once, whether the launcher could fetch its own ModDB
-     * listing archive so that listing's download counter registers it: `unasked` until they answer,
-     * then `accepted`, `declined` or `already-done` forever. See src/domain/moddbVisibility.ts.
+     * What the player answered when asked whether the launcher could fetch its own ModDB listing
+     * entry so that entry's download counter registers this version: which answer and how long it
+     * lasts, the launcher version it was given under, and the versions already counted. Spelled out
+     * here rather than imported because this file declares globals; it is
+     * `ModDbVisibilityState` in src/domain/moddbVisibility.ts, which owns every rule about it.
+     *
+     * Replaces the single `moddbVisibilityAnswer` string of #219, which the config normalizer still
+     * reads under its old name and migrates.
      */
-    moddbVisibilityAnswer: string
+    moddbVisibility: {
+      policy: "ask" | "once" | "always" | "never"
+      answeredVersion: string
+      countedVersions: string[]
+    }
+    /** Whether the player has independently opted into ModDB suggestions for the Mods browser. */
+    modSuggestionsConsent: boolean | null
+    /** Listing ids dismissed from the suggestions row, bounded and retained once recorded. */
+    dismissedModSuggestions: number[]
     /**
      * Whether update checks offer prerelease builds: `true` for yes, `false` for no, and `null`
      * while nobody has said, which leaves the running version deciding the way electron-updater
      * does on its own. See src/domain/appUpdate/betaUpdates.ts.
      */
     receiveBetaUpdates: boolean | null
+    /**
+     * Whether the launcher reads memory and CPU off the game process while it runs, and keeps the
+     * last sessions per Installation. On unless the player turns it off. Nothing measured here
+     * leaves the machine. See src/domain/sessions/sampling.ts.
+     */
+    measurePlaySessions: boolean
+    /**
+     * Whether the launcher may keep a session on a machine with no system keyring, where the only
+     * store left seals it with a key that ships in the binary and so is readable by any program
+     * running as the player. Off unless the player turns it on, and read at startup rather than on
+     * change, since Chromium picks its password store before any config read. See
+     * src/domain/account/sessionStorage.ts.
+     */
+    allowBasicSessionStore: boolean
     /**
      * The version the "what's new" dialog last showed notes up to, empty for a fresh install or
      * a config written before this field existed. Compared against the running version by
@@ -78,6 +105,14 @@ declare global {
      */
     playerEntitlements: string | null
     hostGameServer: boolean
+    /**
+     * Set only on an account whose session is held in the main process because there was no
+     * keyring to write it to (#481). Absent on every other account, so an ordinary record is
+     * byte for byte what earlier builds wrote. The next startup drops the accounts carrying it:
+     * their secrets died with the process, and an account that cannot launch and says nothing
+     * about why is worse than no account at all. See src/config/configManager.ts.
+     */
+    sessionOnly?: true
   }
 
   // Renderer-visible account data. Session credentials are main-process only.
@@ -101,10 +136,57 @@ declare global {
    * check silently drop the account. It flags that the store had to be
    * rebuilt around this one login, so a previously unreadable file's other
    * saved accounts are gone and will need to log in again.
+   *
+   * `network-unreachable`, `certificate-error`, `service-error` and
+   * `account-restricted` name the request itself failing, which used to
+   * throw and collapse into one generic toast no matter the cause (issue
+   * #481). They carry `loginFailureFamily`'s classification of whatever
+   * `src/ipc/handlers/loginFailureReason.ts` named the error, so the
+   * renderer can say which of them it was without the raw error message
+   * ever crossing the IPC boundary. A cause that classifier does not
+   * recognise still throws the generic failure, unchanged.
+   *
+   * `no-keyring` is the same mechanism for the one failure that is neither
+   * the network nor the service: this machine has no system keyring, so
+   * there is nowhere safe to keep a session. It is what a Debian KDE player
+   * with no wallet actually hit, while the generic connection sentence sent
+   * them looking at a firewall that was never involved. The ordinary path for
+   * it is now a success carrying `sessionInMemoryOnly`, since the credentials
+   * were accepted and only the saving failed; the status is what is left for a
+   * keyring failure reaching the handler's catch some other way.
+   *
+   * `sessionInMemoryOnly` flags exactly that success: the player is logged in
+   * and can play, the secrets are held in the main process and were never
+   * written, and quitting ends the session. Not a status of its own, for the
+   * same reason `storeRebuilt` is not: the login succeeded, and a separate
+   * status would have every `status === "success"` check drop the account.
    */
   type AccountLoginResult =
-    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean }
-    | { status: "invalid-credentials" | "requires-two-factor" | "wrong-two-factor" | "unexpected-response" | "session-store-unreadable"; account?: undefined }
+    | { status: "success"; account: AccountPublicType; storeRebuilt?: boolean; sessionInMemoryOnly?: boolean; sessionKeyringSealed?: boolean }
+    | {
+        status:
+          | "invalid-credentials"
+          | "requires-two-factor"
+          | "wrong-two-factor"
+          | "unexpected-response"
+          | "session-store-unreadable"
+          | "network-unreachable"
+          | "certificate-error"
+          | "service-error"
+          | "account-restricted"
+          | "no-keyring"
+        account?: undefined
+      }
+
+  /**
+   * A fork of Vintage Story that named itself when the launcher probed it.
+   *
+   * The ambient name the preload bridge and the renderer reach the domain's own
+   * declaration under, so the token and the rule behind it are written once: see
+   * GameBuildVariant in src/domain/versions/detect.ts, and toWireBuildVariant in
+   * src/ipc/validation.ts for what holds the wire value to it.
+   */
+  type GameBuildVariantType = import("./domain/versions/detect").GameBuildVariant
 
   type GameVersionType = {
     /** Stable technical identity; independent from the displayed label and version number. */
@@ -112,6 +194,15 @@ declare global {
     version: string
     label: string
     path: string
+    /**
+     * The fork this build was patched into, when it is one. Absent means vanilla,
+     * so no config written before this field existed needs migrating.
+     *
+     * Written by the install flow from what the launcher's own probe read back off
+     * the patched folder (#457), never from anything the renderer decided, and
+     * validated by `toWireBuildVariant` on the way in.
+     */
+    variant?: GameBuildVariantType
     /** Registered from a folder the launcher did not install, so removing it must only unregister it. */
     linked?: boolean
     _installing?: boolean
@@ -125,6 +216,23 @@ declare global {
     path: string
     _deleting?: boolean
     _restoring?: boolean
+  }
+
+  /**
+   * One server an Installation can join straight from the launcher (#460).
+   *
+   * `host` is stored without brackets, whatever the player typed, so there is one form to compare
+   * and one place (`joinTargetUrl`) that puts the brackets back for an IPv6 literal. `lastLaunched`
+   * is -1 until the launcher has spawned the game with this bookmark's connect argument, and says
+   * exactly that and no more: the launcher never learns whether the connection itself succeeded.
+   * See src/domain/servers/bookmarks.ts.
+   */
+  type ServerBookmarkType = {
+    id: string
+    name: string
+    host: string
+    port: number
+    lastLaunched: number
   }
 
   type InstallationType = {
@@ -146,6 +254,12 @@ declare global {
     envVars: string
     /** Optional Linux command that receives the game command as its arguments. */
     launchWrapper?: string
+    /**
+     * Servers saved for this Installation, absent rather than empty when there are none: the field
+     * is additive, so an older build drops it and re-saves without it and both directions still
+     * read clean. Same trick `launchWrapper` uses, and the reason this needed no schema bump.
+     */
+    servers?: ServerBookmarkType[]
     _modsCount?: number
     _playing?: boolean
     _backuping?: boolean
@@ -191,6 +305,12 @@ declare global {
     authors?: string[]
     contributors?: string[]
     type?: string
+    /**
+     * Mod ids this Mod declares it needs, each mapped to the lowest version that satisfies it, as
+     * the archive's own modinfo.json wrote them. Bounded and NUL checked by parseModInfo in the
+     * main process, where the file is read. `"*"` and `""` both mean any version.
+     */
+    dependencies?: Record<string, string>
     _image?: string
     _mod?: DownloadableModType
     _updatableTo?: string
@@ -204,6 +324,22 @@ declare global {
    * (a link whose target is gone, a read error): its empty lists say nothing about what it holds.
    */
   type InstalledModsScan = { mods: InstalledModType[]; errors: ErrorInstalledModType[]; unreadable?: true }
+
+  /**
+   * One server's downloaded Mods. `server` is the folder's name, which is whatever the server calls
+   * itself: untrusted text, escaped and truncated on screen, never logged and never joined into a
+   * path by the renderer. `path` is the folder the host built and the only thing a removal echoes
+   * back. `unreadable` counts the archives that would not read; none of them is named, because
+   * nothing here acts on one archive. `unlistable` is the server's folder itself refusing to open,
+   * which leaves the other two saying nothing about what it holds.
+   */
+  type ServerModGroupType = { server: string; path: string; mods: InstalledModType[]; unreadable: number; truncated?: true; unlistable?: true }
+
+  /**
+   * GET_SERVER_MODS' answer. `truncated` means there is more under ModsByServer than came back, a
+   * cap having bitten. `unreadable` is the folder itself failing, the way InstalledModsScan uses it.
+   */
+  type ServerModsScan = { groups: ServerModGroupType[]; truncated?: true; unreadable?: true }
 
   type DownloadableModOnListType = {
     modid: number
@@ -320,6 +456,15 @@ declare global {
     name: string
     gameVersion: string
     mods: ModpackModEntryType[]
+    /**
+     * The servers the exporting player chose to hand over, absent from every pack that carries
+     * none and from every pack written before #460, so no reader may require it. Optional is
+     * load-bearing here for the same reason it is on `ModpackModEntryType.name`.
+     *
+     * Written only when the exporter ticked the box: the default is off, because a modpack is a
+     * file people pass around and a default that discloses an address is the wrong default.
+     */
+    servers?: ServerBookmarkType[]
   }
 
   type ModChangeSummaryEntry = {
@@ -363,6 +508,18 @@ declare global {
    * `ok: false` means the game never ran at all.
    */
   type GameExecutionResult = { ok: true; exitCode: number | null } | { ok: false; reason: GameExecutionFailureReason }
+
+  /** The session report as the domain builds it. Declared by reference so the shape has one home (src/domain/gameLogs/report.ts). */
+  type SessionReportType = import("@domain/gameLogs/report").SessionReport
+
+  /**
+   * GET_GAME_LOG_REPORT's answer.
+   *
+   * `no-logs` is the ordinary case for an Installation nobody has played yet, and the page says so
+   * in place. `refused` means the path was not an Installation the config names, `unreadable` that
+   * the files are there but could not be read.
+   */
+  type GameLogReportResult = { ok: true; report: SessionReportType } | { ok: false; reason: "no-logs" | "refused" | "unreadable" }
 
   /**
    * Why RUN_INSTALLER never finished, narrowed to what the handler can
@@ -480,6 +637,32 @@ declare global {
   type ModProfilesSaveResult = { ok: true } | { ok: false; reason: "newer-format" | "unreadable" | "invalid" | "refused" }
 
   /**
+   * One reading of the game process while it ran: milliseconds since the session started, resident
+   * memory in bytes, and the CPU share since the previous reading where the host can answer it
+   * (Linux today, see src/ipc/adapters/processSampler.ts).
+   */
+  type PlaySample = { t: number; rssBytes: number; cpuPercent?: number }
+
+  /**
+   * One recorded play session (#461). `partial` means the launcher lost track of the process part
+   * way through, which is what a launch wrapper that forks looks like from here: the series stops
+   * but the game did not.
+   */
+  type PlaySession = { id: string; startedAt: number; endedAt: number; intervalMs: number; partial: boolean; samples: PlaySample[] }
+
+  /**
+   * The sessions file for one Installation, under the launcher's own user data folder. Newest
+   * session first. See src/domain/sessions/sampling.ts.
+   */
+  type PlaySessionsDocument = { format: 1; sessions: PlaySession[] }
+
+  /**
+   * GET_PLAY_SESSIONS' verdict. `newer-format` and `unreadable` name a file this build must leave
+   * alone; `refused` is an installation id the path policy would not build a file name from.
+   */
+  type PlaySessionsReadResult = { ok: true; sessions: PlaySession[] } | { ok: false; reason: "newer-format" | "unreadable" | "refused" }
+
+  /**
    * ENSURE_BACKGROUND's verdict for one catalog scene.
    *
    * Three outcomes, not two, because the two callers need different halves of the answer. The
@@ -522,6 +705,104 @@ declare global {
   type FetchReleaseNotesFailureReason = "offline" | "bad-response" | "too-large" | "rate-limited"
 
   type FetchReleaseNotesResult = { ok: true; releases: WhatsNewReleaseInfo[] } | { ok: false; reason: FetchReleaseNotesFailureReason }
+
+  /** The two answers that fetch something. `ModDbVisibilityConsent` in src/domain/moddbVisibility.ts. */
+  type ModDbVisibilityConsentValue = "once" | "always"
+
+  /**
+   * How a COUNT_MODDB_DOWNLOAD call ended: `counted` for a request the counting endpoint answered,
+   * `no-entry` for a listing with no entry named for the running version yet, `unreachable` for a
+   * listing that could not be read or a request that never landed, `not-allowed` for a call that
+   * owed the listing nothing (already counted, already attempted this launch, or an answer that
+   * says no), and `not-saved` for an answer the config refused, where nothing was requested
+   * either. See src/ipc/handlers/netHandlers.ts.
+   */
+  type ModDbCountReason = "counted" | "no-entry" | "unreachable" | "not-allowed" | "not-saved"
+
+  /** The outcome, plus the stored state the main process wrote, for the renderer to mirror. */
+  type ModDbCountResult = { reason: ModDbCountReason; visibility: ConfigType["moddbVisibility"] }
+
+  /**
+   * Optimum's published overlay, trimmed to what the renderer decides with.
+   *
+   * The file list, the per-target donors and the archive hash stay in the main
+   * process: the renderer never verifies anything, it only asks whether Optimum
+   * can be offered for a version and, when the player says yes, starts the
+   * download at an address the main process built out of checked fields.
+   */
+  type OptimumManifestInfo = {
+    optimumVersion: string
+    /** Game versions this overlay was published for. The gate is entirely the launcher's; the CLI never enforces it. */
+    supportedGameVersions: string[]
+    /** Where the overlay archive is fetched from. */
+    downloadUrl: string
+    /** Folder the archive is downloaded into: the cache root, not the folder it is later staged into. */
+    downloadFolder: string
+    /** Name the archive is saved under, which is also the stem of the folder inside it. */
+    archiveFileName: string
+  }
+
+  /**
+   * Why no Optimum is offered this session.
+   *
+   * - `unreachable`: the manifest never arrived. One token for the lot, because
+   *   the download worker reports one uniform failure by design, so no
+   *   connection, a refused response and an oversized one are genuinely
+   *   indistinguishable here.
+   * - `unreadable`: it arrived and is not a manifest this build can act on.
+   * - `unsupported-system`: it describes an overlay for another platform. Today
+   *   that is every machine that is not linux-x64, since one manifest is
+   *   published per release under one name.
+   */
+  type OptimumManifestFailureReason = "unreachable" | "unreadable" | "unsupported-system"
+
+  type OptimumManifestResult = { ok: true; manifest: OptimumManifestInfo } | { ok: false; reason: OptimumManifestFailureReason }
+
+  /**
+   * Why a patch or a restore did not happen.
+   *
+   * The first ten are Optimum's own wire tokens, the next four are the ones the
+   * runner owns (src/domain/optimum/ndjson.ts documents both sets), and the last
+   * three belong to the launcher's side of the flow:
+   *
+   * - `manifest-unavailable`: no manifest was read this session, so there is
+   *   nothing to verify the overlay against.
+   * - `overlay-unverified`: the archive or one of the files staged out of it did
+   *   not match the hash the manifest published. Nothing was run.
+   * - `backup-missing`: the folder carries no `.optimum/vanilla/` to restore the
+   *   assemblies from.
+   * - `restore-failed`: the copies back were refused by the file system.
+   *
+   * Nothing here is ever text the CLI wrote: its `message` and `detail` fields
+   * carry absolute paths and are dropped where its output is read.
+   */
+  type OptimumPatchFailureReason =
+    | "bad-input"
+    | "unsupported-version"
+    | "patch-conflict"
+    | "decompile-failed"
+    | "assemble-failed"
+    | "verification-failed"
+    | "output-exists"
+    | "source-unavailable"
+    | "cancelled"
+    | "engine-internal"
+    | "no-result"
+    | "timed-out"
+    | "runtime-missing"
+    | "output-unverified"
+    | "manifest-unavailable"
+    | "overlay-unverified"
+    | "backup-missing"
+    | "restore-failed"
+
+  /**
+   * `rolledBack` says the folder was put back to its vanilla assemblies out of
+   * the patch's own backup after the run failed. It is the difference between a
+   * build that is simply unpatched and one holding two overlay versions at
+   * once, and it is what the sentence the player reads is chosen on.
+   */
+  type OptimumPatchResult = { ok: true } | { ok: false; reason: OptimumPatchFailureReason; rolledBack?: boolean }
 
   declare module "*.png" {
     const value: string

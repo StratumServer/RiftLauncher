@@ -11,6 +11,11 @@ export function fetchInstalledMods(path: string): Promise<InstalledModsScan> {
   return window.api.modsManager.getInstalledMods(path)
 }
 
+/** Reads the Mods the game downloaded per server. The host names the folder; this names the Installation. */
+export function fetchServerMods(installationPath: string): Promise<ServerModsScan> {
+  return window.api.modsManager.getServerMods(installationPath)
+}
+
 export function setModEnabled(path: string, enabled: boolean): Promise<SetModEnabledResult> {
   return window.api.modsManager.setModEnabled(path, enabled)
 }

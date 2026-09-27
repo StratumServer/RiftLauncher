@@ -10,10 +10,16 @@ import type { InstalledModSnapshot, ModpackImportEntryReport, ModpackModDetail }
  * name is clamped rather than passed through verbatim, so one mod with an oversized modinfo.json
  * name can never fail the whole export.
  */
-export function toModpackManifest(installation: InstallationType, installedMods: readonly InstalledModType[]): ModpackManifestType {
+export function toModpackManifest(installation: InstallationType, installedMods: readonly InstalledModType[], includeServers = false): ModpackManifestType {
+  // Off unless the exporter ticked the box, and the launch stamps are dropped on the way out: a
+  // pack is a file that gets passed around, and when somebody last played is nobody else's
+  // business even when they meant to share the address itself.
+  const servers = includeServers ? (installation.servers ?? []).map((server) => ({ ...server, lastLaunched: -1 })) : []
+
   return {
     name: installation.name,
     gameVersion: installation.version,
+    ...(servers.length > 0 ? { servers } : {}),
     mods: installedMods.map((mod) => ({ modid: mod.modid, version: mod.version, name: clampModpackModName(mod.name) }))
   }
 }

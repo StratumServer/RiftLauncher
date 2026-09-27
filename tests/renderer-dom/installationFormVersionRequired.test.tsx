@@ -30,8 +30,8 @@ describe("AddInstallation version picker", () => {
 
     // The same border and fill FormInputText paints on a `user-invalid` input.
     const classes = versionNotice().className
-    expect(classes).toContain("border-red-800")
-    expect(classes).toContain("bg-red-800/20")
+    expect(classes).toContain("border-red-500")
+    expect(classes).toContain("bg-red-500/20")
   })
 
   it("shows no such block once a game version is installed", async () => {

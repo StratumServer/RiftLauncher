@@ -98,3 +98,45 @@ describe("useMakeInstallationBackup failure notification", () => {
     expect(result.current.notifications.history.map((notification) => notification.body)).not.toContain(GENERIC_WRITE_FAILURE)
   })
 })
+
+/**
+ * Issue #507, reported on Discord. An archive removed from the Backups folder
+ * outside the launcher leaves its record behind, and the host refuses to delete
+ * a path it cannot find (assertManagedDeletionPath in ipc/pathPolicy.ts). Once
+ * the records reach the Installation's limit the prune has to remove one, so
+ * every backup was refused with a sentence about making room, which reads as a
+ * limit the player has to raise.
+ */
+describe("useMakeInstallationBackup with an archive missing from the Backups folder", () => {
+  const PRUNE_FAILED = "No backup made: an old backup file could not be deleted to make room for the new one. Check that it is not open in another program, then try again."
+  const MISSING_ARCHIVE = "/backups/a/backup-6.tar.gz"
+
+  function anInstallationAtItsLimit(): InstallationType {
+    return {
+      ...anInstallation(),
+      backupsLimit: 6,
+      // Newest first, the order the config keeps them in.
+      backups: Array.from({ length: 6 }, (_, index) => ({ id: `backup-${index + 1}`, date: 1_700_000_000_000 - index, path: `/backups/a/backup-${index + 1}.tar.gz` }))
+    }
+  }
+
+  it("makes the backup and drops the record whose archive is gone", async () => {
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ backupsFolder: "/backups", installations: [anInstallationAtItsLimit()] })) },
+      pathsManager: {
+        checkPathExists: vi.fn(async (path: string) => path !== MISSING_ARCHIVE),
+        deletePath: vi.fn(async (path: string) => path !== MISSING_ARCHIVE),
+        compressOnPath: vi.fn(async () => true)
+      }
+    })
+
+    const { result } = renderHook(() => ({ makeBackup: useMakeInstallationBackup(), installations: useInstallations(), notifications: useNotificationsContext() }), { wrapper })
+    await waitFor(() => expect(result.current.installations).toHaveLength(1))
+
+    const outcome = await result.current.makeBackup("install-a")
+
+    expect(outcome).toEqual({ ok: true })
+    expect(result.current.notifications.history.map((notification) => notification.body)).not.toContain(PRUNE_FAILED)
+    await waitFor(() => expect(result.current.installations[0]?.backups.map((backup) => backup.id)).not.toContain("backup-6"))
+  })
+})

@@ -16,6 +16,8 @@
  * the picker; unlike the full-size scene, it is rendered directly and never cached by the app.
  */
 
+import { isRecord } from "./records"
+
 /** The scene shipped inside the app. Selected when nothing else is, and the offline answer. */
 export const DEFAULT_BACKGROUND_ID = "default"
 
@@ -111,10 +113,6 @@ export function normalizeBackgroundId(value: unknown): string {
 /** The name a background is cached under, whatever it was called on the branch. */
 export function backgroundCacheFileName(id: string): string {
   return `${id}.jpg`
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function parseEntry(value: unknown): BackgroundType | null {

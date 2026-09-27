@@ -46,11 +46,19 @@ const LEGACY_ACCOUNT_STORE_VERSION = 1
  *   rebuilds around it the same way `corrupt` does, but its snapshot is kept on
  *   a version-scoped path so it never takes the single slot a genuinely
  *   unrecoverable store needs (#270). `foreignVersion` carries that version.
+ * - `keyring-sealed`: the ciphertext was sealed by a real system keyring
+ *   (Chromium's `v11` prefix), but this process is running the opted-in basic
+ *   backend, which has its own compiled-in key and no way to reach the
+ *   keyring's. Not corruption and not the file's fault, the same way `locked`
+ *   is not: the bytes are intact, they are simply unreachable from this
+ *   backend. Turning the "remember without a system keyring" setting back off
+ *   restores a working keyring backend, which reads them again. A login must
+ *   never rebuild the store around itself over this: see {@link saveAccountSecrets}.
  *
- * Both non-`readable` states hand back an empty map that says nothing about
+ * Every non-`readable` state hands back an empty map that says nothing about
  * what is on disk, so no mutation may treat "not in the map" as "not stored".
  */
-type StoreStatus = "readable" | "locked" | "corrupt" | "foreign-version"
+type StoreStatus = "readable" | "locked" | "corrupt" | "foreign-version" | "keyring-sealed"
 
 /** `undefined` for `cachedRead` means the file has not been read this process. */
 type StoreRead = { accounts: Map<string, AccountSecrets>; status: StoreStatus; foreignVersion?: number }
@@ -133,10 +141,84 @@ function isMissingFileError(error: unknown): boolean {
   return isRecord(error) && error.code === "ENOENT"
 }
 
-function assertSecureStorage(): void {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure account storage is unavailable")
-  if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") throw new Error("A system password store is required for account storage")
+/**
+ * Whether this process was started asking Chromium for the basic password store.
+ *
+ * The command line is the state that matters, not the config value behind it: Chromium reads the
+ * switch while it starts and never looks again, so a config that says yes to a process that was
+ * launched without it is a config describing the next run, not this one. `src/main/index.ts`
+ * appends the switch at startup from the stored setting, and this reads back what actually
+ * happened. Somebody passing `--password-store=basic` on the command line themselves lands here
+ * too, which is the same explicit choice made a different way.
+ */
+function allowsBasicPasswordStore(): boolean {
+  return app.commandLine.getSwitchValue("password-store") === "basic"
 }
+
+/**
+ * Electron 44's basic_text backend starts with `isEncryptionAvailable()` false and
+ * `encryptString`/`decryptString` throwing, until this is called: nothing else in Chromium
+ * flips it on its own. Only worth calling when the player opted into the basic store on Linux,
+ * the same condition `main/index.ts` reads before appending `--password-store=basic`; calling it
+ * unconditionally would make every keyring-less Linux launch fall back to the compiled-in key
+ * this store exists to refuse. Idempotent and run at most once per process: Electron's own docs
+ * do not say a second call is safe, and one flip for the life of the process is all this needs.
+ */
+let hasEnabledBasicStorePlainTextEncryption = false
+function ensureBasicStorePlainTextEncryption(): void {
+  if (hasEnabledBasicStorePlainTextEncryption) return
+  hasEnabledBasicStorePlainTextEncryption = true
+  if (process.platform === "linux" && allowsBasicPasswordStore()) safeStorage.setUsePlainTextEncryption(true)
+}
+
+/**
+ * Chromium's marker for ciphertext sealed with a key it got from a real OS keyring (`libsecret` or
+ * KWallet on Linux), confirmed against this project's Electron 44.1.1: the opted-in basic backend's
+ * own plain-text encryption always produces a `v10` blob instead (see `ensureBasicStorePlainTextEncryption`),
+ * so a `v11` blob can only have been written while a real keyring was in use.
+ */
+const KEYRING_SEALED_CIPHERTEXT_PREFIX = "v11"
+
+function isKeyringSealedCiphertext(ciphertext: Buffer): boolean {
+  return ciphertext.subarray(0, KEYRING_SEALED_CIPHERTEXT_PREFIX.length).toString("latin1") === KEYRING_SEALED_CIPHERTEXT_PREFIX
+}
+
+function assertSecureStorage(): void {
+  ensureBasicStorePlainTextEncryption()
+
+  // `basic_text` still encrypts, with a key compiled into the binary, so anything running as this
+  // user can read what it seals. Refused unless the player asked for it: see
+  // src/domain/account/sessionStorage.ts for what they are agreeing to. Checked before the
+  // general availability test below so a keyring-less, not-opted-in Linux session is refused for
+  // this reason specifically, rather than for the availability test simply failing first.
+  if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text" && !allowsBasicPasswordStore())
+    throw new Error("A system password store is required for account storage")
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure account storage is unavailable")
+}
+
+/** The same rule as {@link assertSecureStorage}, as a question rather than a demand. */
+function isSecureStorageAvailable(): boolean {
+  try {
+    assertSecureStorage()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Sessions this process is holding and will never write down.
+ *
+ * A machine with no keyring used to fail the login outright, with credentials
+ * the service had already accepted: the player could not play at all, over a
+ * missing wallet (#481). Holding the secrets here instead lets the login
+ * finish and the game launch, for as long as the launcher stays open, and
+ * quitting is what drops them: this Map lives and dies with the process, and
+ * nothing here ever reaches {@link writeAccounts}. That is the whole security
+ * property, and it is enforced by where the entries live rather than by a
+ * flag some later caller has to remember to check.
+ */
+const memorySecrets = new Map<string, AccountSecrets>()
 
 async function readStore(): Promise<StoreRead> {
   if (cachedRead !== undefined) return cachedRead
@@ -162,7 +244,21 @@ async function readStore(): Promise<StoreRead> {
     }
     if (stored.version !== ACCOUNT_STORE_VERSION || typeof stored.ciphertext !== "string") throw new Error("Invalid account store")
 
-    const decrypted = safeStorage.decryptString(Buffer.from(stored.ciphertext, "base64"))
+    const ciphertext = Buffer.from(stored.ciphertext, "base64")
+    let decrypted: string
+    try {
+      decrypted = safeStorage.decryptString(ciphertext)
+    } catch (decryptError) {
+      // A keyring-sealed blob the opted-in basic backend cannot open is not corruption (see the
+      // `keyring-sealed` status doc above): only claim that for it when the switch that put this
+      // process on the basic backend in the first place is actually the one active, so a real
+      // decrypt failure on a genuinely keyring-backed run still falls through to `corrupt` below.
+      if (allowsBasicPasswordStore() && isKeyringSealedCiphertext(ciphertext)) {
+        cachedRead = { accounts: new Map(), status: "keyring-sealed" }
+        return cachedRead
+      }
+      throw decryptError
+    }
     const payload: unknown = JSON.parse(decrypted)
     // An entry parseStoredSecretsById itself drops is not corruption: a file holding one
     // broken entry beside three good ones is still a store worth writing to. A payload with
@@ -238,8 +334,14 @@ async function writeAccounts(accounts: Map<string, AccountSecrets>): Promise<voi
   cachedRead = { accounts, status: "readable" }
 }
 
-/** What {@link saveAccountSecrets} actually did: a plain save, or a save that first had to rebuild an unreadable store around it. */
-export type AccountSaveOutcome = "saved" | "saved-after-rebuild"
+/**
+ * What {@link saveAccountSecrets} actually did: a plain save, a save that first
+ * had to rebuild an unreadable store around it, a session kept in memory
+ * because there is no keyring on this machine to write it to, or a session
+ * kept in memory because the store on disk is sealed by a keyring the opted-in
+ * basic backend cannot reach.
+ */
+export type AccountSaveOutcome = "saved" | "saved-after-rebuild" | "saved-in-memory" | "saved-in-memory-keyring-sealed"
 
 /**
  * Saves or replaces one account's secrets. Logging into an already-saved
@@ -254,10 +356,40 @@ export type AccountSaveOutcome = "saved" | "saved-after-rebuild"
  * "never destroy without a snapshot" rule the rest of this file already
  * follows. The caller is told which happened, so a login that quietly wiped
  * a housemate's session is never reported as an ordinary one.
+ *
+ * When there is no keyring at all, nothing is written and the session is held
+ * in {@link memorySecrets} for this run instead. Refusing the write is still
+ * the rule; what changed is that refusing it no longer throws away credentials
+ * the service already accepted. The caller is told, so the player can be.
+ *
+ * A store the opted-in basic backend cannot open because it is sealed by a
+ * real keyring (`keyring-sealed`, see {@link StoreStatus}) gets the same
+ * in-memory treatment, for the same reason plus one more: unlike `corrupt`,
+ * the bytes here are not dead. Turning the setting back off reads them again,
+ * so rebuilding around this login would not just be destroying a copy this
+ * process could have preserved, it would be destroying the one copy that
+ * still works once the player undoes the setting that caused this.
  */
 export function saveAccountSecrets(accountId: string, secrets: AccountSecrets): Promise<AccountSaveOutcome> {
   return serializeMutation(async () => {
+    // Asked before the read, not after a failed write: writeAccounts asserts the same rule and
+    // would throw, and the point here is to leave whatever is on disk untouched, snapshot
+    // machinery included. A store that is present but locked stays exactly as it is.
+    if (!isSecureStorageAvailable()) {
+      memorySecrets.set(accountId, secrets)
+      return "saved-in-memory"
+    }
+
     const store = await readStore()
+
+    // A keyring-sealed store must never be copied aside or overwritten: the bytes are not dead,
+    // they are only unreachable from the backend this process is running (see the doc above), and
+    // there is nothing here for preserveUnreadableStore to protect them from in the first place.
+    if (store.status === "keyring-sealed") {
+      memorySecrets.set(accountId, secrets)
+      return "saved-in-memory-keyring-sealed"
+    }
+
     const accounts = new Map(store.accounts)
     accounts.set(accountId, secrets)
 
@@ -275,9 +407,16 @@ export function saveAccountSecrets(accountId: string, secrets: AccountSecrets): 
   })
 }
 
-/** Reads one account's secrets, or null when nothing is stored for it. */
+/**
+ * Reads one account's secrets, or null when nothing is stored for it.
+ *
+ * A session held for this run only answers first, and is the only thing that
+ * can: the store it would otherwise come from is the one that could not be
+ * opened. Every reader goes through here, so a login with no keyring behind it
+ * is a usable account everywhere the stored kind is, EXECUTE_GAME included.
+ */
 export async function getAccountSecrets(accountId: string): Promise<AccountSecrets | null> {
-  return (await readAccounts()).get(accountId) ?? null
+  return memorySecrets.get(accountId) ?? (await readAccounts()).get(accountId) ?? null
 }
 
 /**
@@ -296,12 +435,18 @@ export async function getAccountSecrets(accountId: string): Promise<AccountSecre
  * nothing names any more. Refusing keeps the account and surfaces the store
  * problem instead. This never rebuilds the file: only `saveAccountSecrets`,
  * running for a login the player actually asked for, does that.
+ *
+ * A session held in memory is dropped first and answers `true` on its own: it
+ * was never on disk, so there is nothing an unreadable store could still be
+ * hiding for it, and the player removing an account must not be refused over a
+ * file that has nothing to do with theirs.
  */
 export function removeAccountSecrets(accountId: string): Promise<boolean> {
   return serializeMutation(async () => {
+    const heldInMemory = memorySecrets.delete(accountId)
     const store = await readStore()
     const accounts = new Map(store.accounts)
-    if (!accounts.delete(accountId)) return store.status === "readable"
+    if (!accounts.delete(accountId)) return heldInMemory || store.status === "readable"
 
     try {
       if (accounts.size === 0) {

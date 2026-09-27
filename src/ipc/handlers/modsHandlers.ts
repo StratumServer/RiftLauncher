@@ -11,9 +11,13 @@ import { requestBoundedBuffer } from "@src/ipc/network"
 import { isJpegBytes, isPngBytes } from "@domain/backgrounds"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { renameModArchiveTo, scanInstalledMods } from "@domain/mods/scanInstalled"
+import { MODS_BY_SERVER_FOLDER_NAME, scanServerMods } from "@domain/mods/serverMods"
 import type { ScannedMod } from "@domain/mods/scanInstalled"
 import { MAX_MODPACK_MOD_NAME_LENGTH } from "@domain/mods/importModpack"
 import { emptyModProfilesDocument, MAX_MOD_PROFILES_FILE_BYTES, MOD_PROFILES_FILE_NAME, normalizeModProfilesDocument } from "@domain/mods/profiles"
+import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
+
+const LOG_PREFIX = "[back] [mods] [ipc/handlers/modsHandlers.ts]"
 
 const MAX_MODPACK_ENTRIES = 2_000
 
@@ -48,7 +52,7 @@ async function cacheModImage(urlValue: unknown): Promise<string | undefined> {
     if (!isPngBytes(bytes) && !isJpegBytes(bytes)) throw new TypeError("Downloaded ModDB image is not a PNG or JPEG")
     return (await images.store(key, bytes)) ?? staleName
   } catch (err) {
-    logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [CACHE_MOD_IMAGE] Could not cache ModDB image: ${getErrorMessage(err)}`)
+    logMessage("debug", `${LOG_PREFIX} [CACHE_MOD_IMAGE] Could not cache ModDB image: ${getErrorMessage(err)}`)
     return staleName
   }
 }
@@ -56,9 +60,16 @@ async function cacheModImage(urlValue: unknown): Promise<string | undefined> {
 function parseModpackManifest(value: unknown): ModpackManifestType {
   if (!isRecord(value) || !Array.isArray(value.mods) || value.mods.length > MAX_MODPACK_ENTRIES) throw new TypeError("Invalid modpack file structure")
 
+  // The same validator the Add dialog and the config normalizer run, which is the whole point:
+  // one set of rules, not two that drift. Tolerant rather than strict, unlike the mod entries
+  // above: a stranger's pack with one unreadable server row still imports, minus that row. The
+  // field is dropped entirely when nothing survives, so an older pack round trips unchanged.
+  const servers = normalizeServerBookmarks(value.servers)
+
   return {
     name: assertString(value.name, "modpack name", 256),
     gameVersion: assertString(value.gameVersion, "modpack game version", 128),
+    ...(servers.length > 0 ? { servers } : {}),
     mods: value.mods.map((entry) => {
       if (!isRecord(entry)) throw new TypeError("Invalid modpack entry")
       const parsed = { modid: assertString(entry.modid, "mod id", 256), version: assertString(entry.version, "mod version", 128) }
@@ -91,32 +102,71 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, async (event, path:
   // policy as before.
   path = await assertManagedPath(path, "mods path", { allowMissing: true, allowSymlinks: true })
   try {
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Looking for mods at [PATH].`)
+    logMessage("info", `${LOG_PREFIX} [GET_INSTALLED_MODS] Looking for mods at [PATH].`)
 
     if (!(await fse.pathExists(path))) {
       // pathExists follows a link, so a linked Mods folder whose disk is not mounted lands here too.
       // That folder is not empty, it is out of reach, and a caller that records the folder must know.
       if (await fse.lstat(path).catch(() => false)) {
-        logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] That path is a link to nothing. Its mods can't be read.`)
+        logMessage("info", `${LOG_PREFIX} [GET_INSTALLED_MODS] That path is a link to nothing. Its mods can't be read.`)
         return { mods: [], errors: [], unreadable: true }
       }
-      logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] That path does not exists. 0 mods detected.`)
+      logMessage("info", `${LOG_PREFIX} [GET_INSTALLED_MODS] That path does not exists. 0 mods detected.`)
       return { mods: [], errors: [] }
     }
 
     const scan = await scanInstalledMods(createScanInstalledModsPorts(), { folder: path })
 
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Found ${scan.mods.length} mods and ${scan.errors.length} mods with errors.`)
-    if (scan.errors.length > 0)
-      logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Found ${scan.errors.length} mods with errors: ${scan.errors.map((archive) => archive.problem).join(", ")}`)
+    logMessage("info", `${LOG_PREFIX} [GET_INSTALLED_MODS] Found ${scan.mods.length} mods and ${scan.errors.length} mods with errors.`)
+    if (scan.errors.length > 0) logMessage("debug", `${LOG_PREFIX} [GET_INSTALLED_MODS] Found ${scan.errors.length} mods with errors: ${scan.errors.map((archive) => archive.problem).join(", ")}`)
 
     void pruneModIconCache()
 
     return { mods: scan.mods.map(toWireMod), errors: scan.errors.map((archive) => ({ zipname: archive.zipname, path: archive.path })) }
   } catch (err) {
-    logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods.`)
-    logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_INSTALLED_MODS] Error getting installed mods: ${err}`)
+    logMessage("error", `${LOG_PREFIX} [GET_INSTALLED_MODS] Error getting installed mods.`)
+    logMessage("debug", `${LOG_PREFIX} [GET_INSTALLED_MODS] Error getting installed mods: ${err}`)
     return { mods: [], errors: [], unreadable: true }
+  }
+})
+
+/**
+ * Reads the Mods Vintage Story downloaded to play on a server, grouped by the server that sent them.
+ *
+ * Read only, and deliberately narrower than GET_INSTALLED_MODS: the renderer names the Installation
+ * and never the folder, so the one subfolder this can ever reach is the game's own `ModsByServer`.
+ * Symlinks are allowed the same way the Mods folder allows them (#237), because a linked data folder
+ * is a setup the launcher already lists happily and this only ever opens the .zip files inside.
+ *
+ * No server name reaches the log. A private server's folder is named after its address, which can be
+ * somebody's home, so what is logged is counts and nothing else.
+ */
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS, async (event, installationPath: string): Promise<ServerModsScan> => {
+  assertTrustedIpcSender(event)
+  const installation = await assertConfiguredInstallationPath(installationPath)
+
+  try {
+    const folder = await assertManagedPath(join(installation, MODS_BY_SERVER_FOLDER_NAME), "server mods path", { allowMissing: true, allowSymlinks: true })
+
+    if (!(await fse.pathExists(folder))) {
+      logMessage("info", `${LOG_PREFIX} [GET_SERVER_MODS] This installation has no server mods folder.`)
+      return { groups: [] }
+    }
+
+    const scan = await scanServerMods(createScanInstalledModsPorts(), { folder })
+    const scanned = scan.groups.reduce((total, group) => total + group.mods.length, 0)
+
+    logMessage("info", `${LOG_PREFIX} [GET_SERVER_MODS] Found ${scan.groups.length} server folders and ${scanned} mods.`)
+
+    const groups = scan.groups.map((group) => {
+      const wire = { server: group.server, path: group.path, mods: group.mods.map(toWireMod), unreadable: group.unreadable, ...(group.truncated ? { truncated: true as const } : {}) }
+      return group.unlistable ? { ...wire, unlistable: true as const } : wire
+    })
+    return scan.truncated ? { groups, truncated: true } : { groups }
+  } catch (err) {
+    logMessage("error", `${LOG_PREFIX} [GET_SERVER_MODS] Error getting server mods.`)
+    logMessage("debug", `${LOG_PREFIX} [GET_SERVER_MODS] ${getErrorMessage(err)}`)
+    return { groups: [], unreadable: true }
   }
 })
 
@@ -149,7 +199,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, async (event, pathValu
     const rename = renameModArchiveTo(assertSafeFileName(basename(safePath), "mod archive name"), wanted)
 
     if (!rename.ok) {
-      logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] Nothing to rename: ${rename.reason}.`)
+      logMessage("debug", `${LOG_PREFIX} [SET_MOD_ENABLED] Nothing to rename: ${rename.reason}.`)
       return rename.reason === "already-in-state" ? { ok: false, reason: "already-in-state" } : { ok: false, reason: "refused" }
     }
 
@@ -159,19 +209,19 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, async (event, pathValu
     await assertManagedPath(target, "mod archive path", { allowMissing: true, allowSymlinks: true })
 
     if (await fse.pathExists(target)) {
-      logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] The other name is already taken, leaving both archives alone.`)
+      logMessage("info", `${LOG_PREFIX} [SET_MOD_ENABLED] The other name is already taken, leaving both archives alone.`)
       return { ok: false, reason: "name-taken" }
     }
 
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] Renaming a mod archive to turn it ${wanted ? "on" : "off"}.`)
+    logMessage("info", `${LOG_PREFIX} [SET_MOD_ENABLED] Renaming a mod archive to turn it ${wanted ? "on" : "off"}.`)
     // move rather than rename: it refuses an existing destination on every platform, so the check
     // above losing a race cannot end with one archive written over the other.
     await fse.move(safePath, target)
 
     return { ok: true, path: target }
   } catch (err) {
-    logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] Error renaming a mod archive.`)
-    logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SET_MOD_ENABLED] ${getErrorMessage(err)}`)
+    logMessage("error", `${LOG_PREFIX} [SET_MOD_ENABLED] Error renaming a mod archive.`)
+    logMessage("debug", `${LOG_PREFIX} [SET_MOD_ENABLED] ${getErrorMessage(err)}`)
     return { ok: false, reason: "refused" }
   }
 })
@@ -180,7 +230,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
   assertTrustedIpcSender(event)
   try {
     const safeManifest = parseModpackManifest(manifest)
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Exporting a modpack with ${safeManifest.mods.length} mods.`)
+    logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Exporting a modpack with ${safeManifest.mods.length} mods and ${safeManifest.servers?.length ?? 0} servers.`)
 
     const result = await dialog.showSaveDialog({
       title: "Export Modpack",
@@ -189,7 +239,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
     })
 
     if (result.canceled || !result.filePath) {
-      logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Export cancelled.`)
+      logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Export cancelled.`)
       return { success: false }
     }
 
@@ -197,11 +247,11 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
     const safeOutputPath = await assertManagedPath(result.filePath, "modpack path", { allowMissing: true })
     await writeJsonAtomic(safeOutputPath, safeManifest, { spaces: 2 })
 
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Modpack exported to [PATH].`)
+    logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Modpack exported to [PATH].`)
     return { success: true, path: result.filePath }
   } catch (err) {
-    logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Error exporting modpack.`)
-    logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [EXPORT_MODPACK] Error exporting modpack: ${err}`)
+    logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Error exporting modpack.`)
+    logMessage("debug", `${LOG_PREFIX} [EXPORT_MODPACK] Error exporting modpack: ${err}`)
     return { success: false }
   }
 })
@@ -209,7 +259,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest:
 ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }> => {
   assertTrustedIpcSender(event)
   try {
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Opening file dialog for modpack import.`)
+    logMessage("info", `${LOG_PREFIX} [IMPORT_MODPACK] Opening file dialog for modpack import.`)
 
     const result = await dialog.showOpenDialog({
       title: "Import Modpack",
@@ -218,13 +268,13 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<
     })
 
     if (result.canceled || result.filePaths.length === 0) {
-      logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Import cancelled.`)
+      logMessage("info", `${LOG_PREFIX} [IMPORT_MODPACK] Import cancelled.`)
       return { success: false }
     }
 
     const filePath = result.filePaths[0]
     if (!filePath) {
-      logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Import cancelled.`)
+      logMessage("info", `${LOG_PREFIX} [IMPORT_MODPACK] Import cancelled.`)
       return { success: false }
     }
     registerUserSelectedPaths([filePath])
@@ -235,11 +285,11 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<
 
     const manifest = parseModpackManifest(parsedManifest)
 
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] A modpack loaded with ${manifest.mods.length} mods.`)
+    logMessage("info", `${LOG_PREFIX} [IMPORT_MODPACK] A modpack loaded with ${manifest.mods.length} mods and ${manifest.servers?.length ?? 0} servers.`)
     return { success: true, manifest }
   } catch (err) {
-    logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Error importing modpack.`)
-    logMessage("debug", `[back] [mods] [ipc/handlers/modsHandlers.ts] [IMPORT_MODPACK] Error importing modpack: ${err}`)
+    logMessage("error", `${LOG_PREFIX} [IMPORT_MODPACK] Error importing modpack.`)
+    logMessage("debug", `${LOG_PREFIX} [IMPORT_MODPACK] Error importing modpack: ${err}`)
     return { success: false, error: "Error reading modpack file." }
   }
 })
@@ -296,11 +346,11 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_MOD_PROFILES, async (event, install
   const location = await locateModProfiles(installationPath)
   const read = location.ok ? await readModProfilesFile(location.path) : location
   if (!read.ok) {
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_MOD_PROFILES] Refused: ${read.reason}.`)
+    logMessage("info", `${LOG_PREFIX} [GET_MOD_PROFILES] Refused: ${read.reason}.`)
     return read
   }
 
-  logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [GET_MOD_PROFILES] Read ${read.document.profiles.length} profiles.`)
+  logMessage("info", `${LOG_PREFIX} [GET_MOD_PROFILES] Read ${read.document.profiles.length} profiles.`)
   return read
 })
 
@@ -308,7 +358,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SAVE_MOD_PROFILES, async (event, instal
   assertTrustedIpcSender(event)
 
   function refuse(reason: "newer-format" | "unreadable" | "invalid" | "refused"): ModProfilesSaveResult {
-    logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SAVE_MOD_PROFILES] Refused: ${reason}.`)
+    logMessage("info", `${LOG_PREFIX} [SAVE_MOD_PROFILES] Refused: ${reason}.`)
     return { ok: false, reason }
   }
 
@@ -332,10 +382,10 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SAVE_MOD_PROFILES, async (event, instal
   try {
     await writeJsonAtomic(location.path, cleaned.document, { spaces: 2 })
   } catch {
-    logMessage("error", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SAVE_MOD_PROFILES] Could not write the profiles file.`)
+    logMessage("error", `${LOG_PREFIX} [SAVE_MOD_PROFILES] Could not write the profiles file.`)
     return { ok: false, reason: "refused" }
   }
 
-  logMessage("info", `[back] [mods] [ipc/handlers/modsHandlers.ts] [SAVE_MOD_PROFILES] Saved ${cleaned.document.profiles.length} profiles.`)
+  logMessage("info", `${LOG_PREFIX} [SAVE_MOD_PROFILES] Saved ${cleaned.document.profiles.length} profiles.`)
   return { ok: true }
 })

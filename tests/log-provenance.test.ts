@@ -18,9 +18,6 @@ import { describe, it } from "vitest"
  *   absolute path out of that text centrally.
  * - reasons, counts, ids, versions (`${result.reason}`, `${scan.mods.length}`, `${modid}`,
  *   `${version.version}`): none of these name a player's files.
- * - the `[id]` / `[fileName]` bracket tags TaskManagerContext prefixes every line with: they
- *   are a pre-existing logging convention, out of scope for this pass, and excluded below by
- *   only looking at the message text that follows a message's leading run of `[...]` tags.
  *
  * What it checks per interpolation `${expr}`: every identifier inside `expr` is split on
  * camelCase boundaries, and only the *last* word of each identifier is compared against the
@@ -53,9 +50,34 @@ const BRACE_GROUP = "(?:[^{}]|\\{[^{}]*\\})*"
 // scan stops at the first backtick it meets, even one that belongs to a nested template.
 const LOG_CALL = new RegExp(String.raw`\b(?:logMessage|logMods|window\.api\.utils\.logMessage)\(\s*["'][a-zA-Z]+["']\s*,\s*\x60((?:\$\{${BRACE_GROUP}\}|[^\x60\\]|\\.)*)\x60`, "g")
 const EXPRESSION = new RegExp(String.raw`\$\{(${BRACE_GROUP})\}`, "g")
-const LEADING_TAGS = /^(?:\[[^\]]*\]\s*)+/
 const IDENTIFIER = /[A-Za-z_$][A-Za-z0-9_$]*/g
-const RISKY_WORDS = new Set(["path", "Path", "name", "Name", "folder", "Folder", "file", "File", "entry", "dir", "Dir", "zipname"])
+// host/address/url/server joined the list with #460: a server address is somebody's machine, often
+// somebody's home, and redactSensitiveText strips absolute paths rather than host names, so there
+// is nothing downstream to catch one. The plural `servers` is deliberately NOT here: a count of
+// them (`${servers.length}`) names nobody, and the match below is on the whole trailing word.
+const RISKY_WORDS = new Set([
+  "path",
+  "Path",
+  "name",
+  "Name",
+  "folder",
+  "Folder",
+  "file",
+  "File",
+  "entry",
+  "dir",
+  "Dir",
+  "zipname",
+  "host",
+  "Host",
+  "address",
+  "Address",
+  "url",
+  "Url",
+  "URL",
+  "server",
+  "Server"
+])
 
 function lastCamelWord(identifier: string): string {
   const words = identifier
@@ -85,10 +107,9 @@ function findViolations(): Violation[] {
     let call: RegExpExecArray | null
     while ((call = LOG_CALL.exec(source))) {
       const message = call[1] ?? ""
-      const prose = message.replace(LEADING_TAGS, "")
       EXPRESSION.lastIndex = 0
       let match: RegExpExecArray | null
-      while ((match = EXPRESSION.exec(prose))) {
+      while ((match = EXPRESSION.exec(message))) {
         const expression = match[1] ?? ""
         if (exposesProvenance(expression)) violations.push({ file, message, expression })
       }
@@ -99,7 +120,7 @@ function findViolations(): Violation[] {
 }
 
 describe("log line provenance (#419)", () => {
-  it("never interpolates a path, a folder, a file name, or a Mod/label name into a log line", () => {
+  it("never interpolates a path, a folder, a file name, a Mod/label name, or a server address into a log line", () => {
     const violations = findViolations()
     const report = violations.map((v) => `${v.file}: \${${v.expression}} in "${v.message}"`).join("\n")
     assert.equal(violations.length, 0, `Found log lines that interpolate a risky identifier:\n${report}`)

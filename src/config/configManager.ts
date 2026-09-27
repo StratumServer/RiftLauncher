@@ -5,13 +5,17 @@ import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
-import { isRecord } from "@src/ipc/validation"
+import { isRecord, toWireBuildVariant } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeAccentColorId } from "@domain/accentColors"
 import { normalizeBackgroundId } from "@domain/backgrounds"
-import { normalizeModDbVisibilityAnswer } from "@domain/moddbVisibility"
+import { normalizeModDbVisibility } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
+import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
+import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
+
+const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
 
 const defaultConfig: ConfigType = {
   ...DEFAULT_CONFIG_BASE,
@@ -46,16 +50,6 @@ let configWriteQueue: Promise<void> = Promise.resolve()
 let pendingConfig: ConfigType | null = null
 let scheduledConfigWrite: Promise<void> | null = null
 
-async function writeConfig(normalizedConfig: ConfigType): Promise<void> {
-  const cleanedConfig = JSON.parse(
-    JSON.stringify(normalizedConfig, (key, value) => {
-      return key.startsWith("_") ? undefined : value
-    })
-  )
-
-  await writeJsonAtomic(configPath, cleanedConfig)
-}
-
 function scheduleConfigWrite(): Promise<void> {
   // Compared against null rather than tested for truthiness: the question is whether a write is already scheduled, not whether a promise is truthy (it always is).
   if (scheduledConfigWrite !== null) return scheduledConfigWrite
@@ -66,7 +60,10 @@ function scheduleConfigWrite(): Promise<void> {
     while (pendingConfig) {
       const nextConfig = pendingConfig
       pendingConfig = null
-      await writeConfig(nextConfig)
+      // Written as it stands: the only thing that ever reaches here is a normalizeConfig result,
+      // and that builds a fixed literal field by field, so the renderer's session-only markers
+      // (`_notifiedModUpdatesInstallations`, `_backgroundRevision`) are already gone.
+      await writeJsonAtomic(configPath, nextConfig)
     }
   })
 
@@ -89,8 +86,8 @@ export async function saveConfig(config: ConfigType): Promise<boolean> {
     configReady = true
     return true
   } catch (err) {
-    logMessage("error", "[back] [config] [config/configManager.ts] [saveConfig] Error saving configuration.")
-    logMessage("debug", `[back] [config] [config/configManager.ts] [saveConfig] ${err}`)
+    logMessage("error", `${LOG_PREFIX} [saveConfig] Error saving configuration.`)
+    logMessage("debug", `${LOG_PREFIX} [saveConfig] ${err}`)
     return false
   }
 }
@@ -107,7 +104,7 @@ export async function getConfig(): Promise<ConfigType> {
     const hadLegacyAccountSecrets = await migrateLegacyAccount(config)
     const migration = migrateConfigDocument(config)
     logConfigMigration(migration)
-    const ensuredConfig = normalizeConfig(migration.doc)
+    const ensuredConfig = normalizeConfig(migration.doc, { atStartup: true })
     const reKeyedAccountStore = await migrateAccountStore(config, ensuredConfig)
     // Every path that overwrites config.json gets the same backup, not just the schema pipeline:
     // a re-key or a legacy-secrets migration writes just as real a document as a schema bump does.
@@ -117,8 +114,8 @@ export async function getConfig(): Promise<ConfigType> {
     if (mustSave) await saveConfig(ensuredConfig)
     return ensuredConfig
   } catch (err) {
-    logMessage("error", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at [PATH]. Using default config.`)
-    logMessage("debug", `[back] [config] [config/configManager.ts] [getConfig] Error getting config at [PATH]: ${err}`)
+    logMessage("error", `${LOG_PREFIX} [getConfig] Error getting config at [PATH]. Using default config.`)
+    logMessage("debug", `${LOG_PREFIX} [getConfig] Error getting config at [PATH]: ${err}`)
     await saveConfig(defaultConfig)
     return defaultConfig
   }
@@ -129,22 +126,22 @@ export async function ensureConfig(): Promise<boolean> {
   configPath = join(app.getPath("userData"), "config.json")
   try {
     if (!(await fse.pathExists(configPath))) {
-      logMessage("info", `[back] [config] [config/configManager.ts] [ensureConfig] Config not found. Creating default config.`)
+      logMessage("info", `${LOG_PREFIX} [ensureConfig] Config not found. Creating default config.`)
       return await saveConfig(defaultConfig)
     }
     configReady = true
-    logMessage("info", `[back] [config] [config/configManager.ts] [ensureConfig] Config found at [PATH].`)
+    logMessage("info", `${LOG_PREFIX} [ensureConfig] Config found at [PATH].`)
     return true
   } catch (err) {
-    logMessage("error", `[back] [config] [config/configManager.ts] [ensureConfig] Error ensuring config.`)
-    logMessage("error", `[back] [config] [config/configManager.ts] [ensureConfig] Error ensuring config at [PATH]: ${err}`)
+    logMessage("error", `${LOG_PREFIX} [ensureConfig] Error ensuring config.`)
+    logMessage("error", `${LOG_PREFIX} [ensureConfig] Error ensuring config at [PATH]: ${err}`)
     return false
   }
 }
 
 /** Says what the schema pipeline did with the stored document, and at what level it deserves saying. */
 function logConfigMigration(migration: ReturnType<typeof migrateConfigDocument>): void {
-  const prefix = "[back] [config] [config/configManager.ts] [getConfig]"
+  const prefix = `${LOG_PREFIX} [getConfig]`
   const steps = migration.applied.map((step) => `${step.fromSchema}->${step.toSchema}`).join(", ")
 
   switch (migration.outcome) {
@@ -188,10 +185,10 @@ async function migrateLegacyAccount(config: unknown): Promise<boolean> {
     try {
       await saveAccountSecrets(legacyAccount.publicAccount.playerUid, legacyAccount.secrets)
     } catch {
-      logMessage("warn", "[back] [config] [configManager.ts] Legacy account credentials were not migrated to secure storage.")
+      logMessage("warn", `${LOG_PREFIX} Legacy account credentials were not migrated to secure storage.`)
     }
   } else {
-    logMessage("warn", "[back] [config] [configManager.ts] Legacy account credentials were invalid and were discarded.")
+    logMessage("warn", `${LOG_PREFIX} Legacy account credentials were invalid and were discarded.`)
   }
 
   return true
@@ -234,7 +231,7 @@ async function migrateAccountStore(legacyDocument: unknown, config: ConfigType):
   try {
     return await adoptLegacySingleAccountSecrets(uid)
   } catch {
-    logMessage("warn", "[back] [config] [configManager.ts] The stored account session was not carried into the multi-account store. Retrying on the next launch.")
+    logMessage("warn", `${LOG_PREFIX} The stored account session was not carried into the multi-account store. Retrying on the next launch.`)
     return false
   }
 }
@@ -298,8 +295,8 @@ async function reconcileConfigBackup(migrationRan: boolean): Promise<void> {
     stripLegacyAccountSecrets(document)
     await writeJsonAtomic(backupPath, document, { mode: 0o600, spaces: 2 })
   } catch (err) {
-    logMessage("warn", "[back] [config] [configManager.ts] Could not reconcile the pre-migration config backup.")
-    logMessage("debug", `[back] [config] [configManager.ts] ${err}`)
+    logMessage("warn", `${LOG_PREFIX} Could not reconcile the pre-migration config backup.`)
+    logMessage("debug", `${LOG_PREFIX} ${err}`)
   }
 }
 
@@ -355,6 +352,12 @@ function normalizeInstallation(value: unknown): InstallationType | null {
   const launchWrapper = asString(value.launchWrapper, "", 4_096).trim()
   if (launchWrapper) installation.launchWrapper = launchWrapper
 
+  // Written only when there is something to write, the same way launchWrapper is: that is what
+  // lets this field be additive with no schema bump. An older build drops what it does not know
+  // and re-saves without it, and both directions read clean either way.
+  const servers = normalizeServerBookmarks(value.servers)
+  if (servers.length > 0) installation.servers = servers
+
   return installation.id && installation.path ? installation : null
 }
 
@@ -366,6 +369,13 @@ function normalizeGameVersion(value: unknown): GameVersionType | null {
     label: asString(value.label, "", 256) || asString(value.version, "", 128),
     path: value.path
   }
+  // Same shape as `linked` below: only set when there is one, so a plain build keeps
+  // the record it has always had and no config written before forks were installable
+  // needs migrating. It goes through the same check that lets a variant cross to the
+  // renderer, so a hand-edited config cannot put a name or a version here that the
+  // rest of the launcher would not have accepted off a probe.
+  const variant = toWireBuildVariant(value.variant)
+  if (variant) gameVersion.variant = variant
   // Only set when true so a plain version, or an unset one, doesn't grow a `linked: false`
   // it never had. This flag is what keeps a player's own install off the delete path, so
   // dropping it silently on the next load would turn "remove from list" back into deletion.
@@ -387,12 +397,22 @@ function normalizeIcon(value: unknown): IconType | null {
 /** Ceiling on saved accounts, the same shape as the 1,000-entry caps above: generous for the real use case, not a promise to scale past it. */
 const MAX_STORED_ACCOUNTS = 50
 
-/** Reads the accounts list, dropping anything unreadable and deduplicating by `playerUid`. */
-function normalizeAccounts(value: unknown): AccountPublicType[] {
+/**
+ * Reads the accounts list, dropping anything unreadable and deduplicating by `playerUid`.
+ *
+ * `atStartup` is what acts on the session-only mark (#481). An account carrying it was logged in
+ * on a machine with no keyring: its secrets lived in the previous process and went with it, so on
+ * a later launch it is a name the player cannot launch under and cannot be told why. Dropping it
+ * here means the launcher opens asking for a login, which is the truth. The mark survives every
+ * other normalization, `saveConfig`'s included, because the running process still has those
+ * secrets and `EXECUTE_GAME` still looks the account up in this list.
+ */
+function normalizeAccounts(value: unknown, atStartup: boolean): AccountPublicType[] {
   const seen = new Set<string>()
   return (Array.isArray(value) ? value : [])
     .map(toPublicAccount)
     .filter((account): account is AccountPublicType => account !== null)
+    .filter((account) => !atStartup || account.sessionOnly !== true)
     .filter((account) => {
       if (seen.has(account.playerUid)) return false
       seen.add(account.playerUid)
@@ -401,7 +421,21 @@ function normalizeAccounts(value: unknown): AccountPublicType[] {
     .slice(0, MAX_STORED_ACCOUNTS)
 }
 
-export function normalizeConfig(config: unknown): ConfigType {
+function normalizeModSuggestionsConsent(value: unknown): boolean | null {
+  return value === true || value === false ? value : null
+}
+
+function normalizeDismissedModSuggestions(value: unknown): number[] {
+  const ids = Array.isArray(value) ? value.filter((listingId): listingId is number => typeof listingId === "number" && Number.isSafeInteger(listingId) && listingId > 0) : []
+  return [...new Set(ids)].slice(0, MAX_DISMISSED_MOD_SUGGESTIONS)
+}
+
+/**
+ * `atStartup` is set on the one read that opens a stored document this process has not written:
+ * `getConfig`'s file read. Everything else (every `saveConfig`, every re-normalization of the
+ * cache) is this process looking at its own config, where a session-only account is still live.
+ */
+export function normalizeConfig(config: unknown, { atStartup = false }: { atStartup?: boolean } = {}): ConfigType {
   const repairedConfig = repairGameVersionIdentity(config)
   const rawConfig = (isRecord(repairedConfig) ? repairedConfig : {}) as Partial<ConfigType>
   const rawWindow = (isRecord(rawConfig.window) ? rawConfig.window : {}) as Partial<WindowType>
@@ -420,7 +454,7 @@ export function normalizeConfig(config: unknown): ConfigType {
     .filter((icon): icon is IconType => icon !== null)
     .slice(0, 1_000)
 
-  const accounts = normalizeAccounts(rawConfig.accounts)
+  const accounts = normalizeAccounts(rawConfig.accounts, atStartup)
 
   const fixedConfig: ConfigType = {
     schemaVersion: clampConfigSchema(rawConfig.schemaVersion),
@@ -457,12 +491,22 @@ export function normalizeConfig(config: unknown): ConfigType {
     // Anything that does not name a listed preset, missing included, becomes the shipped default:
     // a config written before this field existed paints exactly as it always has.
     accentColor: normalizeAccentColorId(rawConfig.accentColor),
-    // Anything unreadable becomes "not asked yet", which costs one question and never invents a
-    // consent. The prompt is the only thing that ever writes a real answer here.
-    moddbVisibilityAnswer: normalizeModDbVisibilityAnswer(rawConfig.moddbVisibilityAnswer),
+    // Anything unreadable becomes "nobody has answered", which costs one question and never invents
+    // a consent. The prompt and the settings row are the only things that write a real answer here.
+    // `moddbVisibilityAnswer` is the #219 field this replaced, read under its old name so an
+    // install that answered back then migrates rather than being asked as though it never had.
+    moddbVisibility: normalizeModDbVisibility(rawConfig.moddbVisibility ?? (rawConfig as Record<string, unknown>)["moddbVisibilityAnswer"], app.getVersion()),
+    modSuggestionsConsent: normalizeModSuggestionsConsent(rawConfig.modSuggestionsConsent),
+    dismissedModSuggestions: normalizeDismissedModSuggestions(rawConfig.dismissedModSuggestions),
     // Null for anything that is not an explicit yes or no, which is what every config written
     // before the toggle existed says, and leaves the running version deciding as it always did.
     receiveBetaUpdates: normalizeReceiveBetaUpdates(rawConfig.receiveBetaUpdates),
+    // A config written before this setting existed reads as the shipped default, which is on.
+    measurePlaySessions: asBoolean(rawConfig.measurePlaySessions, defaultConfig.measurePlaySessions),
+    // Anything that is not an explicit `true`, missing included, is off. A hand-edited config that
+    // says "yes" in any other spelling does not count: this one weakens where a session is kept,
+    // so it takes a real answer from the toggle and nothing else.
+    allowBasicSessionStore: asBoolean(rawConfig.allowBasicSessionStore, defaultConfig.allowBasicSessionStore),
     // Empty for anything unreadable, a config written before this field existed included: the
     // "what's new" dialog reads that the same way it reads a fresh install, showing only the
     // running version's own notes rather than guessing at a history it was never told.

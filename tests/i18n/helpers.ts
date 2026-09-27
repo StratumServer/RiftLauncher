@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { dirname, extname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -11,20 +11,26 @@ export const LOCALES_DIR = join(RENDERER_SRC_DIR, "locales")
 const SOURCE_EXTENSIONS = [".ts", ".tsx"]
 
 /**
+ * JSON files under LOCALES_DIR that are not locales. drafted.json maps a locale
+ * to the keys a seeding pass machine-drafted (issue #496), read by
+ * scripts/i18n-status.js; holding it to a locale's contract would be nonsense.
+ */
+const NON_LOCALE_FILES = ["drafted.json"]
+
+/** The locale files the launcher ships, sorted, e.g. ["be-BY.json", "de-DE.json", ...]. */
+export function listLocaleFiles(): string[] {
+  return readdirSync(LOCALES_DIR)
+    .filter((file) => file.endsWith(".json") && !NON_LOCALE_FILES.includes(file))
+    .sort()
+}
+
+/**
  * Recursively lists every file under `dir` whose extension is in `extensions`.
  */
 export function listSourceFiles(dir: string, extensions: string[] = SOURCE_EXTENSIONS): string[] {
-  const files: string[] = []
-
-  for (const entry of readdirSync(dir)) {
-    const fullPath = join(dir, entry)
-    const stats = statSync(fullPath)
-
-    if (stats.isDirectory()) files.push(...listSourceFiles(fullPath, extensions))
-    else if (extensions.includes(extname(fullPath))) files.push(fullPath)
-  }
-
-  return files
+  return readdirSync(dir, { recursive: true, encoding: "utf8" })
+    .filter((entry) => extensions.includes(extname(entry)))
+    .map((entry) => join(dir, entry))
 }
 
 /**
@@ -49,6 +55,202 @@ export function flattenTranslationObject(value: unknown, prefix = ""): Record<st
   return out
 }
 
+/** i18next v4 cardinal plural suffixes (issue #496: no bare key keeps one of these as a sibling). */
+export const PLURAL_SUFFIXES = ["_zero", "_one", "_two", "_few", "_many", "_other"]
+
+/**
+ * Resolves a t() key against a flattened translation object the way i18next
+ * resolves it at runtime: if `key` itself is not a property, but at least one
+ * of its cardinal-suffixed siblings (key_one, key_other, ...) is, that
+ * sibling's value stands in for it. A plural family never keeps both a bare
+ * and a suffixed key (see no-bare-plural-keys.test.ts), so any one present
+ * suffix answers the only question this is asked: whether the key resolves to
+ * anything at all. What the resolved sibling happens to contain is NOT a
+ * statement about the family -- one variant can carry no {{placeholder}} while
+ * the rest do -- so the checks that care about how a plural family is called
+ * go through collectPluralFamilies and the count contract instead.
+ * Returns undefined only when neither the bare key nor any suffix exists.
+ */
+export function resolveTranslationValue(flattened: Record<string, unknown>, key: string): unknown {
+  if (key in flattened) return flattened[key]
+  const suffix = PLURAL_SUFFIXES.find((candidate) => `${key}${candidate}` in flattened)
+  return suffix ? flattened[`${key}${suffix}`] : undefined
+}
+
+/**
+ * Whole numbers wide enough to hit every cardinal category a language
+ * distinguishes for an integer: 2 and 5 separate few from many in the Slavic
+ * locales, and 1000000 is the only thing that selects `many` in French,
+ * Spanish, Italian and Portuguese.
+ */
+export const INTEGER_PLURAL_PROBES = [0, 1, 2, 3, 5, 11, 21, 22, 25, 100, 101, 1_000_000]
+
+/**
+ * The cardinal plural categories `locale` selects between for a whole number,
+ * e.g. ["one", "other"] for en-US, ["few", "many", "one"] for ru-RU.
+ *
+ * This is deliberately narrower than `Intl.PluralRules.resolvedOptions().pluralCategories`,
+ * which always reports Russian, Ukrainian, Polish and Belarusian as having an
+ * `other` category too -- one only a fractional count such as 1.5 ever
+ * selects for them. Every t() call site in this app passes an integer (an
+ * array .length or another whole counter), and Hosted Weblate's writer keeps
+ * only the categories an integer reaches, so probing integers is what both
+ * of them actually need this function to answer.
+ */
+export function requiredPluralCategories(locale: string): string[] {
+  const rules = new Intl.PluralRules(locale)
+  return [...new Set(INTEGER_PLURAL_PROBES.map((count) => rules.select(count)))].sort()
+}
+
+/**
+ * Groups a flattened translation object's plural keys by family: the map goes
+ * from the bare family name (e.g. "features.mods.modsCount") to the set of
+ * categories it defines (e.g. {"zero", "one", "two", "few", "many", "other"}).
+ * A key with no cardinal suffix belongs to no family and is left out.
+ */
+export function collectPluralFamilies(flattened: Record<string, unknown>): Map<string, Set<string>> {
+  const families = new Map<string, Set<string>>()
+
+  for (const key of Object.keys(flattened)) {
+    const suffix = PLURAL_SUFFIXES.find((candidate) => key.endsWith(candidate))
+    if (!suffix) continue
+
+    const family = key.slice(0, -suffix.length)
+    const categories = families.get(family) ?? new Set<string>()
+    categories.add(suffix.slice(1))
+    families.set(family, categories)
+  }
+
+  return families
+}
+
+/**
+ * Recursively walks a parsed locale object and reports every bare key that
+ * sits next to at least one of its own suffixed siblings, as dotted paths
+ * relative to `prefix` (issue #496: i18next never reads that bare key once
+ * any suffixed form exists, so it is dead weight Weblate reads as a duplicate
+ * string carrying the same text as one of the variants).
+ */
+export function findBarePluralKeys(value: unknown, prefix = ""): string[] {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return []
+
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj)
+  const offenses: string[] = []
+
+  for (const key of keys) {
+    if (typeof obj[key] === "string" && PLURAL_SUFFIXES.some((suffix) => keys.includes(key + suffix))) {
+      offenses.push(prefix ? `${prefix}.${key}` : key)
+    }
+  }
+
+  for (const key of keys) {
+    offenses.push(...findBarePluralKeys(obj[key], prefix ? `${prefix}.${key}` : key))
+  }
+
+  return offenses
+}
+
+/**
+ * Parses `text` as JSON well enough to notice a key repeated inside the same
+ * object, as dotted paths, e.g. "features.mods.serverModsTitle". JSON.parse
+ * cannot report this itself: it silently keeps only the last value, which is
+ * exactly how issue #496's 36 duplicated keys sat unnoticed in three locale
+ * files. Locale files hold only objects, arrays, strings and other JSON
+ * scalars, so this does not need to be a general-purpose parser, just enough
+ * of one to walk every object literal once and watch its own keys for
+ * repeats. It assumes well-formed JSON (a separate test already fails first
+ * on anything that does not parse) and does not decode string escapes,
+ * because two differently escaped spellings of the same key are not a
+ * mistake this scanner is asked to catch.
+ */
+export function findDuplicateJsonKeys(text: string): string[] {
+  let i = 0
+  const duplicates: string[] = []
+
+  function skipWs(): void {
+    while (i < text.length && /\s/.test(text[i]!)) i++
+  }
+
+  function parseString(): string {
+    let raw = ""
+    i++ // opening quote
+    while (text[i] !== '"') {
+      if (text[i] === "\\") {
+        raw += text[i]! + text[i + 1]!
+        i += 2
+      } else {
+        raw += text[i]
+        i++
+      }
+    }
+    i++ // closing quote
+    return raw
+  }
+
+  function parseValue(path: string): void {
+    skipWs()
+    if (text[i] === "{") return parseObject(path)
+    if (text[i] === "[") return parseArray(path)
+    if (text[i] === '"') {
+      parseString()
+      return
+    }
+    // A number, true, false or null: skip to the next structural character.
+    while (i < text.length && !",}] \n\r\t".includes(text[i]!)) i++
+  }
+
+  function parseArray(path: string): void {
+    i++ // "["
+    skipWs()
+    if (text[i] === ("]" as string)) {
+      i++
+      return
+    }
+    for (;;) {
+      parseValue(path)
+      skipWs()
+      if (text[i] === ",") {
+        i++
+        continue
+      }
+      break
+    }
+    i++ // "]"
+  }
+
+  function parseObject(path: string): void {
+    i++ // "{"
+    skipWs()
+    const seen = new Set<string>()
+    if (text[i] === "}") {
+      i++
+      return
+    }
+    for (;;) {
+      skipWs()
+      const key = parseString()
+      const keyPath = path ? `${path}.${key}` : key
+      if (seen.has(key)) duplicates.push(keyPath)
+      seen.add(key)
+      skipWs()
+      i++ // ":"
+      parseValue(keyPath)
+      skipWs()
+      if (text[i] === ",") {
+        i++
+        continue
+      }
+      break
+    }
+    skipWs()
+    i++ // "}"
+  }
+
+  parseValue("")
+  return duplicates
+}
+
 export type TranslationCall = {
   /** Absolute path to the source file the call was found in. */
   file: string
@@ -56,6 +258,32 @@ export type TranslationCall = {
   key: string
   /** Whether the call passed a second argument, e.g. t("key", { count }). */
   hasInterpolationArg: boolean
+  /** Whether that second argument names `count`, which is the only thing i18next selects a plural form by. */
+  hasCountArg: boolean
+}
+
+/**
+ * Returns the source text of everything the t( call passes after its key,
+ * starting at the comma, by counting brackets until the one that closes t(.
+ *
+ * ponytail: bracket counting ignores string literals, so an argument holding an
+ * unbalanced bracket inside a string (t("k", { name: ")" })) would cut the slice
+ * short. No call site in this repo does that, and the only thing read back out
+ * of the slice is whether it names `count`; switch to a real parse if that stops
+ * being true.
+ */
+function readCallArguments(content: string, start: number): string {
+  let depth = 1
+  let cursor = start
+
+  while (cursor < content.length && depth > 0) {
+    const char = content[cursor]!
+    if (char === "(" || char === "{" || char === "[") depth++
+    else if (char === ")" || char === "}" || char === "]") depth--
+    cursor++
+  }
+
+  return content.slice(start, cursor)
 }
 
 // Matches t("some.key" possibly followed by more arguments. Only string-literal
@@ -84,7 +312,11 @@ export function collectTranslationCalls(dir: string): TranslationCall[] {
       let cursor = T_CALL_RE.lastIndex
       // `cursor < content.length` guards the indexed access from being out of bounds.
       while (cursor < content.length && /\s/.test(content[cursor]!)) cursor++
-      calls.push({ file, key, hasInterpolationArg: content[cursor] === "," })
+      const hasInterpolationArg = content[cursor] === ","
+      const args = hasInterpolationArg ? readCallArguments(content, cursor) : ""
+      // Matches both `{ count: total }` and the `{ count }` shorthand, and no
+      // longer name that merely ends in count (totalCount: ...).
+      calls.push({ file, key, hasInterpolationArg, hasCountArg: /(^|[^\w$])count\s*[:,}]/.test(args) })
     }
   }
 

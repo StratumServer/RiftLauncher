@@ -17,8 +17,10 @@
  * strange as it likes and the launcher still starts.
  */
 
+import { isRecord } from "../records"
+
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 5
+export const CURRENT_CONFIG_SCHEMA = 6
 
 /**
  * First schema expressed as an integer.
@@ -108,10 +110,6 @@ export interface ConfigMigrationOptions {
   readonly migrations?: readonly ConfigMigration[]
   /** Schema to reach. Defaults to {@link CURRENT_CONFIG_SCHEMA}. */
   readonly targetSchema?: number
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 /**
@@ -339,8 +337,31 @@ export const addGameVersionIdentity: ConfigMigration = {
   }
 }
 
+/** Adds the independent ModDB suggestions answer and bounded dismissal history. */
+export const addModSuggestionsPreferences: ConfigMigration = {
+  fromSchema: 5,
+  toSchema: 6,
+  migrate(doc: unknown): unknown {
+    if (!isRecord(doc)) return doc
+
+    return {
+      ...doc,
+      modSuggestionsConsent: doc.modSuggestionsConsent === true || doc.modSuggestionsConsent === false ? doc.modSuggestionsConsent : null,
+      dismissedModSuggestions: Array.isArray(doc.dismissedModSuggestions)
+        ? doc.dismissedModSuggestions.filter((listingId): listingId is number => typeof listingId === "number" && Number.isSafeInteger(listingId) && listingId > 0)
+        : []
+    }
+  }
+}
+
 /** Every migration the launcher knows, lowest schema first. */
-export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [floatMarkerToIntegerSchema, stampLinkedOnExternalVersions, singleAccountToAccountList, addGameVersionIdentity]
+export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
+  floatMarkerToIntegerSchema,
+  stampLinkedOnExternalVersions,
+  singleAccountToAccountList,
+  addGameVersionIdentity,
+  addModSuggestionsPreferences
+]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {
   return new Map(migrations.map((migration) => [migration.fromSchema, migration]))

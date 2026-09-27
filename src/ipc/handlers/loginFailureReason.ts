@@ -19,11 +19,10 @@
  * into it. `code` and `name` are both public and writable, so a value that
  * merely looks like a Node enum member proves nothing about where it came
  * from: they are read as lookup keys into the tables below and never copied
- * into the answer. An HTTP status is parsed out of the message as a number
- * and then used the same way, because the message is written from the
- * response and a status the caller can influence is no safer than a field the
- * thrower can set. A key that is not in a table maps to that table's
- * catch-all token.
+ * into the answer. The HTTP status a refused response carries is used the same
+ * way, because it comes from the response and a status the caller can
+ * influence is no safer than a field the thrower can set. A key that is not in
+ * a table maps to that table's catch-all token.
  *
  * The other half of the answer is where the error came from. The handler's
  * catch wraps two very different things: the network round trip and the
@@ -63,37 +62,39 @@ export class AccountStorageFailure extends Error {
  * to `unclassified-Error` and this table needs the new wording; nothing
  * breaks and no secret escapes in the meantime.
  */
-const NETWORK_MESSAGES = new Map<string, string>([
+export const NETWORK_MESSAGES = new Map<string, string>([
   ["Network request timed out", "timeout"],
   ["Network response is too large", "response-too-large"],
-  ["Network response was aborted", "response-aborted"]
+  ["Network response was aborted", "response-aborted"],
+  // The system proxy login now goes through (issue #481): Chromium's own proxy resolution
+  // carries no credentials for this transport to answer a 407 with, and a SOCKS (or otherwise
+  // unroutable) proxy answer has no client here. Both are thrown by
+  // `requestBoundedTextViaNode` before or during the CONNECT tunnel, never after, so neither can
+  // be confused with a refusal from the auth service itself.
+  ["Login proxy requires authentication", "proxy-auth-required"],
+  ["Login proxy is not supported", "proxy-unsupported"]
 ])
 
 /** The literals `assertSecureStorage` throws, reached through {@link AccountStorageFailure}. */
-const STORAGE_MESSAGES = new Map<string, string>([
+export const STORAGE_MESSAGES = new Map<string, string>([
   ["Secure account storage is unavailable", "secure-storage-unavailable"],
   ["A system password store is required for account storage", "no-system-password-store"]
 ])
-
-/** `Network request failed with status 503`. The digits are read as a number, never carried over as text. */
-const STATUS_MESSAGE = /^Network request failed with status (\d{3}|unknown)$/
 
 /**
  * The HTTP statuses the auth service actually answers with, each mapped to
  * the token that names it.
  *
- * Not `http-status-${status}`: `network.ts` writes that message from the
- * response's own status line, and `assertString` accepts `503` as a password,
- * so a login with that password and an outage on the other end used to put
- * the password in the log. The status is parsed into a number here and then
- * treated exactly like `code`, as a lookup key whose value never reaches the
- * answer. A status outside the table degrades to its range, which still
- * separates "the service rejected us" from "the service is broken", and
- * anything that is not a 4xx or 5xx (a redirect this transport does not
- * follow, or the literal `unknown` when the response had no status line at
- * all) is `http-other`.
+ * Not `http-status-${status}`: the status comes from the response's own status
+ * line, and `assertString` accepts `503` as a password, so a login with that
+ * password and an outage on the other end used to put the password in the log.
+ * The status is treated exactly like `code`, as a lookup key whose value never
+ * reaches the answer. A status outside the table degrades to its range, which
+ * still separates "the service rejected us" from "the service is broken", and
+ * anything that is not a 4xx or 5xx (a redirect this transport does not follow,
+ * or no status line at all) is `http-other`.
  */
-const HTTP_STATUSES = new Map<number, string>([
+export const HTTP_STATUSES = new Map<number, string>([
   [400, "http-bad-request"],
   [401, "http-unauthorized"],
   [403, "http-forbidden"],
@@ -123,7 +124,7 @@ const HTTP_STATUSES = new Map<number, string>([
  * accept, most often a corporate middlebox or a clock that is badly wrong,
  * arrives on the same `error` event as the rest.
  */
-const NETWORK_CODES = new Map<string, string>([
+export const NETWORK_CODES = new Map<string, string>([
   ["ENOTFOUND", "network-ENOTFOUND"],
   ["EAI_AGAIN", "network-EAI_AGAIN"],
   ["ECONNREFUSED", "network-ECONNREFUSED"],
@@ -154,7 +155,7 @@ const NETWORK_CODES = new Map<string, string>([
  * something else", and three answers cover it. Same rule as
  * {@link NETWORK_CODES}, the value logged is this table's string.
  */
-const STORAGE_CODES = new Map<string, string>([
+export const STORAGE_CODES = new Map<string, string>([
   ["ENOSPC", "storage-no-space"],
   ["EDQUOT", "storage-no-space"],
   ["EFBIG", "storage-no-space"],
@@ -177,7 +178,7 @@ const STORAGE_CODES = new Map<string, string>([
  * separates a bug in our own parsing (a `TypeError`) from a call the user
  * cancelled (an `AbortError`).
  */
-const ERROR_NAMES = new Map<string, string>([
+export const ERROR_NAMES = new Map<string, string>([
   ["Error", "unclassified-Error"],
   ["TypeError", "unclassified-TypeError"],
   ["RangeError", "unclassified-RangeError"],
@@ -186,15 +187,19 @@ const ERROR_NAMES = new Map<string, string>([
   ["AbortError", "unclassified-AbortError"]
 ])
 
-/** Names an HTTP failure without ever formatting the status back into a string. */
-function httpReason(status: string | undefined): string {
-  const code = Number(status) // `unknown` and a missing group are both NaN, and every comparison below is false for NaN.
-  const named = HTTP_STATUSES.get(code)
+/** Names an HTTP failure without ever formatting the status back into a string. Every comparison is false for NaN, so a response with no status line lands on `http-other`. */
+function httpReason(status: number): string {
+  const named = HTTP_STATUSES.get(status)
   if (named) return named
-  if (code >= 400 && code < 500) return "http-4xx"
-  if (code >= 500 && code < 600) return "http-5xx"
+  if (status >= 400 && status < 500) return "http-4xx"
+  if (status >= 500 && status < 600) return "http-5xx"
 
   return "http-other"
+}
+
+/** The status a refusal carries, as a lookup key only: `network.ts` sets `statusCode` on every non-2xx it throws (`BoundedResponseError`), including when the response had no status line and `Number` reads it as NaN. Structural rather than `instanceof`, so this module stays Electron-free. */
+function statusOf(error: Error): number | undefined {
+  return "statusCode" in error ? Number((error as { statusCode?: unknown }).statusCode) : undefined
 }
 
 /** The `code` an error carries, as a lookup key only: a non-string is no key at all. */
@@ -221,8 +226,8 @@ export function loginFailureReason(error: unknown): string {
   const known = NETWORK_MESSAGES.get(error.message)
   if (known) return known
 
-  const status = STATUS_MESSAGE.exec(error.message)
-  if (status) return httpReason(status[1])
+  const status = statusOf(error)
+  if (status !== undefined) return httpReason(status)
 
   const code = codeOf(error)
   if (code) return NETWORK_CODES.get(code) ?? "network-other"
@@ -231,4 +236,107 @@ export function loginFailureReason(error: unknown): string {
   // still separates a thrown TypeError from anything else, which is the
   // difference a maintainer reading a field report needs first.
   return ERROR_NAMES.get(error.name) ?? "unclassified"
+}
+
+/**
+ * The shapes a rejected login can be told apart as on screen (issue #481).
+ * `unknown` is not shown to the player: it is what keeps the LOGIN handler's
+ * catch throwing its generic failure for a reason this module cannot place,
+ * exactly as it always has.
+ */
+export type LoginFailureFamily = "network-unreachable" | "certificate-error" | "service-error" | "account-restricted" | "no-keyring" | "unknown"
+
+/**
+ * Reasons that mean the request never reached the service, or never came
+ * back: a name that will not resolve, a peer that refused or reset the
+ * connection, or a round trip that ran out of time. This is also where a
+ * proxied network without the proxy configured lands, so the sentence this
+ * family picks is the one that tells a player to check one.
+ *
+ * `proxy-auth-required` and `proxy-unsupported` (issue #481) join it for the
+ * same reason: both mean the login never reached the service either, only
+ * for a proxy-shaped cause this launcher cannot resolve on its own (a proxy
+ * asking for credentials nothing here can supply, or a SOCKS/unrouted answer
+ * with no client for it), and the family's own sentence already names a
+ * proxy as something to check.
+ */
+const NETWORK_UNREACHABLE_REASONS = new Set<string>([
+  "timeout",
+  "response-aborted",
+  "http-request-timeout",
+  "http-gateway-timeout",
+  "network-ENOTFOUND",
+  "network-EAI_AGAIN",
+  "network-ECONNREFUSED",
+  "network-ECONNRESET",
+  "network-ECONNABORTED",
+  "network-EPIPE",
+  "network-ETIMEDOUT",
+  "network-EHOSTUNREACH",
+  "network-ENETUNREACH",
+  "network-ENETDOWN",
+  "network-EPROTO",
+  "network-ERR_SOCKET_CONNECTION_TIMEOUT",
+  "network-ERR_STREAM_PREMATURE_CLOSE",
+  "proxy-auth-required",
+  "proxy-unsupported"
+])
+
+/** The TLS codes {@link NETWORK_CODES} lists: a certificate this machine will not accept. */
+const CERTIFICATE_REASONS = new Set<string>([
+  "network-CERT_HAS_EXPIRED",
+  "network-CERT_NOT_YET_VALID",
+  "network-UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "network-UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "network-SELF_SIGNED_CERT_IN_CHAIN",
+  "network-DEPTH_ZERO_SELF_SIGNED_CERT",
+  "network-ERR_TLS_CERT_ALTNAME_INVALID"
+])
+
+/** The service itself answered, but with a failure that is its own to fix, not the player's. */
+const SERVICE_ERROR_REASONS = new Set<string>(["http-rate-limited", "http-server-error", "http-bad-gateway", "http-unavailable", "http-5xx"])
+
+/** An HTTP-level refusal rather than the ordinary `valid: 0` envelope: the account itself, not the password, is what the service objects to. */
+const ACCOUNT_RESTRICTED_REASONS = new Set<string>(["http-unauthorized", "http-forbidden"])
+
+/**
+ * The two literals `assertSecureStorage` throws, reached here through
+ * {@link AccountStorageFailure}: a platform offering no encryption at all, and
+ * a Linux session where safeStorage would fall back to its basic store.
+ *
+ * They are one family because they are one thing to the player and have one
+ * fix: no keyring is holding this machine's secrets, so nothing can keep a
+ * session between runs until one does. The generic "check your connection"
+ * sentence was the whole of what a Debian KDE player with no wallet was told
+ * while the log named the reason plainly (issue #481).
+ */
+const NO_KEYRING_REASONS = new Set<string>(["secure-storage-unavailable", "no-system-password-store"])
+
+/**
+ * Groups a {@link loginFailureReason} token into the family the renderer
+ * picks a sentence from.
+ *
+ * Deliberately reads the token, not the original error, so it stays exactly
+ * as safe to call from the renderer's side of the IPC boundary as the token
+ * itself: nothing here can carry a value the classifier above did not
+ * already decide was safe to log.
+ *
+ * A `storage-*` token, and anything else this module has no table entry for
+ * (`http-bad-request`, `http-not-found`, `http-4xx`, `http-other`,
+ * `response-too-large`, `network-other`, every `unclassified*` and
+ * `non-error-throw`), is deliberately left off every set above and falls
+ * through to `unknown`: none of them says with any confidence which of the
+ * sentences fits, and guessing wrong would tell a player with a full disk to
+ * check their firewall. The `storage-*` tokens stay out for exactly that
+ * reason while the two keyring messages come in: a disk that is full, or a
+ * folder that refuses a write, is not a missing keyring and must not be sent
+ * to the keyring guide.
+ */
+export function loginFailureFamily(reason: string): LoginFailureFamily {
+  if (NETWORK_UNREACHABLE_REASONS.has(reason)) return "network-unreachable"
+  if (CERTIFICATE_REASONS.has(reason)) return "certificate-error"
+  if (SERVICE_ERROR_REASONS.has(reason)) return "service-error"
+  if (ACCOUNT_RESTRICTED_REASONS.has(reason)) return "account-restricted"
+  if (NO_KEYRING_REASONS.has(reason)) return "no-keyring"
+  return "unknown"
 }

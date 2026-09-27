@@ -15,8 +15,11 @@ import { describe, it } from "vitest"
 
 import { DEFAULT_ACCENT_ID } from "@domain/accentColors"
 import { CUSTOM_BACKGROUND_ID, DEFAULT_BACKGROUND_ID } from "@domain/backgrounds"
-import { DEFAULT_MODDB_VISIBILITY_ANSWER, MODDB_VISIBILITY_ACCEPTED } from "@domain/moddbVisibility"
+import { defaultModDbVisibility, MODDB_VISIBILITY_ALWAYS } from "@domain/moddbVisibility"
 import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
+import { DEFAULT_ALLOW_BASIC_SESSION_STORE } from "@domain/account/sessionStorage"
+import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
+import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
 
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "../../src/renderer/src/features/config/contexts/configReducer"
 
@@ -36,8 +39,12 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     suspendedModUpdates: [],
     background: DEFAULT_BACKGROUND_ID,
     accentColor: DEFAULT_ACCENT_ID,
-    moddbVisibilityAnswer: DEFAULT_MODDB_VISIBILITY_ANSWER,
+    moddbVisibility: defaultModDbVisibility(),
+    modSuggestionsConsent: null,
+    dismissedModSuggestions: [],
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
+    measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
+    allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
     lastSeenChangelogVersion: "",
     customIcons: [],
     ...overrides
@@ -89,7 +96,7 @@ describe("configReducer: initialState", () => {
   })
 
   it("starts with the ModDB listing question unanswered", () => {
-    assert.equal(initialState.moddbVisibilityAnswer, DEFAULT_MODDB_VISIBILITY_ANSWER)
+    assert.deepEqual(initialState.moddbVisibility, defaultModDbVisibility())
   })
 })
 
@@ -98,6 +105,33 @@ describe("configReducer: SET_CONFIG", () => {
     const payload = baseConfig({ schemaVersion: 5 })
     const result = configReducer(initialState, { type: CONFIG_ACTIONS.SET_CONFIG, payload })
     assert.equal(result, payload)
+  })
+})
+
+describe("configReducer: Mod suggestions", () => {
+  it("stores independent consent without touching the ModDB visibility answer", () => {
+    const config = baseConfig()
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT, payload: true })
+
+    assert.equal(result.modSuggestionsConsent, true)
+    assert.deepEqual(result.moddbVisibility, config.moddbVisibility)
+  })
+
+  it("deduplicates dismissed listing ids below the cap", () => {
+    const config = baseConfig({ dismissedModSuggestions: [12, 34] })
+    const duplicate = configReducer(config, { type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION, payload: { listingId: 12 } })
+    assert.deepEqual(duplicate.dismissedModSuggestions, [12, 34])
+    assert.equal(duplicate, config)
+  })
+
+  it("never exceeds the maximum dismissed listing ids cap and never evicts an older dismissal", () => {
+    const config = baseConfig({ dismissedModSuggestions: Array.from({ length: MAX_DISMISSED_MOD_SUGGESTIONS }, (_, index) => index + 1) })
+    const result = configReducer(config, { type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION, payload: { listingId: MAX_DISMISSED_MOD_SUGGESTIONS + 1 } })
+
+    assert.equal(result.dismissedModSuggestions.length, MAX_DISMISSED_MOD_SUGGESTIONS)
+    assert.equal(result.dismissedModSuggestions.includes(1), true)
+    assert.equal(result.dismissedModSuggestions.includes(MAX_DISMISSED_MOD_SUGGESTIONS + 1), false)
+    assert.equal(result, config)
   })
 })
 
@@ -161,11 +195,12 @@ describe("configReducer: scalar setters", () => {
     assert.equal(result.installations, config.installations)
   })
 
-  it("SET_MODDB_VISIBILITY_ANSWER records the answer and touches nothing else", () => {
+  it("SET_MODDB_VISIBILITY records the answer and touches nothing else", () => {
     const config = baseConfig()
-    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY_ANSWER, payload: MODDB_VISIBILITY_ACCEPTED })
+    const answer: ConfigType["moddbVisibility"] = { policy: MODDB_VISIBILITY_ALWAYS, answeredVersion: "1.7.0-beta.10", countedVersions: ["1.7.0-beta.10"] }
+    const result = configReducer(config, { type: CONFIG_ACTIONS.SET_MODDB_VISIBILITY, payload: answer })
 
-    assert.equal(result.moddbVisibilityAnswer, MODDB_VISIBILITY_ACCEPTED)
+    assert.deepEqual(result.moddbVisibility, answer)
     assert.equal(result.background, config.background)
     assert.equal(result.installations, config.installations)
   })
@@ -179,6 +214,17 @@ describe("configReducer: scalar setters", () => {
     const optedOut = configReducer(config, { type: CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES, payload: false })
     assert.equal(optedOut.receiveBetaUpdates, false)
     assert.equal(optedOut.installations, config.installations)
+  })
+
+  it("SET_ALLOW_BASIC_SESSION_STORE stores the answer, and starts from off", () => {
+    const config = baseConfig()
+    assert.equal(config.allowBasicSessionStore, false, "nothing but this action turns it on")
+
+    const optedIn = configReducer(config, { type: CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE, payload: true })
+    assert.equal(optedIn.allowBasicSessionStore, true)
+    assert.equal(optedIn.installations, config.installations)
+
+    assert.equal(configReducer(optedIn, { type: CONFIG_ACTIONS.SET_ALLOW_BASIC_SESSION_STORE, payload: false }).allowBasicSessionStore, false)
   })
 
   it("SET_LAST_SEEN_CHANGELOG_VERSION records the running version and touches nothing else", () => {

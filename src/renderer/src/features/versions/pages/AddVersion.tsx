@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Input } from "@headlessui/react"
 import { FiLoader } from "react-icons/fi"
@@ -8,6 +8,9 @@ import { useSettingsConfig } from "@renderer/features/config/contexts/ConfigCont
 import { useGameVersionCatalog } from "@renderer/features/versions/hooks/useGameVersionCatalog"
 import { useVersionInstallFolder } from "@renderer/features/versions/hooks/useVersionInstallFolder"
 import { useInstallVersion } from "@renderer/features/versions/hooks/useInstallVersion"
+import { useOptimumManifest } from "@renderer/features/versions/hooks/useOptimumManifest"
+import { describeOptimumManifestFailure } from "@renderer/features/versions/adapters/optimum"
+import { supportsGameVersion } from "@domain/optimum/plan"
 
 import {
   FormBody,
@@ -35,14 +38,41 @@ function AddVersion(): JSX.Element {
   const [versionFilters, setVersionFilters] = useState({ stable: true, rc: false, pre: false })
   const { folder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder)
   const installVersion = useInstallVersion()
+  const optimum = useOptimumManifest()
+  const [withOptimum, setWithOptimum] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const buildFieldId = useId()
 
   useEffect(() => {
     setVersion(gameVersions.find((gv) => versionFilters[gv.type]))
   }, [gameVersions, versionFilters])
 
-  const handleInstallVersion = (): Promise<void> => installVersion(version, folder)
+  /**
+   * Whether Optimum can be offered for what is selected right now.
+   *
+   * Two things have to hold: a manifest was read for this machine, and the
+   * overlay it describes was published for the version in the table. The second
+   * is the launcher's alone to enforce, since the patch itself never checks it.
+   */
+  const optimumAvailable = optimum.manifest !== undefined && version !== undefined && supportsGameVersion(optimum.manifest, version.version)
+
+  // A version the overlay does not cover is the one refusal that changes as the
+  // player moves down the table, so the choice falls back rather than sticking.
+  useEffect(() => {
+    if (!optimumAvailable) setWithOptimum(false)
+  }, [optimumAvailable])
+
+  /** The one calm line under a choice that cannot be taken. Empty while it can. */
+  const optimumUnavailableReason = optimumAvailable
+    ? ""
+    : optimum.reason !== undefined
+      ? t(describeOptimumManifestFailure(optimum.reason))
+      : optimum.manifest !== undefined
+        ? t("features.versions.optimumNoBuildForVersion")
+        : ""
+
+  const handleInstallVersion = (): Promise<void> => installVersion(version, folder, withOptimum && optimum.manifest ? optimum.manifest : undefined)
 
   return (
     <ScrollableContainer ref={scrollRef}>
@@ -132,6 +162,42 @@ function AddVersion(): JSX.Element {
                     </TableBody>
                   )}
                 </TableWrapper>
+              </FormBody>
+            </FromGroup>
+
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.versions.labelBuild")} />
+              </FormHead>
+
+              <FormBody>
+                <fieldset className="flex flex-col gap-1 text-sm">
+                  <legend className="sr-only">{t("features.versions.labelBuild")}</legend>
+
+                  <div className="flex items-center gap-2">
+                    <Input type="radio" id={`${buildFieldId}-official`} name={`${buildFieldId}-build`} checked={!withOptimum} onChange={() => setWithOptimum(false)} className="cursor-pointer" />
+                    <label htmlFor={`${buildFieldId}-official`} className="cursor-pointer">
+                      {t("features.versions.buildOfficial")}
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="radio"
+                      id={`${buildFieldId}-optimum`}
+                      name={`${buildFieldId}-build`}
+                      checked={withOptimum}
+                      disabled={!optimumAvailable}
+                      onChange={() => setWithOptimum(true)}
+                      className={optimumAvailable ? "cursor-pointer" : "cursor-not-allowed"}
+                    />
+                    <label htmlFor={`${buildFieldId}-optimum`} className={optimumAvailable ? "cursor-pointer" : "cursor-not-allowed text-zinc-400"}>
+                      {optimum.manifest ? `Optimum ${optimum.manifest.optimumVersion}` : "Optimum"}
+                    </label>
+                  </div>
+
+                  {optimumUnavailableReason && <p className="text-xs text-zinc-400 pl-1">{optimumUnavailableReason}</p>}
+                </fieldset>
               </FormBody>
             </FromGroup>
 

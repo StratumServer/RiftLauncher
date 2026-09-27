@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useWhatsNew } from "@renderer/features/info/hooks/useWhatsNew"
 import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
-import { MODDB_VISIBILITY_UNASKED } from "@domain/moddbVisibility"
+import { moddbLaunchAction } from "@domain/moddbVisibility"
 
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import WhatsNewReleaseSection from "@renderer/components/ui/WhatsNewReleaseSection"
@@ -17,9 +17,9 @@ const RELEASES_PAGE_URL = "https://github.com/StratumServer/RiftLauncher/release
  * releases rather than the auto-updater's own event: a player who updated through a package
  * manager or a manual download never fires that event, and the notes have to reach them too.
  *
- * Mounted beside ModDbVisibilityPrompt, and gated behind that prompt's own answer (schemaVersion
- * check included) for the same reason it is gated behind schemaVersion: a fresh install must never
- * show two full-screen dialogs at once. Closing it, however that happens, marks the running
+ * Mounted beside ModDbVisibilityPrompt, and gated behind that prompt having nothing to ask for the
+ * running version (schemaVersion check included) for the same reason it is gated behind
+ * schemaVersion: a launch must never show two full-screen dialogs at once. Closing it, however that happens, marks the running
  * version seen through the config, the same once-only shape the ModDB prompt's answers already
  * take; "All releases" opens the releases page rather than closing anything, so a player can keep
  * reading after leaving. The notes stay readable afterwards on Info & Help, which lists the latest
@@ -27,12 +27,15 @@ const RELEASES_PAGE_URL = "https://github.com/StratumServer/RiftLauncher/release
  */
 function WhatsNewDialog(): JSX.Element {
   const { t } = useTranslation()
-  const { schemaVersion, moddbVisibilityAnswer } = useSettingsConfig()
-  const { releases, status, previousVersion, markSeen } = useWhatsNew()
+  const { schemaVersion, moddbVisibility } = useSettingsConfig()
+  const { releases, status, previousVersion, runningVersion, markSeen } = useWhatsNew()
   const { openOnBrowser } = useExternalLinks()
   const [dismissed, setDismissed] = useState(false)
 
-  const isOpen = schemaVersion !== 0 && moddbVisibilityAnswer !== MODDB_VISIBILITY_UNASKED && status === "ready" && releases.length > 0 && !dismissed
+  // Waits for the ModDB prompt the same way it always has, now on that prompt's own decision for
+  // the running version rather than on a single lifetime answer: a launch it has a question for is
+  // a launch this dialog stays out of.
+  const isOpen = schemaVersion !== 0 && moddbLaunchAction(moddbVisibility, runningVersion) !== "prompt" && status === "ready" && releases.length > 0 && !dismissed
 
   // Every way out of this dialog marks the version seen: "Got it", Escape, a click on the
   // backdrop. Unlike ModDbVisibilityPrompt, which asks a question and must not read a dismissal

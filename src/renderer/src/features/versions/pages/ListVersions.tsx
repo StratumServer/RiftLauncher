@@ -1,19 +1,37 @@
-import { useRef, useState } from "react"
-import { PiFolderOpenDuotone, PiPlusCircleDuotone, PiTrashDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone, PiWarningDuotone, PiLinkDuotone } from "react-icons/pi"
+import { useId, useRef, useState } from "react"
+import {
+  PiFloppyDiskBackDuotone,
+  PiFolderOpenDuotone,
+  PiPlusCircleDuotone,
+  PiTrashDuotone,
+  PiMagnifyingGlassDuotone,
+  PiPencilSimpleDuotone,
+  PiXCircleDuotone,
+  PiWarningDuotone,
+  PiLinkDuotone,
+  PiArrowCircleUpDuotone,
+  PiArrowUUpLeftDuotone
+} from "react-icons/pi"
 import { useTranslation } from "react-i18next"
 
+import { MAX_GAME_VERSION_LABEL_LENGTH } from "@domain/naming"
+import { isUpdateAvailable, supportsGameVersion } from "@domain/optimum/plan"
 import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
-import { useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useConfigDispatch, useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUninstallGameVersion"
 import { useOpenVersionFolder } from "@renderer/features/versions/hooks/useOpenVersionFolder"
 import { summarizeUsedByInstallations } from "@renderer/features/versions/adapters/uninstall"
+import { useOptimumActions } from "@renderer/features/versions/hooks/useOptimumActions"
+import { useOptimumBackups } from "@renderer/features/versions/hooks/useOptimumBackups"
+import { useOptimumManifest } from "@renderer/features/versions/hooks/useOptimumManifest"
 
 import { ListGroup, ListWrapper, ListItem } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
+import ConfirmDialog from "@renderer/components/ui/ConfirmDialog"
 import { LinkButton, NormalButton } from "@renderer/components/ui/Buttons"
-import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
+import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 import { ThinSeparator } from "@renderer/components/ui/ListSeparators"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
@@ -28,12 +46,20 @@ function ListVersions(): JSX.Element {
   const { addNotification } = useNotificationsContext()
   const gameVersions = useGameVersions()
   const installations = useInstallations()
+  const configDispatch = useConfigDispatch()
   const uninstallVersion = useUninstallGameVersion()
   const openVersionFolder = useOpenVersionFolder()
+  const optimum = useOptimumManifest()
+  const optimumBackups = useOptimumBackups(gameVersions)
+  const { applyOptimum, restoreVanilla } = useOptimumActions()
 
   const [versionToDelete, setVersionToDelete] = useState<GameVersionType | null>(null)
   const [versionInUseWarning, setVersionInUseWarning] = useState<VersionInUseWarning | null>(null)
+  const [versionToRename, setVersionToRename] = useState<GameVersionType | null>(null)
+  const [newLabel, setNewLabel] = useState<string>("")
+  const [versionToRestore, setVersionToRestore] = useState<GameVersionType | null>(null)
 
+  const renameFieldId = useId()
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   function installationsUsing(version: GameVersionType): string[] {
@@ -44,6 +70,56 @@ function ListVersions(): JSX.Element {
   function installationsInUseLabel(names: string[]): string {
     const { shown, remaining } = summarizeUsedByInstallations(names)
     return remaining > 0 ? `${shown.join(", ")} ${t("features.versions.installationsAndMore", { count: remaining })}` : shown.join(", ")
+  }
+
+  /**
+   * Writes the typed name onto the selected build.
+   *
+   * Only the label moves: the version number the compatibility checks read and
+   * the folder the game runs from are both left alone. A name that is empty or
+   * nothing but spaces falls back to the version number, the same rule
+   * registering a build applies, so no row can end up with a blank name.
+   *
+   * Submitted rather than clicked, so the Enter key ends the rename the way it
+   * ends the one in the mod profiles popup.
+   */
+  function RenameVersionHandler(event: React.FormEvent): void {
+    event.preventDefault()
+    if (versionToRename === null) return
+
+    const label = newLabel.trim() || versionToRename.version
+    configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: versionToRename.id, updates: { label } } })
+    setVersionToRename(null)
+    addNotification(t("features.versions.versionRenamed"), "success")
+  }
+
+  /**
+   * What the published overlay is good for on this row, if anything.
+   *
+   * `add` for a plain build the overlay was published for, which is what makes
+   * "you can try again from this page" true after a download that failed partway
+   * through an install. `update` when the row already reads as Optimum and a
+   * newer overlay still covers that game version: both halves matter, since a
+   * newer Optimum that dropped 1.22.7 is not an update for a 1.22.7 build, it is
+   * an overlay for a build nobody has here.
+   */
+  function optimumActionFor(version: GameVersionType): "add" | "update" | undefined {
+    if (!optimum.manifest) return undefined
+    if (!version.variant) return supportsGameVersion(optimum.manifest, version.version) ? "add" : undefined
+    return isUpdateAvailable(version.variant.version, version.version, optimum.manifest) ? "update" : undefined
+  }
+
+  async function ApplyOptimumHandler(version: GameVersionType): Promise<void> {
+    if (!optimum.manifest) return
+    await applyOptimum({ id: version.id, path: version.path, version: version.version }, optimum.manifest)
+  }
+
+  async function RestoreVanillaHandler(): Promise<void> {
+    if (versionToRestore === null) return
+
+    const target = versionToRestore
+    setVersionToRestore(null)
+    await restoreVanilla({ id: target.id, path: target.path, version: target.version })
   }
 
   async function DeleteVersionHandler(): Promise<void> {
@@ -109,71 +185,131 @@ function ListVersions(): JSX.Element {
             {gameVersions
               .slice()
               .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
-              .map((gv) => (
-                <ListItem key={gv.id}>
-                  <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
-                    <div className="w-full flex items-center justify-center text-start font-bold pl-1">
-                      <p className="w-full">{gv.label}</p>
-                    </div>
+              .map((gv) => {
+                const optimumAction = optimumActionFor(gv)
+                // Everything that writes into the folder, or launches out of it,
+                // is refused while the launcher is writing into it itself.
+                const busy = gv._installing === true
 
-                    <ThinSeparator />
+                return (
+                  <ListItem key={gv.id}>
+                    <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
+                      <div className="w-full flex items-center justify-center text-start font-bold pl-1">
+                        <p className="w-full">{gv.label}</p>
+                      </div>
 
-                    <div className="shrink-0 w-fit flex gap-1 items-center text-lg">
-                      {gv.linked && <PiLinkDuotone className="p-1" title={t("features.versions.linkedVersion")} />}
-                      <NormalButton onClick={() => openVersionFolder(gv.path)} title={`${t("generic.openOnFileExplorer")} · ${gv.path}`} variant="ghost" className="p-1">
-                        <PiFolderOpenDuotone />
-                      </NormalButton>
-                      <NormalButton
-                        className="p-1"
-                        title={gv.linked ? t("features.versions.removeFromList") : t("features.versions.deleteVersion")}
-                        variant="ghost"
-                        onClick={async () => {
-                          setVersionToDelete(gv)
-                        }}
-                      >
-                        <PiTrashDuotone />
-                      </NormalButton>
+                      <ThinSeparator />
+
+                      <div className="shrink-0 w-fit flex gap-1 items-center text-lg">
+                        {gv.linked && <PiLinkDuotone className="p-1" title={t("features.versions.linkedVersion")} />}
+                        {optimumAction && (
+                          <NormalButton
+                            className="p-1"
+                            title={t(optimumAction === "add" ? "features.versions.addOptimum" : "features.versions.updateOptimumTo", { version: optimum.manifest?.optimumVersion ?? "" })}
+                            variant="ghost"
+                            disabled={busy}
+                            onClick={() => ApplyOptimumHandler(gv)}
+                          >
+                            <PiArrowCircleUpDuotone />
+                          </NormalButton>
+                        )}
+                        {(gv.variant || optimumBackups.has(gv.id)) && (
+                          <NormalButton className="p-1" title={t("features.versions.restoreVanilla")} variant="ghost" disabled={busy} onClick={() => setVersionToRestore(gv)}>
+                            <PiArrowUUpLeftDuotone />
+                          </NormalButton>
+                        )}
+                        <NormalButton onClick={() => openVersionFolder(gv.path)} title={`${t("generic.openOnFileExplorer")} · ${gv.path}`} variant="ghost" className="p-1">
+                          <PiFolderOpenDuotone />
+                        </NormalButton>
+                        <NormalButton
+                          className="p-1"
+                          title={t("features.versions.renameVersion")}
+                          variant="ghost"
+                          onClick={() => {
+                            setNewLabel(gv.label)
+                            setVersionToRename(gv)
+                          }}
+                        >
+                          <PiPencilSimpleDuotone />
+                        </NormalButton>
+                        <NormalButton
+                          className="p-1"
+                          title={gv.linked ? t("features.versions.removeFromList") : t("features.versions.deleteVersion")}
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={async () => {
+                            setVersionToDelete(gv)
+                          }}
+                        >
+                          <PiTrashDuotone />
+                        </NormalButton>
+                      </div>
                     </div>
-                  </div>
-                </ListItem>
-              ))}
+                  </ListItem>
+                )
+              })}
           </ListGroup>
         </ListWrapper>
 
-        <PopupDialogPanel
+        <ConfirmDialog
           title={t(versionToDelete?.linked ? "features.versions.removeFromList" : "features.versions.uninstallVersion")}
           isOpen={versionToDelete !== null}
           close={() => setVersionToDelete(null)}
-        >
-          <>
-            <p>{t(versionToDelete?.linked ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall", { version: versionToDelete?.label ?? versionToDelete?.version })}</p>
-            <p className="text-zinc-400">{t(versionToDelete?.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
+          question={t(versionToDelete?.linked ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall", { version: versionToDelete?.label ?? versionToDelete?.version })}
+          consequence={t(versionToDelete?.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}
+          confirmLabel={t(versionToDelete?.linked ? "features.versions.removeFromList" : "generic.uninstall")}
+          confirmIcon={<PiTrashDuotone />}
+          onConfirm={DeleteVersionHandler}
+        />
+
+        <PopupDialogPanel title={t("features.versions.renameVersion")} isOpen={versionToRename !== null} close={() => setVersionToRename(null)}>
+          <form className="flex flex-col gap-3" onSubmit={RenameVersionHandler}>
+            <p className="text-zinc-400">{t("features.versions.renameVersionDesc")}</p>
+            <label htmlFor={renameFieldId} className="sr-only">
+              {t("generic.name")}
+            </label>
+            <FormInputText
+              id={renameFieldId}
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              placeholder={t("generic.name")}
+              maxLength={MAX_GAME_VERSION_LABEL_LENGTH}
+              autoFocus
+              className="w-full"
+            />
             <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <FormButton title={t("generic.cancel")} onClick={() => setVersionToDelete(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <FormButton
-                title={t(versionToDelete?.linked ? "features.versions.removeFromList" : "generic.uninstall")}
-                onClick={DeleteVersionHandler}
-                variant="destructive"
-                size="md"
-                icon={<PiTrashDuotone />}
-              />
+              <FormButton title={t("generic.cancel")} onClick={() => setVersionToRename(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
+              <FormButton title={t("generic.save")} nativeType="submit" variant="primary" size="md" icon={<PiFloppyDiskBackDuotone />} />
             </ButtonsWrapper>
-          </>
+          </form>
         </PopupDialogPanel>
 
-        <PopupDialogPanel title={t("features.versions.versionInUse")} isOpen={versionInUseWarning !== null} close={() => setVersionInUseWarning(null)}>
-          <>
-            <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
-              <PiWarningDuotone className="text-lg shrink-0" />
-              <span>{t("features.versions.versionInUseByInstallations", { installations: installationsInUseLabel(versionInUseWarning?.usedByInstallations ?? []) })}</span>
-            </div>
-            <p className="text-zinc-400">{t(versionInUseWarning?.version.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}</p>
-            <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
-              <FormButton title={t("generic.cancel")} onClick={() => setVersionInUseWarning(null)} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
-              <FormButton title={t("features.versions.deleteAnyway")} onClick={DeleteVersionAnywayHandler} variant="destructive" size="md" icon={<PiTrashDuotone />} />
-            </ButtonsWrapper>
-          </>
-        </PopupDialogPanel>
+        <ConfirmDialog
+          title={t("features.versions.restoreVanilla")}
+          isOpen={versionToRestore !== null}
+          close={() => setVersionToRestore(null)}
+          question={t("features.versions.areYouSureRestoreVanilla", { version: versionToRestore?.label ?? versionToRestore?.version })}
+          consequence={t("features.versions.restoreVanillaIsPartial")}
+          confirmLabel={t("features.versions.restoreVanilla")}
+          confirmIcon={<PiArrowUUpLeftDuotone />}
+          confirmVariant="primary"
+          onConfirm={RestoreVanillaHandler}
+        />
+
+        <ConfirmDialog
+          title={t("features.versions.versionInUse")}
+          isOpen={versionInUseWarning !== null}
+          close={() => setVersionInUseWarning(null)}
+          consequence={t(versionInUseWarning?.version.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}
+          confirmLabel={t("features.versions.deleteAnyway")}
+          confirmIcon={<PiTrashDuotone />}
+          onConfirm={DeleteVersionAnywayHandler}
+        >
+          <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
+            <PiWarningDuotone className="text-lg shrink-0" />
+            <span>{t("features.versions.versionInUseByInstallations", { installations: installationsInUseLabel(versionInUseWarning?.usedByInstallations ?? []) })}</span>
+          </div>
+        </ConfirmDialog>
       </div>
     </ScrollableContainer>
   )

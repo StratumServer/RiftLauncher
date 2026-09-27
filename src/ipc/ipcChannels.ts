@@ -5,6 +5,7 @@ export const IPC_CHANNELS = {
     LOG_MESSAGE: "log-message",
     SET_PREVENT_APP_CLOSE: "set-prevent-app-close",
     OPEN_ON_BROWSER: "open-on-browser",
+    COPY_TO_CLIPBOARD: "copy-to-clipboard",
     SELECT_FOLDER_DIALOG: "select-folder-dialog",
     PREVENTED_APP_CLOSE: "prevented-app-close"
   },
@@ -22,6 +23,7 @@ export const IPC_CHANNELS = {
   },
   MODS_MANAGER: {
     GET_INSTALLED_MODS: "get-installed-mods",
+    GET_SERVER_MODS: "get-server-mods",
     SET_MOD_ENABLED: "set-mod-enabled",
     CACHE_MOD_IMAGE: "cache-mod-image",
     EXPORT_MODPACK: "export-modpack",
@@ -52,11 +54,20 @@ export const IPC_CHANNELS = {
   },
   GAME_MANAGER: {
     EXECUTE_GAME: "execute-game",
-    LOOK_FOR_A_GAME_VERSION: "look-for-a-game-version"
+    LOOK_FOR_A_GAME_VERSION: "look-for-a-game-version",
+    GET_PLAY_SESSIONS: "get-play-sessions",
+    FORGET_PLAY_SESSIONS: "forget-play-sessions",
+    GET_GAME_LOG_REPORT: "get-game-log-report"
+  },
+  OPTIMUM_MANAGER: {
+    GET_MANIFEST: "optimum-get-manifest",
+    APPLY_OVERLAY: "optimum-apply-overlay",
+    RESTORE_VANILLA: "optimum-restore-vanilla",
+    PATCH_PROGRESS: "optimum-patch-progress"
   },
   NET_MANAGER: {
     QUERY_URL: "query-url",
-    ACCEPT_MODDB_VISIBILITY: "accept-moddb-visibility",
+    COUNT_MODDB_DOWNLOAD: "count-moddb-download",
     FETCH_RELEASE_NOTES: "fetch-release-notes"
   },
   BACKGROUNDS_MANAGER: {

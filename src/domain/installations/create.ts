@@ -1,5 +1,6 @@
 import type { IdGenerator } from "../ports"
 import { folderIsInUse } from "../paths"
+import { refuse } from "../refusal"
 
 /** Bounds an installation name must fall within. */
 export const INSTALLATION_NAME_MIN_LENGTH = 5
@@ -18,10 +19,6 @@ export interface InstallationFieldsInput {
   startParams: string
 }
 
-function refuseFields(reason: InstallationFieldsFailure): InstallationFieldsResult {
-  return { ok: false, reason }
-}
-
 /**
  * Checks the two rules that apply to an installation's data whether it is
  * being created or edited: the name has to fit inside the launcher's bounds,
@@ -33,8 +30,8 @@ function refuseFields(reason: InstallationFieldsFailure): InstallationFieldsResu
 export function validateInstallationFields(input: InstallationFieldsInput): InstallationFieldsResult {
   const { name, startParams } = input
 
-  if (name.length < INSTALLATION_NAME_MIN_LENGTH || name.length > INSTALLATION_NAME_MAX_LENGTH) return refuseFields("name-length")
-  if (startParams.includes(RESERVED_START_PARAM)) return refuseFields("reserved-start-param")
+  if (name.length < INSTALLATION_NAME_MIN_LENGTH || name.length > INSTALLATION_NAME_MAX_LENGTH) return refuse("name-length")
+  if (startParams.includes(RESERVED_START_PARAM)) return refuse("reserved-start-param")
 
   return { ok: true }
 }
@@ -87,10 +84,6 @@ export interface CreatedInstallation {
   totalTimePlayed: number
 }
 
-function refuseCreate(reason: CreateInstallationFailure): CreateInstallationResult {
-  return { ok: false, reason }
-}
-
 /**
  * Validates a new installation's fields and builds the record for it.
  *
@@ -103,9 +96,9 @@ function refuseCreate(reason: CreateInstallationFailure): CreateInstallationResu
  */
 export function createInstallation(ports: CreateInstallationPorts, input: CreateInstallationInput): CreateInstallationResult {
   const fields = validateInstallationFields(input)
-  if (!fields.ok) return refuseCreate(fields.reason)
+  if (!fields.ok) return refuse(fields.reason)
 
-  if (folderIsInUse(input.path, input.foldersInUse, input.platform)) return refuseCreate("folder-in-use")
+  if (folderIsInUse(input.path, input.foldersInUse, input.platform)) return refuse("folder-in-use")
 
   return {
     ok: true,
