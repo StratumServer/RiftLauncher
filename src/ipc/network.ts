@@ -9,6 +9,21 @@ import type { ProxyResolution } from "@domain/net/proxy"
 import { MAX_RESPONSE_BYTES } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
 
+/**
+ * The default overall wall-clock ceiling {@link requestBoundedBuffer} and
+ * {@link requestBoundedTextViaNode} bound a whole exchange by, and also the
+ * fixed inactivity window {@link requestBoundedBuffer} resets on every chunk
+ * received (see its own `inactivityMs`): a response that keeps sending bytes,
+ * however slowly, never trips on inactivity alone, only on going quiet for
+ * this long or on outliving its (possibly wider, see `UrlRule.timeoutMs`)
+ * overall ceiling. Before this, a single 15s wall clock cut the mods/authors
+ * catalog fetch mid-transfer whenever ModDB served it at ordinary slow
+ * speed, which is what made the Author filter fail with "check your
+ * connection" instead of loading. `requestBoundedTextViaNode` keeps the
+ * single wall-clock shape it always had; only the login endpoint goes
+ * through it, and nothing there answers with a large, slow-trickling body
+ * the way the ModDB catalog does.
+ */
 const REQUEST_TIMEOUT_MS = 15_000
 
 /**
@@ -34,7 +49,12 @@ type BoundedRequestOptions = {
   accept?: string
   /** Extra headers beyond Accept and Content-Type, applied as given. For a target that needs one the shared defaults don't cover, a User-Agent GitHub's API requires among them. */
   headers?: Record<string, string>
-  /** Overrides REQUEST_TIMEOUT_MS for a caller that needs a tighter wall clock than every other request on this transport gets. */
+  /**
+   * Overrides REQUEST_TIMEOUT_MS as the overall wall-clock ceiling, for a caller that needs a
+   * tighter bound (fetchReleaseNotes) or, through a UrlRule's own `timeoutMs`, a wider one (the
+   * mods/authors catalog). `requestBoundedBuffer`'s fixed 15s inactivity window is untouched
+   * either way: it only ever shrinks the effective bound, never widens past this value.
+   */
   timeoutMs?: number
 }
 
@@ -78,8 +98,10 @@ type BoundedResponse = NodeJS.EventEmitter & {
  * @param cancel How this transport drops the exchange: `request.abort` for
  * Electron's `net`, `request.destroy` for Node's `http(s)`.
  * @param finish The caller's settle-once function, given the error on a refusal.
+ * @param onData Called on every chunk received, before it is pushed to `chunks`. Optional: only
+ * `requestBoundedBuffer` passes one, to reset its inactivity timer (see REQUEST_TIMEOUT_MS).
  */
-function collectBounded(response: BoundedResponse, maxBytes: number, chunks: Buffer[], cancel: () => void, finish: (error?: Error) => void): void {
+function collectBounded(response: BoundedResponse, maxBytes: number, chunks: Buffer[], cancel: () => void, finish: (error?: Error) => void, onData?: () => void): void {
   const contentLengthHeader = response.headers["content-length"]
   const contentLength = Number(Array.isArray(contentLengthHeader) ? contentLengthHeader[0] : contentLengthHeader)
 
@@ -101,6 +123,7 @@ function collectBounded(response: BoundedResponse, maxBytes: number, chunks: Buf
   let responseBytes = 0
 
   response.on("data", (chunk: Buffer | string) => {
+    onData?.()
     const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     responseBytes += chunkBuffer.length
 
@@ -129,6 +152,11 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
   const method = options.method ?? "GET"
   const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
+  // Never wider than REQUEST_TIMEOUT_MS: a caller that widens the overall ceiling (the
+  // mods/authors catalog rules, up to 90s) still gets cut after 15s of dead air, and a caller
+  // that tightens it (fetchReleaseNotes's 5s) stays bounded by that tighter value, since the
+  // overall timeout below always fires first in that case regardless of this one.
+  const inactivityMs = Math.min(REQUEST_TIMEOUT_MS, timeoutMs)
 
   return new Promise((resolve, reject) => {
     let settled = false
@@ -140,15 +168,29 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
       credentials: "omit"
     })
 
-    const timeout = setTimeout(() => {
+    const overallTimeout = setTimeout(() => {
       request.abort()
       finish(new Error("Network request timed out"))
     }, timeoutMs)
 
+    // Reset on every chunk (see collectBounded's onData), so a response that keeps sending
+    // bytes, however slowly, is never cut for being slow, only for going quiet this long or
+    // for outliving overallTimeout above.
+    let inactivityTimeout: ReturnType<typeof setTimeout>
+    const resetInactivity = (): void => {
+      clearTimeout(inactivityTimeout)
+      inactivityTimeout = setTimeout(() => {
+        request.abort()
+        finish(new Error("Network request timed out"))
+      }, inactivityMs)
+    }
+    resetInactivity()
+
     const finish = (error?: Error): void => {
       if (settled) return
       settled = true
-      clearTimeout(timeout)
+      clearTimeout(overallTimeout)
+      clearTimeout(inactivityTimeout)
 
       if (error) {
         reject(error)
@@ -157,7 +199,7 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
       }
     }
 
-    request.on("response", (response) => collectBounded(response, maxBytes, chunks, () => request.abort(), finish))
+    request.on("response", (response) => collectBounded(response, maxBytes, chunks, () => request.abort(), finish, resetInactivity))
 
     request.on("error", (error) => finish(error))
     request.on("login", (_authInfo, callback) => callback())
