@@ -437,7 +437,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   // The id comes from the config the launcher wrote, never from the renderer's own object, so the
   // file name a session lands under cannot be chosen by whatever sent the launch.
   const markedPlaying = installationId ? markInstallationPlaying(installationId) : false
-  if (installationId && !markedPlaying) return invalidRequestResult()
+  if (installationId && !markedPlaying) return { ok: false, reason: "installation-busy" }
   // Windows has no /proc, so its sampler reads `tasklist` and needs a probe to run it with. Passing
   // it only there keeps macOS on the absent sampler, which is what the factory answers with none.
   const platform = os.platform()

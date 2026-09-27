@@ -144,7 +144,10 @@ function ManageInstallationWorlds(): JSX.Element {
     if (!installation || isPlaying || targetInstallation._playing) return
     const result = await window.api.worldsManager.transfer(installation.id, world.name, targetInstallation.id, mode)
     if (!result.ok) return addNotification(t(`features.worlds.error.${result.reason}`), "error")
-    addNotification(result.warning ? t("features.worlds.versionWarning") : t("features.worlds.transferDone", { name: result.targetWorldName }), result.warning ? "warning" : "success")
+    addNotification(
+      result.warning ? t("features.worlds.versionWarning", { name: result.targetWorldName }) : t("features.worlds.transferDone", { name: result.targetWorldName }),
+      result.warning ? "warning" : "success"
+    )
     await refresh()
   }
 

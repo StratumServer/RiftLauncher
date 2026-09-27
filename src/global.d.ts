@@ -517,7 +517,7 @@ declare global {
    *   reason drawn from the game's own output, and a fixed token: what the
    *   host printed (the version, the paths) never leaves the verbose log.
    */
-  type GameExecutionFailureReason = "unsupported-platform" | "no-executable" | "session-write-failed" | "launch-failed" | "invalid-request" | "missing-dotnet"
+  type GameExecutionFailureReason = "unsupported-platform" | "no-executable" | "session-write-failed" | "launch-failed" | "invalid-request" | "installation-busy" | "missing-dotnet"
 
   /**
    * EXECUTE_GAME's verdict.

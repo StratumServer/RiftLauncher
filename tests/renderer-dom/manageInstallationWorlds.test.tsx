@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
 import ManageInstallationWorlds from "@renderer/features/installations/pages/ManageInstallationWorlds"
+import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -47,9 +48,12 @@ function renderWorlds(
   })
 
   renderWithProviders(
-    <Routes>
-      <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
-    </Routes>,
+    <>
+      <NotificationsOverlay />
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>
+    </>,
     { route: "/installations/worlds/install-a" }
   )
 }
@@ -145,9 +149,12 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     })
 
     renderWithProviders(
-      <Routes>
-        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
-      </Routes>,
+      <>
+        <NotificationsOverlay />
+        <Routes>
+          <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+        </Routes>
+      </>,
       { route: "/installations/worlds/install-a" }
     )
 
@@ -160,6 +167,7 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     await user.click(within(offer.closest("div[role=dialog]") as HTMLElement).getByRole("button", { name: "Back up this world" }))
 
     await waitFor(() => expect(backupWorld).toHaveBeenCalledWith("install-a", "World.vcdbs"))
+    expect(await screen.findByText("The world operation failed. Nothing else was changed.")).not.toBeNull()
     expect(deleteWorld).not.toHaveBeenCalled()
   })
 
@@ -232,6 +240,7 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
 
     expect((await screen.findAllByText("World.vcdbs")).length).toBe(1)
     expect(screen.getByText("world.vcdbs")).not.toBeNull()
+    expect(screen.getAllByTitle("Restore").length).toBe(1)
 
     await user.click(await screen.findByTitle("Delete"))
     const nameDialog = await screen.findByRole("dialog")
@@ -259,6 +268,26 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     )
 
     const notice = await screen.findByText("No worlds found in this Installation.")
+    expect(notice.className).toContain("relative")
+  })
+
+  it("keeps the reloading notice above the list backdrop blur", async () => {
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation([])] })) },
+      worldsManager: {
+        list: vi.fn<BridgeAPI["worldsManager"]["list"]>(() => new Promise(() => {})),
+        delete: vi.fn(async () => ({ ok: true as const }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const notice = await screen.findByText("Reloading")
     expect(notice.className).toContain("relative")
   })
 
@@ -375,6 +404,121 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
 
     expect((await screen.findAllByText("Gone.vcdbs")).length).toBe(1)
     expect(screen.getAllByTitle("Restore").length).toBe(2)
+  })
+
+  it("prompts before backing up a world directly from the list", async () => {
+    const user = userEvent.setup()
+    const backupWorld = vi.fn<BridgeAPI["worldsManager"]["backup"]>(async () => ({
+      ok: true,
+      backup: { id: "backup-direct", date: 1, path: "/backups/backup-direct.tar.gz", worldName: "World.vcdbs" }
+    }))
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation([])] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        })),
+        backup: backupWorld,
+        delete: vi.fn(async () => ({ ok: true as const }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    await user.click(await screen.findByTitle("Back up this world"))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Back up World.vcdbs now?")).not.toBeNull()
+    expect(backupWorld).not.toHaveBeenCalled()
+
+    await user.click(within(dialog).getByRole("button", { name: "Back up this world" }))
+    await waitFor(() => expect(backupWorld).toHaveBeenCalledWith("install-a", "World.vcdbs"))
+  })
+
+  it("prompts before copying a world and shows the version warning toast with the target world name", async () => {
+    const user = userEvent.setup()
+    const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b" }
+    const transferWorld = vi.fn<BridgeAPI["worldsManager"]["transfer"]>(async () => ({
+      ok: true,
+      targetWorldName: "World (1).vcdbs",
+      warning: "different-version"
+    }))
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(), second] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        })),
+        transfer: transferWorld,
+        delete: vi.fn(async () => ({ ok: true as const }))
+      }
+    })
+
+    renderWithProviders(
+      <>
+        <NotificationsOverlay />
+        <Routes>
+          <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+        </Routes>
+      </>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const select = await screen.findByRole("combobox")
+    await userEvent.selectOptions(select, "install-b")
+
+    await user.click(await screen.findByTitle("Copy world"))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Transfer World.vcdbs to Install B?")).not.toBeNull()
+    expect(transferWorld).not.toHaveBeenCalled()
+
+    await user.click(within(dialog).getByRole("button", { name: "Copy world" }))
+    await waitFor(() => expect(transferWorld).toHaveBeenCalledWith("install-a", "World.vcdbs", "install-b", "copy"))
+    expect(await screen.findByText("World transferred as World (1).vcdbs between different Vintage Story versions.")).not.toBeNull()
+  })
+
+  it("renders singular and plural backup counts according to the plural family", async () => {
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            installations: [
+              anInstallation([
+                { id: "b1", date: 1, path: "/backups/b1.tar.gz", worldName: "Single.vcdbs" },
+                { id: "b2", date: 2, path: "/backups/b2.tar.gz", worldName: "Multi.vcdbs" },
+                { id: "b3", date: 3, path: "/backups/b3.tar.gz", worldName: "Multi.vcdbs" }
+              ])
+            ]
+          })
+        )
+      },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [
+            { name: "Single.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 1 },
+            { name: "Multi.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 2 }
+          ]
+        })),
+        delete: vi.fn(async () => ({ ok: true as const }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    expect(await screen.findByText(/1 backup$/)).not.toBeNull()
+    expect(await screen.findByText(/2 backups$/)).not.toBeNull()
   })
 })
 it("does not refetch in a loop when listing fails", async () => {

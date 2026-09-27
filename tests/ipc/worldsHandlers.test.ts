@@ -352,6 +352,24 @@ describe("worlds IPC handlers", () => {
     assert.deepEqual(result, { ok: false, reason: "operation-failed" })
   })
 
+  it("refuses restore when an orphan world sidecar exists beside the backup target", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    const savesPath = join(sourcePath, "Saves")
+    mkdirSync(savesPath, { recursive: true })
+    writeFileSync(join(savesPath, "World.vcdbs-wal"), "pending write", "utf8")
+    const backupId = "backup-orphan-sidecar"
+    const backupArchive = join(backupsFolder, "Worlds", `${backupId}.tar.gz`)
+    mkdirSync(join(backupsFolder, "Worlds"), { recursive: true })
+    writeFileSync(backupArchive, "dummy", "utf8")
+    writeConfig([installation("install-a", sourcePath, "1.22.7", [{ id: backupId, date: 1, path: backupArchive, worldName: "World.vcdbs" }])])
+    const event = await createTrustedEvent()
+
+    const result = await handler("worlds-restore")(event, "install-a", backupId)
+
+    assert.deepEqual(result, { ok: false, reason: "world-has-sidecars" })
+    expect(extractTarGz).not.toHaveBeenCalled()
+  })
+
   it("refuses restore when extracted archive contains multiple files or an unsafe file", async () => {
     const sourcePath = join(installationsRoot, "install-a")
     const sourceWorld = join(sourcePath, "Saves", "World.vcdbs")

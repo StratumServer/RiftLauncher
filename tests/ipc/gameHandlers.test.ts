@@ -504,7 +504,7 @@ describe("EXECUTE_GAME", () => {
         { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder },
         { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" }
       )
-      assert.deepEqual(result, { ok: false, reason: "invalid-request" })
+      assert.deepEqual(result, { ok: false, reason: "installation-busy" })
       assert.equal(existsSync(join(userDataFolder, "Sessions", "main-1.json")), false)
     } finally {
       lease.release()
