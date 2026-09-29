@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, it, vi } from "vitest"
 import "./helpers/electronMock"
 import { setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 
-import { hostRid } from "@domain/optimum/plan"
+import { hostRid, optimumManifestFileName } from "@domain/optimum/plan"
 
 /**
  * src/ipc/optimumManifest.ts, the session's copy of Optimum's overlay manifest.
@@ -86,6 +86,7 @@ afterEach(() => {
 describe("getOptimumManifest", () => {
   it.skipIf(RID === undefined)("reads the published manifest and hands the renderer only what it decides with", async () => {
     const { getOptimumManifest } = await load(() => manifestDocument())
+    const { runDownload } = await import("@src/ipc/workers/download")
 
     const result = await getOptimumManifest()
 
@@ -94,16 +95,17 @@ describe("getOptimumManifest", () => {
     assert.deepEqual(result.manifest.supportedGameVersions, ["1.22.7"])
     assert.equal(result.manifest.archiveFileName, `Optimum-v0.3.14-${RID}-overlay.tar.gz`)
     assert.equal(result.manifest.downloadUrl, `https://github.com/StratumServer/Optimum/releases/download/v0.3.14/Optimum-v0.3.14-${RID}-overlay.tar.gz`)
+    assert.equal(vi.mocked(runDownload).mock.calls[0]?.[0].url, `https://github.com/StratumServer/Optimum/releases/latest/download/${optimumManifestFileName(RID!)}`)
     // The hash, the file list and the donors stay on this side of the bridge.
     assert.deepEqual(Object.keys(result.manifest).sort(), ["archiveFileName", "downloadFolder", "downloadUrl", "optimumVersion", "supportedGameVersions"])
   })
 
-  it.skipIf(RID === undefined)("writes the manifest into the launcher's own cache and parses it back off disk", async () => {
+  it.skipIf(RID === undefined)("writes the platform manifest into the launcher's own cache and parses it back off disk", async () => {
     const { getOptimumManifest, optimumCacheDirectory } = await load(() => manifestDocument())
 
     await getOptimumManifest()
 
-    assert.equal(JSON.parse(readFileSync(join(optimumCacheDirectory(), "optimum-manifest.json"), "utf8")).optimumVersion, "0.3.14")
+    assert.equal(JSON.parse(readFileSync(join(optimumCacheDirectory(), optimumManifestFileName(RID!)), "utf8")).optimumVersion, "0.3.14")
   })
 
   it.skipIf(RID === undefined)("fetches once per session and answers every later ask from what it read", async () => {
