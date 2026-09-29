@@ -440,9 +440,9 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     await waitFor(() => expect(backupWorld).toHaveBeenCalledWith("install-a", "World.vcdbs"))
   })
 
-  it("prompts before copying a world and shows the version warning toast with the target world name", async () => {
+  it("marks a different-version target before transfer and keeps the copied world name in the result", async () => {
     const user = userEvent.setup()
-    const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b" }
+    const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", version: "1.22.6", gameVersionId: "version-b" }
     const transferWorld = vi.fn<BridgeAPI["worldsManager"]["transfer"]>(async () => ({
       ok: true,
       targetWorldName: "World (1).vcdbs",
@@ -472,6 +472,8 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
 
     const select = await screen.findByRole("combobox")
     await userEvent.selectOptions(select, "install-b")
+    expect(screen.getByRole("option", { name: "Install B (different version)" })).not.toBeNull()
+    expect(screen.getByText("A world opened with a newer Vintage Story version usually will not work with an older one.")).not.toBeNull()
 
     await user.click(await screen.findByTitle("Copy world"))
     const dialog = await screen.findByRole("dialog")

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 import { PiArrowCounterClockwiseDuotone, PiCopyDuotone, PiFolderOpenDuotone, PiTrashDuotone, PiTruckDuotone, PiXCircleDuotone } from "react-icons/pi"
 
+import { worldVersionWarning } from "@domain/worlds/worlds"
 import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
@@ -198,16 +199,24 @@ function ManageInstallationWorlds(): JSX.Element {
               <h1 className="text-2xl font-bold">{t("features.worlds.title")}</h1>
               <p className="text-zinc-400">{installation.name}</p>
             </div>
-            <select className="bg-zinc-800 rounded p-2" value={targetId} onChange={(event) => setTargetId(event.target.value)} aria-label={t("features.worlds.transferTarget")}>
-              <option value="">{t("features.worlds.transferTarget")}</option>
-              {installations
-                .filter((candidate) => candidate.id !== installation.id)
-                .map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.name}
-                  </option>
-                ))}
-            </select>
+            <div className="flex flex-col items-end gap-1">
+              <select className="bg-zinc-800 rounded p-2" value={targetId} onChange={(event) => setTargetId(event.target.value)} aria-label={t("features.worlds.transferTarget")}>
+                <option value="">{t("features.worlds.transferTarget")}</option>
+                {installations
+                  .filter((candidate) => candidate.id !== installation.id)
+                  .map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.name}
+                      {worldVersionWarning(installation.version, candidate.version) ? ` (${t("features.worlds.differentVersion")})` : ""}
+                    </option>
+                  ))}
+              </select>
+              {target && worldVersionWarning(installation.version, target.version) && (
+                <p role="status" className="max-w-xs text-right text-xs text-amber-300">
+                  {t("features.worlds.versionCompatibilityWarning")}
+                </p>
+              )}
+            </div>
           </div>
           {loading && <p className="relative p-4 text-center text-zinc-400">{t("generic.reloading")}</p>}
           {!loading && displayWorlds.length === 0 && <p className="relative p-4 text-center">{t("features.worlds.empty")}</p>}

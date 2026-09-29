@@ -662,6 +662,8 @@
       "backupCount_other": "{{count}} sauvegardes",
       "backupCount_many": "{{count}} sauvegardes",
       "transferTarget": "Transférer vers…",
+      "differentVersion": "version différente",
+      "versionCompatibilityWarning": "Un monde ouvert avec une version plus récente de Vintage Story ne fonctionnera généralement pas avec une version plus ancienne.",
       "chooseTarget": "Choisissez d'abord une autre installation.",
       "confirmBackup": "Sauvegarder {{name}} maintenant ?",
       "confirmDelete": "Saisissez {{name}} pour supprimer définitivement ce monde.",

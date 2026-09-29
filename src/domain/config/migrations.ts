@@ -339,8 +339,8 @@ export const addGameVersionIdentity: ConfigMigration = {
 
 /** Gives every installation its own durable world-backup record collection. */
 export const addWorldBackupRecords: ConfigMigration = {
-  fromSchema: 5,
-  toSchema: 6,
+  fromSchema: 6,
+  toSchema: 7,
   migrate(doc: unknown): unknown {
     if (!isRecord(doc) || !Array.isArray(doc.installations)) return { ...(doc as Record<string, unknown>) }
     const installations = doc.installations.map((entry) => {
@@ -353,8 +353,8 @@ export const addWorldBackupRecords: ConfigMigration = {
 
 /** Adds the independent ModDB suggestions answer and bounded dismissal history. */
 export const addModSuggestionsPreferences: ConfigMigration = {
-  fromSchema: 6,
-  toSchema: 7,
+  fromSchema: 5,
+  toSchema: 6,
   migrate(doc: unknown): unknown {
     if (!isRecord(doc)) return doc
 
@@ -374,8 +374,8 @@ export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
   stampLinkedOnExternalVersions,
   singleAccountToAccountList,
   addGameVersionIdentity,
-  addWorldBackupRecords,
-  addModSuggestionsPreferences
+  addModSuggestionsPreferences,
+  addWorldBackupRecords
 ]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {

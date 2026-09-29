@@ -154,6 +154,28 @@ describe("floatMarkerToIntegerSchema", () => {
 })
 
 describe("migrateConfigDocument on real configs", () => {
+  it("adds world backup records to a beta.11 schema 6 config without renumbering the shipped suggestions step", () => {
+    const existingBackups: WorldBackupType[] = [{ id: "world-backup", date: 1, path: "/backups/world.tar.gz", worldName: "World.vcdbs" }]
+    const beta11Config = {
+      schemaVersion: 6,
+      modSuggestionsConsent: true,
+      dismissedModSuggestions: [12],
+      installations: [{ id: "without-world-backups" }, { id: "with-world-backups", worldBackups: existingBackups }]
+    }
+
+    const result = migrateConfigDocument(beta11Config)
+    const doc = result.doc as { modSuggestionsConsent: boolean; dismissedModSuggestions: number[]; installations: Array<{ worldBackups: WorldBackupType[] }> }
+
+    assert.equal(result.schema, 7)
+    assert.deepEqual(result.applied, [{ fromSchema: 6, toSchema: 7 }])
+    assert.equal(doc.modSuggestionsConsent, true)
+    assert.deepEqual(doc.dismissedModSuggestions, [12])
+    assert.deepEqual(
+      doc.installations.map((installation) => installation.worldBackups),
+      [[], existingBackups]
+    )
+  })
+
   it("migrates schema 4 installations to stable game-version ids and preserves orphans", () => {
     const before = {
       schemaVersion: 4,

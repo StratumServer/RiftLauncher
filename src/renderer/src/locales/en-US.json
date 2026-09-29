@@ -639,6 +639,8 @@
       "backupCount_one": "{{count}} backup",
       "backupCount_other": "{{count}} backups",
       "transferTarget": "Transfer to…",
+      "differentVersion": "different version",
+      "versionCompatibilityWarning": "A world opened with a newer Vintage Story version usually will not work with an older one.",
       "chooseTarget": "Choose another Installation first.",
       "confirmBackup": "Back up {{name}} now?",
       "confirmDelete": "Type {{name}} to permanently delete this world.",
