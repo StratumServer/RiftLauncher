@@ -46,19 +46,30 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        # 22 is the baseline CONTRIBUTING.md asks contributors for. 26 is here
+        # because Node 24 and later ship a global localStorage that stays
+        # undefined without --localstorage-file, which used to take the whole
+        # renderer-dom project down before any test body ran, and because
+        # tlsConnect refuses an IP literal as servername. Both are fixed now,
+        # and neither can be caught by a 22-only run.
+        node: ['22', '26']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
       # sonarcloud reads this instead of regenerating the same coverage a
       # few minutes later: one leg's report is enough for one Sonar scan,
       # and ubuntu-latest is picked because sonarcloud itself runs on it.
-      - if: matrix.os == 'ubuntu-latest'
+      # The node leg is pinned as well: with a second version in the matrix
+      # two ubuntu legs would upload the same artifact name, and
+      # upload-artifact@v4 rejects that. 22 is the leg the reported coverage
+      # has always come from, so Sonar's numbers stay comparable to history.
+      - if: matrix.os == 'ubuntu-latest' && matrix.node == '22'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
