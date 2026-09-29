@@ -47,7 +47,7 @@ import { deflateRawSync, crc32 } from "node:zlib"
 // file's own CURRENT_CONFIG_SCHEMA whenever a schema migration lands, and shape the config
 // object below to match. If it drifts, tests/config/headlessSeed.test.ts fails instead of a
 // reviewer finding out from a broken headless check weeks later.
-const CURRENT_CONFIG_SCHEMA = 6
+const CURRENT_CONFIG_SCHEMA = 7
 const DEFAULT_COMPRESSION_LEVEL = 6
 const DEFAULT_BACKGROUND_ID = "default"
 const DEFAULT_ACCENT_ID = "amber"
@@ -233,6 +233,9 @@ const config = {
   // and none has been dismissed, same as any config written before that field existed.
   modSuggestionsConsent: null,
   dismissedModSuggestions: [],
+  // Added at schema 7 (#546): the opt-in card and the suggestions row start unfolded, same as
+  // any config written before folding existed.
+  modSuggestionsFolded: false,
   receiveBetaUpdates: null,
   measurePlaySessions: true,
   allowBasicSessionStore: false,

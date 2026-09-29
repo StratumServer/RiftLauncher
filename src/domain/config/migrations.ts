@@ -20,7 +20,7 @@
 import { isRecord } from "../records"
 
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 6
+export const CURRENT_CONFIG_SCHEMA = 7
 
 /**
  * First schema expressed as an integer.
@@ -354,13 +354,28 @@ export const addModSuggestionsPreferences: ConfigMigration = {
   }
 }
 
+/** Adds the folded state shared by the opt-in card and the suggestions row. */
+export const addModSuggestionsFolded: ConfigMigration = {
+  fromSchema: 6,
+  toSchema: 7,
+  migrate(doc: unknown): unknown {
+    if (!isRecord(doc)) return doc
+
+    return {
+      ...doc,
+      modSuggestionsFolded: doc.modSuggestionsFolded === true
+    }
+  }
+}
+
 /** Every migration the launcher knows, lowest schema first. */
 export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
   floatMarkerToIntegerSchema,
   stampLinkedOnExternalVersions,
   singleAccountToAccountList,
   addGameVersionIdentity,
-  addModSuggestionsPreferences
+  addModSuggestionsPreferences,
+  addModSuggestionsFolded
 ]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {

@@ -466,6 +466,8 @@
       "suggestionsOptInTitle": "Découvrir des mods compatibles",
       "suggestionsOptInBody": "Activez cette option pour laisser RiftLauncher vérifier quelques annonces du ModDB susceptibles de convenir à cette installation. Rien concernant vos mods installés n'est envoyé.",
       "suggestionsOptInButton": "Activer les suggestions de mods",
+      "suggestionsNoThanks": "Non merci",
+      "suggestionsTurnOff": "Désactiver les suggestions",
       "suggestionsRefresh": "Actualiser les suggestions",
       "suggestionsAddAll": "Ajouter toutes les suggestions",
       "suggestionsDismiss": "Ignorer la suggestion",
@@ -604,6 +606,8 @@
         "always": "Toujours me compter",
         "never": "Ne jamais compter"
       },
+      "modSuggestions": "Suggestions de mods",
+      "modSuggestionsDesc": "Affiche les suggestions de mods compatibles sur la page de navigation des mods. Désactivé masque aussi bien la ligne que la carte d'activation.",
       "allowBasicSessionStore": "Retenir la session sans trousseau système",
       "allowBasicSessionStoreDesc": "Vous garde connecté sur un ordinateur sans trousseau système. La session est alors écrite sur le disque, scellée avec une clé intégrée au launcher : n'importe quel programme lancé sous votre compte peut la lire. Les sessions qu'un trousseau système a enregistrées auparavant restent sur le disque mais ne peuvent pas être lues tant que ce réglage est activé. Laissez ce réglage désactivé si cela ne vous convient pas sur cet ordinateur. Prend effet au prochain démarrage de RiftLauncher.",
       "allowBasicSessionStoreRestart": "Ce réglage prendra effet au prochain démarrage de RiftLauncher."

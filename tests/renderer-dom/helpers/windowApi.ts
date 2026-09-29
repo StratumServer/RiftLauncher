@@ -55,6 +55,7 @@ export function createMockConfig(overrides: MockConfigOverrides = {}): ConfigTyp
     moddbVisibility: { policy: "ask", answeredVersion: "", countedVersions: [] },
     modSuggestionsConsent: null,
     dismissedModSuggestions: [],
+    modSuggestionsFolded: false,
     receiveBetaUpdates: null,
     measurePlaySessions: true,
     allowBasicSessionStore: false,

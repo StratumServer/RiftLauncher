@@ -451,6 +451,8 @@
       "suggestionsOptInTitle": "Discover compatible Mods",
       "suggestionsOptInBody": "Turn this on to let RiftLauncher check a small number of ModDB listings for Mods that may fit this Installation. Nothing about your installed Mods is sent.",
       "suggestionsOptInButton": "Turn on Mod suggestions",
+      "suggestionsNoThanks": "No thanks",
+      "suggestionsTurnOff": "Turn off suggestions",
       "suggestionsRefresh": "Refresh suggestions",
       "suggestionsAddAll": "Add all suggestions",
       "suggestionsDismiss": "Dismiss suggestion",
@@ -582,6 +584,8 @@
         "always": "Always count me in",
         "never": "Never count"
       },
+      "modSuggestions": "Mod suggestions",
+      "modSuggestionsDesc": "Show compatible Mod suggestions on the Mods browse page. Off hides the row and the opt-in card alike.",
       "allowBasicSessionStore": "Remember the session without a system keyring",
       "allowBasicSessionStoreDesc": "Keeps you logged in on a computer with no system keyring. The session is then written to disk sealed with a key built into the launcher, so any program running as you can read it. Sessions a system keyring saved earlier stay on disk but cannot be read while this is on. Leave this off unless that is fine on this computer. Takes effect the next time RiftLauncher starts.",
       "allowBasicSessionStoreRestart": "This setting takes effect the next time RiftLauncher starts."

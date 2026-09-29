@@ -587,7 +587,11 @@
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
     "notifications.body.updateDownloaded",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "de-DE": [
     "breadcrumbs.addInstallation",
@@ -1230,7 +1234,11 @@
     "notifications.body.updateDownloadFailedRetry",
     "notifications.body.updateDownloaded",
     "notifications.discard",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "es-ES": [
     "breadcrumbs.manageServers",
@@ -1710,7 +1718,11 @@
     "notifications.body.installationFolderCreateFailed",
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "hu-HU": [
     "breadcrumbs.addInstallation",
@@ -2236,7 +2248,11 @@
     "notifications.body.noFileSelected",
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "it-IT": [
     "breadcrumbs.manageServers",
@@ -2723,7 +2739,11 @@
     "notifications.body.installationFolderCreateFailed",
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "nl-NL": [
     "breadcrumbs.addInstallation",
@@ -3370,7 +3390,11 @@
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
     "notifications.body.updateDownloaded",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "pl-PL": [
     "breadcrumbs.manageServers",
@@ -3854,7 +3878,11 @@
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
     "notifications.discard",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "pt-BR": [
     "breadcrumbs.manageServers",
@@ -4278,7 +4306,11 @@
     "notifications.body.iconTooLarge",
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "pt-PT": [
     "breadcrumbs.manageServers",
@@ -4772,7 +4804,11 @@
     "notifications.body.installationFolderCreateFailed",
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "ru-RU": [
     "breadcrumbs.manageServers",
@@ -5350,7 +5386,11 @@
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
     "notifications.body.updateDownloaded",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "uk-UA": [
     "breadcrumbs.manageServers",
@@ -5853,7 +5893,11 @@
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
     "notifications.body.updateDownloaded",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ],
   "zh-CN": [
     "breadcrumbs.addInstallation",
@@ -6467,6 +6511,10 @@
     "notifications.body.noFileSelected",
     "notifications.body.updateAvailableConsent",
     "notifications.body.updateDownloadFailedRetry",
-    "notifications.repeats"
+    "notifications.repeats",
+    "features.mods.suggestionsNoThanks",
+    "features.mods.suggestionsTurnOff",
+    "features.config.modSuggestions",
+    "features.config.modSuggestionsDesc"
   ]
 }

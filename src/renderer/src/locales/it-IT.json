@@ -520,7 +520,9 @@
       "healthUnreadable_many": "{{count}} archivi non sono stati letti, quindi sono rimasti fuori da questo controllo.",
       "healthUnreadable_other": "{{count}} archivi non sono stati letti, quindi sono rimasti fuori da questo controllo.",
       "serverModsCountTruncated": "e altre",
-      "serverModsRemoveTruncated": "Questa cartella contiene più Mods di quante ne mostri l'elenco. Rimuoverla svuota tutto quello che contiene."
+      "serverModsRemoveTruncated": "Questa cartella contiene più Mods di quante ne mostri l'elenco. Rimuoverla svuota tutto quello che contiene.",
+      "suggestionsNoThanks": "No grazie",
+      "suggestionsTurnOff": "Disattiva suggerimenti"
     },
     "config": {
       "defaultInstallationsFolder": "Cartella delle installazioni",
@@ -591,7 +593,9 @@
       },
       "allowBasicSessionStore": "Ricorda la sessione senza portachiavi di sistema",
       "allowBasicSessionStoreDesc": "Ti tiene connesso su un computer senza portachiavi di sistema. La sessione viene allora scritta su disco protetta con una chiave integrata nel launcher, quindi qualsiasi programma che gira con il tuo utente può leggerla. Le sessioni salvate in precedenza da un portachiavi di sistema restano sul disco ma non possono essere lette finché questa opzione è attiva. Lascia questa opzione disattivata, a meno che su questo computer non sia un problema. Ha effetto al prossimo avvio di RiftLauncher.",
-      "allowBasicSessionStoreRestart": "Questa impostazione ha effetto al prossimo avvio di RiftLauncher."
+      "allowBasicSessionStoreRestart": "Questa impostazione ha effetto al prossimo avvio di RiftLauncher.",
+      "modSuggestions": "Suggerimenti Mod",
+      "modSuggestionsDesc": "Mostra i suggerimenti di Mod compatibili nella pagina di sfoglio dei Mod. Disattivato nasconde sia la riga sia la scheda di attivazione."
     },
     "backups": {
       "backupInProgress": "C'è già un backup in corso!",

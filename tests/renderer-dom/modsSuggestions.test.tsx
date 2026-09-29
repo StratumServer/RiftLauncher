@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { screen, waitFor, within } from "@testing-library/react"
+import { cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
@@ -98,7 +98,7 @@ const MANY_CANDIDATES = [
   ...Array.from({ length: 5 }, (_, index) => ({ ...CANDIDATE, modid: 125 + index, assetid: 125 + index, name: `Suggestion Candidate ${index + 3}`, modidstrs: [`suggestioncandidate${index + 3}`] }))
 ]
 
-function mount(consent: boolean | null = null, suggestionCandidates: readonly DownloadableModOnListType[] = [CANDIDATE]): { api: MockedBridgeAPI; queryURL: ReturnType<typeof vi.fn> } {
+function mount(consent: boolean | null = null, suggestionCandidates: readonly DownloadableModOnListType[] = [CANDIDATE], folded = false): { api: MockedBridgeAPI; queryURL: ReturnType<typeof vi.fn> } {
   const queryURL = vi.fn(async (url: string): Promise<string> => {
     if (url.endsWith("/api/mods") || url.includes("/api/mods?")) return JSON.stringify({ statuscode: "200", mods: suggestionCandidates })
     const candidate = suggestionCandidates.find(({ modid }) => url.endsWith(`/api/mod/${modid}`))
@@ -107,7 +107,7 @@ function mount(consent: boolean | null = null, suggestionCandidates: readonly Do
   })
   const api = installMockWindowApi({
     configManager: {
-      getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: INSTALLATION.id, installations: [INSTALLATION], modSuggestionsConsent: consent }))
+      getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: INSTALLATION.id, installations: [INSTALLATION], modSuggestionsConsent: consent, modSuggestionsFolded: folded }))
     },
     modsManager: { getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })) },
     netManager: { queryURL }
@@ -122,6 +122,12 @@ function mount(consent: boolean | null = null, suggestionCandidates: readonly Do
     { route: "/mods" }
   )
   return { api, queryURL }
+}
+
+/** The last config the page pushed at the main process. */
+function lastSavedConfig(api: MockedBridgeAPI): ConfigType {
+  const calls = vi.mocked(api.configManager.saveConfig).mock.calls
+  return calls[calls.length - 1]?.[0] as ConfigType
 }
 
 afterEach(() => {
@@ -214,5 +220,143 @@ describe("Mod suggestions", () => {
 
     await waitFor(() => expect(catalogRequests()).toHaveLength(1))
     expect(detailRequests()).toHaveLength(20)
+  }, 15_000)
+})
+
+describe("Mod suggestions: folding (#546)", () => {
+  it("folds and unfolds the suggestions row from its header, and a folded row makes no request", async () => {
+    const user = userEvent.setup()
+    const { api, queryURL } = mount(true)
+    const catalogRequests = (): typeof queryURL.mock.calls => queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    await within(section).findByText(/Popular|Recently updated|You run this/i)
+    await waitFor(() => expect(catalogRequests()).toHaveLength(1))
+
+    const toggle = within(section).getByRole("button", { name: "Suggested for Install A" })
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+
+    await user.click(toggle)
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    expect(within(section).queryByRole("button", { name: "Refresh suggestions" })).toBeNull()
+    expect(within(section).queryByRole("button", { name: "Suggestion Candidate, Not installed" })).toBeNull()
+    // The title line stays: folding is not the same as the "no suggestions yet" empty state.
+    expect(screen.getByRole("region", { name: "Suggested for Install A" })).toBeTruthy()
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsFolded).toBe(true))
+
+    const requestsWhileFolded = catalogRequests().length
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(catalogRequests()).toHaveLength(requestsWhileFolded)
+
+    // Unfolding clears the stale, folded-away suggestions before the fetch it kicks off resolves,
+    // so the row can go through a beat with nothing to show before it does: re-queried through
+    // findBy (which retries) rather than the `toggle`/`section` handles above, which is exactly
+    // the sort of transient the guard above is built to tolerate.
+    await user.click(await screen.findByRole("button", { name: "Suggested for Install A" }))
+
+    await waitFor(async () => expect((await screen.findByRole("button", { name: "Suggested for Install A" })).getAttribute("aria-expanded")).toBe("true"))
+    await screen.findByRole("button", { name: "Refresh suggestions" })
+    await waitFor(() => expect(catalogRequests().length).toBeGreaterThan(requestsWhileFolded))
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsFolded).toBe(false))
+  }, 15_000)
+
+  it("is reachable from the keyboard, toggling aria-expanded on Enter", async () => {
+    const user = userEvent.setup()
+    await mount(true)
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    const toggle = within(section).getByRole("button", { name: "Suggested for Install A" })
+
+    toggle.focus()
+    expect(document.activeElement).toBe(toggle)
+    await user.keyboard("{Enter}")
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+  }, 15_000)
+
+  it("a row mounted already folded (a saved config) makes no suggestion request and stays folded", async () => {
+    const { queryURL } = mount(true, [CANDIDATE], true)
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    expect(within(section).getByRole("button", { name: "Suggested for Install A" }).getAttribute("aria-expanded")).toBe("false")
+    expect(within(section).queryByRole("button", { name: "Refresh suggestions" })).toBeNull()
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))).toHaveLength(0)
+  }, 15_000)
+
+  it("folded from the header survives a remount reading the config it was just saved to", async () => {
+    const user = userEvent.setup()
+    const { api } = mount(true)
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    await user.click(within(section).getByRole("button", { name: "Suggested for Install A" }))
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsFolded).toBe(true))
+
+    cleanup()
+
+    // A fresh mount, reading the config exactly as the first one left it saved: the render start,
+    // not a second toggle, is what has to carry the folded answer forward.
+    const { queryURL: secondQueryURL } = mount(true, [CANDIDATE], true)
+
+    const reopened = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    expect(within(reopened).getByRole("button", { name: "Suggested for Install A" }).getAttribute("aria-expanded")).toBe("false")
+    expect(within(reopened).queryByRole("button", { name: "Refresh suggestions" })).toBeNull()
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(secondQueryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))).toHaveLength(0)
+  }, 15_000)
+
+  it("folds the opt-in card from its header too, without touching consent", async () => {
+    const user = userEvent.setup()
+    const { api } = mount(null)
+
+    const toggle = await screen.findByRole("button", { name: "Discover compatible Mods" }, { timeout: 3000 })
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByRole("button", { name: "Turn on Mod suggestions" })).toBeTruthy()
+
+    await user.click(toggle)
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    expect(screen.queryByRole("button", { name: "Turn on Mod suggestions" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Discover compatible Mods" })).toBeTruthy()
+    expect(api.configManager.saveConfig).not.toHaveBeenCalledWith(expect.objectContaining({ modSuggestionsConsent: expect.anything() }))
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsFolded).toBe(true))
+  }, 15_000)
+})
+
+describe("Mod suggestions: No thanks and Turn off (#546)", () => {
+  it("No thanks hides the opt-in card and persists the refusal", async () => {
+    const user = userEvent.setup()
+    const { api, queryURL } = mount(null)
+
+    await screen.findByRole("button", { name: "Turn on Mod suggestions" }, { timeout: 3000 })
+    await user.click(screen.getByRole("button", { name: "No thanks" }))
+
+    expect(screen.queryByRole("button", { name: "Turn on Mod suggestions" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Discover compatible Mods" })).toBeNull()
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsConsent).toBe(false))
+    expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))).toHaveLength(0)
+  })
+
+  it("with consent already false, mounts with no card, no row, and no suggestion request", async () => {
+    const { queryURL } = mount(false)
+
+    await screen.findByRole("button", { name: "Suggestion Candidate, Not installed" }, { timeout: 3000 })
+    expect(screen.queryByRole("button", { name: "Turn on Mod suggestions" })).toBeNull()
+    expect(screen.queryByRole("region", { name: "Suggested for Install A" })).toBeNull()
+    expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))).toHaveLength(0)
+  })
+
+  it("Turn off suggestions in the row sets consent back to false", async () => {
+    const user = userEvent.setup()
+    const { api } = mount(true)
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    await user.click(within(section).getByRole("button", { name: "Turn off suggestions" }))
+
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Suggested for Install A" })).toBeNull())
+    expect(lastSavedConfig(api).modSuggestionsConsent).toBe(false)
   }, 15_000)
 })
