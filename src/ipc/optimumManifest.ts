@@ -129,8 +129,10 @@ export async function getOptimumManifest(): Promise<OptimumManifestResult> {
     }
   } catch (err) {
     manifestCache = undefined
-    const reason = err instanceof UnusableManifestError ? err.reason : "unreachable"
-    logMessage("info", `${LOG_PREFIX} [GET_MANIFEST] No usable Optimum manifest this session: ${reason}.`)
+    const statusCode = err instanceof Error && "statusCode" in err ? err.statusCode : undefined
+    const reason = err instanceof UnusableManifestError ? err.reason : statusCode === 404 ? "not-published" : "unreachable"
+    if (reason === "not-published") logMessage("debug", `${LOG_PREFIX} [GET_MANIFEST] Optimum has not published a manifest for this platform.`)
+    else logMessage("info", `${LOG_PREFIX} [GET_MANIFEST] No usable Optimum manifest this session: ${reason}.`)
     logMessage("debug", `${LOG_PREFIX} [GET_MANIFEST] ${getErrorMessage(err)}`)
     return { ok: false, reason }
   }

@@ -20,6 +20,10 @@ import { hostRid, optimumManifestFileName } from "@domain/optimum/plan"
  * tries again.
  */
 vi.mock("@src/ipc/workers/download", () => ({ runDownload: vi.fn() }))
+vi.mock("@src/utils/logManager", () => ({
+  getErrorMessage: (err: unknown): string => String(err),
+  logMessage: vi.fn()
+}))
 
 /** The platform the running machine would look for. Undefined on a host Optimum publishes nothing for. */
 const RID = hostRid(process.platform, process.arch)
@@ -108,6 +112,37 @@ describe("getOptimumManifest", () => {
     assert.equal(JSON.parse(readFileSync(join(optimumCacheDirectory(), optimumManifestFileName(RID!)), "utf8")).optimumVersion, "0.3.14")
   })
 
+  it.skipIf(RID === undefined)("reads the platform manifest from the loopback source when configured", async () => {
+    const original = process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN
+    process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN = "http://127.0.0.1:9631/"
+
+    try {
+      const module = await load(() => manifestDocument())
+      const { runDownload } = await import("@src/ipc/workers/download")
+
+      assert.equal((await module.getOptimumManifest()).ok, true)
+      assert.equal(vi.mocked(runDownload).mock.calls[0]?.[0].url, `http://127.0.0.1:9631/${optimumManifestFileName(RID!)}`)
+      assert.equal(vi.mocked(runDownload).mock.calls[0]?.[0].fileName, optimumManifestFileName(RID!))
+    } finally {
+      if (original === undefined) delete process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN
+      else process.env.RIFTLAUNCHER_OPTIMUM_ORIGIN = original
+    }
+  })
+
+  it("does not attempt a download when Optimum has no overlay for the host", async () => {
+    const originalPlatform = process.platform
+    Object.defineProperty(process, "platform", { value: "darwin" })
+
+    try {
+      const module = await load(() => manifestDocument())
+
+      assert.deepEqual(await module.getOptimumManifest(), { ok: false, reason: "unsupported-system" })
+      assert.equal(module.calls(), 0)
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform })
+    }
+  })
+
   it.skipIf(RID === undefined)("fetches once per session and answers every later ask from what it read", async () => {
     const module = await load(() => manifestDocument())
 
@@ -123,6 +158,19 @@ describe("getOptimumManifest", () => {
     const module = await load(() => new Error("Download failed"))
 
     assert.deepEqual(await module.getOptimumManifest(), { ok: false, reason: "unreachable" })
+  })
+
+  it("reports a missing manifest as unpublished and logs it only at debug level", async () => {
+    const { logMessage } = await import("@src/utils/logManager")
+    const module = await load(() => Object.assign(new Error("Download failed"), { statusCode: 404 }))
+
+    assert.deepEqual(await module.getOptimumManifest(), { ok: false, reason: "not-published" })
+    const logCalls = vi.mocked(logMessage).mock.calls
+    assert.ok(logCalls.some(([level, message]) => level === "debug" && message.includes("Optimum has not published a manifest")))
+    assert.equal(
+      logCalls.some(([level, message]) => level === "info" && message.includes("No usable Optimum manifest")),
+      false
+    )
   })
 
   it("forgets a failure so the next ask tries again", async () => {

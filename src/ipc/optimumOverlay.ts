@@ -28,8 +28,10 @@ import { type OptimumManifest } from "@domain/optimum/manifest"
 import { OPTIMUM_STATE_FOLDER } from "@domain/optimum/plan"
 import { isRecord } from "@domain/records"
 
-/** The one file the archive carries that `files[]` never names: the walk that built the list ran before it was written. */
-const UNLISTED_ARCHIVE_FILE = "optimum-manifest.json"
+/** The manifest file the archive carries that `files[]` never names: the walk ran before it was written. */
+function isUnlistedManifestFile(path: string, manifest: OptimumManifest): boolean {
+  return path === "optimum-manifest.json" || path === `optimum-manifest-${manifest.rid}.json`
+}
 
 const OPTIMUM_STATE_MANIFEST = join(OPTIMUM_STATE_FOLDER, "manifest.json")
 
@@ -73,8 +75,8 @@ async function listFiles(root: string, prefix = ""): Promise<string[]> {
  *
  * Refuses on the first file that is missing, the wrong size, or the wrong hash,
  * and on any file the manifest does not name. The strict "nothing unlisted"
- * rule has one exception, `optimum-manifest.json` at the root, which the
- * packaging walk cannot list because it is written after the walk.
+ * rule has one exception for the root manifest, written after the packaging
+ * walk. Both the legacy name and the current RID-specific name are accepted.
  *
  * @returns true when every listed file matched and nothing else was there.
  */
@@ -87,7 +89,7 @@ export async function verifyStagedOverlay(overlayDirectory: string, manifest: Op
   }
 
   const listed = new Set(manifest.files.map((file) => file.path))
-  const unlisted = staged.filter((path) => path !== UNLISTED_ARCHIVE_FILE && !listed.has(path))
+  const unlisted = staged.filter((path) => !isUnlistedManifestFile(path, manifest) && !listed.has(path))
   if (unlisted.length > 0) return false
 
   for (const file of manifest.files) {
