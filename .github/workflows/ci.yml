@@ -52,7 +52,7 @@ jobs:
         # renderer-dom project down before any test body ran, and because
         # tlsConnect refuses an IP literal as servername. Both are fixed now,
         # and neither can be caught by a 22-only run.
-        node: ['22', '26']
+        node: ["22", "26"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
