@@ -136,6 +136,22 @@ interface StackedToast {
 }
 
 /**
+ * Module-level, not a ref: GET_CONFIG_RECOVERY_NOTICE hands its notice back exactly once per
+ * session (main clears it on the way out), so a second ask after the first has already resolved
+ * would just get null. React StrictMode mounts this provider, runs its effects' cleanup, and
+ * mounts it again in the same tick; without this, the first mount's request would land after its
+ * own cleanup had already set `cancelled`, and the second mount would ask again and find the
+ * notice already taken, dropping it entirely. Sharing one promise across mounts instead means
+ * only the first mount ever actually asks; whichever mount is still around when it resolves is
+ * the one that shows it.
+ */
+let configRecoveryNoticePromise: Promise<ConfigRecoveryNotice | null> | null = null
+function fetchConfigRecoveryNoticeOnce(): Promise<ConfigRecoveryNotice | null> {
+  configRecoveryNoticePromise ??= window.api.configManager.getConfigRecoveryNotice()
+  return configRecoveryNoticePromise
+}
+
+/**
  * One banner's countdown, as a component so each place in the stack owns its
  * own timer and its own pause instead of the provider reconciling a map of
  * them by hand.
@@ -321,8 +337,14 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     // `ready-to-show` handler), and a push sent with nobody subscribed yet is simply lost. Pulling
     // once on mount instead means whatever is waiting is still there however late this asks.
     let cancelled = false
-    void window.api.configManager.getConfigRecoveryNotice().then((notice) => {
+    void fetchConfigRecoveryNoticeOnce().then((notice) => {
       if (cancelled || !notice) return
+
+      if (notice.kind === "read-failed") {
+        addNotification(t("notifications.body.configReadFailed"), "warning", { duration: null })
+        return
+      }
+
       const { restored, preserved, copyName } = notice
       const key = preserved
         ? restored

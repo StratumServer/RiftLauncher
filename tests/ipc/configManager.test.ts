@@ -1306,6 +1306,18 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     assert.equal(unreadableCopies().length, 2, "neither copy overwrote the other")
   })
 
+  it("shares one preserve-and-recover pass between two concurrent first reads", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    // Two callers racing the first read (the main window's ready-to-show handler and an early
+    // renderer GET_CONFIG, say) before either has set the cache.
+    const [first, second] = await Promise.all([getConfig(), getConfig()])
+
+    assert.deepEqual(first, second, "both callers get the same recovered config")
+    assert.equal(unreadableCopies().length, 1, "only one copy was preserved, not one per concurrent caller")
+  })
+
   it("leaves a pending notice naming the copy, saying the previous settings were restored", async () => {
     writeFileSync(configPath(), INVALID_JSON, "utf-8")
     const fse = (await import("fs-extra")).default
@@ -1316,7 +1328,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
 
     const [copy] = unreadableCopies()
     assert.ok(copy)
-    assert.deepEqual(takePendingConfigRecoveryNotice(), { restored: true, preserved: true, copyName: copy })
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: true, preserved: true, copyName: copy })
   })
 
   it("leaves a pending notice saying the previous settings could not be restored, with no backup", async () => {
@@ -1327,7 +1339,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
 
     const [copy] = unreadableCopies()
     assert.ok(copy)
-    assert.deepEqual(takePendingConfigRecoveryNotice(), { restored: false, preserved: true, copyName: copy })
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: true, copyName: copy })
   })
 
   // The renderer pulls the notice once through GET_CONFIG_RECOVERY_NOTICE rather than the main
@@ -1414,6 +1426,28 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     assert.equal(readFileSync(configPath(), "utf-8"), INVALID_JSON, "the original file on disk is untouched, not replaced by the recovered defaults")
   })
 
+  it("suppresses every later write for the rest of the session once preservation fails", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig, saveConfig, isConfigWriteSuppressed } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "copyFile").mockRejectedValue(Object.assign(new Error("disk full"), { code: "ENOSPC" }))
+
+    const recovered = await getConfig()
+    assert.equal(isConfigWriteSuppressed(), true)
+
+    // The follow-up writes #554's fix still missed: a window-state save (saveCurrentWindowState in
+    // src/main/index.ts) and the renderer's own settings save both call saveConfig directly with
+    // whatever config they were handed, same as this.
+    const windowStateSave = await saveConfig({ ...recovered, window: { ...recovered.window, width: 1_600 } })
+    assert.equal(windowStateSave, false)
+    assert.equal(readFileSync(configPath(), "utf-8"), INVALID_JSON, "a window-state save after the failed preservation did not overwrite the original file")
+
+    const settingsSave = await saveConfig({ ...recovered, lastUsedInstallation: "picked-in-renderer" })
+    assert.equal(settingsSave, false)
+    assert.equal(readFileSync(configPath(), "utf-8"), INVALID_JSON, "a renderer settings save after the failed preservation did not overwrite the original file either")
+  })
+
   it("still leaves an honest pending notice when preservation fails", async () => {
     writeFileSync(configPath(), INVALID_JSON, "utf-8")
 
@@ -1423,7 +1457,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
 
     await getConfig()
 
-    assert.deepEqual(takePendingConfigRecoveryNotice(), { restored: false, preserved: false, copyName: null })
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: false, copyName: null })
   })
 
   /**
@@ -1445,7 +1479,49 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     assert.deepEqual(result.installations, [], "runs on defaults in memory rather than throwing")
     assert.equal(unreadableCopies().length, 0, "the file was never touched, so there is nothing to preserve")
     assert.equal(JSON.parse(readFileSync(configPath(), "utf-8")).lastUsedInstallation, "still-here", "the perfectly valid file on disk was never overwritten")
-    assert.equal(takePendingConfigRecoveryNotice(), null, "not #554's unreadable-JSON case, so no player-facing notice fires")
+    // Unlike the #554 parse-failure cases, nothing here says the document itself is bad, so this
+    // gets its own honest notice rather than the "unreadable JSON" wording, and rather than staying
+    // silent the way an earlier version of this fix did.
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "read-failed" })
+  })
+
+  it("returns a fresh defaults copy on a read failure, not the shared module-level object", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+
+    const first = await getConfig()
+    // saveCurrentWindowState (src/main/index.ts) mutates the config it gets back from getConfig()
+    // in place before saving it; if getConfig ever handed out the same defaults object twice, this
+    // mutation would leak into the next caller.
+    first.window.width = 9_999
+
+    const second = await getConfig()
+    assert.notEqual(second.window.width, 9_999, "the second call's defaults were not corrupted by the first call's mutation")
+  })
+
+  it("suppresses every later write for the rest of the session once a read fails", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const { getConfig, saveConfig, isConfigWriteSuppressed } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "readFile").mockRejectedValueOnce(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+
+    const config = await getConfig()
+    assert.equal(isConfigWriteSuppressed(), true)
+
+    // The next real writer in line: a window move, or the renderer's own settings save. Both call
+    // saveConfig with whatever config they were handed, same as this.
+    const saved = await saveConfig({ ...config, lastUsedInstallation: "changed-in-memory" })
+
+    assert.equal(saved, false, "saveConfig reports the write did not happen")
+    assert.equal(
+      JSON.parse(readFileSync(configPath(), "utf-8")).lastUsedInstallation,
+      "still-here",
+      "config.json on disk is untouched, even though the read that failed has since become readable again"
+    )
   })
 
   /**
@@ -1466,6 +1542,7 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     assert.equal(readFileSync(join(userDataFolder, unreadableCopies()[0]!), "utf-8"), "[]")
     const notice = takePendingConfigRecoveryNotice()
     assert.ok(notice)
+    if (notice.kind !== "unreadable") throw new Error(`expected an "unreadable" notice, got ${notice.kind}`)
     assert.equal(notice.preserved, true)
   })
 

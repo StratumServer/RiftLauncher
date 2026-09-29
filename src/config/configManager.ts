@@ -49,6 +49,30 @@ let configCache: ConfigType | null = null
 let configWriteQueue: Promise<void> = Promise.resolve()
 let pendingConfig: ConfigType | null = null
 let scheduledConfigWrite: Promise<void> | null = null
+/** Concurrent first reads (startup races: the main window's `ready-to-show` and a stray early
+ * GET_CONFIG landing together) share this instead of each running their own copy-and-recover pass,
+ * which would otherwise preserve the same unreadable file twice and leave two competing notices. */
+let configLoadPromise: Promise<ConfigType> | null = null
+
+/**
+ * Set once the original `config.json` must never be overwritten for the rest of this session: a
+ * parse failure whose copy could not be preserved, or a plain read I/O error (permissions, a
+ * Windows sharing lock). Both mean the file on disk may hold something this process has not
+ * actually seen, so writing over it would destroy the only copy there is. Every writer funnels
+ * through `saveConfig`, which checks this flag, so setting it here is the one place that has to
+ * remember: never cleared once set, even if a later read in the same session would succeed.
+ */
+let configWriteSuppressed = false
+
+/** Whether `saveConfig` is currently refusing to write `config.json`. See {@link configWriteSuppressed}. */
+export function isConfigWriteSuppressed(): boolean {
+  return configWriteSuppressed
+}
+
+function suppressConfigWrites(): void {
+  configWriteSuppressed = true
+  pendingConfigRecoveryNotice = { kind: "read-failed" }
+}
 
 /**
  * The most recent config-recovery notice `getConfig` produced, waiting to be read once.
@@ -95,7 +119,15 @@ function scheduleConfigWrite(): Promise<void> {
 export async function saveConfig(config: ConfigType): Promise<boolean> {
   if (!configPath) configPath = join(app.getPath("userData"), "config.json")
   const normalizedConfig = normalizeConfig(config)
+  // Kept in memory either way: a session running read-only still behaves normally for whoever
+  // called this (a settings toggle, a window move), only the disk write underneath is skipped.
   configCache = normalizedConfig
+
+  if (configWriteSuppressed) {
+    logMessage("warn", `${LOG_PREFIX} [saveConfig] Refusing to write config.json this session: the original could not be safely read or preserved earlier.`)
+    return false
+  }
+
   pendingConfig = normalizedConfig
   const queuedWrite = scheduleConfigWrite()
 
@@ -115,9 +147,24 @@ export function flushConfigWrites(): Promise<void> | null {
 }
 
 export async function getConfig(): Promise<ConfigType> {
-  if (!(await ensureConfig())) return defaultConfig
+  // A fresh copy every time, never the shared module-level object: normalizeConfig builds a new
+  // literal, so a caller that mutates its `.window` or similar (saveCurrentWindowState does
+  // exactly that) can never corrupt what the next reader of defaultConfig sees.
+  if (!(await ensureConfig())) return normalizeConfig(defaultConfig)
   if (configCache) return normalizeConfig(configCache)
 
+  // Two reads that both find no cache yet (the main window's ready-to-show handler and an early
+  // renderer GET_CONFIG racing it) share one pass over the disk instead of each preserving and
+  // recovering the same unreadable file on its own.
+  if (!configLoadPromise) {
+    configLoadPromise = loadConfigFromDisk().finally(() => {
+      configLoadPromise = null
+    })
+  }
+  return configLoadPromise
+}
+
+async function loadConfigFromDisk(): Promise<ConfigType> {
   let rawText: string
   try {
     rawText = await fse.readFile(configPath, "utf-8")
@@ -125,11 +172,13 @@ export async function getConfig(): Promise<ConfigType> {
     // The file itself could not be read (permissions, a Windows sharing lock, it vanished since
     // ensureConfig checked): nothing here says the document is corrupt, so this is not #554's
     // "unreadable JSON" case. Preserving or overwriting a config that may well be fine would be
-    // the same mistake in a new shape. Run this session on defaults, in memory only, and let a
-    // later launch (or a later call this same session) try the real read again.
+    // the same mistake in a new shape. Run this session on defaults, in memory only, and tell the
+    // player through the same recovery notice, with its own honest wording: unlike the #554 cases
+    // below, nothing was preserved because nothing was even opened.
     logMessage("error", `${LOG_PREFIX} [getConfig] Could not read config.json off disk. Running this session on defaults without saving.`)
     logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
-    return defaultConfig
+    suppressConfigWrites()
+    return normalizeConfig(defaultConfig)
   }
 
   let parsedDocument: unknown
@@ -181,10 +230,18 @@ async function recoverFromUnreadableConfig(err: unknown): Promise<ConfigType> {
   else logMessage("warn", `${LOG_PREFIX} [getConfig] No usable pre-migration backup was found. Using default config.`)
 
   configCache = recoveredConfig
-  pendingConfigRecoveryNotice = { restored, preserved: copyName !== null, copyName }
+  pendingConfigRecoveryNotice = { kind: "unreadable", restored, preserved: copyName !== null, copyName }
 
-  if (copyName !== null) await saveConfig(recoveredConfig)
-  else logMessage("warn", `${LOG_PREFIX} [getConfig] Could not preserve a copy of the unreadable config. Running this session in memory without saving.`)
+  if (copyName !== null) {
+    await saveConfig(recoveredConfig)
+  } else {
+    // Nothing was kept of the original, so this session must never overwrite it either: the
+    // recovered config above already reached the player as this call's return value, but writing
+    // it to disk now would destroy the only copy of whatever config.json actually holds. See
+    // saveConfig's own check, which is what makes this hold for every writer, not just this one.
+    configWriteSuppressed = true
+    logMessage("warn", `${LOG_PREFIX} [getConfig] Could not preserve a copy of the unreadable config. Running this session in memory without saving.`)
+  }
 
   return recoveredConfig
 }
@@ -264,6 +321,10 @@ export async function ensureConfig(): Promise<boolean> {
   } catch (err) {
     logMessage("error", `${LOG_PREFIX} [ensureConfig] Error ensuring config.`)
     logMessage("error", `${LOG_PREFIX} [ensureConfig] Error ensuring config at [PATH]: ${err}`)
+    // Could not even find out whether config.json exists (a stat failure): the same "may not be
+    // safe to overwrite" hazard as a read failure further down the pipeline, so this session is
+    // held to the same rule for the rest of it.
+    suppressConfigWrites()
     return false
   }
 }
