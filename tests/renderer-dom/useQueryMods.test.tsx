@@ -85,6 +85,18 @@ describe("useQueryMods search ranking (issue #550)", () => {
     expect(mods.map((mod) => mod.name)).toEqual(["Immersive Herbicide", "Thermal HUD"])
   })
 
+  it("does not rank on a one-character text, which is never sent to the API", async () => {
+    const queryURL = vi.fn(async () => JSON.stringify(RANKING_RESPONSE))
+    installMockWindowApi({ netManager: { queryURL } })
+
+    const { result } = renderHook(() => useQueryMods(), { wrapper })
+
+    const mods = await result.current({ textFilter: "i", orderBy: "follows", orderByOrder: "desc", orderByIsExplicit: false })
+
+    // The unfiltered catalogue comes back, so a single letter must not reorder it.
+    expect(mods.map((mod) => mod.name)).toEqual(["Thermal HUD", "Immersive Herbicide"])
+  })
+
   it("leaves the API's order untouched once the player has explicitly chosen a sort", async () => {
     const queryURL = vi.fn(async () => JSON.stringify(RANKING_RESPONSE))
     installMockWindowApi({ netManager: { queryURL } })

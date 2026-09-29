@@ -114,8 +114,9 @@ export function useQueryMods(): ({
   }): Promise<DownloadableModOnListType[]> {
     try {
       const filters: string[] = []
+      const searchText = textFilter && textFilter.length > 1 ? textFilter : undefined
 
-      if (textFilter && textFilter.length > 1) filters.push(`text=${encodeURIComponent(textFilter)}`)
+      if (searchText) filters.push(`text=${encodeURIComponent(searchText)}`)
       if (authorFilter && authorFilter.name.length > 1) filters.push(`author=${encodeURIComponent(authorFilter.userid)}`)
       if (versionsFilter && versionsFilter.length > 0) versionsFilter.forEach((version) => filters.push(`gameversions[]=${encodeURIComponent(version.tagid)}`))
       if (tagsFilter && tagsFilter.length > 0) tagsFilter.forEach((tag) => filters.push(`tagids[]=${encodeURIComponent(tag.tagid)}`))
@@ -128,7 +129,7 @@ export function useQueryMods(): ({
       // here rather than baked into what the cache stores: the same cached page can come back
       // plain or name-ranked depending on what the caller wants this time.
       function rank(mods: DownloadableModOnListType[]): DownloadableModOnListType[] {
-        return textFilter && !orderByIsExplicit ? rankModsByTextRelevance(mods, textFilter) : mods
+        return searchText && !orderByIsExplicit ? rankModsByTextRelevance(mods, searchText) : mods
       }
 
       const cached = getCachedQuery(requestPath)
