@@ -63,6 +63,8 @@ let configLoadPromise: Promise<ConfigType> | null = null
  * remember: never cleared once set, even if a later read in the same session would succeed.
  */
 let configWriteSuppressed = false
+/** Whether `saveConfig` has already logged the refusal warning this session. See {@link configWriteSuppressed}. */
+let configWriteSuppressedWarned = false
 
 /** Whether `saveConfig` is currently refusing to write `config.json`. See {@link configWriteSuppressed}. */
 export function isConfigWriteSuppressed(): boolean {
@@ -124,7 +126,10 @@ export async function saveConfig(config: ConfigType): Promise<boolean> {
   configCache = normalizedConfig
 
   if (configWriteSuppressed) {
-    logMessage("warn", `${LOG_PREFIX} [saveConfig] Refusing to write config.json this session: the original could not be safely read or preserved earlier.`)
+    if (!configWriteSuppressedWarned) {
+      configWriteSuppressedWarned = true
+      logMessage("warn", `${LOG_PREFIX} [saveConfig] Refusing to write config.json this session: the original could not be safely read or preserved earlier.`)
+    }
     return false
   }
 
@@ -161,24 +166,54 @@ export async function getConfig(): Promise<ConfigType> {
       configLoadPromise = null
     })
   }
-  return configLoadPromise
+
+  try {
+    return await configLoadPromise
+  } catch (err) {
+    // Migrations are documented as never throwing, so this is a last-resort guard: whatever went
+    // wrong, a rejected load must never leave the main window's `ready-to-show` handler without a
+    // config to show it with. Same shape as a failed read: fresh defaults, in memory, read-only.
+    logMessage("error", `${LOG_PREFIX} [getConfig] Loading config.json failed unexpectedly. Running this session on defaults without saving.`)
+    logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
+    suppressConfigWrites()
+    const fallback = normalizeConfig(defaultConfig)
+    configCache = fallback
+    return fallback
+  }
 }
+
+/** How long `loadConfigFromDisk` waits before retrying a failed read once: long enough to ride out a
+ * brief Windows antivirus lock or an EBUSY blip, short enough nobody notices the delay at startup. */
+const CONFIG_READ_RETRY_DELAY_MS = 250
 
 async function loadConfigFromDisk(): Promise<ConfigType> {
   let rawText: string
   try {
     rawText = await fse.readFile(configPath, "utf-8")
-  } catch (err) {
-    // The file itself could not be read (permissions, a Windows sharing lock, it vanished since
-    // ensureConfig checked): nothing here says the document is corrupt, so this is not #554's
-    // "unreadable JSON" case. Preserving or overwriting a config that may well be fine would be
-    // the same mistake in a new shape. Run this session on defaults, in memory only, and tell the
-    // player through the same recovery notice, with its own honest wording: unlike the #554 cases
-    // below, nothing was preserved because nothing was even opened.
-    logMessage("error", `${LOG_PREFIX} [getConfig] Could not read config.json off disk. Running this session on defaults without saving.`)
-    logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
-    suppressConfigWrites()
-    return normalizeConfig(defaultConfig)
+  } catch {
+    // A single retry after a short delay: most read failures here are a transient lock (a brief
+    // antivirus scan, a sharing lock) rather than an actually missing or broken file, and giving up
+    // on the first attempt turns a blip into a whole read-only session.
+    await new Promise<void>((resolve) => setTimeout(resolve, CONFIG_READ_RETRY_DELAY_MS))
+    try {
+      rawText = await fse.readFile(configPath, "utf-8")
+    } catch (err) {
+      // The file itself could not be read (permissions, a Windows sharing lock, it vanished since
+      // ensureConfig checked): nothing here says the document is corrupt, so this is not #554's
+      // "unreadable JSON" case. Preserving or overwriting a config that may well be fine would be
+      // the same mistake in a new shape. Run this session on defaults, in memory only, and tell the
+      // player through the same recovery notice, with its own honest wording: unlike the #554 cases
+      // below, nothing was preserved because nothing was even opened.
+      logMessage("error", `${LOG_PREFIX} [getConfig] Could not read config.json off disk. Running this session on defaults without saving.`)
+      logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
+      suppressConfigWrites()
+      // Cached so a later getConfig() call, before any saveConfig, does not read the disk again:
+      // without this, every call re-reads, re-logs and re-arms the notice for as long as the
+      // session stays read-only.
+      const fallback = normalizeConfig(defaultConfig)
+      configCache = fallback
+      return fallback
+    }
   }
 
   let parsedDocument: unknown
@@ -304,7 +339,7 @@ async function recoverUnreadableConfig(): Promise<{ config: ConfigType; restored
       logMessage("debug", `${LOG_PREFIX} [recoverUnreadableConfig] The pre-migration backup could not be used either: ${backupError}`)
     }
   }
-  return { config: defaultConfig, restored: false }
+  return { config: normalizeConfig(defaultConfig), restored: false }
 }
 
 export async function ensureConfig(): Promise<boolean> {

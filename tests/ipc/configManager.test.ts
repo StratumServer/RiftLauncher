@@ -1342,6 +1342,22 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: true, copyName: copy })
   })
 
+  /**
+   * With no usable backup, recovery used to hand back the shared module-level `defaultConfig`
+   * object itself, so a caller mutating the config it got from getConfig() (saveCurrentWindowState
+   * does exactly that) corrupted the cache every later call in the session would see.
+   */
+  it("returns a fresh defaults copy when recovering with no usable backup, not the shared module-level object", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const first = await getConfig()
+    first.window.width = 4_242
+
+    const second = await getConfig()
+    assert.notEqual(second.window.width, 4_242, "the cached config was not the same object the first caller mutated")
+  })
+
   // The renderer pulls the notice once through GET_CONFIG_RECOVERY_NOTICE rather than the main
   // process pushing it: a push can fire before React has mounted the provider that listens for it
   // (the first getConfig() is often main's own ready-to-show handler), and webContents.send does
@@ -1502,12 +1518,14 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     assert.notEqual(second.window.width, 9_999, "the second call's defaults were not corrupted by the first call's mutation")
   })
 
-  it("suppresses every later write for the rest of the session once a read fails", async () => {
+  it("suppresses every later write for the rest of the session once a read fails on the retry too", async () => {
     writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
 
     const { getConfig, saveConfig, isConfigWriteSuppressed } = await freshConfigManager()
     const fse = (await import("fs-extra")).default
-    vi.spyOn(fse, "readFile").mockRejectedValueOnce(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+    // Persistent, not just-once: a single blip is now retried (see the retry tests below), so
+    // suppression for the rest of the session only kicks in once the retry fails too.
+    vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
 
     const config = await getConfig()
     assert.equal(isConfigWriteSuppressed(), true)
@@ -1517,12 +1535,76 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     const saved = await saveConfig({ ...config, lastUsedInstallation: "changed-in-memory" })
 
     assert.equal(saved, false, "saveConfig reports the write did not happen")
-    assert.equal(
-      JSON.parse(readFileSync(configPath(), "utf-8")).lastUsedInstallation,
-      "still-here",
-      "config.json on disk is untouched, even though the read that failed has since become readable again"
-    )
+    assert.equal(JSON.parse(readFileSync(configPath(), "utf-8")).lastUsedInstallation, "still-here", "config.json on disk is untouched")
   })
+
+  it("logs the refused-write warning once per session, not on every refused save", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const { getConfig, saveConfig } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+    const logSpy = vi.spyOn(await import("@src/utils/logManager"), "logMessage")
+
+    const config = await getConfig()
+    await saveConfig({ ...config, lastUsedInstallation: "a" })
+    await saveConfig({ ...config, lastUsedInstallation: "b" })
+    await saveConfig({ ...config, lastUsedInstallation: "c" })
+
+    const refusalWarnings = logSpy.mock.calls.filter(([, message]) => message.includes("Refusing to write config.json"))
+    assert.equal(refusalWarnings.length, 1, "three refused saves, one warning")
+  })
+
+  /**
+   * A failed read gets one retry after a short delay before this session gives up on the file: most
+   * failures here are a transient lock (a brief antivirus scan, a Windows sharing lock, an EBUSY),
+   * and treating the first attempt as final turns a blip into a whole read-only session.
+   */
+  it("retries a failed read once and uses the real settings when the retry succeeds", async () => {
+    // Already at the current schema, so a successful read never triggers a migration save: what
+    // this test needs to isolate is the retry itself, not the ordinary post-migration write.
+    const onDisk = minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, lastUsedInstallation: "real-settings" })
+    writeFileSync(configPath(), JSON.stringify(onDisk), "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice, isConfigWriteSuppressed } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    const realReadFile = fse.readFile.bind(fse)
+    vi.spyOn(fse, "readFile")
+      .mockRejectedValueOnce(Object.assign(new Error("resource busy"), { code: "EBUSY" }))
+      .mockImplementation(realReadFile)
+
+    const result = await getConfig()
+
+    assert.equal(result.lastUsedInstallation, "real-settings", "the retry's real read won, not defaults")
+    assert.equal(takePendingConfigRecoveryNotice(), null, "a transient blip that recovered on retry raises no notice")
+    assert.equal(isConfigWriteSuppressed(), false, "not read-only: the retry succeeded")
+    assert.equal(readFileSync(configPath(), "utf-8"), JSON.stringify(onDisk), "the file on disk was never touched")
+  }, 10_000)
+
+  /**
+   * When the retry fails too, the fresh defaults are cached for the session so later getConfig()
+   * calls do not go back to the disk, do not re-log the failure, and do not re-arm the notice.
+   */
+  it("caches fresh defaults after a persistent read failure so later getConfig calls do not re-read or re-raise the notice", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    const readFileSpy = vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("resource busy"), { code: "EBUSY" }))
+
+    await getConfig()
+
+    assert.equal(readFileSpy.mock.calls.length, 2, "the initial attempt plus exactly one retry")
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "read-failed" }, "one notice after the first call")
+
+    // Several later calls, no cache primed yet from a save: none of them should touch the disk again.
+    await getConfig()
+    await getConfig()
+
+    assert.equal(readFileSpy.mock.calls.length, 2, "later getConfig calls used the cached defaults instead of re-reading")
+    assert.equal(takePendingConfigRecoveryNotice(), null, "a second pull after the first getConfig call already found nothing left")
+    assert.equal(readFileSync(configPath(), "utf-8"), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "the file on disk was never touched")
+  }, 10_000)
 
   /**
    * `[]`, `null`, a bare number or string: all valid JSON, none of them a config document.

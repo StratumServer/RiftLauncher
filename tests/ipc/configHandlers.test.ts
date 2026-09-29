@@ -221,7 +221,9 @@ describe("SAVE_CONFIG", () => {
     writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
 
     const fse = (await import("fs-extra")).default
-    vi.spyOn(fse, "readFile").mockRejectedValueOnce(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+    // Persistent, not just-once: a single blip is retried once before the session gives up on the
+    // file (see configManager.test.ts), so this needs the retry to fail too for suppression to stick.
+    vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
 
     const event = await createTrustedEvent()
     // Triggers the read failure that marks the session read-only (assertConfigPathsAuthorized's

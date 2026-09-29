@@ -362,6 +362,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       removeUpdateErrorListener()
       removeUpdateDownloadedListener()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t deliberately excluded: adding it would replay the recovery notice on every language change.
   }, [])
 
   const addNotification = (body: string, type: NotificationTypes, options?: NotificationOptions): void => {
