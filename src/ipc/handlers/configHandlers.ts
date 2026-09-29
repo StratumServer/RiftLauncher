@@ -5,11 +5,16 @@ import { isRecord } from "@src/ipc/validation"
 import { assertConfigPathsAuthorized } from "@src/ipc/pathPolicy"
 import { invalidPayloadResult, saveOutcomeToResult, unauthorizedPathResult } from "@src/ipc/handlers/saveConfigOutcome"
 
-import { getConfig, normalizeConfig, saveConfig } from "@src/config/configManager"
+import { getConfig, normalizeConfig, saveConfig, takePendingConfigRecoveryNotice } from "@src/config/configManager"
 
 ipcMain.handle(IPC_CHANNELS.CONFIG_MANAGER.GET_CONFIG, async (event): Promise<ConfigType> => {
   assertTrustedIpcSender(event)
   return await getConfig()
+})
+
+ipcMain.handle(IPC_CHANNELS.CONFIG_MANAGER.GET_CONFIG_RECOVERY_NOTICE, (event): ConfigRecoveryNotice | null => {
+  assertTrustedIpcSender(event)
+  return takePendingConfigRecoveryNotice()
 })
 
 ipcMain.handle(IPC_CHANNELS.CONFIG_MANAGER.SAVE_CONFIG, async (event, config: ConfigType): Promise<SaveConfigResult> => {

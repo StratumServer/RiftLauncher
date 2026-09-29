@@ -6,7 +6,6 @@ import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord, toWireBuildVariant } from "@src/ipc/validation"
-import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeAccentColorId } from "@domain/accentColors"
 import { normalizeBackgroundId } from "@domain/backgrounds"
@@ -51,13 +50,22 @@ let configWriteQueue: Promise<void> = Promise.resolve()
 let pendingConfig: ConfigType | null = null
 let scheduledConfigWrite: Promise<void> | null = null
 
-/** Sends one main-to-renderer message, or does nothing when there is no live window to send it to. Same shape as `main/autoUpdaterEvents.ts`'s `SendToRenderer`. */
-export type SendToRenderer = (channel: string, payload?: unknown) => void
-let sendToRenderer: SendToRenderer = () => {}
+/**
+ * The most recent config-recovery notice `getConfig` produced, waiting to be read once.
+ *
+ * A push (`webContents.send`) can fire before the renderer has subscribed to hear it: the first
+ * `getConfig` often runs from `ready-to-show`, ahead of React mounting its notification provider,
+ * and a message sent with nobody listening is simply gone. Keeping the notice here instead, and
+ * letting the renderer pull it once on mount through GET_CONFIG_RECOVERY_NOTICE, means it survives
+ * however late the renderer gets around to asking.
+ */
+let pendingConfigRecoveryNotice: ConfigRecoveryNotice | null = null
 
-/** Wires up where {@link getConfig}'s config-unreadable notice goes. Set once from `main/index.ts`, next to the same wiring for the auto-updater's own notices. */
-export function setConfigManagerSendToRenderer(send: SendToRenderer): void {
-  sendToRenderer = send
+/** Hands back the notice `getConfig` left, if any, and clears it: a second call the same session gets null. */
+export function takePendingConfigRecoveryNotice(): ConfigRecoveryNotice | null {
+  const notice = pendingConfigRecoveryNotice
+  pendingConfigRecoveryNotice = null
+  return notice
 }
 
 function scheduleConfigWrite(): Promise<void> {
@@ -107,45 +115,78 @@ export function flushConfigWrites(): Promise<void> | null {
 }
 
 export async function getConfig(): Promise<ConfigType> {
+  if (!(await ensureConfig())) return defaultConfig
+  if (configCache) return normalizeConfig(configCache)
+
+  let rawText: string
   try {
-    if (!(await ensureConfig())) return defaultConfig
-    if (configCache) return normalizeConfig(configCache)
-    const config = await fse.readJSON(configPath, "utf-8")
-    const hadLegacyAccountSecrets = await migrateLegacyAccount(config)
-    const migration = migrateConfigDocument(config)
-    logConfigMigration(migration)
-    const ensuredConfig = normalizeConfig(migration.doc, { atStartup: true })
-    const reKeyedAccountStore = await migrateAccountStore(config, ensuredConfig)
-    // Every path that overwrites config.json gets the same backup, not just the schema pipeline:
-    // a re-key or a legacy-secrets migration writes just as real a document as a schema bump does.
-    const mustSave = hadLegacyAccountSecrets || reKeyedAccountStore || migration.applied.length > 0
-    await reconcileConfigBackup(mustSave)
-    configCache = ensuredConfig
-    if (mustSave) await saveConfig(ensuredConfig)
-    return ensuredConfig
+    rawText = await fse.readFile(configPath, "utf-8")
   } catch (err) {
-    logMessage("error", `${LOG_PREFIX} [getConfig] Config could not be read or parsed. Preserving a copy and recovering.`)
-    logMessage("debug", `${LOG_PREFIX} [getConfig] Error getting config at [PATH]: ${err}`)
-
-    try {
-      await preserveUnreadableConfig()
-    } catch (preserveError) {
-      logMessage("error", `${LOG_PREFIX} [getConfig] Could not preserve a copy of the unreadable config. Recovering anyway.`)
-      logMessage("debug", `${LOG_PREFIX} [getConfig] ${preserveError}`)
-    }
-
-    const { config: recoveredConfig, restored } = await recoverUnreadableConfig()
-    if (restored) logMessage("warn", `${LOG_PREFIX} [getConfig] Restored the last good settings from before the previous migration.`)
-    else logMessage("warn", `${LOG_PREFIX} [getConfig] No usable pre-migration backup was found. Using default config.`)
-
-    sendToRenderer(IPC_CHANNELS.CONFIG_MANAGER.CONFIG_RECOVERY_NOTICE, { restored })
-    await saveConfig(recoveredConfig)
-    return recoveredConfig
+    // The file itself could not be read (permissions, a Windows sharing lock, it vanished since
+    // ensureConfig checked): nothing here says the document is corrupt, so this is not #554's
+    // "unreadable JSON" case. Preserving or overwriting a config that may well be fine would be
+    // the same mistake in a new shape. Run this session on defaults, in memory only, and let a
+    // later launch (or a later call this same session) try the real read again.
+    logMessage("error", `${LOG_PREFIX} [getConfig] Could not read config.json off disk. Running this session on defaults without saving.`)
+    logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
+    return defaultConfig
   }
+
+  let parsedDocument: unknown
+  try {
+    parsedDocument = JSON.parse(rawText)
+  } catch (err) {
+    return await recoverFromUnreadableConfig(err)
+  }
+
+  if (!isRecord(parsedDocument)) {
+    // Valid JSON that is not an object ([], null, a bare number or string) is just as much a
+    // hand-edit gone wrong as invalid JSON is: normalizeConfig would otherwise turn it into
+    // defaults with nobody told and nothing preserved (#554).
+    return await recoverFromUnreadableConfig(new Error("Config document is valid JSON but not an object."))
+  }
+
+  const config = parsedDocument
+  const hadLegacyAccountSecrets = await migrateLegacyAccount(config)
+  const migration = migrateConfigDocument(config)
+  logConfigMigration(migration)
+  const ensuredConfig = normalizeConfig(migration.doc, { atStartup: true })
+  const reKeyedAccountStore = await migrateAccountStore(config, ensuredConfig)
+  // Every path that overwrites config.json gets the same backup, not just the schema pipeline:
+  // a re-key or a legacy-secrets migration writes just as real a document as a schema bump does.
+  const mustSave = hadLegacyAccountSecrets || reKeyedAccountStore || migration.applied.length > 0
+  await reconcileConfigBackup(mustSave)
+  configCache = ensuredConfig
+  if (mustSave) await saveConfig(ensuredConfig)
+  return ensuredConfig
 }
 
-function isMissingFileError(error: unknown): boolean {
-  return isRecord(error) && error.code === "ENOENT"
+/**
+ * What `getConfig` falls back to once `config.json` has turned out to hold something other than a
+ * readable config document: a parse failure, or valid JSON that is not an object (#554). Copies
+ * the original aside before touching anything, tries the last good pre-migration snapshot, and
+ * only writes the recovered result over `config.json` when the original copy actually succeeded;
+ * when it did not, this session runs on the recovered config in memory only, so a copy that could
+ * not be preserved is never followed by overwriting the only other copy there was (see the
+ * blocking review note on this: a failed preservation must not still lead to `saveConfig`).
+ */
+async function recoverFromUnreadableConfig(err: unknown): Promise<ConfigType> {
+  logMessage("error", `${LOG_PREFIX} [getConfig] Config could not be parsed. Preserving a copy and recovering.`)
+  logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
+
+  const copyName = await preserveUnreadableConfig()
+
+  const { config: recoveredConfig, restored } = await recoverUnreadableConfig()
+  if (restored) logMessage("warn", `${LOG_PREFIX} [getConfig] Restored settings from before the last migration.`)
+  else logMessage("warn", `${LOG_PREFIX} [getConfig] No usable pre-migration backup was found. Using default config.`)
+
+  configCache = recoveredConfig
+  pendingConfigRecoveryNotice = { restored, preserved: copyName !== null, copyName }
+
+  if (copyName !== null) await saveConfig(recoveredConfig)
+  else logMessage("warn", `${LOG_PREFIX} [getConfig] Could not preserve a copy of the unreadable config. Running this session in memory without saving.`)
+
+  return recoveredConfig
 }
 
 function isFileExistsError(error: unknown): boolean {
@@ -153,33 +194,39 @@ function isFileExistsError(error: unknown): boolean {
 }
 
 /**
- * Copies the unreadable `config.json` aside, byte for byte, before anything
- * else touches it, so a parse failure never destroys the only copy of a
- * player's settings (#554). Named from the current instant, sanitized for a
- * Windows-safe filename, with a numeric suffix appended until a free name is
- * found: a second failure right behind the first (same millisecond, under a
- * fast test clock or a fast retry) still gets its own copy rather than
- * silently losing to `errorOnExist`.
+ * Copies the unreadable `config.json` aside, byte for byte, before anything else touches it, so a
+ * parse failure never destroys the only copy of a player's settings (#554). Named from the current
+ * instant, sanitized for a Windows-safe filename, with a numeric suffix appended until a free name
+ * is found: a second failure right behind the first (same millisecond, under a fast test clock or
+ * a fast retry) still gets its own copy rather than silently losing to a name collision.
  *
- * A best-effort step: `getConfig` still recovers even when this throws (the
- * file vanished, or the destination cannot be written), it just logs the
- * failure and moves on rather than leaving the player on nothing.
+ * Uses `fs.copyFile` with `COPYFILE_EXCL` rather than fs-extra's own `copy`: fs-extra 11's `copy`
+ * throws a plain `Error` with no `code` when `errorOnExist` trips, which a `code === "EEXIST"`
+ * check never catches, so the very first collision fell straight out of the retry loop. The native
+ * flag sets a real `EEXIST` every time.
+ *
+ * A best-effort step, never throwing: the caller decides what "could not preserve a copy" means
+ * for whether it may still write anything. Returns the copy's bare file name on success, or null
+ * when nothing could be kept (the source vanished since the read, every candidate name was denied
+ * for some other reason, or a thousand names in the same instant were all taken).
  */
-async function preserveUnreadableConfig(): Promise<void> {
+async function preserveUnreadableConfig(): Promise<string | null> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-")
   for (let attempt = 0; attempt < 1_000; attempt++) {
     const suffix = attempt === 0 ? "" : `-${attempt}`
-    const candidate = join(app.getPath("userData"), `config.unreadable-${stamp}${suffix}.json`)
+    const name = `config.unreadable-${stamp}${suffix}.json`
     try {
-      await fse.copy(configPath, candidate, { overwrite: false, errorOnExist: true })
-      return
+      await fse.copyFile(configPath, join(app.getPath("userData"), name), fse.constants.COPYFILE_EXCL)
+      return name
     } catch (error) {
       if (isFileExistsError(error)) continue
-      if (isMissingFileError(error)) return // Vanished since the read; nothing left to preserve.
-      throw error
+      logMessage("error", `${LOG_PREFIX} [preserveUnreadableConfig] Could not preserve a copy of the unreadable config.`)
+      logMessage("debug", `${LOG_PREFIX} [preserveUnreadableConfig] ${error}`)
+      return null
     }
   }
-  throw new Error("Could not find a free name to preserve the unreadable config")
+  logMessage("error", `${LOG_PREFIX} [preserveUnreadableConfig] Could not find a free name to preserve the unreadable config.`)
+  return null
 }
 
 /**

@@ -312,19 +312,33 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       }, 2_000)
     })
 
-    // getConfig() found config.json unreadable (bad JSON, a hand edit gone wrong, ...): it kept a
-    // copy next to it before touching anything, and either restored the settings from before the
-    // last migration or, with none usable, fell back to defaults (#554). Either way the player's
-    // launcher just changed under them for a reason that is not their fault, so this says so once.
-    const removeConfigRecoveryNoticeListener = window.api.configManager.onConfigRecoveryNotice(({ restored }) => {
-      addNotification(t(restored ? "notifications.body.configUnreadableRestored" : "notifications.body.configUnreadableReset"), "warning", { duration: null })
+    // getConfig() found config.json unreadable (bad JSON, a hand edit gone wrong, or valid JSON
+    // that was not an object): it tried to keep a copy next to it before touching anything, and
+    // either restored the settings from before the last migration or, with none usable, fell back
+    // to defaults (#554). Either way the player's launcher just changed under them for a reason
+    // that is not their fault, so this says so once. Pulled rather than pushed: `getConfig`'s
+    // notice can be produced before this effect has even run (the first read is often main's own
+    // `ready-to-show` handler), and a push sent with nobody subscribed yet is simply lost. Pulling
+    // once on mount instead means whatever is waiting is still there however late this asks.
+    let cancelled = false
+    void window.api.configManager.getConfigRecoveryNotice().then((notice) => {
+      if (cancelled || !notice) return
+      const { restored, preserved, copyName } = notice
+      const key = preserved
+        ? restored
+          ? "notifications.body.configUnreadableRestored"
+          : "notifications.body.configUnreadableReset"
+        : restored
+          ? "notifications.body.configUnreadableRestoredUnsaved"
+          : "notifications.body.configUnreadableResetUnsaved"
+      addNotification(t(key, preserved ? { copyName } : undefined), "warning", { duration: null })
     })
 
     return () => {
+      cancelled = true
       removeUpdateAvailableListener()
       removeUpdateErrorListener()
       removeUpdateDownloadedListener()
-      removeConfigRecoveryNoticeListener()
     }
   }, [])
 

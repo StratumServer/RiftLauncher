@@ -570,6 +570,17 @@ declare global {
   type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason }
 
   /**
+   * What `getConfig` found when `config.json` turned out unreadable (bad JSON, or valid JSON that
+   * is not an object), pulled once by the renderer through GET_CONFIG_RECOVERY_NOTICE (#554).
+   * `restored` says whether a pre-migration backup was usable, or the launcher fell back to
+   * defaults. `preserved`/`copyName` say whether a copy of the unreadable file could be kept aside:
+   * when it could not, `getConfig` runs the recovered config in memory only, for this session, and
+   * never wrote it over the original file, so `copyName` is null and there is nothing to point the
+   * player at.
+   */
+  type ConfigRecoveryNotice = { restored: boolean; preserved: boolean; copyName: string | null }
+
+  /**
    * Why COPY_TO_ICONS refused to put a picked file in the Icons folder. Every
    * gate there used to answer a bare `{ status: false }` and write nothing to
    * the log, so eight different refusals reached the player as one sentence

@@ -8,7 +8,7 @@ import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMi
 const userDataSetup = setUpUserDataFolder(app.getPath("appData"))
 app.setPath("userData", userDataSetup.path)
 
-import { ensureConfig, flushConfigWrites, getConfig, saveConfig, setConfigManagerSendToRenderer } from "@src/config/configManager"
+import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
@@ -160,12 +160,6 @@ function createWindow(): void {
   })
 
   registerTrustedWebContents(mainWindow.webContents)
-
-  // Same wiring as registerAutoUpdaterEvents' own send callback below: the notice getConfig
-  // fires when config.json was unreadable has nowhere to go until a window exists to hear it.
-  setConfigManagerSendToRenderer((channel, payload) => {
-    if (!mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
-  })
 
   const isAllowedMainFrameUrl = (url: string): boolean => isAllowedRendererUrl(url, is.dev ? process.env["ELECTRON_RENDERER_URL"] : undefined, packagedRendererPath)
 

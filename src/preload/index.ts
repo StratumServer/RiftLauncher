@@ -37,7 +37,7 @@ const api: BridgeAPI = {
   configManager: {
     getConfig: (): Promise<ConfigType> => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_MANAGER.GET_CONFIG),
     saveConfig: (configJson: ConfigType): Promise<SaveConfigResult> => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_MANAGER.SAVE_CONFIG, configJson),
-    onConfigRecoveryNotice: (callback: ConfigRecoveryNoticeCallback): Unsubscribe => subscribe(IPC_CHANNELS.CONFIG_MANAGER.CONFIG_RECOVERY_NOTICE, callback)
+    getConfigRecoveryNotice: (): Promise<ConfigRecoveryNotice | null> => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_MANAGER.GET_CONFIG_RECOVERY_NOTICE)
   },
   modsManager: {
     getInstalledMods: (path: string): Promise<InstalledModsScan> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, path),
