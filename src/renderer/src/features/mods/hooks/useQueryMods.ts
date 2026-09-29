@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next"
 
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { parseModListResponse } from "@domain/mods/moddb"
+import { rankModsByTextRelevance } from "@domain/mods/searchRanking"
 import { queryModDb } from "@renderer/features/moddb/adapters/moddb"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 
@@ -62,6 +63,7 @@ export function useQueryMods(): ({
   tagsFilter,
   orderBy,
   orderByOrder,
+  orderByIsExplicit,
   onFinish
 }: {
   textFilter?: string
@@ -70,6 +72,7 @@ export function useQueryMods(): ({
   tagsFilter?: DownloadableModTagType[]
   orderBy?: string
   orderByOrder?: string
+  orderByIsExplicit?: boolean
   onFinish?: () => void
 }) => Promise<DownloadableModOnListType[]> {
   const { t } = useTranslation()
@@ -84,6 +87,9 @@ export function useQueryMods(): ({
    * @param {DownloadableModGameVersionType[]} [props.versionsFilter] Optional list of versions to filter by.
    * @param {string} [props.orderBy] Optional string to order by. Defaults to "follows".
    * @param {string} [props.orderByOrder] Optional string to set the order. Defaults to "desc".
+   * @param {boolean} [props.orderByIsExplicit] Whether the player picked `orderBy` themselves, rather than it
+   *   sitting at its default. While it's false and a search text is set, results are re-ranked by name
+   *   relevance instead of trusting the API's (follower-count) order.
    * @param {() => void} [props.onFinish] Optional function that will be called just before returning the mods list.
    * @returns {Promise<void>}
    */
@@ -94,6 +100,7 @@ export function useQueryMods(): ({
     tagsFilter,
     orderBy = "follows",
     orderByOrder = "desc",
+    orderByIsExplicit = false,
     onFinish
   }: {
     textFilter?: string
@@ -102,24 +109,32 @@ export function useQueryMods(): ({
     tagsFilter?: DownloadableModTagType[]
     orderBy?: string
     orderByOrder?: string
+    orderByIsExplicit?: boolean
     onFinish?: () => void
   }): Promise<DownloadableModOnListType[]> {
     try {
       const filters: string[] = []
 
-      if (textFilter && textFilter.length > 1) filters.push(`text=${textFilter}`)
-      if (authorFilter && authorFilter.name.length > 1) filters.push(`author=${authorFilter.userid}`)
-      if (versionsFilter && versionsFilter.length > 0) versionsFilter.forEach((version) => filters.push(`gameversions[]=${version.tagid}`))
-      if (tagsFilter && tagsFilter.length > 0) tagsFilter.forEach((tag) => filters.push(`tagids[]=${tag.tagid}`))
-      filters.push(`orderby=${orderBy}`, `orderdirection=${orderByOrder}`)
+      if (textFilter && textFilter.length > 1) filters.push(`text=${encodeURIComponent(textFilter)}`)
+      if (authorFilter && authorFilter.name.length > 1) filters.push(`author=${encodeURIComponent(authorFilter.userid)}`)
+      if (versionsFilter && versionsFilter.length > 0) versionsFilter.forEach((version) => filters.push(`gameversions[]=${encodeURIComponent(version.tagid)}`))
+      if (tagsFilter && tagsFilter.length > 0) tagsFilter.forEach((tag) => filters.push(`tagids[]=${encodeURIComponent(tag.tagid)}`))
+      filters.push(`orderby=${encodeURIComponent(orderBy)}`, `orderdirection=${encodeURIComponent(orderByOrder)}`)
 
       const queryString = filters.length > 0 ? `?${filters.join("&")}` : ""
       const requestPath = `/mods${queryString}`
 
+      // Ranking is a display concern, not part of what was asked of the API, so it's applied
+      // here rather than baked into what the cache stores: the same cached page can come back
+      // plain or name-ranked depending on what the caller wants this time.
+      function rank(mods: DownloadableModOnListType[]): DownloadableModOnListType[] {
+        return textFilter && !orderByIsExplicit ? rankModsByTextRelevance(mods, textFilter) : mods
+      }
+
       const cached = getCachedQuery(requestPath)
       if (cached) {
         if (onFinish) onFinish()
-        return cached
+        return rank(cached)
       }
 
       const res = await queryModDb(requestPath)
@@ -142,7 +157,7 @@ export function useQueryMods(): ({
 
       const mods = parsed.payload as unknown as DownloadableModOnListType[]
       rememberQuery(requestPath, mods)
-      return mods
+      return rank(mods)
     } catch (err) {
       logMods("error", `[front] [mods] [features/mods/hooks/useQueryMods.ts] [useQueryMods > queryMods] Error fetching mods.`)
       logMods("debug", `[front] [mods] [features/mods/hooks/useQueryMods.ts] [useQueryMods > queryMods] Error fetching mods: ${err}`)

@@ -63,3 +63,53 @@ describe("useQueryMods caching", () => {
     await waitFor(() => expect(onFinish).toHaveBeenCalledTimes(2))
   })
 })
+
+const RANKING_RESPONSE = {
+  statuscode: "200",
+  mods: [
+    { modid: 1, assetid: 1, name: "Thermal HUD", summary: "", modidstrs: ["thermalhud"], author: "A", downloads: 1, follows: 100, comments: 0, side: "both", logo: "", tags: [] },
+    { modid: 2, assetid: 2, name: "Immersive Herbicide", summary: "", modidstrs: ["immersiveherbicide"], author: "A", downloads: 1, follows: 1, comments: 0, side: "both", logo: "", tags: [] }
+  ]
+}
+
+describe("useQueryMods search ranking (issue #550)", () => {
+  it("ranks a name match first when no sort was explicitly chosen, ahead of the API's own (follower-count) order", async () => {
+    const queryURL = vi.fn(async () => JSON.stringify(RANKING_RESPONSE))
+    installMockWindowApi({ netManager: { queryURL } })
+
+    const { result } = renderHook(() => useQueryMods(), { wrapper })
+
+    const mods = await result.current({ textFilter: "Immersive", orderBy: "follows", orderByOrder: "desc", orderByIsExplicit: false })
+
+    // Without the fix this fails: the API order (Thermal HUD first, by follows) passes straight through.
+    expect(mods.map((mod) => mod.name)).toEqual(["Immersive Herbicide", "Thermal HUD"])
+  })
+
+  it("leaves the API's order untouched once the player has explicitly chosen a sort", async () => {
+    const queryURL = vi.fn(async () => JSON.stringify(RANKING_RESPONSE))
+    installMockWindowApi({ netManager: { queryURL } })
+
+    const { result } = renderHook(() => useQueryMods(), { wrapper })
+
+    const mods = await result.current({ textFilter: "Immersive", orderBy: "follows", orderByOrder: "desc", orderByIsExplicit: true })
+
+    // Without the fix this fails too: ranking would apply here regardless of orderByIsExplicit,
+    // reordering a sort the player picked on purpose.
+    expect(mods.map((mod) => mod.name)).toEqual(["Thermal HUD", "Immersive Herbicide"])
+  })
+
+  it("encodes a search text with & and + so it reaches the ModDB query intact", async () => {
+    const queryURL = vi.fn(async (_path: string) => JSON.stringify({ statuscode: "200", mods: [] }))
+    installMockWindowApi({ netManager: { queryURL } })
+
+    const { result } = renderHook(() => useQueryMods(), { wrapper })
+
+    await result.current({ textFilter: "Tinker & Tailor + Co", orderBy: "follows", orderByOrder: "desc" })
+
+    expect(queryURL.mock.calls[0]?.[0]).toBeDefined()
+    const requestedUrl = queryURL.mock.calls[0]![0]
+    // Without encodeURIComponent this fails: "&" and "+" are sent raw, splitting/altering the query.
+    expect(requestedUrl).toContain(`text=${encodeURIComponent("Tinker & Tailor + Co")}`)
+    expect(requestedUrl).not.toContain("text=Tinker & Tailor + Co")
+  })
+})
