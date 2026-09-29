@@ -2,7 +2,7 @@ import { net, session } from "electron"
 import { Agent, request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 import type { IncomingMessage } from "node:http"
-import type { Socket } from "node:net"
+import { isIP, type Socket } from "node:net"
 import { connect as tlsConnect } from "node:tls"
 import { matchesNoProxy, parseProxyResolution, parseProxyUrl } from "@domain/net/proxy"
 import type { ProxyResolution } from "@domain/net/proxy"
@@ -461,7 +461,12 @@ function connectThroughProxy(proxy: { host: string; port: number; secure: boolea
     })
     connectRequest.end()
   }).then((rawSocket) => {
-    const tunneledSocket = url.protocol === "http:" ? rawSocket : tlsConnect({ socket: rawSocket, servername: url.hostname })
+    // SNI is a DNS name, never an address: Node refuses an IP literal here
+    // ("Setting the TLS ServerName to an IP address is not permitted"), and a
+    // tunnel opened to a bare-IP https target has no name to offer anyway, so
+    // the handshake falls back to the certificate's own names.
+    const servername = isIP(url.hostname) ? undefined : url.hostname
+    const tunneledSocket = url.protocol === "http:" ? rawSocket : tlsConnect({ socket: rawSocket, servername })
     onAbort(() => tunneledSocket.destroy())
     return new TunnelAgent(tunneledSocket)
   })
