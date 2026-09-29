@@ -47,7 +47,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         # 22 is the baseline CONTRIBUTING.md asks contributors for. 26 is here
-        # because Node 24 and later ship a global localStorage that stays
+        # because Node 26 ships a global localStorage that stays
         # undefined without --localstorage-file, which used to take the whole
         # renderer-dom project down before any test body ran, and because
         # tlsConnect refuses an IP literal as servername. Both are fixed now,

@@ -466,7 +466,7 @@ function connectThroughProxy(proxy: { host: string; port: number; secure: boolea
     // tunnel opened to a bare-IP https target has no name to offer anyway, so
     // the handshake falls back to the certificate's own names.
     const servername = isIP(url.hostname) ? undefined : url.hostname
-    const tunneledSocket = url.protocol === "http:" ? rawSocket : tlsConnect({ socket: rawSocket, servername })
+    const tunneledSocket = url.protocol === "http:" ? rawSocket : tlsConnect({ socket: rawSocket, host: url.hostname, servername })
     onAbort(() => tunneledSocket.destroy())
     return new TunnelAgent(tunneledSocket)
   })

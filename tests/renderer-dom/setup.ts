@@ -5,7 +5,7 @@ import { cleanup } from "@testing-library/react"
 import { clearQueryCache } from "@renderer/features/mods/hooks/useQueryMods"
 import { resetModsBrowseState } from "@renderer/features/mods/modsBrowseState"
 
-// Node 24+ installs a global localStorage of its own, and it stays undefined
+// Node 26 installs a global localStorage of its own, and it stays undefined
 // unless the process was started with --localstorage-file: the runtime then
 // warns "localStorage is not available because --localstorage-file was not
 // provided" and hands back nothing. Vitest's jsdom environment leaves that
