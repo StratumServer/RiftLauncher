@@ -522,7 +522,8 @@
       "serverModsCountTruncated": "y más",
       "serverModsRemoveTruncated": "Esta carpeta contiene más Mods de los que muestra la lista. Quitarla borra todo lo que hay dentro.",
       "suggestionsNoThanks": "No, gracias",
-      "suggestionsTurnOff": "Desactivar sugerencias"
+      "suggestionsTurnOff": "Desactivar sugerencias",
+      "suggestionsEmpty": "No hay sugerencias por ahora."
     },
     "config": {
       "defaultInstallationsFolder": "Carpeta de Instalaciones",

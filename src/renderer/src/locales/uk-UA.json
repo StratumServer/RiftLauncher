@@ -522,7 +522,8 @@
       "serverModsCountTruncated": "та інші",
       "serverModsRemoveTruncated": "Ця папка містить більше модів, ніж показує список. Її вилучення очистить усе, що всередині.",
       "suggestionsNoThanks": "Ні, дякую",
-      "suggestionsTurnOff": "Вимкнути пропозиції"
+      "suggestionsTurnOff": "Вимкнути пропозиції",
+      "suggestionsEmpty": "Зараз немає пропозицій."
     },
     "config": {
       "defaultInstallationsFolder": "Папка інсталяцій",

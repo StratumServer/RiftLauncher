@@ -500,7 +500,8 @@
       "serverModsCountTruncated": "és még több",
       "serverModsRemoveTruncated": "Ebben a könyvtárban több mod van, mint amennyit a lista mutat. Az eltávolítása mindent töröl belőle.",
       "suggestionsNoThanks": "Köszönöm, nem",
-      "suggestionsTurnOff": "Javaslatok kikapcsolása"
+      "suggestionsTurnOff": "Javaslatok kikapcsolása",
+      "suggestionsEmpty": "Jelenleg nincs javaslat."
     },
     "config": {
       "defaultInstallationsFolder": "Telepítések könyvtára",

@@ -500,7 +500,8 @@
       "serverModsCountTruncated": "und mehr",
       "serverModsRemoveTruncated": "Dieser Ordner enthält mehr Mods, als die Liste zeigt. Beim Entfernen wird alles darin geleert.",
       "suggestionsNoThanks": "Nein danke",
-      "suggestionsTurnOff": "Vorschläge deaktivieren"
+      "suggestionsTurnOff": "Vorschläge deaktivieren",
+      "suggestionsEmpty": "Derzeit keine Vorschläge."
     },
     "config": {
       "defaultInstallationsFolder": "Ordner für Installationen",

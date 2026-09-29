@@ -522,7 +522,8 @@
       "serverModsCountTruncated": "e altre",
       "serverModsRemoveTruncated": "Questa cartella contiene più Mods di quante ne mostri l'elenco. Rimuoverla svuota tutto quello che contiene.",
       "suggestionsNoThanks": "No grazie",
-      "suggestionsTurnOff": "Disattiva suggerimenti"
+      "suggestionsTurnOff": "Disattiva suggerimenti",
+      "suggestionsEmpty": "Nessun suggerimento al momento."
     },
     "config": {
       "defaultInstallationsFolder": "Cartella delle installazioni",

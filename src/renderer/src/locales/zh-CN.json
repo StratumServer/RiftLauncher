@@ -478,7 +478,8 @@
       "serverModsCountTruncated": "以及更多",
       "serverModsRemoveTruncated": "该文件夹里的模组比列表显示的更多。移除它会清空其中的全部内容。",
       "suggestionsNoThanks": "不用了",
-      "suggestionsTurnOff": "关闭建议"
+      "suggestionsTurnOff": "关闭建议",
+      "suggestionsEmpty": "暂无建议。"
     },
     "config": {
       "defaultInstallationsFolder": "安装文件夹",

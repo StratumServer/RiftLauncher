@@ -500,7 +500,8 @@
       "serverModsCountTruncated": "en meer",
       "serverModsRemoveTruncated": "Deze map bevat meer Mods dan de lijst toont. Als je de map weghaalt, wordt alles erin gewist.",
       "suggestionsNoThanks": "Nee bedankt",
-      "suggestionsTurnOff": "Suggesties uitschakelen"
+      "suggestionsTurnOff": "Suggesties uitschakelen",
+      "suggestionsEmpty": "Op dit moment geen suggesties."
     },
     "config": {
       "defaultInstallationsFolder": "Map voor installaties",

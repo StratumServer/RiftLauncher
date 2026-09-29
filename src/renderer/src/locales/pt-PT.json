@@ -522,7 +522,8 @@
       "serverModsCountTruncated": "e mais",
       "serverModsRemoveTruncated": "Esta pasta tem mais Mods do que a lista mostra. Removê-la limpa tudo o que está lá dentro.",
       "suggestionsNoThanks": "Não, obrigado",
-      "suggestionsTurnOff": "Desativar sugestões"
+      "suggestionsTurnOff": "Desativar sugestões",
+      "suggestionsEmpty": "Sem sugestões de momento."
     },
     "config": {
       "defaultInstallationsFolder": "Instalações",

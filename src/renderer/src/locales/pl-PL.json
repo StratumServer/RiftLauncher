@@ -522,7 +522,8 @@
       "serverModsCountTruncated": "i więcej",
       "serverModsRemoveTruncated": "Ten folder ma więcej modów, niż pokazuje lista. Usunięcie go czyści wszystko, co jest w środku.",
       "suggestionsNoThanks": "Nie, dziękuję",
-      "suggestionsTurnOff": "Wyłącz sugestie"
+      "suggestionsTurnOff": "Wyłącz sugestie",
+      "suggestionsEmpty": "Brak sugestii w tej chwili."
     },
     "config": {
       "defaultInstallationsFolder": "Folder instancji",
