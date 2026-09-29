@@ -829,6 +829,8 @@
       "configSaveUnauthorizedPath": "Nie udało się zapisać ustawień: jeden z folderów nie należy do tych, którymi zarządza RiftLauncher. Wybierz go ponownie na stronie Konfiguracja.",
       "configSaveWriteFailed": "Nie udało się zapisać ustawień na dysku. Upewnij się, że RiftLauncher może pisać do swojego folderu danych, i spróbuj ponownie.",
       "configSaveRecovered": "Ustawienia znów się zapisują.",
+      "configUnreadableRestored": "Nie udało się odczytać pliku ustawień, więc zachowano jego kopię i przywrócono ostatnio zapisane ustawienia sprzed tego zdarzenia.",
+      "configUnreadableReset": "Nie udało się odczytać pliku ustawień, więc zachowano jego kopię, ale nie udało się przywrócić ustawień i przywrócono wartości domyślne.",
       "missingFields": "Wypełnij wszystkie pola!",
       "compressed": "Zakończono kompresowanie: {{compressName}}!",
       "compressError": "Błąd kompresowania: {{compressName}}!",

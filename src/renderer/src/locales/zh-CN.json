@@ -777,6 +777,8 @@
       "configSaveUnauthorizedPath": "您的设置没能保存：其中一个文件夹不是 RiftLauncher 管理的。请在配置页面重新选择它。",
       "configSaveWriteFailed": "您的设置没能写入磁盘。请确认 RiftLauncher 可以写入它的数据文件夹，然后重试。",
       "configSaveRecovered": "您的设置又能正常保存了。",
+      "configUnreadableRestored": "您的设置文件无法读取，因此保留了一份副本，并恢复了此前最后一次保存的设置。",
+      "configUnreadableReset": "您的设置文件无法读取，因此保留了一份副本，但设置无法恢复，已重置为默认值。",
       "missingFields": "请填写所有字段！",
       "compressed": "压缩完成：{{compressName}}。",
       "compressError": "无法压缩 {{compressName}}。请确认磁盘还有空间，然后重试。",

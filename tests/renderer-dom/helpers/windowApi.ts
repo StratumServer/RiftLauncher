@@ -95,7 +95,8 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
     },
     configManager: {
       getConfig: vi.fn(async () => createMockConfig()),
-      saveConfig: vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+      saveConfig: vi.fn(async () => ({ ok: true }) as SaveConfigResult),
+      onConfigRecoveryNotice: vi.fn(noopUnsubscribe)
     },
     modsManager: {
       getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })),

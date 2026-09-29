@@ -312,10 +312,19 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       }, 2_000)
     })
 
+    // getConfig() found config.json unreadable (bad JSON, a hand edit gone wrong, ...): it kept a
+    // copy next to it before touching anything, and either restored the settings from before the
+    // last migration or, with none usable, fell back to defaults (#554). Either way the player's
+    // launcher just changed under them for a reason that is not their fault, so this says so once.
+    const removeConfigRecoveryNoticeListener = window.api.configManager.onConfigRecoveryNotice(({ restored }) => {
+      addNotification(t(restored ? "notifications.body.configUnreadableRestored" : "notifications.body.configUnreadableReset"), "warning", { duration: null })
+    })
+
     return () => {
       removeUpdateAvailableListener()
       removeUpdateErrorListener()
       removeUpdateDownloadedListener()
+      removeConfigRecoveryNoticeListener()
     }
   }, [])
 

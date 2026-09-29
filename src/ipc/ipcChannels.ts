@@ -19,7 +19,8 @@ export const IPC_CHANNELS = {
   },
   CONFIG_MANAGER: {
     GET_CONFIG: "get-config",
-    SAVE_CONFIG: "save-config"
+    SAVE_CONFIG: "save-config",
+    CONFIG_RECOVERY_NOTICE: "config-recovery-notice"
   },
   MODS_MANAGER: {
     GET_INSTALLED_MODS: "get-installed-mods",

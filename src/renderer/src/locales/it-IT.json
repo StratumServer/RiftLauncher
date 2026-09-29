@@ -829,6 +829,8 @@
       "configSaveUnauthorizedPath": "Non è stato possibile salvare le impostazioni: una delle tue cartelle non è gestita da RiftLauncher. Riselezionala nella pagina Impostazioni.",
       "configSaveWriteFailed": "Non è stato possibile salvare le impostazioni su disco. Assicurati che RiftLauncher possa scrivere nella sua cartella dati, poi riprova.",
       "configSaveRecovered": "Le impostazioni si salvano di nuovo.",
+      "configUnreadableRestored": "Il file delle impostazioni non è stato leggibile, quindi è stata conservata una copia e sono state ripristinate le ultime impostazioni salvate prima di allora.",
+      "configUnreadableReset": "Il file delle impostazioni non è stato leggibile, quindi è stata conservata una copia, ma le impostazioni non sono state ripristinabili e sono tornate ai valori predefiniti.",
       "missingFields": "Per favore compila tutti i campi!",
       "compressed": "Compressione terminata: {{compressName}}!",
       "compressError": "Errore comprimendo: {{compressName}}!",

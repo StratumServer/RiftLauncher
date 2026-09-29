@@ -6,6 +6,7 @@ import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
 import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/accountStore"
 import { isRecord, toWireBuildVariant } from "@src/ipc/validation"
+import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeAccentColorId } from "@domain/accentColors"
 import { normalizeBackgroundId } from "@domain/backgrounds"
@@ -50,6 +51,15 @@ let configWriteQueue: Promise<void> = Promise.resolve()
 let pendingConfig: ConfigType | null = null
 let scheduledConfigWrite: Promise<void> | null = null
 
+/** Sends one main-to-renderer message, or does nothing when there is no live window to send it to. Same shape as `main/autoUpdaterEvents.ts`'s `SendToRenderer`. */
+export type SendToRenderer = (channel: string, payload?: unknown) => void
+let sendToRenderer: SendToRenderer = () => {}
+
+/** Wires up where {@link getConfig}'s config-unreadable notice goes. Set once from `main/index.ts`, next to the same wiring for the auto-updater's own notices. */
+export function setConfigManagerSendToRenderer(send: SendToRenderer): void {
+  sendToRenderer = send
+}
+
 function scheduleConfigWrite(): Promise<void> {
   // Compared against null rather than tested for truthiness: the question is whether a write is already scheduled, not whether a promise is truthy (it always is).
   if (scheduledConfigWrite !== null) return scheduledConfigWrite
@@ -63,7 +73,7 @@ function scheduleConfigWrite(): Promise<void> {
       // Written as it stands: the only thing that ever reaches here is a normalizeConfig result,
       // and that builds a fixed literal field by field, so the renderer's session-only markers
       // (`_notifiedModUpdatesInstallations`, `_backgroundRevision`) are already gone.
-      await writeJsonAtomic(configPath, nextConfig)
+      await writeJsonAtomic(configPath, nextConfig, { spaces: 2 })
     }
   })
 
@@ -114,11 +124,83 @@ export async function getConfig(): Promise<ConfigType> {
     if (mustSave) await saveConfig(ensuredConfig)
     return ensuredConfig
   } catch (err) {
-    logMessage("error", `${LOG_PREFIX} [getConfig] Error getting config at [PATH]. Using default config.`)
+    logMessage("error", `${LOG_PREFIX} [getConfig] Config could not be read or parsed. Preserving a copy and recovering.`)
     logMessage("debug", `${LOG_PREFIX} [getConfig] Error getting config at [PATH]: ${err}`)
-    await saveConfig(defaultConfig)
-    return defaultConfig
+
+    try {
+      await preserveUnreadableConfig()
+    } catch (preserveError) {
+      logMessage("error", `${LOG_PREFIX} [getConfig] Could not preserve a copy of the unreadable config. Recovering anyway.`)
+      logMessage("debug", `${LOG_PREFIX} [getConfig] ${preserveError}`)
+    }
+
+    const { config: recoveredConfig, restored } = await recoverUnreadableConfig()
+    if (restored) logMessage("warn", `${LOG_PREFIX} [getConfig] Restored the last good settings from before the previous migration.`)
+    else logMessage("warn", `${LOG_PREFIX} [getConfig] No usable pre-migration backup was found. Using default config.`)
+
+    sendToRenderer(IPC_CHANNELS.CONFIG_MANAGER.CONFIG_RECOVERY_NOTICE, { restored })
+    await saveConfig(recoveredConfig)
+    return recoveredConfig
   }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return isRecord(error) && error.code === "ENOENT"
+}
+
+function isFileExistsError(error: unknown): boolean {
+  return isRecord(error) && error.code === "EEXIST"
+}
+
+/**
+ * Copies the unreadable `config.json` aside, byte for byte, before anything
+ * else touches it, so a parse failure never destroys the only copy of a
+ * player's settings (#554). Named from the current instant, sanitized for a
+ * Windows-safe filename, with a numeric suffix appended until a free name is
+ * found: a second failure right behind the first (same millisecond, under a
+ * fast test clock or a fast retry) still gets its own copy rather than
+ * silently losing to `errorOnExist`.
+ *
+ * A best-effort step: `getConfig` still recovers even when this throws (the
+ * file vanished, or the destination cannot be written), it just logs the
+ * failure and moves on rather than leaving the player on nothing.
+ */
+async function preserveUnreadableConfig(): Promise<void> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+  for (let attempt = 0; attempt < 1_000; attempt++) {
+    const suffix = attempt === 0 ? "" : `-${attempt}`
+    const candidate = join(app.getPath("userData"), `config.unreadable-${stamp}${suffix}.json`)
+    try {
+      await fse.copy(configPath, candidate, { overwrite: false, errorOnExist: true })
+      return
+    } catch (error) {
+      if (isFileExistsError(error)) continue
+      if (isMissingFileError(error)) return // Vanished since the read; nothing left to preserve.
+      throw error
+    }
+  }
+  throw new Error("Could not find a free name to preserve the unreadable config")
+}
+
+/**
+ * What `getConfig` falls back to once the unreadable `config.json` has been
+ * copied aside: the last good pre-migration snapshot, run through the same
+ * migration and normalization pipeline a normal read would use, or the
+ * built-in defaults when there is no usable snapshot (#554).
+ */
+async function recoverUnreadableConfig(): Promise<{ config: ConfigType; restored: boolean }> {
+  const backupPath = getConfigBackupPath()
+  if (await fse.pathExists(backupPath)) {
+    try {
+      const backupDocument: unknown = await fse.readJSON(backupPath)
+      const migration = migrateConfigDocument(backupDocument)
+      const restoredConfig = normalizeConfig(migration.doc, { atStartup: true })
+      return { config: restoredConfig, restored: true }
+    } catch (backupError) {
+      logMessage("debug", `${LOG_PREFIX} [recoverUnreadableConfig] The pre-migration backup could not be used either: ${backupError}`)
+    }
+  }
+  return { config: defaultConfig, restored: false }
 }
 
 export async function ensureConfig(): Promise<boolean> {

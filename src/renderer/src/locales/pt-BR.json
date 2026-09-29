@@ -829,6 +829,8 @@
       "configSaveUnauthorizedPath": "Não foi possível salvar suas configurações: uma das suas pastas não é gerenciada pelo RiftLauncher. Selecione-a novamente na página de Configuração!",
       "configSaveWriteFailed": "Não foi possível salvar suas configurações no disco! Certifique-se de que o RiftLauncher pode escrever na sua pasta de dados e tente novamente.",
       "configSaveRecovered": "Suas configurações estão sendo salvas novamente!",
+      "configUnreadableRestored": "Seu arquivo de configurações não pôde ser lido, então uma cópia foi mantida e suas últimas configurações salvas antes disso foram restauradas.",
+      "configUnreadableReset": "Seu arquivo de configurações não pôde ser lido, então uma cópia foi mantida, mas suas configurações não puderam ser restauradas e foram redefinidas para os padrões.",
       "missingFields": "Por favor, preencha todos os campos!",
       "compressed": "Compressão concluída: {{compressName}}!",
       "compressError": "Erro ao comprimir: {{compressName}}!",

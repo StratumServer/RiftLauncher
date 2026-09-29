@@ -803,6 +803,8 @@
       "configSaveUnauthorizedPath": "Deine Einstellungen konnten nicht gespeichert werden: einer deiner Ordner wird nicht von RiftLauncher verwaltet. Wähle ihn auf der Seite Konfiguration erneut aus.",
       "configSaveWriteFailed": "Deine Einstellungen konnten nicht auf die Festplatte geschrieben werden. Stelle sicher, dass RiftLauncher in seinen Datenordner schreiben darf, und versuche es erneut.",
       "configSaveRecovered": "Deine Einstellungen werden wieder gespeichert.",
+      "configUnreadableRestored": "Deine Einstellungsdatei konnte nicht gelesen werden, daher wurde eine Kopie aufbewahrt und deine zuletzt gespeicherten Einstellungen von davor wurden wiederhergestellt.",
+      "configUnreadableReset": "Deine Einstellungsdatei konnte nicht gelesen werden, daher wurde eine Kopie aufbewahrt, aber deine Einstellungen konnten nicht wiederhergestellt werden und wurden auf die Standardwerte zurückgesetzt.",
       "missingFields": "Fülle vor dem Speichern alle Felder aus.",
       "compressed": "{{compressName}} komprimiert.",
       "compressError": "{{compressName}} konnte nicht komprimiert werden. Prüfe, ob auf dem Laufwerk Platz ist, und versuche es erneut.",

@@ -803,6 +803,8 @@
       "configSaveUnauthorizedPath": "A beállításokat nem sikerült elmenteni: az egyik könyvtárad nem olyan, amelyet a RiftLauncher kezel. Válaszd ki újra a Beállítások oldalon.",
       "configSaveWriteFailed": "A beállításokat nem sikerült lemezre menteni. Győződj meg róla, hogy a RiftLauncher írhat az adatkönyvtárába, majd próbáld újra.",
       "configSaveRecovered": "A beállítások mentése újra működik.",
+      "configUnreadableRestored": "A beállítási fájlt nem sikerült beolvasni, ezért egy másolat megőrzésre került, és az azt megelőzően mentett beállításaid visszaálltak.",
+      "configUnreadableReset": "A beállítási fájlt nem sikerült beolvasni, ezért egy másolat megőrzésre került, de a beállításaidat nem sikerült visszaállítani, így az alapértelmezésekre álltak vissza.",
       "missingFields": "Kérlek tölts ki minden mezőt!",
       "compressed": "A tömörítés befejeződött: {{compressName}}!",
       "compressError": "Hiba tömörítés közben: {{compressName}}!",

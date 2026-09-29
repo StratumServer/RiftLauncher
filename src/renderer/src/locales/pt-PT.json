@@ -829,6 +829,8 @@
       "configSaveUnauthorizedPath": "Não foi possível guardar as suas definições: uma das suas pastas não é gerida pelo RiftLauncher. Volte a escolhê-la na página de Configuração.",
       "configSaveWriteFailed": "Não foi possível guardar as suas definições no disco. Certifique-se de que o RiftLauncher consegue escrever na sua pasta de dados e tente novamente.",
       "configSaveRecovered": "As suas definições voltaram a ser guardadas.",
+      "configUnreadableRestored": "O seu ficheiro de definições não pôde ser lido, por isso foi guardada uma cópia e foram restauradas as últimas definições guardadas antes disso.",
+      "configUnreadableReset": "O seu ficheiro de definições não pôde ser lido, por isso foi guardada uma cópia, mas as suas definições não puderam ser restauradas e foram repostas para os valores predefinidos.",
       "missingFields": "Por favor, preencha todos os campos!",
       "compressed": "Compressão concluída: {{compressName}}!",
       "compressError": "Erro a comprimir: {{compressName}}!",

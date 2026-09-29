@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -862,6 +862,22 @@ describe("saveConfig and flushConfigWrites", () => {
     const onDisk = await fse.readJSON(join(userDataFolder, "config.json"))
     assert.equal("_notifiedModUpdatesInstallations" in onDisk, false)
   })
+
+  // #553: a hand-edited config.json is unreadable to a player when it is one line of minified
+  // JSON. writeJsonAtomic defaults to no spacing at all; the config writer has to ask for two
+  // spaces explicitly, the same way the modpack export already does for the same reason.
+  it("writes config.json indented two spaces, and the result parses back equal (#553)", async () => {
+    const { saveConfig, flushConfigWrites, normalizeConfig } = await freshConfigManager()
+    const config = minimalConfig({ lastUsedInstallation: "install-1" })
+
+    await saveConfig(config)
+    await flushConfigWrites()
+
+    const raw = readFileSync(join(userDataFolder, "config.json"), "utf-8")
+    assert.equal(raw, JSON.stringify(JSON.parse(raw), undefined, 2), "the file on disk is exactly its own content pretty-printed with two spaces")
+    assert.ok(raw.includes("\n  "), "at least one line is indented two spaces")
+    assert.deepEqual(JSON.parse(raw), normalizeConfig(config))
+  })
 })
 
 describe("getConfig: schema migration logging", () => {
@@ -1203,6 +1219,121 @@ describe("getConfig: config.json backup before a schema migration", () => {
     await getConfig()
 
     assert.equal(statSync(backupPath()).mode & 0o777, 0o600)
+  })
+})
+
+/**
+ * #554: a config.json a player hand-edited into invalid JSON (one trailing comma is enough) used
+ * to be silently replaced by defaults, taking every Installation, account and setting with it.
+ * getConfig now copies the unreadable file aside before writing anything, tries the last good
+ * pre-migration snapshot, and only falls back to defaults when that is unusable too.
+ */
+describe("getConfig: an unreadable config.json is preserved and recovered (#554)", () => {
+  const INVALID_JSON = '{"schemaVersion": 2, "lastUsedInstallation": null,}' // trailing comma
+
+  function configPath(): string {
+    return join(userDataFolder, "config.json")
+  }
+
+  function backupPath(): string {
+    return join(userDataFolder, "config.pre-migration.bak.json")
+  }
+
+  function unreadableCopies(): string[] {
+    return readdirSync(userDataFolder).filter((name) => /^config\.unreadable-.*\.json$/.test(name))
+  }
+
+  it("copies the unreadable file aside byte for byte before writing anything", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    const [copy, ...rest] = unreadableCopies()
+    assert.equal(rest.length, 0)
+    assert.ok(copy)
+    assert.equal(readFileSync(join(userDataFolder, copy), "utf-8"), INVALID_JSON, "the preserved copy is the exact original bytes, not a reparsed or reformatted version")
+  })
+
+  it("starts from the pre-migration backup when it is readable, and saves it as config.json", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const fse = (await import("fs-extra")).default
+    await fse.writeJSON(backupPath(), minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, lastUsedInstallation: "install-from-backup" }))
+
+    const { getConfig } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.equal(result.lastUsedInstallation, "install-from-backup")
+    assert.equal(unreadableCopies().length, 1, "the unreadable file is still preserved even though the backup covered for it")
+
+    const onDisk = await fse.readJSON(configPath())
+    assert.equal(onDisk.lastUsedInstallation, "install-from-backup", "the restored document is saved as the new config.json")
+  })
+
+  it("falls back to defaults with no usable backup, and still keeps the copy", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.deepEqual(result.installations, [], "nothing recoverable, so the defaults' empty state")
+    assert.equal(result.defaultInstallationsFolder, join(appDataFolder, "RiftLauncherInstallations"))
+    assert.equal(unreadableCopies().length, 1)
+  })
+
+  it("falls back to defaults when the pre-migration backup is itself unreadable, and still keeps the copy", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    writeFileSync(backupPath(), "{not valid json either,}", "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.deepEqual(result.installations, [])
+    assert.equal(unreadableCopies().length, 1)
+  })
+
+  it("keeps two copies when two launches in a row each find an unreadable config.json", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const first = await freshConfigManager()
+    await first.getConfig()
+    assert.equal(unreadableCopies().length, 1)
+
+    // The recovered config.json is valid now; corrupt it again the way a second bad hand edit would.
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const second = await freshConfigManager()
+    await second.getConfig()
+
+    assert.equal(unreadableCopies().length, 2, "neither copy overwrote the other")
+  })
+
+  it("notifies the renderer once, saying the previous settings were restored", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const fse = (await import("fs-extra")).default
+    await fse.writeJSON(backupPath(), minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA }))
+
+    const { getConfig, setConfigManagerSendToRenderer } = await freshConfigManager()
+    const sent: Array<{ channel: string; payload?: unknown }> = []
+    setConfigManagerSendToRenderer((channel, payload) => sent.push({ channel, payload }))
+
+    await getConfig()
+
+    assert.equal(sent.length, 1)
+    const [notice] = sent
+    assert.ok(notice)
+    assert.equal(notice.channel, "config-recovery-notice")
+    assert.deepEqual(notice.payload, { restored: true })
+  })
+
+  it("notifies the renderer that the previous settings could not be restored, with no backup", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig, setConfigManagerSendToRenderer } = await freshConfigManager()
+    const sent: Array<{ channel: string; payload?: unknown }> = []
+    setConfigManagerSendToRenderer((channel, payload) => sent.push({ channel, payload }))
+
+    await getConfig()
+
+    assert.deepEqual(sent, [{ channel: "config-recovery-notice", payload: { restored: false } }])
   })
 })
 

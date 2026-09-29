@@ -818,6 +818,8 @@
       "configSaveUnauthorizedPath": "Your settings couldn't be saved: one of your folders isn't one RiftLauncher manages. Re-pick it on the Config page.",
       "configSaveWriteFailed": "Your settings couldn't be saved to disk. Make sure RiftLauncher can write to its data folder, then try again.",
       "configSaveRecovered": "Your settings are saving again.",
+      "configUnreadableRestored": "Your settings file couldn't be read, so a copy was kept and your last saved settings from before that were restored.",
+      "configUnreadableReset": "Your settings file couldn't be read, so a copy was kept, but your settings couldn't be restored and were reset to defaults.",
       "missingFields": "Fill in every field before saving.",
       "compressed": "Compressed {{compressName}}.",
       "compressError": "Couldn't compress {{compressName}}. Check that there is room on the drive and try again.",

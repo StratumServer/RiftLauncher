@@ -13,6 +13,11 @@ declare global {
     (payload: { version: string; progress: number }): void
   }
 
+  /** `config.json` was unreadable and getConfig recovered; `restored` says whether the pre-migration backup was usable or the launcher fell back to defaults. */
+  type ConfigRecoveryNoticeCallback = {
+    (payload: { restored: boolean }): void
+  }
+
   type Unsubscribe = () => void
 
   type BridgeAPI = {
@@ -38,6 +43,7 @@ declare global {
     configManager: {
       getConfig: () => Promise<ConfigType>
       saveConfig: (configJson: ConfigType) => Promise<SaveConfigResult>
+      onConfigRecoveryNotice: (callback: ConfigRecoveryNoticeCallback) => Unsubscribe
     }
     modsManager: {
       getInstalledMods: (path: string) => Promise<InstalledModsScan>

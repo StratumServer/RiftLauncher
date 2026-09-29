@@ -844,6 +844,8 @@
       "configSaveUnauthorizedPath": "Vos réglages n'ont pas pu être enregistrés : l'un de vos dossiers n'est pas géré par RiftLauncher. Choisissez-le à nouveau sur la page Configuration.",
       "configSaveWriteFailed": "Vos réglages n'ont pas pu être écrits sur le disque. Vérifiez que RiftLauncher peut écrire dans son dossier de données, puis réessayez.",
       "configSaveRecovered": "Vos réglages s'enregistrent à nouveau.",
+      "configUnreadableRestored": "Votre fichier de réglages n'a pas pu être lu, une copie a donc été conservée et vos derniers réglages enregistrés avant cela ont été restaurés.",
+      "configUnreadableReset": "Votre fichier de réglages n'a pas pu être lu, une copie a donc été conservée, mais vos réglages n'ont pas pu être restaurés et ont été réinitialisés aux valeurs par défaut.",
       "missingFields": "Remplissez tous les champs avant d'enregistrer.",
       "compressed": "Compression terminée : {{compressName}}.",
       "compressError": "Impossible de compresser {{compressName}}. Vérifiez qu'il reste de la place sur le disque et réessayez.",
