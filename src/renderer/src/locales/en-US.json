@@ -457,6 +457,7 @@
       "suggestionsAddAll": "Add all suggestions",
       "suggestionsDismiss": "Dismiss suggestion",
       "suggestionsLoading": "Checking suggestions...",
+      "suggestionsEmpty": "No suggestions right now.",
       "suggestionsReasonOtherInstallation": "You run this in another compatible Installation",
       "suggestionsReasonMatchingTags": "Matches {{count}} category tags you use",
       "suggestionsReasonTrending": "Trending on ModDB",

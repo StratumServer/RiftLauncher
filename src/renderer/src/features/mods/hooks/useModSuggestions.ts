@@ -67,9 +67,19 @@ export function useModSuggestions({
   const refresh = useCallback(() => setRefreshNumber((number) => number + 1), [])
 
   useEffect(() => {
-    if (consent !== true || folded || !installationId || !installationPath || !installationVersion || installedModsKey === null) {
+    if (consent !== true || !installationId || !installationPath || !installationVersion || installedModsKey === null) {
       setSuggestions([])
       setLoading(false)
+      return
+    }
+
+    // Folded rows fetch nothing, but they must not settle into the "loaded and empty" state: that
+    // is what unmounts the section below (see ModSuggestions.tsx) and drops focus off the chevron
+    // on unfold. Keeping loading true here means the first render after unfolding already shows the
+    // spinner, so the section stays mounted throughout.
+    if (folded) {
+      setSuggestions([])
+      setLoading(true)
       return
     }
 

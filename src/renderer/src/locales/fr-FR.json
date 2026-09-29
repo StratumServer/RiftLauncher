@@ -472,6 +472,7 @@
       "suggestionsAddAll": "Ajouter toutes les suggestions",
       "suggestionsDismiss": "Ignorer la suggestion",
       "suggestionsLoading": "Vérification des suggestions...",
+      "suggestionsEmpty": "Aucune suggestion pour le moment.",
       "suggestionsReasonOtherInstallation": "Vous utilisez ce mod dans une autre installation compatible",
       "suggestionsReasonMatchingTags": "Correspond à {{count}} catégories que vous utilisez",
       "suggestionsReasonTrending": "Tendance sur le ModDB",

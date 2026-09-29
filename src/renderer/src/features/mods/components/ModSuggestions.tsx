@@ -113,10 +113,6 @@ function ModSuggestions({
     )
   }
 
-  // A folded row keeps showing its title line regardless of what the (unfetched) suggestions list
-  // holds; only an unfolded, empty, no-longer-loading row hides itself the way it always did.
-  if (!folded && !loading && suggestions.length === 0) return null
-
   const headingId = "mod-suggestions-heading"
   const title = t("features.mods.suggestionsTitle", { installation: installation.name })
   return (
@@ -153,6 +149,7 @@ function ModSuggestions({
           <div id={BODY_ID}>
             <GridGroup>
               {loading && <FiLoader aria-label={t("features.mods.suggestionsLoading")} className="animate-spin text-3xl text-zinc-400" />}
+              {!loading && suggestions.length === 0 && <p className="px-2 text-sm text-zinc-400">{t("features.mods.suggestionsEmpty")}</p>}
               {suggestions.map((suggestion) => (
                 <ModListCard
                   key={suggestion.mod.modid}
