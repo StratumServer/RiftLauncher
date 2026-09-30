@@ -17,8 +17,9 @@ import "@renderer/i18n"
  * The two actions, wired the way the pages wire them.
  *
  * The post-check is the thing worth holding here. What the row ends up saying
- * comes from the launcher's own probe of the folder, so a patch that reports
- * success on a folder the probe does not read as Optimum leaves the row alone
+ * comes from the manifest the main process verified the patched assemblies
+ * against, not from `-v`: a build patched in place prints the plain version.
+ * A folder the probe no longer reads as a VS build at all leaves the row alone
  * and tells the player, rather than writing a label nothing backs up.
  */
 
@@ -77,11 +78,32 @@ describe("useOptimumActions", () => {
     expect(result.current.versions[0]).toMatchObject({ label: "1.22.7 Optimum 0.3.14", variant: { name: "Optimum", version: "0.3.14" } })
   })
 
-  it("leaves the row alone when the folder does not read as Optimum afterwards", async () => {
+  // A build patched in place answers `-v` with the plain version: the version it
+  // prints is compiled into the game's own binary, which the overlay leaves alone.
+  // The main process has already verified the patched assemblies against the
+  // manifest by then, so the manifest is what names the row.
+  it("labels the row from the verified manifest when the probe prints the plain version", async () => {
     const { result } = mountWith({
       pathsManager: { downloadOnPath: vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz") },
       optimumManager: { applyOverlay: vi.fn(async () => ({ ok: true }) as OptimumPatchResult) },
       gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.22.7" })) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    let applied = false
+    await act(async () => {
+      applied = await result.current.actions.applyOptimum(TARGET, MANIFEST)
+    })
+
+    expect(applied).toBe(true)
+    expect(result.current.versions[0]).toMatchObject({ label: "1.22.7 Optimum 0.3.14", variant: { name: "Optimum", version: "0.3.14" } })
+  })
+
+  it("leaves the row alone when the folder no longer reads as a VS build afterwards", async () => {
+    const { result } = mountWith({
+      pathsManager: { downloadOnPath: vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz") },
+      optimumManager: { applyOverlay: vi.fn(async () => ({ ok: true }) as OptimumPatchResult) },
+      gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: false as const })) }
     })
     await waitFor(() => expect(result.current.versions).toHaveLength(1))
 

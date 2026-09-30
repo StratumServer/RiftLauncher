@@ -152,9 +152,11 @@ function ListInslallations(): JSX.Element {
                     <ThinSeparator />
 
                     <div className="shrink-0 w-22 flex flex-col items-center justify-center gap-1">
-                      <p className={clsx("font-bold flex items-center gap-1", isVersionMissing && "text-orange-300")} title={isVersionMissing ? versionWarning : undefined}>
+                      {/* max-w-full and the min-w-0 span let a long label such as "1.22.7 Optimum 0.3.19" wrap inside this
+                          fixed-width column instead of spilling over the move buttons beside it. */}
+                      <p className={clsx("max-w-full font-bold flex items-center gap-1 text-center", isVersionMissing && "text-orange-300")} title={isVersionMissing ? versionWarning : undefined}>
                         {isVersionMissing && <PiWarningDuotone className="shrink-0" />}
-                        {gameVersion?.label ?? installation.version}
+                        <span className="min-w-0">{gameVersion?.label ?? installation.version}</span>
                       </p>
                       <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount ?? 0 })}</p>
                     </div>
