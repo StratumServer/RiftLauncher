@@ -318,7 +318,11 @@ function ListMods(): JSX.Element {
       versionsFilter: filters.versionsFilter,
       tagsFilter: filters.tagsFilter,
       orderBy: filters.orderBy,
-      orderByOrder: filters.orderByOrder
+      orderByOrder: filters.orderByOrder,
+      // OrderFilter only writes this key once the player has actually picked a sort from its
+      // menu, never on the state's own "follows"/"desc" default, so its presence is exactly the
+      // "did they choose one" signal a name-relevance ranking needs to stay out of the way of.
+      orderByIsExplicit: window.localStorage.getItem("listModsOrderBy") !== null
     })
 
     if (queryToken !== queryTokenRef.current) return

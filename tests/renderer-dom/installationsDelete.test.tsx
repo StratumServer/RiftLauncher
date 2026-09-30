@@ -80,4 +80,19 @@ describe("ListInstallations", () => {
     await waitFor(() => expect(screen.queryByText("Are you sure you want to delete this Installation?")).toBeNull())
     expect(screen.getByText("Install A")).toBeTruthy()
   })
+
+  it("renders Manage Worlds beside Delete in the actions strip", async () => {
+    installMockWindowApi({ configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) } })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListInstallations />
+      </TaskProvider>,
+      { route: "/installations" }
+    )
+
+    const deleteBtn = await screen.findByTitle("Delete Installation")
+    const worldsBtn = await screen.findByTitle("Manage Worlds")
+    expect(deleteBtn.parentElement).toBe(worldsBtn.parentElement)
+  })
 })

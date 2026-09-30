@@ -220,6 +220,25 @@ declare global {
     _restoring?: boolean
   }
 
+  type WorldBackupType = BackupType & {
+    worldName: string
+    _deleting?: boolean
+    _restoring?: boolean
+  }
+
+  type WorldType = {
+    name: string
+    size: number
+    lastModified: number
+    isDefault: boolean
+    backupCount: number
+  }
+
+  type WorldListResult = { ok: true; worlds: WorldType[] } | { ok: false; reason: string }
+  type WorldBackupResult = { ok: true; backup: WorldBackupType } | { ok: false; reason: string }
+  type WorldOperationResult = { ok: true } | { ok: false; reason: string }
+  type WorldTransferResult = { ok: true; targetWorldName: string; warning?: "different-version" } | { ok: false; reason: string }
+
   /**
    * One server an Installation can join straight from the launcher (#460).
    *
@@ -250,6 +269,7 @@ declare global {
     backupsAuto: boolean
     compressionLevel: number
     backups: BackupType[]
+    worldBackups?: WorldBackupType[]
     lastTimePlayed: number
     totalTimePlayed: number
     mesaGlThread: boolean
@@ -267,6 +287,7 @@ declare global {
     _backuping?: boolean
     _restoringBackup?: boolean
     _updatingMods?: boolean
+    _worldsCount?: number
   }
 
   type ConfigType = BasicConfigType & {
@@ -498,7 +519,7 @@ declare global {
    *   reason drawn from the game's own output, and a fixed token: what the
    *   host printed (the version, the paths) never leaves the verbose log.
    */
-  type GameExecutionFailureReason = "unsupported-platform" | "no-executable" | "session-write-failed" | "launch-failed" | "invalid-request" | "missing-dotnet"
+  type GameExecutionFailureReason = "unsupported-platform" | "no-executable" | "session-write-failed" | "launch-failed" | "invalid-request" | "installation-busy" | "missing-dotnet"
 
   /**
    * EXECUTE_GAME's verdict.
@@ -747,16 +768,14 @@ declare global {
   /**
    * Why no Optimum is offered this session.
    *
-   * - `unreachable`: the manifest never arrived. One token for the lot, because
-   *   the download worker reports one uniform failure by design, so no
-   *   connection, a refused response and an oversized one are genuinely
-   *   indistinguishable here.
+   * - `unreachable`: the manifest could not be reached because of a transport
+   *   or server failure.
+   * - `not-published`: the release has no manifest asset for this platform.
    * - `unreadable`: it arrived and is not a manifest this build can act on.
    * - `unsupported-system`: it describes an overlay for another platform. Today
-   *   that is every machine that is not linux-x64, since one manifest is
-   *   published per release under one name.
+   *   that is every machine without a published overlay for its runtime ID.
    */
-  type OptimumManifestFailureReason = "unreachable" | "unreadable" | "unsupported-system"
+  type OptimumManifestFailureReason = "unreachable" | "not-published" | "unreadable" | "unsupported-system"
 
   type OptimumManifestResult = { ok: true; manifest: OptimumManifestInfo } | { ok: false; reason: OptimumManifestFailureReason }
 
