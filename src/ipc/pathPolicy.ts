@@ -114,6 +114,10 @@ function getEntryGrants(config: ConfigType): PathGrant[] {
     ...toGrants(
       config.installations.flatMap((installation) => installation.backups.map((backup) => backup.path)),
       false
+    ),
+    ...toGrants(
+      config.installations.flatMap((installation) => (installation.worldBackups ?? []).map((backup) => backup.path)),
+      false
     )
   ]
 }
@@ -218,6 +222,7 @@ export async function assertConfigPathsAuthorized(nextConfig: ConfigType, curren
     nextConfig.backupsFolder,
     ...nextConfig.installations.map((installation) => installation.path),
     ...nextConfig.installations.flatMap((installation) => installation.backups.map((backup) => backup.path)),
+    ...nextConfig.installations.flatMap((installation) => (installation.worldBackups ?? []).map((backup) => backup.path)),
     ...nextConfig.gameVersions.map((gameVersion) => gameVersion.path)
   ]
 

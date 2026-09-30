@@ -218,6 +218,9 @@ function ListInslallations(): JSX.Element {
                         </LinkButton>
                       </div>
                       <div className="flex flex-col gap-1">
+                        <LinkButton to={`/installations/worlds/${installation.id}`} className="p-1" title={t("features.worlds.manageWorlds")} variant="ghost">
+                          <PiGlobeDuotone />
+                        </LinkButton>
                         <NormalButton
                           className="p-1"
                           title={t("features.installations.deleteInstallation")}

@@ -77,5 +77,12 @@ export const IPC_CHANNELS = {
   ACCOUNT_MANAGER: {
     LOGIN: "account-login",
     REMOVE_ACCOUNT: "account-remove"
+  },
+  WORLDS_MANAGER: {
+    LIST: "worlds-list",
+    BACKUP: "worlds-backup",
+    RESTORE: "worlds-restore",
+    DELETE: "worlds-delete",
+    TRANSFER: "worlds-transfer"
   }
 }

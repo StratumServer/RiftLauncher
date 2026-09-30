@@ -126,6 +126,14 @@ vi.mock("@src/ipc/atomicJsonFile", async (importOriginal) => {
 type ExecuteGameHandler = (event: IpcMainInvokeEvent, version: unknown, installation: unknown, serverId?: unknown) => Promise<GameExecutionResult>
 type LookForAGameVersionHandler = (event: IpcMainInvokeEvent, path: unknown) => Promise<{ exists: boolean; installedGameVersion?: string; variant?: GameBuildVariantType }>
 
+async function waitFor(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 2_000
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for condition")
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+}
+
 /** The key the game writes after prompting the player, which the launcher has never seen. */
 const GAME_REFRESHED_KEY = "game-session-key"
 
@@ -443,6 +451,64 @@ describe("EXECUTE_GAME", () => {
     await executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
 
     assert.equal(existsSync(join(userDataFolder, "Sessions")), false)
+  })
+
+  it.skipIf(process.platform !== "linux")("holds the world-operation lock for the duration of a launch", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    const savesFolder = join(installationFolder, "Saves")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(savesFolder, { recursive: true })
+    writeFileSync(join(savesFolder, "World.vcdbs"), "world", "utf-8")
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "#!/bin/sh\nsleep 1\nexit 0\n")
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+    writeConfig({
+      gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+    })
+
+    const activity = await import("@src/ipc/installationActivity")
+    await import("@src/ipc/handlers/worldsHandlers")
+    const event = await createTrustedEvent()
+    const deleteWorld = getIpcHandler<(event: IpcMainInvokeEvent, installationId: string, worldName: string) => Promise<unknown>>("worlds-delete")
+    const launch = executeGameHandler()(event, { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }, { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" })
+
+    await waitFor(() => activity.isInstallationPlaying("main-1"))
+    assert.deepEqual(await deleteWorld(event, "main-1", "World.vcdbs"), { ok: false, reason: "installation-playing" })
+    assert.deepEqual(await launch, { ok: true, exitCode: 0 })
+    assert.deepEqual(await deleteWorld(event, "main-1", "World.vcdbs"), { ok: true })
+    assert.equal(existsSync(join(savesFolder, "World.vcdbs")), false)
+  })
+
+  it("refuses to launch while a world-operation lease is held", async () => {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), "#!/bin/sh\nsleep 1\nexit 0\n")
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+    writeConfig({
+      gameVersions: [{ id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"]
+    })
+
+    const activity = await import("@src/ipc/installationActivity")
+    const lease = activity.tryAcquireInstallationOperation(["main-1"])
+    assert.equal(lease.ok, true)
+    if (!lease.ok) return
+
+    try {
+      const event = await createTrustedEvent()
+      const result = await executeGameHandler()(
+        event,
+        { id: "gv-1.20.0", version: "1.20.0", path: gameVersionFolder },
+        { ...baseInstallation({ path: installationFolder }), gameVersionId: "gv-1.20.0" }
+      )
+      assert.deepEqual(result, { ok: false, reason: "installation-busy" })
+      assert.equal(existsSync(join(userDataFolder, "Sessions", "main-1.json")), false)
+    } finally {
+      lease.release()
+    }
   })
 
   /**

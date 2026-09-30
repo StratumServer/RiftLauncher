@@ -13,6 +13,7 @@ import { normalizeModDbVisibility } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
+import { isSafeWorldName } from "@domain/worlds/worlds"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
 
 const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
@@ -37,6 +38,7 @@ const defaultInstallation: InstallationType = {
   backupsAuto: false,
   compressionLevel: DEFAULT_COMPRESSION_LEVEL,
   backups: [],
+  worldBackups: [],
   lastTimePlayed: -1,
   totalTimePlayed: 0,
   mesaGlThread: false,
@@ -324,6 +326,14 @@ function normalizeBackup(value: unknown): BackupType | null {
   }
 }
 
+function normalizeWorldBackup(value: unknown): WorldBackupType | null {
+  if (!isRecord(value)) return null
+  const backup = normalizeBackup(value)
+  const worldName = asString(value.worldName, "", 255)
+  if (!backup || !isSafeWorldName(worldName)) return null
+  return { ...backup, worldName }
+}
+
 function normalizeInstallation(value: unknown): InstallationType | null {
   if (!isRecord(value)) return null
   const installation: InstallationType = {
@@ -343,6 +353,7 @@ function normalizeInstallation(value: unknown): InstallationType | null {
           .filter((backup): backup is BackupType => backup !== null)
           .slice(0, 100)
       : [],
+    worldBackups: Array.isArray(value.worldBackups) ? value.worldBackups.map(normalizeWorldBackup).filter((backup): backup is WorldBackupType => backup !== null) : [],
     lastTimePlayed: asNumber(value.lastTimePlayed, defaultInstallation.lastTimePlayed, -1, Number.MAX_SAFE_INTEGER),
     totalTimePlayed: asNumber(value.totalTimePlayed, defaultInstallation.totalTimePlayed, 0, Number.MAX_SAFE_INTEGER),
     mesaGlThread: asBoolean(value.mesaGlThread, defaultInstallation.mesaGlThread),

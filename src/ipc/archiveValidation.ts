@@ -24,6 +24,7 @@ import * as tar from "tar"
 
 import type { ArchiveSizeLimits } from "./validation"
 import { archiveSizeLimits, isArchiveSymlink, isSafeArchiveEntry, isSafeTarEntryType, isTarGzName } from "./validation"
+import { isSafeWorldName } from "@domain/worlds/worlds"
 
 const MAX_ARCHIVE_ENTRIES = 100_000
 
@@ -154,4 +155,27 @@ export async function validateArchive(filePath: string, limits: ArchiveSizeLimit
   if (isTarGzName(filePath)) return validateTarGzArchive(filePath, limits)
   if (filePath.toLowerCase().endsWith(".zip")) return validateZipArchive(filePath, limits)
   throw new Error("Archive format is not supported")
+}
+
+/** Validates a launcher-created world archive before any entry is extracted. */
+export async function validateWorldBackupArchive(filePath: string, worldName: string): Promise<void> {
+  if (!isTarGzName(filePath) || !isSafeWorldName(worldName)) throw new Error("World backup format is not supported")
+
+  let count = 0
+  let valid = false
+  try {
+    await tar.list({
+      file: filePath,
+      onReadEntry: (entry) => {
+        count++
+        const size = Number(entry.size)
+        if (count === 1 && entry.type === "File" && entry.path === worldName && isSafeArchiveEntry(entry.path) && Number.isFinite(size) && size >= 0 && size <= archiveSizeLimits(true).entryBytes)
+          valid = true
+      }
+    })
+  } catch {
+    throw new Error("World backup could not be read")
+  }
+
+  if (count !== 1 || !valid) throw new Error("World backup must contain exactly one world file")
 }

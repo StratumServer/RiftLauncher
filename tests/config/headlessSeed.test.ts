@@ -105,6 +105,7 @@ describe("headless seed: config.json against normalizeConfig", () => {
 
     assert.deepEqual(normalizeConfig(config), config)
     assert.equal(config.installations.length, 1)
+    assert.deepEqual(config.installations[0]?.worldBackups, [])
     assert.equal(config.installations[0]?.gameVersionId, config.gameVersions[0]?.id)
     assert.equal(config.window.width, 1024)
     assert.equal(config.window.height, 600)
