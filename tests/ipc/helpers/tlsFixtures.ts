@@ -126,7 +126,7 @@ function toPem(der: Buffer, label: string): string {
  * unsigned-by-anyone-trusted, and the only way `openssl verify -CAfile` (or Node's own
  * chain check, handed this certificate as its `ca`) accepts it as its own root.
  */
-export function createSelfSignedCert(): { cert: string; key: string } {
+export function createSelfSignedCert({ includeLocalhost = true }: { includeLocalhost?: boolean } = {}): { cert: string; key: string } {
   const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
   const publicKeyDer = publicKey.export({ type: "spki", format: "der" })
 
@@ -134,6 +134,8 @@ export function createSelfSignedCert(): { cert: string; key: string } {
   const notAfter = new Date(Date.now() + 24 * 60 * 60 * 1000)
   const serial = Math.floor(Math.random() * 1e9) + 1
   const subjectAndIssuer = name("127.0.0.1")
+  const altNames = [ipAddress("127.0.0.1")]
+  if (includeLocalhost) altNames.push(dnsName("localhost"))
 
   const tbsCertificate = seq(
     explicit(0, int(2)),
@@ -143,7 +145,7 @@ export function createSelfSignedCert(): { cert: string; key: string } {
     seq(utcTime(notBefore), utcTime(notAfter)),
     subjectAndIssuer,
     publicKeyDer,
-    explicit(3, seq(extensionSAN([ipAddress("127.0.0.1"), dnsName("localhost")])))
+    explicit(3, seq(extensionSAN(altNames)))
   )
   const signature = cryptoSign("sha256", tbsCertificate, { key: privateKey })
   const certificate = seq(tbsCertificate, algEcdsaSha256(), bitString(signature))

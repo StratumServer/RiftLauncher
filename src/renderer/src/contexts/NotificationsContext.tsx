@@ -222,6 +222,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   const invokedActions = useRef<Set<string>>(new Set())
   const offeredVersion = useRef("")
   const downloadAccepted = useRef(false)
+  const addNotificationRef = useRef<NotificationsContextType["addNotification"]>(() => {})
 
   const history = useMemo(() => records.filter((record) => !isToastOnly(record)), [records])
   stackRef.current = stack
@@ -294,7 +295,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
 
   useEffect((): (() => void) => {
     const offerDownload = (body: string): void => {
-      addNotification(body, "info", {
+      addNotificationRef.current(body, "info", {
         duration: null,
         actions: [
           {
@@ -321,13 +322,21 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     })
     const removeUpdateDownloadedListener = window.api.appUpdater.onUpdateDownloaded(() => {
       window.setTimeout(() => {
-        addNotification(t("notifications.body.updateDownloaded"), "success", {
+        addNotificationRef.current(t("notifications.body.updateDownloaded"), "success", {
           duration: null,
           actions: [{ id: "restart-and-update", label: t("components.activityCenter.restartAndUpdate"), onClick: (): void => window.api.appUpdater.updateAndRestart() }]
         })
       }, 2_000)
     })
 
+    return () => {
+      removeUpdateAvailableListener()
+      removeUpdateErrorListener()
+      removeUpdateDownloadedListener()
+    }
+  }, [t])
+
+  useEffect(() => {
     // getConfig() found config.json unreadable (bad JSON, a hand edit gone wrong, or valid JSON
     // that was not an object): it tried to keep a copy next to it before touching anything, and
     // either restored the settings from before the last migration or, with none usable, fell back
@@ -341,7 +350,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       if (cancelled || !notice) return
 
       if (notice.kind === "read-failed") {
-        addNotification(t("notifications.body.configReadFailed"), "warning", { duration: null })
+        addNotificationRef.current(t("notifications.body.configReadFailed"), "warning", { duration: null })
         return
       }
 
@@ -353,19 +362,19 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
         : restored
           ? "notifications.body.configUnreadableRestoredUnsaved"
           : "notifications.body.configUnreadableResetUnsaved"
-      addNotification(t(key, preserved ? { copyName } : undefined), "warning", { duration: null })
+      addNotificationRef.current(t(key, preserved ? { copyName } : undefined), "warning", { duration: null })
     })
 
     return () => {
       cancelled = true
-      removeUpdateAvailableListener()
-      removeUpdateErrorListener()
-      removeUpdateDownloadedListener()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t deliberately excluded: adding it would replay the recovery notice on every language change.
   }, [])
 
-  const addNotification = (body: string, type: NotificationTypes, options?: NotificationOptions): void => {
+  // useCallback because page-level refresh callbacks list addNotification in
+  // their dependency arrays and refire their list effect when its identity
+  // churns per render (#362 pattern; same reason as markAllSeen below).
+  const addNotification = useCallback((body: string, type: NotificationTypes, options?: NotificationOptions): void => {
     const presentation = options?.presentation ?? "both"
     const hasActions = Boolean(options?.actions?.length)
 
@@ -406,7 +415,8 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       pendingToasts.current.push({ id, body, type, hasActions })
       setToastQueue((queue) => [...queue, id])
     }
-  }
+  }, [])
+  addNotificationRef.current = addNotification
 
   const dismissToast = (id: string, reason: ToastDismissReason = "manual"): void => {
     setStack((current) => (current.some((entry) => entry.id === id) ? current.filter((entry) => entry.id !== id) : current))

@@ -26,8 +26,15 @@ ipcMain.handle(IPC_CHANNELS.CONFIG_MANAGER.GET_CONFIG_RECOVERY_NOTICE, async (ev
 ipcMain.handle(IPC_CHANNELS.CONFIG_MANAGER.SAVE_CONFIG, async (event, config: ConfigType): Promise<SaveConfigResult> => {
   assertTrustedIpcSender(event)
   if (!isRecord(config)) return invalidPayloadResult()
-  const normalizedConfig = normalizeConfig(config)
   const currentConfig = await getConfig()
+  const requestedConfig = normalizeConfig(config)
+  const normalizedConfig = normalizeConfig({
+    ...requestedConfig,
+    installations: requestedConfig.installations.map((installation) => ({
+      ...installation,
+      worldBackups: currentConfig.installations.find((current) => current.id === installation.id)?.worldBackups ?? installation.worldBackups
+    }))
+  })
   if (!(await assertConfigPathsAuthorized(normalizedConfig, currentConfig))) return unauthorizedPathResult()
   const saved = await saveConfig(normalizedConfig)
   if (!saved && isConfigWriteSuppressed()) return sessionReadOnlyResult()

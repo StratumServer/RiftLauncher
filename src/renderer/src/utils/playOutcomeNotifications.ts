@@ -56,6 +56,8 @@ export function pickPlayOutcomeNotification(result: GameExecutionResult, os: str
       return { key: "notifications.body.gameLaunchSessionWriteFailed" }
     case "invalid-request":
       return { key: "notifications.body.gameLaunchInvalidEnvironment" }
+    case "installation-busy":
+      return { key: "notifications.body.gameLaunchInstallationBusy" }
     case "missing-dotnet":
       return { key: "notifications.body.gameLaunchMissingDotnet", link: { url: installGuideUrl(os), labelKey: "notifications.actions.openInstallGuide" } }
     case "launch-failed":

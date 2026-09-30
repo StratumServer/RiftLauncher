@@ -204,8 +204,12 @@ function renderManageMods(overrides: WindowApiOverrides = {}, servers?: ServerBo
  * carry, so every test written against that label still works once it awaits this instead.
  */
 async function modpackMenuItem(user: ReturnType<typeof userEvent.setup>, label: string): Promise<HTMLButtonElement> {
-  if (!screen.queryByText(label)) await user.click(screen.getByText("Modpack").closest("button") as HTMLElement)
-  return screen.getByText(label).closest("button") as HTMLButtonElement
+  // A closed menu can remain mounted during its exit animation. Check its expanded state, then
+  // scope the text lookup to the visible menu instead of matching a lingering hidden item.
+  const menuButton = screen.getByRole("button", { name: "Modpack" })
+  if (menuButton.getAttribute("aria-expanded") !== "true") await user.click(menuButton)
+  const menu = await screen.findByRole("menu")
+  return within(menu).getByText(label).closest("button") as HTMLButtonElement
 }
 
 /**

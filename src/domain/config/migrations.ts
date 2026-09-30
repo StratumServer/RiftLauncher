@@ -20,7 +20,7 @@
 import { isRecord } from "../records"
 
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 6
+export const CURRENT_CONFIG_SCHEMA = 7
 
 /**
  * First schema expressed as an integer.
@@ -337,6 +337,20 @@ export const addGameVersionIdentity: ConfigMigration = {
   }
 }
 
+/** Gives every installation its own durable world-backup record collection. */
+export const addWorldBackupRecords: ConfigMigration = {
+  fromSchema: 6,
+  toSchema: 7,
+  migrate(doc: unknown): unknown {
+    if (!isRecord(doc) || !Array.isArray(doc.installations)) return { ...(doc as Record<string, unknown>) }
+    const installations = doc.installations.map((entry) => {
+      if (!isRecord(entry)) return entry
+      return Array.isArray(entry.worldBackups) ? entry : { ...entry, worldBackups: [] }
+    })
+    return { ...doc, installations }
+  }
+}
+
 /** Adds the independent ModDB suggestions answer and bounded dismissal history. */
 export const addModSuggestionsPreferences: ConfigMigration = {
   fromSchema: 5,
@@ -360,7 +374,8 @@ export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
   stampLinkedOnExternalVersions,
   singleAccountToAccountList,
   addGameVersionIdentity,
-  addModSuggestionsPreferences
+  addModSuggestionsPreferences,
+  addWorldBackupRecords
 ]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {
