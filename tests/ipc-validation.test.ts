@@ -43,7 +43,7 @@ describe("IPC boundary validators", () => {
   })
 
   it("downloads Optimum's overlay from one repository's release assets and nowhere else on GitHub", () => {
-    assert.equal(assertAllowedDownloadUrl("https://github.com/StratumServer/Optimum/releases/latest/download/optimum-manifest.json").hostname, "github.com")
+    assert.equal(assertAllowedDownloadUrl("https://github.com/StratumServer/Optimum/releases/latest/download/optimum-manifest-linux-x64.json").hostname, "github.com")
     assert.equal(
       assertAllowedDownloadUrl("https://github.com/StratumServer/Optimum/releases/download/v0.3.14/Optimum-v0.3.14-linux-x64-overlay.tar.gz").pathname,
       "/StratumServer/Optimum/releases/download/v0.3.14/Optimum-v0.3.14-linux-x64-overlay.tar.gz"

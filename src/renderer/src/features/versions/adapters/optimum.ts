@@ -27,6 +27,8 @@ export function describeOptimumManifestFailure(reason: OptimumManifestFailureRea
       return "features.versions.optimumNoBuildForSystem"
     case "unreadable":
       return "features.versions.optimumListUnreadable"
+    case "not-published":
+      return "features.versions.optimumListNotPublished"
     case "unreachable":
       return "features.versions.optimumListUnreachable"
   }

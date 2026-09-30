@@ -332,6 +332,20 @@ describe("verifyStagedOverlay", () => {
     assert.equal(await verifyStagedOverlay(overlayDirectory, manifest({ files })), true)
   })
 
+  it("accepts the RID-specific manifest name that Optimum writes after its file list", async () => {
+    const files = [stage("optimum", "the cli")]
+    writeFileSync(join(overlayDirectory, "optimum-manifest-linux-x64.json"), "{}")
+
+    assert.equal(await verifyStagedOverlay(overlayDirectory, manifest({ files })), true)
+  })
+
+  it("refuses a RID-specific manifest for another platform", async () => {
+    const files = [stage("optimum", "the cli")]
+    writeFileSync(join(overlayDirectory, "optimum-manifest-win-x64.json"), "{}")
+
+    assert.equal(await verifyStagedOverlay(overlayDirectory, manifest({ files })), false)
+  })
+
   it("refuses a file whose bytes are not the ones the manifest hashed", async () => {
     const files = [stage("optimum", "the cli")]
     writeFileSync(join(overlayDirectory, "optimum"), "a swapped cli")
