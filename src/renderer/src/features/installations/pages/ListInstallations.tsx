@@ -152,11 +152,14 @@ function ListInslallations(): JSX.Element {
                     <ThinSeparator />
 
                     <div className="shrink-0 w-22 flex flex-col items-center justify-center gap-1">
-                      {/* max-w-full, the min-w-0 span and whitespace-normal (the row itself is nowrap) let a long label such as
-                          "1.22.7 Optimum 0.3.19" wrap inside this fixed-width column instead of spilling over the buttons beside it. */}
-                      <p className={clsx("max-w-full font-bold flex items-center gap-1 text-center", isVersionMissing && "text-orange-300")} title={isVersionMissing ? versionWarning : undefined}>
+                      {/* A long label such as "1.22.7 Optimum 0.3.19" is cut with an ellipsis inside this fixed-width column, with
+                          the full text as a tooltip: wrapping it takes three lines, which the 64 px row clips. */}
+                      <p
+                        className={clsx("max-w-full font-bold flex items-center gap-1", isVersionMissing && "text-orange-300")}
+                        title={isVersionMissing ? versionWarning : (gameVersion?.label ?? installation.version)}
+                      >
                         {isVersionMissing && <PiWarningDuotone className="shrink-0" />}
-                        <span className="min-w-0 whitespace-normal leading-tight">{gameVersion?.label ?? installation.version}</span>
+                        <span className="min-w-0 truncate">{gameVersion?.label ?? installation.version}</span>
                       </p>
                       <p className="text-sm">{t("features.mods.modsCount", { count: installation._modsCount ?? 0 })}</p>
                     </div>
