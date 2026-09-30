@@ -216,6 +216,12 @@ describe("serveTasks", () => {
  * the failure route while a single file is now a valid world-backup source.
  */
 describe("the compress worker's own failure describer", () => {
+  // The worker can post progress before it answers, so wait for its terminal
+  // message rather than the first one: reading a progress message was a race.
+  async function waitForTerminalMessage(): Promise<void> {
+    await vi.waitFor(() => assert.ok(["finished", "error"].includes((lastMessage() as { type?: string } | undefined)?.type ?? "")))
+  }
+
   it("forwards each distinct compression failure instead of one constant sentence", async () => {
     // Imported after beforeEach has put the fake port in place: serveTasks reads
     // parentPort when the module body runs.
@@ -223,7 +229,7 @@ describe("the compress worker's own failure describer", () => {
 
     const missingSource = { inputPath: "/nonexistent-riftlauncher-backup-source", outputPath: "/tmp", outputFileName: "backup.tar.gz" }
     port.emit("message", { type: "task", token: 1, payload: missingSource })
-    await vi.waitFor(() => assert.equal(lastMessage() !== undefined, true))
+    await waitForTerminalMessage()
 
     const missingSourceMessage = (lastMessage() as { message: string }).message
     assert.match(missingSourceMessage, /ENOENT/, `expected the filesystem's own reason, got: ${missingSourceMessage}`)
@@ -233,7 +239,7 @@ describe("the compress worker's own failure describer", () => {
     // A single file is a valid world-backup source and must finish successfully.
     const fileAsSource = { inputPath: fileURLToPath(import.meta.url), outputPath: "/tmp", outputFileName: "backup.tar.gz" }
     port.emit("message", { type: "task", token: 2, payload: fileAsSource })
-    await vi.waitFor(() => assert.equal(lastMessage() !== undefined, true))
+    await waitForTerminalMessage()
 
     assert.equal((lastMessage() as { type: string }).type, "finished")
   })
