@@ -252,6 +252,8 @@ describe("Mod suggestions: folding (#546)", () => {
     await user.click(toggle)
 
     expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    // aria-controls must keep pointing at an element that exists while folded.
+    expect(document.getElementById(toggle.getAttribute("aria-controls") ?? "")).not.toBeNull()
     expect(within(section).queryByRole("button", { name: "Refresh suggestions" })).toBeNull()
     expect(within(section).queryByRole("button", { name: "Suggestion Candidate, Not installed" })).toBeNull()
     // The title line stays: folding is not the same as the "no suggestions yet" empty state.
@@ -353,6 +355,7 @@ describe("Mod suggestions: folding (#546)", () => {
     await user.click(toggle)
 
     expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    expect(document.getElementById(toggle.getAttribute("aria-controls") ?? "")).not.toBeNull()
     expect(screen.queryByRole("button", { name: "Turn on Mod suggestions" })).toBeNull()
     expect(screen.getByRole("button", { name: "Discover compatible Mods" })).toBeTruthy()
     expect(api.configManager.saveConfig).not.toHaveBeenCalledWith(expect.objectContaining({ modSuggestionsConsent: expect.anything() }))

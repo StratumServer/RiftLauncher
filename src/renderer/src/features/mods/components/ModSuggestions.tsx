@@ -96,19 +96,21 @@ function ModSuggestions({
           <h2 className="text-lg font-bold">{title}</h2>
         </div>
 
-        {!folded && (
-          <div id={BODY_ID}>
-            <p className="mx-auto mt-1 max-w-2xl text-sm text-zinc-300">{t("features.mods.suggestionsOptInBody")}</p>
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              <FormButton title={t("features.mods.suggestionsOptInButton")} variant="primary" onClick={onEnable}>
-                {t("features.mods.suggestionsOptInButton")}
-              </FormButton>
-              <FormButton title={t("features.mods.suggestionsNoThanks")} variant="ghost" onClick={onNoThanks}>
-                {t("features.mods.suggestionsNoThanks")}
-              </FormButton>
-            </div>
-          </div>
-        )}
+        <div id={BODY_ID} hidden={folded}>
+          {!folded && (
+            <>
+              <p className="mx-auto mt-1 max-w-2xl text-sm text-zinc-300">{t("features.mods.suggestionsOptInBody")}</p>
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                <FormButton title={t("features.mods.suggestionsOptInButton")} variant="primary" onClick={onEnable}>
+                  {t("features.mods.suggestionsOptInButton")}
+                </FormButton>
+                <FormButton title={t("features.mods.suggestionsNoThanks")} variant="ghost" onClick={onNoThanks}>
+                  {t("features.mods.suggestionsNoThanks")}
+                </FormButton>
+              </div>
+            </>
+          )}
+        </div>
       </section>
     )
   }
@@ -145,8 +147,8 @@ function ModSuggestions({
           </div>
         </div>
 
-        {!folded && (
-          <div id={BODY_ID}>
+        <div id={BODY_ID} hidden={folded}>
+          {!folded && (
             <GridGroup>
               {loading && <FiLoader aria-label={t("features.mods.suggestionsLoading")} className="animate-spin text-3xl text-zinc-400" />}
               {!loading && suggestions.length === 0 && <p className="px-2 text-sm text-zinc-400">{t("features.mods.suggestionsEmpty")}</p>}
@@ -183,8 +185,8 @@ function ModSuggestions({
                 />
               ))}
             </GridGroup>
-          </div>
-        )}
+          )}
+        </div>
       </GridWrapper>
     </section>
   )
