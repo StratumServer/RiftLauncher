@@ -336,7 +336,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     }
   }, [t])
 
-  useEffect(() => {
+  useEffect((): (() => void) => {
     // getConfig() found config.json unreadable (bad JSON, a hand edit gone wrong, or valid JSON
     // that was not an object): it tried to keep a copy next to it before touching anything, and
     // either restored the settings from before the last migration or, with none usable, fell back
