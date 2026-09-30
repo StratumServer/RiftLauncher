@@ -5,6 +5,37 @@ import { cleanup } from "@testing-library/react"
 import { clearQueryCache } from "@renderer/features/mods/hooks/useQueryMods"
 import { resetModsBrowseState } from "@renderer/features/mods/modsBrowseState"
 
+// Node 26 installs a global localStorage of its own, and it stays undefined
+// unless the process was started with --localstorage-file: the runtime then
+// warns "localStorage is not available because --localstorage-file was not
+// provided" and hands back nothing. Vitest's jsdom environment leaves that
+// shadow in place instead of jsdom's Storage, so window.localStorage reads as
+// undefined and the beforeEach below throws before any test body runs -- which
+// is what takes all 87 renderer-dom files down at once under a modern Node.
+// The in-memory Storage below is the same shape as the other jsdom gaps
+// patched in this file, and keeps the parts the renderer actually uses: string
+// coercion on both key and value, null for a miss, and insertion order for
+// key(). Nothing here persists on purpose -- these tests want a clean store
+// per file, and the per-file beforeEach already clears the two keys it names.
+if (typeof window.localStorage === "undefined") {
+  const entries = new Map<string, string>()
+  const shim: Storage = {
+    get length(): number {
+      return entries.size
+    },
+    clear: (): void => entries.clear(),
+    getItem: (key: string): string | null => entries.get(String(key)) ?? null,
+    key: (index: number): string | null => [...entries.keys()][index] ?? null,
+    removeItem: (key: string): void => {
+      entries.delete(String(key))
+    },
+    setItem: (key: string, value: string): void => {
+      entries.set(String(key), String(value))
+    }
+  }
+  Object.defineProperty(window, "localStorage", { value: shim, configurable: true, writable: true })
+}
+
 // useQueryMods keeps its result cache at module scope. Reset it for every
 // renderer-dom test so one file cannot leak a cached response into another.
 beforeEach(() => {
