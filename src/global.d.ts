@@ -766,16 +766,14 @@ declare global {
   /**
    * Why no Optimum is offered this session.
    *
-   * - `unreachable`: the manifest never arrived. One token for the lot, because
-   *   the download worker reports one uniform failure by design, so no
-   *   connection, a refused response and an oversized one are genuinely
-   *   indistinguishable here.
+   * - `unreachable`: the manifest could not be reached because of a transport
+   *   or server failure.
+   * - `not-published`: the release has no manifest asset for this platform.
    * - `unreadable`: it arrived and is not a manifest this build can act on.
    * - `unsupported-system`: it describes an overlay for another platform. Today
-   *   that is every machine that is not linux-x64, since one manifest is
-   *   published per release under one name.
+   *   that is every machine without a published overlay for its runtime ID.
    */
-  type OptimumManifestFailureReason = "unreachable" | "unreadable" | "unsupported-system"
+  type OptimumManifestFailureReason = "unreachable" | "not-published" | "unreadable" | "unsupported-system"
 
   type OptimumManifestResult = { ok: true; manifest: OptimumManifestInfo } | { ok: false; reason: OptimumManifestFailureReason }
 

@@ -36,6 +36,14 @@ const DOWNLOAD_TIMEOUT_MS = 30_000
  */
 const MAX_DOWNLOAD_REDIRECTS = 3
 
+/** A download failure with an HTTP response status, when a server refused the request. */
+export class DownloadError extends Error {
+  constructor(readonly statusCode?: number) {
+    super("Download failed")
+    this.name = "DownloadError"
+  }
+}
+
 function isRedirectStatus(statusCode: number): boolean {
   return statusCode === 301 || statusCode === 302 || statusCode === 303 || statusCode === 307 || statusCode === 308
 }
@@ -103,9 +111,10 @@ export interface DownloadOptions {
  * because the worker used to make this check at module scope, where it faulted
  * the thread instead of posting a download failure.
  * @throws Asynchronously, as a rejection, for every transport, filesystem,
- * length and digest failure. The reason is deliberately uniform: the caller
- * reports "Download failed" and nothing about a refused download is worth
- * telling the renderer apart.
+ * length and digest failure. The error message stays "Download failed". An
+ * HTTP response status is retained for callers that distinguish a missing
+ * release asset from a transport failure; the worker protocol still reports
+ * the same uniform message.
  */
 export function runDownload(options: DownloadOptions): Promise<string> {
   const { url, outputPath, fileName, expectedMd5, expectedSha256, maxBytes = MAX_DOWNLOAD_BYTES, request = nodeRequest, onProgress } = options
@@ -121,14 +130,14 @@ export function runDownload(options: DownloadOptions): Promise<string> {
     let writer: ReturnType<typeof createWriteStream> | undefined
     const digest = createHash(typeof expectedSha256 === "string" ? "sha256" : "md5")
 
-    function fail(): void {
+    function fail(statusCode?: number): void {
       if (settled) return
       settled = true
       activeRequest?.destroy()
       responseStream?.destroy()
       writer?.destroy()
       void fse.remove(temporaryPath).catch(() => undefined)
-      rejectPromise(new Error("Download failed"))
+      rejectPromise(new DownloadError(statusCode))
     }
 
     try {
@@ -191,7 +200,7 @@ export function runDownload(options: DownloadOptions): Promise<string> {
 
           if (statusCode < 200 || statusCode >= 300 || (Number.isFinite(contentLength) && (contentLength < 0 || contentLength > byteCeiling))) {
             response.resume()
-            fail()
+            fail(statusCode < 200 || statusCode >= 300 ? statusCode : undefined)
             return
           }
 
@@ -228,9 +237,9 @@ export function runDownload(options: DownloadOptions): Promise<string> {
           }
 
           response.on("data", reportProgress)
-          response.on("aborted", fail)
-          response.on("error", fail)
-          writer.on("error", fail)
+          response.on("aborted", () => fail())
+          response.on("error", () => fail())
+          writer.on("error", () => fail())
           writer.on("finish", () => {
             if (settled) return
             try {

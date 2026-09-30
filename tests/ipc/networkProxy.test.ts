@@ -90,7 +90,7 @@ function startSecureOrigin(cert: string, key: string, handler: (req: IncomingMes
 }
 
 /** A CONNECT-accepting proxy that relays the tunnel to the real target, and records every CONNECT target it saw. */
-function startRelayProxy(): Promise<{ port: number; connectTargets: string[] }> {
+function startRelayProxy(bindHost = "127.0.0.1"): Promise<{ port: number; connectTargets: string[] }> {
   return new Promise((resolve) => {
     const connectTargets: string[] = []
     proxy = createHttpServer()
@@ -110,7 +110,7 @@ function startRelayProxy(): Promise<{ port: number; connectTargets: string[] }> 
       upstream.on("error", () => clientSocket.destroy())
       clientSocket.on("error", () => upstream.destroy())
     })
-    proxy.listen(0, "127.0.0.1", () => {
+    proxy.listen(0, bindHost, () => {
       const address = proxy?.address()
       if (address === null || typeof address !== "object") throw new Error("Proxy server failed to bind")
       resolve({ port: address.port, connectTargets })
@@ -340,5 +340,39 @@ describe("requestBoundedTextViaNode reaches an https target through an HTTP prox
     assert.equal(result, "ok")
     assert.equal(receivedBody, body)
     assert.deepEqual(relay.connectTargets, [`127.0.0.1:${url.port}`])
+  })
+
+  it("checks an IP target certificate against the target host, not the proxy address", async () => {
+    const { cert, key } = createSelfSignedCert({ includeLocalhost: false })
+    const url = await startSecureOrigin(cert, key, (_req, res) => {
+      res.writeHead(200)
+      res.end("ok")
+    })
+    const relay = await startRelayProxy("127.0.0.2")
+    setElectronProxyResolution(`PROXY 127.0.0.2:${relay.port}`)
+    setTrustedCa(cert)
+
+    assert.equal(await requestBoundedTextViaNode(url), "ok")
+    assert.deepEqual(relay.connectTargets, [`127.0.0.1:${url.port}`])
+  })
+
+  it("sends the DNS target as SNI through the proxy tunnel", async () => {
+    const { cert, key } = createSelfSignedCert()
+    const url = await startSecureOrigin(cert, key, (_req, res) => {
+      res.writeHead(200)
+      res.end("ok")
+    })
+    let servername: string | undefined
+    secureOrigin?.on("secureConnection", (socket) => {
+      servername = (socket as typeof socket & { servername?: string }).servername
+    })
+    url.hostname = "localhost"
+    const relay = await startRelayProxy("127.0.0.2")
+    setElectronProxyResolution(`PROXY 127.0.0.2:${relay.port}`)
+    setTrustedCa(cert)
+
+    assert.equal(await requestBoundedTextViaNode(url), "ok")
+    assert.equal(servername, "localhost")
+    assert.deepEqual(relay.connectTargets, [`localhost:${url.port}`])
   })
 })

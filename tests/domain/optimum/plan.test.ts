@@ -2,7 +2,18 @@ import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
-import { cliFileName, hostRid, isUpdateAvailable, overlayCacheFolder, overlayDownloadUrl, patchArgs, rollbackArgs, supportsGameVersion } from "@domain/optimum/plan"
+import {
+  cliFileName,
+  hostRid,
+  isUpdateAvailable,
+  optimumManifestDownloadUrl,
+  optimumManifestFileName,
+  overlayCacheFolder,
+  overlayDownloadUrl,
+  patchArgs,
+  rollbackArgs,
+  supportsGameVersion
+} from "@domain/optimum/plan"
 
 function manifest(overrides: Partial<OptimumManifest> = {}): OptimumManifest {
   return {
@@ -67,6 +78,13 @@ describe("isUpdateAvailable", () => {
 })
 
 describe("addresses built by the launcher", () => {
+  it("selects a release manifest per platform", () => {
+    assert.equal(optimumManifestFileName("linux-x64"), "optimum-manifest-linux-x64.json")
+    assert.equal(optimumManifestFileName("win-x64"), "optimum-manifest-win-x64.json")
+    assert.equal(optimumManifestDownloadUrl("linux-x64"), "https://github.com/StratumServer/Optimum/releases/latest/download/optimum-manifest-linux-x64.json")
+    assert.equal(optimumManifestDownloadUrl("win-x64"), "https://github.com/StratumServer/Optimum/releases/latest/download/optimum-manifest-win-x64.json")
+  })
+
   it("builds the download URL from the version and the checked file name", () => {
     assert.equal(overlayDownloadUrl(manifest()), "https://github.com/StratumServer/Optimum/releases/download/v0.3.14/Optimum-v0.3.14-linux-x64-overlay.tar.gz")
   })

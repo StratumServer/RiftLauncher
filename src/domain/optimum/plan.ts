@@ -13,11 +13,15 @@ import semver from "semver"
 
 import type { OptimumManifest, OptimumRid } from "./manifest"
 
-/** Where the manifest of the newest published overlay is read from. One fixed address, no listing call. */
-export const OPTIMUM_MANIFEST_URL = "https://github.com/StratumServer/Optimum/releases/latest/download/optimum-manifest.json"
+/** The manifest filename published for one supported platform. */
+export function optimumManifestFileName(rid: OptimumRid): string {
+  return `optimum-manifest-${rid}.json`
+}
 
-/** The name the manifest is saved under in the cache. */
-export const OPTIMUM_MANIFEST_FILE_NAME = "optimum-manifest.json"
+/** Where the newest manifest for one supported platform is read from. */
+export function optimumManifestDownloadUrl(rid: OptimumRid): string {
+  return `https://github.com/StratumServer/Optimum/releases/latest/download/${optimumManifestFileName(rid)}`
+}
 
 /**
  * The folder a patched build keeps Optimum's own state in, and the folder under

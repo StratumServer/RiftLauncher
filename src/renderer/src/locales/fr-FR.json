@@ -148,6 +148,7 @@
       "optimumNoBuildForSystem": "Optimum ne propose pas de build pour ce système.",
       "optimumNoBuildForVersion": "Optimum ne propose pas encore de build pour cette version.",
       "optimumListUnreachable": "La liste des builds d'Optimum n'a pas pu être récupérée. Vérifiez votre connexion et rouvrez cette page.",
+      "optimumListNotPublished": "Optimum n'a pas encore publié de liste de builds pour cette plateforme.",
       "optimumListUnreadable": "La liste des builds d'Optimum n'a pas pu être lue, elle n'est donc pas proposée cette fois.",
       "optimumTaskName": "Optimum {{version}}",
       "optimumDownloadDesc": "Téléchargement d'Optimum {{version}}.",
