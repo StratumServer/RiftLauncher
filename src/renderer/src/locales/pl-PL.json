@@ -347,6 +347,8 @@
       "summaryFailed": "Nieudane",
       "summaryAlreadyPresent": "Już zainstalowane",
       "summaryClose": "Gotowe",
+      "importModConfigsSkip": "Nie zapisuj żadnego",
+      "importModConfigsApply": "Zapisz wybrane konfiguracje",
       "cantPlayWhileUpdatingMods": "Nie możesz grać na tej instancji, gdy jej mody są aktualizowane.",
       "showModDetails": "Pokaż szczegóły {{mod}}",
       "closeModDetails": "Zamknij szczegóły",

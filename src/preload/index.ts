@@ -44,12 +44,20 @@ const api: BridgeAPI = {
     getServerMods: (installationPath: string): Promise<ServerModsScan> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS, installationPath),
     setModEnabled: (path: string, enabled: boolean): Promise<SetModEnabledResult> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, path, enabled),
     cacheModImage: (url: string): Promise<string | undefined> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.CACHE_MOD_IMAGE, url),
-    exportModpack: (manifest: ModpackManifestType): Promise<{ success: boolean; path?: string }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, manifest),
-    importModpack: (): Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK),
+    exportModpack: (
+      manifest: ModpackManifestType,
+      installationPath: string,
+      includeConfigs: boolean
+    ): Promise<{ success: boolean; path?: string; reason?: "unreadable-config" | "not-utf8" | "too-many" | "too-large"; name?: string }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, manifest, installationPath, includeConfigs),
+    importModpack: (): Promise<{ success: boolean; manifest?: ModpackManifestType; settingsRefused?: SettingsRefused; error?: string }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK),
     clearModIconMemoryCache: (): void => ipcRenderer.send(IPC_CHANNELS.MODS_MANAGER.CLEAR_MOD_ICON_MEMORY_CACHE),
     getModProfiles: (installationPath: string): Promise<ModProfilesReadResult> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_MOD_PROFILES, installationPath),
     saveModProfiles: (installationPath: string, document: ModProfilesDocument): Promise<ModProfilesSaveResult> =>
-      ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.SAVE_MOD_PROFILES, installationPath, document)
+      ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.SAVE_MOD_PROFILES, installationPath, document),
+    getModConfigs: (installationPath: string): Promise<ModConfigsReadResult> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_MOD_CONFIGS, installationPath),
+    applyModConfigs: (installationPath: string, files: { name: string; text: string; sha256: string }[]): Promise<ApplyModConfigsResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, installationPath, files)
   },
   pathsManager: {
     getCurrentUserDataPath: (): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.PATHS_MANAGER.GET_CURRENT_USER_DATA_PATH),

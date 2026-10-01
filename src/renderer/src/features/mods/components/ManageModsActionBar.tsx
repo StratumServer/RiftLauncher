@@ -6,6 +6,7 @@ import clsx from "clsx"
 import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBoxArrowDownDuotone, PiDesktopTowerDuotone, PiStackDuotone, PiPackageDuotone } from "react-icons/pi"
 
 import { useExportModpack } from "@renderer/features/mods/hooks/useExportModpack"
+import { useModConfigs } from "@renderer/features/mods/hooks/useModConfigs"
 import { resolveModsFolder } from "@renderer/features/mods/adapters/folder"
 import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
 
@@ -50,6 +51,15 @@ function ManageModsActionBar({
   // something to include, so a player with no saved servers never sees a choice they cannot make.
   const [includeServers, setIncludeServers] = useState(false)
   const savedServers = installation.servers?.length ?? 0
+
+  // Off by default for the same reason, and for a stronger one: a config is the one part of an
+  // Installation that is the player's own work rather than the game's, so it does not travel in a
+  // file people hand around unless they say so. Hidden while the folder's contents are unknown, so
+  // the box is never offered for an installation whose configs have not been read yet, and hidden
+  // when there is nothing in the folder to offer.
+  const [includeConfigs, setIncludeConfigs] = useState(false)
+  const { listing: modConfigs } = useModConfigs(installation.path)
+  const configCount = modConfigs?.ok ? modConfigs.configs.length : 0
 
   // A modpack is the set someone else is meant to be able to play, so a Mod the player turned off
   // is not in it. Both exports read this list, and both are greyed out by it: a folder whose Mods
@@ -127,7 +137,7 @@ function ManageModsActionBar({
                           title={t("features.mods.exportModpack")}
                           variant="ghost"
                           className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
-                          onClick={() => exportModpack({ installedMods: enabledMods, installation, includeServers })}
+                          onClick={() => exportModpack({ installedMods: enabledMods, installation, includeServers, includeConfigs })}
                           disabled={enabledMods.length === 0}
                         >
                           <div className="w-full flex items-center gap-2">
@@ -187,6 +197,15 @@ function ManageModsActionBar({
             <Input id="export-include-servers" type="checkbox" checked={includeServers} onChange={(e) => setIncludeServers(e.target.checked)} />
             <label htmlFor="export-include-servers" className="text-sm">
               {t("features.servers.includeServers")}
+            </label>
+          </div>
+        )}
+
+        {configCount > 0 && (
+          <div className="flex items-center gap-2 h-8 px-1" title={t("features.mods.includeConfigsInExport")}>
+            <Input id="export-include-configs" type="checkbox" checked={includeConfigs} onChange={(e) => setIncludeConfigs(e.target.checked)} />
+            <label htmlFor="export-include-configs" className="text-sm">
+              {t("features.mods.includeConfigs")}
             </label>
           </div>
         )}

@@ -347,6 +347,8 @@
       "summaryFailed": "Falhou",
       "summaryAlreadyPresent": "Já instalado",
       "summaryClose": "Feito",
+      "importModConfigsSkip": "Não escrever nenhum",
+      "importModConfigsApply": "Escrever as configs escolhidas",
       "cantPlayWhileUpdatingMods": "Não pode jogar esta Instalação enquanto os Mods estiverem a ser atualizados.",
       "showModDetails": "Mostrar os detalhes de {{mod}}",
       "closeModDetails": "Fechar os detalhes",

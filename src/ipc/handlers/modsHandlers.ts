@@ -4,6 +4,8 @@ import { basename, dirname, join } from "node:path"
 import { IPC_CHANNELS } from "../ipcChannels"
 import { createModImageStorePort, createScanInstalledModsPorts, MAX_MOD_IMAGE_BYTES, pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
+import { collectModConfigs, MAX_MODPACK_BYTES, MAX_MODPACK_ENTRIES, parseModpackSettings } from "@src/ipc/handlers/modConfigs"
+import type { ExportModpackConfigFailure } from "@src/ipc/handlers/modConfigs"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertConfiguredInstallationPath, assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
 import { assertAllowedDownloadUrl, assertBoolean, assertSafeFileName, assertString, isRecord } from "@src/ipc/validation"
@@ -18,8 +20,6 @@ import { emptyModProfilesDocument, MAX_MOD_PROFILES_FILE_BYTES, MOD_PROFILES_FIL
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 
 const LOG_PREFIX = "[back] [mods] [ipc/handlers/modsHandlers.ts]"
-
-const MAX_MODPACK_ENTRIES = 2_000
 
 // Narrows DOWNLOAD_URL_RULES, which already lists this host for archive downloads, to the one host
 // that serves images. A logofile pointing anywhere else fails here and the row keeps its
@@ -57,7 +57,16 @@ async function cacheModImage(urlValue: unknown): Promise<string | undefined> {
   }
 }
 
-function parseModpackManifest(value: unknown): ModpackManifestType {
+/**
+ * Reads a modpack off disk, saying what it had to leave behind.
+ *
+ * Two returns because the two callers need different things. The export path writes what this
+ * returns straight to a file, and a field saying "the settings in the pack I read were refused"
+ * would then be written into every pack the launcher exports, which is a field no older launcher
+ * knows and no player asked for. The import path needs to tell the player, so it gets the report
+ * beside the manifest and the manifest alone stays clean.
+ */
+function parseModpackManifestWithReport(value: unknown): { manifest: ModpackManifestType; settingsRefused?: SettingsRefused } {
   if (!isRecord(value) || !Array.isArray(value.mods) || value.mods.length > MAX_MODPACK_ENTRIES) throw new TypeError("Invalid modpack file structure")
 
   // The same validator the Add dialog and the config normalizer run, which is the whole point:
@@ -65,20 +74,31 @@ function parseModpackManifest(value: unknown): ModpackManifestType {
   // above: a stranger's pack with one unreadable server row still imports, minus that row. The
   // field is dropped entirely when nothing survives, so an older pack round trips unchanged.
   const servers = normalizeServerBookmarks(value.servers)
+  const settings = parseModpackSettings(value.settings)
 
   return {
-    name: assertString(value.name, "modpack name", 256),
-    gameVersion: assertString(value.gameVersion, "modpack game version", 128),
-    ...(servers.length > 0 ? { servers } : {}),
-    mods: value.mods.map((entry) => {
-      if (!isRecord(entry)) throw new TypeError("Invalid modpack entry")
-      const parsed = { modid: assertString(entry.modid, "mod id", 256), version: assertString(entry.version, "mod version", 128) }
-      // Every pack exported before #379 carries modid and version only, so the name is read when it
-      // is there and never required. A name of the wrong type is still a refusal, like every other
-      // field: the manifest comes off disk and this is the only place its shape is checked.
-      return entry.name === undefined ? parsed : { ...parsed, name: assertString(entry.name, "mod name", MAX_MODPACK_MOD_NAME_LENGTH) }
-    })
+    manifest: {
+      name: assertString(value.name, "modpack name", 256),
+      gameVersion: assertString(value.gameVersion, "modpack game version", 128),
+      ...(servers.length > 0 ? { servers } : {}),
+      // An empty block is no block: a pack whose settings were refused, or that never had any, is
+      // written and read exactly as it was before #363.
+      ...(settings.ok && Object.keys(settings.settings).length > 0 ? { settings: settings.settings } : {}),
+      mods: value.mods.map((entry) => {
+        if (!isRecord(entry)) throw new TypeError("Invalid modpack entry")
+        const parsed = { modid: assertString(entry.modid, "mod id", 256), version: assertString(entry.version, "mod version", 128) }
+        // Every pack exported before #379 carries modid and version only, so the name is read when it
+        // is there and never required. A name of the wrong type is still a refusal, like every other
+        // field: the manifest comes off disk and this is the only place its shape is checked.
+        return entry.name === undefined ? parsed : { ...parsed, name: assertString(entry.name, "mod name", MAX_MODPACK_MOD_NAME_LENGTH) }
+      })
+    },
+    ...(settings.ok ? {} : { settingsRefused: settings.refused })
   }
+}
+
+function parseModpackManifest(value: unknown): ModpackManifestType {
+  return parseModpackManifestWithReport(value).manifest
 }
 
 /**
@@ -226,37 +246,70 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, async (event, pathValu
   }
 })
 
-ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, async (event, manifest: ModpackManifestType): Promise<{ success: boolean; path?: string }> => {
-  assertTrustedIpcSender(event)
-  try {
-    const safeManifest = parseModpackManifest(manifest)
-    logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Exporting a modpack with ${safeManifest.mods.length} mods and ${safeManifest.servers?.length ?? 0} servers.`)
+ipcMain.handle(
+  IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK,
+  async (
+    event,
+    manifest: ModpackManifestType,
+    installationPath: unknown,
+    includeConfigs: unknown
+  ): Promise<{ success: boolean; path?: string; reason?: ExportModpackConfigFailure | "too-large"; name?: string }> => {
+    assertTrustedIpcSender(event)
+    try {
+      const safeManifest = parseModpackManifest(manifest)
 
-    const result = await dialog.showSaveDialog({
-      title: "Export Modpack",
-      defaultPath: safeManifest.name,
-      filters: [{ name: "JSON", extensions: ["json"] }]
-    })
+      // The configs are read here, in the process that owns the Installation, and never asked of
+      // the renderer: the same reasons the Mods list is not renderer-supplied apply, plus the fact
+      // that a renderer naming which files to read is a renderer naming paths.
+      if (includeConfigs === true) {
+        const installation = await assertConfiguredInstallationPath(installationPath)
+        const collected = await collectModConfigs(installation)
+        if (!collected.ok) {
+          logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: ${collected.reason}.`)
+          return { success: false, reason: collected.reason, name: collected.name }
+        }
+        if (safeManifest.mods.length + (safeManifest.servers?.length ?? 0) + Object.keys(collected.settings).length > MAX_MODPACK_ENTRIES) {
+          logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-many.`)
+          return { success: false, reason: "too-many" }
+        }
+        safeManifest.settings = collected.settings
+      }
 
-    if (result.canceled || !result.filePath) {
-      logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Export cancelled.`)
+      // Before the save dialog rather than after the write, so a pack that cannot be written is
+      // refused while the player is still looking at their Mods list and not at a file path.
+      if (Buffer.byteLength(JSON.stringify(safeManifest, undefined, 2), "utf8") >= MAX_MODPACK_BYTES) {
+        logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-large.`)
+        return { success: false, reason: "too-large" }
+      }
+
+      logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Exporting a modpack with ${safeManifest.mods.length} mods and ${safeManifest.servers?.length ?? 0} servers.`)
+
+      const result = await dialog.showSaveDialog({
+        title: "Export Modpack",
+        defaultPath: safeManifest.name,
+        filters: [{ name: "JSON", extensions: ["json"] }]
+      })
+
+      if (result.canceled || !result.filePath) {
+        logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Export cancelled.`)
+        return { success: false }
+      }
+
+      registerUserSelectedPaths([result.filePath])
+      const safeOutputPath = await assertManagedPath(result.filePath, "modpack path", { allowMissing: true })
+      await writeJsonAtomic(safeOutputPath, safeManifest, { spaces: 2 })
+
+      logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Modpack exported to [PATH].`)
+      return { success: true, path: result.filePath }
+    } catch (err) {
+      logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Error exporting modpack.`)
+      logMessage("debug", `${LOG_PREFIX} [EXPORT_MODPACK] Error exporting modpack: ${err}`)
       return { success: false }
     }
-
-    registerUserSelectedPaths([result.filePath])
-    const safeOutputPath = await assertManagedPath(result.filePath, "modpack path", { allowMissing: true })
-    await writeJsonAtomic(safeOutputPath, safeManifest, { spaces: 2 })
-
-    logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Modpack exported to [PATH].`)
-    return { success: true, path: result.filePath }
-  } catch (err) {
-    logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Error exporting modpack.`)
-    logMessage("debug", `${LOG_PREFIX} [EXPORT_MODPACK] Error exporting modpack: ${err}`)
-    return { success: false }
   }
-})
+)
 
-ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }> => {
+ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<{ success: boolean; manifest?: ModpackManifestType; settingsRefused?: SettingsRefused; error?: string }> => {
   assertTrustedIpcSender(event)
   try {
     logMessage("info", `${LOG_PREFIX} [IMPORT_MODPACK] Opening file dialog for modpack import.`)
@@ -279,14 +332,14 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK, async (event): Promise<
     }
     registerUserSelectedPaths([filePath])
     const safeFilePath = await assertManagedPath(filePath, "modpack path")
-    if ((await fse.stat(safeFilePath)).size > 2 * 1024 * 1024) throw new Error("Modpack file is too large")
+    if ((await fse.stat(safeFilePath)).size > MAX_MODPACK_BYTES) throw new Error("Modpack file is too large")
     const raw = await fse.readFile(safeFilePath, "utf-8")
     const parsedManifest: unknown = JSON.parse(raw)
 
-    const manifest = parseModpackManifest(parsedManifest)
+    const { manifest, settingsRefused } = parseModpackManifestWithReport(parsedManifest)
 
     logMessage("info", `${LOG_PREFIX} [IMPORT_MODPACK] A modpack loaded with ${manifest.mods.length} mods and ${manifest.servers?.length ?? 0} servers.`)
-    return { success: true, manifest }
+    return { success: true, manifest, ...(settingsRefused ? { settingsRefused } : {}) }
   } catch (err) {
     logMessage("error", `${LOG_PREFIX} [IMPORT_MODPACK] Error importing modpack.`)
     logMessage("debug", `${LOG_PREFIX} [IMPORT_MODPACK] Error importing modpack: ${err}`)

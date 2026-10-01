@@ -34,7 +34,9 @@ export const IPC_CHANNELS = {
     IMPORT_MODPACK: "import-modpack",
     CLEAR_MOD_ICON_MEMORY_CACHE: "clear-mod-icon-memory-cache",
     GET_MOD_PROFILES: "get-mod-profiles",
-    SAVE_MOD_PROFILES: "save-mod-profiles"
+    SAVE_MOD_PROFILES: "save-mod-profiles",
+    GET_MOD_CONFIGS: "get-mod-configs",
+    APPLY_MOD_CONFIGS: "apply-mod-configs"
   },
   PATHS_MANAGER: {
     GET_CURRENT_USER_DATA_PATH: "get-current-user-data-path",

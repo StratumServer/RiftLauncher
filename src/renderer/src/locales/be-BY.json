@@ -347,6 +347,8 @@
       "summaryFailed": "Памылка",
       "summaryAlreadyPresent": "Ужо ўсталявана",
       "summaryClose": "Гатова",
+      "importModConfigsSkip": "Не запісваць ніводнага",
+      "importModConfigsApply": "Запісаць выбраныя канфігурацыі",
       "cantPlayWhileUpdatingMods": "Вы не можаце гуляць у гэтую ўсталёўку, пакуль абнаўляюцца яе моды.",
       "showModDetails": "Паказаць падрабязнасці {{mod}}",
       "closeModDetails": "Закрыць падрабязнасці",
