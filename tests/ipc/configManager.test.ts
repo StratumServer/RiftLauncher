@@ -1301,6 +1301,48 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     assert.equal(unreadableCopies().length, 1)
   })
 
+  /**
+   * `migrateConfigDocument` answers for every document without throwing, including ones it could not
+   * bring to the current schema, so "the call returned" is not "the backup is a usable restore
+   * point". A real pre-migration snapshot is older than the current schema and gets migrated up.
+   */
+  it("restores a backup from an older schema, which the migration brings up to date", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const fse = (await import("fs-extra")).default
+    await fse.writeJSON(backupPath(), minimalConfig({ schemaVersion: 2, lastUsedInstallation: "from-schema-2" }))
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.equal(result.lastUsedInstallation, "from-schema-2")
+    assert.equal(result.schemaVersion, CURRENT_CONFIG_SCHEMA)
+    const [copy] = unreadableCopies()
+    assert.ok(copy)
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: true, preserved: true, copyName: copy })
+  })
+
+  // Lazy bodies: minimalConfig reads the per-test temp folders, which only exist once beforeEach has run.
+  const unusableBackups: ReadonlyArray<readonly [string, () => string]> = [
+    ["an array, which is valid JSON but not a document", () => "[]"],
+    ["from a newer launcher than this build", () => JSON.stringify(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA + 1, lastUsedInstallation: "from-the-future" }))]
+  ]
+
+  for (const [description, backup] of unusableBackups) {
+    it(`uses defaults and reports a reset, not a restore, when the pre-migration backup is ${description}`, async () => {
+      writeFileSync(configPath(), INVALID_JSON, "utf-8")
+      writeFileSync(backupPath(), backup(), "utf-8")
+
+      const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+      const result = await getConfig()
+
+      assert.equal(result.lastUsedInstallation, null, "none of the backup's settings were adopted")
+      assert.equal(result.schemaVersion, CURRENT_CONFIG_SCHEMA)
+      const [copy] = unreadableCopies()
+      assert.ok(copy, "the unreadable file is still kept")
+      assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: true, copyName: copy })
+    })
+  }
+
   it("keeps two copies when two launches in a row each find an unreadable config.json", async () => {
     writeFileSync(configPath(), INVALID_JSON, "utf-8")
     const first = await freshConfigManager()
@@ -1389,6 +1431,26 @@ describe("getConfig: an unreadable config.json is preserved and recovered (#554)
     await getConfig()
 
     assert.equal(takePendingConfigRecoveryNotice(), null)
+  })
+
+  /**
+   * Notepad and some other editors save UTF-8 with a byte order mark, which JSON.parse rejects.
+   * The reader this one replaced (fs-extra's readJSON) stripped it, so a config that loaded before
+   * must not start landing in recovery, where its settings would be set aside for a backup or
+   * for defaults.
+   */
+  it("reads a valid config.json saved with a byte order mark as an ordinary config", async () => {
+    const saved = `\uFEFF${JSON.stringify(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, lastUsedInstallation: "from-a-bom-file" }))}`
+    writeFileSync(configPath(), saved, "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice, isConfigWriteSuppressed } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.equal(result.lastUsedInstallation, "from-a-bom-file", "its own settings, not a backup's or the defaults'")
+    assert.equal(unreadableCopies().length, 0, "nothing was copied aside: the file was never unreadable")
+    assert.equal(takePendingConfigRecoveryNotice(), null, "no recovery notice")
+    assert.equal(isConfigWriteSuppressed(), false, "the session is not read-only")
+    assert.equal(readFileSync(configPath(), "utf-8"), saved, "the file on disk was not rewritten")
   })
 
   /**

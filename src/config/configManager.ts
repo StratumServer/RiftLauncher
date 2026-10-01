@@ -220,7 +220,10 @@ async function loadConfigFromDisk(): Promise<ConfigType> {
 
   let parsedDocument: unknown
   try {
-    parsedDocument = JSON.parse(rawText)
+    // A leading UTF-8 byte order mark is not JSON, and Notepad (among other editors) writes one.
+    // fs-extra's readJSON, which this read replaced, stripped it before parsing; without the same
+    // strip here a perfectly valid config.json would be sent down the recovery path instead.
+    parsedDocument = JSON.parse(rawText.replace(/^\uFEFF/, ""))
   } catch (err) {
     return await recoverFromUnreadableConfig(err)
   }
@@ -328,6 +331,12 @@ async function preserveUnreadableConfig(): Promise<string | null> {
  * copied aside: the last good pre-migration snapshot, run through the same
  * migration and normalization pipeline a normal read would use, or the
  * built-in defaults when there is no usable snapshot (#554).
+ *
+ * A snapshot is usable only when that pipeline brought it to the current schema (`migrated` or
+ * `already-current`). A normal read carries on with the other outcomes (not an object, a newer
+ * launcher's document, a chain that stops short, a step that threw) because the live file is all it
+ * has; here they would be reported as restored settings that were never restored, so they count as
+ * no snapshot at all.
  */
 async function recoverUnreadableConfig(): Promise<{ config: ConfigType; restored: boolean }> {
   const backupPath = getConfigBackupPath()
@@ -335,8 +344,11 @@ async function recoverUnreadableConfig(): Promise<{ config: ConfigType; restored
     try {
       const backupDocument: unknown = await fse.readJSON(backupPath)
       const migration = migrateConfigDocument(backupDocument)
-      const restoredConfig = normalizeConfig(migration.doc, { atStartup: true })
-      return { config: restoredConfig, restored: true }
+      if (migration.outcome === "migrated" || migration.outcome === "already-current") {
+        const restoredConfig = normalizeConfig(migration.doc, { atStartup: true })
+        return { config: restoredConfig, restored: true }
+      }
+      logMessage("debug", `${LOG_PREFIX} [recoverUnreadableConfig] The pre-migration backup is not a usable restore point: its migration ended as ${migration.outcome}.`)
     } catch (backupError) {
       logMessage("debug", `${LOG_PREFIX} [recoverUnreadableConfig] The pre-migration backup could not be used either: ${backupError}`)
     }
