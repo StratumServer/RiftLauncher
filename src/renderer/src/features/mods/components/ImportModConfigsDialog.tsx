@@ -17,7 +17,12 @@ import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponen
  * why they are not offered at all. Ticking a config is writing over somebody's work, so a file
  * that is not on screen is not a file a player can agree to.
  */
-const MAX_VISIBLE_CONFIGS = 50
+/**
+ * How many failures are spelled out, which is the only list here that is a report rather than a
+ * question. The rows above are never cut: a file the player cannot see is a file the player cannot
+ * agree to, and the pack already caps how many can arrive.
+ */
+const MAX_LISTED_FAILURES = 50
 
 /** What an apply did, held while the dialog shows it rather than in a toast that has already gone. */
 type AppliedSummary = Extract<ApplyModConfigsResult, { ok: true }>
@@ -73,8 +78,6 @@ function ImportModConfigsDialog({
     setChosen(carried.filter((key) => !existing.has(key.toLowerCase())))
   }, [listing, carried, existing])
 
-  const visible = carried.slice(0, MAX_VISIBLE_CONFIGS)
-  const hidden = carried.length - visible.length
   const listed = listing?.ok ? listing.configs : []
 
   function writeChosen(): void {
@@ -88,19 +91,26 @@ function ImportModConfigsDialog({
       .map(([name, entry]) => ({ name, text: entry.text, sha256: entry.sha256 }))
     if (files.length === 0) return close()
 
-    void applyModConfigs(installation.path, files).then((result) => {
-      if (!result.ok) {
-        if (result.reason === "playing") addNotification(t("features.mods.importModConfigsPlaying"), "error")
-        else if (result.reason === "busy") addNotification(t("features.mods.importModConfigsBusy"), "error")
-        else if (result.reason === "no-backups-folder") addNotification(t("features.mods.importModConfigsNoBackupsFolder"), "error")
-        else if (result.reason === "insufficient-space") addNotification(t("features.mods.importModConfigsInsufficientSpace"), "error")
-        else addNotification(t("features.mods.importModConfigsUnreadable"), "error")
-        return
-      }
+    void applyModConfigs(installation.path, files)
+      .then((result) => {
+        if (!result.ok) {
+          if (result.reason === "playing") addNotification(t("features.mods.importModConfigsPlaying"), "error")
+          else if (result.reason === "busy") addNotification(t("features.mods.importModConfigsBusy"), "error")
+          else if (result.reason === "no-backups-folder") addNotification(t("features.mods.importModConfigsNoBackupsFolder"), "error")
+          else if (result.reason === "insufficient-space") addNotification(t("features.mods.importModConfigsInsufficientSpace"), "error")
+          else addNotification(t("features.mods.importModConfigsUnreadable"), "error")
+          return
+        }
 
-      addNotification(t("features.mods.importModConfigsWritten", { count: result.applied.length }), result.failed.length > 0 ? "warning" : "success")
-      setApplied(result)
-    })
+        addNotification(t("features.mods.importModConfigsWritten", { count: result.applied.length }), result.failed.length > 0 ? "warning" : "success")
+        setApplied(result)
+      })
+      .catch(() => {
+        // The channel rejects on malformed input rather than answering with a refusal, so a rejection
+        // is a designed outcome and not a crash. Answering it here is the difference between a player
+        // who is told and a button press that vanishes.
+        addNotification(t("features.mods.importModConfigsUnreadable"), "error")
+      })
   }
 
   function reasonFor(reason: ApplyFailureReason): string {
@@ -119,7 +129,7 @@ function ImportModConfigsDialog({
 
           {applied.failed.length > 0 && (
             <ul className="w-full flex flex-col gap-1 text-left">
-              {applied.failed.slice(0, MAX_VISIBLE_CONFIGS).map((entry) => (
+              {applied.failed.slice(0, MAX_LISTED_FAILURES).map((entry) => (
                 <li key={entry.name} className="rounded-sm bg-zinc-950/50 px-2 py-1">
                   <span className="block truncate font-bold">{entry.name}</span>
                   <span className="block text-sm text-zinc-300">{reasonFor(entry.reason)}</span>
@@ -145,12 +155,15 @@ function ImportModConfigsDialog({
         <p>{t("features.mods.importModConfigsDesc", { count: carried.length })}</p>
 
         {/* Nothing is listed until the host has answered. An answer that has not arrived is not an
-            empty folder, and rendering an empty list would tick every row below as new. */}
+            empty folder, and rendering an empty list would tick every row below as new. Every carried
+            file does get a row once it has: a capped list would be a lie twice over, since the files
+            past the cap would be written with no row to agree to, and the line counting them reads as
+            "not offered" while the answer would be "written anyway". */}
         {listing === undefined ? null : !listing.ok ? (
           <p>{t("features.mods.importModConfigsUnreadable")}</p>
         ) : (
-          <ul className="w-full flex flex-col gap-1 text-left">
-            {visible.map((name) => (
+          <ul className="w-full max-h-[20rem] overflow-y-auto flex flex-col gap-1 text-left">
+            {carried.map((name) => (
               <li key={name} className="flex items-center gap-2 rounded-sm bg-zinc-950/50 px-2 py-1">
                 <Input
                   id={`import-mod-config-${name}`}
@@ -166,11 +179,12 @@ function ImportModConfigsDialog({
                 </label>
               </li>
             ))}
-            {hidden > 0 && <li className="text-sm text-zinc-300">{t("features.mods.importModConfigsMore", { count: hidden })}</li>}
           </ul>
         )}
 
-        <p className="text-sm text-zinc-300">{listed.length > 0 ? t("features.mods.importModConfigsHave", { count: listed.length }) : t("features.mods.importModConfigsHaveNone")}</p>
+        {/* Only when the host answered. A listing that failed renders as an empty one here, and the
+            player would read "the folder is empty" under "the folder could not be read". */}
+        {listing?.ok && <p className="text-sm text-zinc-300">{listed.length > 0 ? t("features.mods.importModConfigsHave", { count: listed.length }) : t("features.mods.importModConfigsHaveNone")}</p>}
 
         <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
           <FormButton title={t("features.mods.importModConfigsSkip")} onClick={close} variant="secondary" size="md" icon={<PiXCircleDuotone />} />

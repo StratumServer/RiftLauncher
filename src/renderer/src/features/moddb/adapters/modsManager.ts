@@ -59,7 +59,7 @@ export function exportModpackArchive(
   manifest: ModpackManifestType,
   installationPath: string,
   includeConfigs: boolean
-): Promise<{ success: boolean; path?: string; reason?: "unreadable-config" | "not-utf8" | "too-many" | "too-large"; name?: string }> {
+): Promise<{ success: boolean; path?: string; reason?: ExportModpackRefusal; name?: string }> {
   return window.api.modsManager.exportModpack(manifest, installationPath, includeConfigs)
 }
 

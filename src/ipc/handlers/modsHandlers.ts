@@ -277,7 +277,7 @@ ipcMain.handle(
 
       // Before the save dialog rather than after the write, so a pack that cannot be written is
       // refused while the player is still looking at their Mods list and not at a file path.
-      if (Buffer.byteLength(JSON.stringify(safeManifest, undefined, 2), "utf8") >= MAX_MODPACK_BYTES) {
+      if (Buffer.byteLength(JSON.stringify(safeManifest, undefined, 2), "utf8") > MAX_MODPACK_BYTES) {
         logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-large.`)
         return { success: false, reason: "too-large" }
       }

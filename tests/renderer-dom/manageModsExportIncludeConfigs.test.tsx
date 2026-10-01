@@ -86,6 +86,22 @@ describe("Manage Mods: the Export Modpack mod config box", () => {
     expect((box as HTMLInputElement).checked).toBe(false)
   })
 
+  it("is drawn but disabled, and says why, when the folder could not be read", async () => {
+    // Drawing nothing here is the same as drawing an empty folder, and the difference is a sentence
+    // the player could have acted on: a game that is running closes, a folder that is unreadable
+    // does not. The box is never retried within the session, so the sentence is all there is.
+    const { answer } = mountWithPendingConfigs()
+    await openTheExportMenu()
+    expect(screen.queryByText("Include mod configs")).toBeNull()
+    await act(async () => void answer({ ok: false, reason: "playing" }))
+
+    const box = (await screen.findByLabelText("Include mod configs", {}, { timeout: 3000 })) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    expect(box.disabled).toBe(true)
+    const holder = box.closest("div")
+    expect(holder?.getAttribute("title")).toBe("This Installation is playing. The mod configs can be written once the game has closed.")
+  })
+
   it("stays away from an Installation with no mod configs at all", async () => {
     const { answer } = mountWithPendingConfigs()
     await act(async () => void answer({ ok: true, configs: [] }))

@@ -155,7 +155,12 @@ export function assertOptionalString(value: unknown, name: string, maxLength = M
   return assertString(value, name, maxLength)
 }
 
-function assertBoundedString(value: unknown, name: string, maxLength: number): string {
+/**
+ * The same check as {@link assertString} without the non-empty requirement, for the values that
+ * are content rather than an identifier: a launch wrapper that is not set, an environment
+ * variable that is not set, a file that is zero bytes long. An empty string there is a value.
+ */
+export function assertBoundedString(value: unknown, name: string, maxLength: number): string {
   if (typeof value !== "string" || value.length > maxLength || value.includes("\0")) throw new TypeError(`Invalid ${name}`)
   return value
 }

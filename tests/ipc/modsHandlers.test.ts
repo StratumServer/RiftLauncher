@@ -20,7 +20,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
-import { MAX_MODPACK_BYTES } from "@src/ipc/handlers/modConfigs"
+import { MAX_MODPACK_BYTES, parseModpackSettings } from "@src/ipc/handlers/modConfigs"
 
 vi.mock("@src/ipc/adapters/modScan", async (importOriginal) => {
   const original = await importOriginal<typeof import("@src/ipc/adapters/modScan")>()
@@ -290,6 +290,36 @@ describe("EXPORT_MODPACK", () => {
     assert.deepEqual(Object.keys(written.settings ?? {}), ["ConfigureEverything/Client/RoomSize.json"])
     assert.equal(written.settings?.["ConfigureEverything/Client/RoomSize.json"]?.text, '{"blocksize":8}')
     assert.equal(written.settings?.["ConfigureEverything/Client/RoomSize.json"]?.sha256, createHash("sha256").update(Buffer.from('{"blocksize":8}', "utf8")).digest("hex"))
+  })
+
+  // The one asymmetry that would cost a player their whole settings block: export reads whatever is
+  // on disk without a length or emptiness rule of its own, and import drops the entire block on the
+  // first entry it cannot parse. A launcher that writes a pack its own importer refuses is the wound
+  // the plan named for the size cap, one layer down. This runs the export for real and hands what it
+  // wrote to the parser the import uses, so the two ends are proved to agree rather than assumed to.
+  it("writes a pack its own importer accepts, whatever the files happen to be", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    // 64 KB is over the launcher's 8 KiB cap for an identifier-sized string, and 0 bytes is what a
+    // mod leaves behind when it truncates its config. Both are legal files on disk.
+    const big = JSON.stringify({ padding: "p".repeat(64 * 1024) })
+    writeFileSync(join(modConfigFolder, "Big.json"), big, "utf-8")
+    writeFileSync(join(modConfigFolder, "Empty.json"), "", "utf-8")
+    const destination = join(temporaryRoot, "exports", "Round trip.json")
+    mkdirSync(dirname(destination), { recursive: true })
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true)
+
+    assert.equal(result.success, true)
+    const written = JSON.parse(readFileSync(destination, "utf-8")) as ModpackManifestType
+    const parsed = parseModpackSettings(written.settings)
+
+    assert.equal(parsed.ok, true, parsed.ok ? "" : `the launcher refused its own pack: ${JSON.stringify(parsed.refused)}`)
+    if (parsed.ok) {
+      assert.equal(parsed.settings["Big.json"]?.text, big)
+      assert.equal(parsed.settings["Empty.json"]?.text, "")
+    }
   })
 
   it("leaves the settings out of the pack entirely when the box was not ticked", async () => {

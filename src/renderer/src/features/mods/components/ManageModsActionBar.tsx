@@ -60,6 +60,16 @@ function ManageModsActionBar({
   const [includeConfigs, setIncludeConfigs] = useState(false)
   const { listing: modConfigs } = useModConfigs(installation.path)
   const configCount = modConfigs?.ok ? modConfigs.configs.length : 0
+  // One literal branch per reason rather than a lookup keyed by the reason: a computed key is one
+  // the locale parity test cannot see, which is how a missing translation ships.
+  const modConfigRefusal =
+    !modConfigs || modConfigs.ok
+      ? undefined
+      : modConfigs.reason === "playing"
+        ? t("features.mods.importModConfigsPlaying")
+        : modConfigs.reason === "busy"
+          ? t("features.mods.importModConfigsBusy")
+          : t("features.mods.importModConfigsUnreadable")
 
   // A modpack is the set someone else is meant to be able to play, so a Mod the player turned off
   // is not in it. Both exports read this list, and both are greyed out by it: a folder whose Mods
@@ -201,9 +211,12 @@ function ManageModsActionBar({
           </div>
         )}
 
-        {configCount > 0 && (
-          <div className="flex items-center gap-2 h-8 px-1" title={t("features.mods.includeConfigsInExport")}>
-            <Input id="export-include-configs" type="checkbox" checked={includeConfigs} onChange={(e) => setIncludeConfigs(e.target.checked)} />
+        {/* A refusal is drawn, not hidden. Rendering nothing for it is the same as drawing an empty
+            folder, and the difference is a sentence the player could have acted on. The sentences are
+            the import dialog's, because the three reasons are the same three. */}
+        {(configCount > 0 || modConfigRefusal !== undefined) && (
+          <div className="flex items-center gap-2 h-8 px-1" title={modConfigRefusal ?? t("features.mods.includeConfigsInExport")}>
+            <Input id="export-include-configs" type="checkbox" checked={includeConfigs} disabled={modConfigRefusal !== undefined} onChange={(e) => setIncludeConfigs(e.target.checked)} />
             <label htmlFor="export-include-configs" className="text-sm">
               {t("features.mods.includeConfigs")}
             </label>

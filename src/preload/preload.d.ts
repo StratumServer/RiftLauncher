@@ -47,11 +47,7 @@ declare global {
       getServerMods: (installationPath: string) => Promise<ServerModsScan>
       setModEnabled: (path: string, enabled: boolean) => Promise<SetModEnabledResult>
       cacheModImage: (url: string) => Promise<string | undefined>
-      exportModpack: (
-        manifest: ModpackManifestType,
-        installationPath: string,
-        includeConfigs: boolean
-      ) => Promise<{ success: boolean; path?: string; reason?: "unreadable-config" | "not-utf8" | "too-many" | "too-large"; name?: string }>
+      exportModpack: (manifest: ModpackManifestType, installationPath: string, includeConfigs: boolean) => Promise<{ success: boolean; path?: string; reason?: ExportModpackRefusal; name?: string }>
       importModpack: () => Promise<{ success: boolean; manifest?: ModpackManifestType; settingsRefused?: SettingsRefused; error?: string }>
       clearModIconMemoryCache: () => void
       getModProfiles: (installationPath: string) => Promise<ModProfilesReadResult>

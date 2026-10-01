@@ -734,6 +734,21 @@ declare global {
   type ApplyFailureReason = "copy-failed" | "not-landed" | "digest-mismatch" | "write-failed"
 
   /**
+   * Why an export was refused before a single byte was written.
+   *
+   * One name for the whole union, spelled once here because it crosses the bridge in three files
+   * (the preload's own signature, its declaration and the renderer adapter) and a reason added to
+   * one copy of a union is a reason the other two refuse to compare against.
+   *
+   * - `too-large` is the pack's own byte ceiling. The other five are the config folder's, and each of
+   *   them names a file where one file is what went wrong.
+   * - `bad-name` and `collides` exist because the export and the import have to agree about which
+   *   keys a pack may hold: a name Windows would refuse, and two names differing only in case, are
+   *   both legal on the file system the file was created on and both unusable in a pack.
+   */
+  type ExportModpackRefusal = "unreadable-config" | "not-utf8" | "bad-name" | "collides" | "too-many" | "too-large"
+
+  /**
    * What one apply did, file by file.
    *
    * `kind` is main's own answer, computed while writing, so the summary the player reads cannot be

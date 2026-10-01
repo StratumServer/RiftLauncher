@@ -44,7 +44,7 @@ function modConfigFolder(): string {
   return join(installationPath, "ModConfig")
 }
 
-function writeConfig(overrides: { backupsFolder?: string; backupsLimit?: number } = {}): void {
+function writeConfig(overrides: { backupsFolder?: string; backupsLimit?: number; alsoInstall?: { id: string; name: string; path: string; backupsLimit: number } } = {}): void {
   writeFileSync(
     join(temporaryRoot, "userData", "config.json"),
     JSON.stringify({
@@ -57,6 +57,26 @@ function writeConfig(overrides: { backupsFolder?: string; backupsLimit?: number 
       accounts: [],
       activeAccountId: null,
       installations: [
+        ...(overrides.alsoInstall
+          ? [
+              {
+                id: overrides.alsoInstall.id,
+                name: overrides.alsoInstall.name,
+                path: overrides.alsoInstall.path,
+                version: "1.0.0",
+                gameVersionId: null,
+                startParams: "",
+                backupsLimit: overrides.alsoInstall.backupsLimit,
+                backupsAuto: false,
+                compressionLevel: 0,
+                backups: [],
+                lastTimePlayed: 0,
+                totalTimePlayed: 0,
+                mesaGlThread: false,
+                envVars: ""
+              }
+            ]
+          : []),
         {
           id: "inst-1",
           name: "test",
@@ -226,6 +246,48 @@ describe("collectModConfigs", () => {
 
     assert.deepEqual(collected, { ok: false, reason: "not-utf8", name: "latin1.json" })
   })
+
+  it("refuses a file name Windows would not accept, and says which one", async () => {
+    // Imported here, not at the top: beforeEach resets the module registry, so a top-level import
+    // would be a second copy of this module, holding its own state the handlers never see.
+    const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    mkdirSync(modConfigFolder(), { recursive: true })
+    // Legal on the file system the player is on, which is exactly why the export has to notice.
+    writeFileSync(join(modConfigFolder(), "what?.json"), "{}", "utf-8")
+    writeFileSync(join(modConfigFolder(), "RoomSize.json"), "{}", "utf-8")
+
+    const collected = await collectModConfigs(installationPath)
+
+    assert.deepEqual(collected, { ok: false, reason: "bad-name", name: "what?.json" })
+  })
+
+  it("refuses two names that differ only in case, and says which one it found second", async () => {
+    // Imported here, not at the top: beforeEach resets the module registry, so a top-level import
+    // would be a second copy of this module, holding its own state the handlers never see.
+    const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    mkdirSync(join(modConfigFolder(), "Client"), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "Client", "RoomSize.json"), "{}", "utf-8")
+    writeFileSync(join(modConfigFolder(), "Client", "roomsize.json"), "{}", "utf-8")
+
+    const collected = await collectModConfigs(installationPath)
+
+    assert.equal(collected.ok, false)
+    if (collected.ok) return
+    // Whichever the readdir handed over second, the pair is the problem and one of the two is the name.
+    assert.equal(collected.reason, "collides")
+    assert.match(collected.name ?? "", /^Client\/roomsize\.json$/i)
+  })
+
+  it("refuses a folder past the entry ceiling, and says the folder is too big rather than unreadable", async () => {
+    const { MAX_MODPACK_ENTRIES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const folder = modConfigFolder()
+    mkdirSync(folder, { recursive: true })
+    for (let index = 0; index <= MAX_MODPACK_ENTRIES; index += 1) writeFileSync(join(folder, `c${index}.json`), "{}", "utf-8")
+
+    const collected = await collectModConfigs(installationPath)
+
+    assert.deepEqual(collected, { ok: false, reason: "too-many" })
+  })
 })
 
 describe("GET_MOD_CONFIGS", () => {
@@ -260,7 +322,9 @@ describe("APPLY_MOD_CONFIGS", () => {
 
     const [folder] = recoveryFolders()
     assert.ok(folder, "a recovery folder was made")
-    const written = join(backupsFolder, "Settings", "test", folder)
+    // The parent is read rather than spelled out, since it is the prune that is under test here and
+    // the naming is a separate test's business.
+    const written = join(backupsFolder, "Settings", readdirSync(join(backupsFolder, "Settings"))[0] as string, folder)
     assert.equal(readFileSync(join(written, "a.json"), "utf-8"), "old")
     assert.match(readFileSync(join(written, "applied.txt"), "utf-8"), /a\.json/)
   })
@@ -285,13 +349,15 @@ describe("APPLY_MOD_CONFIGS", () => {
 
     const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "a.json", text: "theirs", sha256: entry("mine").sha256 }])
 
-    assert.deepEqual(applied, {
-      ok: true,
-      backupFolder: applied.ok === true ? applied.backupFolder : "",
-      applied: [],
-      skipped: [],
-      failed: [{ name: "a.json", reason: "digest-mismatch" }]
-    })
+    // Spelled out rather than deep-equal against itself, which is what this used to assert: the
+    // point is what the refusal did NOT leave behind, and a value compared with itself proves none of it.
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [])
+    assert.deepEqual(applied.skipped, [])
+    assert.deepEqual(applied.failed, [{ name: "a.json", reason: "digest-mismatch" }])
+    assert.equal(applied.backupFolder, "")
+    assert.deepEqual(recoveryFolders(), [])
     assert.equal(readFileSync(join(modConfigFolder(), "a.json"), "utf-8"), "mine")
   })
 
@@ -369,8 +435,71 @@ describe("APPLY_MOD_CONFIGS", () => {
 
     const folders = recoveryFolders()
     assert.equal(folders.length, 1)
-    // The survivor is the newer one by mtime, which is the only ordering this prune uses.
-    const survivor = readFileSync(join(backupsFolder, "Settings", "test", folders[0] as string, "a.json"), "utf-8")
+    // The survivor is the newer one by mtime, which is the only ordering this prune uses. The parent
+    // is read rather than spelled out, because what this test is about is the prune.
+    const parent = readdirSync(join(backupsFolder, "Settings"))[0] as string
+    const survivor = readFileSync(join(backupsFolder, "Settings", parent, folders[0] as string, "a.json"), "utf-8")
     assert.equal(survivor, "one")
+  })
+
+  /**
+   * The recovery folder of one apply is the one thing standing between a displaced config and being
+   * gone, so what these tests are about is which bytes actually land there.
+   */
+  it("puts the displaced bytes in the recovery folder, and the file it read is what it wrote", async () => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    // Two files of the same length, so a check that only compares sizes would pass with the wrong one.
+    writeFileSync(join(modConfigFolder(), "a.json"), '{"n":1}', "utf-8")
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "a.json", ...entry('{"n":2}') }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "a.json", kind: "replace" }])
+    const parent = readdirSync(join(backupsFolder, "Settings"))[0] as string
+    assert.equal(readFileSync(join(applied.backupFolder, "a.json"), "utf-8"), '{"n":1}')
+    assert.equal(readFileSync(join(modConfigFolder(), "a.json"), "utf-8"), '{"n":2}')
+    assert.equal(readdirSync(join(backupsFolder, "Settings", parent)).length, 1)
+  })
+
+  it("keeps one Installation's recovery folder when another with the same name applies", async () => {
+    // The sequence is the loss, and it is why the id is in the folder name. Both Installations are
+    // called "test" and both keep one recovery folder. Under a shared parent, the second apply to
+    // prune to its own limit of one finds the first Installation's only folder newer than nothing
+    // and deletes it, so the first player loses their way back during an apply they never asked for.
+    const secondPath = join(temporaryRoot, "Installations", "second")
+    mkdirSync(join(secondPath, "ModConfig"), { recursive: true })
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeConfig({ backupsLimit: 1, alsoInstall: { id: "inst-2", name: "test", path: secondPath, backupsLimit: 1 } })
+    writeFileSync(join(modConfigFolder(), "a.json"), "mine", "utf-8")
+    writeFileSync(join(secondPath, "ModConfig", "b.json"), "theirs", "utf-8")
+    const event = await createTrustedEvent()
+
+    const first = await applyModConfigsHandler()(event, secondPath, [{ name: "b.json", ...entry("newer") }])
+    const second = await applyModConfigsHandler()(event, installationPath, [{ name: "a.json", ...entry("newer") }])
+
+    assert.equal(first.ok, true)
+    assert.equal(second.ok, true)
+    if (first.ok !== true || second.ok !== true) return
+    assert.notEqual(first.backupFolder, second.backupFolder)
+    assert.equal(readFileSync(join(first.backupFolder, "b.json"), "utf-8"), "theirs")
+    assert.equal(readFileSync(join(second.backupFolder, "a.json"), "utf-8"), "mine")
+    assert.equal(recoveryFolders().length, 2)
+  })
+
+  it("refuses a request carrying two names that differ only in case", async () => {
+    // The renderer could forge this even though no pack can carry it, and on Windows the second write
+    // would land on the first file, which is the one with no way back.
+    const event = await createTrustedEvent()
+
+    await assert.rejects(
+      applyModConfigsHandler()(event, installationPath, [
+        { name: "Client/RoomSize.json", ...entry("{}") },
+        { name: "client/roomsize.json", ...entry("{}") }
+      ]),
+      /Invalid mod config request/
+    )
+    assert.deepEqual(existsDirectory(modConfigFolder()) ? readdirSync(modConfigFolder()) : [], [])
   })
 })

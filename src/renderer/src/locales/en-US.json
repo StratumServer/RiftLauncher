@@ -324,8 +324,6 @@
       "importModConfigsDesc_other": "This modpack carries {{count}} mod config files. Choose which ones to write.",
       "importModConfigsNew": "This Installation has no file at this name",
       "importModConfigsReplaces": "Replaces yours",
-      "importModConfigsMore_one": "and {{count}} more",
-      "importModConfigsMore_other": "and {{count}} more",
       "importModConfigsHave_one": "This Installation has {{count}} file in its ModConfig folder.",
       "importModConfigsHave_other": "This Installation has {{count}} files in its ModConfig folder.",
       "importModConfigsHaveNone": "This Installation's ModConfig folder is empty, so every file below is new.",
@@ -549,7 +547,9 @@
       "healthUnreadable_one": "{{count}} archive could not be read, so it was left out of this check.",
       "healthUnreadable_other": "{{count}} archives could not be read, so they were left out of this check.",
       "serverModsCountTruncated": "and more",
-      "serverModsRemoveTruncated": "This folder holds more Mods than the list shows. Removing it clears everything inside it."
+      "serverModsRemoveTruncated": "This folder holds more Mods than the list shows. Removing it clears everything inside it.",
+      "exportModpackConfigBadName": "{{name}} cannot travel in a modpack: Windows does not accept that file name. Rename it in the ModConfig folder and export again.",
+      "exportModpackConfigCollides": "{{name}} differs from another config file only in letter case, and on Windows the two are one file. Rename one of them and export again."
     },
     "config": {
       "defaultInstallationsFolder": "Installations folder",

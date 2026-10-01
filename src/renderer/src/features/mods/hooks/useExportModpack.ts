@@ -47,6 +47,14 @@ export function useExportModpack(): ({
       addNotification(t("features.mods.exportModpackConfigTooLarge"), "error")
       return
     }
+    if (result.reason === "bad-name") {
+      addNotification(t("features.mods.exportModpackConfigBadName", { name: result.name ?? "" }), "error")
+      return
+    }
+    if (result.reason === "collides") {
+      addNotification(t("features.mods.exportModpackConfigCollides", { name: result.name ?? "" }), "error")
+      return
+    }
     if (result.reason === "too-many") {
       addNotification(t("features.mods.exportModpackConfigTooMany"), "error")
       return

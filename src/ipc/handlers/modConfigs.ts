@@ -8,7 +8,7 @@ import { writeTextAtomic } from "@src/ipc/atomicJsonFile"
 import { tryAcquireInstallationOperation } from "@src/ipc/installationActivity"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertConfiguredInstallationPath, assertManagedPath } from "@src/ipc/pathPolicy"
-import { assertSafeFileName, assertString, comparablePath, isRecord } from "@src/ipc/validation"
+import { assertBoundedString, assertSafeFileName, assertString, comparablePath, isRecord } from "@src/ipc/validation"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { describeBackupSpaceShortfall } from "@domain/installations/backupCapacity"
 import { MOD_CONFIG_FOLDER_NAME } from "@domain/mods/folder"
@@ -35,6 +35,17 @@ export const MAX_MODPACK_BYTES = 8 * 1024 * 1024
 
 /** The longest whole key a pack may use. Each of its segments is held to assertSafeFileName's 255. */
 const MAX_MOD_CONFIG_KEY_LENGTH = 512
+
+/**
+ * The longest path Windows takes without the `\\?\` prefix, in characters.
+ *
+ * Not the launcher's own `MAX_PATH_LENGTH` (src/ipc/validation.ts, 4096), which is the bound on
+ * what a caller may send over IPC. Past this a write fails with an error that names nothing, so a
+ * pack that would land there is refused as a named failure instead of half-written. The documented
+ * way past it is the `\\?\` prefix, which this launcher does not use: it is the path a player would
+ * never type, and `write-file-atomic` builds its own temporary name beside the target.
+ */
+const WINDOWS_LEGACY_MAX_PATH = 260
 
 /**
  * Names Windows refuses to create a file under, with or without an extension: the DOS device names
@@ -124,7 +135,13 @@ function parseModConfigEntry(value: unknown): ModConfigEntry {
   const sha256 = assertString(value.sha256, "mod config digest", 64)
   if (!/^[0-9a-f]{64}$/.test(sha256)) throw new TypeError("Invalid mod config digest")
 
-  return { sha256, text: assertString(value.text, "mod config text") }
+  // A config file is content, not an identifier, and the export side already wrote whatever the
+  // player had on disk. Two things follow from that, and both are load-bearing: an empty file is
+  // a real file, and no file in a pack can be bigger than the pack. Bounding the text by
+  // `MAX_IPC_STRING_LENGTH` instead would refuse the other half of every export the launcher
+  // itself produces — and because one bad value costs the whole settings block, a single
+  // 9 KB file would take every other config in the pack down with it.
+  return { sha256, text: assertBoundedString(value.text, "mod config text", MAX_MODPACK_BYTES) }
 }
 
 /**
@@ -188,7 +205,7 @@ function digestOf(bytes: Buffer): string {
  * player's. `not-utf8` is a file the launcher cannot carry without lying about it: see
  * {@link collectModConfigs}.
  */
-export type ExportModpackConfigFailure = "unreadable-config" | "not-utf8" | "too-many"
+export type ExportModpackConfigFailure = Exclude<ExportModpackRefusal, "too-large">
 
 /**
  * Walks an installation's `ModConfig` folder.
@@ -229,9 +246,13 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) continue
 
       const stats = await fse.lstat(entryPath)
+      // No key rule here. This walk answers "what is in the folder", and a folder can hold a name
+      // that is legal on the file system it was created on and unusable in a pack; the caller that
+      // builds a pack is the one that has to say so, because only it can name the file.
       const key = relative(safeRoot, entryPath).replaceAll("\\", "/")
-      assertModConfigKey(key)
-      if (found.length >= MAX_MODPACK_ENTRIES) throw new Error("Too many mod configs")
+      // RangeError, and not Error, so the pack builder below can tell "the folder is too big to
+      // carry" from "the folder could not be read" without matching on a sentence.
+      if (found.length >= MAX_MODPACK_ENTRIES) throw new RangeError("Too many mod configs")
 
       found.push({ name: key, bytes: stats.size, text: options.readText ? await fse.readFile(entryPath, "utf-8") : "" })
     }
@@ -259,13 +280,33 @@ export async function collectModConfigs(installationPath: string): Promise<{ ok:
   try {
     files = await walkModConfigs(installationPath, { readText: true })
   } catch (err) {
+    if (err instanceof RangeError) {
+      logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] The ModConfig folder holds more files than a modpack may carry.`)
+      return { ok: false, reason: "too-many" }
+    }
     logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Could not read the ModConfig folder.`)
     logMessage("debug", `${LOG_PREFIX} [EXPORT_MODPACK] ${getErrorMessage(err)}`)
     return { ok: false, reason: "unreadable-config" }
   }
 
   const settings: Record<string, ModConfigEntry> = {}
+  // The two ends of a pack have to agree about which keys exist, or the export writes a pack the
+  // import drops whole. Both rules below are the import's rules, run here so that the file to
+  // complain about is known while the pack is being built rather than on somebody else's machine.
+  // A name Windows would refuse is legal on the file system it was created on, so refusing the
+  // export is the only way to name it: the player can rename one file, and cannot rename a folder.
+  const folded = new Set<string>()
   for (const file of files) {
+    try {
+      assertModConfigKey(file.name)
+    } catch (err) {
+      logMessage("debug", `${LOG_PREFIX} [EXPORT_MODPACK] ${getErrorMessage(err)}`)
+      return { ok: false, reason: "bad-name", name: file.name }
+    }
+    const lower = file.name.toLowerCase()
+    if (folded.has(lower)) return { ok: false, reason: "collides", name: file.name }
+    folded.add(lower)
+
     if (Buffer.byteLength(file.text, "utf8") !== file.bytes) return { ok: false, reason: "not-utf8", name: file.name }
     // The digest is over the re-encoded text rather than over a second read of the file: the check
     // above is what says those are the same bytes, and this way a 2000-file folder is read once.
@@ -342,11 +383,19 @@ function parseApplyRequest(installationPath: string, files: unknown): PendingCon
   if (!Array.isArray(files) || files.length > MAX_MODPACK_ENTRIES) throw new TypeError("Invalid mod config request")
 
   const modConfigRoot = join(installationPath, MOD_CONFIG_FOLDER_NAME)
+  const folded = new Set<string>()
 
   return files.map((entry) => {
     if (!isRecord(entry)) throw new TypeError("Invalid mod config request")
 
     const key = assertModConfigKey(entry.name)
+    // The same fold the pack parser applies, on the same reasoning: two keys differing only in case
+    // are one file on Windows, and only the first of them would be copied aside, so the second
+    // write would land on a file with no way back.
+    const lower = key.toLowerCase()
+    if (folded.has(lower)) throw new TypeError("Invalid mod config request")
+    folded.add(lower)
+
     const { sha256, text } = parseModConfigEntry(entry)
     return { key, destination: join(modConfigRoot, ...key.split("/")), text, sha256, bytes: Buffer.byteLength(text, "utf8") }
   })
@@ -377,7 +426,14 @@ function freeBytesAt(path: string): number | undefined {
  * new one, which is the question being asked, on every platform.
  */
 async function createRecoveryFolder(backupsFolder: string, record: { id: string; name: string }): Promise<string> {
-  const parent = await assertManagedPath(join(backupsFolder, SETTINGS_BACKUP_SUBFOLDER, cleanFolderName(record.name) || record.id.slice(0, 8)), "settings backup folder", {
+  // The id is in the folder name, not only a fallback for a missing one, and that is the one place
+  // this departs from the installation archive's own naming (src/domain/installations/backup.ts,
+  // `cleanFolderName(name) || id.slice(0, 8)`). An archive is one file per run that nothing else
+  // writes, so a shared folder costs it nothing. These folders are pruned, and each apply prunes to
+  // its OWN installation's limit: two installations that happen to share a name would otherwise
+  // delete each other's only way back, silently, during an apply the other one never asked for.
+  const folder = `${cleanFolderName(record.name) || "installation"}-${record.id.slice(0, 8)}`
+  const parent = await assertManagedPath(join(backupsFolder, SETTINGS_BACKUP_SUBFOLDER, folder), "settings backup folder", {
     allowMissing: true
   })
   await fse.ensureDir(parent)
@@ -534,8 +590,11 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         // The option pair `preserveUnreadableStore` uses (src/ipc/accountStore.ts): overwrite is
         // off, so an existing destination is left as it is instead of being clobbered.
         await fse.copy(entry.destination, backupPath, { overwrite: false, errorOnExist: false })
+        // The digest, not the length: a copy that is the right size and the wrong bytes is exactly
+        // the failure a recovery folder must not contain, and the digest of what was read is
+        // already in hand. `lstat` first because a link is not a copy of anything.
         const copied = await fse.lstat(backupPath)
-        if (!copied.isFile() || copied.size !== current.length) {
+        if (!copied.isFile() || digestOf(await fse.readFile(backupPath)) !== digestOf(current)) {
           await fse.remove(backupPath)
           failed.push({ name: entry.key, reason: "not-landed" })
           refused.add(entry.key)
@@ -566,7 +625,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       try {
         await fse.ensureDir(dirname(entry.destination))
         const destinationFolder = await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
-        if (destinationFolder.length > 260) {
+        if (destinationFolder.length > WINDOWS_LEGACY_MAX_PATH) {
           // Windows caps a path at MAX_PATH unless it is spelled with the `\\?\` prefix, which this
           // writer does not do. A named refusal beats a half-written file or an ENAMETOOLONG with no
           // explanation in it; the log carries the reason and the dialog carries the file name,

@@ -162,14 +162,50 @@ describe("ImportModConfigsDialog, what it sends", () => {
     expect(close).toHaveBeenCalled()
   })
 
-  it("counts the configs a pack carries past the row limit instead of offering them", async () => {
+  it("offers every file the pack carries, and writes every file it offered", async () => {
+    // A pack may carry up to 2000 entries, so the rows are not capped. A capped list would write the
+    // files past the cap with no box to agree to, which is the one outcome the box is there to stop.
     const settings: Record<string, ModConfigEntry> = {}
     for (let index = 0; index < 52; index += 1) settings[`c${index}.json`] = entry("{}")
-    mount(settings, { ok: true, configs: [] })
+    const { sent } = mount(settings, { ok: true, configs: [] })
 
-    await waitFor(() => expect(screen.getByText("c49.json")).toBeTruthy())
-    expect(screen.queryByText("c50.json")).toBeNull()
-    expect(screen.getByText("and 2 more")).toBeTruthy()
+    await waitFor(async () => expect((await rowFor("c0.json")).checked).toBe(true))
+    expect((await rowFor("c49.json")).checked).toBe(true)
+    expect((await rowFor("c51.json")).checked).toBe(true)
+    // The pack's own size is stated even though the rows scroll, so the number the player reads is
+    // the number of files that will be written.
+    expect(screen.getByText("This modpack carries 52 mod config files. Choose which ones to write.")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Write the chosen configs" }))
+
+    // Every row offered, every file written: the two lists are the same list.
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect((sent[0] as { name: string }[]).map((file) => file.name)).toEqual(Object.keys(settings))
+  })
+
+  it("does not claim the folder is empty when the host could not read it", async () => {
+    // A failed listing is an empty list as far as a counter is concerned, and the two sentences
+    // together read as a folder that was read and found bare, right under one saying it was not.
+    mount({ "New.json": entry("{}") }, { ok: false, reason: "playing" })
+
+    await waitFor(() => expect(screen.getByText("This Installation's mod config folder could not be read, so nothing was written.")).toBeTruthy())
+    expect(screen.queryByText("This Installation's ModConfig folder is empty, so every file below is new.")).toBeNull()
+  })
+})
+
+describe("ImportModConfigsDialog, when the host throws", () => {
+  it("says so instead of leaving the button press with nothing to show for it", async () => {
+    // The channel rejects on malformed input rather than answering with a refusal, so this is a
+    // designed outcome. Before, the rejection was unhandled: no notification, no state, no answer.
+    const { sent } = mount({ "New.json": entry("{}") }, { ok: true, configs: [] }, () => Promise.reject(new Error("Invalid mod config request")))
+
+    await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
+    fireEvent.click(screen.getByRole("button", { name: "Write the chosen configs" }))
+
+    await waitFor(() => expect(screen.getByText("This Installation's mod config folder could not be read, so nothing was written.")).toBeTruthy())
+    expect(sent).toHaveLength(1)
+    // Still the question, not a result view: the player has not been told anything landed.
+    expect((await rowFor("New.json")).checked).toBe(true)
   })
 })
 
