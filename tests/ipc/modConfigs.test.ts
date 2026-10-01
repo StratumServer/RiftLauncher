@@ -252,16 +252,22 @@ describe("collectModConfigs", () => {
     // would be a second copy of this module, holding its own state the handlers never see.
     const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
     mkdirSync(modConfigFolder(), { recursive: true })
-    // Legal on the file system the player is on, which is exactly why the export has to notice.
-    writeFileSync(join(modConfigFolder(), "what?.json"), "{}", "utf-8")
+    // Windows keeps this one, because the space is not at the end of the name, and then strips the
+    // space on its way out. The pack carries the name as read, so the importer has to refuse it.
+    // A name Windows cannot hold, such as `what?.json`, is covered by the rule test below instead:
+    // it cannot be created on NTFS, so a walk test of it would only ever pass on Linux.
+    writeFileSync(join(modConfigFolder(), "trailing .json"), "{}", "utf-8")
     writeFileSync(join(modConfigFolder(), "RoomSize.json"), "{}", "utf-8")
+    // Stated rather than assumed: a host that renamed the file on the way in would have taken the
+    // premise of this test away, and the failure would otherwise read as a missing file.
+    assert.ok(readdirSync(modConfigFolder()).includes("trailing .json"), "the host did not keep the name this test is about")
 
     const collected = await collectModConfigs(installationPath)
 
-    assert.deepEqual(collected, { ok: false, reason: "bad-name", name: "what?.json" })
+    assert.deepEqual(collected, { ok: false, reason: "bad-name", name: "trailing .json" })
   })
 
-  it("refuses two names that differ only in case, and says which one it found second", async () => {
+  it.skipIf(process.platform === "win32")("refuses two names that differ only in case, and says which one it found second", async () => {
     // Imported here, not at the top: beforeEach resets the module registry, so a top-level import
     // would be a second copy of this module, holding its own state the handlers never see.
     const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
@@ -276,6 +282,41 @@ describe("collectModConfigs", () => {
     // Whichever the readdir handed over second, the pair is the problem and one of the two is the name.
     assert.equal(collected.reason, "collides")
     assert.match(collected.name ?? "", /^Client\/roomsize\.json$/i)
+  })
+
+  it("names the same rules whatever the host file system can hold", async () => {
+    // The walk can only be asked about files that exist, and on NTFS that rules out every name the
+    // forbidden-character and reserved-device rules exist for. The rule is a pure function of the
+    // name, so it is tested here rather than through a file the Windows runner could not create.
+    // The matching pack-level test is the one in `parseModpackSettings` above: a pack built on a
+    // case-sensitive file system is the only way a Windows player ever meets these names.
+    const { assertModConfigKey } = await import("@src/ipc/handlers/modConfigs")
+
+    for (const name of [
+      "what?.json",
+      "a*b.json",
+      "a:b.json",
+      "a<b.json",
+      "a|b.json",
+      'a"b.json',
+      "nul.json",
+      "NUL.json",
+      "Client/nul/room.json",
+      "com1.json",
+      "COM¹.json",
+      "CLOCK$.json",
+      "aux.txt.json",
+      "trailing .json",
+      "trailing..json",
+      "ConfigureEverything/Client/RoomSize.json\u0000"
+    ]) {
+      assert.throws(() => assertModConfigKey(name), /Invalid mod config key/, `accepted ${JSON.stringify(name)}`)
+    }
+
+    // The shapes that have to survive, because they are what the game and its mods actually write.
+    for (const name of ["RoomSize.json", "ConfigureEverything/Client/RoomSize.json", "ROOM.JSON", "a-b_c.1.json", ".json"]) {
+      assert.doesNotThrow(() => assertModConfigKey(name), `refused ${JSON.stringify(name)}`)
+    }
   })
 
   it("refuses a folder past the entry ceiling, and says the folder is too big rather than unreadable", async () => {
