@@ -25,3 +25,17 @@ export function folderIsInUse(folder: string, foldersInUse: readonly string[], p
   const target = normalizeFolderForComparison(folder, platform)
   return foldersInUse.some((used) => normalizeFolderForComparison(used, platform) === target)
 }
+
+/**
+ * The first folder nothing registered occupies: `base` itself, then `base-2`, `base-3` and so on.
+ *
+ * Used to suggest where a new install goes, so a second build of a version the launcher already
+ * holds is not offered the folder of the first. It always finds one: each taken candidate is a
+ * distinct entry of `foldersInUse`, so the search ends within `foldersInUse.length` steps and never
+ * hands back a folder the install would refuse.
+ */
+export function firstFreeFolder(base: string, foldersInUse: readonly string[], platform?: "win32" | "posix"): string {
+  let candidate = base
+  for (let n = 2; folderIsInUse(candidate, foldersInUse, platform); n++) candidate = `${base}-${n}`
+  return candidate
+}
