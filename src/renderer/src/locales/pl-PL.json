@@ -520,7 +520,10 @@
       "healthUnreadable_few": "Nie udało się odczytać {{count}} archiwów, więc pominięto je w tym sprawdzeniu.",
       "healthUnreadable_many": "Nie udało się odczytać {{count}} archiwów, więc pominięto je w tym sprawdzeniu.",
       "serverModsCountTruncated": "i więcej",
-      "serverModsRemoveTruncated": "Ten folder ma więcej modów, niż pokazuje lista. Usunięcie go czyści wszystko, co jest w środku."
+      "serverModsRemoveTruncated": "Ten folder ma więcej modów, niż pokazuje lista. Usunięcie go czyści wszystko, co jest w środku.",
+      "suggestionsNoThanks": "Nie, dziękuję",
+      "suggestionsTurnOff": "Wyłącz sugestie",
+      "suggestionsEmpty": "Brak sugestii w tej chwili."
     },
     "config": {
       "defaultInstallationsFolder": "Folder instancji",
@@ -591,7 +594,9 @@
       },
       "allowBasicSessionStore": "Pamiętaj sesję bez systemowego pęku kluczy",
       "allowBasicSessionStoreDesc": "Utrzymuje zalogowanie na komputerze bez systemowego pęku kluczy. Sesja jest wtedy zapisywana na dysku i zabezpieczona kluczem wbudowanym w launcher, więc odczyta ją każdy program działający na twoim koncie. Sesje wcześniej zapisane przez systemowy pęk kluczy pozostają na dysku, ale nie można ich odczytać, dopóki to jest włączone. Zostaw to wyłączone, chyba że na tym komputerze ci to nie przeszkadza. Zadziała przy następnym uruchomieniu RiftLauncher.",
-      "allowBasicSessionStoreRestart": "To ustawienie zadziała przy następnym uruchomieniu RiftLauncher."
+      "allowBasicSessionStoreRestart": "To ustawienie zadziała przy następnym uruchomieniu RiftLauncher.",
+      "modSuggestions": "Sugestie modów",
+      "modSuggestionsDesc": "Pokazuje sugestie kompatybilnych modów na stronie przeglądania modów. Wyłączenie ukrywa zarówno wiersz, jak i kartę zgody."
     },
     "backups": {
       "backupInProgress": "Kopia zapasowa jest już tworzona!",

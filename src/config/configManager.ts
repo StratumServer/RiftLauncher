@@ -666,6 +666,10 @@ function normalizeDismissedModSuggestions(value: unknown): number[] {
   return [...new Set(ids)].slice(0, MAX_DISMISSED_MOD_SUGGESTIONS)
 }
 
+function normalizeModSuggestionsFolded(value: unknown): boolean {
+  return value === true
+}
+
 /**
  * `atStartup` is set on the one read that opens a stored document this process has not written:
  * `getConfig`'s file read. Everything else (every `saveConfig`, every re-normalization of the
@@ -734,6 +738,7 @@ export function normalizeConfig(config: unknown, { atStartup = false }: { atStar
     moddbVisibility: normalizeModDbVisibility(rawConfig.moddbVisibility ?? (rawConfig as Record<string, unknown>)["moddbVisibilityAnswer"], app.getVersion()),
     modSuggestionsConsent: normalizeModSuggestionsConsent(rawConfig.modSuggestionsConsent),
     dismissedModSuggestions: normalizeDismissedModSuggestions(rawConfig.dismissedModSuggestions),
+    modSuggestionsFolded: normalizeModSuggestionsFolded(rawConfig.modSuggestionsFolded),
     // Null for anything that is not an explicit yes or no, which is what every config written
     // before the toggle existed says, and leaves the running version deciding as it always did.
     receiveBetaUpdates: normalizeReceiveBetaUpdates(rawConfig.receiveBetaUpdates),

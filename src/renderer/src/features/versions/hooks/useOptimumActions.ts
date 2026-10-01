@@ -119,20 +119,25 @@ export function useOptimumActions(): OptimumActions {
       return refuse(patched)
     }
 
-    // The post-check, and the only thing that decides what the row says: the
-    // marker comes off the patched assembly itself, which is the one signal
-    // anyone can neither rename nor fake by writing a file.
+    // What the row says comes from the manifest the main process has just
+    // verified every patched assembly against, hash by hash: a signal nobody
+    // can fake by renaming or writing a file. The probe only confirms the
+    // folder still reads as a VS build and gives its game version. Its Optimum
+    // marker is not required: `-v` prints a version compiled into the game's
+    // own binary, which the overlay does not patch, so a build patched in place
+    // answers with the plain version.
     const probe = await window.api.gameManager.lookForAGameVersion(target.path)
     // Nothing is rolled back here: the patch itself checked out file by file, so
     // what failed is the launcher's reading of the folder. Remove Optimum stays
     // reachable on that row, because the backup is there.
-    if (!probe.exists || !probe.variant) return refuse({ reason: "output-unverified" })
+    if (!probe.exists) return refuse({ reason: "output-unverified" })
 
+    const variant: GameBuildVariantType = { name: "Optimum", version: manifest.optimumVersion }
     configDispatch({
       type: CONFIG_ACTIONS.EDIT_GAME_VERSION,
-      payload: { id: target.id, updates: { variant: probe.variant, label: buildGameVersionLabel(probe.installedGameVersion, probe.variant) } }
+      payload: { id: target.id, updates: { variant, label: buildGameVersionLabel(probe.installedGameVersion, variant) } }
     })
-    addNotification(t("features.versions.optimumApplied", { version: probe.variant.version }), "success")
+    addNotification(t("features.versions.optimumApplied", { version: variant.version }), "success")
     return true
   }
 

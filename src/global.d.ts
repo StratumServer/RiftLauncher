@@ -47,6 +47,8 @@ declare global {
     modSuggestionsConsent: boolean | null
     /** Listing ids dismissed from the suggestions row, bounded and retained once recorded. */
     dismissedModSuggestions: number[]
+    /** Whether the opt-in card or the suggestions row is folded down to its title line. Independent of `modSuggestionsConsent`. */
+    modSuggestionsFolded: boolean
     /**
      * Whether update checks offer prerelease builds: `true` for yes, `false` for no, and `null`
      * while nobody has said, which leaves the running version deciding the way electron-updater

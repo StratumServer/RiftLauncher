@@ -20,7 +20,7 @@
 import { isRecord } from "../records"
 
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 7
+export const CURRENT_CONFIG_SCHEMA = 8
 
 /**
  * First schema expressed as an integer.
@@ -337,20 +337,6 @@ export const addGameVersionIdentity: ConfigMigration = {
   }
 }
 
-/** Gives every installation its own durable world-backup record collection. */
-export const addWorldBackupRecords: ConfigMigration = {
-  fromSchema: 6,
-  toSchema: 7,
-  migrate(doc: unknown): unknown {
-    if (!isRecord(doc) || !Array.isArray(doc.installations)) return { ...(doc as Record<string, unknown>) }
-    const installations = doc.installations.map((entry) => {
-      if (!isRecord(entry)) return entry
-      return Array.isArray(entry.worldBackups) ? entry : { ...entry, worldBackups: [] }
-    })
-    return { ...doc, installations }
-  }
-}
-
 /** Adds the independent ModDB suggestions answer and bounded dismissal history. */
 export const addModSuggestionsPreferences: ConfigMigration = {
   fromSchema: 5,
@@ -368,6 +354,34 @@ export const addModSuggestionsPreferences: ConfigMigration = {
   }
 }
 
+/** Gives every installation its own durable world-backup record collection. */
+export const addWorldBackupRecords: ConfigMigration = {
+  fromSchema: 6,
+  toSchema: 7,
+  migrate(doc: unknown): unknown {
+    if (!isRecord(doc) || !Array.isArray(doc.installations)) return { ...(doc as Record<string, unknown>) }
+    const installations = doc.installations.map((entry) => {
+      if (!isRecord(entry)) return entry
+      return Array.isArray(entry.worldBackups) ? entry : { ...entry, worldBackups: [] }
+    })
+    return { ...doc, installations }
+  }
+}
+
+/** Adds the folded state shared by the opt-in card and the suggestions row. */
+export const addModSuggestionsFolded: ConfigMigration = {
+  fromSchema: 7,
+  toSchema: 8,
+  migrate(doc: unknown): unknown {
+    if (!isRecord(doc)) return doc
+
+    return {
+      ...doc,
+      modSuggestionsFolded: doc.modSuggestionsFolded === true
+    }
+  }
+}
+
 /** Every migration the launcher knows, lowest schema first. */
 export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
   floatMarkerToIntegerSchema,
@@ -375,7 +389,8 @@ export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
   singleAccountToAccountList,
   addGameVersionIdentity,
   addModSuggestionsPreferences,
-  addWorldBackupRecords
+  addWorldBackupRecords,
+  addModSuggestionsFolded
 ]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {

@@ -93,6 +93,7 @@ function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     moddbVisibility: defaultModDbVisibility(),
     modSuggestionsConsent: null,
     dismissedModSuggestions: [],
+    modSuggestionsFolded: false,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
     allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
@@ -200,6 +201,14 @@ describe("normalizeConfig: the document itself", () => {
     assert.deepEqual(normalizeConfig({}).dismissedModSuggestions, [])
     assert.deepEqual(normalizeConfig({ dismissedModSuggestions: [4, 4, 2.5, "3", 0, -1, 7] }).dismissedModSuggestions, [4, 7])
     assert.deepEqual(normalizeConfig({ dismissedModSuggestions: "not an array" }).dismissedModSuggestions, [])
+  })
+
+  it("normalizes the folded flag to a strict boolean", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+
+    assert.equal(normalizeConfig({}).modSuggestionsFolded, false)
+    assert.equal(normalizeConfig({ modSuggestionsFolded: true }).modSuggestionsFolded, true)
+    for (const value of ["true", 1, null, {}, []]) assert.equal(normalizeConfig({ modSuggestionsFolded: value }).modSuggestionsFolded, false, String(value))
   })
 })
 

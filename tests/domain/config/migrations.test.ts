@@ -10,6 +10,7 @@ import {
   FLOAT_ERA_CONFIG_SCHEMA,
   floatMarkerToIntegerSchema,
   addModSuggestionsPreferences,
+  addModSuggestionsFolded,
   legacyGameVersionId,
   MAX_CONFIG_SCHEMA,
   migrateConfigDocument,
@@ -113,6 +114,21 @@ describe("addModSuggestionsPreferences", () => {
   })
 })
 
+describe("addModSuggestionsFolded", () => {
+  it("defaults a config written before folding existed to unfolded", () => {
+    const before = { schemaVersion: 7, modSuggestionsConsent: true }
+    const after = addModSuggestionsFolded.migrate(before) as Record<string, unknown>
+
+    assert.deepEqual(after, { schemaVersion: 7, modSuggestionsConsent: true, modSuggestionsFolded: false })
+    assert.deepEqual(before, { schemaVersion: 7, modSuggestionsConsent: true })
+  })
+
+  it("keeps a valid stored answer and rejects anything that is not literally true", () => {
+    assert.equal((addModSuggestionsFolded.migrate({ modSuggestionsFolded: true }) as Record<string, unknown>).modSuggestionsFolded, true)
+    assert.equal((addModSuggestionsFolded.migrate({ modSuggestionsFolded: "true" }) as Record<string, unknown>).modSuggestionsFolded, false)
+  })
+})
+
 describe("floatMarkerToIntegerSchema", () => {
   it("steps from the float era to the first integer schema", () => {
     assert.equal(floatMarkerToIntegerSchema.fromSchema, FLOAT_ERA_CONFIG_SCHEMA)
@@ -163,7 +179,7 @@ describe("migrateConfigDocument on real configs", () => {
       installations: [{ id: "without-world-backups" }, { id: "with-world-backups", worldBackups: existingBackups }]
     }
 
-    const result = migrateConfigDocument(beta11Config)
+    const result = migrateConfigDocument(beta11Config, { targetSchema: 7 })
     const doc = result.doc as { modSuggestionsConsent: boolean; dismissedModSuggestions: number[]; installations: Array<{ worldBackups: WorldBackupType[] }> }
 
     assert.equal(result.schema, 7)
@@ -174,6 +190,31 @@ describe("migrateConfigDocument on real configs", () => {
       doc.installations.map((installation) => installation.worldBackups),
       [[], existingBackups]
     )
+  })
+
+  it("adds the suggestions fold to a schema 7 config without disturbing world backups or consent", () => {
+    const existingBackups: WorldBackupType[] = [{ id: "world-backup", date: 1, path: "/backups/world.tar.gz", worldName: "World.vcdbs" }]
+    const schema7Config = {
+      schemaVersion: 7,
+      modSuggestionsConsent: true,
+      dismissedModSuggestions: [12],
+      installations: [{ id: "with-world-backups", worldBackups: existingBackups }]
+    }
+
+    const result = migrateConfigDocument(schema7Config)
+    const doc = result.doc as {
+      modSuggestionsConsent: boolean
+      dismissedModSuggestions: number[]
+      modSuggestionsFolded: boolean
+      installations: Array<{ worldBackups: WorldBackupType[] }>
+    }
+
+    assert.equal(result.schema, CURRENT_CONFIG_SCHEMA)
+    assert.deepEqual(result.applied, [{ fromSchema: 7, toSchema: 8 }])
+    assert.equal(doc.modSuggestionsFolded, false)
+    assert.equal(doc.modSuggestionsConsent, true)
+    assert.deepEqual(doc.dismissedModSuggestions, [12])
+    assert.deepEqual(doc.installations[0]!.worldBackups, existingBackups)
   })
 
   it("migrates schema 4 installations to stable game-version ids and preserves orphans", () => {
@@ -193,7 +234,7 @@ describe("migrateConfigDocument on real configs", () => {
 
     assert.equal(result.outcome, "migrated")
     assert.equal(result.schema, CURRENT_CONFIG_SCHEMA)
-    assert.deepEqual(result.applied.at(-1), { fromSchema: 6, toSchema: 7 })
+    assert.deepEqual(result.applied.at(-1), { fromSchema: 7, toSchema: 8 })
     assert.equal(doc.gameVersions[0]!.label, "1.22.7")
     assert.equal(typeof doc.gameVersions[0]!.id, "string")
     assert.equal(doc.gameVersions[0]!.id, repeatedDoc.gameVersions[0]!.id, "legacy ids are deterministic")
@@ -303,7 +344,8 @@ describe("migrateConfigDocument on real configs", () => {
       { fromSchema: 3, toSchema: 4 },
       { fromSchema: 4, toSchema: 5 },
       { fromSchema: 5, toSchema: 6 },
-      { fromSchema: 6, toSchema: 7 }
+      { fromSchema: 6, toSchema: 7 },
+      { fromSchema: 7, toSchema: 8 }
     ])
 
     const doc = result.doc as Record<string, unknown>
@@ -371,9 +413,11 @@ describe("migrateConfigDocument on real configs", () => {
         [3, 4],
         [4, 5],
         [5, 6],
-        [6, 7]
+        [6, 7],
+        [7, 8]
       ]
     )
+    assert.equal(CONFIG_MIGRATIONS[CONFIG_MIGRATIONS.length - 1]?.toSchema, CURRENT_CONFIG_SCHEMA)
   })
 })
 

@@ -42,6 +42,7 @@ function baseConfig(overrides: Partial<ConfigType> = {}): ConfigType {
     moddbVisibility: defaultModDbVisibility(),
     modSuggestionsConsent: null,
     dismissedModSuggestions: [],
+    modSuggestionsFolded: false,
     receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
     measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
     allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,
@@ -132,6 +133,17 @@ describe("configReducer: Mod suggestions", () => {
     assert.equal(result.dismissedModSuggestions.includes(1), true)
     assert.equal(result.dismissedModSuggestions.includes(MAX_DISMISSED_MOD_SUGGESTIONS + 1), false)
     assert.equal(result, config)
+  })
+
+  it("folds and unfolds independently of the consent answer", () => {
+    const config = baseConfig({ modSuggestionsConsent: true })
+    const folded = configReducer(config, { type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_FOLDED, payload: true })
+
+    assert.equal(folded.modSuggestionsFolded, true)
+    assert.equal(folded.modSuggestionsConsent, true)
+
+    const unfolded = configReducer(folded, { type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_FOLDED, payload: false })
+    assert.equal(unfolded.modSuggestionsFolded, false)
   })
 })
 

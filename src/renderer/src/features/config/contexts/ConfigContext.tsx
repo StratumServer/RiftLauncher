@@ -32,6 +32,8 @@ export interface ConfigSettingsType {
   modSuggestionsConsent: boolean | null
   /** Listing ids dismissed from the suggestions row. */
   dismissedModSuggestions: number[]
+  /** Whether the opt-in card or the suggestions row is folded down to its title line. */
+  modSuggestionsFolded: boolean
   /** Whether update checks may offer betas, or null while nobody has said. See src/domain/appUpdate/betaUpdates.ts. */
   receiveBetaUpdates: boolean | null
   /** Whether the launcher measures the game process while it runs. See src/domain/sessions/sampling.ts. */
@@ -181,6 +183,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       moddbVisibility: config.moddbVisibility,
       modSuggestionsConsent: config.modSuggestionsConsent,
       dismissedModSuggestions: config.dismissedModSuggestions,
+      modSuggestionsFolded: config.modSuggestionsFolded,
       receiveBetaUpdates: config.receiveBetaUpdates,
       measurePlaySessions: config.measurePlaySessions,
       allowBasicSessionStore: config.allowBasicSessionStore,
@@ -199,6 +202,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
       config.moddbVisibility,
       config.modSuggestionsConsent,
       config.dismissedModSuggestions,
+      config.modSuggestionsFolded,
       config.receiveBetaUpdates,
       config.measurePlaySessions,
       config.allowBasicSessionStore,
