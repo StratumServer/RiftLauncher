@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { folderIsInUse, normalizeFolderForComparison } from "@domain/paths"
+import { firstFreeFolder, folderIsInUse, normalizeFolderForComparison } from "@domain/paths"
 
 describe("normalizeFolderForComparison", () => {
   it("strips a trailing forward slash", () => {
@@ -72,5 +72,25 @@ describe("folderIsInUse", () => {
 
   it("does not false-positive on a Linux path with backslash as filename char", () => {
     assert.equal(folderIsInUse("/home/a/dir\\x", ["/home/a/DIR\\x"], "posix"), false)
+  })
+})
+
+describe("firstFreeFolder", () => {
+  it("keeps the base when nothing uses it", () => {
+    assert.equal(firstFreeFolder("/versions/1.22.7", ["/versions/1.21.6", "/backups"]), "/versions/1.22.7")
+  })
+
+  it("moves to -2 when the base is taken, and past the numbers already taken too", () => {
+    assert.equal(firstFreeFolder("/versions/1.22.7", ["/versions/1.22.7"]), "/versions/1.22.7-2")
+    assert.equal(firstFreeFolder("/versions/1.22.7", ["/versions/1.22.7", "/versions/1.22.7-2"]), "/versions/1.22.7-3")
+  })
+
+  it("sees a Windows folder as taken whatever its case and separators", () => {
+    assert.equal(firstFreeFolder("C:\\Games\\Versions\\1.22.7", ["c:/games/versions/1.22.7/"]), "C:\\Games\\Versions\\1.22.7-2")
+  })
+
+  it("gives the base back rather than searching without end", () => {
+    const taken = ["/v/1.22.7", ...Array.from({ length: 98 }, (_, i) => `/v/1.22.7-${i + 2}`)]
+    assert.equal(firstFreeFolder("/v/1.22.7", taken), "/v/1.22.7")
   })
 })

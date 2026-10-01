@@ -168,6 +168,35 @@ describe("AddVersion", () => {
       expect((screen.getByLabelText("Official") as HTMLInputElement).checked).toBe(false)
     })
 
+    /**
+     * A player who already holds the version and asks for its Optimum build, or
+     * for a second copy, used to be offered the folder of the first one and
+     * refused with "VS Version already installed". The suggestion now steps
+     * aside: a folder of its own for Optimum, a numbered one for a second copy.
+     */
+    it("suggests a folder of its own for a second build of a version already installed", async () => {
+      const user = userEvent.setup()
+      installMockWindowApi({
+        configManager: {
+          getConfig: vi.fn(async () => createMockConfig({ defaultVersionsFolder: "/versions", gameVersions: [{ id: "gv-1", version: "1.20.4", label: "1.20.4", path: "/versions/1.20.4" }] }))
+        },
+        netManager: { queryURL: vi.fn(async (url: string) => (url.endsWith("stable.json") ? JSON.stringify(STABLE) : JSON.stringify({}))) },
+        optimumManager: { getManifest: vi.fn(async () => ({ ok: true, manifest: anOptimumManifest() }) as OptimumManifestResult) }
+      })
+
+      renderAddVersion()
+      await screen.findByText("1.20.4")
+
+      const folder = (await screen.findByPlaceholderText("VS Version folder")) as HTMLInputElement
+      await waitFor(() => expect(folder.value).toBe("/versions/1.20.4-2"))
+
+      await user.click(await screen.findByLabelText("Optimum 0.3.14"))
+      await waitFor(() => expect(folder.value).toBe("/versions/1.20.4-optimum"))
+
+      await user.click(screen.getByLabelText("Official"))
+      await waitFor(() => expect(folder.value).toBe("/versions/1.20.4-2"))
+    })
+
     it("disables the choice with one line when the machine has no build", async () => {
       withOptimum({ ok: false, reason: "unsupported-system" })
 
