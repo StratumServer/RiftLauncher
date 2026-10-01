@@ -38,6 +38,8 @@ declare global {
     configManager: {
       getConfig: () => Promise<ConfigType>
       saveConfig: (configJson: ConfigType) => Promise<SaveConfigResult>
+      /** Pulls, and clears, the notice `getConfig` left when `config.json` turned out unreadable. Call once on mount: a push can fire before anything is listening, so this is a pull instead (#554). */
+      getConfigRecoveryNotice: () => Promise<ConfigRecoveryNotice | null>
     }
     modsManager: {
       getInstalledMods: (path: string) => Promise<InstalledModsScan>

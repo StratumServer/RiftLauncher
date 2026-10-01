@@ -586,11 +586,33 @@ declare global {
    *   temp-file write or the rename onto `config.json` failed), which
    *   `saveConfig` catches and reports as `false`. Disk full, permissions,
    *   or something else holding the file.
+   * - `session-read-only`: `saveConfig` refused to write at all, because
+   *   `config.json` could not be safely read or preserved earlier this
+   *   session (see `configManager.ts`'s `configWriteSuppressed`). Nothing is
+   *   wrong with this particular save; every save this session is refused
+   *   the same way, on purpose, to avoid overwriting a file this process
+   *   never actually saw.
    */
-  type SaveConfigFailureReason = "invalid-payload" | "unauthorized-path" | "write-failed"
+  type SaveConfigFailureReason = "invalid-payload" | "unauthorized-path" | "write-failed" | "session-read-only"
 
   /** SAVE_CONFIG's verdict. `ok: false` means nothing was written to disk. */
   type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason }
+
+  /**
+   * What `getConfig` found on the read that mattered, pulled once by the renderer through
+   * GET_CONFIG_RECOVERY_NOTICE (#554). Two shapes:
+   *
+   * - `kind: "unreadable"`: `config.json` parsed to bad JSON, or to valid JSON that is not an
+   *   object. `restored` says whether a pre-migration backup was usable, or the launcher fell back
+   *   to defaults. `preserved`/`copyName` say whether a copy of the unreadable file could be kept
+   *   aside: when it could not, `getConfig` runs the recovered config in memory only, for this
+   *   session, and never wrote it over the original file, so `copyName` is null and there is
+   *   nothing to point the player at.
+   * - `kind: "read-failed"`: the file itself could not even be opened (permissions, a Windows
+   *   sharing lock). Nothing says the document inside is corrupt, so there is nothing to preserve
+   *   and no copy name to give: this session simply runs on defaults, in memory only.
+   */
+  type ConfigRecoveryNotice = { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null } | { kind: "read-failed" }
 
   /**
    * Why COPY_TO_ICONS refused to put a picked file in the Icons folder. Every

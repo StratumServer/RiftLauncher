@@ -19,7 +19,11 @@ export const IPC_CHANNELS = {
   },
   CONFIG_MANAGER: {
     GET_CONFIG: "get-config",
-    SAVE_CONFIG: "save-config"
+    SAVE_CONFIG: "save-config",
+    // Pulled once by the renderer on mount rather than pushed, so a notice getConfig produced
+    // before anything was listening (see configManager.ts's pendingConfigRecoveryNotice) is never
+    // lost.
+    GET_CONFIG_RECOVERY_NOTICE: "get-config-recovery-notice"
   },
   MODS_MANAGER: {
     GET_INSTALLED_MODS: "get-installed-mods",

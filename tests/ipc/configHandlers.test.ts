@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -33,6 +33,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 
 type GetConfigHandler = (event: IpcMainInvokeEvent) => Promise<ConfigType>
 type SaveConfigHandler = (event: IpcMainInvokeEvent, config: ConfigType) => Promise<SaveConfigResult>
+type GetConfigRecoveryNoticeHandler = (event: IpcMainInvokeEvent) => Promise<ConfigRecoveryNotice | null>
 
 let temporaryRoot: string
 let userDataFolder: string
@@ -64,6 +65,10 @@ function getConfigHandler(): GetConfigHandler {
 
 function saveConfigHandler(): SaveConfigHandler {
   return getIpcHandler<SaveConfigHandler>(IPC_CHANNELS.CONFIG_MANAGER.SAVE_CONFIG)
+}
+
+function getConfigRecoveryNoticeHandler(): GetConfigRecoveryNoticeHandler {
+  return getIpcHandler<GetConfigRecoveryNoticeHandler>(IPC_CHANNELS.CONFIG_MANAGER.GET_CONFIG_RECOVERY_NOTICE)
 }
 
 function minimalConfig(overrides: Partial<ConfigType> = {}): ConfigType {
@@ -105,6 +110,36 @@ describe("GET_CONFIG", () => {
     const config = await getConfigHandler()(event)
     assert.deepEqual(config.installations, [])
     assert.equal(config.defaultInstallationsFolder, join(appDataFolder, "RiftLauncherInstallations"))
+  })
+})
+
+describe("GET_CONFIG_RECOVERY_NOTICE", () => {
+  it("throws Unauthorized IPC sender for an untrusted caller", async () => {
+    await assert.rejects(() => getConfigRecoveryNoticeHandler()(createUntrustedEvent()), /Unauthorized IPC sender/)
+  })
+
+  it("returns null when config.json is fine, and nothing has ever been recovered", async () => {
+    const event = await createTrustedEvent()
+    const notice = await getConfigRecoveryNoticeHandler()(event)
+    assert.equal(notice, null)
+  })
+
+  /**
+   * Point 3 of the #554 review: this handler used to read the pending notice synchronously, with
+   * no guarantee getConfig()'s first real read (where recovery actually happens) had even started.
+   * NotificationsProvider asks for the notice from its own mount effect, independent of
+   * ConfigProvider's, so nothing guarantees GET_CONFIG runs first. Calling this handler with no
+   * GET_CONFIG call before it, straight after startup, reproduces that race: the notice must still
+   * come back correctly rather than the null an unlucky ordering used to hand back.
+   */
+  it("awaits the first config load before answering, even if GET_CONFIG was never called first", async () => {
+    writeFileSync(join(userDataFolder, "config.json"), "{ not valid json at all", "utf-8")
+
+    const event = await createTrustedEvent()
+    const notice = await getConfigRecoveryNoticeHandler()(event)
+
+    assert.ok(notice)
+    assert.equal(notice.kind, "unreadable")
   })
 })
 
@@ -240,5 +275,30 @@ describe("SAVE_CONFIG", () => {
     } finally {
       chmodSync(userDataFolder, 0o700)
     }
+  })
+
+  /**
+   * Point 1 of the #554 review: every writer, including a plain settings save from the renderer,
+   * funnels through saveConfig(), which now refuses to write once the session has been marked
+   * read-only. This is SAVE_CONFIG's own reason for that refusal, distinct from write-failed:
+   * nothing is wrong with this particular save, config.json itself just cannot be trusted with a
+   * write this session.
+   */
+  it("reports session-read-only once a read failure has suppressed writes for the session", async () => {
+    writeFileSync(join(userDataFolder, "config.json"), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const fse = (await import("fs-extra")).default
+    // Persistent, not just-once: a single blip is retried once before the session gives up on the
+    // file (see configManager.test.ts), so this needs the retry to fail too for suppression to stick.
+    vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+
+    const event = await createTrustedEvent()
+    // Triggers the read failure that marks the session read-only (assertConfigPathsAuthorized's
+    // own getConfig() call inside SAVE_CONFIG below would otherwise be the first read).
+    await getConfigHandler()(event)
+
+    const result = await saveConfigHandler()(event, minimalConfig())
+    assert.deepEqual(result, { ok: false, reason: "session-read-only" })
+    assert.equal(JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8")).lastUsedInstallation, "still-here", "the config on disk from before the read failure is untouched")
   })
 })

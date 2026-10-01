@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -871,6 +871,22 @@ describe("saveConfig and flushConfigWrites", () => {
     const onDisk = await fse.readJSON(join(userDataFolder, "config.json"))
     assert.equal("_notifiedModUpdatesInstallations" in onDisk, false)
   })
+
+  // #553: a hand-edited config.json is unreadable to a player when it is one line of minified
+  // JSON. writeJsonAtomic defaults to no spacing at all; the config writer has to ask for two
+  // spaces explicitly, the same way the modpack export already does for the same reason.
+  it("writes config.json indented two spaces, and the result parses back equal (#553)", async () => {
+    const { saveConfig, flushConfigWrites, normalizeConfig } = await freshConfigManager()
+    const config = minimalConfig({ lastUsedInstallation: "install-1" })
+
+    await saveConfig(config)
+    await flushConfigWrites()
+
+    const raw = readFileSync(join(userDataFolder, "config.json"), "utf-8")
+    assert.equal(raw, JSON.stringify(JSON.parse(raw), undefined, 2), "the file on disk is exactly its own content pretty-printed with two spaces")
+    assert.ok(raw.includes("\n  "), "at least one line is indented two spaces")
+    assert.deepEqual(JSON.parse(raw), normalizeConfig(config))
+  })
 })
 
 describe("getConfig: schema migration logging", () => {
@@ -1213,6 +1229,484 @@ describe("getConfig: config.json backup before a schema migration", () => {
 
     assert.equal(statSync(backupPath()).mode & 0o777, 0o600)
   })
+})
+
+/**
+ * #554: a config.json a player hand-edited into invalid JSON (one trailing comma is enough) used
+ * to be silently replaced by defaults, taking every Installation, account and setting with it.
+ * getConfig now copies the unreadable file aside before writing anything, tries the last good
+ * pre-migration snapshot, and only falls back to defaults when that is unusable too.
+ */
+describe("getConfig: an unreadable config.json is preserved and recovered (#554)", () => {
+  const INVALID_JSON = '{"schemaVersion": 2, "lastUsedInstallation": null,}' // trailing comma
+
+  function configPath(): string {
+    return join(userDataFolder, "config.json")
+  }
+
+  function backupPath(): string {
+    return join(userDataFolder, "config.pre-migration.bak.json")
+  }
+
+  function unreadableCopies(): string[] {
+    return readdirSync(userDataFolder).filter((name) => /^config\.unreadable-.*\.json$/.test(name))
+  }
+
+  it("copies the unreadable file aside byte for byte before writing anything", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    await getConfig()
+
+    const [copy, ...rest] = unreadableCopies()
+    assert.equal(rest.length, 0)
+    assert.ok(copy)
+    assert.equal(readFileSync(join(userDataFolder, copy), "utf-8"), INVALID_JSON, "the preserved copy is the exact original bytes, not a reparsed or reformatted version")
+  })
+
+  it("starts from the pre-migration backup when it is readable, and saves it as config.json", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const fse = (await import("fs-extra")).default
+    await fse.writeJSON(backupPath(), minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, lastUsedInstallation: "install-from-backup" }))
+
+    const { getConfig } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.equal(result.lastUsedInstallation, "install-from-backup")
+    assert.equal(unreadableCopies().length, 1, "the unreadable file is still preserved even though the backup covered for it")
+
+    const onDisk = await fse.readJSON(configPath())
+    assert.equal(onDisk.lastUsedInstallation, "install-from-backup", "the restored document is saved as the new config.json")
+  })
+
+  it("falls back to defaults with no usable backup, and still keeps the copy", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.deepEqual(result.installations, [], "nothing recoverable, so the defaults' empty state")
+    assert.equal(result.defaultInstallationsFolder, join(appDataFolder, "RiftLauncherInstallations"))
+    assert.equal(unreadableCopies().length, 1)
+  })
+
+  it("falls back to defaults when the pre-migration backup is itself unreadable, and still keeps the copy", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    writeFileSync(backupPath(), "{not valid json either,}", "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.deepEqual(result.installations, [])
+    assert.equal(unreadableCopies().length, 1)
+  })
+
+  /**
+   * `migrateConfigDocument` answers for every document without throwing, including ones it could not
+   * bring to the current schema, so "the call returned" is not "the backup is a usable restore
+   * point". A real pre-migration snapshot is older than the current schema and gets migrated up.
+   */
+  it("restores a backup from an older schema, which the migration brings up to date", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const fse = (await import("fs-extra")).default
+    await fse.writeJSON(backupPath(), minimalConfig({ schemaVersion: 2, lastUsedInstallation: "from-schema-2" }))
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.equal(result.lastUsedInstallation, "from-schema-2")
+    assert.equal(result.schemaVersion, CURRENT_CONFIG_SCHEMA)
+    const [copy] = unreadableCopies()
+    assert.ok(copy)
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: true, preserved: true, copyName: copy })
+  })
+
+  // Lazy bodies: minimalConfig reads the per-test temp folders, which only exist once beforeEach has run.
+  const unusableBackups: ReadonlyArray<readonly [string, () => string]> = [
+    ["an array, which is valid JSON but not a document", () => "[]"],
+    ["from a newer launcher than this build", () => JSON.stringify(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA + 1, lastUsedInstallation: "from-the-future" }))]
+  ]
+
+  for (const [description, backup] of unusableBackups) {
+    it(`uses defaults and reports a reset, not a restore, when the pre-migration backup is ${description}`, async () => {
+      writeFileSync(configPath(), INVALID_JSON, "utf-8")
+      writeFileSync(backupPath(), backup(), "utf-8")
+
+      const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+      const result = await getConfig()
+
+      assert.equal(result.lastUsedInstallation, null, "none of the backup's settings were adopted")
+      assert.equal(result.schemaVersion, CURRENT_CONFIG_SCHEMA)
+      const [copy] = unreadableCopies()
+      assert.ok(copy, "the unreadable file is still kept")
+      assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: true, copyName: copy })
+    })
+  }
+
+  it("keeps two copies when two launches in a row each find an unreadable config.json", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const first = await freshConfigManager()
+    await first.getConfig()
+    assert.equal(unreadableCopies().length, 1)
+
+    // The recovered config.json is valid now; corrupt it again the way a second bad hand edit would.
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const second = await freshConfigManager()
+    await second.getConfig()
+
+    assert.equal(unreadableCopies().length, 2, "neither copy overwrote the other")
+  })
+
+  it("shares one preserve-and-recover pass between two concurrent first reads", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    // Two callers racing the first read (the main window's ready-to-show handler and an early
+    // renderer GET_CONFIG, say) before either has set the cache.
+    const [first, second] = await Promise.all([getConfig(), getConfig()])
+
+    assert.deepEqual(first, second, "both callers get the same recovered config")
+    assert.equal(unreadableCopies().length, 1, "only one copy was preserved, not one per concurrent caller")
+  })
+
+  it("leaves a pending notice naming the copy, saying the previous settings were restored", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+    const fse = (await import("fs-extra")).default
+    await fse.writeJSON(backupPath(), minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA }))
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    await getConfig()
+
+    const [copy] = unreadableCopies()
+    assert.ok(copy)
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: true, preserved: true, copyName: copy })
+  })
+
+  it("leaves a pending notice saying the previous settings could not be restored, with no backup", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    await getConfig()
+
+    const [copy] = unreadableCopies()
+    assert.ok(copy)
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: true, copyName: copy })
+  })
+
+  /**
+   * With no usable backup, recovery used to hand back the shared module-level `defaultConfig`
+   * object itself, so a caller mutating the config it got from getConfig() (saveCurrentWindowState
+   * does exactly that) corrupted the cache every later call in the session would see.
+   */
+  it("returns a fresh defaults copy when recovering with no usable backup, not the shared module-level object", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const first = await getConfig()
+    first.window.width = 4_242
+
+    const second = await getConfig()
+    assert.notEqual(second.window.width, 4_242, "the cached config was not the same object the first caller mutated")
+  })
+
+  // The renderer pulls the notice once through GET_CONFIG_RECOVERY_NOTICE rather than the main
+  // process pushing it: a push can fire before React has mounted the provider that listens for it
+  // (the first getConfig() is often main's own ready-to-show handler), and webContents.send does
+  // not queue, so that message is just gone. Keeping the notice here until asked for survives
+  // however late the renderer gets around to asking.
+  it("clears the pending notice once it has been taken, so a second read of it is null", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    await getConfig()
+
+    assert.notEqual(takePendingConfigRecoveryNotice(), null)
+    assert.equal(takePendingConfigRecoveryNotice(), null)
+  })
+
+  it("has no pending notice on an ordinary, readable config", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig()), "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    await getConfig()
+
+    assert.equal(takePendingConfigRecoveryNotice(), null)
+  })
+
+  /**
+   * Notepad and some other editors save UTF-8 with a byte order mark, which JSON.parse rejects.
+   * The reader this one replaced (fs-extra's readJSON) stripped it, so a config that loaded before
+   * must not start landing in recovery, where its settings would be set aside for a backup or
+   * for defaults.
+   */
+  it("reads a valid config.json saved with a byte order mark as an ordinary config", async () => {
+    const saved = `\uFEFF${JSON.stringify(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, lastUsedInstallation: "from-a-bom-file" }))}`
+    writeFileSync(configPath(), saved, "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice, isConfigWriteSuppressed } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.equal(result.lastUsedInstallation, "from-a-bom-file", "its own settings, not a backup's or the defaults'")
+    assert.equal(unreadableCopies().length, 0, "nothing was copied aside: the file was never unreadable")
+    assert.equal(takePendingConfigRecoveryNotice(), null, "no recovery notice")
+    assert.equal(isConfigWriteSuppressed(), false, "the session is not read-only")
+    assert.equal(readFileSync(configPath(), "utf-8"), saved, "the file on disk was not rewritten")
+  })
+
+  /**
+   * The name-collision retry never actually ran: fs-extra 11's `copy` throws a plain `Error` with
+   * no `code` when `errorOnExist` trips, so a `code === "EEXIST"` check never matched it, the retry
+   * loop's catch fell straight through to the outer handler, and `config.json` still got overwritten
+   * with nothing preserved. Reproduced here with a pinned clock, because without one the "two
+   * launches in a row" coverage above only passes by accident: the real clock has moved on to a new
+   * millisecond by the second call, so two different names are picked and no collision is ever hit.
+   */
+  it("still preserves a copy under a pinned clock when a same-named copy already exists", async () => {
+    // Only Date is faked: scheduleConfigWrite's own debounce (setTimeout) still needs to run for
+    // real, or saveConfig's queued write never resolves and the test hangs.
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"))
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+      const collidingName = `config.unreadable-${stamp}.json`
+
+      writeFileSync(configPath(), INVALID_JSON, "utf-8")
+      writeFileSync(join(userDataFolder, collidingName), "someone else's file", "utf-8")
+
+      const { getConfig } = await freshConfigManager()
+      const result = await getConfig()
+
+      // The original, invalid bytes are preserved under a second name; the pre-existing file at
+      // the colliding name is left untouched, not overwritten with the invalid config.
+      const copies = unreadableCopies()
+      assert.equal(copies.length, 2)
+      assert.equal(readFileSync(join(userDataFolder, collidingName), "utf-8"), "someone else's file")
+      const secondCopy = copies.find((name) => name !== collidingName)
+      assert.ok(secondCopy)
+      assert.equal(readFileSync(join(userDataFolder, secondCopy), "utf-8"), INVALID_JSON)
+
+      // And config.json itself was not silently replaced without a preserved original: the fixed
+      // defaults are there because no backup existed, exactly like the uncontested case.
+      assert.deepEqual(result.installations, [])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  /**
+   * When preservation itself fails (every candidate name denied, the source vanished mid-copy,
+   * whatever the cause), getConfig must not fall through to overwriting config.json anyway: that
+   * is the exact loss #554 exists to prevent, just reached from a different door. The recovered
+   * config runs for this session only, in memory, and nothing is written to disk.
+   */
+  it("does not overwrite config.json when preserving a copy fails", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "copyFile").mockRejectedValue(Object.assign(new Error("disk full"), { code: "ENOSPC" }))
+
+    const result = await getConfig()
+
+    assert.deepEqual(result.installations, [], "the recovered config is still handed back for this session")
+    assert.equal(unreadableCopies().length, 0, "nothing was preserved")
+    assert.equal(readFileSync(configPath(), "utf-8"), INVALID_JSON, "the original file on disk is untouched, not replaced by the recovered defaults")
+  })
+
+  it("suppresses every later write for the rest of the session once preservation fails", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig, saveConfig, isConfigWriteSuppressed } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "copyFile").mockRejectedValue(Object.assign(new Error("disk full"), { code: "ENOSPC" }))
+
+    const recovered = await getConfig()
+    assert.equal(isConfigWriteSuppressed(), true)
+
+    // The follow-up writes #554's fix still missed: a window-state save (saveCurrentWindowState in
+    // src/main/index.ts) and the renderer's own settings save both call saveConfig directly with
+    // whatever config they were handed, same as this.
+    const windowStateSave = await saveConfig({ ...recovered, window: { ...recovered.window, width: 1_600 } })
+    assert.equal(windowStateSave, false)
+    assert.equal(readFileSync(configPath(), "utf-8"), INVALID_JSON, "a window-state save after the failed preservation did not overwrite the original file")
+
+    const settingsSave = await saveConfig({ ...recovered, lastUsedInstallation: "picked-in-renderer" })
+    assert.equal(settingsSave, false)
+    assert.equal(readFileSync(configPath(), "utf-8"), INVALID_JSON, "a renderer settings save after the failed preservation did not overwrite the original file either")
+  })
+
+  it("still leaves an honest pending notice when preservation fails", async () => {
+    writeFileSync(configPath(), INVALID_JSON, "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "copyFile").mockRejectedValue(Object.assign(new Error("disk full"), { code: "ENOSPC" }))
+
+    await getConfig()
+
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "unreadable", restored: false, preserved: false, copyName: null })
+  })
+
+  /**
+   * A failure reading config.json itself (permissions, a Windows sharing lock, ...) says nothing
+   * about whether the document inside is valid. Treating it the same as a parse failure would
+   * preserve-and-recover a config that may be perfectly fine, and the copy step would fail for the
+   * very same reason the read did, landing right back in the same trap as the case above. Instead
+   * this session runs on defaults in memory, and neither preserves nor overwrites anything.
+   */
+  it("does not preserve or overwrite the file when reading it fails for a reason other than bad content", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+
+    const result = await getConfig()
+
+    assert.deepEqual(result.installations, [], "runs on defaults in memory rather than throwing")
+    assert.equal(unreadableCopies().length, 0, "the file was never touched, so there is nothing to preserve")
+    assert.equal(JSON.parse(readFileSync(configPath(), "utf-8")).lastUsedInstallation, "still-here", "the perfectly valid file on disk was never overwritten")
+    // Unlike the #554 parse-failure cases, nothing here says the document itself is bad, so this
+    // gets its own honest notice rather than the "unreadable JSON" wording, and rather than staying
+    // silent the way an earlier version of this fix did.
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "read-failed" })
+  })
+
+  it("returns a fresh defaults copy on a read failure, not the shared module-level object", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const { getConfig } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+
+    const first = await getConfig()
+    // saveCurrentWindowState (src/main/index.ts) mutates the config it gets back from getConfig()
+    // in place before saving it; if getConfig ever handed out the same defaults object twice, this
+    // mutation would leak into the next caller.
+    first.window.width = 9_999
+
+    const second = await getConfig()
+    assert.notEqual(second.window.width, 9_999, "the second call's defaults were not corrupted by the first call's mutation")
+  })
+
+  it("suppresses every later write for the rest of the session once a read fails on the retry too", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const { getConfig, saveConfig, isConfigWriteSuppressed } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    // Persistent, not just-once: a single blip is now retried (see the retry tests below), so
+    // suppression for the rest of the session only kicks in once the retry fails too.
+    vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+
+    const config = await getConfig()
+    assert.equal(isConfigWriteSuppressed(), true)
+
+    // The next real writer in line: a window move, or the renderer's own settings save. Both call
+    // saveConfig with whatever config they were handed, same as this.
+    const saved = await saveConfig({ ...config, lastUsedInstallation: "changed-in-memory" })
+
+    assert.equal(saved, false, "saveConfig reports the write did not happen")
+    assert.equal(JSON.parse(readFileSync(configPath(), "utf-8")).lastUsedInstallation, "still-here", "config.json on disk is untouched")
+  })
+
+  it("logs the refused-write warning once per session, not on every refused save", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const { getConfig, saveConfig } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+    const logSpy = vi.spyOn(await import("@src/utils/logManager"), "logMessage")
+
+    const config = await getConfig()
+    await saveConfig({ ...config, lastUsedInstallation: "a" })
+    await saveConfig({ ...config, lastUsedInstallation: "b" })
+    await saveConfig({ ...config, lastUsedInstallation: "c" })
+
+    const refusalWarnings = logSpy.mock.calls.filter(([, message]) => message.includes("Refusing to write config.json"))
+    assert.equal(refusalWarnings.length, 1, "three refused saves, one warning")
+  })
+
+  /**
+   * A failed read gets one retry after a short delay before this session gives up on the file: most
+   * failures here are a transient lock (a brief antivirus scan, a Windows sharing lock, an EBUSY),
+   * and treating the first attempt as final turns a blip into a whole read-only session.
+   */
+  it("retries a failed read once and uses the real settings when the retry succeeds", async () => {
+    // Already at the current schema, so a successful read never triggers a migration save: what
+    // this test needs to isolate is the retry itself, not the ordinary post-migration write.
+    const onDisk = minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, lastUsedInstallation: "real-settings" })
+    writeFileSync(configPath(), JSON.stringify(onDisk), "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice, isConfigWriteSuppressed } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    const realReadFile = fse.readFile.bind(fse)
+    vi.spyOn(fse, "readFile")
+      .mockRejectedValueOnce(Object.assign(new Error("resource busy"), { code: "EBUSY" }))
+      .mockImplementation(realReadFile)
+
+    const result = await getConfig()
+
+    assert.equal(result.lastUsedInstallation, "real-settings", "the retry's real read won, not defaults")
+    assert.equal(takePendingConfigRecoveryNotice(), null, "a transient blip that recovered on retry raises no notice")
+    assert.equal(isConfigWriteSuppressed(), false, "not read-only: the retry succeeded")
+    assert.equal(readFileSync(configPath(), "utf-8"), JSON.stringify(onDisk), "the file on disk was never touched")
+  }, 10_000)
+
+  /**
+   * When the retry fails too, the fresh defaults are cached for the session so later getConfig()
+   * calls do not go back to the disk, do not re-log the failure, and do not re-arm the notice.
+   */
+  it("caches fresh defaults after a persistent read failure so later getConfig calls do not re-read or re-raise the notice", async () => {
+    writeFileSync(configPath(), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    const readFileSpy = vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("resource busy"), { code: "EBUSY" }))
+
+    await getConfig()
+
+    assert.equal(readFileSpy.mock.calls.length, 2, "the initial attempt plus exactly one retry")
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "read-failed" }, "one notice after the first call")
+
+    // Several later calls, no cache primed yet from a save: none of them should touch the disk again.
+    await getConfig()
+    await getConfig()
+
+    assert.equal(readFileSpy.mock.calls.length, 2, "later getConfig calls used the cached defaults instead of re-reading")
+    assert.equal(takePendingConfigRecoveryNotice(), null, "a second pull after the first getConfig call already found nothing left")
+    assert.equal(readFileSync(configPath(), "utf-8"), JSON.stringify(minimalConfig({ lastUsedInstallation: "still-here" })), "the file on disk was never touched")
+  }, 10_000)
+
+  /**
+   * `[]`, `null`, a bare number or string: all valid JSON, none of them a config document.
+   * `migrateConfigDocument` used to read these as `outcome: "unreadable"` and let normalizeConfig
+   * quietly build defaults, with no copy taken and no migration ever running to trigger a save, so
+   * the loss only showed up whenever something later did save. Same failure class as a syntax
+   * error, so it now goes through the same preserve-and-recover door.
+   */
+  it("preserves and recovers valid JSON that is not an object, the same as invalid JSON", async () => {
+    writeFileSync(configPath(), "[]", "utf-8")
+
+    const { getConfig, takePendingConfigRecoveryNotice } = await freshConfigManager()
+    const result = await getConfig()
+
+    assert.deepEqual(result.installations, [])
+    assert.equal(unreadableCopies().length, 1)
+    assert.equal(readFileSync(join(userDataFolder, unreadableCopies()[0]!), "utf-8"), "[]")
+    const notice = takePendingConfigRecoveryNotice()
+    assert.ok(notice)
+    if (notice.kind !== "unreadable") throw new Error(`expected an "unreadable" notice, got ${notice.kind}`)
+    assert.equal(notice.preserved, true)
+  })
+
+  for (const notAnObject of ["null", "42", '"a string"']) {
+    it(`preserves and recovers ${notAnObject} the same way`, async () => {
+      writeFileSync(configPath(), notAnObject, "utf-8")
+      const { getConfig } = await freshConfigManager()
+      await getConfig()
+      assert.equal(unreadableCopies().length, 1, notAnObject)
+    })
+  }
 })
 
 /**
