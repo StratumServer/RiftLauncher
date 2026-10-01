@@ -30,14 +30,12 @@ export function folderIsInUse(folder: string, foldersInUse: readonly string[], p
  * The first folder nothing registered occupies: `base` itself, then `base-2`, `base-3` and so on.
  *
  * Used to suggest where a new install goes, so a second build of a version the launcher already
- * holds is not offered the folder of the first. The search is bounded: past it the suggestion is
- * `base` again, which the install then refuses by name rather than looping.
+ * holds is not offered the folder of the first. It always finds one: each taken candidate is a
+ * distinct entry of `foldersInUse`, so the search ends within `foldersInUse.length` steps and never
+ * hands back a folder the install would refuse.
  */
 export function firstFreeFolder(base: string, foldersInUse: readonly string[], platform?: "win32" | "posix"): string {
-  if (!folderIsInUse(base, foldersInUse, platform)) return base
-  for (let n = 2; n < 100; n++) {
-    const candidate = `${base}-${n}`
-    if (!folderIsInUse(candidate, foldersInUse, platform)) return candidate
-  }
-  return base
+  let candidate = base
+  for (let n = 2; folderIsInUse(candidate, foldersInUse, platform); n++) candidate = `${base}-${n}`
+  return candidate
 }

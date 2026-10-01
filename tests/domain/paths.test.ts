@@ -89,8 +89,14 @@ describe("firstFreeFolder", () => {
     assert.equal(firstFreeFolder("C:\\Games\\Versions\\1.22.7", ["c:/games/versions/1.22.7/"]), "C:\\Games\\Versions\\1.22.7-2")
   })
 
-  it("gives the base back rather than searching without end", () => {
+  it("never hands back a taken folder, however many numbered ones are registered", () => {
+    // The base and -2 to -99: the old bounded search gave the occupied base back here.
     const taken = ["/v/1.22.7", ...Array.from({ length: 98 }, (_, i) => `/v/1.22.7-${i + 2}`)]
-    assert.equal(firstFreeFolder("/v/1.22.7", taken), "/v/1.22.7")
+    assert.equal(firstFreeFolder("/v/1.22.7", taken), "/v/1.22.7-100")
+
+    const many = ["/v/1.22.7", ...Array.from({ length: 500 }, (_, i) => `/v/1.22.7-${i + 2}`)]
+    const free = firstFreeFolder("/v/1.22.7", many)
+    assert.equal(free, "/v/1.22.7-502")
+    assert.equal(folderIsInUse(free, many), false)
   })
 })
