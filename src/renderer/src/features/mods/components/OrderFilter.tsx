@@ -40,12 +40,14 @@ function OrderFilter({
   }, [])
 
   function changeOrder(order: string): void {
+    // Written on every pick, flipping the active entry included: ListMods reads this key's
+    // presence as "the player chose a sort", which keeps the name ranking out of the way.
+    window.localStorage.setItem("listModsOrderBy", order)
     if (orderBy === order) {
       const newOrder = orderByOrder === "desc" ? "asc" : "desc"
       window.localStorage.setItem("listModsOrderByOrder", newOrder)
       setOrderByOrder(newOrder)
     } else {
-      window.localStorage.setItem("listModsOrderBy", order)
       setOrderBy(order)
       window.localStorage.setItem("listModsOrderByOrder", "desc")
       setOrderByOrder("desc")
