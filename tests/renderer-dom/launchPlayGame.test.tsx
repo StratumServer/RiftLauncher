@@ -378,6 +378,7 @@ describe("MainMenu Play button", () => {
     { reason: "no-executable", message: "Couldn't find Vintage Story in this version's folder. Try reinstalling it." },
     { reason: "session-write-failed", message: "Couldn't save your login to this installation. Try logging in again." },
     { reason: "invalid-request", message: "This installation's environment variables can't be used. Check them and try again." },
+    { reason: "installation-busy", message: "This Installation is busy managing a world. Try launching again in a moment." },
     { reason: "launch-failed", message: "Something went wrong starting the game. The log has the details." }
   ]
 

@@ -19,6 +19,11 @@ export function unauthorizedPathResult(): SaveConfigResult {
   return { ok: false, reason: "unauthorized-path" }
 }
 
+/** `saveConfig` refused to write at all: see `configManager.ts`'s `configWriteSuppressed`. */
+export function sessionReadOnlyResult(): SaveConfigResult {
+  return { ok: false, reason: "session-read-only" }
+}
+
 /** Carries `saveConfig`'s own boolean verdict onto the wire, naming a `false` as `write-failed`. */
 export function saveOutcomeToResult(saved: boolean): SaveConfigResult {
   return saved ? { ok: true } : { ok: false, reason: "write-failed" }

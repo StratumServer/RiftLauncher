@@ -136,6 +136,22 @@ interface StackedToast {
 }
 
 /**
+ * Module-level, not a ref: GET_CONFIG_RECOVERY_NOTICE hands its notice back exactly once per
+ * session (main clears it on the way out), so a second ask after the first has already resolved
+ * would just get null. React StrictMode mounts this provider, runs its effects' cleanup, and
+ * mounts it again in the same tick; without this, the first mount's request would land after its
+ * own cleanup had already set `cancelled`, and the second mount would ask again and find the
+ * notice already taken, dropping it entirely. Sharing one promise across mounts instead means
+ * only the first mount ever actually asks; whichever mount is still around when it resolves is
+ * the one that shows it.
+ */
+let configRecoveryNoticePromise: Promise<ConfigRecoveryNotice | null> | null = null
+function fetchConfigRecoveryNoticeOnce(): Promise<ConfigRecoveryNotice | null> {
+  configRecoveryNoticePromise ??= window.api.configManager.getConfigRecoveryNotice()
+  return configRecoveryNoticePromise
+}
+
+/**
  * One banner's countdown, as a component so each place in the stack owns its
  * own timer and its own pause instead of the provider reconciling a map of
  * them by hand.
@@ -206,6 +222,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   const invokedActions = useRef<Set<string>>(new Set())
   const offeredVersion = useRef("")
   const downloadAccepted = useRef(false)
+  const addNotificationRef = useRef<NotificationsContextType["addNotification"]>(() => {})
 
   const history = useMemo(() => records.filter((record) => !isToastOnly(record)), [records])
   stackRef.current = stack
@@ -278,7 +295,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
 
   useEffect((): (() => void) => {
     const offerDownload = (body: string): void => {
-      addNotification(body, "info", {
+      addNotificationRef.current(body, "info", {
         duration: null,
         actions: [
           {
@@ -305,7 +322,7 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     })
     const removeUpdateDownloadedListener = window.api.appUpdater.onUpdateDownloaded(() => {
       window.setTimeout(() => {
-        addNotification(t("notifications.body.updateDownloaded"), "success", {
+        addNotificationRef.current(t("notifications.body.updateDownloaded"), "success", {
           duration: null,
           actions: [{ id: "restart-and-update", label: t("components.activityCenter.restartAndUpdate"), onClick: (): void => window.api.appUpdater.updateAndRestart() }]
         })
@@ -317,9 +334,47 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       removeUpdateErrorListener()
       removeUpdateDownloadedListener()
     }
+  }, [t])
+
+  useEffect((): (() => void) => {
+    // getConfig() found config.json unreadable (bad JSON, a hand edit gone wrong, or valid JSON
+    // that was not an object): it tried to keep a copy next to it before touching anything, and
+    // either restored the settings from before the last migration or, with none usable, fell back
+    // to defaults (#554). Either way the player's launcher just changed under them for a reason
+    // that is not their fault, so this says so once. Pulled rather than pushed: `getConfig`'s
+    // notice can be produced before this effect has even run (the first read is often main's own
+    // `ready-to-show` handler), and a push sent with nobody subscribed yet is simply lost. Pulling
+    // once on mount instead means whatever is waiting is still there however late this asks.
+    let cancelled = false
+    void fetchConfigRecoveryNoticeOnce().then((notice) => {
+      if (cancelled || !notice) return
+
+      if (notice.kind === "read-failed") {
+        addNotificationRef.current(t("notifications.body.configReadFailed"), "warning", { duration: null })
+        return
+      }
+
+      const { restored, preserved, copyName } = notice
+      const key = preserved
+        ? restored
+          ? "notifications.body.configUnreadableRestored"
+          : "notifications.body.configUnreadableReset"
+        : restored
+          ? "notifications.body.configUnreadableRestoredUnsaved"
+          : "notifications.body.configUnreadableResetUnsaved"
+      addNotificationRef.current(t(key, preserved ? { copyName } : undefined), "warning", { duration: null })
+    })
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t deliberately excluded: adding it would replay the recovery notice on every language change.
   }, [])
 
-  const addNotification = (body: string, type: NotificationTypes, options?: NotificationOptions): void => {
+  // useCallback because page-level refresh callbacks list addNotification in
+  // their dependency arrays and refire their list effect when its identity
+  // churns per render (#362 pattern; same reason as markAllSeen below).
+  const addNotification = useCallback((body: string, type: NotificationTypes, options?: NotificationOptions): void => {
     const presentation = options?.presentation ?? "both"
     const hasActions = Boolean(options?.actions?.length)
 
@@ -360,7 +415,8 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       pendingToasts.current.push({ id, body, type, hasActions })
       setToastQueue((queue) => [...queue, id])
     }
-  }
+  }, [])
+  addNotificationRef.current = addNotification
 
   const dismissToast = (id: string, reason: ToastDismissReason = "manual"): void => {
     setStack((current) => (current.some((entry) => entry.id === id) ? current.filter((entry) => entry.id !== id) : current))

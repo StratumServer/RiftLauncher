@@ -10,6 +10,7 @@ import * as tar from "tar"
 import fse from "fs-extra"
 
 import { assertRoomForArchive, assertSafeCompressionTree, runCompression } from "@src/ipc/workers/compression"
+import { validateWorldBackupArchive } from "@src/ipc/archiveValidation"
 import { MAX_ARCHIVE_TOTAL_BYTES, MAX_BACKUP_ENTRY_BYTES, MAX_BACKUP_TOTAL_BYTES } from "@src/ipc/validation"
 
 /**
@@ -186,6 +187,23 @@ describe("assertSafeCompressionTree", () => {
   })
 })
 
+describe("validateWorldBackupArchive", () => {
+  it("accepts the one-file archive produced for a world", async () => {
+    const world = workspacePath("world.vcdbs")
+    const archive = join(output, "world-backup.tar.gz")
+    writeFileSync(world, "world data")
+
+    await runCompression({ inputPath: world, outputPath: output, outputFileName: "world-backup.tar.gz" })
+    await validateWorldBackupArchive(archive, "world.vcdbs")
+  })
+
+  it("rejects an archive containing more than the selected world before extraction", async () => {
+    await runCompression({ inputPath: source, outputPath: output, outputFileName: "invalid-world-backup.tar.gz" })
+
+    await assert.rejects(() => validateWorldBackupArchive(join(output, "invalid-world-backup.tar.gz"), "Vintagestory.vcdbs"), /exactly one world file/)
+  })
+})
+
 describe("runCompression", () => {
   it("archives the source contents, not the source folder itself", async () => {
     await runCompression({ inputPath: source, outputPath: output, outputFileName: "backup.tar.gz" })
@@ -270,8 +288,9 @@ describe("runCompression", () => {
     assert.throws(() => statSync(join(output, "backup.tar.gz")))
   })
 
-  it("refuses a source that is a file rather than a folder", async () => {
-    await assert.rejects(runCompression({ inputPath: join(source, "Vintagestory"), outputPath: output, outputFileName: "backup.tar.gz" }), /must be a directory/)
+  it("can archive one world database file", async () => {
+    await runCompression({ inputPath: join(source, "Vintagestory"), outputPath: output, outputFileName: "world.tar.gz" })
+    assert.equal(statSync(join(output, "world.tar.gz")).isFile(), true)
   })
 
   it("refuses a source that does not exist", async () => {

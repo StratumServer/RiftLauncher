@@ -1,11 +1,11 @@
 /**
  * The session's copy of Optimum's overlay manifest.
  *
- * One fixed address, `releases/latest/download/optimum-manifest.json`, which is
- * GitHub's own convenience URL for "the newest release's asset by this name".
- * Reading it that way removes an `api.github.com` listing call along with its
- * release-entry validator and its `browser_download_url` field, so there is no
- * assets array to walk and no string from GitHub used as an address.
+ * One fixed latest-release address per platform, such as
+ * `releases/latest/download/optimum-manifest-win-x64.json`. Reading it that
+ * way removes an `api.github.com` listing call along with its release-entry
+ * validator and its `browser_download_url` field, so there is no assets array
+ * to walk and no string from GitHub used as an address.
  *
  * The price is a 302, and the download worker is what follows one, so the
  * manifest comes down through `runDownload` rather than `requestBoundedText`:
@@ -23,7 +23,7 @@ import fse from "fs-extra"
 import { join } from "node:path"
 
 import { parseOptimumManifest, type OptimumManifest } from "@domain/optimum/manifest"
-import { hostRid, overlayCacheFolder, overlayDownloadUrl, OPTIMUM_MANIFEST_FILE_NAME, OPTIMUM_MANIFEST_URL } from "@domain/optimum/plan"
+import { hostRid, optimumManifestDownloadUrl, optimumManifestFileName, overlayCacheFolder, overlayDownloadUrl } from "@domain/optimum/plan"
 import { optimumTestOrigin } from "@src/ipc/validation"
 import { runDownload } from "@src/ipc/workers/download"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
@@ -45,9 +45,9 @@ const MAX_OPTIMUM_MANIFEST_BYTES = 256 * 1024
  * unchanged: the archive is still checked against the hash this manifest
  * publishes, and every file staged out of it against its own.
  */
-function manifestSourceUrl(): string {
+function manifestSourceUrl(rid: NonNullable<ReturnType<typeof hostRid>>): string {
   const origin = optimumTestOrigin()
-  return origin === undefined ? OPTIMUM_MANIFEST_URL : `${origin}/${OPTIMUM_MANIFEST_FILE_NAME}`
+  return origin === undefined ? optimumManifestDownloadUrl(rid) : `${origin}/${optimumManifestFileName(rid)}`
 }
 
 export function overlaySourceUrl(manifest: OptimumManifest): string {
@@ -79,6 +79,9 @@ class UnusableManifestError extends Error {
 let manifestCache: Promise<OptimumManifest> | undefined
 
 async function fetchOptimumManifest(): Promise<OptimumManifest> {
+  const rid = hostRid(process.platform, process.arch)
+  if (rid === undefined) throw new UnusableManifestError("unsupported-system")
+
   const directory = optimumCacheDirectory()
   await fse.ensureDir(directory)
 
@@ -86,9 +89,9 @@ async function fetchOptimumManifest(): Promise<OptimumManifest> {
   if (origin !== undefined) logMessage("warn", `${LOG_PREFIX} [GET_MANIFEST] Reading Optimum from a local source origin instead of its releases. This is a test setting.`)
 
   const manifestPath = await runDownload({
-    url: manifestSourceUrl(),
+    url: manifestSourceUrl(rid),
     outputPath: directory,
-    fileName: OPTIMUM_MANIFEST_FILE_NAME,
+    fileName: optimumManifestFileName(rid),
     maxBytes: MAX_OPTIMUM_MANIFEST_BYTES
   })
 
@@ -98,7 +101,7 @@ async function fetchOptimumManifest(): Promise<OptimumManifest> {
   // One manifest is published per release under one name, and it describes one
   // platform's overlay. A manifest for another platform is not a manifest this
   // machine can act on, whatever else it says.
-  if (manifest.rid !== hostRid(process.platform, process.arch)) throw new UnusableManifestError("unsupported-system")
+  if (manifest.rid !== rid) throw new UnusableManifestError("unsupported-system")
 
   return manifest
 }
@@ -126,8 +129,10 @@ export async function getOptimumManifest(): Promise<OptimumManifestResult> {
     }
   } catch (err) {
     manifestCache = undefined
-    const reason = err instanceof UnusableManifestError ? err.reason : "unreachable"
-    logMessage("info", `${LOG_PREFIX} [GET_MANIFEST] No usable Optimum manifest this session: ${reason}.`)
+    const statusCode = err instanceof Error && "statusCode" in err ? err.statusCode : undefined
+    const reason = err instanceof UnusableManifestError ? err.reason : statusCode === 404 ? "not-published" : "unreachable"
+    if (reason === "not-published") logMessage("debug", `${LOG_PREFIX} [GET_MANIFEST] Optimum has not published a manifest for this platform.`)
+    else logMessage("info", `${LOG_PREFIX} [GET_MANIFEST] No usable Optimum manifest this session: ${reason}.`)
     logMessage("debug", `${LOG_PREFIX} [GET_MANIFEST] ${getErrorMessage(err)}`)
     return { ok: false, reason }
   }

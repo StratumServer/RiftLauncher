@@ -164,6 +164,37 @@ describe("ListMods filter bar", () => {
   // wrapper, never a button nested inside it. A click on an ancestor does not fire a descendant's
   // onClick, so the keyboard used to close the menu without ever running changeOrder; only a
   // mouse, which lands straight on the button, worked.
+  // Picking the entry that is already active flips its direction. That is a sort the player chose
+  // too, so it must count as explicit and keep the name ranking of a search out of the way.
+  it("counts flipping the active sort as an explicit choice", async () => {
+    const user = userEvent.setup()
+
+    installMockWindowApi({
+      netManager: {
+        queryURL: async (url: string) => {
+          if (url.includes("/api/mods")) return JSON.stringify(MOD_RESPONSE)
+          return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+        }
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    expect(await screen.findByText("Better Ruins", {}, { timeout: 3000 })).toBeTruthy()
+    expect(window.localStorage.getItem("listModsOrderBy")).toBeNull()
+
+    await user.click(screen.getByTitle("Order"))
+    await user.click(await screen.findByRole("menuitem", { name: "Follows" }))
+
+    await waitFor(() => expect(window.localStorage.getItem("listModsOrderByOrder")).toBe("asc"))
+    expect(window.localStorage.getItem("listModsOrderBy")).toBe("follows")
+  })
+
   it("changes the sort order from the keyboard, not just a mouse click", async () => {
     const user = userEvent.setup()
 

@@ -21,7 +21,7 @@ import { DOWNLOAD_TEMP_FILE_NAMESPACE, runDownload, type DownloadRequestFn } fro
  * check, and the rule that nothing lands under the caller's name until both
  * pass.
  *
- * `runDownload` never says why it failed, by design, so most of these assert on
+ * `runDownload` keeps its failure message uniform, so most of these assert on
  * the disk instead: no file under the destination name, and no leftover `.part`.
  */
 
@@ -268,6 +268,16 @@ describe("runDownload", () => {
 
     assert.equal(response.resumed, true)
     assert.equal(existsSync(join(destination, "game.tar.gz")), false)
+  })
+
+  it("retains an HTTP status for callers that distinguish a missing asset", async () => {
+    const transport = respondWith(new FakeResponse(404, { "content-length": "9" }, [Buffer.from("not found")]))
+
+    await assert.rejects(runDownload({ url: ALLOWED_URL, outputPath: destination, fileName: "game.tar.gz", request: transport.fn }), (error: unknown) => {
+      assert.equal(error instanceof Error && error.message, "Download failed")
+      assert.equal(error instanceof Error && "statusCode" in error ? error.statusCode : undefined, 404)
+      return true
+    })
   })
 
   it("refuses a response with no status code at all", async () => {

@@ -196,5 +196,15 @@ describe("AddVersion", () => {
 
       expect(screen.getByText("Optimum's list of builds couldn't be reached. Check your connection and open this page again.")).toBeTruthy()
     })
+
+    it("says the list is unpublished without connection advice", async () => {
+      withOptimum({ ok: false, reason: "not-published" })
+
+      renderAddVersion()
+      await screen.findByText("1.20.4")
+
+      expect(screen.getByText("Optimum has not published a list of builds for this platform yet.")).toBeTruthy()
+      expect(screen.queryByText(/Check your connection/)).toBeNull()
+    })
   })
 })

@@ -13,6 +13,7 @@ import { normalizeModDbVisibility } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
+import { isSafeWorldName } from "@domain/worlds/worlds"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
 
 const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
@@ -37,6 +38,7 @@ const defaultInstallation: InstallationType = {
   backupsAuto: false,
   compressionLevel: DEFAULT_COMPRESSION_LEVEL,
   backups: [],
+  worldBackups: [],
   lastTimePlayed: -1,
   totalTimePlayed: 0,
   mesaGlThread: false,
@@ -49,6 +51,50 @@ let configCache: ConfigType | null = null
 let configWriteQueue: Promise<void> = Promise.resolve()
 let pendingConfig: ConfigType | null = null
 let scheduledConfigWrite: Promise<void> | null = null
+/** Concurrent first reads (startup races: the main window's `ready-to-show` and a stray early
+ * GET_CONFIG landing together) share this instead of each running their own copy-and-recover pass,
+ * which would otherwise preserve the same unreadable file twice and leave two competing notices. */
+let configLoadPromise: Promise<ConfigType> | null = null
+
+/**
+ * Set once the original `config.json` must never be overwritten for the rest of this session: a
+ * parse failure whose copy could not be preserved, or a plain read I/O error (permissions, a
+ * Windows sharing lock). Both mean the file on disk may hold something this process has not
+ * actually seen, so writing over it would destroy the only copy there is. Every writer funnels
+ * through `saveConfig`, which checks this flag, so setting it here is the one place that has to
+ * remember: never cleared once set, even if a later read in the same session would succeed.
+ */
+let configWriteSuppressed = false
+/** Whether `saveConfig` has already logged the refusal warning this session. See {@link configWriteSuppressed}. */
+let configWriteSuppressedWarned = false
+
+/** Whether `saveConfig` is currently refusing to write `config.json`. See {@link configWriteSuppressed}. */
+export function isConfigWriteSuppressed(): boolean {
+  return configWriteSuppressed
+}
+
+function suppressConfigWrites(): void {
+  configWriteSuppressed = true
+  pendingConfigRecoveryNotice = { kind: "read-failed" }
+}
+
+/**
+ * The most recent config-recovery notice `getConfig` produced, waiting to be read once.
+ *
+ * A push (`webContents.send`) can fire before the renderer has subscribed to hear it: the first
+ * `getConfig` often runs from `ready-to-show`, ahead of React mounting its notification provider,
+ * and a message sent with nobody listening is simply gone. Keeping the notice here instead, and
+ * letting the renderer pull it once on mount through GET_CONFIG_RECOVERY_NOTICE, means it survives
+ * however late the renderer gets around to asking.
+ */
+let pendingConfigRecoveryNotice: ConfigRecoveryNotice | null = null
+
+/** Hands back the notice `getConfig` left, if any, and clears it: a second call the same session gets null. */
+export function takePendingConfigRecoveryNotice(): ConfigRecoveryNotice | null {
+  const notice = pendingConfigRecoveryNotice
+  pendingConfigRecoveryNotice = null
+  return notice
+}
 
 function scheduleConfigWrite(): Promise<void> {
   // Compared against null rather than tested for truthiness: the question is whether a write is already scheduled, not whether a promise is truthy (it always is).
@@ -63,7 +109,7 @@ function scheduleConfigWrite(): Promise<void> {
       // Written as it stands: the only thing that ever reaches here is a normalizeConfig result,
       // and that builds a fixed literal field by field, so the renderer's session-only markers
       // (`_notifiedModUpdatesInstallations`, `_backgroundRevision`) are already gone.
-      await writeJsonAtomic(configPath, nextConfig)
+      await writeJsonAtomic(configPath, nextConfig, { spaces: 2 })
     }
   })
 
@@ -77,7 +123,18 @@ function scheduleConfigWrite(): Promise<void> {
 export async function saveConfig(config: ConfigType): Promise<boolean> {
   if (!configPath) configPath = join(app.getPath("userData"), "config.json")
   const normalizedConfig = normalizeConfig(config)
+  // Kept in memory either way: a session running read-only still behaves normally for whoever
+  // called this (a settings toggle, a window move), only the disk write underneath is skipped.
   configCache = normalizedConfig
+
+  if (configWriteSuppressed) {
+    if (!configWriteSuppressedWarned) {
+      configWriteSuppressedWarned = true
+      logMessage("warn", `${LOG_PREFIX} [saveConfig] Refusing to write config.json this session: the original could not be safely read or preserved earlier.`)
+    }
+    return false
+  }
+
   pendingConfig = normalizedConfig
   const queuedWrite = scheduleConfigWrite()
 
@@ -97,28 +154,206 @@ export function flushConfigWrites(): Promise<void> | null {
 }
 
 export async function getConfig(): Promise<ConfigType> {
-  try {
-    if (!(await ensureConfig())) return defaultConfig
-    if (configCache) return normalizeConfig(configCache)
-    const config = await fse.readJSON(configPath, "utf-8")
-    const hadLegacyAccountSecrets = await migrateLegacyAccount(config)
-    const migration = migrateConfigDocument(config)
-    logConfigMigration(migration)
-    const ensuredConfig = normalizeConfig(migration.doc, { atStartup: true })
-    const reKeyedAccountStore = await migrateAccountStore(config, ensuredConfig)
-    // Every path that overwrites config.json gets the same backup, not just the schema pipeline:
-    // a re-key or a legacy-secrets migration writes just as real a document as a schema bump does.
-    const mustSave = hadLegacyAccountSecrets || reKeyedAccountStore || migration.applied.length > 0
-    await reconcileConfigBackup(mustSave)
-    configCache = ensuredConfig
-    if (mustSave) await saveConfig(ensuredConfig)
-    return ensuredConfig
-  } catch (err) {
-    logMessage("error", `${LOG_PREFIX} [getConfig] Error getting config at [PATH]. Using default config.`)
-    logMessage("debug", `${LOG_PREFIX} [getConfig] Error getting config at [PATH]: ${err}`)
-    await saveConfig(defaultConfig)
-    return defaultConfig
+  // A fresh copy every time, never the shared module-level object: normalizeConfig builds a new
+  // literal, so a caller that mutates its `.window` or similar (saveCurrentWindowState does
+  // exactly that) can never corrupt what the next reader of defaultConfig sees.
+  if (!(await ensureConfig())) return normalizeConfig(defaultConfig)
+  if (configCache) return normalizeConfig(configCache)
+
+  // Two reads that both find no cache yet (the main window's ready-to-show handler and an early
+  // renderer GET_CONFIG racing it) share one pass over the disk instead of each preserving and
+  // recovering the same unreadable file on its own.
+  if (!configLoadPromise) {
+    configLoadPromise = loadConfigFromDisk().finally(() => {
+      configLoadPromise = null
+    })
   }
+
+  try {
+    return await configLoadPromise
+  } catch (err) {
+    // Migrations are documented as never throwing, so this is a last-resort guard: whatever went
+    // wrong, a rejected load must never leave the main window's `ready-to-show` handler without a
+    // config to show it with. Same shape as a failed read: fresh defaults, in memory, read-only.
+    logMessage("error", `${LOG_PREFIX} [getConfig] Loading config.json failed unexpectedly. Running this session on defaults without saving.`)
+    logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
+    suppressConfigWrites()
+    const fallback = normalizeConfig(defaultConfig)
+    configCache = fallback
+    return fallback
+  }
+}
+
+/** How long `loadConfigFromDisk` waits before retrying a failed read once: long enough to ride out a
+ * brief Windows antivirus lock or an EBUSY blip, short enough nobody notices the delay at startup. */
+const CONFIG_READ_RETRY_DELAY_MS = 250
+
+async function loadConfigFromDisk(): Promise<ConfigType> {
+  let rawText: string
+  try {
+    rawText = await fse.readFile(configPath, "utf-8")
+  } catch {
+    // A single retry after a short delay: most read failures here are a transient lock (a brief
+    // antivirus scan, a sharing lock) rather than an actually missing or broken file, and giving up
+    // on the first attempt turns a blip into a whole read-only session.
+    await new Promise<void>((resolve) => setTimeout(resolve, CONFIG_READ_RETRY_DELAY_MS))
+    try {
+      rawText = await fse.readFile(configPath, "utf-8")
+    } catch (err) {
+      // The file itself could not be read (permissions, a Windows sharing lock, it vanished since
+      // ensureConfig checked): nothing here says the document is corrupt, so this is not #554's
+      // "unreadable JSON" case. Preserving or overwriting a config that may well be fine would be
+      // the same mistake in a new shape. Run this session on defaults, in memory only, and tell the
+      // player through the same recovery notice, with its own honest wording: unlike the #554 cases
+      // below, nothing was preserved because nothing was even opened.
+      logMessage("error", `${LOG_PREFIX} [getConfig] Could not read config.json off disk. Running this session on defaults without saving.`)
+      logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
+      suppressConfigWrites()
+      // Cached so a later getConfig() call, before any saveConfig, does not read the disk again:
+      // without this, every call re-reads, re-logs and re-arms the notice for as long as the
+      // session stays read-only.
+      const fallback = normalizeConfig(defaultConfig)
+      configCache = fallback
+      return fallback
+    }
+  }
+
+  let parsedDocument: unknown
+  try {
+    // A leading UTF-8 byte order mark is not JSON, and Notepad (among other editors) writes one.
+    // fs-extra's readJSON, which this read replaced, stripped it before parsing; without the same
+    // strip here a perfectly valid config.json would be sent down the recovery path instead.
+    parsedDocument = JSON.parse(rawText.replace(/^\uFEFF/, ""))
+  } catch (err) {
+    return await recoverFromUnreadableConfig(err)
+  }
+
+  if (!isRecord(parsedDocument)) {
+    // Valid JSON that is not an object ([], null, a bare number or string) is just as much a
+    // hand-edit gone wrong as invalid JSON is: normalizeConfig would otherwise turn it into
+    // defaults with nobody told and nothing preserved (#554).
+    return await recoverFromUnreadableConfig(new Error("Config document is valid JSON but not an object."))
+  }
+
+  const config = parsedDocument
+  const hadLegacyAccountSecrets = await migrateLegacyAccount(config)
+  const migration = migrateConfigDocument(config)
+  logConfigMigration(migration)
+  const ensuredConfig = normalizeConfig(migration.doc, { atStartup: true })
+  const reKeyedAccountStore = await migrateAccountStore(config, ensuredConfig)
+  // Every path that overwrites config.json gets the same backup, not just the schema pipeline:
+  // a re-key or a legacy-secrets migration writes just as real a document as a schema bump does.
+  const mustSave = hadLegacyAccountSecrets || reKeyedAccountStore || migration.applied.length > 0
+  await reconcileConfigBackup(mustSave)
+  configCache = ensuredConfig
+  if (mustSave) await saveConfig(ensuredConfig)
+  return ensuredConfig
+}
+
+/**
+ * What `getConfig` falls back to once `config.json` has turned out to hold something other than a
+ * readable config document: a parse failure, or valid JSON that is not an object (#554). Copies
+ * the original aside before touching anything, tries the last good pre-migration snapshot, and
+ * only writes the recovered result over `config.json` when the original copy actually succeeded;
+ * when it did not, this session runs on the recovered config in memory only, so a copy that could
+ * not be preserved is never followed by overwriting the only other copy there was (see the
+ * blocking review note on this: a failed preservation must not still lead to `saveConfig`).
+ */
+async function recoverFromUnreadableConfig(err: unknown): Promise<ConfigType> {
+  logMessage("error", `${LOG_PREFIX} [getConfig] Config could not be parsed. Preserving a copy and recovering.`)
+  logMessage("debug", `${LOG_PREFIX} [getConfig] ${err}`)
+
+  const copyName = await preserveUnreadableConfig()
+
+  const { config: recoveredConfig, restored } = await recoverUnreadableConfig()
+  if (restored) logMessage("warn", `${LOG_PREFIX} [getConfig] Restored settings from before the last migration.`)
+  else logMessage("warn", `${LOG_PREFIX} [getConfig] No usable pre-migration backup was found. Using default config.`)
+
+  configCache = recoveredConfig
+  pendingConfigRecoveryNotice = { kind: "unreadable", restored, preserved: copyName !== null, copyName }
+
+  if (copyName !== null) {
+    await saveConfig(recoveredConfig)
+  } else {
+    // Nothing was kept of the original, so this session must never overwrite it either: the
+    // recovered config above already reached the player as this call's return value, but writing
+    // it to disk now would destroy the only copy of whatever config.json actually holds. See
+    // saveConfig's own check, which is what makes this hold for every writer, not just this one.
+    configWriteSuppressed = true
+    logMessage("warn", `${LOG_PREFIX} [getConfig] Could not preserve a copy of the unreadable config. Running this session in memory without saving.`)
+  }
+
+  return recoveredConfig
+}
+
+function isFileExistsError(error: unknown): boolean {
+  return isRecord(error) && error.code === "EEXIST"
+}
+
+/**
+ * Copies the unreadable `config.json` aside, byte for byte, before anything else touches it, so a
+ * parse failure never destroys the only copy of a player's settings (#554). Named from the current
+ * instant, sanitized for a Windows-safe filename, with a numeric suffix appended until a free name
+ * is found: a second failure right behind the first (same millisecond, under a fast test clock or
+ * a fast retry) still gets its own copy rather than silently losing to a name collision.
+ *
+ * Uses `fs.copyFile` with `COPYFILE_EXCL` rather than fs-extra's own `copy`: fs-extra 11's `copy`
+ * throws a plain `Error` with no `code` when `errorOnExist` trips, which a `code === "EEXIST"`
+ * check never catches, so the very first collision fell straight out of the retry loop. The native
+ * flag sets a real `EEXIST` every time.
+ *
+ * A best-effort step, never throwing: the caller decides what "could not preserve a copy" means
+ * for whether it may still write anything. Returns the copy's bare file name on success, or null
+ * when nothing could be kept (the source vanished since the read, every candidate name was denied
+ * for some other reason, or a thousand names in the same instant were all taken).
+ */
+async function preserveUnreadableConfig(): Promise<string | null> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+  for (let attempt = 0; attempt < 1_000; attempt++) {
+    const suffix = attempt === 0 ? "" : `-${attempt}`
+    const name = `config.unreadable-${stamp}${suffix}.json`
+    try {
+      await fse.copyFile(configPath, join(app.getPath("userData"), name), fse.constants.COPYFILE_EXCL)
+      return name
+    } catch (error) {
+      if (isFileExistsError(error)) continue
+      logMessage("error", `${LOG_PREFIX} [preserveUnreadableConfig] Could not preserve a copy of the unreadable config.`)
+      logMessage("debug", `${LOG_PREFIX} [preserveUnreadableConfig] ${error}`)
+      return null
+    }
+  }
+  logMessage("error", `${LOG_PREFIX} [preserveUnreadableConfig] Could not find a free name to preserve the unreadable config.`)
+  return null
+}
+
+/**
+ * What `getConfig` falls back to once the unreadable `config.json` has been
+ * copied aside: the last good pre-migration snapshot, run through the same
+ * migration and normalization pipeline a normal read would use, or the
+ * built-in defaults when there is no usable snapshot (#554).
+ *
+ * A snapshot is usable only when that pipeline brought it to the current schema (`migrated` or
+ * `already-current`). A normal read carries on with the other outcomes (not an object, a newer
+ * launcher's document, a chain that stops short, a step that threw) because the live file is all it
+ * has; here they would be reported as restored settings that were never restored, so they count as
+ * no snapshot at all.
+ */
+async function recoverUnreadableConfig(): Promise<{ config: ConfigType; restored: boolean }> {
+  const backupPath = getConfigBackupPath()
+  if (await fse.pathExists(backupPath)) {
+    try {
+      const backupDocument: unknown = await fse.readJSON(backupPath)
+      const migration = migrateConfigDocument(backupDocument)
+      if (migration.outcome === "migrated" || migration.outcome === "already-current") {
+        const restoredConfig = normalizeConfig(migration.doc, { atStartup: true })
+        return { config: restoredConfig, restored: true }
+      }
+      logMessage("debug", `${LOG_PREFIX} [recoverUnreadableConfig] The pre-migration backup is not a usable restore point: its migration ended as ${migration.outcome}.`)
+    } catch (backupError) {
+      logMessage("debug", `${LOG_PREFIX} [recoverUnreadableConfig] The pre-migration backup could not be used either: ${backupError}`)
+    }
+  }
+  return { config: normalizeConfig(defaultConfig), restored: false }
 }
 
 export async function ensureConfig(): Promise<boolean> {
@@ -135,6 +370,10 @@ export async function ensureConfig(): Promise<boolean> {
   } catch (err) {
     logMessage("error", `${LOG_PREFIX} [ensureConfig] Error ensuring config.`)
     logMessage("error", `${LOG_PREFIX} [ensureConfig] Error ensuring config at [PATH]: ${err}`)
+    // Could not even find out whether config.json exists (a stat failure): the same "may not be
+    // safe to overwrite" hazard as a read failure further down the pipeline, so this session is
+    // held to the same rule for the rest of it.
+    suppressConfigWrites()
     return false
   }
 }
@@ -324,6 +563,14 @@ function normalizeBackup(value: unknown): BackupType | null {
   }
 }
 
+function normalizeWorldBackup(value: unknown): WorldBackupType | null {
+  if (!isRecord(value)) return null
+  const backup = normalizeBackup(value)
+  const worldName = asString(value.worldName, "", 255)
+  if (!backup || !isSafeWorldName(worldName)) return null
+  return { ...backup, worldName }
+}
+
 function normalizeInstallation(value: unknown): InstallationType | null {
   if (!isRecord(value)) return null
   const installation: InstallationType = {
@@ -343,6 +590,7 @@ function normalizeInstallation(value: unknown): InstallationType | null {
           .filter((backup): backup is BackupType => backup !== null)
           .slice(0, 100)
       : [],
+    worldBackups: Array.isArray(value.worldBackups) ? value.worldBackups.map(normalizeWorldBackup).filter((backup): backup is WorldBackupType => backup !== null) : [],
     lastTimePlayed: asNumber(value.lastTimePlayed, defaultInstallation.lastTimePlayed, -1, Number.MAX_SAFE_INTEGER),
     totalTimePlayed: asNumber(value.totalTimePlayed, defaultInstallation.totalTimePlayed, 0, Number.MAX_SAFE_INTEGER),
     mesaGlThread: asBoolean(value.mesaGlThread, defaultInstallation.mesaGlThread),
@@ -430,6 +678,10 @@ function normalizeDismissedModSuggestions(value: unknown): number[] {
   return [...new Set(ids)].slice(0, MAX_DISMISSED_MOD_SUGGESTIONS)
 }
 
+function normalizeModSuggestionsFolded(value: unknown): boolean {
+  return value === true
+}
+
 /**
  * `atStartup` is set on the one read that opens a stored document this process has not written:
  * `getConfig`'s file read. Everything else (every `saveConfig`, every re-normalization of the
@@ -498,6 +750,7 @@ export function normalizeConfig(config: unknown, { atStartup = false }: { atStar
     moddbVisibility: normalizeModDbVisibility(rawConfig.moddbVisibility ?? (rawConfig as Record<string, unknown>)["moddbVisibilityAnswer"], app.getVersion()),
     modSuggestionsConsent: normalizeModSuggestionsConsent(rawConfig.modSuggestionsConsent),
     dismissedModSuggestions: normalizeDismissedModSuggestions(rawConfig.dismissedModSuggestions),
+    modSuggestionsFolded: normalizeModSuggestionsFolded(rawConfig.modSuggestionsFolded),
     // Null for anything that is not an explicit yes or no, which is what every config written
     // before the toggle existed says, and leaves the running version deciding as it always did.
     receiveBetaUpdates: normalizeReceiveBetaUpdates(rawConfig.receiveBetaUpdates),

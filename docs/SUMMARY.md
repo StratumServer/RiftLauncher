@@ -19,6 +19,7 @@
     - [Play Vintage Story](get-started/usage/game-client/play-vintage-story.md)
     - [Edit Installations](get-started/usage/game-client/edit-installations.md)
     - [Installation Backups](get-started/usage/game-client/backups.md)
+    - [Manage worlds](get-started/usage/game-client/worlds.md)
     - [Install/Manage Mods](get-started/usage/game-client/install-manage-mods.md)
 - [🌐 Translation](get-started/translation/README.md)
   - [Option 1](get-started/translation/option-1.md)

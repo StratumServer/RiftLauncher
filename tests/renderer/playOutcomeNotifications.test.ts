@@ -37,6 +37,10 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
     assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "invalid-request" }, "linux"), { key: "notifications.body.gameLaunchInvalidEnvironment" })
   })
 
+  it("keys an installation lease refusal to a world-management notice", () => {
+    assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "installation-busy" }, "linux"), { key: "notifications.body.gameLaunchInstallationBusy" })
+  })
+
   it("keys missing-dotnet to its own sentence, with the guide for the player's OS as an action", () => {
     assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "missing-dotnet" }, "win32"), {
       key: "notifications.body.gameLaunchMissingDotnet",
@@ -57,7 +61,7 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
   })
 
   it("gives every other reason a bare message, so only missing-dotnet grows an action", () => {
-    const reasons: GameExecutionFailureReason[] = ["unsupported-platform", "no-executable", "session-write-failed", "invalid-request", "launch-failed"]
+    const reasons: GameExecutionFailureReason[] = ["unsupported-platform", "no-executable", "session-write-failed", "invalid-request", "installation-busy", "launch-failed"]
     for (const reason of reasons) assert.equal(pickPlayOutcomeNotification({ ok: false, reason }, "linux")?.link, undefined)
   })
 
@@ -67,7 +71,7 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
    * session's one, which is worse than not offering it (#462).
    */
   it("offers the session report only where a session actually happened", () => {
-    const reasons: GameExecutionFailureReason[] = ["unsupported-platform", "no-executable", "session-write-failed", "invalid-request", "missing-dotnet", "launch-failed"]
+    const reasons: GameExecutionFailureReason[] = ["unsupported-platform", "no-executable", "session-write-failed", "invalid-request", "installation-busy", "missing-dotnet", "launch-failed"]
     for (const reason of reasons) assert.equal(pickPlayOutcomeNotification({ ok: false, reason }, "linux")?.report, undefined)
     assert.equal(pickPlayOutcomeNotification({ ok: true, exitCode: 0 }, "linux"), null)
     assert.equal(pickPlayOutcomeNotification({ ok: true, exitCode: 1 }, "linux")?.report?.labelKey, "notifications.actions.seeWhatWentWrong")

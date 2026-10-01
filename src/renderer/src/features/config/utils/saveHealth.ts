@@ -67,5 +67,7 @@ export function configSaveFailureMessageKey(reason: SaveConfigFailureReason): st
       return "notifications.body.configSaveUnauthorizedPath"
     case "write-failed":
       return "notifications.body.configSaveWriteFailed"
+    case "session-read-only":
+      return "notifications.body.configSaveSessionReadOnly"
   }
 }

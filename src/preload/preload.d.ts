@@ -38,6 +38,8 @@ declare global {
     configManager: {
       getConfig: () => Promise<ConfigType>
       saveConfig: (configJson: ConfigType) => Promise<SaveConfigResult>
+      /** Pulls, and clears, the notice `getConfig` left when `config.json` turned out unreadable. Call once on mount: a push can fire before anything is listening, so this is a pull instead (#554). */
+      getConfigRecoveryNotice: () => Promise<ConfigRecoveryNotice | null>
     }
     modsManager: {
       getInstalledMods: (path: string) => Promise<InstalledModsScan>
@@ -121,6 +123,13 @@ declare global {
       login: (email: string, password: string, twoFactorCode?: string) => Promise<AccountLoginResult>
       /** Drops one saved account's secrets, by its `playerUid`. */
       removeAccount: (accountId: string) => Promise<boolean>
+    }
+    worldsManager: {
+      list: (installationId: string) => Promise<WorldListResult>
+      backup: (installationId: string, worldName: string) => Promise<WorldBackupResult>
+      restore: (installationId: string, backupId: string) => Promise<WorldOperationResult>
+      delete: (installationId: string, worldName: string) => Promise<WorldOperationResult>
+      transfer: (sourceId: string, worldName: string, targetId: string, mode: "copy" | "move") => Promise<WorldTransferResult>
     }
   }
 

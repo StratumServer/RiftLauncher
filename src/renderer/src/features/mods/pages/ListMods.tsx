@@ -58,7 +58,7 @@ function ListMods(): JSX.Element {
   const installations = useInstallations()
   const favMods = useFavMods()
   const suspendedModUpdates = useSuspendedModUpdates()
-  const { lastUsedInstallation, modSuggestionsConsent, dismissedModSuggestions } = useSettingsConfig()
+  const { lastUsedInstallation, modSuggestionsConsent, dismissedModSuggestions, modSuggestionsFolded } = useSettingsConfig()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
 
@@ -91,6 +91,7 @@ function ListMods(): JSX.Element {
     refresh: refreshSuggestions
   } = useModSuggestions({
     consent: modSuggestionsConsent,
+    folded: modSuggestionsFolded,
     installation,
     installations,
     installedMods: installationInstalledMods,
@@ -317,7 +318,11 @@ function ListMods(): JSX.Element {
       versionsFilter: filters.versionsFilter,
       tagsFilter: filters.tagsFilter,
       orderBy: filters.orderBy,
-      orderByOrder: filters.orderByOrder
+      orderByOrder: filters.orderByOrder,
+      // OrderFilter only writes this key once the player has actually picked a sort from its
+      // menu, never on the state's own "follows"/"desc" default, so its presence is exactly the
+      // "did they choose one" signal a name-relevance ranking needs to stay out of the way of.
+      orderByIsExplicit: window.localStorage.getItem("listModsOrderBy") !== null
     })
 
     if (queryToken !== queryTokenRef.current) return
@@ -459,6 +464,14 @@ function ListMods(): JSX.Element {
     configDispatch({ type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT, payload: true })
   }
 
+  function declineSuggestions(): void {
+    configDispatch({ type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT, payload: false })
+  }
+
+  function toggleSuggestionsFolded(): void {
+    configDispatch({ type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_FOLDED, payload: !modSuggestionsFolded })
+  }
+
   function dismissSuggestion(listingId: number): void {
     configDispatch({ type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION, payload: { listingId } })
   }
@@ -543,6 +556,7 @@ function ListMods(): JSX.Element {
 
         <ModSuggestions
           consent={modSuggestionsConsent}
+          folded={modSuggestionsFolded}
           installation={installation}
           suggestions={suggestions}
           loading={suggestionsLoading}
@@ -551,6 +565,9 @@ function ListMods(): JSX.Element {
           isModFav={(mod) => favMods.includes(mod.modid)}
           isBusy={actions.isBusy}
           onEnable={enableSuggestions}
+          onNoThanks={declineSuggestions}
+          onToggleFold={toggleSuggestionsFolded}
+          onTurnOff={declineSuggestions}
           onRefresh={refreshSuggestions}
           onDismiss={dismissSuggestion}
           onAddAll={addAllSuggestions}

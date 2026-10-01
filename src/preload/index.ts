@@ -36,7 +36,8 @@ const api: BridgeAPI = {
   },
   configManager: {
     getConfig: (): Promise<ConfigType> => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_MANAGER.GET_CONFIG),
-    saveConfig: (configJson: ConfigType): Promise<SaveConfigResult> => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_MANAGER.SAVE_CONFIG, configJson)
+    saveConfig: (configJson: ConfigType): Promise<SaveConfigResult> => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_MANAGER.SAVE_CONFIG, configJson),
+    getConfigRecoveryNotice: (): Promise<ConfigRecoveryNotice | null> => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_MANAGER.GET_CONFIG_RECOVERY_NOTICE)
   },
   modsManager: {
     getInstalledMods: (path: string): Promise<InstalledModsScan> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS, path),
@@ -101,6 +102,14 @@ const api: BridgeAPI = {
   accountManager: {
     login: (email: string, password: string, twoFactorCode?: string): Promise<AccountLoginResult> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, email, password, twoFactorCode),
     removeAccount: (accountId: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.REMOVE_ACCOUNT, accountId)
+  },
+  worldsManager: {
+    list: (installationId: string): Promise<WorldListResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.LIST, installationId),
+    backup: (installationId: string, worldName: string): Promise<WorldBackupResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.BACKUP, installationId, worldName),
+    restore: (installationId: string, backupId: string): Promise<WorldOperationResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.RESTORE, installationId, backupId),
+    delete: (installationId: string, worldName: string): Promise<WorldOperationResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.DELETE, installationId, worldName),
+    transfer: (sourceId: string, worldName: string, targetId: string, mode: "copy" | "move"): Promise<WorldTransferResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.TRANSFER, sourceId, worldName, targetId, mode)
   }
 }
 
