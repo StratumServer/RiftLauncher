@@ -33,6 +33,7 @@ export const DEFAULT_CONFIG_BASE: Omit<ConfigType, "schemaVersion" | "defaultIns
   moddbVisibility: defaultModDbVisibility(),
   modSuggestionsConsent: null,
   dismissedModSuggestions: [],
+  modSuggestionsFolded: false,
   receiveBetaUpdates: DEFAULT_RECEIVE_BETA_UPDATES,
   measurePlaySessions: DEFAULT_MEASURE_PLAY_SESSIONS,
   allowBasicSessionStore: DEFAULT_ALLOW_BASIC_SESSION_STORE,

@@ -498,7 +498,10 @@
       "healthUnreadable_one": "{{count}} Archiv konnte nicht gelesen werden, es blieb deshalb bei dieser Prüfung außen vor.",
       "healthUnreadable_other": "{{count}} Archive konnten nicht gelesen werden, sie blieben deshalb bei dieser Prüfung außen vor.",
       "serverModsCountTruncated": "und mehr",
-      "serverModsRemoveTruncated": "Dieser Ordner enthält mehr Mods, als die Liste zeigt. Beim Entfernen wird alles darin geleert."
+      "serverModsRemoveTruncated": "Dieser Ordner enthält mehr Mods, als die Liste zeigt. Beim Entfernen wird alles darin geleert.",
+      "suggestionsNoThanks": "Nein danke",
+      "suggestionsTurnOff": "Vorschläge deaktivieren",
+      "suggestionsEmpty": "Derzeit keine Vorschläge."
     },
     "config": {
       "defaultInstallationsFolder": "Ordner für Installationen",
@@ -569,7 +572,9 @@
       },
       "allowBasicSessionStore": "Sitzung ohne Systemschlüsselbund merken",
       "allowBasicSessionStoreDesc": "Hält dich auf einem Computer ohne Systemschlüsselbund angemeldet. Die Sitzung wird dann auf die Festplatte geschrieben, versiegelt mit einem Schlüssel, der im Launcher steckt: jedes Programm, das unter deinem Konto läuft, kann sie lesen. Sitzungen, die ein Systemschlüsselbund vorher gespeichert hat, bleiben auf der Festplatte, können aber nicht gelesen werden, solange das aktiv ist. Lass das aus, wenn dir das auf diesem Computer nicht recht ist. Wirkt beim nächsten Start von RiftLauncher.",
-      "allowBasicSessionStoreRestart": "Diese Einstellung wirkt beim nächsten Start von RiftLauncher."
+      "allowBasicSessionStoreRestart": "Diese Einstellung wirkt beim nächsten Start von RiftLauncher.",
+      "modSuggestions": "Mod-Vorschläge",
+      "modSuggestionsDesc": "Zeigt kompatible Mod-Vorschläge auf der Mods-Übersichtsseite. Aus blendet sowohl die Zeile als auch die Opt-in-Karte aus."
     },
     "backups": {
       "backupInProgress": "Es läuft bereits ein Backup.",

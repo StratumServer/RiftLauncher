@@ -142,6 +142,16 @@ function ConfigPage(): JSX.Element {
 
             <FromGroup>
               <FormHead>
+                <FormLabel content={t("features.config.modSuggestions")} className="max-h-6" />
+              </FormHead>
+
+              <FormBody>
+                <ModSuggestionsToggle />
+              </FormBody>
+            </FromGroup>
+
+            <FromGroup>
+              <FormHead>
                 <FormLabel content={t("features.config.allowBasicSessionStore")} className="max-h-6" />
               </FormHead>
 
@@ -280,6 +290,31 @@ function MeasurePlaySessionsToggle(): JSX.Element {
         onChange={(value) => configDispatch({ type: CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS, payload: value })}
       />
       <FormFieldDescription content={t("features.config.measurePlaySessionsDesc")} />
+    </FormFieldGroupWithDescription>
+  )
+}
+
+/**
+ * Whether the Mods browse page fetches and shows compatible Mod suggestions (#546).
+ *
+ * The independent answer next to it: on flips a `null` (never asked) or `false` (declined) answer
+ * to `true`, off writes an explicit `false`, same as the "No thanks" and "Turn off suggestions"
+ * actions on the row itself.
+ */
+function ModSuggestionsToggle(): JSX.Element {
+  const { t } = useTranslation()
+
+  const { modSuggestionsConsent } = useSettingsConfig()
+  const configDispatch = useConfigDispatch()
+
+  return (
+    <FormFieldGroupWithDescription alignment="x">
+      <FormToggle
+        title={t("features.config.modSuggestionsDesc")}
+        value={modSuggestionsConsent === true}
+        onChange={(value) => configDispatch({ type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_CONSENT, payload: value })}
+      />
+      <FormFieldDescription content={t("features.config.modSuggestionsDesc")} />
     </FormFieldGroupWithDescription>
   )
 }

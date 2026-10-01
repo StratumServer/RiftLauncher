@@ -476,7 +476,10 @@
       "healthNotChecked_other": "有 {{count}} 个模组无法在 ModDB 上核对。",
       "healthUnreadable_other": "有 {{count}} 个压缩包无法读取，因此没有纳入这次检查。",
       "serverModsCountTruncated": "以及更多",
-      "serverModsRemoveTruncated": "该文件夹里的模组比列表显示的更多。移除它会清空其中的全部内容。"
+      "serverModsRemoveTruncated": "该文件夹里的模组比列表显示的更多。移除它会清空其中的全部内容。",
+      "suggestionsNoThanks": "不用了",
+      "suggestionsTurnOff": "关闭建议",
+      "suggestionsEmpty": "暂无建议。"
     },
     "config": {
       "defaultInstallationsFolder": "安装文件夹",
@@ -547,7 +550,9 @@
       },
       "allowBasicSessionStore": "没有系统密钥环时也记住会话",
       "allowBasicSessionStoreDesc": "在没有系统密钥环的电脑上让您保持登录。此时会话会写到磁盘上，用启动器内置的密钥加密，因此以您的身份运行的任何程序都能读到它。系统密钥环之前保存的会话仍留在磁盘上，但在此设置开启期间无法读取。除非您觉得这在这台电脑上没问题，否则请保持关闭。在 RiftLauncher 下次启动时生效。",
-      "allowBasicSessionStoreRestart": "该设置会在 RiftLauncher 下次启动时生效。"
+      "allowBasicSessionStoreRestart": "该设置会在 RiftLauncher 下次启动时生效。",
+      "modSuggestions": "模组建议",
+      "modSuggestionsDesc": "在模组浏览页面显示兼容的模组建议。关闭后将同时隐藏该行和同意卡片。"
     },
     "backups": {
       "backupInProgress": "已经有一个备份正在进行。",

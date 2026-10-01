@@ -520,7 +520,10 @@
       "healthUnreadable_many": "No se pudieron leer {{count}} archivos, así que quedaron fuera de esta revisión.",
       "healthUnreadable_other": "No se pudieron leer {{count}} archivos, así que quedaron fuera de esta revisión.",
       "serverModsCountTruncated": "y más",
-      "serverModsRemoveTruncated": "Esta carpeta contiene más Mods de los que muestra la lista. Quitarla borra todo lo que hay dentro."
+      "serverModsRemoveTruncated": "Esta carpeta contiene más Mods de los que muestra la lista. Quitarla borra todo lo que hay dentro.",
+      "suggestionsNoThanks": "No, gracias",
+      "suggestionsTurnOff": "Desactivar sugerencias",
+      "suggestionsEmpty": "No hay sugerencias por ahora."
     },
     "config": {
       "defaultInstallationsFolder": "Carpeta de Instalaciones",
@@ -591,7 +594,9 @@
       },
       "allowBasicSessionStore": "Recordar la sesión sin llavero del sistema",
       "allowBasicSessionStoreDesc": "Te mantiene con la sesión iniciada en un ordenador sin llavero del sistema. La sesión se escribe entonces en el disco sellada con una clave incluida en el launcher, así que cualquier programa que se ejecute con tu usuario puede leerla. Las sesiones que un llavero del sistema haya guardado antes permanecen en el disco, pero no se pueden leer mientras esto esté activado. Déjalo desactivado salvo que eso te parezca bien en este ordenador. Surte efecto la próxima vez que se inicie RiftLauncher.",
-      "allowBasicSessionStoreRestart": "Este ajuste surtirá efecto la próxima vez que se inicie RiftLauncher."
+      "allowBasicSessionStoreRestart": "Este ajuste surtirá efecto la próxima vez que se inicie RiftLauncher.",
+      "modSuggestions": "Sugerencias de mods",
+      "modSuggestionsDesc": "Muestra sugerencias de mods compatibles en la página de exploración de mods. Desactivado oculta tanto la fila como la tarjeta de activación."
     },
     "backups": {
       "backupInProgress": "¡Ya hay una Copia de Seguridad en progreso!",

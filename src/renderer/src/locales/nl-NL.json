@@ -498,7 +498,10 @@
       "healthUnreadable_one": "{{count}} archief kon niet worden gelezen en is buiten deze controle gebleven.",
       "healthUnreadable_other": "{{count}} archieven konden niet worden gelezen en zijn buiten deze controle gebleven.",
       "serverModsCountTruncated": "en meer",
-      "serverModsRemoveTruncated": "Deze map bevat meer Mods dan de lijst toont. Als je de map weghaalt, wordt alles erin gewist."
+      "serverModsRemoveTruncated": "Deze map bevat meer Mods dan de lijst toont. Als je de map weghaalt, wordt alles erin gewist.",
+      "suggestionsNoThanks": "Nee bedankt",
+      "suggestionsTurnOff": "Suggesties uitschakelen",
+      "suggestionsEmpty": "Op dit moment geen suggesties."
     },
     "config": {
       "defaultInstallationsFolder": "Map voor installaties",
@@ -569,7 +572,9 @@
       },
       "allowBasicSessionStore": "Sessie onthouden zonder systeemsleutelring",
       "allowBasicSessionStoreDesc": "Houdt je ingelogd op een computer zonder systeemsleutelring. De sessie wordt dan op schijf geschreven, verzegeld met een sleutel die in de launcher zelf zit, zodat elk programma dat onder jouw account draait die kan lezen. Sessies die eerder door een systeemsleutelring zijn opgeslagen, blijven op schijf staan maar kunnen niet worden gelezen zolang dit aanstaat. Laat dit uit tenzij dat op deze computer geen bezwaar is. Werkt vanaf de volgende keer dat RiftLauncher start.",
-      "allowBasicSessionStoreRestart": "Deze instelling werkt vanaf de volgende keer dat RiftLauncher start."
+      "allowBasicSessionStoreRestart": "Deze instelling werkt vanaf de volgende keer dat RiftLauncher start.",
+      "modSuggestions": "Mod-suggesties",
+      "modSuggestionsDesc": "Toont compatibele Mod-suggesties op de Mods-bladerpagina. Uit verbergt zowel de rij als de opt-in-kaart."
     },
     "backups": {
       "backupInProgress": "Er wordt al een back-up gemaakt.",

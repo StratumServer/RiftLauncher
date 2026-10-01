@@ -17,6 +17,7 @@ export enum CONFIG_ACTIONS {
   SET_MODDB_VISIBILITY = "SET_MODDB_VISIBILITY",
   SET_MOD_SUGGESTIONS_CONSENT = "SET_MOD_SUGGESTIONS_CONSENT",
   ADD_DISMISSED_MOD_SUGGESTION = "ADD_DISMISSED_MOD_SUGGESTION",
+  SET_MOD_SUGGESTIONS_FOLDED = "SET_MOD_SUGGESTIONS_FOLDED",
   SET_RECEIVE_BETA_UPDATES = "SET_RECEIVE_BETA_UPDATES",
   SET_MEASURE_PLAY_SESSIONS = "SET_MEASURE_PLAY_SESSIONS",
   SET_ALLOW_BASIC_SESSION_STORE = "SET_ALLOW_BASIC_SESSION_STORE",
@@ -140,6 +141,12 @@ export interface SetModSuggestionsConsent {
 export interface AddDismissedModSuggestion {
   type: CONFIG_ACTIONS.ADD_DISMISSED_MOD_SUGGESTION
   payload: { listingId: number }
+}
+
+/** Folds or unfolds the opt-in card and the suggestions row down to their title line. Shared by both, independent of the consent answer. */
+export interface SetModSuggestionsFolded {
+  type: CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_FOLDED
+  payload: boolean
 }
 
 /**
@@ -340,6 +347,7 @@ export type ConfigAction =
   | SetModDbVisibility
   | SetModSuggestionsConsent
   | AddDismissedModSuggestion
+  | SetModSuggestionsFolded
   | SetReceiveBetaUpdates
   | SetMeasurePlaySessions
   | SetAllowBasicSessionStore
@@ -407,6 +415,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
       if (config.dismissedModSuggestions.includes(action.payload.listingId) || config.dismissedModSuggestions.length >= MAX_DISMISSED_MOD_SUGGESTIONS) return config
       return { ...config, dismissedModSuggestions: [...config.dismissedModSuggestions, action.payload.listingId] }
     }
+    case CONFIG_ACTIONS.SET_MOD_SUGGESTIONS_FOLDED:
+      return { ...config, modSuggestionsFolded: action.payload }
     case CONFIG_ACTIONS.SET_RECEIVE_BETA_UPDATES:
       return { ...config, receiveBetaUpdates: action.payload }
     case CONFIG_ACTIONS.SET_MEASURE_PLAY_SESSIONS:

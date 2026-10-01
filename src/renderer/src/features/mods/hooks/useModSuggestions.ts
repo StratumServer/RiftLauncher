@@ -19,6 +19,7 @@ export interface ModSuggestionsState {
  */
 export function useModSuggestions({
   consent,
+  folded,
   installation,
   installations,
   installedMods,
@@ -27,6 +28,8 @@ export function useModSuggestions({
   queryMod
 }: Readonly<{
   consent: boolean | null
+  /** Whether the row is folded down to its title line. A folded row makes no request until it is opened again. */
+  folded: boolean
   installation: InstallationType | undefined
   installations: readonly InstallationType[]
   installedMods: readonly InstalledModType[] | undefined
@@ -67,6 +70,16 @@ export function useModSuggestions({
     if (consent !== true || !installationId || !installationPath || !installationVersion || installedModsKey === null) {
       setSuggestions([])
       setLoading(false)
+      return
+    }
+
+    // Folded rows fetch nothing, but they must not settle into the "loaded and empty" state: that
+    // is what unmounts the section below (see ModSuggestions.tsx) and drops focus off the chevron
+    // on unfold. Keeping loading true here means the first render after unfolding already shows the
+    // spinner, so the section stays mounted throughout.
+    if (folded) {
+      setSuggestions([])
+      setLoading(true)
       return
     }
 
@@ -131,7 +144,7 @@ export function useModSuggestions({
     })()
 
     return (): void => controller.abort()
-  }, [consent, installationId, installationPath, installationVersion, otherInstallationsKey, installedModsKey, getInstalledMods, queryMod, refreshNumber])
+  }, [consent, folded, installationId, installationPath, installationVersion, otherInstallationsKey, installedModsKey, getInstalledMods, queryMod, refreshNumber])
 
   const visibleSuggestions = useMemo(() => {
     const dismissed = new Set(dismissedListingIds)

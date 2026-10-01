@@ -498,7 +498,10 @@
       "healthUnreadable_one": "{{count}} archívumot nem sikerült beolvasni, ezért kimaradt ebből az ellenőrzésből.",
       "healthUnreadable_other": "{{count}} archívumot nem sikerült beolvasni, ezért kimaradtak ebből az ellenőrzésből.",
       "serverModsCountTruncated": "és még több",
-      "serverModsRemoveTruncated": "Ebben a könyvtárban több mod van, mint amennyit a lista mutat. Az eltávolítása mindent töröl belőle."
+      "serverModsRemoveTruncated": "Ebben a könyvtárban több mod van, mint amennyit a lista mutat. Az eltávolítása mindent töröl belőle.",
+      "suggestionsNoThanks": "Köszönöm, nem",
+      "suggestionsTurnOff": "Javaslatok kikapcsolása",
+      "suggestionsEmpty": "Jelenleg nincs javaslat."
     },
     "config": {
       "defaultInstallationsFolder": "Telepítések könyvtára",
@@ -569,7 +572,9 @@
       },
       "allowBasicSessionStore": "Munkamenet megjegyzése rendszerkulcstartó nélkül",
       "allowBasicSessionStoreDesc": "Bejelentkezve tart olyan gépen, ahol nincs rendszerkulcstartó. A munkamenet ilyenkor a lemezre kerül, a launcherbe épített kulccsal lezárva, így minden program elolvashatja, amely a te nevedben fut. Amit korábban egy rendszerkulcstartó mentett, az a lemezen marad, de nem olvasható, amíg ez be van kapcsolva. Hagyd kikapcsolva, hacsak ez nem elfogadható ezen a gépen. A RiftLauncher következő indításakor lép életbe.",
-      "allowBasicSessionStoreRestart": "Ez a beállítás a RiftLauncher következő indításakor lép életbe."
+      "allowBasicSessionStoreRestart": "Ez a beállítás a RiftLauncher következő indításakor lép életbe.",
+      "modSuggestions": "Mod javaslatok",
+      "modSuggestionsDesc": "Kompatibilis Mod javaslatokat jelenít meg a Modok böngésző oldalon. Kikapcsolva elrejti a sort és a hozzájárulási kártyát is."
     },
     "backups": {
       "backupInProgress": "Egy biztonásgi mentés már folyamatban van!",
