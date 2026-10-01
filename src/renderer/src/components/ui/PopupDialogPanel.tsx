@@ -9,7 +9,8 @@ function PopupDialogPanel({
   isOpen,
   close,
   fixedWidth = true,
-  scrollBody = false
+  scrollBody = false,
+  onExitComplete
 }: Readonly<{
   children: React.ReactElement
   title: JSX.Element | string
@@ -19,9 +20,11 @@ function PopupDialogPanel({
   // Hand scrolling to the content instead of scrolling the whole panel, so a tall
   // dialog keeps its actions pinned in view on a short window.
   scrollBody?: boolean
+  /** Fires once this panel has fully left the DOM, its own exit animation included. For a caller that opens another dialog right after this one closes: waiting for this instead of firing both from the same update keeps the two from ever being mounted at once. */
+  onExitComplete?: () => void
 }>): JSX.Element {
   return (
-    <AnimatePresence>
+    <AnimatePresence onExitComplete={onExitComplete}>
       {isOpen && (
         <Dialog static open={isOpen} onClose={close} className="w-full h-full absolute top-0 left-0 z-200 flex justify-center items-center select-none bg-zinc">
           <motion.div

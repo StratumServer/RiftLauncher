@@ -335,6 +335,21 @@ describe("worlds IPC handlers", () => {
     expect(existsSync(sourceWorld)).toBe(false)
   })
 
+  it("returns operation-failed instead of a partial archive when compressing a world throws", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    writeFileSync(join(sourcePath, "Saves", "World.vcdbs"), "world", "utf8")
+    writeConfig([installation("install-a", sourcePath)])
+    const event = await createTrustedEvent()
+    runCompression.mockRejectedValueOnce(new Error("disk full"))
+
+    const result = await handler("worlds-backup")(event, "install-a", "World.vcdbs")
+
+    assert.deepEqual(result, { ok: false, reason: "operation-failed" })
+    const config = JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType
+    expect(config.installations[0]?.worldBackups ?? []).toEqual([])
+  })
+
   it("refuses restore when archive validation rejects", async () => {
     const sourcePath = join(installationsRoot, "install-a")
     const sourceWorld = join(sourcePath, "Saves", "World.vcdbs")
