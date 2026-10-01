@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { screen, waitFor, within } from "@testing-library/react"
+import { cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
@@ -98,7 +98,7 @@ const MANY_CANDIDATES = [
   ...Array.from({ length: 5 }, (_, index) => ({ ...CANDIDATE, modid: 125 + index, assetid: 125 + index, name: `Suggestion Candidate ${index + 3}`, modidstrs: [`suggestioncandidate${index + 3}`] }))
 ]
 
-function mount(consent: boolean | null = null, suggestionCandidates: readonly DownloadableModOnListType[] = [CANDIDATE]): { api: MockedBridgeAPI; queryURL: ReturnType<typeof vi.fn> } {
+function mount(consent: boolean | null = null, suggestionCandidates: readonly DownloadableModOnListType[] = [CANDIDATE], folded = false): { api: MockedBridgeAPI; queryURL: ReturnType<typeof vi.fn> } {
   const queryURL = vi.fn(async (url: string): Promise<string> => {
     if (url.endsWith("/api/mods") || url.includes("/api/mods?")) return JSON.stringify({ statuscode: "200", mods: suggestionCandidates })
     const candidate = suggestionCandidates.find(({ modid }) => url.endsWith(`/api/mod/${modid}`))
@@ -107,7 +107,7 @@ function mount(consent: boolean | null = null, suggestionCandidates: readonly Do
   })
   const api = installMockWindowApi({
     configManager: {
-      getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: INSTALLATION.id, installations: [INSTALLATION], modSuggestionsConsent: consent }))
+      getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: INSTALLATION.id, installations: [INSTALLATION], modSuggestionsConsent: consent, modSuggestionsFolded: folded }))
     },
     modsManager: { getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })) },
     netManager: { queryURL }
@@ -122,6 +122,12 @@ function mount(consent: boolean | null = null, suggestionCandidates: readonly Do
     { route: "/mods" }
   )
   return { api, queryURL }
+}
+
+/** The last config the page pushed at the main process. */
+function lastSavedConfig(api: MockedBridgeAPI): ConfigType {
+  const calls = vi.mocked(api.configManager.saveConfig).mock.calls
+  return calls[calls.length - 1]?.[0] as ConfigType
 }
 
 afterEach(() => {
@@ -158,7 +164,10 @@ describe("Mod suggestions", () => {
     await waitFor(() => expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods")).length).toBe(beforeRefresh + 1))
 
     await user.click(within(section).getByRole("button", { name: "Dismiss suggestion" }))
-    await waitFor(() => expect(screen.queryByRole("region", { name: "Suggested for Install A" })).toBeNull())
+    // Dismissing the only candidate leaves the row with nothing to show, but the row itself stays:
+    // it does not vanish the way it did before the empty state got its own short line.
+    await within(section).findByText("No suggestions right now.")
+    expect(screen.getByRole("region", { name: "Suggested for Install A" })).toBeTruthy()
     expect(api.configManager.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ dismissedModSuggestions: [123] }))
   }, 15_000)
 
@@ -196,6 +205,16 @@ describe("Mod suggestions", () => {
     expect(downloadOnPath).not.toHaveBeenCalled()
   }, 15_000)
 
+  it("keeps the section and header visible with a short empty line when there are no suggestions", async () => {
+    const { queryURL } = mount(true, [])
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    await waitFor(() => expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))).toHaveLength(1))
+
+    await within(section).findByText("No suggestions right now.")
+    expect(within(section).queryByLabelText("Checking suggestions...")).toBeNull()
+  }, 15_000)
+
   it("mounts with consent and 30 candidates runs the pipeline once and caps detail lookups at 20", async () => {
     const candidates30 = Array.from({ length: 30 }, (_, index) => ({
       ...CANDIDATE,
@@ -214,5 +233,177 @@ describe("Mod suggestions", () => {
 
     await waitFor(() => expect(catalogRequests()).toHaveLength(1))
     expect(detailRequests()).toHaveLength(20)
+  }, 15_000)
+})
+
+describe("Mod suggestions: folding (#546)", () => {
+  it("folds and unfolds the suggestions row from its header, and a folded row makes no request", async () => {
+    const user = userEvent.setup()
+    const { api, queryURL } = mount(true)
+    const catalogRequests = (): typeof queryURL.mock.calls => queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    await within(section).findByText(/Popular|Recently updated|You run this/i)
+    await waitFor(() => expect(catalogRequests()).toHaveLength(1))
+
+    const toggle = within(section).getByRole("button", { name: "Suggested for Install A" })
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+
+    await user.click(toggle)
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    // aria-controls must keep pointing at an element that exists while folded.
+    expect(document.getElementById(toggle.getAttribute("aria-controls") ?? "")).not.toBeNull()
+    expect(within(section).queryByRole("button", { name: "Refresh suggestions" })).toBeNull()
+    expect(within(section).queryByRole("button", { name: "Suggestion Candidate, Not installed" })).toBeNull()
+    // The title line stays: folding is not the same as the "no suggestions yet" empty state.
+    expect(screen.getByRole("region", { name: "Suggested for Install A" })).toBeTruthy()
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsFolded).toBe(true))
+
+    const requestsWhileFolded = catalogRequests().length
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(catalogRequests()).toHaveLength(requestsWhileFolded)
+
+    // The section stays mounted throughout: unfolding through the same `toggle`/`section` handles
+    // (rather than re-querying) is itself the regression check for #546's focus loss.
+    await user.click(toggle)
+
+    await waitFor(() => expect(toggle.getAttribute("aria-expanded")).toBe("true"))
+    await within(section).findByRole("button", { name: "Refresh suggestions" })
+    await waitFor(() => expect(catalogRequests().length).toBeGreaterThan(requestsWhileFolded))
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsFolded).toBe(false))
+  }, 15_000)
+
+  it("is reachable from the keyboard, toggling aria-expanded on Enter", async () => {
+    const user = userEvent.setup()
+    await mount(true)
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    const toggle = within(section).getByRole("button", { name: "Suggested for Install A" })
+
+    toggle.focus()
+    expect(document.activeElement).toBe(toggle)
+    await user.keyboard("{Enter}")
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+  }, 15_000)
+
+  it("keeps keyboard focus on the same chevron across a fold/unfold cycle, and never unmounts the section", async () => {
+    const user = userEvent.setup()
+    await mount(true)
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    const toggle = within(section).getByRole("button", { name: "Suggested for Install A" })
+
+    toggle.focus()
+    expect(document.activeElement).toBe(toggle)
+
+    await user.keyboard("{Enter}")
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    // If the section had unmounted, this node would have been removed from the document and
+    // jsdom (like a real browser) would have reset activeElement to <body>.
+    expect(document.activeElement).toBe(toggle)
+
+    await user.keyboard("{Enter}")
+    await waitFor(() => expect(toggle.getAttribute("aria-expanded")).toBe("true"))
+    expect(document.activeElement).toBe(toggle)
+    // Same DOM node identity as the very first query: never torn down and rebuilt.
+    expect(screen.getByRole("region", { name: "Suggested for Install A" })).toBe(section)
+  }, 15_000)
+
+  it("a row mounted already folded (a saved config) makes no suggestion request and stays folded", async () => {
+    const { queryURL } = mount(true, [CANDIDATE], true)
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    expect(within(section).getByRole("button", { name: "Suggested for Install A" }).getAttribute("aria-expanded")).toBe("false")
+    expect(within(section).queryByRole("button", { name: "Refresh suggestions" })).toBeNull()
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))).toHaveLength(0)
+  }, 15_000)
+
+  it("folded from the header survives a remount reading the config it was just saved to", async () => {
+    const user = userEvent.setup()
+    const { api } = mount(true)
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    await user.click(within(section).getByRole("button", { name: "Suggested for Install A" }))
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsFolded).toBe(true))
+
+    cleanup()
+
+    // A fresh mount, reading the config exactly as the first one left it saved: the render start,
+    // not a second toggle, is what has to carry the folded answer forward.
+    const { queryURL: secondQueryURL } = mount(true, [CANDIDATE], true)
+
+    const reopened = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    expect(within(reopened).getByRole("button", { name: "Suggested for Install A" }).getAttribute("aria-expanded")).toBe("false")
+    expect(within(reopened).queryByRole("button", { name: "Refresh suggestions" })).toBeNull()
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(secondQueryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))).toHaveLength(0)
+  }, 15_000)
+
+  it("folds the opt-in card from its header too, without touching consent", async () => {
+    const user = userEvent.setup()
+    const { api } = mount(null)
+
+    const toggle = await screen.findByRole("button", { name: "Discover compatible Mods" }, { timeout: 3000 })
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByRole("button", { name: "Turn on Mod suggestions" })).toBeTruthy()
+
+    await user.click(toggle)
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    expect(document.getElementById(toggle.getAttribute("aria-controls") ?? "")).not.toBeNull()
+    expect(screen.queryByRole("button", { name: "Turn on Mod suggestions" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Discover compatible Mods" })).toBeTruthy()
+    expect(api.configManager.saveConfig).not.toHaveBeenCalledWith(expect.objectContaining({ modSuggestionsConsent: expect.anything() }))
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsFolded).toBe(true))
+  }, 15_000)
+})
+
+describe("Mod suggestions: No thanks and Turn off (#546)", () => {
+  it("No thanks hides the opt-in card and persists the refusal", async () => {
+    const user = userEvent.setup()
+    const { api, queryURL } = mount(null)
+
+    await screen.findByRole("button", { name: "Turn on Mod suggestions" }, { timeout: 3000 })
+    await user.click(screen.getByRole("button", { name: "No thanks" }))
+
+    expect(screen.queryByRole("button", { name: "Turn on Mod suggestions" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Discover compatible Mods" })).toBeNull()
+    await waitFor(() => expect(lastSavedConfig(api).modSuggestionsConsent).toBe(false))
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))).toHaveLength(0)
+  })
+
+  it("with consent already false, mounts with no card, no row, and no suggestion request", async () => {
+    const { queryURL } = mount(false)
+
+    await screen.findByRole("button", { name: "Suggestion Candidate, Not installed" }, { timeout: 3000 })
+    expect(screen.queryByRole("button", { name: "Turn on Mod suggestions" })).toBeNull()
+    expect(screen.queryByRole("region", { name: "Suggested for Install A" })).toBeNull()
+    expect(queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))).toHaveLength(0)
+  })
+
+  it("Turn off suggestions in the row sets consent back to false and makes no further request", async () => {
+    const user = userEvent.setup()
+    const { api, queryURL } = mount(true)
+    const catalogRequests = (): typeof queryURL.mock.calls => queryURL.mock.calls.filter(([url]) => url.endsWith("/api/mods"))
+
+    const section = await screen.findByRole("region", { name: "Suggested for Install A" }, { timeout: 3000 })
+    await within(section).findByText(/Popular|Recently updated|You run this/i)
+    await waitFor(() => expect(catalogRequests()).toHaveLength(1))
+
+    await user.click(within(section).getByRole("button", { name: "Turn off suggestions" }))
+
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Suggested for Install A" })).toBeNull())
+    expect(lastSavedConfig(api).modSuggestionsConsent).toBe(false)
+
+    const requestsAtTurnOff = catalogRequests().length
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(catalogRequests()).toHaveLength(requestsAtTurnOff)
   }, 15_000)
 })

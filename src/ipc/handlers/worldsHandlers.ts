@@ -10,13 +10,14 @@ import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isInstallationPlaying, tryAcquireInstallationOperation } from "@src/ipc/installationActivity"
 import { setShouldPreventClose } from "@src/utils/shouldPreventClose"
-import { logMessage } from "@src/utils/logManager"
+import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { runCompression } from "@src/ipc/workers/compression"
 import { extractTarGz } from "@src/ipc/workers/extraction"
 import { validateWorldBackupArchive } from "@src/ipc/archiveValidation"
 import { SAVES_FOLDER_NAME, WORLD_FILE_EXTENSION, canTransferWorld, collisionFreeWorldName, hasWorldSidecars, isSafeWorldName, listWorlds, worldVersionWarning } from "@domain/worlds/worlds"
 
 const WORLD_BACKUPS_FOLDER = "Worlds"
+const LOG_PREFIX = "[back] [ipc] [ipc/handlers/worldsHandlers.ts]"
 
 type WorldOperationFailure =
   | "invalid-request"
@@ -164,12 +165,16 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
           return failure("operation-failed")
         }
         return { ok: true, backup }
-      } catch {
+      } catch (error) {
         await fse.remove(archivePath).catch(() => undefined)
+        logMessage("warn", `${LOG_PREFIX} [BACKUP] Could not finish compressing or recording this world backup.`)
+        logMessage("debug", `${LOG_PREFIX} [BACKUP] ${getErrorMessage(error)}`)
         return failure("operation-failed")
       }
     })
-  } catch {
+  } catch (error) {
+    logMessage("warn", `${LOG_PREFIX} [BACKUP] Could not prepare this world backup.`)
+    logMessage("debug", `${LOG_PREFIX} [BACKUP] ${getErrorMessage(error)}`)
     return failure("operation-failed")
   } finally {
     lease.release()
@@ -248,11 +253,13 @@ async function restoreWorld(installationId: unknown, backupIdValue: unknown): Pr
         }
         if (existing) {
           await fse.remove(replacement).catch(() => {
-            logMessage("warn", "[back] [ipc] [ipc/handlers/worldsHandlers.ts] [RESTORE] Kept the replaced world aside after a successful restore.")
+            logMessage("warn", `${LOG_PREFIX} [RESTORE] Kept the replaced world aside after a successful restore.`)
           })
         }
         return { ok: true as const }
-      } catch {
+      } catch (error) {
+        logMessage("warn", `${LOG_PREFIX} [RESTORE] Could not finish restoring this world backup.`)
+        logMessage("debug", `${LOG_PREFIX} [RESTORE] ${getErrorMessage(error)}`)
         return failure("operation-failed")
       } finally {
         if (tempRoot) await fse.remove(tempRoot).catch(() => undefined)
@@ -305,7 +312,9 @@ async function transferWorld(sourceId: unknown, requestedName: unknown, targetId
     } finally {
       lease.release()
     }
-  } catch {
+  } catch (error) {
+    logMessage("warn", `${LOG_PREFIX} [TRANSFER] Could not finish transferring this world.`)
+    logMessage("debug", `${LOG_PREFIX} [TRANSFER] ${getErrorMessage(error)}`)
     return failure("operation-failed")
   }
 }

@@ -522,6 +522,104 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     expect(await screen.findByText(/1 backup$/)).not.toBeNull()
     expect(await screen.findByText(/2 backups$/)).not.toBeNull()
   })
+
+  it("shows a world name with special characters as plain text, not HTML entities, in the delete and transfer prompts", async () => {
+    const user = userEvent.setup()
+    const specialName = `Bob's World & "Co" <1>.vcdbs`
+    const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b" }
+    const transferWorld = vi.fn<BridgeAPI["worldsManager"]["transfer"]>(async () => ({ ok: true, targetWorldName: specialName }))
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation([]), second] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: specialName, size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        })),
+        transfer: transferWorld,
+        delete: vi.fn(async () => ({ ok: true as const }))
+      }
+    })
+
+    renderWithProviders(
+      <>
+        <NotificationsOverlay />
+        <Routes>
+          <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+        </Routes>
+      </>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    // The delete prompt states the real name, and typing that real name (not the escaped one) enables Delete.
+    await user.click(await screen.findByTitle("Delete"))
+    const nameDialog = await screen.findByRole("dialog")
+    const nameInput = within(nameDialog).getByLabelText(`Type ${specialName} to permanently delete this world.`)
+    const confirmDeleteButton = within(nameDialog).getByRole("button", { name: "Delete" }) as HTMLButtonElement
+    expect(confirmDeleteButton.disabled).toBe(true)
+    await user.type(nameInput, specialName)
+    expect(confirmDeleteButton.disabled).toBe(false)
+    await user.click(within(nameDialog).getByTitle("Cancel"))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+
+    // The transfer confirmation and its result toast state the real names too.
+    const select = await screen.findByRole("combobox")
+    await userEvent.selectOptions(select, "install-b")
+    await user.click(await screen.findByTitle("Copy world"))
+    const transferDialog = await screen.findByRole("dialog")
+    expect(within(transferDialog).getByText(`Transfer ${specialName} to Install B?`)).not.toBeNull()
+    await user.click(within(transferDialog).getByRole("button", { name: "Copy world" }))
+
+    await waitFor(() => expect(transferWorld).toHaveBeenCalledWith("install-a", specialName, "install-b", "copy"))
+    expect(await screen.findByText(`World transferred as ${specialName}.`)).not.toBeNull()
+  })
+
+  it("never shows the no-backup offer beside a still-closing name dialog, and returns focus to Delete once the chain ends", async () => {
+    const user = userEvent.setup()
+    const deleteWorld = vi.fn<BridgeAPI["worldsManager"]["delete"]>(async () => ({ ok: true }))
+    const backupWorld = vi.fn<BridgeAPI["worldsManager"]["backup"]>(async () => ({
+      ok: true,
+      backup: { id: "backup-new", date: 2, path: "/backups/backup-new.tar.gz", worldName: "World.vcdbs" }
+    }))
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation([])] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        })),
+        backup: backupWorld,
+        delete: deleteWorld
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const deleteButton = await screen.findByTitle("Delete")
+    await user.click(deleteButton)
+    const nameDialog = await screen.findByRole("dialog")
+    await user.type(within(nameDialog).getByRole("textbox"), "World.vcdbs")
+    await user.click(within(nameDialog).getByRole("button", { name: "Delete" }))
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1)
+
+    // The offer only replaces the name dialog once that one has actually finished closing, so at
+    // no point are both on screen fighting over the focus trap: exactly one dialog exists once it appears.
+    const offerText = await screen.findByText("There is no backup for World.vcdbs. Create one before deleting it?")
+    const offerDialog = offerText.closest('[role="dialog"]') as HTMLElement
+    expect(offerDialog).not.toBeNull()
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1)
+    await waitFor(() => expect(offerDialog.contains(document.activeElement)).toBe(true))
+
+    await user.click(within(offerDialog).getByRole("button", { name: "Back up this world" }))
+    await waitFor(() => expect(deleteWorld).toHaveBeenCalledWith("install-a", "World.vcdbs"))
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(deleteButton))
+  })
 })
 it("does not refetch in a loop when listing fails", async () => {
   const list = vi.fn(async () => ({ ok: false as const, reason: "saves-unavailable" }))

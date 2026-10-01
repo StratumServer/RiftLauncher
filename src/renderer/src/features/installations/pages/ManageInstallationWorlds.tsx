@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { PiArrowCounterClockwiseDuotone, PiCopyDuotone, PiFolderOpenDuotone, PiTrashDuotone, PiTruckDuotone, PiXCircleDuotone } from "react-icons/pi"
+import { PiArchiveDuotone, PiArrowCounterClockwiseDuotone, PiCopyDuotone, PiFolderOpenDuotone, PiTrashDuotone, PiTruckDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { worldVersionWarning } from "@domain/worlds/worlds"
 import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
@@ -12,6 +12,7 @@ import ConfirmDialog from "@renderer/components/ui/ConfirmDialog"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
+import type { ButtonVariant } from "@renderer/components/ui/buttonStyles"
 import { StickyMenuWrapper, StickyMenuGroupWrapper, StickyMenuGroup, StickyMenuBreadcrumbs, GoBackButton, GoToTopButton } from "@renderer/components/ui/StickyMenu"
 
 function formatBytes(bytes: number): string {
@@ -21,11 +22,15 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
 }
 
+/** A world or Installation name is the player's own text and React already escapes what it renders, so i18next's HTML escaping would only show "Bob's World" as "Bob&#39;s World". */
+const RAW_NAME = { interpolation: { escapeValue: false } }
+
 interface PendingConfirmation {
   question: string
   consequence?: string
   confirmLabel: string
   confirmIcon: React.ReactNode
+  confirmVariant?: ButtonVariant
   run: () => Promise<void>
 }
 
@@ -44,6 +49,7 @@ function ManageInstallationWorlds(): JSX.Element {
   const isTargetPlaying = Boolean(target?._playing)
   const [worldToDelete, setWorldToDelete] = useState<WorldType | null>(null)
   const [deleteName, setDeleteName] = useState("")
+  const [worldPendingBackupOffer, setWorldPendingBackupOffer] = useState<WorldType | null>(null)
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const deleteNameId = useId()
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -77,9 +83,10 @@ function ManageInstallationWorlds(): JSX.Element {
   function requestBackup(world: WorldType): void {
     if (!installation || isPlaying) return
     setPendingConfirmation({
-      question: t("features.worlds.confirmBackup", { name: world.name }),
+      question: t("features.worlds.confirmBackup", { name: world.name, ...RAW_NAME }),
       confirmLabel: t("features.worlds.backup"),
-      confirmIcon: <PiCopyDuotone />,
+      confirmIcon: <PiArchiveDuotone />,
+      confirmVariant: "primary",
       run: async () => {
         await backup(world)
       }
@@ -102,20 +109,32 @@ function ManageInstallationWorlds(): JSX.Element {
   function deleteWorldHandler(): void {
     if (!installation || isPlaying || !worldToDelete || deleteName !== worldToDelete.name) return
     const world = worldToDelete
-    closeDeleteDialog()
     const backups = (installation.worldBackups ?? []).filter((backup) => backup.worldName === world.name)
+    closeDeleteDialog()
     if (backups.length === 0) {
-      setPendingConfirmation({
-        question: t("features.worlds.backupBeforeDelete", { name: world.name }),
-        confirmLabel: t("features.worlds.backup"),
-        confirmIcon: <PiCopyDuotone />,
-        run: async () => {
-          if (await backup(world)) await deleteWorld(world)
-        }
-      })
+      // Queued rather than opened right here: this PopupDialogPanel is about to start closing, and
+      // opening the offer in the same update would mount it while the first one is still playing its
+      // exit animation. onExitComplete below only fires once that animation (and the dialog with it)
+      // is actually gone, so the two are never on screen, and trapping focus, at the same time.
+      setWorldPendingBackupOffer(world)
       return
     }
     void deleteWorld(world)
+  }
+
+  function offerBackupBeforeDelete(): void {
+    if (!worldPendingBackupOffer) return
+    const world = worldPendingBackupOffer
+    setWorldPendingBackupOffer(null)
+    setPendingConfirmation({
+      question: t("features.worlds.backupBeforeDelete", { name: world.name, ...RAW_NAME }),
+      confirmLabel: t("features.worlds.backup"),
+      confirmIcon: <PiArchiveDuotone />,
+      confirmVariant: "primary",
+      run: async () => {
+        if (await backup(world)) await deleteWorld(world)
+      }
+    })
   }
 
   async function performRestore(backup: WorldBackupType): Promise<void> {
@@ -134,7 +153,7 @@ function ManageInstallationWorlds(): JSX.Element {
   function restore(backup: WorldBackupType): void {
     if (!installation || isPlaying) return
     setPendingConfirmation({
-      question: t("features.worlds.confirmRestore", { name: backup.worldName }),
+      question: t("features.worlds.confirmRestore", { name: backup.worldName, ...RAW_NAME }),
       confirmLabel: t("generic.restore"),
       confirmIcon: <PiArrowCounterClockwiseDuotone />,
       run: () => performRestore(backup)
@@ -146,7 +165,7 @@ function ManageInstallationWorlds(): JSX.Element {
     const result = await window.api.worldsManager.transfer(installation.id, world.name, targetInstallation.id, mode)
     if (!result.ok) return addNotification(t(`features.worlds.error.${result.reason}`), "error")
     addNotification(
-      result.warning ? t("features.worlds.versionWarning", { name: result.targetWorldName }) : t("features.worlds.transferDone", { name: result.targetWorldName }),
+      result.warning ? t("features.worlds.versionWarning", { name: result.targetWorldName, ...RAW_NAME }) : t("features.worlds.transferDone", { name: result.targetWorldName, ...RAW_NAME }),
       result.warning ? "warning" : "success"
     )
     await refresh()
@@ -156,10 +175,12 @@ function ManageInstallationWorlds(): JSX.Element {
     if (!installation || isPlaying || isTargetPlaying || !targetId || targetId === installation.id) return addNotification(t("features.worlds.chooseTarget"), "error")
     if (!target) return
     setPendingConfirmation({
-      question: t("features.worlds.confirmTransfer", { name: world.name, target: target.name }),
-      ...(mode === "move" ? { consequence: t("features.worlds.confirmMove", { name: world.name, target: target.name }) } : {}),
+      question: t("features.worlds.confirmTransfer", { name: world.name, target: target.name, ...RAW_NAME }),
+      ...(mode === "move" ? { consequence: t("features.worlds.confirmMove", { name: world.name, target: target.name, ...RAW_NAME }) } : {}),
       confirmLabel: t(mode === "move" ? "features.worlds.move" : "features.worlds.copy"),
       confirmIcon: mode === "move" ? <PiTruckDuotone /> : <PiCopyDuotone />,
+      // Move removes the source after copying, so it keeps the destructive default; copy only adds one.
+      confirmVariant: mode === "move" ? "destructive" : "primary",
       run: () => performTransfer(world, target, mode)
     })
   }
@@ -239,7 +260,7 @@ function ManageInstallationWorlds(): JSX.Element {
                     </div>
                     {liveWorld && (
                       <NormalButton title={t("features.worlds.backup")} variant="ghost" className="p-1" disabled={isPlaying} onClick={() => requestBackup(world)}>
-                        <PiCopyDuotone />
+                        <PiArchiveDuotone />
                       </NormalButton>
                     )}
                     {liveWorld && (
@@ -291,16 +312,17 @@ function ManageInstallationWorlds(): JSX.Element {
           consequence={pendingConfirmation?.consequence}
           confirmLabel={pendingConfirmation?.confirmLabel ?? t("generic.cancel")}
           confirmIcon={pendingConfirmation?.confirmIcon ?? <PiCopyDuotone />}
+          confirmVariant={pendingConfirmation?.confirmVariant ?? "destructive"}
           onConfirm={() => {
             const confirmation = pendingConfirmation
             setPendingConfirmation(null)
             if (confirmation) void confirmation.run()
           }}
         />
-        <PopupDialogPanel title={t("generic.delete")} isOpen={worldToDelete !== null} close={closeDeleteDialog}>
+        <PopupDialogPanel title={t("generic.delete")} isOpen={worldToDelete !== null} close={closeDeleteDialog} onExitComplete={offerBackupBeforeDelete}>
           <>
             <div className="flex flex-col gap-1 text-left">
-              <label htmlFor={deleteNameId}>{t("features.worlds.confirmDelete", { name: worldToDelete?.name ?? "" })}</label>
+              <label htmlFor={deleteNameId}>{t("features.worlds.confirmDelete", { name: worldToDelete?.name ?? "", ...RAW_NAME })}</label>
               <FormInputText id={deleteNameId} value={deleteName} onChange={(event) => setDeleteName(event.target.value)} autoFocus className="w-full" />
             </div>
             <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>

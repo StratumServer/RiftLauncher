@@ -536,7 +536,10 @@
       "healthUnreadable_many": "Não foi possível ler {{count}} arquivos, por isso ficaram de fora desta verificação.",
       "healthUnreadable_other": "Não foi possível ler {{count}} arquivos, por isso ficaram de fora desta verificação.",
       "serverModsCountTruncated": "e mais",
-      "serverModsRemoveTruncated": "Esta pasta tem mais Mods do que a lista mostra. Removê-la limpa tudo o que está lá dentro."
+      "serverModsRemoveTruncated": "Esta pasta tem mais Mods do que a lista mostra. Removê-la limpa tudo o que está lá dentro.",
+      "suggestionsNoThanks": "Não, obrigado",
+      "suggestionsTurnOff": "Desativar sugestões",
+      "suggestionsEmpty": "Sem sugestões de momento."
     },
     "config": {
       "defaultInstallationsFolder": "Instalações",
@@ -607,7 +610,9 @@
       },
       "allowBasicSessionStore": "Guardar a sessão sem porta-chaves do sistema",
       "allowBasicSessionStoreDesc": "Mantém a sua sessão iniciada num computador sem porta-chaves do sistema. A sessão passa a ser escrita no disco, selada com uma chave incluída no launcher, por isso qualquer programa que corra com o seu utilizador a consegue ler. As sessões que um porta-chaves do sistema tenha guardado antes mantêm-se no disco, mas não podem ser lidas enquanto isto estiver ativo. Deixe isto desativado, a não ser que isso não seja problema neste computador. Aplica-se no próximo arranque do RiftLauncher.",
-      "allowBasicSessionStoreRestart": "Esta definição aplica-se no próximo arranque do RiftLauncher."
+      "allowBasicSessionStoreRestart": "Esta definição aplica-se no próximo arranque do RiftLauncher.",
+      "modSuggestions": "Sugestões de mods",
+      "modSuggestionsDesc": "Mostra sugestões de mods compatíveis na página de navegação de mods. Desativado oculta tanto a linha como o cartão de adesão."
     },
     "backups": {
       "backupInProgress": "Já existe um backup em progresso!",
