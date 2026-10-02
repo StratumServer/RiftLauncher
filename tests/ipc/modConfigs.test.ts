@@ -302,6 +302,23 @@ describe("collectModConfigs", () => {
     assert.deepEqual(collected, { ok: false, reason: "unreadable-config" })
   })
 
+  it("refuses a ModConfig folder reached through a linked parent rather than the folder itself", async () => {
+    // The root goes through `assertManagedPath` before the walk, and a link anywhere in its existing
+    // ancestors is refused there. `lstat` alone cannot see this case: it resolves the components in
+    // front of the last one, so a real folder behind a linked parent stats as a directory and the
+    // walk reads a folder that is not this Installation's.
+    const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    const outside = join(temporaryRoot, "outside")
+    mkdirSync(join(outside, "ModConfig"), { recursive: true })
+    writeFileSync(join(outside, "ModConfig", "carried.json"), '{"token":"x"}', "utf-8")
+    rmSync(installationPath, { recursive: true, force: true })
+    symlinkSync(outside, installationPath)
+
+    const collected = await collectModConfigs(installationPath)
+
+    assert.deepEqual(collected, { ok: false, reason: "unreadable-config" })
+  })
+
   it("refuses a file name Windows would not accept, and says which one", async () => {
     // Imported here, not at the top: beforeEach resets the module registry, so a top-level import
     // would be a second copy of this module, holding its own state the handlers never see.
@@ -593,6 +610,28 @@ describe("APPLY_MOD_CONFIGS", () => {
 
     assert.deepEqual(applied, { ok: false, reason: "mod-config-unreadable" })
     assert.equal(readFileSync(modConfigFolder(), "utf-8"), "not a folder")
+  })
+
+  it("refuses a destination that is a link rather than a file", async () => {
+    // `fse.copy` copies a link rather than what it points at, so a backup taken without this check is
+    // a link to the very file being replaced, and writing through the destination edits a file
+    // outside the Installation.
+    const outside = join(temporaryRoot, "outside")
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, "theirs.json"), "theirs", "utf-8")
+    mkdirSync(modConfigFolder(), { recursive: true })
+    symlinkSync(join(outside, "theirs.json"), join(modConfigFolder(), "pointed.json"))
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "pointed.json", ...entry("mine") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.failed, [{ name: "pointed.json", reason: "write-failed" }])
+    assert.deepEqual(applied.applied, [])
+    assert.equal(applied.backupFolder, "")
+    assert.equal(readFileSync(join(outside, "theirs.json"), "utf-8"), "theirs")
+    assert.deepEqual(recoveryFolders(), [])
   })
 
   it("refuses with no backups folder rather than writing over something it cannot copy", async () => {
