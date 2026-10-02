@@ -59,11 +59,13 @@ describe("lint guards", () => {
     for (const target of targets) rmSync(target, { force: true })
   })
 
-  // 0.8 s on a developer machine, and the work is two short-lived processes, not a
-  // long-running test. The generous ceiling is for the Windows runner, where this
-  // starts two Node processes while the rest of the suite is still running beside
-  // it and the default 5 s was not enough: the same headroom, for the same reason,
-  // that vitest.config.ts already gives the renderer-dom project.
+  // About 1 s on a developer machine, and the work is four short-lived processes (oxlint and
+  // ESLint, once per fixture), not a long-running test. The generous ceiling is for the
+  // Windows runner, where they start while the rest of the suite is still running beside
+  // them. Over the 40 Windows jobs of 20 CI runs it took 12.7 to 29.0 s when it passed
+  // (median 15.7 s) and 41.6 s once, which failed the 30 s ceiling this had. 120 s is about
+  // three times the slowest of those: the same headroom, for the same reason, that
+  // vitest.config.ts already gives the renderer-dom project.
   it("reports a src/domain file importing electron and a hook called conditionally", () => {
     for (const entry of seeded) copyFileSync(resolve(root, entry.fixture), resolve(root, entry.target))
 
@@ -79,5 +81,5 @@ describe("lint guards", () => {
         `${entry.guard} was reported on ${entry.target} but neither linter failed, so npm run lint:ci would stay green. Full output:\n${output}`
       )
     }
-  }, 30_000)
+  }, 120_000)
 })
