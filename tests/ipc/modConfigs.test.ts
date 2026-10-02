@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
@@ -788,15 +788,93 @@ describe("APPLY_MOD_CONFIGS", () => {
     }
   })
 
+  // The backup limit is spent by what a run actually displaced. A run that copied a file and then
+  // could not write it left the player where they were, so it must not delete the recovery folder
+  // they were relying on, and it must not hand back a folder of copies that are of no use.
+  it.skipIf(process.platform === "win32")("spends no backup limit on a run that displaced nothing, and names no folder that is gone", async () => {
+    writeConfig({ backupsLimit: 1 })
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "a.json"), "old", "utf-8")
+    const older = join(backupsFolder, "Settings", "test-inst-1", "settings_20200101-000000")
+    mkdirSync(older, { recursive: true })
+    writeFileSync(join(older, "a.json"), "stale", "utf-8")
+    utimesSync(older, new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"))
+    // The destination folder is both where the copy is read from and where the write lands, so it is
+    // closed to the run: the copy lands in the backups folder, the write cannot.
+    chmodSync(modConfigFolder(), 0o500)
+
+    try {
+      const applied = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [{ name: "a.json", ...entry("new") }])
+
+      assert.equal(applied.ok, true)
+      if (applied.ok !== true) return
+      assert.deepEqual(applied.applied, [])
+      assert.deepEqual(applied.failed, [{ name: "a.json", reason: "write-failed" }])
+      assert.equal(applied.backupFolder, "")
+      assert.deepEqual(recoveryFolders(), ["settings_20200101-000000"])
+      assert.equal(readFileSync(join(modConfigFolder(), "a.json"), "utf-8"), "old")
+    } finally {
+      chmodSync(modConfigFolder(), 0o700)
+    }
+  })
+
+  // One config in a directory the player can no longer read is a failure of that file, not of the
+  // other forty-nine in the pack. Before this, the `readFile` that backs it up rejected the whole
+  // invoke, so nothing was written and the player was told nothing at all.
+  it.skipIf(process.platform === "win32")("writes the rest of the pack when one config cannot be read to back it up", async () => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "locked.json"), '{"n":1}', "utf-8")
+    writeFileSync(join(modConfigFolder(), "open.json"), '{"n":1}', "utf-8")
+    chmodSync(join(modConfigFolder(), "locked.json"), 0o000)
+
+    let applied: Awaited<ReturnType<ReturnType<typeof applyModConfigsHandler>>>
+    try {
+      applied = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [
+        { name: "locked.json", ...entry('{"n":2}') },
+        { name: "open.json", ...entry('{"n":2}') }
+      ])
+    } finally {
+      chmodSync(join(modConfigFolder(), "locked.json"), 0o600)
+    }
+
+    try {
+      assert.equal(applied.ok, true)
+      if (applied.ok !== true) return
+      assert.deepEqual(applied.applied, [{ name: "open.json", kind: "replace" }])
+      assert.deepEqual(applied.failed, [{ name: "locked.json", reason: "write-failed" }])
+      assert.equal(readFileSync(join(modConfigFolder(), "open.json"), "utf-8"), '{"n":2}')
+      assert.equal(readFileSync(join(modConfigFolder(), "locked.json"), "utf-8"), '{"n":1}')
+    } catch (err) {
+      assert.fail(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  // Windows takes 260 characters for the whole path, and the rule used to count the folder alone, so
+  // a 245 character file name under a short folder passed every check and failed on the write.
+  it("refuses a destination past what Windows can open, counting the whole path", async () => {
+    writeConfig()
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const name = `${"n".repeat(240)}.json`
+
+    const applied = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [{ name, ...entry("{}") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.failed, [{ name, reason: "write-failed" }])
+    assert.deepEqual(applied.applied, [])
+    assert.equal(existsSync(join(modConfigFolder(), name)), false)
+  })
+
   // A copy of the right length and the wrong bytes is the one failure a recovery folder must not
-  // hold: it looks like a way back and is not one.
-  it("refuses a copy that landed the wrong bytes, and leaves the file it could not back up alone", async () => {
+  // hold: it looks like a way back and is not one. The corruption is written to land on the same
+  // number of bytes, because a check that only compared sizes would take this as a good copy.
+  it("refuses a copy that landed the right number of wrong bytes, and leaves the file it could not back up alone", async () => {
     mkdirSync(modConfigFolder(), { recursive: true })
     writeFileSync(join(modConfigFolder(), "a.json"), '{"n":1}', "utf-8")
     const fse = (await import("fs-extra")).default
     const copy = vi.spyOn(fse, "copy").mockImplementation(async (from, to) => {
       copyFileSync(String(from), String(to))
-      writeFileSync(String(to), "not the file", "utf-8")
+      writeFileSync(String(to), '{"n":9}', "utf-8")
     })
 
     try {

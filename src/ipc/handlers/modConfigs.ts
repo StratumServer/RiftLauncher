@@ -620,8 +620,15 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
     // is refused before a single copy is made.
     for (const entry of pending) {
       try {
-        const destinationFolder = await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
-        if (destinationFolder.length > WINDOWS_LEGACY_MAX_PATH) throw new Error("Path is too long")
+        // The call is the check: it walks the components that exist and refuses a path that leaves
+        // the Installation. What it resolves is not read, and a log line may not name it either.
+        await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
+        // The whole path Windows has to take, not the folder holding it: a 245 character file name
+        // under a 46 character folder is 292 characters in all, and it is the write that fails.
+        if (entry.destination.length > WINDOWS_LEGACY_MAX_PATH) {
+          logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] The path is longer than Windows takes`)
+          throw new Error("Path is too long")
+        }
       } catch (err) {
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
         failed.push({ name: entry.key, reason: "write-failed" })
@@ -630,12 +637,12 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
     }
 
     // Step 7's first half: decide, per file, whether anything is going to be displaced at all.
-    for (const entry of pending) {
+    const applyOneConfigEntry = async (entry: PendingConfig): Promise<void> => {
       // Already refused above, and skipped rather than re-examined: the `lstat`, the `readFile` and
       // the `copy` below are the three calls that must not run on a path the pre-pass rejected. A
       // key refused there is one whose destination is behind a link, so reading it reads somebody
       // else's file and copying it puts a copy of that file in the recovery folder.
-      if (refused.has(entry.key)) continue
+      if (refused.has(entry.key)) return
 
       // The digest is a claim about the text right next to it, and the only thing that can check it
       // is the text. A record that fails here was edited by hand after the pack was made, or was
@@ -644,13 +651,13 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       if (digestOf(Buffer.from(entry.text, "utf8")) !== entry.sha256) {
         failed.push({ name: entry.key, reason: "digest-mismatch" })
         refused.add(entry.key)
-        continue
+        return
       }
 
       const existing = await fse.lstat(entry.destination).catch(() => undefined)
       if (!existing) {
         kinds.set(entry.key, "new")
-        continue
+        return
       }
       // A link or a directory where a config belongs. The same `lstat` the icon copy does before it
       // writes, and for the same reason: `fse.copy` copies a link rather than what it points at, so a
@@ -658,14 +665,14 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       if (existing.isSymbolicLink() || !existing.isFile()) {
         failed.push({ name: entry.key, reason: "write-failed" })
         refused.add(entry.key)
-        continue
+        return
       }
 
       const current = await fse.readFile(entry.destination)
       if (digestOf(current) === entry.sha256) {
         skipped.push(entry.key)
         refused.add(entry.key)
-        continue
+        return
       }
 
       kinds.set(entry.key, "replace")
@@ -683,7 +690,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
           await fse.remove(backupPath)
           failed.push({ name: entry.key, reason: "not-landed" })
           refused.add(entry.key)
-          continue
+          return
         }
       } catch (err) {
         // A copy that threw part way leaves a partial file, and a recovery folder holding a partial
@@ -695,13 +702,18 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       }
     }
 
-    try {
-      if (recoveryFolder) await pruneRecoveryFolders(dirname(recoveryFolder), record.backupsLimit, recoveryFolder)
-    } catch (err) {
-      // Non-fatal: the backups this run needed are already written. A prune that cannot finish is
-      // about old folders piling up, which is the next backup's problem and the log's business.
-      logMessage("error", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not prune old settings backups.`)
-      logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
+    // Every file answers for itself. A config whose folder cannot be read, or whose recovery
+    // folder cannot be made, is a failure of that file alone: without this the whole invoke
+    // rejects, and a pack of fifty configs loses all fifty because one of them sits in a
+    // directory the player no longer has permission on.
+    for (const entry of pending) {
+      try {
+        await applyOneConfigEntry(entry)
+      } catch (err) {
+        logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
+        failed.push({ name: entry.key, reason: "write-failed" })
+        refused.add(entry.key)
+      }
     }
 
     for (const entry of pending) {
@@ -727,6 +739,29 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         logMessage("error", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not write the applied record.`)
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
       })
+    }
+
+    // The backup limit is spent by what a run actually displaced, so the prune waits until the write
+    // loop is done and only runs when something landed. An apply that wrote nothing because every
+    // file was refused, or every write died, no longer costs the player the recovery folder that
+    // would have taken them back to.
+    if (applied.length > 0) {
+      try {
+        if (recoveryFolder) await pruneRecoveryFolders(dirname(recoveryFolder), record.backupsLimit, recoveryFolder)
+      } catch (err) {
+        // Non-fatal: the backups this run needed are already written. A prune that cannot finish is
+        // about old folders piling up, which is the next backup's problem and the log's business.
+        logMessage("error", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not prune old settings backups.`)
+        logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
+      }
+    } else if (recoveryFolder) {
+      // A recovery folder with nothing in it reads as a way back when there is nothing to go back
+      // to, so it is dropped rather than left to the next run's prune. The result must not name it
+      // either: `backupFolder` is what the dialog offers as the place to look.
+      await fse.remove(recoveryFolder).catch((err: unknown) => {
+        logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not remove the empty recovery folder. ${getErrorMessage(err)}`)
+      })
+      recoveryFolder = null
     }
 
     logMessage("info", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Wrote ${applied.length} configs, skipped ${skipped.length}, failed ${failed.length}.`)

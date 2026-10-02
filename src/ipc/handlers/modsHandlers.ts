@@ -265,8 +265,19 @@ ipcMain.handle(
       // does name is which of the files the walk found to put in the pack, and those names are
       // matched against the walk's own keys rather than resolved as paths.
       if (includeConfigs === true) {
+        const chosenConfigs = parseChosenConfigNames(configNames)
+        if (chosenConfigs === undefined) {
+          // The picker is the only reason this can be narrow at all: the player sees a row per file
+          // and ticks the ones they want in the pack. A request that says "read the configs" without
+          // saying which ones carries no choice, and #363 asked for no blind sweep, so the host
+          // answers the same way it answers a configNames that is not a list at all rather than
+          // trusting a renderer that skipped its own picker. The renderer sends both together
+          // (ExportModConfigsDialog), so nothing in the app can reach this.
+          logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: no config names were chosen.`)
+          throw new TypeError("Invalid modpack export request")
+        }
         const installation = await assertConfiguredInstallationPath(installationPath)
-        const collected = await collectModConfigs(installation, parseChosenConfigNames(configNames))
+        const collected = await collectModConfigs(installation, chosenConfigs)
         if (!collected.ok) {
           logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: ${collected.reason}.`)
           return { success: false, reason: collected.reason, name: collected.name }

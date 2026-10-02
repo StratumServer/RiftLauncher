@@ -274,6 +274,20 @@ describe("EXPORT_MODPACK", () => {
     }
   })
 
+  // The reason the picker exists: a request that asks for "the configs" without saying which ones is
+  // a blind sweep of everything in the folder, which is what #363 asked not to be able to happen.
+  // The host refuses it before it opens a save dialog, so nothing is read and nothing is written.
+  it("refuses to export the whole ModConfig folder, before it opens the save dialog", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig", "ConfigureEverything", "Client")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), '{"blocksize":8}', "utf-8")
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true)
+
+    assert.deepEqual(result, { success: false })
+    assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
+  })
+
   // #363: the configs are read here rather than handed in, so what is under test is the file that
   // comes out and the point at which a refusal stops the export.
   it("writes the Installation's mod configs into the pack when the box was ticked, keys and all", async () => {
@@ -284,7 +298,7 @@ describe("EXPORT_MODPACK", () => {
     mkdirSync(dirname(destination), { recursive: true })
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
 
-    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true)
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["ConfigureEverything/Client/RoomSize.json"])
 
     assert.equal(result.success, true)
     const written = JSON.parse(readFileSync(destination, "utf-8")) as ModpackManifestType
@@ -310,7 +324,7 @@ describe("EXPORT_MODPACK", () => {
     mkdirSync(dirname(destination), { recursive: true })
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
 
-    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true)
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["Big.json", "Empty.json"])
 
     assert.equal(result.success, true)
     const written = JSON.parse(readFileSync(destination, "utf-8")) as ModpackManifestType
@@ -346,7 +360,7 @@ describe("EXPORT_MODPACK", () => {
     mkdirSync(modConfigFolder, { recursive: true })
     writeFileSync(join(modConfigFolder, "latin1.json"), Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0xe7, 0x7d]))
 
-    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true)
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["latin1.json"])
 
     assert.deepEqual(result, { success: false, reason: "not-utf8", name: "latin1.json" })
     assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
@@ -443,7 +457,7 @@ describe("EXPORT_MODPACK", () => {
       mods: Array.from({ length: MAX_MODPACK_ENTRIES }, (_, index) => ({ modid: `m${index}`, version: "1.0.0" }))
     }
 
-    const result = await exportModpackHandler()(await createTrustedEvent(), manifest, installationPath, true)
+    const result = await exportModpackHandler()(await createTrustedEvent(), manifest, installationPath, true, ["RoomSize.json"])
 
     assert.deepEqual(result, { success: false, reason: "too-many" })
     assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
@@ -458,7 +472,7 @@ describe("EXPORT_MODPACK", () => {
     writeFileSync(join(modConfigFolder, "Big.json"), big, "utf-8")
     writeFileSync(join(modConfigFolder, "Bigger.json"), big, "utf-8")
 
-    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true)
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["Big.json", "Bigger.json"])
 
     assert.deepEqual(result, { success: false, reason: "too-large" })
     assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
