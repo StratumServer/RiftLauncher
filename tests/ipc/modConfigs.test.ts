@@ -523,6 +523,25 @@ describe("APPLY_MOD_CONFIGS", () => {
     assert.match(readFileSync(join(written, "applied.txt"), "utf-8"), /a\.json/)
   })
 
+  it("writes a config the Installation has never had, and makes no recovery folder for it", async () => {
+    // The branch that records a file as `new` had no test: every other apply case replaces something,
+    // so a name the pack brought and the Installation did not have was only ever exercised by hand.
+    // Nothing is displaced here, so there is no recovery folder and no applied.txt either.
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "fresh.json", ...entry("mine") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "fresh.json", kind: "new" }])
+    assert.deepEqual(applied.failed, [])
+    assert.deepEqual(applied.skipped, [])
+    assert.equal(applied.backupFolder, "")
+    assert.equal(readFileSync(join(modConfigFolder(), "fresh.json"), "utf-8"), "mine")
+    assert.deepEqual(recoveryFolders(), [])
+  })
+
   it("calls a file that is already byte-identical unchanged, and keeps it out of the backup", async () => {
     mkdirSync(modConfigFolder(), { recursive: true })
     writeFileSync(join(modConfigFolder(), "a.json"), "same", "utf-8")
