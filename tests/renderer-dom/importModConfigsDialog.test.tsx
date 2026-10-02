@@ -275,4 +275,105 @@ describe("ImportModConfigsDialog, what came back", () => {
     await waitFor(() => expect(screen.getByText("This Installation has no backups folder set, and a config is only ever written over a copy of what it replaces. Nothing was written.")).toBeTruthy())
     expect(close).not.toHaveBeenCalled()
   })
+
+  /**
+   * Every refusal has its own sentence, and a player who is told "the launcher was playing" learns
+   * something they can act on while a player told the generic unreadable line learns nothing. The
+   * last one also answers a rejected channel, which is a designed outcome rather than a crash, so it
+   * must not fall silent.
+   */
+  it("answers each refusal with its own sentence, and a rejected channel with the last one", async () => {
+    const refusals: { reason: Extract<ApplyModConfigsResult, { ok: false }>["reason"]; said: string }[] = [
+      { reason: "playing", said: "This Installation is playing. The mod configs can be written once the game has closed." },
+      { reason: "busy", said: "This Installation is busy. The mod configs can be written once the work in progress is done." },
+      { reason: "insufficient-space", said: "There is not enough free space to keep a copy of every file and write the pack's. Nothing was written." },
+      { reason: "mod-config-unreadable", said: "This Installation's mod config folder could not be read, so nothing was written." }
+    ]
+
+    for (const { reason, said } of refusals) {
+      installMockWindowApi({
+        modsManager: {
+          getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [] })),
+          applyModConfigs: vi.fn(async (): Promise<ApplyModConfigsResult> => ({ ok: false, reason }))
+        }
+      })
+      const { unmount } = renderWithProviders(
+        <>
+          <NotificationsOverlay />
+          <ImportModConfigsDialog settings={{ "New.json": entry("{}") }} installation={installation()} close={vi.fn()} />
+        </>
+      )
+
+      await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
+      fireEvent.click(screen.getByRole("button", { name: "Write the chosen configs" }))
+      await waitFor(() => expect(screen.getByText(said)).toBeTruthy())
+      unmount()
+    }
+
+    installMockWindowApi({
+      modsManager: {
+        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [] })),
+        applyModConfigs: vi.fn(async (): Promise<ApplyModConfigsResult> => Promise.reject(new TypeError("Invalid mod config request")))
+      }
+    })
+    const { unmount } = renderWithProviders(
+      <>
+        <NotificationsOverlay />
+        <ImportModConfigsDialog settings={{ "New.json": entry("{}") }} installation={installation()} close={vi.fn()} />
+      </>
+    )
+
+    await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
+    fireEvent.click(screen.getByRole("button", { name: "Write the chosen configs" }))
+    await waitFor(() => expect(screen.getByText("This Installation's mod config folder could not be read, so nothing was written.")).toBeTruthy())
+    unmount()
+  })
+
+  /**
+   * Each failure reason is one sentence per row, and the three this branch's host can answer are the
+   * ones a player cannot guess: the copy did not happen, the copy landed wrong, the file did not
+   * take. A row that fell through to the wrong one of the four would send them looking in the wrong
+   * place, which is the whole job of this list.
+   */
+  it("gives every reason the host can answer its own line, all four in one apply", async () => {
+    installMockWindowApi({
+      modsManager: {
+        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [{ name: "Mine.json", bytes: 2 }] })),
+        applyModConfigs: vi.fn(
+          async (): Promise<ApplyModConfigsResult> => ({
+            ok: true,
+            backupFolder: "",
+            applied: [{ name: "New.json", kind: "new" as const }],
+            skipped: [],
+            failed: [
+              { name: "Copy.json", reason: "copy-failed" as const },
+              { name: "Short.json", reason: "not-landed" as const },
+              { name: "Long.json", reason: "write-failed" as const }
+            ]
+          })
+        )
+      }
+    })
+    renderWithProviders(
+      <>
+        <NotificationsOverlay />
+        <ImportModConfigsDialog settings={{ "Copy.json": entry("{}"), "Short.json": entry("{}"), "Long.json": entry("{}"), "Mine.json": entry("{}") }} installation={installation()} close={vi.fn()} />
+      </>
+    )
+
+    await waitFor(async () => expect((await rowFor("Copy.json")).checked).toBe(true))
+    fireEvent.click(screen.getByRole("button", { name: "Write the chosen configs" }))
+    await waitFor(() => expect(screen.getByText("the copy for the backup folder could not be made")).toBeTruthy())
+    const rows = screen.getAllByRole("listitem")
+    assertReasons(["Copy.json", "the copy for the backup folder could not be made"], rows)
+    assertReasons(["Short.json", "the copy landed shorter than it should have"], rows)
+    assertReasons(["Long.json", "the file could not be written"], rows)
+  })
 })
+
+/** The two lines of a failure row: the file's name, and the reason it did not land. */
+function assertReasons([name, reason]: [string, string], rows: HTMLElement[]): void {
+  const row = rows.find((element) => element.textContent?.includes(name))
+  expect(row, `no row for ${name}`).toBeTruthy()
+  expect(within(row as HTMLElement).getByText(reason)).toBeTruthy()
+}

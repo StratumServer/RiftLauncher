@@ -874,6 +874,105 @@ describe("APPLY_MOD_CONFIGS", () => {
     assert.equal(existsSync(join(modConfigFolder(), name)), false)
   })
 
+  /**
+   * A destination is written through a temp name beside it, and that temp name is what opens first,
+   * so a destination that fits while the temp name does not is the same failure one step later. The
+   * boundary is therefore the whole path plus the longest temp name, not the path on its own: the
+   * last writable destination here is 249 characters, not 260.
+   */
+  it("charges the temp name beside a destination to the destination, at the exact boundary", async () => {
+    writeConfig()
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const { ATOMIC_WRITE_TEMP_SUFFIX_MAX } = await import("@src/ipc/atomicJsonFile")
+    const longest = 260 - ATOMIC_WRITE_TEMP_SUFFIX_MAX
+    const ofLength = (total: number): string => {
+      const room = total - modConfigFolder().length - 1 - "/x.json".length
+      assert.ok(room > 0, "there has to be room for a folder of its own")
+      const name = `${"d".repeat(room)}/x.json`
+      assert.equal(join(modConfigFolder(), name).length, total)
+      return name
+    }
+    const writable = ofLength(longest)
+    const refused = ofLength(longest + 1)
+
+    const first = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [{ name: writable, ...entry('{"n":1}') }])
+    const second = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [{ name: refused, ...entry('{"n":1}') }])
+
+    assert.equal(first.ok, true)
+    if (first.ok !== true || second.ok !== true) return
+    assert.deepEqual(first.applied, [{ name: writable, kind: "new" }])
+    assert.deepEqual(second.failed, [{ name: refused, reason: "write-failed" }])
+    assert.equal(readFileSync(join(modConfigFolder(), writable), "utf-8"), '{"n":1}')
+    assert.equal(existsSync(join(modConfigFolder(), refused)), false)
+  })
+
+  /**
+   * The recovery copy is opened before the destination and under a different root: the backups
+   * folder, the Installation's backup folder and the recovery folder itself, which together are
+   * usually the longer path. Measuring only the destination let a file land a copy the writer could
+   * not have opened, so the failure arrived as `copy-failed` instead of the refusal the pack was
+   * promised.
+   */
+  it("refuses a file whose backup path is past what Windows can open, and leaves its config alone", async () => {
+    writeConfig({ backupsFolder: join(temporaryRoot, "Backups", "B".repeat(200)) })
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "a.json"), '{"n":1}', "utf-8")
+
+    const applied = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [{ name: "a.json", ...entry('{"n":2}') }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.failed, [{ name: "a.json", reason: "write-failed" }])
+    assert.deepEqual(applied.applied, [])
+    assert.equal(readFileSync(join(modConfigFolder(), "a.json"), "utf-8"), '{"n":1}')
+    assert.equal(applied.backupFolder, "", "nothing was displaced, so nothing may be offered as a way back")
+    const settings = join(temporaryRoot, "Backups", "Settings")
+    assert.ok(!existsSync(settings) || readdirSync(settings).length === 0, "no recovery folder may be made for a copy that was refused before it opened")
+  })
+
+  /**
+   * A copy that threw part way leaves a file in the recovery folder that is not the file the player
+   * had, at the same name. That is worse than an empty recovery folder: it looks like a way back and
+   * is not one. Another file of the same pack is what keeps the folder alive to be checked, because
+   * a run that wrote nothing drops the whole folder at the end and would hide the leftover behind
+   * that instead.
+   */
+  it("removes what a copy left behind when the copy threw, and keeps the copy that did land", async () => {
+    writeConfig()
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "a.json"), '{"n":1}', "utf-8")
+    writeFileSync(join(modConfigFolder(), "b.json"), '{"n":1}', "utf-8")
+    const fse = (await import("fs-extra")).default
+    const copy = vi.spyOn(fse, "copy").mockImplementation(async (from, to) => {
+      copyFileSync(String(from), String(to))
+      if (String(to).endsWith("a.json")) {
+        writeFileSync(String(to), '{"n":1', "utf-8")
+        throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" })
+      }
+    })
+
+    try {
+      const applied = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [
+        { name: "a.json", ...entry('{"n":2}') },
+        { name: "b.json", ...entry('{"n":2}') }
+      ])
+
+      assert.equal(applied.ok, true)
+      if (applied.ok !== true) return
+      assert.deepEqual(applied.failed, [{ name: "a.json", reason: "copy-failed" }])
+      assert.deepEqual(applied.applied, [{ name: "b.json", kind: "replace" }])
+      assert.equal(readFileSync(join(modConfigFolder(), "a.json"), "utf-8"), '{"n":1}')
+      assert.equal(readFileSync(join(modConfigFolder(), "b.json"), "utf-8"), '{"n":2}')
+      assert.notEqual(applied.backupFolder, "", "the file that did land is still a way back")
+      assert.deepEqual(
+        readdirSync(applied.backupFolder).filter((name: string) => name !== "applied.txt"),
+        ["b.json"]
+      )
+    } finally {
+      copy.mockRestore()
+    }
+  })
+
   // A copy of the right length and the wrong bytes is the one failure a recovery folder must not
   // hold: it looks like a way back and is not one. The corruption is written to land on the same
   // number of bytes, because a check that only compared sizes would take this as a good copy.

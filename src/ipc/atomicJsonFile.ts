@@ -29,6 +29,15 @@ export async function writeJsonAtomic(filePath: string, data: unknown, options: 
 }
 
 /**
+ * The longest name `write-file-atomic` adds beside a destination before opening anything:
+ * one dot plus the ten digits its `readUInt32BE(0)` can reach
+ * (`node_modules/write-file-atomic/lib/index.js:29-38`). A caller that has to decide whether
+ * Windows can open a path at all has to leave this much room, because the temp file beside the
+ * destination is the first thing opened, not the destination.
+ */
+export const ATOMIC_WRITE_TEMP_SUFFIX_MAX = 11
+
+/**
  * The same write for text that is not JSON.
  *
  * A mod config is copied out of somebody's `ModConfig` folder verbatim and put back verbatim, so

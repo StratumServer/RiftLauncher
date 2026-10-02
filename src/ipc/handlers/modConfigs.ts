@@ -5,7 +5,7 @@ import { createHash } from "node:crypto"
 import { dirname, join, relative } from "node:path"
 import { IPC_CHANNELS } from "../ipcChannels"
 import { getConfig } from "@src/config/configManager"
-import { writeTextAtomic } from "@src/ipc/atomicJsonFile"
+import { ATOMIC_WRITE_TEMP_SUFFIX_MAX, writeTextAtomic } from "@src/ipc/atomicJsonFile"
 import { isInstallationPlaying, tryAcquireInstallationOperation } from "@src/ipc/installationActivity"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertConfiguredInstallationPath, assertManagedPath } from "@src/ipc/pathPolicy"
@@ -44,7 +44,8 @@ const MAX_MOD_CONFIG_KEY_LENGTH = 512
  * what a caller may send over IPC. Past this a write fails with an error that names nothing, so a
  * pack that would land there is refused as a named failure instead of half-written. The documented
  * way past it is the `\\?\` prefix, which this launcher does not use: it is the path a player would
- * never type, and `write-file-atomic` builds its own temporary name beside the target.
+ * never type, and `write-file-atomic` builds its own temporary name beside the target, which is why
+ * a path is only writable here if `ATOMIC_WRITE_TEMP_SUFFIX_MAX` is still room at the end of it.
  */
 const WINDOWS_LEGACY_MAX_PATH = 260
 
@@ -627,7 +628,9 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
         // The whole path Windows has to take, not the folder holding it: a 245 character file name
         // under a 46 character folder is 292 characters in all, and it is the write that fails.
-        if (entry.destination.length > WINDOWS_LEGACY_MAX_PATH) {
+        // The temp name the write opens first is charged to the destination, so a destination that
+        // fits and a temp name that does not is the same failure, one step later and less clear.
+        if (entry.destination.length + ATOMIC_WRITE_TEMP_SUFFIX_MAX > WINDOWS_LEGACY_MAX_PATH) {
           logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] The path is longer than Windows takes`)
           throw new Error("Path is too long")
         }
@@ -679,6 +682,17 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
 
       kinds.set(entry.key, "replace")
       const backupPath = join(await recoveryFolderFor(), ...entry.key.split("/"))
+      // The recovery copy is the first thing opened for a file that already exists, and it is not
+      // opened under the destination: it carries the backups root, the Installation's backup folder
+      // and the recovery folder itself, so it is usually the longer of the two. Measured here rather
+      // than in the pre-pass because the recovery folder is only made for a file that is really
+      // being displaced, and making it earlier to measure it would be making it for nothing.
+      if (backupPath.length + ATOMIC_WRITE_TEMP_SUFFIX_MAX > WINDOWS_LEGACY_MAX_PATH) {
+        logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] The backup path is longer than Windows takes`)
+        failed.push({ name: entry.key, reason: "write-failed" })
+        refused.add(entry.key)
+        return
+      }
       await fse.ensureDir(dirname(backupPath))
       try {
         // The option pair `preserveUnreadableStore` uses (src/ipc/accountStore.ts): overwrite is
