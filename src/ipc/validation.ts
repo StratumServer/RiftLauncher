@@ -144,6 +144,9 @@ export const REDIRECT_URL_RULES: readonly UrlRule[] = [
 export const BROWSER_URL_RULES: readonly UrlRule[] = [
   { hostname: "discord.gg", pathPrefixes: ["/vQm6z2urZs"] },
   { hostname: "github.com", pathPrefixes: ["/StratumServer/RiftLauncher"] },
+  // The launcher's translation project, offered from the language row on the Config page. Its own
+  // engage page only, not Weblate at large.
+  { hostname: "hosted.weblate.org", pathPrefixes: ["/engage/riftlauncher"] },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/show"] },
   // The launcher's own docs, offered from the missing-.NET notification (#397).
   { hostname: "riftlauncher.stratumvs.dev", pathPrefixes: ["/docs"] },

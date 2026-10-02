@@ -735,6 +735,7 @@ describe("the brand accent where it carries text", () => {
       ["add installation start-params link", /startParamsLink=\{[\s\S]*?<NormalButton[\s\S]*?variant="link"/, "features/installations/pages/AddInstallation.tsx", FORM_SECTION],
       ["edit installation start-params link", /startParamsLink=\{[\s\S]*?<NormalButton[\s\S]*?variant="link"/, "features/installations/pages/EditInstallation.tsx", FORM_SECTION],
       ["logs folder link", /folderlink:\s*\([\s\S]*?<NormalButton[\s\S]*?variant="link"/, "features/info/pages/InfoAndHelpPage.tsx", FORM_SECTION],
+      ["config help translate link", /openOnBrowser\(HELP_TRANSLATE_URL\)[\s\S]{0,120}variant="link"/, "features/config/pages/ConfigPage.tsx", FORM_SECTION],
       ["no installed mods link", /link:\s*\([\s\S]*?<LinkButton[\s\S]*?variant="link"/, "features/mods/components/NoInstalledModsNotice.tsx", LIST_PANEL],
       ["mods section issues link", /openExternalLink\(ISSUES_URL\)[\s\S]{0,120}variant="link"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
       ["mods section discord link", /openExternalLink\(DISCORD_URL\)[\s\S]{0,120}variant="link"/, "features/mods/components/InstalledModsSectionHeader.tsx", LIST_PANEL],
