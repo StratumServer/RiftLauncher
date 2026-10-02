@@ -558,6 +558,8 @@
       "ownImage": "Your own image",
       "backgroundsLoadFailed": "The background list couldn't be loaded. Check your connection and try again.",
       "language": "Language",
+      "helpTranslate": "Help translate RiftLauncher",
+      "helpTranslateDesc": "Translation happens on Weblate, in your browser. A few minutes in your language already help.",
       "switchAccountTitle": "Switch account",
       "addAnotherAccount": "Add another account",
       "removeAccountTitle": "Remove {{user}}",

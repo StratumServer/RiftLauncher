@@ -580,6 +580,8 @@
       "ownImage": "Votre propre image",
       "backgroundsLoadFailed": "La liste des arrière-plans n'a pas pu être chargée. Vérifiez votre connexion et réessayez.",
       "language": "Langue",
+      "helpTranslate": "Aider à traduire RiftLauncher",
+      "helpTranslateDesc": "La traduction se fait sur Weblate, dans votre navigateur. Quelques minutes dans votre langue aident déjà.",
       "switchAccountTitle": "Changer de compte",
       "addAnotherAccount": "Ajouter un autre compte",
       "removeAccountTitle": "Supprimer {{user}}",
