@@ -553,10 +553,12 @@ async function pruneRecoveryFolders(parent: string, limit: number, keep: string)
  *     rather than after: a copy of an unchanged file would leave the newest recovery folder holding
  *     the pack's own bytes, which is exactly the folder a player reaches for when something is
  *     wrong;
- *  8. the recovery folders past the limit are pruned, non-fatally;
- *  9. the writes happen, one file at a time, each naming its own failure;
- *  10. a record of what landed is written last, so a run that was killed part way through still
- *     says which half it got through.
+ *  8. the writes happen, one file at a time, each naming its own failure;
+ *  9. a record of what landed is written, so a run that was killed part way through still says
+ *     which half it got through;
+ *  10. the recovery folders past the limit are pruned, non-fatally, and only by a run that
+ *     displaced something: a run that wrote nothing has no newest folder to keep, and one that
+ *     removed the folder it created has nothing left to name.
  */
 ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, installationPath: unknown, files: unknown): Promise<ApplyModConfigsResult> => {
   assertTrustedIpcSender(event)

@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import type { IpcMainInvokeEvent } from "electron"
@@ -850,11 +850,20 @@ describe("APPLY_MOD_CONFIGS", () => {
   })
 
   // Windows takes 260 characters for the whole path, and the rule used to count the folder alone, so
-  // a 245 character file name under a short folder passed every check and failed on the write.
+  // a long file name under a short folder passed every check and failed on the write. The name here
+  // is a folder plus a short file for that reason: the whole path has to be past what Windows takes
+  // while the folder holding it is not, or both rules refuse it and the test cannot tell them apart.
+  // The name is also spread over two components, because one component of this length is refused by
+  // the file system itself, on Linux and Windows alike, which is a different failure carrying the
+  // same reason string.
   it("refuses a destination past what Windows can open, counting the whole path", async () => {
     writeConfig()
     mkdirSync(modConfigFolder(), { recursive: true })
-    const name = `${"n".repeat(240)}.json`
+    const room = 255 - modConfigFolder().length - 1
+    const name = `${"d".repeat(room)}/x.json`
+    assert.ok(join(modConfigFolder(), name).length > 260, "the whole path has to be the long part")
+    assert.ok(room > 0, "there has to be room for a folder of its own")
+    assert.ok(join(modConfigFolder(), dirname(name)).length <= 260, "and the folder under it the short one")
 
     const applied = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [{ name, ...entry("{}") }])
 
