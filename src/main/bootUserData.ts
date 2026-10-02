@@ -35,34 +35,45 @@ const appDataPath = app.getPath("appData")
 // Electron derives its single-instance lock from userData, so this path is set before the lock is
 // taken and before the profile is chosen. It sits under appData rather than the temp folder so that
 // two launches on one machine still exclude each other while scratch profiles stay usable side by
-// side, which the headless checks rely on (docs/contribute/headless-checks.md). Electron takes the
-// lock inside this folder, so the folder is created here: a first run on a fresh Linux account has
-// no ~/.config/RiftLauncher yet, and a lock that cannot be taken would exit the process instead of
-// starting the launcher.
+// side, which the headless checks rely on (docs/contribute/headless-checks.md).
 const singleInstanceLockPath = join(appDataPath, SINGLE_INSTANCE_LOCK_FOLDER)
-mkdirSync(singleInstanceLockPath, { recursive: true })
-app.setPath("userData", singleInstanceLockPath)
-if (!app.requestSingleInstanceLock()) process.exit(0)
-
-const portablePaths = portablePathsForCurrentInstall(process.platform, app.getPath("exe"), process.env["APPIMAGE"], process.platform === "linux" ? readLinuxPackageType() : undefined)
 
 let selection: UserDataSelection | null = null
 let failure: BootFailure | null = null
 
+// Electron takes the lock inside this folder and Chromium opens the profile from it, so the folder
+// is created before the lock is asked for: a first run on a fresh Linux account has no
+// ~/.config/RiftLauncher yet, and a lock that cannot be taken would exit the process instead of
+// starting the launcher. A folder that cannot be created leaves the lock and the profile both
+// without anywhere to live, and exiting now would look to the player like another copy was already
+// running, so the reason travels to the entry with the rest.
 try {
-  selection = selectUserDataFolder(appDataPath, portablePaths)
-  app.setPath("userData", selection.setup.path)
-  app.setPath("sessionData", selection.setup.path)
-  setDefaultFolderPathRoot(selection.portableMode ? selection.setup.path : appDataPath)
+  mkdirSync(singleInstanceLockPath, { recursive: true })
 } catch (error) {
-  // Without a profile there is nothing else this process can do. userData is still the lock folder,
-  // so nothing is written to a folder the player did not choose, and the entry reports it once
-  // Electron is ready and a dialog can actually be seen.
-  failure = { detail: getErrorMessage(error) }
+  failure = { detail: `Could not create the folder Electron keeps the profile and the single instance lock in (${singleInstanceLockPath}): ${getErrorMessage(error)}` }
+}
+
+app.setPath("userData", singleInstanceLockPath)
+if (failure === null && !app.requestSingleInstanceLock()) process.exit(0)
+
+if (failure === null) {
+  const portablePaths = portablePathsForCurrentInstall(process.platform, app.getPath("exe"), process.env["APPIMAGE"], process.platform === "linux" ? readLinuxPackageType() : undefined)
+
+  try {
+    selection = selectUserDataFolder(appDataPath, portablePaths)
+    app.setPath("userData", selection.setup.path)
+    app.setPath("sessionData", selection.setup.path)
+    setDefaultFolderPathRoot(selection.portableMode ? selection.setup.path : appDataPath)
+  } catch (error) {
+    // Without a profile there is nothing else this process can do. userData is still the lock folder,
+    // so nothing is written to a folder the player did not choose, and the entry reports it once
+    // Electron is ready and a dialog can actually be seen.
+    failure = { detail: getErrorMessage(error) }
+  }
 }
 
 /** The profile the launcher is running on. Only a placeholder while {@link bootFailure} is set. */
-export const userDataSetup: UserDataSetup = selection?.setup ?? { path: singleInstanceLockPath, outcome: "fresh", copied: [], cleanedStaleMigration: false }
+export const userDataSetup: UserDataSetup = selection?.setup ?? { path: singleInstanceLockPath, outcome: "unavailable", copied: [], cleanedStaleMigration: false }
 
 export const portableMode = selection?.portableMode === true
 

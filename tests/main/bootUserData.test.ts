@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -146,9 +146,26 @@ describe("the boot module wires the profile into a running app", () => {
     assert.equal(module.bootFailure?.detail, "Portable profile or migration folder overlaps the NSIS install folder.")
     // Still the lock folder, so nothing was written to a profile this player did not choose.
     assert.equal(module.userDataSetup.path, lockFolder)
-    assert.equal(module.userDataSetup.outcome, "fresh")
+    assert.equal(module.userDataSetup.outcome, "unavailable")
     assert.equal(module.portableNote, "")
     assert.equal(vi.mocked(setDefaultFolderPathRoot).mock.calls.length, 0)
     assert.deepEqual(state.exitCodes, [])
+  })
+
+  it("says why the lock folder could not be created instead of exiting as if another copy were running", async () => {
+    const blocker = join(workDir, "not-a-folder")
+    writeFileSync(blocker, "a file where appData needs a folder")
+    state.appData = join(blocker, "AppData", "Roaming")
+    const module = await boot()
+
+    assert.match(module.bootFailure?.detail ?? "", /Could not create the folder Electron keeps the profile and the single instance lock in/)
+    assert.match(module.bootFailure?.detail ?? "", /ENOTDIR|not a directory/)
+    assert.equal(module.userDataSetup.outcome, "unavailable")
+    assert.equal(module.portableNote, "")
+    // Exiting here would look to the player like another instance owns the launcher.
+    assert.deepEqual(state.exitCodes, [])
+    assert.equal(state.calls.includes("requestSingleInstanceLock"), false)
+    assert.equal(vi.mocked(selectUserDataFolder).mock.calls.length, 0)
+    assert.equal(vi.mocked(setDefaultFolderPathRoot).mock.calls.length, 0)
   })
 })

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { join, resolve, sep } from "node:path"
 import * as ts from "typescript"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
@@ -161,17 +161,32 @@ describe("the entry decides the profile before anything else runs", () => {
     return ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   }
 
+  /** The path map the build itself uses, so `@src/*` and `@domain/*` resolve the way they compile. */
+  const compilerOptions = ts.parseJsonConfigFileContent(ts.readConfigFile(join(root, "tsconfig.node.json"), ts.sys.readFile).config, ts.sys, root).options
+
+  const isOurs = (file: string): boolean => resolve(file).startsWith(`${resolve(srcDir)}${sep}`)
+
+  /** A specifier that names our own code, which the walk is expected to be able to follow. */
+  const claimsOurs = (specifier: string): boolean => specifier.startsWith("@src/") || specifier.startsWith("@domain/") || specifier.startsWith(".")
+
+  /**
+   * Every module of ours that `file` reaches. Resolution goes through the compiler rather than a
+   * hand-kept list of prefixes, and a specifier that names our own code but does not resolve is an
+   * error here: dropping it would leave the walk quietly blind to exactly the edge it cannot see.
+   */
   function localModulesOf(file: string): string[] {
     return sourceOf(file)
       .statements.filter((statement): statement is ts.ImportDeclaration | ts.ExportDeclaration => ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement))
       .map((statement) => (statement.moduleSpecifier as ts.StringLiteral | undefined)?.text)
       .filter((specifier): specifier is string => specifier !== undefined)
       .map((specifier) => {
-        if (specifier.startsWith("@src/")) return join(srcDir, `${specifier.slice("@src/".length)}.ts`)
-        if (specifier.startsWith(".")) return resolve(dirname(file), `${specifier}.ts`)
-        return null
+        const resolved = ts.resolveModuleName(specifier, file, compilerOptions, ts.sys).resolvedModule?.resolvedFileName
+        const target = resolved === undefined ? undefined : resolve(resolved)
+        const reachable = target !== undefined && isOurs(target)
+        assert.ok(!claimsOurs(specifier) || reachable, `${file} imports ${specifier}, which this walk cannot resolve`)
+        return reachable ? target : null
       })
-      .filter((file): file is string => file !== null && existsSync(file))
+      .filter((target): target is string => target !== null)
   }
 
   const unwrap = (node: ts.Node): ts.Node => (ts.isParenthesizedExpression(node) ? unwrap(node.expression) : node)
@@ -263,6 +278,10 @@ describe("the entry decides the profile before anything else runs", () => {
     }
 
     assert.ok(seen.size > 3, `expected the boot graph to reach more than 3 local modules, reached ${seen.size}`)
+    assert.ok(
+      [...seen].some((file) => file.startsWith(join(srcDir, "domain"))),
+      `expected the boot graph to reach src/domain, reached ${[...seen].join(", ")}`
+    )
     assert.deepEqual(offenders, [])
   })
 })

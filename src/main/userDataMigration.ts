@@ -27,6 +27,8 @@ export type UserDataSetupOutcome =
   | "portable-profile-migrated"
   /** A copy started and did not finish. The launcher starts on an empty folder. */
   | "migration-failed"
+  /** No folder was chosen at all, because preparing one failed before the profile was decided. */
+  | "unavailable"
 
 export interface UserDataSetup {
   /** Folder to hand to `app.setPath("userData", ...)`. */
@@ -335,5 +337,7 @@ export function describeUserDataSetup(setup: UserDataSetup): string {
       return `Could not copy the VS Launcher user data folder. Starting on an empty RiftLauncher folder.${stale}`
     case "fresh":
       return `Created a new RiftLauncher user data folder.${stale}`
+    case "unavailable":
+      return `No RiftLauncher user data folder was prepared.${stale}`
   }
 }
