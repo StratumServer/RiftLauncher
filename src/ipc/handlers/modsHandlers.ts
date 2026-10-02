@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path"
 import { IPC_CHANNELS } from "../ipcChannels"
 import { createModImageStorePort, createScanInstalledModsPorts, MAX_MOD_IMAGE_BYTES, pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
-import { collectModConfigs, MAX_MODPACK_BYTES, MAX_MODPACK_ENTRIES, parseModpackSettings } from "@src/ipc/handlers/modConfigs"
+import { collectModConfigs, MAX_MODPACK_BYTES, MAX_MODPACK_ENTRIES, parseChosenConfigNames, parseModpackSettings } from "@src/ipc/handlers/modConfigs"
 import type { ExportModpackConfigFailure } from "@src/ipc/handlers/modConfigs"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertConfiguredInstallationPath, assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
@@ -252,7 +252,8 @@ ipcMain.handle(
     event,
     manifest: ModpackManifestType,
     installationPath: unknown,
-    includeConfigs: unknown
+    includeConfigs: unknown,
+    configNames: unknown
   ): Promise<{ success: boolean; path?: string; reason?: ExportModpackConfigFailure | "too-large"; name?: string }> => {
     assertTrustedIpcSender(event)
     try {
@@ -260,10 +261,12 @@ ipcMain.handle(
 
       // The configs are read here, in the process that owns the Installation, and never asked of
       // the renderer: the same reasons the Mods list is not renderer-supplied apply, plus the fact
-      // that a renderer naming which files to read is a renderer naming paths.
+      // that a renderer naming which files to read is a renderer naming paths. What the renderer
+      // does name is which of the files the walk found to put in the pack, and those names are
+      // matched against the walk's own keys rather than resolved as paths.
       if (includeConfigs === true) {
         const installation = await assertConfiguredInstallationPath(installationPath)
-        const collected = await collectModConfigs(installation)
+        const collected = await collectModConfigs(installation, parseChosenConfigNames(configNames))
         if (!collected.ok) {
           logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: ${collected.reason}.`)
           return { success: false, reason: collected.reason, name: collected.name }
@@ -272,7 +275,9 @@ ipcMain.handle(
           logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-many.`)
           return { success: false, reason: "too-many" }
         }
-        safeManifest.settings = collected.settings
+        // Left off rather than written empty, so a pack the player unticked every config for is the
+        // same pack as one exported without the checkbox: nothing in it claims a settings block.
+        if (Object.keys(collected.settings).length > 0) safeManifest.settings = collected.settings
       }
 
       // Before the save dialog rather than after the write, so a pack that cannot be written is

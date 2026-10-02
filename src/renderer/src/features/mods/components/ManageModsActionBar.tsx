@@ -7,6 +7,7 @@ import { PiArrowClockwiseDuotone, PiFolderOpenDuotone, PiBoxArrowUpDuotone, PiBo
 
 import { useExportModpack } from "@renderer/features/mods/hooks/useExportModpack"
 import { useModConfigs } from "@renderer/features/mods/hooks/useModConfigs"
+import ExportModConfigsDialog from "@renderer/features/mods/components/ExportModConfigsDialog"
 import { resolveModsFolder } from "@renderer/features/mods/adapters/folder"
 import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
 
@@ -58,18 +59,16 @@ function ManageModsActionBar({
   // the box is never offered for an installation whose configs have not been read yet, and hidden
   // when there is nothing in the folder to offer.
   const [includeConfigs, setIncludeConfigs] = useState(false)
+  // Which files the pack carries, asked in a dialog of its own rather than decided here. The tick
+  // above is the intent; this is the list it turns into, and it stays shut for a pack with no
+  // configs to list.
+  const [pickConfigs, setPickConfigs] = useState(false)
   const { listing: modConfigs } = useModConfigs(installation.path)
   const configCount = modConfigs?.ok ? modConfigs.configs.length : 0
   // One literal branch per reason rather than a lookup keyed by the reason: a computed key is one
-  // the locale parity test cannot see, which is how a missing translation ships.
-  const modConfigRefusal =
-    !modConfigs || modConfigs.ok
-      ? undefined
-      : modConfigs.reason === "playing"
-        ? t("features.mods.importModConfigsPlaying")
-        : modConfigs.reason === "busy"
-          ? t("features.mods.importModConfigsBusy")
-          : t("features.mods.importModConfigsUnreadable")
+  // the locale parity test cannot see, which is how a missing translation ships. Two reasons, not
+  // three: a read no longer takes the operation lease, so `busy` is not something a listing can be.
+  const modConfigRefusal = !modConfigs || modConfigs.ok ? undefined : modConfigs.reason === "playing" ? t("features.mods.importModConfigsPlaying") : t("features.mods.importModConfigsUnreadable")
 
   // A modpack is the set someone else is meant to be able to play, so a Mod the player turned off
   // is not in it. Both exports read this list, and both are greyed out by it: a folder whose Mods
@@ -147,7 +146,14 @@ function ManageModsActionBar({
                           title={t("features.mods.exportModpack")}
                           variant="ghost"
                           className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
-                          onClick={() => exportModpack({ installedMods: enabledMods, installation, includeServers, includeConfigs })}
+                          onClick={() => {
+                            // The picker rather than the export when the box is ticked, because the
+                            // box is a question the player has not finished answering: which of these
+                            // files travels. Exporting straight from here is what put every config in
+                            // a pack with nothing shown but a checkbox.
+                            if (includeConfigs) setPickConfigs(true)
+                            else exportModpack({ installedMods: enabledMods, installation, includeServers })
+                          }}
                           disabled={enabledMods.length === 0}
                         >
                           <div className="w-full flex items-center gap-2">
@@ -236,6 +242,8 @@ function ManageModsActionBar({
           <p>{t("features.mods.openModsFolderButton")}</p>
         </FormButton>
       </StickyMenuGroup>
+
+      <ExportModConfigsDialog open={pickConfigs} installation={installation} installedMods={enabledMods} includeServers={includeServers} close={() => setPickConfigs(false)} />
     </StickyMenuGroupWrapper>
   )
 }

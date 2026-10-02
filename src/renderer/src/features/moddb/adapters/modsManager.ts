@@ -58,9 +58,10 @@ export function applyModConfigs(installationPath: string, files: { name: string;
 export function exportModpackArchive(
   manifest: ModpackManifestType,
   installationPath: string,
-  includeConfigs: boolean
+  includeConfigs: boolean,
+  configNames?: readonly string[]
 ): Promise<{ success: boolean; path?: string; reason?: ExportModpackRefusal; name?: string }> {
-  return window.api.modsManager.exportModpack(manifest, installationPath, includeConfigs)
+  return window.api.modsManager.exportModpack(manifest, installationPath, includeConfigs, configNames)
 }
 
 export function importModpackArchive(): Promise<{ success: boolean; manifest?: ModpackManifestType; settingsRefused?: SettingsRefused; error?: string }> {

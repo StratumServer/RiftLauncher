@@ -349,6 +349,8 @@
       "summaryClose": "Гатова",
       "importModConfigsSkip": "Не запісваць ніводнага",
       "importModConfigsApply": "Запісаць выбраныя канфігурацыі",
+      "exportModConfigsSkip": "Экспартаваць без канфігурацый",
+      "exportModConfigsApply": "Экспартаваць выбраныя канфігурацыі",
       "cantPlayWhileUpdatingMods": "Вы не можаце гуляць у гэтую ўсталёўку, пакуль абнаўляюцца яе моды.",
       "showModDetails": "Паказаць падрабязнасці {{mod}}",
       "closeModDetails": "Закрыць падрабязнасці",

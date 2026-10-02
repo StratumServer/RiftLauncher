@@ -12,12 +12,6 @@ import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
 
 /**
- * How many files get a checkbox. A pack can carry two thousand, and a dialog that renders two
- * thousand rows is a dialog nobody reads: the rest are counted in a line instead, which is also
- * why they are not offered at all. Ticking a config is writing over somebody's work, so a file
- * that is not on screen is not a file a player can agree to.
- */
-/**
  * How many failures are spelled out, which is the only list here that is a report rather than a
  * question. The rows above are never cut: a file the player cannot see is a file the player cannot
  * agree to, and the pack already caps how many can arrive.
@@ -61,7 +55,7 @@ function ImportModConfigsDialog({
   const { addNotification } = useNotificationsContext()
   const openPathInExplorer = useOpenPathInExplorer()
 
-  const { listing } = useModConfigs(installation?.path ?? "")
+  const { listing, refresh } = useModConfigs(installation?.path ?? "")
   const [chosen, setChosen] = useState<readonly string[]>([])
   const [applied, setApplied] = useState<AppliedSummary | null>(null)
 
@@ -69,6 +63,16 @@ function ImportModConfigsDialog({
 
   /** The names this Installation already has, folded the way the file systems that merge case fold them. */
   const existing = useMemo(() => new Set((listing?.ok ? listing.configs : []).map((entry) => entry.name.toLowerCase())), [listing])
+
+  useEffect(() => {
+    // A new pack is a new question, and this dialog stays mounted between packs. Without this the
+    // second import opened on the first one's summary, and the listing read when the page loaded
+    // decided which boxes were ticked for a folder that had changed since: a config the previous
+    // import wrote, or the game rewrote, was called one this Installation has never seen and was
+    // ticked to be written over.
+    setApplied(null)
+    refresh()
+  }, [settings, refresh])
 
   useEffect(() => {
     if (!listing?.ok) {
@@ -160,7 +164,7 @@ function ImportModConfigsDialog({
             past the cap would be written with no row to agree to, and the line counting them reads as
             "not offered" while the answer would be "written anyway". */}
         {listing === undefined ? null : !listing.ok ? (
-          <p>{t("features.mods.importModConfigsUnreadable")}</p>
+          <p>{listing.reason === "playing" ? t("features.mods.importModConfigsPlaying") : t("features.mods.importModConfigsUnreadable")}</p>
         ) : (
           <ul className="w-full max-h-[20rem] overflow-y-auto flex flex-col gap-1 text-left">
             {carried.map((name) => (

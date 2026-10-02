@@ -728,7 +728,7 @@ declare global {
    * - `playing`: the game owns the folder. Vintage Story documents its configs as human-editable
    *   "only while the game is not running", so this is the game's rule, not the launcher's.
    */
-  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[] } | { ok: false; reason: "playing" | "busy" | "mod-config-unreadable" }
+  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
 
   /** Why one file of an apply did not land. Every value names a step that refused it, never a guess. */
   type ApplyFailureReason = "copy-failed" | "not-landed" | "digest-mismatch" | "write-failed"

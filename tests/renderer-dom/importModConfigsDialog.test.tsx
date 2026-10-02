@@ -186,10 +186,20 @@ describe("ImportModConfigsDialog, what it sends", () => {
   it("does not claim the folder is empty when the host could not read it", async () => {
     // A failed listing is an empty list as far as a counter is concerned, and the two sentences
     // together read as a folder that was read and found bare, right under one saying it was not.
-    mount({ "New.json": entry("{}") }, { ok: false, reason: "playing" })
+    mount({ "New.json": entry("{}") }, { ok: false, reason: "mod-config-unreadable" })
 
     await waitFor(() => expect(screen.getByText("This Installation's mod config folder could not be read, so nothing was written.")).toBeTruthy())
     expect(screen.queryByText("This Installation's ModConfig folder is empty, so every file below is new.")).toBeNull()
+  })
+
+  it("says the game is running rather than that the folder could not be read", async () => {
+    // Two reasons, two sentences. One is the game holding the folder and the player can end it; the
+    // other is a folder the launcher cannot make sense of and they cannot. Reporting the second when
+    // the first is true sends them looking for a problem that is not there.
+    mount({ "New.json": entry("{}") }, { ok: false, reason: "playing" })
+
+    await waitFor(() => expect(screen.getByText("This Installation is playing. The mod configs can be written once the game has closed.")).toBeTruthy())
+    expect(screen.queryByText("This Installation's mod config folder could not be read, so nothing was written.")).toBeNull()
   })
 })
 

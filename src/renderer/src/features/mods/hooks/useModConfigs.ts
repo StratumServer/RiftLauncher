@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import { fetchModConfigs } from "@renderer/features/moddb/adapters/modsManager"
 
@@ -11,11 +11,20 @@ import { fetchModConfigs } from "@renderer/features/moddb/adapters/modsManager"
  * whose configs it had not seen. So the answer starts undefined and stays that way until it is one
  * thing or the other.
  *
+ * `refresh` is for a caller that has changed the folder and knows it: the import dialog asks again
+ * per pack, because the listing it shows decides which boxes start ticked and a config that appeared
+ * since the page loaded would be called new.
+ *
  * @param installationPath The Installation to read, which is the only thing the host will accept.
- * @returns The host's answer, or undefined while it is still being asked.
+ * @returns The host's answer, or undefined while it is still being asked, and a way to ask again.
  */
-export function useModConfigs(installationPath: string): { listing: ModConfigsReadResult | undefined } {
+export function useModConfigs(installationPath: string): { listing: ModConfigsReadResult | undefined; refresh: () => void } {
   const [listing, setListing] = useState<ModConfigsReadResult | undefined>(undefined)
+  const [askedAt, setAskedAt] = useState(0)
+
+  const refresh = useCallback(() => {
+    setAskedAt((count) => count + 1)
+  }, [])
 
   useEffect(() => {
     // A component that unmounts mid-answer must not set state, and an Installation change starts a
@@ -34,7 +43,7 @@ export function useModConfigs(installationPath: string): { listing: ModConfigsRe
     return (): void => {
       live = false
     }
-  }, [installationPath])
+  }, [installationPath, askedAt])
 
-  return { listing }
+  return { listing, refresh }
 }

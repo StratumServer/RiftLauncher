@@ -8,12 +8,15 @@ export function useExportModpack(): ({
   installedMods,
   installation,
   includeServers,
-  includeConfigs
+  includeConfigs,
+  configNames
 }: {
   installedMods: InstalledModType[]
   installation: InstallationType
   includeServers?: boolean
   includeConfigs?: boolean
+  /** Which config files the pack carries, or undefined for all of them. Ignored unless `includeConfigs`. */
+  configNames?: readonly string[]
 }) => Promise<void> {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
@@ -22,14 +25,16 @@ export function useExportModpack(): ({
     installedMods,
     installation,
     includeServers = false,
-    includeConfigs = false
+    includeConfigs = false,
+    configNames
   }: {
     installedMods: InstalledModType[]
     installation: InstallationType
     includeServers?: boolean
     includeConfigs?: boolean
+    configNames?: readonly string[]
   }): Promise<void> {
-    const result = await exportModpackArchive(toModpackManifest(installation, installedMods, includeServers), installation.path, includeConfigs)
+    const result = await exportModpackArchive(toModpackManifest(installation, installedMods, includeServers), installation.path, includeConfigs, configNames)
 
     if (result.success) {
       addNotification(t("features.mods.exportModpackSuccess"), "success")

@@ -44,8 +44,13 @@ const api: BridgeAPI = {
     getServerMods: (installationPath: string): Promise<ServerModsScan> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_SERVER_MODS, installationPath),
     setModEnabled: (path: string, enabled: boolean): Promise<SetModEnabledResult> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.SET_MOD_ENABLED, path, enabled),
     cacheModImage: (url: string): Promise<string | undefined> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.CACHE_MOD_IMAGE, url),
-    exportModpack: (manifest: ModpackManifestType, installationPath: string, includeConfigs: boolean): Promise<{ success: boolean; path?: string; reason?: ExportModpackRefusal; name?: string }> =>
-      ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, manifest, installationPath, includeConfigs),
+    exportModpack: (
+      manifest: ModpackManifestType,
+      installationPath: string,
+      includeConfigs: boolean,
+      configNames?: readonly string[]
+    ): Promise<{ success: boolean; path?: string; reason?: ExportModpackRefusal; name?: string }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.EXPORT_MODPACK, manifest, installationPath, includeConfigs, configNames),
     importModpack: (): Promise<{ success: boolean; manifest?: ModpackManifestType; settingsRefused?: SettingsRefused; error?: string }> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.IMPORT_MODPACK),
     clearModIconMemoryCache: (): void => ipcRenderer.send(IPC_CHANNELS.MODS_MANAGER.CLEAR_MOD_ICON_MEMORY_CACHE),
     getModProfiles: (installationPath: string): Promise<ModProfilesReadResult> => ipcRenderer.invoke(IPC_CHANNELS.MODS_MANAGER.GET_MOD_PROFILES, installationPath),

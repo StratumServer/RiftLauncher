@@ -349,6 +349,8 @@
       "summaryClose": "Concluído",
       "importModConfigsSkip": "Não escrever nenhum",
       "importModConfigsApply": "Escrever as configs escolhidas",
+      "exportModConfigsSkip": "Exportar sem configs",
+      "exportModConfigsApply": "Exportar as configs escolhidas",
       "cantPlayWhileUpdatingMods": "Você não pode jogar esta Instalação enquanto os Mods dela estão sendo atualizados.",
       "showModDetails": "Mostrar os detalhes de {{mod}}",
       "closeModDetails": "Fechar os detalhes",

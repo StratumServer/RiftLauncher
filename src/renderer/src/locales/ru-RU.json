@@ -349,6 +349,8 @@
       "summaryClose": "Готово",
       "importModConfigsSkip": "Не записывать ни одного",
       "importModConfigsApply": "Записать выбранные конфиги",
+      "exportModConfigsSkip": "Экспортировать без конфигов",
+      "exportModConfigsApply": "Экспортировать выбранные конфиги",
       "cantPlayWhileUpdatingMods": "Вы не можете играть в эту установку, пока обновляются её моды.",
       "showModDetails": "Показать подробности о {{mod}}",
       "closeModDetails": "Закрыть подробности",

@@ -575,7 +575,16 @@
       "serverModsCountTruncated": "et plus",
       "serverModsRemoveTruncated": "Ce dossier contient plus de mods que la liste n'en montre. Le supprimer efface tout ce qu'il contient.",
       "exportModpackConfigBadName": "{{name}} ne peut pas voyager dans un modpack : Windows n'accepte pas ce nom de fichier. Renommez-le dans le dossier ModConfig puis exportez à nouveau.",
-      "exportModpackConfigCollides": "{{name}} ne diffère d'un autre fichier de configuration que par la casse, et sous Windows les deux sont un seul fichier. Renommez l'un des deux puis exportez à nouveau."
+      "exportModpackConfigCollides": "{{name}} ne diffère d'un autre fichier de configuration que par la casse, et sous Windows les deux sont un seul fichier. Renommez l'un des deux puis exportez à nouveau.",
+      "exportModConfigsTitle": "Configs de mods à exporter",
+      "exportModConfigsDesc_one": "Ce modpack emportera {{count}} fichier de config de mod de cette installation. Décochez ceux qu'il ne doit pas emporter.",
+      "exportModConfigsDesc_other": "Ce modpack emportera {{count}} fichiers de config de mods de cette installation. Décochez ceux qu'il ne doit pas emporter.",
+      "exportModConfigsDesc_many": "Ce modpack emportera {{count}} fichiers de config de mods de cette installation. Décochez ceux qu'il ne doit pas emporter.",
+      "exportModConfigsWarning": "Un fichier de config peut contenir des adresses de serveur, des clés d'API et des jetons, et toute personne à qui vous remettez ce pack peut lire chaque fichier que vous laissez coché.",
+      "exportModConfigsPlaying": "Cette installation est en cours de partie. Ses configs de mods pourront être listées une fois le jeu fermé.",
+      "exportModConfigsUnreadable": "Le dossier de configs de mods de cette installation n'a pas pu être lu, le modpack ne peut donc pas emporter ses configs.",
+      "exportModConfigsSkip": "Exporter sans configs",
+      "exportModConfigsApply": "Exporter les configs cochées"
     },
     "config": {
       "defaultInstallationsFolder": "Installations",
