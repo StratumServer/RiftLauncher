@@ -1,10 +1,22 @@
 import assert from "node:assert/strict"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 
-import { describeUserDataSetup, LEGACY_USER_DATA_FOLDER, MIGRATION_TEMP_FOLDER, RIFT_USER_DATA_FOLDER, setUpUserDataFolder } from "@src/main/userDataMigration"
+import {
+  describeUserDataSetup,
+  getPortableUserDataPaths,
+  isWindowsPathEqualOrWithin,
+  LEGACY_USER_DATA_FOLDER,
+  MIGRATION_TEMP_FOLDER,
+  PORTABLE_MIGRATION_TEMP_SUFFIX,
+  PORTABLE_MARKER_FILE,
+  PORTABLE_USER_DATA_FOLDER,
+  RIFT_USER_DATA_FOLDER,
+  setUpPortableUserDataFolder,
+  setUpUserDataFolder
+} from "@src/main/userDataMigration"
 
 /**
  * The user-data folder setup, against a real appData directory in a temp folder.
@@ -137,6 +149,232 @@ describe("setUpUserDataFolder", () => {
     assert.equal(setup.outcome, "use-existing")
     assert.equal(setup.cleanedStaleMigration, true)
     assert.equal(existsSync(temporaryPath()), false)
+  })
+
+  it("places the Windows marker and profile outside the install folder", () => {
+    assert.deepEqual(getPortableUserDataPaths("win32", "D:\\Games\\RiftLauncher\\RiftLauncher.exe", undefined), {
+      markerPath: `D:\\Games\\${PORTABLE_MARKER_FILE}`,
+      dataPath: `D:\\Games\\${PORTABLE_USER_DATA_FOLDER}`,
+      installPath: "D:\\Games\\RiftLauncher"
+    })
+  })
+
+  it("places the Linux marker and profile beside the AppImage", () => {
+    assert.deepEqual(getPortableUserDataPaths("linux", "", "/mnt/games/riftlauncher.AppImage"), {
+      markerPath: `/mnt/games/${PORTABLE_MARKER_FILE}`,
+      dataPath: `/mnt/games/${PORTABLE_USER_DATA_FOLDER}`
+    })
+    assert.equal(getPortableUserDataPaths("linux", "", "riftlauncher.AppImage"), null)
+  })
+
+  it("copies the full RiftLauncher profile into portable data and leaves the source intact", () => {
+    mkdirSync(join(riftPath(), "Cache", "Chromium"), { recursive: true })
+    const originalConfig = JSON.stringify({
+      defaultInstallationsFolder: join(appDataPath, "RiftLauncherInstallations"),
+      defaultVersionsFolder: join(appDataPath, "RiftLauncherGameVersions"),
+      backupsFolder: join(appDataPath, "player-chosen-backups")
+    })
+    const originalBackup = JSON.stringify({
+      defaultInstallationsFolder: join(appDataPath, "RiftLauncherInstallations"),
+      defaultVersionsFolder: join(appDataPath, "RiftLauncherGameVersions"),
+      backupsFolder: join(appDataPath, "RiftLauncherBackups")
+    })
+    writeFileSync(join(riftPath(), "config.json"), originalConfig, "utf8")
+    writeFileSync(join(riftPath(), "config.pre-migration.bak.json"), originalBackup, "utf8")
+    writeFileSync(join(riftPath(), "Cache", "Chromium", "cache.bin"), "cache", "utf8")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    const setup = setUpPortableUserDataFolder(appDataPath, dataPath)
+
+    assert.equal(setup.path, dataPath)
+    assert.equal(setup.outcome, "portable-profile-migrated")
+    assert.deepEqual(JSON.parse(readFileSync(join(dataPath, "config.json"), "utf8")), {
+      defaultInstallationsFolder: join(dataPath, "RiftLauncherInstallations"),
+      defaultVersionsFolder: join(dataPath, "RiftLauncherGameVersions"),
+      backupsFolder: join(appDataPath, "player-chosen-backups")
+    })
+    assert.deepEqual(JSON.parse(readFileSync(join(dataPath, "config.pre-migration.bak.json"), "utf8")), {
+      defaultInstallationsFolder: join(dataPath, "RiftLauncherInstallations"),
+      defaultVersionsFolder: join(dataPath, "RiftLauncherGameVersions"),
+      backupsFolder: join(dataPath, "RiftLauncherBackups")
+    })
+    assert.equal(readFileSync(join(dataPath, "Cache", "Chromium", "cache.bin"), "utf8"), "cache")
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), originalConfig)
+    assert.equal(readFileSync(join(riftPath(), "config.pre-migration.bak.json"), "utf8"), originalBackup)
+    assert.equal(existsSync(`${dataPath}${PORTABLE_MIGRATION_TEMP_SUFFIX}`), false)
+  })
+
+  it.skipIf(process.platform === "win32")("copies a linked source profile without writing through its symlink", () => {
+    const sourcePath = join(appDataPath, "linked-profile-source")
+    mkdirSync(sourcePath, { recursive: true })
+    const originalConfig = JSON.stringify({ defaultInstallationsFolder: join(appDataPath, "RiftLauncherInstallations") })
+    writeFileSync(join(sourcePath, "config.json"), originalConfig, "utf8")
+    symlinkSync(sourcePath, riftPath(), "dir")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    setUpPortableUserDataFolder(appDataPath, dataPath)
+
+    assert.equal(lstatSync(riftPath()).isSymbolicLink(), true)
+    assert.equal(lstatSync(dataPath).isSymbolicLink(), false)
+    assert.equal(readFileSync(join(sourcePath, "config.json"), "utf8"), originalConfig)
+    assert.deepEqual(JSON.parse(readFileSync(join(dataPath, "config.json"), "utf8")), {
+      defaultInstallationsFolder: join(dataPath, "RiftLauncherInstallations")
+    })
+  })
+
+  it.skipIf(process.platform === "win32")("copies linked config files without changing their targets", () => {
+    const externalConfigPath = join(appDataPath, "shared-config")
+    const originalConfig = JSON.stringify({ defaultInstallationsFolder: join(appDataPath, "RiftLauncherInstallations") })
+    const originalBackup = Buffer.from([0x7b, 0xff, 0x7d])
+    writeFileSync(externalConfigPath, originalConfig, "utf8")
+    writeFileSync(join(appDataPath, "shared-backup"), originalBackup)
+    mkdirSync(riftPath(), { recursive: true })
+    symlinkSync("../shared-config", join(riftPath(), "config.json"), "file")
+    symlinkSync("../shared-backup", join(riftPath(), "config.pre-migration.bak.json"), "file")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    setUpPortableUserDataFolder(appDataPath, dataPath)
+
+    assert.equal(readFileSync(externalConfigPath, "utf8"), originalConfig)
+    assert.deepEqual(readFileSync(join(appDataPath, "shared-backup")), originalBackup)
+    assert.equal(lstatSync(join(dataPath, "config.json")).isSymbolicLink(), false)
+    assert.equal(lstatSync(join(dataPath, "config.pre-migration.bak.json")).isSymbolicLink(), false)
+    assert.deepEqual(JSON.parse(readFileSync(join(dataPath, "config.json"), "utf8")), { defaultInstallationsFolder: join(dataPath, "RiftLauncherInstallations") })
+    assert.deepEqual(readFileSync(join(dataPath, "config.pre-migration.bak.json")), originalBackup)
+  })
+
+  it.skipIf(process.platform === "win32")("rejects a linked secret file without writing to its target", () => {
+    const externalSecretPath = join(appDataPath, "shared-account-secrets.json")
+    const originalSecret = "sealed:keep-source-safe"
+    writeFileSync(externalSecretPath, originalSecret, "utf8")
+    mkdirSync(riftPath(), { recursive: true })
+    symlinkSync("../shared-account-secrets.json", join(riftPath(), "account-secrets.json"), "file")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /symbolic link that cannot be copied safely/i)
+    assert.equal(readFileSync(externalSecretPath, "utf8"), originalSecret)
+    assert.equal(existsSync(dataPath), false)
+    assert.equal(existsSync(`${dataPath}${PORTABLE_MIGRATION_TEMP_SUFFIX}`), false)
+  })
+
+  it.skipIf(process.platform === "win32")("copies legacy config links as files and leaves the VS Launcher source intact", () => {
+    const externalConfigPath = join(appDataPath, "shared-config.json")
+    const originalConfig = JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "abc" })
+    writeFileSync(externalConfigPath, originalConfig, "utf8")
+    mkdirSync(legacyPath(), { recursive: true })
+    symlinkSync("../shared-config.json", join(legacyPath(), "config.json"), "file")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    setUpPortableUserDataFolder(appDataPath, dataPath)
+
+    assert.equal(readFileSync(externalConfigPath, "utf8"), originalConfig)
+    assert.equal(lstatSync(join(dataPath, "config.json")).isSymbolicLink(), false)
+    assert.equal(readFileSync(join(dataPath, "config.json"), "utf8"), originalConfig)
+  })
+
+  it("rejects symlinks inside the legacy Icons folder", () => {
+    const externalIconsPath = join(appDataPath, "shared-icons")
+    mkdirSync(join(legacyPath(), "Icons"), { recursive: true })
+    mkdirSync(externalIconsPath, { recursive: true })
+    writeFileSync(join(externalIconsPath, "custom.png"), "keep-source-safe", "utf8")
+    symlinkSync(externalIconsPath, join(legacyPath(), "Icons", "shared"), process.platform === "win32" ? "junction" : "dir")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /legacy profile contains a symbolic link/i)
+    assert.equal(readFileSync(join(externalIconsPath, "custom.png"), "utf8"), "keep-source-safe")
+    assert.equal(existsSync(dataPath), false)
+    assert.equal(existsSync(`${dataPath}${PORTABLE_MIGRATION_TEMP_SUFFIX}`), false)
+  })
+
+  it.skipIf(process.platform === "win32")("discards stale Chromium lock links during portable migration", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    symlinkSync("stale-host-1234", join(riftPath(), "SingletonLock"), "file")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    setUpPortableUserDataFolder(appDataPath, dataPath)
+
+    assert.equal(existsSync(join(dataPath, "SingletonLock")), false)
+    assert.equal(lstatSync(join(riftPath(), "SingletonLock")).isSymbolicLink(), true)
+  })
+
+  it.skipIf(process.platform !== "win32")("rejects a linked secret folder without writing to its target", () => {
+    const externalSecretsPath = join(appDataPath, "shared-secrets")
+    const originalSecret = "sealed:keep-source-safe"
+    mkdirSync(externalSecretsPath, { recursive: true })
+    writeFileSync(join(externalSecretsPath, "account-secrets.json"), originalSecret, "utf8")
+    mkdirSync(riftPath(), { recursive: true })
+    symlinkSync(externalSecretsPath, join(riftPath(), "Secrets"), "junction")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /symbolic link that cannot be copied safely/i)
+    assert.equal(readFileSync(join(externalSecretsPath, "account-secrets.json"), "utf8"), originalSecret)
+    assert.equal(existsSync(dataPath), false)
+    assert.equal(existsSync(`${dataPath}${PORTABLE_MIGRATION_TEMP_SUFFIX}`), false)
+  })
+
+  it("keeps a non-empty portable profile and does not overwrite it from appData", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    writeFileSync(join(riftPath(), "config.json"), '{"source":true}', "utf8")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    mkdirSync(dataPath, { recursive: true })
+    writeFileSync(join(dataPath, "config.json"), '{"portable":true}', "utf8")
+
+    const setup = setUpPortableUserDataFolder(appDataPath, dataPath)
+
+    assert.equal(setup.outcome, "use-existing")
+    assert.equal(readFileSync(join(dataPath, "config.json"), "utf8"), '{"portable":true}')
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), '{"source":true}')
+  })
+
+  it("uses only the existing VS Launcher migration allowlist when no RiftLauncher profile exists", () => {
+    seedLegacyFolder()
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    const setup = setUpPortableUserDataFolder(appDataPath, dataPath)
+
+    assert.equal(setup.outcome, "migrate")
+    assert.deepEqual(setup.copied, ["config.json", "Icons"])
+    assert.deepEqual(readdirSync(dataPath).sort(), ["Icons", "config.json"])
+    assert.equal(existsSync(join(legacyPath(), "account-secrets.json")), true)
+  })
+
+  it("does not replace a portable data path that is a file", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    writeFileSync(join(riftPath(), "config.json"), "keep me", "utf8")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    mkdirSync(join(appDataPath, "drive"), { recursive: true })
+    writeFileSync(dataPath, "not a folder", "utf8")
+
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /not a folder/i)
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), "keep me")
+    assert.equal(readFileSync(dataPath, "utf8"), "not a folder")
+  })
+
+  it("rejects a Windows portable data path that equals the install folder", () => {
+    assert.equal(isWindowsPathEqualOrWithin("D:\\Games\\RiftLauncherData", "d:\\games\\riftlauncherdata"), true)
+    assert.equal(isWindowsPathEqualOrWithin("D:\\Games\\RiftLauncher", "D:\\Games\\RiftLauncherData"), false)
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, "D:\\Games\\RiftLauncherData", "d:\\games\\riftlauncherdata"), /overlaps the NSIS install folder/i)
+  })
+
+  it("rejects a Windows migration staging path that equals the install folder", () => {
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, "D:\\Games\\RiftLauncherData", "d:\\games\\riftlauncherdata.migrating"), /migration folder overlaps the NSIS install folder/i)
+  })
+
+  it("rejects a Windows migration folder that contains the install folder", () => {
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, "D:\\Games\\RiftLauncherData", "D:\\Games\\RiftLauncherData.migrating\\Launcher"), /overlaps the NSIS install folder/i)
+  })
+
+  it.skipIf(process.platform !== "win32")("rejects a migration junction that points inside the NSIS install folder", () => {
+    const installPath = join(appDataPath, "Games", "Install")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    const temporaryPath = `${dataPath}${PORTABLE_MIGRATION_TEMP_SUFFIX}`
+    mkdirSync(installPath, { recursive: true })
+    writeFileSync(join(installPath, "RiftLauncher.exe"), "keep", "utf8")
+    mkdirSync(join(appDataPath, "drive"), { recursive: true })
+    symlinkSync(installPath, temporaryPath, "junction")
+
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath, installPath), /overlaps the NSIS install folder/i)
+    assert.equal(readFileSync(join(installPath, "RiftLauncher.exe"), "utf8"), "keep")
   })
 
   it.skipIf(process.platform !== "linux" || process.getuid?.() === 0)("starts on an empty folder when the copy cannot be read, rather than failing to start", () => {

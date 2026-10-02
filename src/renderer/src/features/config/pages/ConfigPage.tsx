@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { FiLoader } from "react-icons/fi"
+import { FiFolder, FiLoader } from "react-icons/fi"
 import { PiMagnifyingGlassDuotone } from "react-icons/pi"
 import clsx from "clsx"
 
@@ -50,6 +50,11 @@ function ConfigPage(): JSX.Element {
   const pickBackupsFolder = useConfigFolderPicker(CONFIG_ACTIONS.SET_DEFAULT_BACKUPS_FOLDER)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [userDataPath, setUserDataPath] = useState("")
+
+  useEffect(() => {
+    void window.api.pathsManager.getCurrentUserDataPath().then(setUserDataPath, () => undefined)
+  }, [])
 
   return (
     <ScrollableContainer ref={scrollRef}>
@@ -162,6 +167,21 @@ function ConfigPage(): JSX.Element {
           </FormGroupWrapper>
 
           <FormGroupWrapper title={t("generic.folders")}>
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={`RiftLauncher ${t("features.installations.dataFolder")}`} />
+              </FormHead>
+
+              <FormBody>
+                <FormFieldGroup alignment="x">
+                  <FormInputText value={userDataPath} readOnly className="w-full" />
+                  <FormButton onClick={() => void window.api.pathsManager.openPathOnFileExplorer(userDataPath)} disabled={!userDataPath} title={t("generic.openOnFileExplorer")} className="px-2 py-1">
+                    <FiFolder />
+                  </FormButton>
+                </FormFieldGroup>
+              </FormBody>
+            </FromGroup>
+
             <FromGroup>
               <FormHead>
                 <FormLabel content={t("features.config.defaultInstallationsFolder")} />

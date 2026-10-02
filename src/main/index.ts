@@ -1,12 +1,55 @@
-import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain } from "electron"
+import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain, dialog } from "electron"
 import { dirname, join } from "node:path"
+import { tmpdir } from "node:os"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import Logger from "electron-log"
 import { pathToFileURL } from "node:url"
-import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMigration"
+import { describeUserDataSetup, getPortableUserDataPaths, setUpPortableUserDataFolder, setUpUserDataFolder } from "@src/main/userDataMigration"
+import type { UserDataSetup } from "@src/main/userDataMigration"
+import fse from "fs-extra"
+import { setDefaultFolderPathRoot } from "@src/config/configManager"
 
-const userDataSetup = setUpUserDataFolder(app.getPath("appData"))
-app.setPath("userData", userDataSetup.path)
+const appDataPath = app.getPath("appData")
+const portablePaths = getPortablePathsForCurrentInstall()
+const portableMode = portablePaths !== null && isEmptyMarkerFile(portablePaths.markerPath)
+
+// Use one temporary singleton path for normal and portable launches.
+app.setPath("userData", join(tmpdir(), "RiftLauncherSingleton-" + (process.getuid?.() ?? "user")))
+
+// Portable profiles can copy a large Chromium cache. Lock before discovering or touching any profile.
+if (!app.requestSingleInstanceLock()) process.exit(0)
+
+function getPortablePathsForCurrentInstall(): ReturnType<typeof getPortableUserDataPaths> {
+  if (!app.isPackaged) return null
+  if (process.platform === "win32") return getPortableUserDataPaths("win32", app.getPath("exe"), undefined)
+  if (process.platform === "linux") return getPortableUserDataPaths("linux", "", process.env["APPIMAGE"])
+  return null
+}
+
+function isEmptyMarkerFile(path: string): boolean {
+  try {
+    const marker = fse.statSync(path)
+    return marker.isFile() && marker.size === 0
+  } catch {
+    return false
+  }
+}
+
+const userDataSetup = ((): UserDataSetup => {
+  try {
+    const setup = portableMode && portablePaths ? setUpPortableUserDataFolder(appDataPath, portablePaths.dataPath, portablePaths.installPath) : setUpUserDataFolder(appDataPath)
+    app.setPath("userData", setup.path)
+    app.setPath("sessionData", setup.path)
+    setDefaultFolderPathRoot(portableMode ? setup.path : appDataPath)
+    return setup
+  } catch (error) {
+    dialog.showErrorBox(
+      "RiftLauncher could not start",
+      `The profile folder could not be prepared. Make sure the data folder is outside the install folder and the drive is available and writable.\n\n${String(error)}`
+    )
+    process.exit(1)
+  }
+})()
 
 import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
@@ -28,8 +71,6 @@ import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
 import { getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
-import fse from "fs-extra"
-
 import "@src/ipc"
 import { clearTimeout, setTimeout } from "node:timers"
 
@@ -256,10 +297,6 @@ function createWindow(): void {
     mainWindow.loadURL("app://renderer/index.html")
   }
 }
-
-const gotTheLock = app.requestSingleInstanceLock()
-
-if (!gotTheLock) app.quit()
 
 /**
  * Reads electron-builder's `package-type` marker next to the packaged app, when the deb,

@@ -41,6 +41,20 @@ Once the downloads are complete just install them.
 
 And that's it... easy right? Now with this launcher it'll be even easier to install Vintage Story.
 
+## Portable data folder
+
+NSIS installs can keep RiftLauncher's profile on the same drive as the launcher. Install RiftLauncher in a folder whose parent is writable by your Windows account, close it, then create an empty `RiftLauncher.portable` file in that parent folder. For example, if the install folder is `D:\Games\RiftLauncher`, create `D:\Games\RiftLauncher.portable`:
+
+```powershell
+New-Item -ItemType File -Path "D:\Games\RiftLauncher.portable"
+```
+
+On the next launch, RiftLauncher creates `D:\Games\RiftLauncherData` and stores its profile there. The first portable launch copies the existing `%APPDATA%\RiftLauncher` profile and leaves the original in place. If there is no RiftLauncher profile, it uses the existing VS Launcher migration for `config.json` and installation icons. New Installations, VS Versions and Backups default under the portable data folder. Existing custom folder paths and game files are not moved.
+
+Keep both the marker and `RiftLauncherData` beside the install folder. NSIS updates and uninstallers remove the install folder itself, so data inside that folder would be deleted.
+
+The install folder itself must not be named `RiftLauncherData` or `RiftLauncherData.migrating`; RiftLauncher refuses portable mode if either the profile or its temporary migration folder would overlap the NSIS install folder.
+
 ---
 
 ## SmartScreen and antivirus warnings

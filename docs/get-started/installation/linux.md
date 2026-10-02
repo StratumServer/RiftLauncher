@@ -80,6 +80,18 @@ RiftLauncher does not need any dependecy to work but Vintage Story does so follo
 {% endstep %}
 {% endstepper %}
 
+## Portable data folder
+
+AppImage installs can keep RiftLauncher's profile beside the AppImage. Close RiftLauncher, open a terminal in the folder containing the AppImage, and create an empty marker file:
+
+```sh
+touch RiftLauncher.portable
+```
+
+On the next launch, RiftLauncher creates a `RiftLauncherData` folder beside the AppImage. The first portable launch copies the existing `~/.config/RiftLauncher` profile and leaves the original in place. New Installations, VS Versions and Backups default under the portable data folder. Existing custom folder paths and game files are not moved.
+
+This marker is supported for AppImages. `.deb`, `.rpm` and `.pacman` installs continue to keep their profile in the usual Linux data folder.
+
 ---
 
 ## Vintage Story Dependencies
@@ -319,9 +331,9 @@ Be clear about the trade. With that setting on, your session is written to disk 
 
 ## Where RiftLauncher keeps its data
 
-Every Linux build stores its config, the list of your game versions and the list of your Installations in `/home/username/.config/RiftLauncher/`. Switching between the AppImage and a packaged build changes nothing about that, so you keep everything either way.
+By default, Linux builds store their config, game-version list and installations in `/home/username/.config/RiftLauncher/`. An AppImage with the `RiftLauncher.portable` marker instead keeps its profile beside the AppImage in `RiftLauncherData`. Debian, RPM and pacman packages continue to use the default location.
 
-If you're coming from VS Launcher, its own folder is `/home/username/.config/VSLauncher/` and RiftLauncher never writes to it. The first time RiftLauncher starts it copies VS Launcher's `config.json` and its installation icons across into its own folder, so both launchers keep working and neither can overwrite the other's settings.
+If you're coming from VS Launcher, its folder is `/home/username/.config/VSLauncher/` and RiftLauncher never writes to it. On first launch, RiftLauncher copies its existing profile to the portable folder, or copies VS Launcher's `config.json` and installation icons when there is no RiftLauncher profile. The original folders stay in place.
 
 ---
 

@@ -383,7 +383,13 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.ENSURE_PATH_EXISTS, async (event, path
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER, async (event, pathValue: string): Promise<void> => {
   assertTrustedIpcSender(event)
   // allowSymlinks: handing a linked folder to the file explorer is a read (#237).
-  shell.showItemInFolder(await assertManagedPath(pathValue, "path", { allowSymlinks: true }))
+  const requestedPath = assertPath(pathValue)
+  const userDataRoot = app.getPath("userData")
+  if (comparablePath(requestedPath) === comparablePath(userDataRoot)) {
+    await shell.openPath(userDataRoot)
+    return
+  }
+  shell.showItemInFolder(await assertManagedPath(requestedPath, "path", { allowSymlinks: true }))
 })
 
 ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DOWNLOAD_ON_PATH, async (event, id: string, url: string, outputPath: string, fileName: string): Promise<string> => {
