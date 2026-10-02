@@ -350,5 +350,3 @@ ipcMain.handle(IPC_CHANNELS.WORLDS_MANAGER.TRANSFER, async (event, sourceId: unk
   assertTrustedIpcSender(event)
   return transferWorld(sourceId, worldName, targetId, mode)
 })
-
-logMessage("debug", "[back] [worlds] World management handlers registered.")
