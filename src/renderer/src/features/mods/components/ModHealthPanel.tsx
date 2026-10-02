@@ -37,6 +37,40 @@ const SECTIONS: readonly { section: ModHealthSection; titleKey: string; classNam
 const RAW = { interpolation: { escapeValue: false } }
 
 /**
+ * The line that counts the Mods the ModDB never answered for, with the Mods themselves under it for
+ * whoever opens it (#573). A bare count left the player hunting for the rows that had lost their
+ * ModDB link.
+ *
+ * The sentence is the `<summary>` of a native `<details>`, so opening it, keyboard included, is the
+ * browser's own. The names mount only once it is open: offline every Mod is in this list, and a name
+ * nobody asked to see would sit in the page a second time beside its row. Open, the list scrolls on
+ * its own, so it cannot push the Mod list a whole folder further down.
+ *
+ * @param mods The enabled Mods with no ModDB answer, in the order the folder was scanned.
+ * @param labelOf Each Mod named the way its row is named: a file name is added to a name two copies share, never a path.
+ */
+function NotCheckedMods({ mods, labelOf }: Readonly<{ mods: readonly InstalledModType[]; labelOf: (iMod: InstalledModType) => string }>): JSX.Element {
+  const { t } = useTranslation()
+
+  // Mirrors the element's own state, which the browser flips on a click or a key press. Held here
+  // rather than on the panel so a list that leaves and comes back starts closed, like its element.
+  const [opened, setOpened] = useState(false)
+
+  return (
+    <details className="text-zinc-400 text-sm" onToggle={(event) => setOpened(event.currentTarget.open)}>
+      <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2">{t("features.mods.healthNotChecked", { count: mods.length })}</summary>
+      {opened && (
+        <ul className="max-h-48 overflow-y-auto break-words px-2 pt-1">
+          {mods.map((iMod) => (
+            <li key={iMod.path}>{labelOf(iMod)}</li>
+          ))}
+        </ul>
+      )}
+    </details>
+  )
+}
+
+/**
  * Everything wrong with one Installation's Mods, above the list itself.
  *
  * There is no button to run it. The scan behind this page already fetches every Mod's ModDB detail,
@@ -111,13 +145,14 @@ function ModHealthPanel({
   }
 
   // A Mod the ModDB never answered for gets neither of the two verdicts that need it, so the
-  // count has to be said out loud. Offline and not listed are indistinguishable from here, and
-  // the sentence is true of both. Only the copies that are actually checked are counted.
-  const notCheckedCount = installedMods.filter((iMod) => iMod.enabled && !iMod._mod).length
+  // count has to be said out loud, with the Mods behind it named on request. Offline and not
+  // listed are indistinguishable from here, and the sentence is true of both. Only the copies
+  // that are actually checked are counted, and they stay in the order the folder was scanned.
+  const notChecked = installedMods.filter((iMod) => iMod.enabled && !iMod._mod)
   const problems = findings.filter((finding) => finding.section !== "update").length
   const updates = findings.length - problems
 
-  if (findings.length < 1 && notCheckedCount < 1 && unreadableCount < 1) return null
+  if (findings.length < 1 && notChecked.length < 1 && unreadableCount < 1) return null
 
   const open = openedByHand ?? findings.some((finding) => finding.section === "blocking")
 
@@ -243,7 +278,7 @@ function ModHealthPanel({
             )
           })}
 
-          {notCheckedCount > 0 && <p className="text-zinc-400 text-sm">{t("features.mods.healthNotChecked", { count: notCheckedCount })}</p>}
+          {notChecked.length > 0 && <NotCheckedMods mods={notChecked} labelOf={labelOf} />}
           {unreadableCount > 0 && <p className="text-zinc-400 text-sm">{t("features.mods.healthUnreadable", { count: unreadableCount })}</p>}
         </div>
       </ListGroup>
