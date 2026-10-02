@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { describe, it } from "vitest"
 
-import { collectPluralFamilies, findBarePluralKeys, findDuplicateJsonKeys, flattenTranslationObject, listLocaleFiles, LOCALES_DIR, requiredPluralCategories } from "./helpers"
+import { collectPluralFamilies, findBarePluralKeys, findDuplicateJsonKeys, flattenTranslationObject, listLocaleFiles, LOCALES_DIR, PLURAL_SUFFIXES, requiredPluralCategories } from "./helpers"
 
 /**
  * The plural shape Hosted Weblate enforces on save (issue #506's follow-up):
@@ -55,6 +55,40 @@ describe("every locale carries exactly its language's integer plural categories"
     })
 
     assert.deepEqual(offenses, [], `bare plural keys found (key exists alongside a _one/_two/_few/_many/_other sibling): ${offenses.join(", ")}`)
+  })
+
+  it("writes the forms of every plural family side by side, in the order Hosted Weblate emits them", () => {
+    // Hosted Weblate writes a family's forms together, in the order of PLURAL_SUFFIXES, so a file that
+    // spells them any other way gets that line moved by the first Weblate commit that touches it. Read off
+    // the parsed file, object by object (JSON.parse keeps key order): the flattened map forgets what sat
+    // next to what.
+    function misordered(value: unknown, prefix = ""): string[] {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) return []
+
+      const obj = value as Record<string, unknown>
+      const keys = Object.keys(obj)
+      const families = new Set<string>()
+      for (const key of keys) {
+        const suffix = PLURAL_SUFFIXES.find((candidate) => key.endsWith(candidate))
+        if (suffix) families.add(key.slice(0, -suffix.length))
+      }
+
+      const here = [...families].flatMap((family) => {
+        const forms = PLURAL_SUFFIXES.map((suffix) => family + suffix).filter((key) => key in obj)
+        const positions = forms.map((key) => keys.indexOf(key))
+        const found = keys.slice(Math.min(...positions), Math.max(...positions) + 1)
+        if (JSON.stringify(found) === JSON.stringify(forms)) return []
+
+        const spell = (key: string): string => (forms.includes(key) ? key.slice(family.length) : key)
+        return [`${prefix ? `${prefix}.` : ""}${family} reads ${found.map(spell).join(", ")} where Hosted Weblate writes ${forms.map(spell).join(", ")}`]
+      })
+
+      return [...here, ...Object.entries(obj).flatMap(([key, child]) => misordered(child, prefix ? `${prefix}.${key}` : key))]
+    }
+
+    const failures = localeFiles.flatMap((file) => misordered(JSON.parse(readFileSync(join(LOCALES_DIR, file), "utf8"))).map((failure) => `${file}: ${failure}`))
+
+    assert.deepEqual(failures, [], `plural families Hosted Weblate would reorder on its first save: ${failures.join(" | ")}`)
   })
 
   it("has no duplicate key in any locale file", () => {

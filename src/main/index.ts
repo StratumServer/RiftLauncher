@@ -343,8 +343,6 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(filePath).toString())
   })
 
-  await ensureConfig()
-
   // Set app user model id for windows
   electronApp.setAppUserModelId("net.stratumserver.riftlauncher")
   Menu.setApplicationMenu(null)
@@ -355,6 +353,13 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+
+  // After the window, not before it: `ensureConfig` is one `pathExists` and writes only when there
+  // is no config yet, and the window's own `ready-to-show` handler is the first reader anyway.
+  // `getConfig` awaits `ensureConfig` itself, so the early call bought no ordering the later one
+  // does not already have. What it cost was the first run, where the default config was written
+  // before the window could be created.
+  await ensureConfig()
 
   // Fire and forget, after the window exists so it stays off the first paint path
   // and before the renderer's first scan 2.5 seconds later. This is the only

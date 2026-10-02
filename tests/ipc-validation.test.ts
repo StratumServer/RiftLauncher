@@ -34,6 +34,13 @@ describe("IPC boundary validators", () => {
     // The install guide the missing-.NET notification opens: the page it links must be openable or the button is a no-op.
     assert.equal(assertAllowedBrowserUrl("https://riftlauncher.stratumvs.dev/docs/get-started/installation/windows").hostname, "riftlauncher.stratumvs.dev")
     assert.throws(() => assertAllowedBrowserUrl("https://riftlauncher.stratumvs.dev/"), /URL is not allowed/)
+    // The Config page's "Help translate" link: the project's engage page and no other part of Weblate,
+    // and no look-alike host or credentials trick standing in for it.
+    assert.equal(assertAllowedBrowserUrl("https://hosted.weblate.org/engage/riftlauncher/").hostname, "hosted.weblate.org")
+    assert.throws(() => assertAllowedBrowserUrl("https://hosted.weblate.org/"), /URL is not allowed/)
+    assert.throws(() => assertAllowedBrowserUrl("https://hosted.weblate.org/engage/riftlauncher-evil/"), /URL is not allowed/)
+    assert.throws(() => assertAllowedBrowserUrl("https://hosted.weblate.org.evil.example/engage/riftlauncher/"), /URL is not allowed/)
+    assert.throws(() => assertAllowedBrowserUrl("https://hosted.weblate.org@evil.example/engage/riftlauncher/"), /Invalid URL/)
 
     assert.throws(() => assertAllowedApiUrl("http://mods.vintagestory.at/api/tags"), /Invalid URL/)
     assert.throws(() => assertAllowedApiUrl("https://example.com/api/tags"), /URL is not allowed/)

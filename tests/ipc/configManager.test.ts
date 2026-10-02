@@ -831,6 +831,35 @@ describe("ensureConfig", () => {
 
     assert.equal(await configManager.ensureConfig(), false)
   })
+
+  it("shares one pass over the disk when a second caller arrives before the first finishes", async () => {
+    const { ensureConfig } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    const configPath = join(userDataFolder, "config.json")
+    const pathExists = vi.spyOn(fse, "pathExists")
+
+    // Both calls are in flight before either has looked at the disk. That is the first-run overlap
+    // between the window's `ready-to-show` handler and the renderer's first GET_CONFIG, and without
+    // the shared promise each one finds no file and writes its own default.
+    const [first, second] = await Promise.all([ensureConfig(), ensureConfig()])
+
+    assert.equal(first, true)
+    assert.equal(second, true)
+    assert.equal(pathExists.mock.calls.filter(([target]) => target === configPath).length, 1, "the second caller joins the first pass instead of starting its own")
+  })
+
+  it("does not cache a failed pass, so a later caller runs the check again", async () => {
+    const { ensureConfig } = await freshConfigManager()
+    const fse = (await import("fs-extra")).default
+    const pathExists = vi.spyOn(fse, "pathExists").mockRejectedValueOnce(new Error("boom"))
+
+    assert.equal(await ensureConfig(), false)
+    // A stat failure is not a verdict about the file, so the promise is cleared in a `finally` and
+    // the next caller looks again rather than inheriting the rejection. The write stays suppressed
+    // for the rest of the session either way, which is the pre-existing behaviour.
+    await ensureConfig()
+    assert.equal(pathExists.mock.calls.length, 2)
+  })
 })
 
 describe("saveConfig and flushConfigWrites", () => {
