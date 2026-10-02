@@ -229,8 +229,8 @@ async function restoreWorld(installationId: unknown, backupIdValue: unknown): Pr
         await fse.ensureDir(savesPath)
         tempRoot = await fse.mkdtemp(join(savesPath, ".rift-world-restore-"))
         await assertManagedPath(backup.path, "world backup")
-        // Same reasoning as the two worker chunks below: the archive reader pulls in the zip
-        // reader, and nothing on the boot path ever reads an archive.
+        // Same reasoning as the two worker chunks above: nothing on the boot path reads an archive,
+        // so the reader that opens one loads with the call that needs it.
         const { validateWorldBackupArchive } = await import("@src/ipc/archiveValidation")
         await validateWorldBackupArchive(backup.path, backup.worldName)
         const { extractTarGz } = await import("@src/ipc/workers/extraction")

@@ -355,10 +355,11 @@ app.whenReady().then(async () => {
 
   createWindow()
 
-  // After the window, not before it: this is 14 ms of a stat plus a parse, and the window's own
-  // `ready-to-show` handler is the first reader anyway. `getConfig` awaits `ensureConfig` itself
-  // and shares one pass over the disk between concurrent callers, so the early call bought no
-  // ordering the later one does not already have.
+  // After the window, not before it: `ensureConfig` is one `pathExists` and writes only when there
+  // is no config yet, and the window's own `ready-to-show` handler is the first reader anyway.
+  // `getConfig` awaits `ensureConfig` itself, so the early call bought no ordering the later one
+  // does not already have. What it cost was the first run, where the default config was written
+  // before the window could be created.
   await ensureConfig()
 
   // Fire and forget, after the window exists so it stays off the first paint path

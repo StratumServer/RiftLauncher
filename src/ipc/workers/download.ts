@@ -18,10 +18,9 @@ import { request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 import fse from "fs-extra"
 import { join } from "node:path"
-import { DOWNLOAD_TEMP_FILE_NAMESPACE } from "@src/ipc/downloadTempFile"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
-import { assertAllowedDownloadUrl, assertAllowedRedirectUrl, assertSafeFileName, optimumTestOrigin } from "../validation"
+import { assertAllowedDownloadUrl, assertAllowedRedirectUrl, assertSafeFileName, DOWNLOAD_TEMP_FILE_NAMESPACE, optimumTestOrigin } from "../validation"
 
 const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 30_000
