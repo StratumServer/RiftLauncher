@@ -55,6 +55,11 @@ let scheduledConfigWrite: Promise<void> | null = null
  * GET_CONFIG landing together) share this instead of each running their own copy-and-recover pass,
  * which would otherwise preserve the same unreadable file twice and leave two competing notices. */
 let configLoadPromise: Promise<ConfigType> | null = null
+/** The in-flight first pass over the disk. `configLoadPromise` above covers reading; this covers the
+ * `ensureConfig` step in front of it, which is the one that writes. Without it, the window's
+ * `ready-to-show` handler and the renderer's first `GET_CONFIG` can both find no `config.json` and
+ * both write the default one on a first run. */
+let ensureConfigPromise: Promise<boolean> | null = null
 
 /**
  * Set once the original `config.json` must never be overwritten for the rest of this session: a
@@ -358,6 +363,14 @@ async function recoverUnreadableConfig(): Promise<{ config: ConfigType; restored
 
 export async function ensureConfig(): Promise<boolean> {
   if (configReady) return true
+  ensureConfigPromise ??= ensureConfigOnDisk().finally(() => {
+    ensureConfigPromise = null
+  })
+  return await ensureConfigPromise
+}
+
+/** The body of the first `ensureConfig` call. Concurrent callers share one run of this. */
+async function ensureConfigOnDisk(): Promise<boolean> {
   configPath = join(app.getPath("userData"), "config.json")
   try {
     if (!(await fse.pathExists(configPath))) {

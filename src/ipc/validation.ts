@@ -76,6 +76,15 @@ export const MAX_MODDB_LISTING_RESPONSE_BYTES = 256 * 1024
 // ceiling, while still refusing anything that could not plausibly be ten releases of notes.
 export const MAX_RELEASE_NOTES_RESPONSE_BYTES = 256 * 1024
 
+/**
+ * Namespace used by temporary download siblings and the orphan sweep in the main process.
+ *
+ * It lives here rather than beside the worker that writes the files: the sweep runs at startup and
+ * needs only this string, so putting it in the worker would pull that worker's HTTP and hashing
+ * code into the boot path. This module is on the boot path already.
+ */
+export const DOWNLOAD_TEMP_FILE_NAMESPACE = "riftlauncher"
+
 export type UrlRule = Readonly<{
   hostname: string
   pathPrefixes: readonly string[]

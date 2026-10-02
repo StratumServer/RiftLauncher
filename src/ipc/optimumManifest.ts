@@ -25,7 +25,6 @@ import { join } from "node:path"
 import { parseOptimumManifest, type OptimumManifest } from "@domain/optimum/manifest"
 import { hostRid, optimumManifestDownloadUrl, optimumManifestFileName, overlayCacheFolder, overlayDownloadUrl } from "@domain/optimum/plan"
 import { optimumTestOrigin } from "@src/ipc/validation"
-import { runDownload } from "@src/ipc/workers/download"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
 const LOG_PREFIX = "[back] [ipc] [ipc/optimumManifest.ts]"
@@ -88,6 +87,9 @@ async function fetchOptimumManifest(): Promise<OptimumManifest> {
   const origin = optimumTestOrigin()
   if (origin !== undefined) logMessage("warn", `${LOG_PREFIX} [GET_MANIFEST] Reading Optimum from a local source origin instead of its releases. This is a test setting.`)
 
+  // Off the boot path for the same reason as the other worker chunks: this one is reached
+  // only when someone asks for Optimum, never while the main window is coming up.
+  const { runDownload } = await import("@src/ipc/workers/download")
   const manifestPath = await runDownload({
     url: manifestSourceUrl(rid),
     outputPath: directory,
