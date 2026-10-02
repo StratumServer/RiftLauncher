@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -9,10 +10,11 @@ import type { IpcMainInvokeEvent } from "electron"
 import "./helpers/electronMock"
 import { createTrustedEvent, getIpcHandler, setElectronPath, setElectronUserDataPath } from "./helpers/electronMock"
 
+import type { OptimumManifest } from "@domain/optimum/manifest"
 import { hostRid } from "@domain/optimum/plan"
 
 /**
- * What each of the four moved worker/archive chunks does when it cannot be loaded.
+ * What each of the five moved worker/archive chunks does when it cannot be loaded.
  *
  * `src/ipc/handlers/worldsHandlers.ts`, `src/ipc/optimumInstall.ts` and `src/ipc/optimumManifest.ts`
  * load their worker chunks with `await import(...)` now instead of at module scope, so a chunk that
@@ -267,5 +269,58 @@ describe("optimum manifest with an unloadable download chunk", () => {
     // serving the rejection forever.
     const second = await getOptimumManifest()
     assert.deepEqual(second, { ok: false, reason: "unreachable" })
+  })
+})
+
+describe("optimum overlay staging with an unloadable extraction chunk", () => {
+  it("refuses overlay-unverified, clears the staging folder, and logs the cause instead of only blaming the download", async () => {
+    // A real file at the published size and hash, so the archive gate passes and the run reaches the
+    // import. The overlay folder holds a file no manifest names, which is what makes the pre-check
+    // say "not staged yet" rather than short-circuiting into success.
+    const archivePath = join(temporaryRoot, "Optimum-v0.3.14-linux-x64-overlay.tar.gz")
+    writeFileSync(archivePath, "overlay bytes", "utf8")
+    const archive = readFileSync(archivePath)
+    const overlayDirectory = join(temporaryRoot, "overlay")
+    mkdirSync(overlayDirectory, { recursive: true })
+    writeFileSync(join(overlayDirectory, "leftover.txt"), "x", "utf8")
+
+    const manifest: OptimumManifest = {
+      manifestVersion: 1,
+      optimumVersion: "0.3.14",
+      supportedGameVersions: ["1.22.7"],
+      rid: RID ?? "linux-x64",
+      archive: { filename: "Optimum-v0.3.14-linux-x64-overlay.tar.gz", size: archive.length, sha256: createHash("sha256").update(archive).digest("hex") },
+      targets: [],
+      files: []
+    }
+
+    const realLogManager = await import("@src/utils/logManager")
+    const logMessage = vi.fn()
+    vi.doMock("@src/utils/logManager", () => ({ ...realLogManager, logMessage }))
+    installChunkMocks(["extraction"])
+    vi.resetModules()
+    const { applyOptimumOverlay } = await import("@src/ipc/optimumInstall")
+
+    const result = await applyOptimumOverlay({
+      manifest,
+      archivePath,
+      overlayDirectory,
+      gameDirectory: join(temporaryRoot, "game"),
+      gameVersion: "1.22.7",
+      platform: "linux"
+    })
+
+    assert.deepEqual(result, { ok: false, reason: "overlay-unverified" })
+    assert.equal(existsSync(overlayDirectory), false)
+    // The refusal the player sees is the same one a bad archive produces, so the log is the only
+    // place the real cause survives. Without the catch binding the error this is one call, not two,
+    // and the second line would be `getErrorMessage`'s non-Error fallback.
+    const logged = logMessage.mock.calls.map((call) => String(call[1]))
+    assert.match(logged.join("\n"), /Could not extract the downloaded overlay archive/)
+    assert.equal(logged.length, 2)
+    assert.notEqual(logged[1], "Operation failed")
+    assert.notEqual(logged[1], "")
+
+    vi.doUnmock("@src/utils/logManager")
   })
 })
