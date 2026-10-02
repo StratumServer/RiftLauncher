@@ -29,6 +29,16 @@ const PROJECT_ROOT = resolve(__dirname, "../..")
 const ENTRY = resolve(PROJECT_ROOT, "src/main/index.ts")
 const EXTENSIONS = [".ts", ".tsx", "/index.ts", "/index.tsx", ".json", ".css"]
 
+/**
+ * `path.relative` returns backslashes on Windows, and every key below is compared against a
+ * forward-slash literal, so a path that is not normalised here compares against nothing and the
+ * assertions pass without checking anything. `sep` is not used because it is `/` on the host that
+ * runs the suite, which would make the conversion untestable there.
+ */
+function toPosix(filePath: string): string {
+  return filePath.replaceAll("\\", "/")
+}
+
 interface Edge {
   specifier: string
   line: number
@@ -76,14 +86,14 @@ function resolveSpecifier(fromFile: string, specifier: string): string | null {
   // an extensionless asset would be written.
   const candidates = [...EXTENSIONS.map((extension) => `${base}${extension}`), base]
   for (const candidate of candidates) {
-    if (existsSync(candidate) && statSync(candidate).isFile()) return relative(PROJECT_ROOT, candidate)
+    if (existsSync(candidate) && statSync(candidate).isFile()) return toPosix(relative(PROJECT_ROOT, candidate))
   }
-  throw new Error(`${relative(PROJECT_ROOT, fromFile)} imports "${specifier}", which resolves to no file. Teach this walk the new alias or extension.`)
+  throw new Error(`${toPosix(relative(PROJECT_ROOT, fromFile))} imports "${specifier}", which resolves to no file. Teach this walk the new alias or extension.`)
 }
 
 /** Every module the boot path reaches, each mapped to the import chain that reached it. */
 function bootPath(): Map<string, string[]> {
-  const entry = relative(PROJECT_ROOT, ENTRY)
+  const entry = toPosix(relative(PROJECT_ROOT, ENTRY))
   const chains = new Map<string, string[]>([[entry, []]])
   const queue: { file: string; chain: string[] }[] = [{ file: entry, chain: [] }]
   while (queue.length > 0) {
@@ -114,6 +124,17 @@ describe("boot path static imports", () => {
       assert.notEqual(BOOT_PATH.get(module), undefined, `${module} is no longer reachable from src/main/index.ts`)
     }
     assert.ok(BOOT_PATH.size > 50, `Expected the boot path to reach more than 50 modules, reached ${BOOT_PATH.size}`)
+    // A key with a backslash means a `relative` result escaped `toPosix`, and every lookup below
+    // then misses, so the four assertions would pass on a Windows checkout without checking
+    // anything. This is what caught that on the first CI run for this file.
+    for (const module of BOOT_PATH.keys()) {
+      assert.ok(!module.includes("\\"), `boot path key "${module}" is not a forward-slash path`)
+    }
+  })
+
+  it("normalises separators so the walk reads the same on Windows", () => {
+    assert.equal(toPosix("src\\main\\index.ts"), "src/main/index.ts")
+    assert.equal(toPosix("src/main/index.ts"), "src/main/index.ts")
   })
 
   for (const module of MUST_STAY_OFF_THE_BOOT_PATH) {
