@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import {
   describeUserDataSetup,
@@ -167,8 +167,9 @@ describe("setUpUserDataFolder", () => {
     assert.equal(getPortableUserDataPaths("linux", "", "riftlauncher.AppImage"), null)
   })
 
-  it("copies the full RiftLauncher profile into portable data and leaves the source intact", () => {
+  it("copies the RiftLauncher profile into portable data without the caches, and leaves the source intact", () => {
     mkdirSync(join(riftPath(), "Cache", "Chromium"), { recursive: true })
+    mkdirSync(join(riftPath(), "Installations", "survival"), { recursive: true })
     const originalConfig = JSON.stringify({
       defaultInstallationsFolder: join(appDataPath, "RiftLauncherInstallations"),
       defaultVersionsFolder: join(appDataPath, "RiftLauncherGameVersions"),
@@ -182,6 +183,7 @@ describe("setUpUserDataFolder", () => {
     writeFileSync(join(riftPath(), "config.json"), originalConfig, "utf8")
     writeFileSync(join(riftPath(), "config.pre-migration.bak.json"), originalBackup, "utf8")
     writeFileSync(join(riftPath(), "Cache", "Chromium", "cache.bin"), "cache", "utf8")
+    writeFileSync(join(riftPath(), "Installations", "survival", "rift.json"), "{}", "utf8")
     const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
 
     const setup = setUpPortableUserDataFolder(appDataPath, dataPath)
@@ -198,7 +200,11 @@ describe("setUpUserDataFolder", () => {
       defaultVersionsFolder: join(dataPath, "RiftLauncherGameVersions"),
       backupsFolder: join(dataPath, "RiftLauncherBackups")
     })
-    assert.equal(readFileSync(join(dataPath, "Cache", "Chromium", "cache.bin"), "utf8"), "cache")
+    // Chromium rebuilds the caches on the next run, and copying them is the difference between a
+    // portable profile that moves in seconds and one that takes minutes.
+    assert.equal(existsSync(join(dataPath, "Cache")), false)
+    assert.equal(readFileSync(join(dataPath, "Installations", "survival", "rift.json"), "utf8"), "{}")
+    assert.equal(readFileSync(join(riftPath(), "Cache", "Chromium", "cache.bin"), "utf8"), "cache")
     assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), originalConfig)
     assert.equal(readFileSync(join(riftPath(), "config.pre-migration.bak.json"), "utf8"), originalBackup)
     assert.equal(existsSync(`${dataPath}${PORTABLE_MIGRATION_TEMP_SUFFIX}`), false)
@@ -348,6 +354,44 @@ describe("setUpUserDataFolder", () => {
     assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /not a folder/i)
     assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), "keep me")
     assert.equal(readFileSync(dataPath, "utf8"), "not a folder")
+  })
+
+  it.skipIf(process.platform === "win32")("rejects a portable data folder that belongs to another user, so a shared profile is nobody's", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    writeFileSync(join(riftPath(), "config.json"), '{"source":true}', "utf8")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    mkdirSync(dataPath, { recursive: true })
+    writeFileSync(join(dataPath, "config.json"), '{"portable":true}', "utf8")
+    const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
+
+    try {
+      assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /belongs to another user/i)
+      assert.equal(readFileSync(join(dataPath, "config.json"), "utf8"), '{"portable":true}')
+    } finally {
+      getuid.mockRestore()
+    }
+  })
+
+  it("rewrites a config.json that starts with a byte order mark instead of leaving the old folders", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    writeFileSync(
+      join(riftPath(), "config.json"),
+      `\uFEFF${JSON.stringify({
+        defaultInstallationsFolder: join(appDataPath, "RiftLauncherInstallations"),
+        defaultVersionsFolder: join(appDataPath, "RiftLauncherGameVersions"),
+        backupsFolder: join(appDataPath, "RiftLauncherBackups")
+      })}`,
+      "utf8"
+    )
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    setUpPortableUserDataFolder(appDataPath, dataPath)
+
+    assert.deepEqual(JSON.parse(readFileSync(join(dataPath, "config.json"), "utf8")), {
+      defaultInstallationsFolder: join(dataPath, "RiftLauncherInstallations"),
+      defaultVersionsFolder: join(dataPath, "RiftLauncherGameVersions"),
+      backupsFolder: join(dataPath, "RiftLauncherBackups")
+    })
   })
 
   it("rejects a Windows portable data path that equals the install folder", () => {

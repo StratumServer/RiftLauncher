@@ -520,6 +520,7 @@
       "suggestionsEmpty": "Op dit moment geen suggesties."
     },
     "config": {
+      "userDataFolder": "Profielmap",
       "defaultInstallationsFolder": "Map voor installaties",
       "defaultVersionsFolder": "Map voor VS-versies",
       "backupsFolder": "Map voor back-ups",

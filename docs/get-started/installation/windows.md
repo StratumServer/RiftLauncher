@@ -49,9 +49,11 @@ NSIS installs can keep RiftLauncher's profile on the same drive as the launcher.
 New-Item -ItemType File -Path "D:\Games\RiftLauncher.portable"
 ```
 
-On the next launch, RiftLauncher creates `D:\Games\RiftLauncherData` and stores its profile there. The first portable launch copies the existing `%APPDATA%\RiftLauncher` profile and leaves the original in place. If there is no RiftLauncher profile, it uses the existing VS Launcher migration for `config.json` and installation icons. New Installations, VS Versions and Backups default under the portable data folder. Existing custom folder paths and game files are not moved.
+On the next launch, RiftLauncher creates `D:\Games\RiftLauncherData` and stores its profile there. The first portable launch copies the existing `%APPDATA%\RiftLauncher` profile, leaving Chromium's caches behind, and leaves the original in place. If there is no RiftLauncher profile, it uses the existing VS Launcher migration for `config.json` and installation icons. New Installations, VS Versions and Backups default under the portable data folder. Existing custom folder paths and game files are not moved, and `config.json` keeps absolute paths, so the portable folder cannot be moved afterwards without editing them. A profile carried to another machine or another Windows account keeps its settings but not its saved sessions, because those live in the keyring of the machine and the account they were saved on.
 
 Keep both the marker and `RiftLauncherData` beside the install folder. NSIS updates and uninstallers remove the install folder itself, so data inside that folder would be deleted.
+
+The marker is read rather than followed: it has to be an empty file, not a link to one somewhere else. On Linux the marker and the data folder must also belong to the account running the launcher, since a shared profile is nobody's. Windows has no equivalent check, and does not need one here: the marker sits next to your own install and the profile under your own roaming folder.
 
 The install folder itself must not be named `RiftLauncherData` or `RiftLauncherData.migrating`; RiftLauncher refuses portable mode if either the profile or its temporary migration folder would overlap the NSIS install folder.
 

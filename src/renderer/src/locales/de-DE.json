@@ -520,6 +520,7 @@
       "suggestionsEmpty": "Derzeit keine Vorschläge."
     },
     "config": {
+      "userDataFolder": "Profilordner",
       "defaultInstallationsFolder": "Ordner für Installationen",
       "defaultVersionsFolder": "Ordner für VS-Versionen",
       "backupsFolder": "Backups-Ordner",

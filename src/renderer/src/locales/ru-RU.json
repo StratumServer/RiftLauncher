@@ -542,6 +542,7 @@
       "suggestionsEmpty": "Сейчас нет предложений."
     },
     "config": {
+      "userDataFolder": "Папка профиля",
       "defaultInstallationsFolder": "Папка установок",
       "defaultVersionsFolder": "Папка версий VS",
       "backupsFolder": "Папка резервных копий",

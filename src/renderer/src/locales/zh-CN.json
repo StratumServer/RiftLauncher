@@ -498,6 +498,7 @@
       "suggestionsEmpty": "暂无建议。"
     },
     "config": {
+      "userDataFolder": "个人资料文件夹",
       "defaultInstallationsFolder": "安装文件夹",
       "defaultVersionsFolder": "游戏版本文件夹",
       "backupsFolder": "备份文件夹",

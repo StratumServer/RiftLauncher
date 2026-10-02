@@ -520,6 +520,7 @@
       "suggestionsEmpty": "Jelenleg nincs javaslat."
     },
     "config": {
+      "userDataFolder": "Profilmappa",
       "defaultInstallationsFolder": "Telepítések könyvtára",
       "defaultVersionsFolder": "Verziók könyvtára",
       "backupsFolder": "Biztonsági mentések könyvtára",

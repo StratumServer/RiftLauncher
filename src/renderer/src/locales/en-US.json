@@ -520,6 +520,7 @@
       "serverModsRemoveTruncated": "This folder holds more Mods than the list shows. Removing it clears everything inside it."
     },
     "config": {
+      "userDataFolder": "Profile folder",
       "defaultInstallationsFolder": "Installations folder",
       "defaultVersionsFolder": "VS Versions folder",
       "backupsFolder": "Backups folder",

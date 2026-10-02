@@ -1,55 +1,16 @@
+// Imported first on purpose: this module chooses the profile folder while it is being evaluated,
+// before any other import of the entry runs, and therefore before any log call can fix electron-log
+// to a folder nobody picked (#581). Nothing in its own graph may log at module scope.
+import { bootFailure, portableNote, userDataSetup } from "@src/main/bootUserData"
+
 import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain, dialog } from "electron"
 import { dirname, join } from "node:path"
-import { tmpdir } from "node:os"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import Logger from "electron-log"
 import { pathToFileURL } from "node:url"
-import { describeUserDataSetup, getPortableUserDataPaths, setUpPortableUserDataFolder, setUpUserDataFolder } from "@src/main/userDataMigration"
-import type { UserDataSetup } from "@src/main/userDataMigration"
+import { describeUserDataSetup } from "@src/main/userDataMigration"
 import fse from "fs-extra"
-import { setDefaultFolderPathRoot } from "@src/config/configManager"
-
-const appDataPath = app.getPath("appData")
-const portablePaths = getPortablePathsForCurrentInstall()
-const portableMode = portablePaths !== null && isEmptyMarkerFile(portablePaths.markerPath)
-
-// Use one temporary singleton path for normal and portable launches.
-app.setPath("userData", join(tmpdir(), "RiftLauncherSingleton-" + (process.getuid?.() ?? "user")))
-
-// Portable profiles can copy a large Chromium cache. Lock before discovering or touching any profile.
-if (!app.requestSingleInstanceLock()) process.exit(0)
-
-function getPortablePathsForCurrentInstall(): ReturnType<typeof getPortableUserDataPaths> {
-  if (!app.isPackaged) return null
-  if (process.platform === "win32") return getPortableUserDataPaths("win32", app.getPath("exe"), undefined)
-  if (process.platform === "linux") return getPortableUserDataPaths("linux", "", process.env["APPIMAGE"])
-  return null
-}
-
-function isEmptyMarkerFile(path: string): boolean {
-  try {
-    const marker = fse.statSync(path)
-    return marker.isFile() && marker.size === 0
-  } catch {
-    return false
-  }
-}
-
-const userDataSetup = ((): UserDataSetup => {
-  try {
-    const setup = portableMode && portablePaths ? setUpPortableUserDataFolder(appDataPath, portablePaths.dataPath, portablePaths.installPath) : setUpUserDataFolder(appDataPath)
-    app.setPath("userData", setup.path)
-    app.setPath("sessionData", setup.path)
-    setDefaultFolderPathRoot(portableMode ? setup.path : appDataPath)
-    return setup
-  } catch (error) {
-    dialog.showErrorBox(
-      "RiftLauncher could not start",
-      `The profile folder could not be prepared. Make sure the data folder is outside the install folder and the drive is available and writable.\n\n${String(error)}`
-    )
-    process.exit(1)
-  }
-})()
+import { readLinuxPackageType } from "@src/main/linuxPackageType"
 
 import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
@@ -96,7 +57,7 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
   return join(logsPath, `${message.level}.log`)
 }
 
-logMessage("info", `${LOG_PREFIX} [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
+logMessage("info", `${LOG_PREFIX} [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}${portableNote}`)
 
 /**
  * The one setting that has to be answered before Electron starts.
@@ -299,22 +260,23 @@ function createWindow(): void {
 }
 
 /**
- * Reads electron-builder's `package-type` marker next to the packaged app, when the deb,
- * rpm or pacman targets wrote one. Its absence just means an AppImage, a flatpak, or a dev
- * run, all of which canAutoUpdate treats the same as "no marker".
+ * electron-builder's Linux package type, read through the module the boot-time portable decision
+ * also uses. An AppImage, a flatpak or a dev run has no marker, which is what portable mode needs.
  */
-function readLinuxPackageType(): string | undefined {
-  try {
-    const markerPath = join(process.resourcesPath, "package-type")
-    if (!fse.existsSync(markerPath)) return undefined
-    return fse.readFileSync(markerPath, "utf-8").trim()
-  } catch {
-    return undefined
-  }
-}
 
 // This method will be called when Electron has finished initialization and is ready to create browser windows. Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
+  // No profile means no launcher, and a dialog before whenReady is invisible on Linux: it only
+  // reaches stderr. So the failure is reported here, where the dialog is real, and the process
+  // goes before any window, session or updater work is attempted.
+  if (bootFailure) {
+    dialog.showErrorBox(
+      "RiftLauncher could not start",
+      `The profile folder could not be prepared. Make sure the data folder is outside the install folder and the drive is available and writable.\n\n${bootFailure.detail}`
+    )
+    process.exit(1)
+  }
+
   logMessage("info", `${LOG_PREFIX} [whenReady] Electron ready.`)
 
   session.defaultSession.setPermissionCheckHandler(() => false)

@@ -542,6 +542,7 @@
       "serverModsRemoveTruncated": "Ce dossier contient plus de mods que la liste n'en montre. Le supprimer efface tout ce qu'il contient."
     },
     "config": {
+      "userDataFolder": "Dossier de profil",
       "defaultInstallationsFolder": "Installations",
       "defaultVersionsFolder": "Versions de VS",
       "backupsFolder": "Sauvegardes",

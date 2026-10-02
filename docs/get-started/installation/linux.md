@@ -333,7 +333,9 @@ Be clear about the trade. With that setting on, your session is written to disk 
 
 By default, Linux builds store their config, game-version list and installations in `/home/username/.config/RiftLauncher/`. An AppImage with the `RiftLauncher.portable` marker instead keeps its profile beside the AppImage in `RiftLauncherData`. Debian, RPM and pacman packages continue to use the default location.
 
-If you're coming from VS Launcher, its folder is `/home/username/.config/VSLauncher/` and RiftLauncher never writes to it. On first launch, RiftLauncher copies its existing profile to the portable folder, or copies VS Launcher's `config.json` and installation icons when there is no RiftLauncher profile. The original folders stay in place.
+If you're coming from VS Launcher, its folder is `/home/username/.config/VSLauncher/` and RiftLauncher never writes to it. A portable profile that has not been set up yet gets one on its first launch: RiftLauncher copies the existing RiftLauncher profile to the portable folder, or copies VS Launcher's `config.json` and installation icons when there is no RiftLauncher profile. A launcher using the default folder leaves both folders where they are and migrates nothing. The originals are never modified.
+
+The copy leaves Chromium's caches behind, since the next run rebuilds them, so a large profile moves in seconds rather than minutes. It does not move game files or custom folder paths: `config.json` stores absolute paths, so the portable folder cannot be moved afterwards without editing them. A portable folder carried to another machine or another user account keeps its settings and installations but not its saved sessions, because those live in the system keyring of the machine and the account it was saved on.
 
 ---
 

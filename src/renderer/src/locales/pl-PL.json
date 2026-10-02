@@ -542,6 +542,7 @@
       "suggestionsEmpty": "Brak sugestii w tej chwili."
     },
     "config": {
+      "userDataFolder": "Folder profilu",
       "defaultInstallationsFolder": "Folder instancji",
       "defaultVersionsFolder": "Folder wersji VS",
       "backupsFolder": "Folder kopii zapasowych",

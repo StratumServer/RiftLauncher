@@ -169,7 +169,7 @@ function ConfigPage(): JSX.Element {
           <FormGroupWrapper title={t("generic.folders")}>
             <FromGroup>
               <FormHead>
-                <FormLabel content={`RiftLauncher ${t("features.installations.dataFolder")}`} />
+                <FormLabel content={t("features.config.userDataFolder")} />
               </FormHead>
 
               <FormBody>

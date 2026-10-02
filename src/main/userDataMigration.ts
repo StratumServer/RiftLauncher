@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs"
-import { basename, join, posix, relative, win32 } from "node:path"
+import { basename, dirname, join, posix, relative, win32 } from "node:path"
 import fse from "fs-extra"
 
 import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, MIGRATED_USER_DATA_ENTRIES, planUserDataMigration } from "@domain/userData/migrationPlan"
@@ -49,6 +49,37 @@ export function isWindowsPathEqualOrWithin(directory: string, candidate: string)
   const relativePath = win32.relative(win32.resolve(directory), win32.resolve(candidate))
   return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${win32.sep}`) && !win32.isAbsolute(relativePath))
 }
+
+/**
+ * Whether a folder or marker belongs to the account running the launcher.
+ *
+ * Windows has no cheap equivalent (`fs.Stats.uid` is 0 everywhere there and the profile is under
+ * the player's own roaming folder anyway), so this is a no-op there and the Windows docs say so.
+ * On POSIX a marker or profile folder another account can write is not this player's: adopting it
+ * would hand one user a profile, and its logs, to another.
+ */
+export function isOwnedByThisUser(stats: fse.Stats): boolean {
+  const uid = process.getuid?.()
+  return uid === undefined || stats.uid === uid
+}
+
+/** Chromium rebuilds these from scratch, so a copy that includes them is only slower. */
+const REGENERABLE_PROFILE_ENTRIES = [
+  "Blob Storage",
+  "Cache",
+  "Code Cache",
+  "Component CRX Cache",
+  "Crashpad",
+  "DawnCache",
+  "DawnGraphiteCache",
+  "DawnWebGPUCache",
+  "GPUCache",
+  "GrShaderCache",
+  "ShaderCache",
+  "blob_storage",
+  "component_crx_cache",
+  "crashpad"
+]
 
 function portablePathsOverlapInstall(installPath: string, candidatePaths: readonly string[]): boolean {
   const overlaps = (firstPath: string, secondPath: string): boolean => isWindowsPathEqualOrWithin(firstPath, secondPath) || isWindowsPathEqualOrWithin(secondPath, firstPath)
@@ -167,7 +198,9 @@ function migratePortableDefaultFolders(profilePath: string, sourceProfilePath: s
     let output: Buffer | string = contents
     let changed = false
     try {
-      const parsed: unknown = JSON.parse(contents.toString("utf8"))
+      // A config.json written by an editor on Windows can start with a BOM, and JSON.parse rejects
+      // it, which would silently leave the old default folders in place after the profile moved.
+      const parsed: unknown = JSON.parse(contents.toString("utf8").replace(/^\uFEFF/, ""))
       if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
         const config = parsed as Record<string, unknown>
         for (const [key, folderName] of folderDefaults) {
@@ -203,8 +236,20 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
 
   if (cleanedStaleMigration) fse.removeSync(temporaryPath)
 
-  if (fse.existsSync(dataPath)) {
-    if (!fse.statSync(dataPath).isDirectory()) throw new Error(`Portable data path is not a folder: ${dataPath}`)
+  // lstat, not stat: a link pointing at a folder elsewhere is not a portable profile, and a
+  // profile folder owned by another account is not this player's either.
+  const existingData = ((): fse.Stats | null => {
+    try {
+      return fse.lstatSync(dataPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+      throw error
+    }
+  })()
+
+  if (existingData) {
+    if (!existingData.isDirectory()) throw new Error(`Portable data path is not a folder: ${dataPath}`)
+    if (!isOwnedByThisUser(existingData)) throw new Error(`Portable data folder belongs to another user: ${dataPath}`)
     if (fse.readdirSync(dataPath).length > 0) {
       return { path: dataPath, outcome: "use-existing", copied: [], cleanedStaleMigration }
     }
@@ -224,10 +269,12 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
       const sourceProfilePath = realpathSync.native(currentProfilePath)
       fse.copySync(sourceProfilePath, temporaryPath, {
         filter: (source) => {
-          if (!fse.lstatSync(source).isSymbolicLink()) return true
           const profileEntry = relative(sourceProfilePath, source)
+          const entryName = basename(source)
+          if (dirname(profileEntry) === "." && REGENERABLE_PROFILE_ENTRIES.includes(entryName)) return false
+          if (!fse.lstatSync(source).isSymbolicLink()) return true
           if (profileEntry === "config.json" || profileEntry === "config.pre-migration.bak.json") return true
-          if (["SingletonLock", "SingletonCookie", "SingletonSocket"].includes(basename(source))) return false
+          if (["SingletonLock", "SingletonCookie", "SingletonSocket"].includes(entryName)) return false
           throw new Error(`Profile contains a symbolic link that cannot be copied safely: ${profileEntry}`)
         }
       })
