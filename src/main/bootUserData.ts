@@ -1,4 +1,5 @@
 import { app } from "electron"
+import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 
 import { setDefaultFolderPathRoot } from "@src/config/configManager"
@@ -34,8 +35,13 @@ const appDataPath = app.getPath("appData")
 // Electron derives its single-instance lock from userData, so this path is set before the lock is
 // taken and before the profile is chosen. It sits under appData rather than the temp folder so that
 // two launches on one machine still exclude each other while scratch profiles stay usable side by
-// side, which the headless checks rely on (docs/contribute/headless-checks.md).
-app.setPath("userData", join(appDataPath, SINGLE_INSTANCE_LOCK_FOLDER))
+// side, which the headless checks rely on (docs/contribute/headless-checks.md). Electron takes the
+// lock inside this folder, so the folder is created here: a first run on a fresh Linux account has
+// no ~/.config/RiftLauncher yet, and a lock that cannot be taken would exit the process instead of
+// starting the launcher.
+const singleInstanceLockPath = join(appDataPath, SINGLE_INSTANCE_LOCK_FOLDER)
+mkdirSync(singleInstanceLockPath, { recursive: true })
+app.setPath("userData", singleInstanceLockPath)
 if (!app.requestSingleInstanceLock()) process.exit(0)
 
 const portablePaths = portablePathsForCurrentInstall(process.platform, app.getPath("exe"), process.env["APPIMAGE"], process.platform === "linux" ? readLinuxPackageType() : undefined)
@@ -56,7 +62,7 @@ try {
 }
 
 /** The profile the launcher is running on. Only a placeholder while {@link bootFailure} is set. */
-export const userDataSetup: UserDataSetup = selection?.setup ?? { path: join(appDataPath, SINGLE_INSTANCE_LOCK_FOLDER), outcome: "fresh", copied: [], cleanedStaleMigration: false }
+export const userDataSetup: UserDataSetup = selection?.setup ?? { path: singleInstanceLockPath, outcome: "fresh", copied: [], cleanedStaleMigration: false }
 
 export const portableMode = selection?.portableMode === true
 

@@ -161,10 +161,11 @@ describe("the entry decides the profile before anything else runs", () => {
     return ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   }
 
-  function localImportsOf(file: string): string[] {
+  function localModulesOf(file: string): string[] {
     return sourceOf(file)
-      .statements.filter(ts.isImportDeclaration)
-      .map((statement) => (statement.moduleSpecifier as ts.StringLiteral).text)
+      .statements.filter((statement): statement is ts.ImportDeclaration | ts.ExportDeclaration => ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement))
+      .map((statement) => (statement.moduleSpecifier as ts.StringLiteral | undefined)?.text)
+      .filter((specifier): specifier is string => specifier !== undefined)
       .map((specifier) => {
         if (specifier.startsWith("@src/")) return join(srcDir, `${specifier.slice("@src/".length)}.ts`)
         if (specifier.startsWith(".")) return resolve(dirname(file), `${specifier}.ts`)
@@ -173,21 +174,70 @@ describe("the entry decides the profile before anything else runs", () => {
       .filter((file): file is string => file !== null && existsSync(file))
   }
 
-  /** Calls that run while the module is being evaluated, skipping anything inside a function. */
+  const unwrap = (node: ts.Node): ts.Node => (ts.isParenthesizedExpression(node) ? unwrap(node.expression) : node)
+
+  /** A body that runs later than its module is evaluated, unless the module calls it on the spot. */
+  const defersUntilCalled = (node: ts.Node): boolean =>
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node) ||
+    ts.isConstructorDeclaration(node) ||
+    // A static field initializer and a static block run while the class is defined; an instance
+    // field runs when an object is built, which can be long after this module was evaluated.
+    (ts.isPropertyDeclaration(node) && !node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword))
+
+  /**
+   * Calls that run while the module is being evaluated. A local function called at module scope is
+   * followed, because an `init()` helper that logs is the same hazard as logging directly.
+   */
   function moduleScopeLogCalls(file: string): string[] {
+    const source = sourceOf(file)
     const found: string[] = []
-    const visit = (node: ts.Node): void => {
-      if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isMethodDeclaration(node) || ts.isClassDeclaration(node)) return
-      if (ts.isCallExpression(node)) {
-        const callee = node.expression
-        const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name) ? callee.name.text : null
-        if (name === "logMessage" || (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "Logger")) {
-          found.push(`${file}: ${node.getText(sourceOf(file)).split("\n")[0]}`)
-        }
+    const localFunctions = new Map(
+      source.statements
+        .filter((statement): statement is ts.FunctionDeclaration => ts.isFunctionDeclaration(statement) && statement.name !== undefined)
+        .map((statement) => [statement.name?.text as string, statement])
+    )
+    const followed = new Set<string>()
+
+    // `import { logMessage as say }` is the same call under another name.
+    const loggerNames = new Set(["logMessage"])
+    for (const statement of source.statements) {
+      const bindings = ts.isImportDeclaration(statement) ? statement.importClause?.namedBindings : undefined
+      if (!bindings || !ts.isNamedImports(bindings)) continue
+      for (const element of bindings.elements) {
+        if (element.propertyName?.text === "logMessage" || element.name.text === "logMessage") loggerNames.add(element.name.text)
       }
-      ts.forEachChild(node, visit)
     }
-    visit(sourceOf(file))
+
+    const isLoggerCall = (node: ts.CallExpression): boolean => {
+      const callee = node.expression
+      const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name) ? callee.name.text : null
+      return name !== null && (loggerNames.has(name) || (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "Logger"))
+    }
+
+    const visit = (node: ts.Node, deferred: boolean): void => {
+      if (!deferred && ts.isCallExpression(node) && isLoggerCall(node)) {
+        found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`)
+      }
+
+      ts.forEachChild(node, (rawChild) => {
+        // Parentheses are not a scope: `(function () {})()` and `(() => {})()` run on the spot.
+        const child = unwrap(rawChild)
+        const calledHere = ts.isCallExpression(node) && unwrap(node.expression) === child
+        if (!deferred && calledHere && ts.isIdentifier(child) && localFunctions.has(child.text) && !followed.has(child.text)) {
+          followed.add(child.text)
+          const declaration = localFunctions.get(child.text)
+          if (declaration) ts.forEachChild(declaration, (inner) => visit(inner, false))
+        }
+        visit(child, deferred || (!calledHere && defersUntilCalled(child)))
+      })
+    }
+
+    visit(source, false)
     return found
   }
 
@@ -209,7 +259,7 @@ describe("the entry decides the profile before anything else runs", () => {
       if (seen.has(file)) continue
       seen.add(file)
       offenders.push(...moduleScopeLogCalls(file))
-      queue.push(...localImportsOf(file))
+      queue.push(...localModulesOf(file))
     }
 
     assert.ok(seen.size > 3, `expected the boot graph to reach more than 3 local modules, reached ${seen.size}`)
