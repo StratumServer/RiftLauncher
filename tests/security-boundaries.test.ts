@@ -940,7 +940,7 @@ describe("main process protocol boundary wiring", () => {
   // index.ts bootstraps Electron on import, so keep this contract scoped to each inline handler.
   it("routes app and custom icon requests through containment before file checks", () => {
     const appSource = mainHandlerSource('protocol.handle("app", async (request) => {', "\n  // Handler for mod icons")
-    const iconsSource = mainHandlerSource('protocol.handle("icons", async (req) => {', "\n  await ensureConfig()")
+    const iconsSource = mainHandlerSource('protocol.handle("icons", async (req) => {', "\n  // Set app user model id for windows")
     const handlers: ReadonlyArray<readonly [string, string]> = [
       ["app", appSource],
       ["icons", iconsSource]

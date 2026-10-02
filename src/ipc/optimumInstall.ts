@@ -14,7 +14,6 @@ import type { OptimumManifest } from "@domain/optimum/manifest"
 import { cliFileName, OPTIMUM_STATE_FOLDER, OPTIMUM_VANILLA_FOLDER, supportsGameVersion } from "@domain/optimum/plan"
 import { OPTIMUM_CONTRACTS_ASSEMBLY, sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
 import { isOptimumRuntimeAvailable, runOptimumCli } from "@src/ipc/optimumPatch"
-import { runExtraction } from "@src/ipc/workers/extraction"
 
 /**
  * What the patch backs up, and where.
@@ -70,6 +69,9 @@ async function stageOverlay(manifest: OptimumManifest, archivePath: string, over
     // absolute names and anything that is not a plain file. `unwrapSingleRootFolder`
     // steps into the archive's own `Optimum-v<version>-<rid>-overlay/` the way the
     // game install steps into `vintagestory/`.
+    // Module scope is the boot path for the main process, and this worker chunk is only
+    // needed once someone installs Optimum. Loaded here so it stays off that path.
+    const { runExtraction } = await import("@src/ipc/workers/extraction")
     await runExtraction({ filePath: archivePath, outputPath: overlayDirectory, deleteArchive: false, unwrapSingleRootFolder: true })
   } catch {
     await fse.remove(overlayDirectory)

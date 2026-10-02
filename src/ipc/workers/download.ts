@@ -18,6 +18,7 @@ import { request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 import fse from "fs-extra"
 import { join } from "node:path"
+import { DOWNLOAD_TEMP_FILE_NAMESPACE } from "@src/ipc/downloadTempFile"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
 import { assertAllowedDownloadUrl, assertAllowedRedirectUrl, assertSafeFileName, optimumTestOrigin } from "../validation"
@@ -48,8 +49,7 @@ function isRedirectStatus(statusCode: number): boolean {
   return statusCode === 301 || statusCode === 302 || statusCode === 303 || statusCode === 307 || statusCode === 308
 }
 
-/** Namespace used by temporary download siblings and the orphan sweep. */
-export const DOWNLOAD_TEMP_FILE_NAMESPACE = "riftlauncher"
+export { DOWNLOAD_TEMP_FILE_NAMESPACE }
 
 /** The `https.request` shape, so a test can answer without a socket. */
 export type DownloadRequestFn = (url: URL, options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest

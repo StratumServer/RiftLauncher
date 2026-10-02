@@ -344,8 +344,6 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(filePath).toString())
   })
 
-  await ensureConfig()
-
   // Set app user model id for windows
   electronApp.setAppUserModelId("net.stratumserver.riftlauncher")
   Menu.setApplicationMenu(null)
@@ -356,6 +354,12 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+
+  // After the window, not before it: this is 14 ms of a stat plus a parse, and the window's own
+  // `ready-to-show` handler is the first reader anyway. `getConfig` awaits `ensureConfig` itself
+  // and shares one pass over the disk between concurrent callers, so the early call bought no
+  // ordering the later one does not already have.
+  await ensureConfig()
 
   // Fire and forget, after the window exists so it stays off the first paint path
   // and before the renderer's first scan 2.5 seconds later. This is the only
