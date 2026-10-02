@@ -1,8 +1,7 @@
 import fse from "fs-extra"
 import { basename, dirname, join, resolve } from "node:path"
 
-import { isRestoreStagingWorkspaceName } from "@src/ipc/validation"
-import { DOWNLOAD_TEMP_FILE_NAMESPACE } from "@src/ipc/workers/download"
+import { DOWNLOAD_TEMP_FILE_NAMESPACE, isRestoreStagingWorkspaceName } from "@src/ipc/validation"
 import { logMessage } from "@src/utils/logManager"
 
 const LOG_PREFIX = "[back] [maintenance] [main/orphanedTempFiles.ts]"

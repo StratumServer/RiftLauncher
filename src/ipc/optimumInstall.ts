@@ -14,7 +14,10 @@ import type { OptimumManifest } from "@domain/optimum/manifest"
 import { cliFileName, OPTIMUM_STATE_FOLDER, OPTIMUM_VANILLA_FOLDER, supportsGameVersion } from "@domain/optimum/plan"
 import { OPTIMUM_CONTRACTS_ASSEMBLY, sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
 import { isOptimumRuntimeAvailable, runOptimumCli } from "@src/ipc/optimumPatch"
-import { runExtraction } from "@src/ipc/workers/extraction"
+import { getErrorMessage, logMessage } from "@src/utils/logManager"
+
+/** Same shape as the other main-process modules, so a support log traces back to this file. */
+const LOG_PREFIX = "[back] [ipc] [ipc/optimumInstall.ts]"
 
 /**
  * What the patch backs up, and where.
@@ -70,8 +73,16 @@ async function stageOverlay(manifest: OptimumManifest, archivePath: string, over
     // absolute names and anything that is not a plain file. `unwrapSingleRootFolder`
     // steps into the archive's own `Optimum-v<version>-<rid>-overlay/` the way the
     // game install steps into `vintagestory/`.
+    // Module scope is the boot path for the main process, and this worker chunk is only
+    // needed once someone installs Optimum. Loaded here so it stays off that path.
+    const { runExtraction } = await import("@src/ipc/workers/extraction")
     await runExtraction({ filePath: archivePath, outputPath: overlayDirectory, deleteArchive: false, unwrapSingleRootFolder: true })
-  } catch {
+  } catch (error) {
+    // The staging folder goes either way, but an archive the reader refused and a worker chunk that
+    // failed to load are the same refusal from the outside, so the cause is recorded rather than
+    // folded into the reason the player sees.
+    logMessage("debug", `${LOG_PREFIX} [OVERLAY] Could not extract the downloaded overlay archive.`)
+    logMessage("debug", `${LOG_PREFIX} [OVERLAY] ${getErrorMessage(error)}`)
     await fse.remove(overlayDirectory)
     return refuse("overlay-unverified")
   }

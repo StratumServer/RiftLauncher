@@ -14,6 +14,7 @@ import { backgroundThumbnailSource } from "@renderer/utils/backgroundThumbnail"
 
 import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 
 import defaultBackground from "@renderer/assets/background.jpg"
 
@@ -40,8 +41,12 @@ import { useConfigFolderPicker } from "@renderer/features/config/hooks/useConfig
 import { useBackgroundCatalog } from "@renderer/features/config/hooks/useBackgroundCatalog"
 import { useSelectBackground } from "@renderer/features/config/hooks/useSelectBackground"
 
+// The launcher's translation project on Hosted Weblate. Covered by BROWSER_URL_RULES (src/ipc/validation.ts).
+const HELP_TRANSLATE_URL = "https://hosted.weblate.org/engage/riftlauncher/"
+
 function ConfigPage(): JSX.Element {
   const { t } = useTranslation()
+  const { openOnBrowser } = useExternalLinks()
 
   const settings = useSettingsConfig()
 
@@ -77,6 +82,13 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <LanguagesMenu />
+
+                <FormFieldGroupWithDescription>
+                  <NormalButton title={t("features.config.helpTranslate")} onClick={() => openOnBrowser(HELP_TRANSLATE_URL)} variant="link" className="w-fit text-left">
+                    {t("features.config.helpTranslate")}
+                  </NormalButton>
+                  <FormFieldDescription content={t("features.config.helpTranslateDesc")} />
+                </FormFieldGroupWithDescription>
               </FormBody>
             </FromGroup>
 

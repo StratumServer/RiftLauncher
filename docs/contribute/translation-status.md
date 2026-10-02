@@ -13,26 +13,26 @@ description: How complete each translation is, and how much of it is still a mac
 
 A pull request that touches the locale files gets this same table as a comment, which is where the numbers are easiest to act on. This page is refreshed in that same pull request: run `npm run i18n:status -- --write docs/contribute/translation-status.md` and commit what changes.
 
-Community translation is moving to Weblate, tracked in [#496](https://github.com/StratumServer/RiftLauncher/issues/496). Until it is live, a translation reaches the launcher as a pull request, the way the [translation guide](../get-started/translation/README.md) describes.
+Community translation happens on [Weblate](https://hosted.weblate.org/projects/riftlauncher/), which opens a pull request against `dev` with what translators changed. That pull request comes from a fork, whose token cannot comment, so it does not get the table as a comment. It changes values only, which leaves the numbers below as they are. When it corrects drafted strings, a maintainer takes those keys out of `drafted.json` and refreshes this page in a follow-up pull request.
 
 <!-- i18n-status:start -->
 
-en-US is the source and carries 892 keys.
+en-US is the source and carries 894 keys.
 
 | Locale | Keys | Missing | Stale | Drafted to review |
 | ------ | ---: | ------: | ----: | ----------------: |
-| be-BY  |  883 |      41 |     0 |               655 |
-| de-DE  |  856 |      36 |     0 |               707 |
-| es-ES  |  883 |      41 |     0 |               545 |
-| fr-FR  |  924 |       0 |     0 |                 0 |
-| hu-HU  |  856 |      36 |     0 |               590 |
-| it-IT  |  883 |      41 |     0 |               552 |
-| nl-NL  |  856 |      36 |     0 |               711 |
-| pl-PL  |  883 |      41 |     0 |               549 |
-| pt-BR  |  883 |      41 |     0 |               453 |
-| pt-PT  |  883 |      41 |     0 |               559 |
-| ru-RU  |  883 |      41 |     0 |               643 |
-| uk-UA  |  883 |      41 |     0 |               568 |
-| zh-CN  |  829 |      31 |     0 |               677 |
+| be-BY  |  883 |      43 |     0 |               655 |
+| de-DE  |  856 |      38 |     0 |               707 |
+| es-ES  |  883 |      43 |     0 |               545 |
+| fr-FR  |  926 |       0 |     0 |                 0 |
+| hu-HU  |  856 |      38 |     0 |               590 |
+| it-IT  |  883 |      43 |     0 |               552 |
+| nl-NL  |  856 |      38 |     0 |               711 |
+| pl-PL  |  883 |      43 |     0 |               549 |
+| pt-BR  |  883 |      43 |     0 |               453 |
+| pt-PT  |  883 |      43 |     0 |               559 |
+| ru-RU  |  883 |      43 |     0 |               643 |
+| uk-UA  |  883 |      43 |     0 |               568 |
+| zh-CN  |  829 |      33 |     0 |               677 |
 
 <!-- i18n-status:end -->

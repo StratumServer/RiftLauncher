@@ -11,9 +11,6 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { isInstallationPlaying, tryAcquireInstallationOperation } from "@src/ipc/installationActivity"
 import { setShouldPreventClose } from "@src/utils/shouldPreventClose"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
-import { runCompression } from "@src/ipc/workers/compression"
-import { extractTarGz } from "@src/ipc/workers/extraction"
-import { validateWorldBackupArchive } from "@src/ipc/archiveValidation"
 import { SAVES_FOLDER_NAME, WORLD_FILE_EXTENSION, canTransferWorld, collisionFreeWorldName, hasWorldSidecars, isSafeWorldName, listWorlds, worldVersionWarning } from "@domain/worlds/worlds"
 
 const WORLD_BACKUPS_FOLDER = "Worlds"
@@ -158,6 +155,10 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
     const archivePath = join(outputFolder, `${backupId}.tar.gz`)
     return await withCloseGuard("Backing up a world.", async () => {
       try {
+        // Loaded here rather than at module scope: this chunk is tens of milliseconds of the
+        // main process's startup, and it is only ever needed once a player asks for a backup or
+        // a restore. Nothing else in this file touches it, so the require is off the boot path.
+        const { runCompression } = await import("@src/ipc/workers/compression")
         await runCompression({ inputPath: world.path, outputPath: outputFolder, outputFileName: `${backupId}.tar.gz`, compressionLevel: installation.compressionLevel })
         const backup: WorldBackupType = { id: backupId, date: Date.now(), path: archivePath, worldName: world.name }
         if (!(await saveWorldBackupRecord(installation.id, backup))) {
@@ -228,7 +229,11 @@ async function restoreWorld(installationId: unknown, backupIdValue: unknown): Pr
         await fse.ensureDir(savesPath)
         tempRoot = await fse.mkdtemp(join(savesPath, ".rift-world-restore-"))
         await assertManagedPath(backup.path, "world backup")
+        // Same reasoning as the two worker chunks above: nothing on the boot path reads an archive,
+        // so the reader that opens one loads with the call that needs it.
+        const { validateWorldBackupArchive } = await import("@src/ipc/archiveValidation")
         await validateWorldBackupArchive(backup.path, backup.worldName)
+        const { extractTarGz } = await import("@src/ipc/workers/extraction")
         await extractTarGz(backup.path, tempRoot)
         const extracted = await fse.readdir(tempRoot)
         const files = []
@@ -345,5 +350,3 @@ ipcMain.handle(IPC_CHANNELS.WORLDS_MANAGER.TRANSFER, async (event, sourceId: unk
   assertTrustedIpcSender(event)
   return transferWorld(sourceId, worldName, targetId, mode)
 })
-
-logMessage("debug", "[back] [worlds] World management handlers registered.")

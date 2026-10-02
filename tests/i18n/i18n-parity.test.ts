@@ -22,11 +22,15 @@ import {
  * en-US.json is the fallback locale (src/renderer/src/i18n.ts) and the only
  * one every t() call site is checked against: recent slices routinely add
  * keys to en-US first and let other locales catch up later, so lagging
- * behind en-US is expected and NOT a failure here. Only two classes of
+ * behind en-US is expected and NOT a failure here. Only three classes of
  * mistake are hard failures:
  *   1. code that references a t() key which does not exist anywhere, even
  *      in en-US (the "added the code, forgot the key" mistake)
  *   2. a locale file (including en-US.json) that is structurally broken
+ *   3. a translated string that drops, adds or alters a {{placeholder}} or a
+ *      <tag> of its en-US original, or is empty: translations arrive from
+ *      Hosted Weblate in bulk now, and nobody reads 300 Belarusian strings
+ *      in review
  * Everything else -- how far behind a locale is, or which keys it has that
  * en-US no longer does -- is reported so humans (and future tooling) can
  * act on it, but it never fails the suite.
@@ -34,6 +38,11 @@ import {
 
 function readLocaleJson(file: string): unknown {
   return JSON.parse(readFileSync(join(LOCALES_DIR, file), "utf8"))
+}
+
+/** The {{interpolations}} and <components /> a string carries, sorted so order never matters. */
+function markers(value: unknown): string[] {
+  return typeof value === "string" ? (value.match(/\{\{[^}]+\}\}|<\/?[A-Za-z][^>]*>/g) ?? []).sort() : []
 }
 
 describe("t() keys referenced in src/renderer/** exist in en-US.json", () => {
@@ -239,6 +248,54 @@ describe("Activity Center translation contract", () => {
   })
 })
 
+describe("every locale keeps what en-US interpolates", () => {
+  // Translations arrive from Hosted Weblate in bulk now, and nobody reads each
+  // of them in review. A string that drops or renames a {{placeholder}}, or
+  // breaks a <tag>, only shows in front of a player, so every locale is held
+  // to its en-US original here. Which keys a locale has is still its own
+  // business (the coverage snapshot above reports the lag). A plural form of
+  // the locale's own grammar, such as a Russian _few, has no English twin and
+  // is held to the English _other form.
+  const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
+  const otherFiles = listLocaleFiles().filter((file) => file !== "en-US.json")
+
+  it("carries the same placeholders and component tags as the en-US string it translates", () => {
+    const mismatched = otherFiles.flatMap((file) => {
+      const locale = flattenTranslationObject(readLocaleJson(file))
+
+      const shared = Object.keys(enUS)
+        .filter((key) => key in locale)
+        .filter((key) => markers(enUS[key]).join("|") !== markers(locale[key]).join("|"))
+        .map((key) => `${file}: ${key} (en-US: ${markers(enUS[key]).join(" ") || "none"}; locale: ${markers(locale[key]).join(" ") || "none"})`)
+
+      const ownGrammar = Object.keys(locale)
+        .filter((key) => !(key in enUS))
+        .flatMap((key) => {
+          const suffix = PLURAL_SUFFIXES.find((candidate) => key.endsWith(candidate))
+          const other = suffix ? `${key.slice(0, -suffix.length)}_other` : undefined
+          if (other === undefined || !(other in enUS)) return []
+          if (markers(enUS[other]).join("|") === markers(locale[key]).join("|")) return []
+
+          return [`${file}: ${key} (en-US _other: ${markers(enUS[other]).join(" ") || "none"}; locale: ${markers(locale[key]).join(" ") || "none"})`]
+        })
+
+      return [...shared, ...ownGrammar]
+    })
+
+    assert.deepEqual(mismatched, [], `strings whose placeholders differ from en-US: ${mismatched.join(" | ")}`)
+  })
+
+  it("has no value that is not a string or is empty, in any locale", () => {
+    const unusable = otherFiles.flatMap((file) =>
+      Object.entries(flattenTranslationObject(readLocaleJson(file)))
+        .filter(([, value]) => typeof value !== "string" || value.trim().length === 0)
+        .map(([key]) => `${file}: ${key}`)
+    )
+
+    assert.deepEqual(unusable, [], `locale values that are not a non-empty string: ${unusable.join(", ")}`)
+  })
+})
+
 describe("fr-FR stays in step with en-US", () => {
   // French is kept complete on purpose (issue #411): a slice that adds an
   // en-US key adds its French one in the same PR, so the next feature can't
@@ -247,24 +304,10 @@ describe("fr-FR stays in step with en-US", () => {
   const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
   const frFR = flattenTranslationObject(readLocaleJson("fr-FR.json"))
 
-  /** The {{interpolations}} and <components /> a string carries, sorted so order never matters. */
-  function markers(value: unknown): string[] {
-    return typeof value === "string" ? (value.match(/\{\{[^}]+\}\}|<\/?[A-Za-z][^>]*>/g) ?? []).sort() : []
-  }
-
   it("has every en-US key with a non-empty string value", () => {
     const missing = Object.keys(enUS).filter((key) => typeof frFR[key] !== "string" || (frFR[key] as string).trim().length === 0)
 
     assert.deepEqual(missing, [], `en-US keys with no French translation: ${missing.join(", ")}`)
-  })
-
-  it("carries the same placeholders and component tags as en-US", () => {
-    const mismatched = Object.keys(enUS)
-      .filter((key) => key in frFR)
-      .filter((key) => markers(enUS[key]).join("|") !== markers(frFR[key]).join("|"))
-      .map((key) => `${key} (en-US: ${markers(enUS[key]).join(" ") || "none"}; fr-FR: ${markers(frFR[key]).join(" ") || "none"})`)
-
-    assert.deepEqual(mismatched, [], `fr-FR strings whose placeholders differ from en-US: ${mismatched.join(", ")}`)
   })
 
   it("has no key en-US does not have", () => {

@@ -20,7 +20,7 @@ import fse from "fs-extra"
 import { join } from "node:path"
 
 // Relative so the module stays importable from a plain test run, like extraction.ts.
-import { assertAllowedDownloadUrl, assertAllowedRedirectUrl, assertSafeFileName, optimumTestOrigin } from "../validation"
+import { assertAllowedDownloadUrl, assertAllowedRedirectUrl, assertSafeFileName, DOWNLOAD_TEMP_FILE_NAMESPACE, optimumTestOrigin } from "../validation"
 
 const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 30_000
@@ -48,8 +48,7 @@ function isRedirectStatus(statusCode: number): boolean {
   return statusCode === 301 || statusCode === 302 || statusCode === 303 || statusCode === 307 || statusCode === 308
 }
 
-/** Namespace used by temporary download siblings and the orphan sweep. */
-export const DOWNLOAD_TEMP_FILE_NAMESPACE = "riftlauncher"
+export { DOWNLOAD_TEMP_FILE_NAMESPACE }
 
 /** The `https.request` shape, so a test can answer without a socket. */
 export type DownloadRequestFn = (url: URL, options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest
