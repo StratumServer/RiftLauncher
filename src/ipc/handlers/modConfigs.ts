@@ -421,6 +421,57 @@ type PendingConfig = {
   bytes: number
 }
 
+type ConfigDestinationResolution = { ok: true; destination: string } | { ok: false; reason: "ambiguous" | "not-directory" }
+type ModConfigDirectoryEntry = { name: string; isDirectory(): boolean }
+type ModConfigDirectoryIndex = Map<string, ModConfigDirectoryEntry[]>
+
+/**
+ * Finds the spelling already on disk for a config path.
+ *
+ * Packs can move between case-sensitive and case-insensitive filesystems. When the requested
+ * spelling is absent, use a unique case-folded match at each path component so an import replaces
+ * the player's existing file instead of creating a second file beside it. If the disk already has
+ * multiple case variants and none exactly matches the pack, refuse the entry rather than choosing
+ * one arbitrarily.
+ */
+async function resolveConfigDestination(root: string, key: string, directories: Map<string, ModConfigDirectoryIndex>): Promise<ConfigDestinationResolution> {
+  const segments = key.split("/")
+  let current = root
+
+  for (const [index, segment] of segments.entries()) {
+    const folder = await fse.lstat(current).catch(() => undefined)
+    if (!folder) return { ok: true, destination: join(current, ...segments.slice(index)) }
+    if (folder.isSymbolicLink() || !folder.isDirectory()) return { ok: false, reason: "not-directory" }
+
+    // Re-check the real spelling before listing it. The case-folded path the pack asked for may
+    // have been absent, so validating only that spelling would miss a linked existing directory.
+    await assertManagedPath(current, "mod config folder")
+    let indexByName = directories.get(current)
+    if (!indexByName) {
+      indexByName = new Map<string, ModConfigDirectoryEntry[]>()
+      for (const entry of await fse.readdir(current, { withFileTypes: true })) {
+        const foldedName = entry.name.toLowerCase()
+        const matches = indexByName.get(foldedName) ?? []
+        matches.push(entry)
+        indexByName.set(foldedName, matches)
+      }
+      directories.set(current, indexByName)
+    }
+
+    const matches = indexByName.get(segment.toLowerCase()) ?? []
+    if (matches.length === 0) return { ok: true, destination: join(current, ...segments.slice(index)) }
+
+    const exact = matches.find((entry) => entry.name === segment)
+    if (matches.length > 1 && !exact) return { ok: false, reason: "ambiguous" }
+    const selected = exact ?? matches[0]
+    if (!selected) return { ok: true, destination: join(current, ...segments.slice(index)) }
+    if (index < segments.length - 1 && !selected.isDirectory()) return { ok: false, reason: "not-directory" }
+    current = join(current, selected.name)
+  }
+
+  return { ok: true, destination: current }
+}
+
 /**
  * Validates an apply request and resolves every key to a destination inside the installation.
  *
@@ -612,6 +663,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
     const failed: { name: string; reason: ApplyFailureReason }[] = []
     const kinds = new Map<string, "new" | "replace">()
     const refused = new Set<string>()
+    const configDirectories = new Map<string, ModConfigDirectoryIndex>()
 
     // Before anything is read, copied or created: every destination folder has to be a folder inside
     // the Installation with no symbolic link in its existing ancestors. Without this pass the checks
@@ -623,6 +675,14 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
     // is refused before a single copy is made.
     for (const entry of pending) {
       try {
+        const resolution = await resolveConfigDestination(modConfigRoot, entry.key, configDirectories)
+        if (!resolution.ok) {
+          failed.push({ name: entry.key, reason: "write-failed" })
+          refused.add(entry.key)
+          continue
+        }
+        entry.destination = resolution.destination
+
         // The call is the check: it walks the components that exist and refuses a path that leaves
         // the Installation. What it resolves is not read, and a log line may not name it either.
         await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
