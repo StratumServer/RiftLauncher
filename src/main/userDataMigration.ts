@@ -68,7 +68,6 @@ export function isOwnedByThisUser(stats: fse.Stats): boolean {
 /** Chromium rebuilds these from scratch, so a copy that includes them is only slower. */
 const REGENERABLE_PROFILE_ENTRIES = [
   "Blob Storage",
-  "Cache",
   "Code Cache",
   "Component CRX Cache",
   "Crashpad",
@@ -82,6 +81,8 @@ const REGENERABLE_PROFILE_ENTRIES = [
   "component_crx_cache",
   "crashpad"
 ]
+
+const REGENERABLE_PROFILE_PATHS = [join("Cache", "Cache_Data"), join("Cache", "No_Vary_Search")]
 
 function portablePathsOverlapInstall(installPath: string, candidatePaths: readonly string[]): boolean {
   const overlaps = (firstPath: string, secondPath: string): boolean => isWindowsPathEqualOrWithin(firstPath, secondPath) || isWindowsPathEqualOrWithin(secondPath, firstPath)
@@ -223,8 +224,9 @@ function migratePortableDefaultFolders(profilePath: string, sourceProfilePath: s
 
 /**
  * Sets up a profile selected by the portable marker. Existing RiftLauncher data
- * is copied in full; the older VS Launcher migration stays limited to its
- * existing config-and-icons allowlist.
+ * is copied except for regenerable Chromium caches; saved background images stay
+ * with the profile. The older VS Launcher migration stays limited to its existing
+ * config-and-icons allowlist.
  */
 export function setUpPortableUserDataFolder(appDataPath: string, dataPath: string, installPath?: string): UserDataSetup {
   const currentProfilePath = join(appDataPath, RIFT_USER_DATA_FOLDER)
@@ -274,6 +276,7 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
           const profileEntry = relative(sourceProfilePath, source)
           const entryName = basename(source)
           if (dirname(profileEntry) === "." && REGENERABLE_PROFILE_ENTRIES.includes(entryName)) return false
+          if (REGENERABLE_PROFILE_PATHS.includes(profileEntry)) return false
           if (!fse.lstatSync(source).isSymbolicLink()) return true
           if (profileEntry === "config.json" || profileEntry === "config.pre-migration.bak.json") return true
           if (["SingletonLock", "SingletonCookie", "SingletonSocket"].includes(entryName)) return false

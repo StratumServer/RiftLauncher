@@ -1,10 +1,11 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import { setDefaultFolderPathRoot } from "@src/config/configManager"
+import { readLinuxPackageType } from "@src/main/linuxPackageType"
 import { selectUserDataFolder } from "@src/main/profileChoice"
 import type { UserDataSelection } from "@src/main/profileChoice"
 
@@ -52,6 +53,7 @@ vi.mock("electron", () => ({
 }))
 
 vi.mock("@src/config/configManager", () => ({ setDefaultFolderPathRoot: vi.fn() }))
+vi.mock("@src/main/linuxPackageType", () => ({ readLinuxPackageType: vi.fn() }))
 
 vi.mock("@src/main/profileChoice", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@src/main/profileChoice")>()),
@@ -81,6 +83,7 @@ describe("the boot module wires the profile into a running app", () => {
     state.lockGranted = true
     state.paths = {}
     vi.mocked(setDefaultFolderPathRoot).mockClear()
+    vi.mocked(readLinuxPackageType).mockReset()
     vi.mocked(selectUserDataFolder).mockReset()
     vi.spyOn(process, "exit").mockImplementation(((code?: number): never => {
       state.exitCodes.push(code ?? 0)
@@ -94,7 +97,10 @@ describe("the boot module wires the profile into a running app", () => {
   })
 
   it("holds only the lock in userData when it asks Electron for the single-instance lock", async () => {
-    vi.mocked(selectUserDataFolder).mockReturnValue(selection("/profiles/default", false))
+    vi.mocked(selectUserDataFolder).mockImplementation(() => {
+      state.calls.push("selectUserDataFolder")
+      return selection("/profiles/default", false)
+    })
     const { userDataSetup } = await boot()
 
     const lockIndex = state.calls.indexOf("requestSingleInstanceLock")
@@ -102,8 +108,33 @@ describe("the boot module wires the profile into a running app", () => {
 
     assert.ok(lockIndex > 0, `expected a lock request, got ${JSON.stringify(state.calls)}`)
     assert.ok(lockPathIndex >= 0 && lockPathIndex < lockIndex, `the lock folder must be set before the lock is taken, got ${JSON.stringify(state.calls)}`)
+    assert.ok(state.calls.indexOf("selectUserDataFolder") > lockIndex, `the profile must be selected after Electron takes the lock, got ${JSON.stringify(state.calls)}`)
     assert.ok(existsSync(lockFolder), "the lock folder has to exist before Electron is asked to lock it")
     assert.equal(userDataSetup.path, "/profiles/default")
+  })
+
+  it.skipIf(process.platform !== "linux")("checks the Linux package marker before selecting a portable profile", async () => {
+    const previousAppImage = process.env.APPIMAGE
+    process.env.APPIMAGE = join(workDir, "RiftLauncher.AppImage")
+    vi.mocked(readLinuxPackageType).mockReturnValue("deb")
+    vi.mocked(selectUserDataFolder).mockReturnValue(selection("/profiles/default", false))
+
+    try {
+      await boot()
+
+      assert.equal(vi.mocked(readLinuxPackageType).mock.calls.length, 1)
+      assert.deepEqual(vi.mocked(selectUserDataFolder).mock.calls, [[appDataPath, null]])
+    } finally {
+      if (previousAppImage === undefined) delete process.env.APPIMAGE
+      else process.env.APPIMAGE = previousAppImage
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("restricts the lock folder to the current account", async () => {
+    vi.mocked(selectUserDataFolder).mockReturnValue(selection("/profiles/default", false))
+    await boot()
+
+    assert.equal(statSync(lockFolder).mode & 0o777, 0o700)
   })
 
   it("hands the process to the instance that holds the lock, without calling it a boot failure", async () => {
@@ -158,8 +189,10 @@ describe("the boot module wires the profile into a running app", () => {
     state.appData = join(blocker, "AppData", "Roaming")
     const module = await boot()
 
-    assert.match(module.bootFailure?.detail ?? "", /Could not create the folder Electron keeps the profile and the single instance lock in/)
-    assert.match(module.bootFailure?.detail ?? "", /ENOTDIR|not a directory/)
+    const detail = module.bootFailure?.detail ?? ""
+    assert.match(detail, /Could not create the folder Electron keeps the profile and the single instance lock in/)
+    assert.match(detail, /ENOTDIR|not a directory/)
+    assert.ok(detail.includes(join(state.appData, SINGLE_INSTANCE_LOCK_FOLDER)), `the diagnostic must keep the actionable path, got ${detail}`)
     assert.equal(module.userDataSetup.outcome, "unavailable")
     assert.equal(module.portableNote, "")
     // Exiting here would look to the player like another instance owns the launcher.

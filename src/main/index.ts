@@ -2,6 +2,7 @@
 // before any other import of the entry runs, and therefore before any log call can fix electron-log
 // to a folder nobody picked (#581). Nothing in its own graph may log at module scope.
 import { bootFailure, portableNote, userDataSetup } from "@src/main/bootUserData"
+import { logUserDataSetupUnlessBootFailed, reportBootFailure } from "@src/main/bootOutcome"
 
 import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain, dialog } from "electron"
 import { dirname, join } from "node:path"
@@ -57,7 +58,7 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
   return join(logsPath, `${message.level}.log`)
 }
 
-logMessage("info", `${LOG_PREFIX} [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}${portableNote}`)
+logUserDataSetupUnlessBootFailed(bootFailure, `${LOG_PREFIX} [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}${portableNote}`, (message) => logMessage("info", message))
 
 /**
  * The one setting that has to be answered before Electron starts.
@@ -259,23 +260,19 @@ function createWindow(): void {
   }
 }
 
-/**
- * electron-builder's Linux package type, read through the module the boot-time portable decision
- * also uses. An AppImage, a flatpak or a dev run has no marker, which is what portable mode needs.
- */
-
 // This method will be called when Electron has finished initialization and is ready to create browser windows. Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   // No profile means no launcher, and a dialog before whenReady is invisible on Linux: it only
   // reaches stderr. So the failure is reported here, where the dialog is real, and the process
   // goes before any window, session or updater work is attempted.
-  if (bootFailure) {
-    dialog.showErrorBox(
-      "RiftLauncher could not start",
-      `The profile folder could not be prepared. Make sure the data folder is outside the install folder and the drive is available and writable.\n\n${bootFailure.detail}`
-    )
-    process.exit(1)
-  }
+  if (
+    reportBootFailure(bootFailure, {
+      writeStderr: (message) => process.stderr.write(message),
+      showErrorBox: (title, message) => dialog.showErrorBox(title, message),
+      exit: (code) => process.exit(code)
+    })
+  )
+    return
 
   logMessage("info", `${LOG_PREFIX} [whenReady] Electron ready.`)
 

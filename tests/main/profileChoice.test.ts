@@ -47,7 +47,7 @@ describe("isTrustedPortableMarker", () => {
     assert.equal(isTrustedPortableMarker(join(installPath, PORTABLE_MARKER_FILE)), false)
   })
 
-  it("rejects a link pointing at an empty file elsewhere", () => {
+  it.skipIf(process.platform === "win32")("rejects a link pointing at an empty file elsewhere", () => {
     const target = join(workDir, "target")
     writeFileSync(target, "")
     symlinkSync(target, join(installPath, PORTABLE_MARKER_FILE))

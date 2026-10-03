@@ -88,9 +88,11 @@ AppImage installs can keep RiftLauncher's profile beside the AppImage. Close Rif
 touch RiftLauncher.portable
 ```
 
-On the next launch, RiftLauncher creates a `RiftLauncherData` folder beside the AppImage. The first portable launch copies the existing `~/.config/RiftLauncher` profile and leaves the original in place. New Installations, VS Versions and Backups default under the portable data folder. Existing custom folder paths and game files are not moved.
+On the next launch, RiftLauncher creates a `RiftLauncherData` folder beside the AppImage. The first portable launch copies the existing `~/.config/RiftLauncher` profile and leaves the original in place. Chromium's regenerable disk caches are skipped, while saved background images under `Cache/Backgrounds` are copied. New Installations, VS Versions and Backups default under the portable data folder. Existing custom folder paths and game files are not moved.
 
 This marker is supported for AppImages. `.deb`, `.rpm` and `.pacman` installs continue to keep their profile in the usual Linux data folder.
+
+The single-instance lock stays separate from the portable profile, in the normal app data folder as `RiftLauncher.singleton`.
 
 ---
 
@@ -333,9 +335,9 @@ Be clear about the trade. With that setting on, your session is written to disk 
 
 By default, Linux builds store their config, game-version list and installations in `/home/username/.config/RiftLauncher/`. An AppImage with the `RiftLauncher.portable` marker instead keeps its profile beside the AppImage in `RiftLauncherData`. Debian, RPM and pacman packages continue to use the default location.
 
-If you're coming from VS Launcher, its folder is `/home/username/.config/VSLauncher/` and RiftLauncher never writes to it. A portable profile that has not been set up yet gets one on its first launch: RiftLauncher copies the existing RiftLauncher profile to the portable folder, or copies VS Launcher's `config.json` and installation icons when there is no RiftLauncher profile. A launcher using the default folder leaves both folders where they are and migrates nothing. The originals are never modified.
+If you're coming from VS Launcher, its folder is `/home/username/.config/VSLauncher/` and RiftLauncher never writes to it. On first launch, if no RiftLauncher profile exists yet, RiftLauncher copies VS Launcher's `config.json` and installation icons into its profile. This migration also runs when RiftLauncher uses its default folder. If a RiftLauncher profile already exists, portable setup copies that profile instead. The originals are never modified.
 
-The copy leaves Chromium's caches behind, since the next run rebuilds them, so a large profile moves in seconds rather than minutes. It does not move game files or custom folder paths: `config.json` stores absolute paths, so the portable folder cannot be moved afterwards without editing them. A portable folder carried to another machine or another user account keeps its settings and installations but not its saved sessions, because those live in the system keyring of the machine and the account it was saved on.
+The copy skips Chromium's regenerable caches, including `Cache/Cache_Data` and `Cache/No_Vary_Search`, but keeps saved background images in `Cache/Backgrounds`. It does not move game files or custom folder paths: `config.json` stores absolute paths, so the portable folder cannot be moved afterwards without editing them. A portable folder carried to another machine keeps its settings and installations but not its saved sessions, because those live in the system keyring of the machine and account where they were saved. Linux also requires the empty marker file and the portable data folder to be owned by the account running RiftLauncher; another account cannot use that profile.
 
 ---
 

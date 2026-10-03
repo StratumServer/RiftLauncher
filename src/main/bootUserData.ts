@@ -1,12 +1,11 @@
 import { app } from "electron"
-import { mkdirSync } from "node:fs"
+import { chmodSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 
 import { setDefaultFolderPathRoot } from "@src/config/configManager"
 import { readLinuxPackageType } from "@src/main/linuxPackageType"
 import { describePortableDecision, portablePathsForCurrentInstall, selectUserDataFolder } from "@src/main/profileChoice"
 import type { UserDataSelection } from "@src/main/profileChoice"
-import { getErrorMessage } from "@src/utils/logManager"
 import type { UserDataSetup } from "@src/main/userDataMigration"
 
 /**
@@ -41,6 +40,10 @@ const singleInstanceLockPath = join(appDataPath, SINGLE_INSTANCE_LOCK_FOLDER)
 let selection: UserDataSelection | null = null
 let failure: BootFailure | null = null
 
+function bootErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Operation failed"
+}
+
 // Electron takes the lock inside this folder and Chromium opens the profile from it, so the folder
 // is created before the lock is asked for: a first run on a fresh Linux account has no
 // ~/.config/RiftLauncher yet, and a lock that cannot be taken would exit the process instead of
@@ -48,9 +51,10 @@ let failure: BootFailure | null = null
 // without anywhere to live, and exiting now would look to the player like another copy was already
 // running, so the reason travels to the entry with the rest.
 try {
-  mkdirSync(singleInstanceLockPath, { recursive: true })
+  mkdirSync(singleInstanceLockPath, { recursive: true, mode: 0o700 })
+  if (process.platform !== "win32") chmodSync(singleInstanceLockPath, 0o700)
 } catch (error) {
-  failure = { detail: `Could not create the folder Electron keeps the profile and the single instance lock in (${singleInstanceLockPath}): ${getErrorMessage(error)}` }
+  failure = { detail: `Could not create the folder Electron keeps the profile and the single instance lock in (${singleInstanceLockPath}): ${bootErrorMessage(error)}` }
 }
 
 app.setPath("userData", singleInstanceLockPath)
@@ -68,7 +72,7 @@ if (failure === null) {
     // Without a profile there is nothing else this process can do. userData is still the lock folder,
     // so nothing is written to a folder the player did not choose, and the entry reports it once
     // Electron is ready and a dialog can actually be seen.
-    failure = { detail: getErrorMessage(error) }
+    failure = { detail: bootErrorMessage(error) }
   }
 }
 

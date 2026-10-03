@@ -6,14 +6,11 @@ import type { PortableUserDataPaths, UserDataSetup } from "@src/main/userDataMig
 /**
  * Chooses the profile folder before anything else in the process can touch one.
  *
- * `src/main/index.ts` imports this module first on purpose. ESM evaluates every import of the
- * entry before any statement in its body, and electron-log resolves its file path on its first
- * write, so the earliest log call anywhere in the entry's graph fixes the folder for the rest of
- * the run. That is how `app.setPath("userData", ...)` in the body of index.ts came to be too late
- * (#581): a handler module logging at module scope created the default profile, and on Windows that
- * is the very folder the VS Launcher migration probes. Deciding here, before any of those imports
- * run, makes the ordering structural instead of a rule the source has to keep. Nothing in this
- * module's import graph may log at module scope, and tests/main/profileChoice.test.ts guards it.
+ * `src/main/index.ts` imports `bootUserData.ts` first. That module calls this selector before the
+ * remaining entry imports are evaluated, so electron-log has not yet resolved a path while profile
+ * selection is underway. A handler logging at module scope used to create Electron's default
+ * profile before the VS Launcher migration probed it on Windows (#581). The boot-path and
+ * module-scope logging tests keep that order and import graph safe.
  */
 
 export interface UserDataSelection {

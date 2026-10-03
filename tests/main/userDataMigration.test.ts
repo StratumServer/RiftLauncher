@@ -167,9 +167,13 @@ describe("setUpUserDataFolder", () => {
     assert.equal(getPortableUserDataPaths("linux", "", "riftlauncher.AppImage"), null)
   })
 
-  it("copies the RiftLauncher profile into portable data without the caches, and leaves the source intact", () => {
+  it("copies the RiftLauncher profile and saved backgrounds while omitting regenerable caches", () => {
     mkdirSync(join(riftPath(), "Cache", "Chromium"), { recursive: true })
+    mkdirSync(join(riftPath(), "Cache", "Backgrounds"), { recursive: true })
+    mkdirSync(join(riftPath(), "Cache", "Cache_Data"), { recursive: true })
+    mkdirSync(join(riftPath(), "Cache", "No_Vary_Search"), { recursive: true })
     mkdirSync(join(riftPath(), "Installations", "survival"), { recursive: true })
+    mkdirSync(join(riftPath(), "Installations", "survival", "Cache"), { recursive: true })
     const originalConfig = JSON.stringify({
       defaultInstallationsFolder: join(appDataPath, "RiftLauncherInstallations"),
       defaultVersionsFolder: join(appDataPath, "RiftLauncherGameVersions"),
@@ -183,7 +187,11 @@ describe("setUpUserDataFolder", () => {
     writeFileSync(join(riftPath(), "config.json"), originalConfig, "utf8")
     writeFileSync(join(riftPath(), "config.pre-migration.bak.json"), originalBackup, "utf8")
     writeFileSync(join(riftPath(), "Cache", "Chromium", "cache.bin"), "cache", "utf8")
+    writeFileSync(join(riftPath(), "Cache", "Backgrounds", "custom.jpg"), "custom background", "utf8")
+    writeFileSync(join(riftPath(), "Cache", "Cache_Data", "index"), "cache data", "utf8")
+    writeFileSync(join(riftPath(), "Cache", "No_Vary_Search", "index"), "cache metadata", "utf8")
     writeFileSync(join(riftPath(), "Installations", "survival", "rift.json"), "{}", "utf8")
+    writeFileSync(join(riftPath(), "Installations", "survival", "Cache", "world-data"), "keep nested data", "utf8")
     const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
 
     const setup = setUpPortableUserDataFolder(appDataPath, dataPath)
@@ -200,10 +208,13 @@ describe("setUpUserDataFolder", () => {
       defaultVersionsFolder: join(dataPath, "RiftLauncherGameVersions"),
       backupsFolder: join(dataPath, "RiftLauncherBackups")
     })
-    // Chromium rebuilds the caches on the next run, and copying them is the difference between a
-    // portable profile that moves in seconds and one that takes minutes.
-    assert.equal(existsSync(join(dataPath, "Cache")), false)
+    // Chromium rebuilds its disk caches, but the launcher stores user-selected backgrounds under
+    // Cache too, so only the known regenerable Chromium subfolders are omitted.
+    assert.equal(readFileSync(join(dataPath, "Cache", "Backgrounds", "custom.jpg"), "utf8"), "custom background")
+    assert.equal(existsSync(join(dataPath, "Cache", "Cache_Data")), false)
+    assert.equal(existsSync(join(dataPath, "Cache", "No_Vary_Search")), false)
     assert.equal(readFileSync(join(dataPath, "Installations", "survival", "rift.json"), "utf8"), "{}")
+    assert.equal(readFileSync(join(dataPath, "Installations", "survival", "Cache", "world-data"), "utf8"), "keep nested data")
     assert.equal(readFileSync(join(riftPath(), "Cache", "Chromium", "cache.bin"), "utf8"), "cache")
     assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), originalConfig)
     assert.equal(readFileSync(join(riftPath(), "config.pre-migration.bak.json"), "utf8"), originalBackup)
@@ -354,6 +365,21 @@ describe("setUpUserDataFolder", () => {
     assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /not a folder/i)
     assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), "keep me")
     assert.equal(readFileSync(dataPath, "utf8"), "not a folder")
+  })
+
+  it.skipIf(process.platform === "win32")("rejects a portable data symlink instead of following it", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    writeFileSync(join(riftPath(), "config.json"), '{"source":true}', "utf8")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    const targetPath = join(appDataPath, "real-portable-data")
+    mkdirSync(join(appDataPath, "drive"), { recursive: true })
+    mkdirSync(targetPath, { recursive: true })
+    writeFileSync(join(targetPath, "config.json"), '{"target":true}', "utf8")
+    symlinkSync(targetPath, dataPath, "dir")
+
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /Portable data path is not a folder/i)
+    assert.equal(readFileSync(join(targetPath, "config.json"), "utf8"), '{"target":true}')
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), '{"source":true}')
   })
 
   it.skipIf(process.platform === "win32")("rejects a portable data folder that belongs to another user, so a shared profile is nobody's", () => {
