@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
@@ -42,6 +43,12 @@ function entry(text: string): ModConfigEntry {
 
 function modConfigFolder(): string {
   return join(installationPath, "ModConfig")
+}
+
+/** Enables NTFS's per-directory case-sensitive mode when a Windows runner can support the edge. */
+function enableCaseSensitiveDirectory(path: string): boolean {
+  if (process.platform !== "win32") return true
+  return spawnSync("fsutil.exe", ["file", "setCaseSensitiveInfo", path, "enable"], { encoding: "utf-8" }).status === 0
 }
 
 function writeConfig(overrides: { backupsFolder?: string; backupsLimit?: number; alsoInstall?: { id: string; name: string; path: string; backupsLimit: number } } = {}): void {
@@ -400,7 +407,7 @@ describe("collectModConfigs", () => {
     const collected = await collectModConfigs(installationPath)
 
     assert.deepEqual(collected, { ok: false, reason: "too-many" })
-  })
+  }, 20_000)
 
   it("carries only the names it was given, so a file it cannot carry stops being the export's problem", async () => {
     const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
@@ -503,6 +510,75 @@ describe("GET_MOD_CONFIGS", () => {
 })
 
 describe("APPLY_MOD_CONFIGS", () => {
+  it("replaces a differently-cased config on a case-sensitive filesystem and backs it up", async (context) => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    if (!enableCaseSensitiveDirectory(modConfigFolder())) {
+      context.skip()
+      return
+    }
+    writeFileSync(join(modConfigFolder(), "Config.json"), "old", "utf-8")
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "config.json", ...entry("new") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "config.json", kind: "replace" }])
+    assert.deepEqual(applied.failed, [])
+    assert.deepEqual(readdirSync(modConfigFolder()), ["Config.json"])
+    assert.equal(readFileSync(join(modConfigFolder(), "Config.json"), "utf-8"), "new")
+    assert.notEqual(applied.backupFolder, "")
+    assert.equal(readFileSync(join(applied.backupFolder, "config.json"), "utf-8"), "old")
+  })
+
+  it("resolves case differences in parent folders as well as the config filename", async (context) => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    if (!enableCaseSensitiveDirectory(modConfigFolder())) {
+      context.skip()
+      return
+    }
+    const clientFolder = join(modConfigFolder(), "Client")
+    mkdirSync(clientFolder)
+    if (!enableCaseSensitiveDirectory(clientFolder)) {
+      context.skip()
+      return
+    }
+    writeFileSync(join(clientFolder, "Config.json"), "old", "utf-8")
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "client/config.json", ...entry("new") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "client/config.json", kind: "replace" }])
+    assert.deepEqual(readdirSync(clientFolder), ["Config.json"])
+    assert.equal(readFileSync(join(clientFolder, "Config.json"), "utf-8"), "new")
+    assert.equal(readFileSync(join(applied.backupFolder, "client", "config.json"), "utf-8"), "old")
+  })
+
+  it("refuses an ambiguous case-folded match on disk without changing either file", async (context) => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    if (!enableCaseSensitiveDirectory(modConfigFolder())) {
+      context.skip()
+      return
+    }
+    writeFileSync(join(modConfigFolder(), "Config.json"), "first", "utf-8")
+    writeFileSync(join(modConfigFolder(), "CONFIG.json"), "second", "utf-8")
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "config.json", ...entry("new") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.failed, [{ name: "config.json", reason: "write-failed" }])
+    assert.deepEqual(applied.applied, [])
+    assert.equal(applied.backupFolder, "")
+    assert.deepEqual(readdirSync(modConfigFolder()).sort(), ["CONFIG.json", "Config.json"])
+    assert.equal(readFileSync(join(modConfigFolder(), "Config.json"), "utf-8"), "first")
+    assert.equal(readFileSync(join(modConfigFolder(), "CONFIG.json"), "utf-8"), "second")
+    assert.deepEqual(recoveryFolders(), [])
+  })
+
   it("writes a new file, backs up what it replaced, and records what landed", async () => {
     mkdirSync(modConfigFolder(), { recursive: true })
     writeFileSync(join(modConfigFolder(), "a.json"), "old", "utf-8")
