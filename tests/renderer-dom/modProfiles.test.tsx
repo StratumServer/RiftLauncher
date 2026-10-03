@@ -385,7 +385,8 @@ describe("Mod profiles", { timeout: 20000 }, () => {
   })
 
   it("a half-failed switch leaves no profile active, says so once, and a second switch renames only the rest", async () => {
-    const { user, setModEnabled, saveModProfiles, refused, stored } = renderProfiles({ document: aDocument([SERVER, SOLO], "server") })
+    const cleanSolo = { ...SOLO, mods: SOLO.mods.filter((entry) => entry.modid !== "zeta") }
+    const { user, setModEnabled, saveModProfiles, refused, stored } = renderProfiles({ document: aDocument([SERVER, cleanSolo], "server") })
     refused.add(GAMMA)
     const dialog = await openProfiles(user, "Solo")
     const logMessage = vi.mocked(window.api.utils.logMessage)
@@ -398,20 +399,23 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(screen.queryByText(/^Switched to/)).toBeNull()
     // Only the first write happened, and both stored sets are intact.
     expect(saveModProfiles).toHaveBeenCalledTimes(1)
-    expect(stored()).toEqual(aDocument([{ ...SERVER, mods: LIVE }, SOLO], null))
+    expect(stored()).toEqual(aDocument([{ ...SERVER, mods: LIVE }, cleanSolo], null))
     expect(screen.getAllByText(NO_PROFILE_NOTE)).toHaveLength(2)
     expect(profilesButton().textContent).toContain("No profile")
 
     const affectedFiles = within(dialog).getByText("Show affected archive names (1)")
     const affectedDisclosure = affectedFiles.closest("details") as HTMLDetailsElement
     expect(affectedDisclosure.open).toBe(false)
+    expect(affectedDisclosure.querySelector("ul")).toBeNull()
     await user.click(affectedFiles)
-    expect(within(affectedDisclosure).getByRole("listitem").textContent).toBe("gamma-3.0.0.zip")
+    expect(affectedDisclosure.querySelector(":scope > ul")?.classList.contains("max-h-48")).toBe(true)
+    expect(within(affectedDisclosure).getByText("gamma")).toBeTruthy()
+    expect(within(affectedDisclosure).getByText("gamma-3.0.0.zip")).toBeTruthy()
 
     // The log carries counts, never a profile, a Mod or a path.
     const lines = logMessage.mock.calls.map((call) => call.join(" "))
     expect(lines.filter((line) => /Solo|Server|Mod\b|\/games\/a/.test(line.replace(/\[.*?\]/g, "")))).toEqual([])
-    expect(lines.filter((line) => line.includes("Profile switch: 1 on, 2 off, 1 failed, 1 missing, 0 unresolved."))).toHaveLength(1)
+    expect(lines.filter((line) => line.includes("Profile switch: 1 on, 2 off, 1 failed, 0 missing, 0 unresolved."))).toHaveLength(1)
 
     // The toast sits outside the dialog, so dismissing it is a click outside, which closes the dialog.
     await discardToast(user)
@@ -420,12 +424,16 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     setModEnabled.mockClear()
     const reopened = await openProfiles(user, "Solo")
     expect(within(reopened).getByText(NO_PROFILE_NOTE)).toBeTruthy()
+    const reopenedReport = within(reopened).getByText("Show affected archive names (1)").closest("details") as HTMLDetailsElement
+    expect(reopenedReport.open).toBe(false)
     await user.click(useButtonOf(reopened, "Solo"))
 
     expect(await screen.findByText(/^Switched to Solo: 0 turned on, 1 turned off\./)).toBeTruthy()
+    await switchLanded()
+    expect(within(reopened).queryByText("Show affected archive names (1)")).toBeNull()
     expect(setModEnabled.mock.calls).toEqual([[GAMMA, false]])
     // No profile was active, so nothing was recorded over Server with the mixed folder.
-    expect(stored()).toEqual(aDocument([{ ...SERVER, mods: LIVE }, SOLO], "solo"))
+    expect(stored()).toEqual(aDocument([{ ...SERVER, mods: LIVE }, cleanSolo], "solo"))
   })
 
   it("names the missing profile file and every ambiguous installed copy behind the skipped count", async () => {
@@ -441,13 +449,37 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     const affectedFiles = within(dialog).getByText("Show affected archive names (4)")
     const affectedDisclosure = affectedFiles.closest("details") as HTMLDetailsElement
     expect(affectedDisclosure.open).toBe(false)
+    expect(affectedDisclosure.classList.contains("text-left")).toBe(true)
+    expect(affectedDisclosure.querySelector("ul")).toBeNull()
     await user.click(affectedFiles)
 
-    expect(
-      within(affectedDisclosure)
-        .getAllByRole("listitem")
-        .map((item) => item.textContent)
-    ).toEqual(["zeta-1.0.0.zip", "delta-0.9.0.zip", "delta-4.0.0.zip", "delta-1.0.1.zip"])
+    const outerList = affectedDisclosure.querySelector(":scope > ul")
+    expect(outerList?.classList.contains("max-h-48")).toBe(true)
+    const groups = Array.from(outerList?.querySelectorAll(":scope > li") ?? [])
+    expect(groups).toHaveLength(2)
+    expect(groups.map((group) => group.firstChild?.textContent)).toEqual(["zeta", "quirkid"])
+    expect(Array.from(groups[0]?.querySelectorAll(":scope > ul > li") ?? [], (item) => item.textContent)).toEqual(["zeta-1.0.0.zip"])
+    expect(Array.from(groups[1]?.querySelectorAll(":scope > ul > li") ?? [], (item) => item.textContent)).toEqual(["delta-0.9.0.zip", "delta-4.0.0.zip", "delta-1.0.1.zip"])
+
+    await user.type(within(dialog).getByLabelText(NEW_NAME), "Snapshot{Enter}")
+    await waitFor(() => expect(within(dialog).queryByText("Show affected archive names (4)")).toBeNull())
+  })
+
+  it("clears a previous switch report before a later scan that cannot read the Mods folder", async () => {
+    const { user, refused, takeFolderOffline } = renderProfiles({ document: aDocument([SERVER, SOLO], "server") })
+    refused.add(GAMMA)
+    const dialog = await openProfiles(user, "Solo")
+
+    await user.click(useButtonOf(dialog, "Solo"))
+    await switchLanded()
+    expect(within(dialog).getByText("Show affected archive names (1)")).toBeTruthy()
+
+    takeFolderOffline()
+    await user.click(useButtonOf(dialog, "Server"))
+
+    expect(await screen.findByText(FOLDER_UNREADABLE)).toBeTruthy()
+    await waitFor(() => expect(profilesButton().disabled).toBe(false))
+    expect(within(dialog).queryByText("Show affected archive names (1)")).toBeNull()
   })
 
   it("stops before any rename when the outgoing profile cannot be recorded", async () => {

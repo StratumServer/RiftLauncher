@@ -439,7 +439,6 @@
       "profileSwitchPartial_one": "Overschakelen naar {{profile}} is niet afgerond: {{count}} Mod hield zijn stand. Er is geen profiel actief tot je opnieuw overschakelt.",
       "profileSwitchPartial_other": "Overschakelen naar {{profile}} is niet afgerond: {{count}} Mods hielden hun stand. Er is geen profiel actief tot je opnieuw overschakelt.",
       "profileSwitchNotStarted": "Het huidige profiel kon niet worden vastgelegd, er is dus niets veranderd.",
-      "profileSwitchAffectedFiles": "Betrokken archiefnamen tonen ({{count}})",
       "profileSwitchNotRecorded": "De Mods komen nu overeen met {{profile}}, maar dat kon niet als actief profiel worden vastgelegd.",
       "cantChangeProfilesWhileInUse": "Je kunt geen profielen wijzigen terwijl er een back-up van deze installatie wordt gemaakt of teruggezet, of terwijl de Mods worden bijgewerkt.",
       "profilesFolderUnreadable": "De map met Mods van deze installatie kon niet worden gelezen, er is dus niets vastgelegd of veranderd.",
@@ -525,6 +524,7 @@
       "suggestionsEmpty": "Op dit moment geen suggesties."
     },
     "config": {
+      "userDataFolder": "Profielmap",
       "defaultInstallationsFolder": "Map voor installaties",
       "defaultVersionsFolder": "Map voor VS-versies",
       "backupsFolder": "Map voor back-ups",

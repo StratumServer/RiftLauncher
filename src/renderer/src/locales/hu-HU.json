@@ -439,7 +439,6 @@
       "profileSwitchPartial_one": "A(z) {{profile}} profilra váltás nem fejeződött be: {{count}} mod megtartotta az állapotát. Addig nincs aktív profil, amíg újra nem váltasz.",
       "profileSwitchPartial_other": "A(z) {{profile}} profilra váltás nem fejeződött be: {{count}} mod megtartotta az állapotát. Addig nincs aktív profil, amíg újra nem váltasz.",
       "profileSwitchNotStarted": "A jelenlegi profilt nem sikerült rögzíteni, ezért semmi sem változott.",
-      "profileSwitchAffectedFiles": "Érintett archívumnevek megjelenítése ({{count}})",
       "profileSwitchNotRecorded": "A modok most megegyeznek a(z) {{profile}} profillal, de nem sikerült aktív profilként rögzíteni.",
       "cantChangeProfilesWhileInUse": "Nem módosíthatod a profilokat, amíg erről a Telepítésről mentés készül, visszaállítás fut, vagy a modjai frissülnek.",
       "profilesFolderUnreadable": "Ennek a Telepítésnek a modkönyvtárát nem sikerült beolvasni, ezért semmi sem lett rögzítve vagy módosítva.",
@@ -525,6 +524,7 @@
       "suggestionsEmpty": "Jelenleg nincs javaslat."
     },
     "config": {
+      "userDataFolder": "Profilmappa",
       "defaultInstallationsFolder": "Telepítések könyvtára",
       "defaultVersionsFolder": "Verziók könyvtára",
       "backupsFolder": "Biztonsági mentések könyvtára",

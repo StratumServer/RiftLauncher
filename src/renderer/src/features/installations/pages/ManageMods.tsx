@@ -98,9 +98,9 @@ function ListMods(): JSX.Element {
 
   const actions = useInstalledModActions(installation, refresh)
   const batch = useModBatchActions(installation, installedMods, visibleMods, refresh)
-  const [profilesOpen, setProfilesOpen] = useState(false)
   // Handed the Installation only, never the filtered list: a profile records and applies the whole folder.
   const profiles = useModProfiles(installation)
+  const [profilesOpen, setProfilesOpen] = useState(false)
   // One predicate for every surface that writes the whole Mods folder. Each of those write paths
   // already refuses on modsFolderInUse, so a control that would be refused has to read as off:
   // Import Modpack used to stay live through Update all and only refuse after the player had been

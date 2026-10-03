@@ -21,7 +21,7 @@ import {
   renameModProfile,
   validateModProfileName
 } from "@domain/mods/profiles"
-import type { ModProfileNameProblem } from "@domain/mods/profiles"
+import type { ModProfileNameProblem, ModProfileSwitchSkippedMod } from "@domain/mods/profiles"
 
 const LOG_TAG = "[front] [mods] [features/mods/hooks/useModProfiles.ts]"
 
@@ -41,11 +41,8 @@ export interface ModProfiles {
   working: boolean
   /** The profile a switch is applying, while it runs. */
   switchingTo: string | null
-  /** File names behind the last partial or skipped switch, held for the open Profiles dialog. */
-  switchReport: Readonly<{ files: readonly string[] }> | null
-  /** Whether the last switch's name list is expanded in the Profiles dialog. */
-  switchReportOpen: boolean
-  setSwitchReportOpen: (open: boolean) => void
+  /** File names behind the last partial or skipped switch, grouped by Mod for the Profiles dialog. */
+  switchReport: Readonly<{ groups: readonly ModProfileSwitchSkippedMod[] }> | null
   /** Saves the folder as a new, active profile. Resolves the name problem, or null once it was handled. */
   create(name: string): Promise<ModProfileNameProblem | null>
   rename(id: string, name: string): Promise<ModProfileNameProblem | null>
@@ -84,8 +81,7 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   const [status, setStatus] = useState<ModProfilesStatus>("loading")
   const [document, setDocument] = useState<ModProfilesDocument>(emptyModProfilesDocument)
   const [switchingTo, setSwitchingTo] = useState<string | null>(null)
-  const [switchReport, setSwitchReport] = useState<Readonly<{ files: readonly string[] }> | null>(null)
-  const [switchReportOpen, setSwitchReportOpen] = useState(false)
+  const [switchReport, setSwitchReport] = useState<Readonly<{ groups: readonly ModProfileSwitchSkippedMod[] }> | null>(null)
 
   // The ref is the guard and the state only paints it: a second press lands before React has
   // rendered the first one's state.
@@ -93,6 +89,10 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   const [working, setWorking] = useState(false)
 
   const installationPath = installation?.path
+
+  function clearSwitchReport(): void {
+    if (switchReport !== null) setSwitchReport(null)
+  }
 
   useEffect(() => {
     if (!installationPath) return
@@ -169,6 +169,7 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
     const check = validateModProfileName(name, document.profiles)
     if (!check.ok) return check.problem
     await exclusive(async (path) => {
+      clearSwitchReport()
       const mods = await scanFolder(path)
       if (mods) await saveOrSay(path, createModProfile(document, crypto.randomUUID(), check.name, mods))
     })
@@ -178,17 +179,24 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   async function rename(id: string, name: string): Promise<ModProfileNameProblem | null> {
     const check = validateModProfileName(name, document.profiles, id)
     if (!check.ok) return check.problem
-    await exclusive((path) => saveOrSay(path, renameModProfile(document, id, check.name)))
+    await exclusive((path) => {
+      clearSwitchReport()
+      return saveOrSay(path, renameModProfile(document, id, check.name))
+    })
     return null
   }
 
   async function remove(id: string): Promise<void> {
-    await exclusive((path) => saveOrSay(path, deleteModProfile(document, id)))
+    await exclusive((path) => {
+      clearSwitchReport()
+      return saveOrSay(path, deleteModProfile(document, id))
+    })
   }
 
   async function duplicate(id: string): Promise<void> {
     // Only the active profile's copy needs the folder: every other profile's stored set is its record.
     await exclusive(async (path) => {
+      clearSwitchReport()
       const mods = id === document.activeProfileId ? await scanFolder(path) : []
       if (mods) await saveOrSay(path, duplicateModProfile(document, id, crypto.randomUUID(), mods))
     })
@@ -197,8 +205,6 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   async function applyProfile(path: string, target: ModProfile): Promise<void> {
     const mods = await scanFolder(path)
     if (!mods) return
-    setSwitchReport(null)
-    setSwitchReportOpen(false)
     const begun = beginModProfileSwitch(document, mods)
     if (!(await save(path, begun))) {
       logMods("error", `${LOG_TAG} [switchTo] Stopped before any rename: the outgoing profile could not be recorded.`)
@@ -217,8 +223,18 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
     // Nothing is rolled back. Every rename is atomic, so the folder is valid, and with no profile
     // active the next switch cannot record this mix into either profile.
     if (failed > 0) {
-      const failedFiles = [...new Set(results.filter((result) => !result.ok).map((result) => lastPathSegment(result.path)))]
-      setSwitchReport({ files: failedFiles })
+      const modsByPath = new Map(mods.map((mod) => [mod.path, mod]))
+      const failedByModid = new Map<string, { modid: string; files: Set<string> }>()
+      for (const result of results) {
+        if (result.ok) continue
+        const file = lastPathSegment(result.path)
+        const modid = modsByPath.get(result.path)?.modid ?? file
+        const key = modid.toLowerCase()
+        const group = failedByModid.get(key) ?? { modid, files: new Set<string>() }
+        group.files.add(file)
+        failedByModid.set(key, group)
+      }
+      setSwitchReport({ groups: [...failedByModid.values()].map(({ modid, files }) => ({ modid, files: [...files] })) })
       return addNotification(t("features.mods.profileSwitchPartial", { profile: target.name, count: failed, ...RAW_NAME }), "warning")
     }
 
@@ -228,7 +244,7 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
 
     const skipped = plan.missing + plan.unresolved
     const counts = { profile: target.name, on: turnedOn, off: turnedOff, ...RAW_NAME }
-    if (skipped > 0) setSwitchReport({ files: plan.skippedFiles ?? [] })
+    if (skipped > 0) setSwitchReport({ groups: plan.skippedMods ?? [] })
     addNotification(skipped > 0 ? t("features.mods.profileSwitchedWithSkipped", { ...counts, count: skipped }) : t("features.mods.profileSwitched", counts), "success")
   }
 
@@ -239,6 +255,7 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
     // A game running on these archives, or anything else rewriting them, would see half a profile.
     if (installation._playing || modsFolderInUse(installation)) return addNotification(t("features.mods.cantSwitchProfileWhileInUse"), "error")
 
+    clearSwitchReport()
     const installationId = installation.id
     await exclusive(async (path) => {
       setSwitchingTo(id)
@@ -261,8 +278,6 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
     working,
     switchingTo,
     switchReport,
-    switchReportOpen,
-    setSwitchReportOpen,
     create,
     rename,
     remove,

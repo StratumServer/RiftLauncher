@@ -1,12 +1,17 @@
-import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain } from "electron"
+// Imported first on purpose: this module chooses the profile folder while it is being evaluated,
+// before any other import of the entry runs, and therefore before any log call can fix electron-log
+// to a folder nobody picked (#581). Nothing in its own graph may log at module scope.
+import { bootFailure, portableNote, userDataSetup } from "@src/main/bootUserData"
+import { logUserDataSetupUnlessBootFailed, reportBootFailure } from "@src/main/bootOutcome"
+
+import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain, dialog } from "electron"
 import { dirname, join } from "node:path"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import Logger from "electron-log"
 import { pathToFileURL } from "node:url"
-import { describeUserDataSetup, setUpUserDataFolder } from "@src/main/userDataMigration"
-
-const userDataSetup = setUpUserDataFolder(app.getPath("appData"))
-app.setPath("userData", userDataSetup.path)
+import { describeUserDataSetup } from "@src/main/userDataMigration"
+import fse from "fs-extra"
+import { readLinuxPackageType } from "@src/main/linuxPackageType"
 
 import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
@@ -28,8 +33,6 @@ import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
 import { getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
-import fse from "fs-extra"
-
 import "@src/ipc"
 import { clearTimeout, setTimeout } from "node:timers"
 
@@ -55,7 +58,7 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
   return join(logsPath, `${message.level}.log`)
 }
 
-logMessage("info", `${LOG_PREFIX} [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}`)
+logUserDataSetupUnlessBootFailed(bootFailure, `${LOG_PREFIX} [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}${portableNote}`, (message) => logMessage("info", message))
 
 /**
  * The one setting that has to be answered before Electron starts.
@@ -257,27 +260,20 @@ function createWindow(): void {
   }
 }
 
-const gotTheLock = app.requestSingleInstanceLock()
-
-if (!gotTheLock) app.quit()
-
-/**
- * Reads electron-builder's `package-type` marker next to the packaged app, when the deb,
- * rpm or pacman targets wrote one. Its absence just means an AppImage, a flatpak, or a dev
- * run, all of which canAutoUpdate treats the same as "no marker".
- */
-function readLinuxPackageType(): string | undefined {
-  try {
-    const markerPath = join(process.resourcesPath, "package-type")
-    if (!fse.existsSync(markerPath)) return undefined
-    return fse.readFileSync(markerPath, "utf-8").trim()
-  } catch {
-    return undefined
-  }
-}
-
 // This method will be called when Electron has finished initialization and is ready to create browser windows. Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
+  // No profile means no launcher, and a dialog before whenReady is invisible on Linux: it only
+  // reaches stderr. So the failure is reported here, where the dialog is real, and the process
+  // goes before any window, session or updater work is attempted.
+  if (
+    reportBootFailure(bootFailure, {
+      writeStderr: (message) => process.stderr.write(message),
+      showErrorBox: (title, message) => dialog.showErrorBox(title, message),
+      exit: (code) => process.exit(code)
+    })
+  )
+    return
+
   logMessage("info", `${LOG_PREFIX} [whenReady] Electron ready.`)
 
   session.defaultSession.setPermissionCheckHandler(() => false)

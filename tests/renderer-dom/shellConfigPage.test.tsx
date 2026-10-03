@@ -8,6 +8,18 @@ import { installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 describe("ConfigPage", () => {
+  it("shows and opens the active RiftLauncher data folder", async () => {
+    const user = userEvent.setup()
+    const profilePath = "/mnt/games/RiftLauncherData"
+    const api = installMockWindowApi({ pathsManager: { getCurrentUserDataPath: async () => profilePath } })
+
+    renderWithProviders(<ConfigPage />, { route: "/config" })
+
+    expect(await screen.findByDisplayValue(profilePath)).toBeTruthy()
+    await user.click(screen.getByTitle("Open folder on the file explorer"))
+    expect(api.pathsManager.openPathOnFileExplorer).toHaveBeenCalledWith(profilePath)
+  })
+
   it("updates the installations folder setting after a folder pick", async () => {
     const user = userEvent.setup()
     const PICKED_PATH = "/mock/picked/installations"

@@ -415,6 +415,7 @@ describe("ManageMods: the Installation check", () => {
     const disclosure = summary.closest("details") as HTMLDetailsElement
     expect(disclosure).toBeTruthy()
     expect(disclosure.open).toBe(false)
+    expect(disclosure.querySelector("ul")).toBeNull()
     // Every enabled Mod was answered for, so there is no ModDB sentence; only the unreadable-file list can open.
     expect(within(disclosure).queryByRole("listitem")).toBeNull()
   })
@@ -446,6 +447,7 @@ describe("ManageMods: the Installation check", () => {
         .getAllByRole("listitem")
         .map((item) => item.textContent)
     ).toEqual(["broken one.zip", "broken two.zip"])
+    expect(disclosure.querySelector(":scope > ul")?.classList.contains("max-h-48")).toBe(true)
     expect(disclosure.textContent).not.toContain(root)
   })
 })

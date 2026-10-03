@@ -5,9 +5,8 @@
 # folder only), and is killed on its own after 10 minutes if nothing stops it
 # first.
 #
-# ELECTRON_FORCE_IS_PACKAGED is unset before launch: a shell that has it set
-# for its own dev workflow breaks a packaged Electron build in ways that have
-# nothing to do with what is being checked here.
+# ELECTRON_FORCE_IS_PACKAGED and APPIMAGE are unset before launch: shell state
+# for a developer build or AppImage install must not change this packaged run.
 #
 # Usage: scripts/headless/launch.sh <profileRoot> <port>
 set -euo pipefail
@@ -28,7 +27,7 @@ mkdir -p "$profile/config" "$profile/cache" "$profile/data"
 XDG_CONFIG_HOME="$profile/config" \
 XDG_CACHE_HOME="$profile/cache" \
 XDG_DATA_HOME="$profile/data" \
-  env -u ELECTRON_FORCE_IS_PACKAGED \
+  env -u ELECTRON_FORCE_IS_PACKAGED -u APPIMAGE \
   timeout 600 "$binary" --ozone-platform=headless --disable-gpu --remote-debugging-port="$port" --no-sandbox \
   >"$profile/launch.log" 2>&1 &
 

@@ -453,7 +453,6 @@
       "profileSwitchPartial_many": "El cambio a {{profile}} no terminó: {{count}} Mods conservaron su estado. No hay ningún perfil activo hasta que vuelvas a cambiar.",
       "profileSwitchPartial_other": "El cambio a {{profile}} no terminó: {{count}} Mods conservaron su estado. No hay ningún perfil activo hasta que vuelvas a cambiar.",
       "profileSwitchNotStarted": "No se pudo registrar el perfil actual, así que no se ha cambiado nada.",
-      "profileSwitchAffectedFiles": "Mostrar los nombres de los archivos afectados ({{count}})",
       "profileSwitchNotRecorded": "Los Mods ya coinciden con {{profile}}, pero no se pudo registrar como perfil activo.",
       "cantChangeProfilesWhileInUse": "No puedes cambiar los perfiles mientras se hace una copia de seguridad de esta Instalación, se restaura o se actualizan sus Mods.",
       "profilesFolderUnreadable": "No se pudo leer la carpeta de Mods de esta Instalación, así que no se ha registrado ni cambiado nada.",
@@ -547,6 +546,7 @@
       "suggestionsEmpty": "No hay sugerencias por ahora."
     },
     "config": {
+      "userDataFolder": "Carpeta de perfil",
       "defaultInstallationsFolder": "Carpeta de Instalaciones",
       "defaultVersionsFolder": "Carpeta de Versiones de VS",
       "backupsFolder": "Carpeta de Copias de Seguridad",

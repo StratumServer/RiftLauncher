@@ -6,6 +6,7 @@ import type { ModProfiles } from "@renderer/features/mods/hooks/useModProfiles"
 import { MAX_MOD_PROFILE_NAME_LENGTH, MAX_MOD_PROFILES } from "@domain/mods/profiles"
 import type { ModProfileNameProblem } from "@domain/mods/profiles"
 
+import ExpandableNameList from "@renderer/components/ui/ExpandableNameList"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { ButtonsWrapper, FormButton, FormInputText } from "@renderer/components/ui/FormComponents"
 
@@ -191,25 +192,20 @@ function ModProfilesPopup({ isOpen, close, profiles, locked }: Readonly<{ isOpen
         {notice && <p role="status">{t(notice)}</p>}
 
         {profiles.switchReport && (
-          <details open={profiles.switchReportOpen} onToggle={(event) => profiles.setSwitchReportOpen(event.currentTarget.open)} className="text-sm text-zinc-300">
-            <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2">
-              {t("features.mods.profileSwitchAffectedFiles", { count: profiles.switchReport.files.length })}
-            </summary>
-            {profiles.switchReportOpen && (
-              <ul className="max-h-48 overflow-y-auto break-words px-2 pt-1">
-                {profiles.switchReport.files.map((file) => (
-                  <li key={file}>{file}</li>
-                ))}
-              </ul>
-            )}
-          </details>
+          <ExpandableNameList
+            summary={t("features.mods.profileSwitchAffectedFiles", {
+              count: profiles.switchReport.groups.reduce((total, group) => total + group.files.length, 0)
+            })}
+            groups={profiles.switchReport.groups.map((group) => ({ key: group.modid.toLowerCase(), label: group.modid, names: group.files }))}
+            className="text-sm text-zinc-300 text-left"
+          />
         )}
 
         {ready && profiles.profiles.length === 0 && <p>{t("features.mods.profilesFirstHint")}</p>}
         {ready && profiles.profiles.length > 0 && !profiles.activeProfile && <p role="status">{t("features.mods.noProfileActive")}</p>}
 
         {profiles.profiles.length > 0 && (
-          <ul ref={listRef} className="flex flex-col gap-2 max-h-72 overflow-y-auto text-left px-1">
+          <ul ref={listRef} className="flex flex-col gap-2 max-h-72 shrink-0 overflow-y-auto text-left px-1">
             {profiles.profiles.map((profile) => (
               <li key={profile.id}>{row(profile)}</li>
             ))}

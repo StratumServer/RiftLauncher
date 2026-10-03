@@ -15,15 +15,26 @@ import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/d
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 import { isSafeWorldName } from "@domain/worlds/worlds"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
+import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME } from "@domain/userData/migrationPlan"
 
 const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
 
-const defaultConfig: ConfigType = {
+let defaultConfig: ConfigType = {
   ...DEFAULT_CONFIG_BASE,
   schemaVersion: CURRENT_CONFIG_SCHEMA,
-  defaultInstallationsFolder: join(app.getPath("appData"), "RiftLauncherInstallations"),
-  defaultVersionsFolder: join(app.getPath("appData"), "RiftLauncherGameVersions"),
-  backupsFolder: join(app.getPath("appData"), "RiftLauncherBackups")
+  defaultInstallationsFolder: join(app.getPath("appData"), DEFAULT_INSTALLATIONS_FOLDER_NAME),
+  defaultVersionsFolder: join(app.getPath("appData"), DEFAULT_VERSIONS_FOLDER_NAME),
+  backupsFolder: join(app.getPath("appData"), DEFAULT_BACKUPS_FOLDER_NAME)
+}
+
+/** Use a different root for future default folders in portable mode. */
+export function setDefaultFolderPathRoot(root: string): void {
+  defaultConfig = {
+    ...defaultConfig,
+    defaultInstallationsFolder: join(root, DEFAULT_INSTALLATIONS_FOLDER_NAME),
+    defaultVersionsFolder: join(root, DEFAULT_VERSIONS_FOLDER_NAME),
+    backupsFolder: join(root, DEFAULT_BACKUPS_FOLDER_NAME)
+  }
 }
 
 const defaultInstallation: InstallationType = {

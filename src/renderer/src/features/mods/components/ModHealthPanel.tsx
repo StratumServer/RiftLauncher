@@ -10,6 +10,7 @@ import type { ModHealthFinding, ModHealthSection } from "@domain/mods/health"
 import type { InstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
 
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
+import ExpandableNameList from "@renderer/components/ui/ExpandableNameList"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 
@@ -51,42 +52,13 @@ const RAW = { interpolation: { escapeValue: false } }
  */
 function NotCheckedMods({ mods, labelOf }: Readonly<{ mods: readonly InstalledModType[]; labelOf: (iMod: InstalledModType) => string }>): JSX.Element {
   const { t } = useTranslation()
-
-  // Mirrors the element's own state, which the browser flips on a click or a key press. Held here
-  // rather than on the panel so a list that leaves and comes back starts closed, like its element.
-  const [opened, setOpened] = useState(false)
-
-  return (
-    <details className="text-zinc-400 text-sm" onToggle={(event) => setOpened(event.currentTarget.open)}>
-      <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2">{t("features.mods.healthNotChecked", { count: mods.length })}</summary>
-      {opened && (
-        <ul className="max-h-48 overflow-y-auto break-words px-2 pt-1">
-          {mods.map((iMod) => (
-            <li key={iMod.path}>{labelOf(iMod)}</li>
-          ))}
-        </ul>
-      )}
-    </details>
-  )
+  return <ExpandableNameList summary={t("features.mods.healthNotChecked", { count: mods.length })} groups={mods.map((iMod) => ({ key: iMod.path, label: labelOf(iMod) }))} />
 }
 
 /** Archive names behind the unreadable count, disclosed only when asked for (#576). */
 function UnreadableMods({ mods }: Readonly<{ mods: readonly ErrorInstalledModType[] }>): JSX.Element {
   const { t } = useTranslation()
-  const [opened, setOpened] = useState(false)
-
-  return (
-    <details className="text-zinc-400 text-sm" onToggle={(event) => setOpened(event.currentTarget.open)}>
-      <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2">{t("features.mods.healthUnreadable", { count: mods.length })}</summary>
-      {opened && (
-        <ul className="max-h-48 overflow-y-auto break-words px-2 pt-1">
-          {mods.map((mod) => (
-            <li key={mod.path}>{mod.zipname}</li>
-          ))}
-        </ul>
-      )}
-    </details>
-  )
+  return <ExpandableNameList summary={t("features.mods.healthUnreadable", { count: mods.length })} groups={mods.map((mod) => ({ key: mod.path, label: mod.zipname }))} />
 }
 
 /**

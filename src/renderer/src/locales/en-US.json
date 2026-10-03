@@ -561,6 +561,7 @@
       "exportModConfigsApply": "Export the chosen configs"
     },
     "config": {
+      "userDataFolder": "Profile folder",
       "defaultInstallationsFolder": "Installations folder",
       "defaultVersionsFolder": "VS Versions folder",
       "backupsFolder": "Backups folder",

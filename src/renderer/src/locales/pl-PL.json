@@ -453,7 +453,6 @@
       "profileSwitchPartial_few": "Przełączanie na {{profile}} nie dobiegło końca: {{count}} mody zachowały swój stan. Żaden profil nie jest aktywny, dopóki nie przełączysz ponownie.",
       "profileSwitchPartial_many": "Przełączanie na {{profile}} nie dobiegło końca: {{count}} modów zachowało swój stan. Żaden profil nie jest aktywny, dopóki nie przełączysz ponownie.",
       "profileSwitchNotStarted": "Nie udało się zapisać obecnego profilu, więc nic nie zostało zmienione.",
-      "profileSwitchAffectedFiles": "Pokaż nazwy archiwów, których dotyczy problem ({{count}})",
       "profileSwitchNotRecorded": "Mody odpowiadają teraz profilowi {{profile}}, ale nie udało się zapisać go jako aktywnego.",
       "cantChangeProfilesWhileInUse": "Nie możesz zmieniać profili, gdy dla tej instancji trwa tworzenie lub przywracanie kopii zapasowej albo aktualizacja modów.",
       "profilesFolderUnreadable": "Nie udało się odczytać folderu modów tej instancji, więc nic nie zostało zapisane ani zmienione.",
@@ -547,6 +546,7 @@
       "suggestionsEmpty": "Brak sugestii w tej chwili."
     },
     "config": {
+      "userDataFolder": "Folder profilu",
       "defaultInstallationsFolder": "Folder instancji",
       "defaultVersionsFolder": "Folder wersji VS",
       "backupsFolder": "Folder kopii zapasowych",

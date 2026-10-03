@@ -588,6 +588,7 @@
       "exportModConfigsApply": "Exporter les configs cochées"
     },
     "config": {
+      "userDataFolder": "Dossier de profil",
       "defaultInstallationsFolder": "Installations",
       "defaultVersionsFolder": "Versions de VS",
       "backupsFolder": "Sauvegardes",

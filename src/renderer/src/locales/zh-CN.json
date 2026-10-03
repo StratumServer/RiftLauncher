@@ -425,7 +425,6 @@
       "profileSwitchedWithSkipped_other": "已切换到 {{profile}}：启用 {{on}} 个，禁用 {{off}} 个。它列出的 {{count}} 个模组没有被改动，因为它们已经不在这里，或者有多个副本可能匹配。",
       "profileSwitchPartial_other": "切换到 {{profile}} 没有完成：{{count}} 个模组保持了原有状态。在您再次切换之前，没有预设处于使用状态。",
       "profileSwitchNotStarted": "当前预设没能记录下来，因此什么都没有改动。",
-      "profileSwitchAffectedFiles": "显示受影响的压缩包名称（{{count}}）",
       "profileSwitchNotRecorded": "模组现在与 {{profile}} 一致，但它没能记录为正在使用的预设。",
       "cantChangeProfilesWhileInUse": "该安装正在备份、恢复或更新模组，此时无法改动预设。",
       "profilesFolderUnreadable": "无法读取该安装的模组文件夹，因此既没有记录也没有改动任何内容。",
@@ -503,6 +502,7 @@
       "suggestionsEmpty": "暂无建议。"
     },
     "config": {
+      "userDataFolder": "个人资料文件夹",
       "defaultInstallationsFolder": "安装文件夹",
       "defaultVersionsFolder": "游戏版本文件夹",
       "backupsFolder": "备份文件夹",
