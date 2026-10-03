@@ -13,7 +13,10 @@ const LOG_TAG = "[front] [mods] [features/mods/hooks/useModBatchActions.ts]"
 
 export interface ModBatchActions {
   isChecked(path: string): boolean
-  /** Checks this Mod, or the displayed range from the last plain click through this one with Shift. */
+  /**
+   * Checks this Mod, or the displayed range from the last plain click through this one with Shift.
+   * Shift-click always adds the range to the selection, even when the clicked Mod is already checked.
+   */
   setChecked(path: string, checked: boolean, shiftKey: boolean): void
   /** Checks every shown Mod, or clears them when every one already is. Checked Mods a filter hides stay as they are. */
   toggleAllShown(): void
@@ -190,6 +193,7 @@ export function useModBatchActions(
       }
 
       // What went through has a new name or is gone, so the failures are all that is left to hold.
+      rangeAnchorPath.current = null
       setCheckedPaths(new Set(failedPaths))
       await refresh()
     } finally {
@@ -210,6 +214,7 @@ export function useModBatchActions(
 
     logMods("info", `${LOG_TAG} [${suspend ? "suspend" : "resume"}] Batch ${suspend ? "suspend" : "resume"}: ${modids.length} changed.`)
     addNotification(suspend ? t("features.mods.modsBatchSuspended", { count: modids.length }) : t("features.mods.modsBatchResumed", { count: modids.length }), "success")
+    rangeAnchorPath.current = null
     setCheckedPaths(new Set())
   }
 

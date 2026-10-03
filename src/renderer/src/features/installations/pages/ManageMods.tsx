@@ -95,6 +95,8 @@ function ListMods(): JSX.Element {
 
   // The selection follows the order on screen: update status first, then name within each section.
   // Shift+click ranges must match what the player sees, not the archive scan's order.
+  // Deliberately blind to suspension: a held-back Mod still belongs under "Mods with updates",
+  // because watching for the new version is exactly why the player suspended it (#194).
   const updatableMods = visibleMods.filter((iMod) => iMod._updatableTo).sort(byName)
   const incompatibleMods = visibleMods.filter((iMod) => !iMod._updatableTo && iMod._lastVersion).sort(byName)
   const upToDateMods = visibleMods.filter((iMod) => !iMod._updatableTo && !iMod._lastVersion).sort(byName)

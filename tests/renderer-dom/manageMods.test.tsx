@@ -1576,7 +1576,63 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     ])
   })
 
-  it("starts a new Shift range when a search hides the previous anchor", async () => {
+  it("selects the displayed range upward with Shift+click, unchecks with plain click, and handles anchor equal to target", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    await user.click(checkboxOf("Delta Mod"))
+    expect(checkboxOf("Delta Mod").checked).toBe(true)
+
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Alpha Mod"))
+    await user.keyboard("{/Shift}")
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([true, true, true, true])
+    expect(screen.getByText("4 selected")).toBeTruthy()
+
+    await user.click(checkboxOf("Beta Mod"))
+    expect(checkboxOf("Beta Mod").checked).toBe(false)
+    expect(screen.getByText("3 selected")).toBeTruthy()
+
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Beta Mod"))
+    await user.keyboard("{/Shift}")
+    expect(checkboxOf("Beta Mod").checked).toBe(true)
+    expect(screen.getByText("4 selected")).toBeTruthy()
+  })
+
+  it("checks only visible rows in a Shift range when search hides an intermediate row", async () => {
+    const user = userEvent.setup()
+    renderManageMods({
+      modsManager: {
+        getInstalledMods: vi.fn(async () => ({
+          mods: [
+            { name: "First Mod", modid: "first", version: "1.0.0", path: ALPHA_PATH, enabled: true, authors: ["Ann"], contributors: [] },
+            { name: "Second Mod", modid: "second", version: "2.0.0", path: BETA_PATH, enabled: true, authors: ["Bob"], contributors: [] },
+            { name: "Third Mod", modid: "third", version: "3.0.0", path: DELTA_PATH, enabled: true, authors: ["Dee"], contributors: [] }
+          ],
+          errors: []
+        }))
+      }
+    })
+
+    await screen.findByText("First Mod", {}, { timeout: 3000 })
+    const search = screen.getByPlaceholderText(SEARCH_PLACEHOLDER)
+    await user.type(search, "ir")
+    await waitFor(() => expect(screen.queryByText("Second Mod")).toBeNull())
+
+    await user.click(checkboxOf("First Mod"))
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Third Mod"))
+    await user.keyboard("{/Shift}")
+
+    expect(screen.getByText("2 selected")).toBeTruthy()
+    await user.clear(search)
+    await screen.findByText("Second Mod")
+    expect(["First Mod", "Second Mod", "Third Mod"].map((name) => checkboxOf(name).checked)).toEqual([true, false, true])
+  })
+
+  it("starts a new Shift range when a search hides the previous anchor and moves the anchor to the clicked Mod", async () => {
     const user = userEvent.setup()
     renderManageMods()
 
@@ -1584,17 +1640,124 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     await user.click(checkboxOf("Alpha Mod"))
 
     const search = screen.getByPlaceholderText(SEARCH_PLACEHOLDER)
-    await user.type(search, "beta")
+    await user.type(search, "delta")
     await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
 
     await user.keyboard("{Shift>}")
-    await user.click(checkboxOf("Beta Mod"))
+    await user.click(checkboxOf("Delta Mod"))
     await user.keyboard("{/Shift}")
 
     expect(screen.getByText("1 selected")).toBeTruthy()
     await user.clear(search)
     await screen.findByText("Alpha Mod")
-    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([true, true, false, false])
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([true, false, false, true])
+
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Gamma Mod"))
+    await user.keyboard("{/Shift}")
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([true, false, true, true])
+    expect(screen.getByText("3 selected")).toBeTruthy()
+  })
+
+  it("starts a new range when Shift-clicking with no prior anchor", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Gamma Mod"))
+    await user.keyboard("{/Shift}")
+
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([false, false, true, false])
+    expect(screen.getByText("1 selected")).toBeTruthy()
+
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Delta Mod"))
+    await user.keyboard("{/Shift}")
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([false, false, true, true])
+    expect(screen.getByText("2 selected")).toBeTruthy()
+  })
+
+  it("clears the Shift range anchor when selecting all, suspending updates, or running a batch action", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering()
+    renderManageMods({ modsManager: { setModEnabled } })
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+
+    // 1. Select-all clears the anchor
+    await user.click(checkboxOf("Alpha Mod"))
+    await user.click(await selectAllBox())
+    await user.click(await selectAllBox())
+    expect(screen.getByText("0 selected")).toBeTruthy()
+
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Delta Mod"))
+    await user.keyboard("{/Shift}")
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([false, false, false, true])
+
+    await user.click(checkboxOf("Delta Mod"))
+    expect(screen.getByText("0 selected")).toBeTruthy()
+
+    // 2. Suspending updates clears the anchor
+    await user.click(checkboxOf("Alpha Mod"))
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Beta Mod"))
+    await user.keyboard("{/Shift}")
+    expect(screen.getByText("2 selected")).toBeTruthy()
+
+    await user.click(batchButton(SUSPEND_SELECTED))
+    expect(await screen.findByText("Updates suspended for 2 Mods.")).toBeTruthy()
+    expect(screen.getByText("0 selected")).toBeTruthy()
+    await discardToast(user)
+
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Delta Mod"))
+    await user.keyboard("{/Shift}")
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([false, false, false, true])
+
+    await user.click(checkboxOf("Delta Mod"))
+    expect(screen.getByText("0 selected")).toBeTruthy()
+
+    // 3. Batch action clears the anchor
+    await user.click(checkboxOf("Alpha Mod"))
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Beta Mod"))
+    await user.keyboard("{/Shift}")
+    expect(screen.getByText("2 selected")).toBeTruthy()
+
+    await user.click(batchButton(DISABLE_SELECTED))
+    expect(await screen.findByText("2 Mods disabled.")).toBeTruthy()
+    await batchLanded()
+    await discardToast(user)
+
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Delta Mod"))
+    await user.keyboard("{/Shift}")
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([false, false, false, true])
+  })
+
+  it("drops the Shift range anchor when a rescan removes the anchor Mod from the folder", async () => {
+    const user = userEvent.setup()
+    let currentScan = aModScan()
+    const getInstalledMods = vi.fn(async () => currentScan)
+    renderManageMods({ modsManager: { getInstalledMods } })
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    await user.click(checkboxOf("Alpha Mod"))
+    expect(checkboxOf("Alpha Mod").checked).toBe(true)
+
+    currentScan = {
+      mods: currentScan.mods.filter((m) => m.name !== "Alpha Mod"),
+      errors: []
+    }
+    await user.click(screen.getByRole("button", { name: "Reload" }))
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Delta Mod"))
+    await user.keyboard("{/Shift}")
+    expect(["Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([false, false, true])
   })
 
   it("checks only the Mods the search left on screen when selecting all, and acts on nothing else", async () => {
