@@ -546,6 +546,7 @@
       "suggestionsEmpty": "No hay sugerencias por ahora."
     },
     "config": {
+      "userDataFolder": "Carpeta de perfil",
       "defaultInstallationsFolder": "Carpeta de Instalaciones",
       "defaultVersionsFolder": "Carpeta de Versiones de VS",
       "backupsFolder": "Carpeta de Copias de Seguridad",

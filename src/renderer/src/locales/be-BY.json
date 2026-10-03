@@ -546,6 +546,7 @@
       "suggestionsEmpty": "Зараз няма прапаноў."
     },
     "config": {
+      "userDataFolder": "Папка профілю",
       "defaultInstallationsFolder": "Папка ўсталёвак",
       "defaultVersionsFolder": "Папка версій VS",
       "backupsFolder": "Папка рэзервовых копій",

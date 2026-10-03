@@ -130,6 +130,24 @@ describe("normalizeConfig: the document itself", () => {
     assert.equal(result.backupsFolder, legacyPaths.backupsFolder)
   })
 
+  it("uses portable defaults for new values and preserves configured paths", async () => {
+    const { normalizeConfig, setDefaultFolderPathRoot } = await freshConfigManager()
+    const portableRoot = join(temporaryRoot, "RiftLauncherData")
+    const customBackups = join(temporaryRoot, "my-backups")
+    setDefaultFolderPathRoot(portableRoot)
+
+    const result = normalizeConfig({
+      defaultInstallationsFolder: join(appDataFolder, "RiftLauncherInstallations"),
+      defaultVersionsFolder: join(appDataFolder, "RiftLauncherGameVersions"),
+      backupsFolder: customBackups
+    })
+
+    assert.equal(result.defaultInstallationsFolder, join(appDataFolder, "RiftLauncherInstallations"))
+    assert.equal(result.defaultVersionsFolder, join(appDataFolder, "RiftLauncherGameVersions"))
+    assert.equal(result.backupsFolder, customBackups)
+    assert.equal(normalizeConfig({}).backupsFolder, join(portableRoot, "RiftLauncherBackups"))
+  })
+
   it("falls back to default window fields when window is not a record", async () => {
     const { normalizeConfig } = await freshConfigManager()
     const result = normalizeConfig({ window: "not an object" })

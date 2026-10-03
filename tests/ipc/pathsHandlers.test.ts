@@ -486,6 +486,14 @@ describe("OPEN_PATH_ON_FILE_EXPLORER", () => {
     expect_calledWith(managedFolder)
   })
 
+  it("opens the active user-data root without granting access to its contents", async () => {
+    const event = await createTrustedEvent()
+    const showItemCallCount = vi.mocked(shell.showItemInFolder).mock.calls.length
+    await handler(IPC_CHANNELS.PATHS_MANAGER.OPEN_PATH_ON_FILE_EXPLORER)(event, userDataFolder)
+    assert.equal(vi.mocked(shell.openPath).mock.calls.at(-1)?.[0], userDataFolder)
+    assert.equal(vi.mocked(shell.showItemInFolder).mock.calls.length, showItemCallCount)
+  })
+
   function expect_calledWith(pathValue: string): void {
     assert.equal(vi.mocked(shell.showItemInFolder).mock.calls.at(-1)?.[0], pathValue)
   }

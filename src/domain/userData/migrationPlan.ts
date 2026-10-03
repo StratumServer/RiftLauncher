@@ -41,6 +41,10 @@ export type UserDataMigrationAction =
  */
 export const MIGRATED_USER_DATA_ENTRIES = ["config.json", "Icons"] as const
 
+export const DEFAULT_INSTALLATIONS_FOLDER_NAME = "RiftLauncherInstallations"
+export const DEFAULT_VERSIONS_FOLDER_NAME = "RiftLauncherGameVersions"
+export const DEFAULT_BACKUPS_FOLDER_NAME = "RiftLauncherBackups"
+
 export type MigratedUserDataEntry = (typeof MIGRATED_USER_DATA_ENTRIES)[number]
 
 /** What the host found on disk, before anything is decided. */

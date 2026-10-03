@@ -546,6 +546,7 @@
       "suggestionsEmpty": "Nessun suggerimento al momento."
     },
     "config": {
+      "userDataFolder": "Cartella profilo",
       "defaultInstallationsFolder": "Cartella delle installazioni",
       "defaultVersionsFolder": "Cartella delle versioni",
       "backupsFolder": "Cartella dei backups",
