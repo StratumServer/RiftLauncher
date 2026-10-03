@@ -1537,6 +1537,66 @@ describe("ManageMods: batch actions on selected Mods", { timeout: 20000 }, () =>
     return vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => answer(path))
   }
 
+  it("selects the displayed range with Shift+click and disables that range", async () => {
+    const user = userEvent.setup()
+    const setModEnabled = renamesAnswering()
+    renderManageMods({
+      modsManager: {
+        setModEnabled,
+        getInstalledMods: vi.fn(async () => {
+          const scan = aModScan()
+          return { ...scan, mods: [scan.mods[2]!, scan.mods[0]!, scan.mods[3]!, scan.mods[1]!] }
+        })
+      }
+    })
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    const rowCheckboxes = screen
+      .getAllByRole("checkbox")
+      .filter((checkbox) => checkbox.getAttribute("aria-label")?.startsWith("Select ") && checkbox.getAttribute("aria-label") !== SELECT_ALL) as HTMLInputElement[]
+    expect(rowCheckboxes).toHaveLength(4)
+    expect(rowCheckboxes.map((checkbox) => checkbox.getAttribute("aria-label"))).toEqual(["Select Alpha Mod", "Select Beta Mod", "Select Gamma Mod", "Select Delta Mod"])
+
+    await user.click(rowCheckboxes[0]!)
+    await user.keyboard("{Shift>}")
+    await user.click(rowCheckboxes[2]!)
+    await user.keyboard("{/Shift}")
+
+    expect(rowCheckboxes.map((checkbox) => checkbox.checked)).toEqual([true, true, true, false])
+    expect(screen.getByText("3 selected")).toBeTruthy()
+
+    await user.click(batchButton(DISABLE_SELECTED))
+
+    expect(await screen.findByText("3 Mods disabled.")).toBeTruthy()
+    await batchLanded()
+    expect(setModEnabled.mock.calls).toEqual([
+      [ALPHA_PATH, false],
+      [BETA_PATH, false],
+      [GAMMA_PATH, false]
+    ])
+  })
+
+  it("starts a new Shift range when a search hides the previous anchor", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    await user.click(checkboxOf("Alpha Mod"))
+
+    const search = screen.getByPlaceholderText(SEARCH_PLACEHOLDER)
+    await user.type(search, "beta")
+    await waitFor(() => expect(screen.queryByText("Alpha Mod")).toBeNull())
+
+    await user.keyboard("{Shift>}")
+    await user.click(checkboxOf("Beta Mod"))
+    await user.keyboard("{/Shift}")
+
+    expect(screen.getByText("1 selected")).toBeTruthy()
+    await user.clear(search)
+    await screen.findByText("Alpha Mod")
+    expect(["Alpha Mod", "Beta Mod", "Gamma Mod", "Delta Mod"].map((name) => checkboxOf(name).checked)).toEqual([true, true, false, false])
+  })
+
   it("checks only the Mods the search left on screen when selecting all, and acts on nothing else", async () => {
     const user = userEvent.setup()
     const setModEnabled = renamesAnswering()

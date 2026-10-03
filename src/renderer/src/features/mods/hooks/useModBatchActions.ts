@@ -13,7 +13,8 @@ const LOG_TAG = "[front] [mods] [features/mods/hooks/useModBatchActions.ts]"
 
 export interface ModBatchActions {
   isChecked(path: string): boolean
-  setChecked(path: string, checked: boolean): void
+  /** Checks this Mod, or the displayed range from the last plain click through this one with Shift. */
+  setChecked(path: string, checked: boolean, shiftKey: boolean): void
   /** Checks every shown Mod, or clears them when every one already is. Checked Mods a filter hides stay as they are. */
   toggleAllShown(): void
   /** The Mod's name, with its archive's file name added when another listed copy has the same name. */
@@ -43,15 +44,15 @@ function modidsOf(mods: readonly InstalledModType[]): string[] {
  * Manage Mods' selection, and the five things it can do to the selected Mods at once.
  *
  * The selection is keyed by archive path, the only identity two copies of one modid do not share.
- * Every action works on the selection as it stands among `visibleMods`, so a checked Mod that a filter
- * hides is neither counted nor touched (#228): what the player sees is what the buttons act on.
+ * Every action works on the selection as it stands among `visibleMods`, in display order, so a checked
+ * Mod that a filter hides is neither counted nor touched (#228): what the player sees is what the buttons act on.
  *
  * Each batch ends in one notification and one rescan, and leaves checked only the Mods that did not go
  * through. Those still sit in the folder under the name they had, so the page itself shows which.
  *
  * @param installation The Installation whose Mods folder the batch writes to.
  * @param installedMods Everything the last scan listed. A checked path it no longer lists is dropped.
- * @param visibleMods What the search and filters leave on screen.
+ * @param visibleMods What the search and filters leave on screen, in the order rendered.
  * @param refresh Rescans the folder, once per batch.
  */
 export function useModBatchActions(
@@ -66,6 +67,7 @@ export function useModBatchActions(
   const configDispatch = useConfigDispatch()
 
   const [checkedPaths, setCheckedPaths] = useState<ReadonlySet<string>>(() => new Set())
+  const rangeAnchorPath = useRef<string | null>(null)
 
   // The ref is the guard and the state only paints it, as in useInstalledModActions: a second click
   // lands before React has rendered the first one's state.
@@ -76,6 +78,7 @@ export function useModBatchActions(
   // back checked.
   useEffect(() => {
     const listed = new Set(installedMods.map((iMod) => iMod.path))
+    if (rangeAnchorPath.current !== null && !listed.has(rangeAnchorPath.current)) rangeAnchorPath.current = null
     setCheckedPaths((current) => {
       const kept = [...current].filter((path) => listed.has(path))
       return kept.length === current.size ? current : new Set(kept)
@@ -96,7 +99,29 @@ export function useModBatchActions(
   const toSuspend = modidsOf(selected).filter((modid) => !suspendedModUpdates.includes(modid))
   const toResume = modidsOf(selected).filter((modid) => suspendedModUpdates.includes(modid))
 
-  function setChecked(path: string, checked: boolean): void {
+  function setChecked(path: string, checked: boolean, shiftKey: boolean): void {
+    if (shiftKey) {
+      const anchorIndex = visibleMods.findIndex((iMod) => iMod.path === rangeAnchorPath.current)
+      const clickedIndex = visibleMods.findIndex((iMod) => iMod.path === path)
+
+      if (anchorIndex >= 0 && clickedIndex >= 0) {
+        const first = Math.min(anchorIndex, clickedIndex)
+        const last = Math.max(anchorIndex, clickedIndex)
+        setCheckedPaths((current) => {
+          const next = new Set(current)
+          for (const iMod of visibleMods.slice(first, last + 1)) next.add(iMod.path)
+          return next
+        })
+        return
+      }
+
+      // If a filter hides the anchor, Shift starts a new range at the clicked Mod.
+      rangeAnchorPath.current = path
+      setCheckedPaths((current) => new Set(current).add(path))
+      return
+    }
+
+    rangeAnchorPath.current = path
     setCheckedPaths((current) => {
       const next = new Set(current)
       if (checked) next.add(path)
@@ -106,6 +131,7 @@ export function useModBatchActions(
   }
 
   function toggleAllShown(): void {
+    rangeAnchorPath.current = null
     const shown = visibleMods.map((iMod) => iMod.path)
     setCheckedPaths((current) => {
       const next = new Set(current)
