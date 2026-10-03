@@ -475,6 +475,33 @@ declare global {
     name?: string
   }
 
+  /**
+   * One mod config as a modpack carries it: the file's exact text, and a digest over those exact
+   * bytes re-encoded UTF-8.
+   *
+   * The text is what the game reads, so it travels verbatim rather than re-serialised: Vintage Story
+   * takes JSON5 in its config files, which `JSON.parse` rejects outright. The digest is the industry
+   * answer to a file list inside a manifest (Gentoo GLEP 74, the OCI image spec, SBOMs all pair a
+   * size with a checksum), and it is here for one narrow job: a pack is a file people edit, and a
+   * hand-edited `text` whose digest no longer matches is refused per file instead of written over a
+   * config somebody tuned. The digest does NOT make the channel trustworthy against a hostile
+   * renderer: it can send any pair it likes. What stops a renderer from reaching a path it should
+   * not is that no key it sends is ever joined to anything unchecked.
+   */
+  type ModConfigEntry = {
+    sha256: string
+    text: string
+  }
+
+  /**
+   * Why a modpack's settings block was dropped whole, and which key did it. A pack whose settings
+   * cannot be used is still a good pack: the mods are what most people import a modpack for.
+   */
+  type SettingsRefused = {
+    reason: "bad-key" | "bad-value" | "too-many"
+    name?: string
+  }
+
   type ModpackManifestType = {
     name: string
     gameVersion: string
@@ -488,6 +515,14 @@ declare global {
      * file people pass around and a default that discloses an address is the wrong default.
      */
     servers?: ServerBookmarkType[]
+    /**
+     * The mod configs the exporting player chose to hand over, keyed by path relative to the
+     * Installation's own `ModConfig` folder with `/` between directories, and absent from every
+     * pack written before #363 and from every export whose player did not tick the box. The default
+     * is off for the same reason it is off on `servers`: a modpack is a file people pass around, and
+     * a config is the one part of an Installation that is the player's own work.
+     */
+    settings?: Record<string, ModConfigEntry>
   }
 
   type ModChangeSummaryEntry = {
@@ -677,6 +712,70 @@ declare global {
    * overwrite; `refused` is a path that is not a configured Installation.
    */
   type ModProfilesReadResult = { ok: true; document: ModProfilesDocument } | { ok: false; reason: "newer-format" | "unreadable" | "refused" }
+
+  /** One file in an Installation's `ModConfig` folder, as the import dialog needs to see it. */
+  type ModConfigListingEntry = {
+    /** Path relative to the folder, `/` between directories, the same shape a pack's keys use. */
+    name: string
+    bytes: number
+  }
+
+  /**
+   * What an Installation already has in its `ModConfig` folder, or the one reason there is nothing
+   * to list. `bytes` is the size on THIS Installation's disk, which is not the size the pack's own
+   * entry claims: the digest is what says whether the two hold the same bytes, and a size cannot.
+   *
+   * - `playing`: the game owns the folder. Vintage Story documents its configs as human-editable
+   *   "only while the game is not running", so this is the game's rule, not the launcher's.
+   */
+  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
+
+  /** Why one file of an apply did not land. Every value names a step that refused it, never a guess. */
+  type ApplyFailureReason = "copy-failed" | "not-landed" | "digest-mismatch" | "write-failed"
+
+  /**
+   * Why an export was refused before a single byte was written.
+   *
+   * One name for the whole union, spelled once here because it crosses the bridge in three files
+   * (the preload's own signature, its declaration and the renderer adapter) and a reason added to
+   * one copy of a union is a reason the other two refuse to compare against.
+   *
+   * - `too-large` is the pack's own byte ceiling. The other five are the config folder's, and each of
+   *   them names a file where one file is what went wrong.
+   * - `bad-name` and `collides` exist because the export and the import have to agree about which
+   *   keys a pack may hold: a name Windows would refuse, and two names differing only in case, are
+   *   both legal on the file system the file was created on and both unusable in a pack.
+   */
+  type ExportModpackRefusal = "unreadable-config" | "not-utf8" | "bad-name" | "collides" | "too-many" | "too-large"
+
+  /**
+   * What one apply did, file by file.
+   *
+   * `kind` is main's own answer, computed while writing, so the summary the player reads cannot be
+   * a dialog's guess made before anything happened. `skipped` names files the pack's bytes already
+   * matched, which are neither written nor backed up: a copy of them would leave the newest
+   * recovery folder holding the pack's own bytes.
+   */
+  type ApplyModConfigsResult =
+    | {
+        ok: true
+        /** The folder the displaced files were copied into, for the reveal button to open. */
+        backupFolder: string
+        applied: { name: string; kind: "new" | "replace" }[]
+        skipped: string[]
+        failed: { name: string; reason: ApplyFailureReason }[]
+      }
+    | {
+        ok: false
+        /**
+         * - `no-backups-folder`: no backup location is configured, so nothing displaced would have
+         *   anywhere to be put back to.
+         * - `insufficient-space`: the destination cannot hold both the backups and the new files.
+         * - `mod-config-unreadable`: something is at the `ModConfig` path that is not a folder, so
+         *   `ensureDir` would fail later with an ENOTDIR that says nothing about what to do.
+         */
+        reason: "playing" | "busy" | "no-backups-folder" | "insufficient-space" | "mod-config-unreadable"
+      }
 
   /** SAVE_MOD_PROFILES' verdict. `invalid` is a document that is not a format-1 profiles document. */
   type ModProfilesSaveResult = { ok: true } | { ok: false; reason: "newer-format" | "unreadable" | "invalid" | "refused" }
