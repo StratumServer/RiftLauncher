@@ -453,6 +453,7 @@
       "profileSwitchPartial_many": "A mudança para {{profile}} não terminou: {{count}} Mods mantiveram o estado. Nenhum perfil fica ativo até você mudar de novo.",
       "profileSwitchPartial_other": "A mudança para {{profile}} não terminou: {{count}} Mods mantiveram o estado. Nenhum perfil fica ativo até você mudar de novo.",
       "profileSwitchNotStarted": "Não foi possível registrar o perfil atual, então nada foi alterado.",
+      "profileSwitchAffectedFiles": "Ver nomes dos arquivos afetados ({{count}})",
       "profileSwitchNotRecorded": "Os Mods agora correspondem a {{profile}}, mas não foi possível registrá-lo como o perfil ativo.",
       "cantChangeProfilesWhileInUse": "Você não pode alterar perfis enquanto esta Instalação está em backup, sendo restaurada ou com os Mods sendo atualizados.",
       "profilesFolderUnreadable": "Não foi possível ler a pasta de Mods desta Instalação, então nada foi registrado nem alterado.",

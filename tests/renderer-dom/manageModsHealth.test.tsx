@@ -410,8 +410,42 @@ describe("ManageMods: the Installation check", () => {
     // Nothing to fix still leaves the unreadable archive to say, which is what opening it shows.
     await user.click(toggle)
     expect(toggle.getAttribute("aria-expanded")).toBe("true")
-    expect(screen.getByText("1 archive could not be read, so it was left out of this check.")).toBeTruthy()
-    // Every enabled Mod was answered for, so there is no ModDB sentence and nothing to open under it.
-    expect(document.querySelector("details")).toBeNull()
+    const body = document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement
+    const summary = within(body).getByText("1 archive could not be read, so it was left out of this check.")
+    const disclosure = summary.closest("details") as HTMLDetailsElement
+    expect(disclosure).toBeTruthy()
+    expect(disclosure.open).toBe(false)
+    // Every enabled Mod was answered for, so there is no ModDB sentence; only the unreadable-file list can open.
+    expect(within(disclosure).queryByRole("listitem")).toBeNull()
+  })
+
+  it("names unreadable archives on demand without exposing their paths", async () => {
+    const user = userEvent.setup()
+    const root = "C:/Users/player/AppData/RiftLauncherInstallations/Save/Mods"
+    renderManageMods({
+      modsManager: {
+        getInstalledMods: vi.fn(async () => ({
+          mods: [],
+          errors: [
+            { zipname: "broken one.zip", path: `${root}/broken one.zip` },
+            { zipname: "broken two.zip", path: `${root}/broken two.zip` }
+          ]
+        }))
+      }
+    })
+
+    const body = await openedHealthBody(user)
+    const summary = within(body).getByText("2 archives could not be read, so they were left out of this check.")
+    const disclosure = summary.closest("details") as HTMLDetailsElement
+    expect(within(disclosure).queryByRole("listitem")).toBeNull()
+
+    await user.click(summary)
+
+    expect(
+      within(disclosure)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["broken one.zip", "broken two.zip"])
+    expect(disclosure.textContent).not.toContain(root)
   })
 })

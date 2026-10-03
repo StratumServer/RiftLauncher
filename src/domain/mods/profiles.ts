@@ -67,6 +67,8 @@ export interface ModProfileSwitchPlan {
   missing: number
   /** Mods with two or more archives in the folder, none of which is the one the profile recorded. */
   unresolved: number
+  /** Archive file names behind the missing and unresolved counts, never full paths. */
+  skippedFiles?: string[]
 }
 
 export function emptyModProfilesDocument(): ModProfilesDocument {
@@ -192,7 +194,7 @@ export function planModProfileSwitch(profile: ModProfile, mods: readonly Profile
   }
 
   const wanted = new Map<string, boolean>()
-  let unresolved = 0
+  const unresolvedModids = new Set<string>()
   for (const [key, copies] of folder) {
     const files = recorded.get(key)
     if (!files) {
@@ -205,7 +207,7 @@ export function planModProfileSwitch(profile: ModProfile, mods: readonly Profile
       const names = new Set(copies.map((mod) => lastPathSegment(mod.path)))
       for (const mod of copies) wanted.set(mod.path, files.has(enabledFormOf(mod.path)) && (mod.enabled || !names.has(enabledFormOf(mod.path))))
     } else {
-      unresolved++
+      unresolvedModids.add(key)
     }
   }
 
@@ -213,9 +215,22 @@ export function planModProfileSwitch(profile: ModProfile, mods: readonly Profile
     const enabled = wanted.get(mod.path)
     return enabled === undefined || enabled === mod.enabled ? [] : [{ path: mod.path, enabled }]
   })
-  const missing = [...recorded.keys()].filter((key) => !folder.has(key)).length
+  const missingModids = new Set([...recorded.keys()].filter((key) => !folder.has(key)))
+  const skippedFiles = new Set<string>()
+  for (const entry of profile.mods) {
+    const key = entry.modid.toLowerCase()
+    if (missingModids.has(key) || unresolvedModids.has(key)) skippedFiles.add(entry.file)
+  }
+  for (const modid of unresolvedModids) {
+    for (const mod of folder.get(modid) ?? []) skippedFiles.add(enabledFormOf(mod.path))
+  }
 
-  return { changes, missing, unresolved }
+  return {
+    changes,
+    missing: missingModids.size,
+    unresolved: unresolvedModids.size,
+    ...(skippedFiles.size > 0 ? { skippedFiles: [...skippedFiles] } : {})
+  }
 }
 
 /** Records the folder into the active profile, if there is one. */

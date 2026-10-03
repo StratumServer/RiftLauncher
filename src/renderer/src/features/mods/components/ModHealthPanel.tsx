@@ -70,6 +70,25 @@ function NotCheckedMods({ mods, labelOf }: Readonly<{ mods: readonly InstalledMo
   )
 }
 
+/** Archive names behind the unreadable count, disclosed only when asked for (#576). */
+function UnreadableMods({ mods }: Readonly<{ mods: readonly ErrorInstalledModType[] }>): JSX.Element {
+  const { t } = useTranslation()
+  const [opened, setOpened] = useState(false)
+
+  return (
+    <details className="text-zinc-400 text-sm" onToggle={(event) => setOpened(event.currentTarget.open)}>
+      <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2">{t("features.mods.healthUnreadable", { count: mods.length })}</summary>
+      {opened && (
+        <ul className="max-h-48 overflow-y-auto break-words px-2 pt-1">
+          {mods.map((mod) => (
+            <li key={mod.path}>{mod.zipname}</li>
+          ))}
+        </ul>
+      )}
+    </details>
+  )
+}
+
 /**
  * Everything wrong with one Installation's Mods, above the list itself.
  *
@@ -83,7 +102,7 @@ function NotCheckedMods({ mods, labelOf }: Readonly<{ mods: readonly InstalledMo
  * one category whose outcome is close to certain.
  *
  * @param installedMods Everything the last scan read, disabled copies included.
- * @param unreadableCount Archives the scan could not read at all, counted rather than left silent.
+ * @param unreadableMods Archives the scan could not read at all, counted and named on request.
  * @param gameVersion The Installation's game version, without a leading "v".
  * @param suspended Mod ids the player holds, which drop every finding about them.
  * @param labelOf The Mod's name, with its file name added when a second copy shares it (batch.labelOf).
@@ -95,7 +114,7 @@ function NotCheckedMods({ mods, labelOf }: Readonly<{ mods: readonly InstalledMo
  */
 function ModHealthPanel({
   installedMods,
-  unreadableCount,
+  unreadableMods,
   gameVersion,
   suspended,
   labelOf,
@@ -104,7 +123,7 @@ function ModHealthPanel({
   onUpdateAll
 }: Readonly<{
   installedMods: readonly InstalledModType[]
-  unreadableCount: number
+  unreadableMods: readonly ErrorInstalledModType[]
   gameVersion: string
   suspended: readonly string[]
   labelOf: (iMod: InstalledModType) => string
@@ -152,7 +171,7 @@ function ModHealthPanel({
   const problems = findings.filter((finding) => finding.section !== "update").length
   const updates = findings.length - problems
 
-  if (findings.length < 1 && notChecked.length < 1 && unreadableCount < 1) return null
+  if (findings.length < 1 && notChecked.length < 1 && unreadableMods.length < 1) return null
 
   const open = openedByHand ?? findings.some((finding) => finding.section === "blocking")
 
@@ -279,7 +298,7 @@ function ModHealthPanel({
           })}
 
           {notChecked.length > 0 && <NotCheckedMods mods={notChecked} labelOf={labelOf} />}
-          {unreadableCount > 0 && <p className="text-zinc-400 text-sm">{t("features.mods.healthUnreadable", { count: unreadableCount })}</p>}
+          {unreadableMods.length > 0 && <UnreadableMods mods={unreadableMods} />}
         </div>
       </ListGroup>
     </ListWrapper>

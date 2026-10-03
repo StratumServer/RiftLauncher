@@ -439,6 +439,7 @@
       "profileSwitchPartial_one": "Der Wechsel zu {{profile}} wurde nicht abgeschlossen: {{count}} Mod hat ihren Zustand behalten. Es ist kein Profil aktiv, bis du erneut wechselst.",
       "profileSwitchPartial_other": "Der Wechsel zu {{profile}} wurde nicht abgeschlossen: {{count}} Mods haben ihren Zustand behalten. Es ist kein Profil aktiv, bis du erneut wechselst.",
       "profileSwitchNotStarted": "Das aktuelle Profil konnte nicht festgehalten werden, deshalb wurde nichts geändert.",
+      "profileSwitchAffectedFiles": "Betroffene Archivnamen anzeigen ({{count}})",
       "profileSwitchNotRecorded": "Die Mods passen jetzt zu {{profile}}, es konnte aber nicht als aktives Profil festgehalten werden.",
       "cantChangeProfilesWhileInUse": "Du kannst keine Profile ändern, während diese Installation gesichert oder wiederhergestellt wird oder ihre Mods aktualisiert werden.",
       "profilesFolderUnreadable": "Der Mods-Ordner dieser Installation konnte nicht gelesen werden, deshalb wurde nichts festgehalten oder geändert.",

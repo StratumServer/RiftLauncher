@@ -16,6 +16,7 @@ import {
   duplicateModProfile,
   emptyModProfilesDocument,
   finishModProfileSwitch,
+  lastPathSegment,
   planModProfileSwitch,
   renameModProfile,
   validateModProfileName
@@ -40,6 +41,11 @@ export interface ModProfiles {
   working: boolean
   /** The profile a switch is applying, while it runs. */
   switchingTo: string | null
+  /** File names behind the last partial or skipped switch, held for the open Profiles dialog. */
+  switchReport: Readonly<{ files: readonly string[] }> | null
+  /** Whether the last switch's name list is expanded in the Profiles dialog. */
+  switchReportOpen: boolean
+  setSwitchReportOpen: (open: boolean) => void
   /** Saves the folder as a new, active profile. Resolves the name problem, or null once it was handled. */
   create(name: string): Promise<ModProfileNameProblem | null>
   rename(id: string, name: string): Promise<ModProfileNameProblem | null>
@@ -78,6 +84,8 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   const [status, setStatus] = useState<ModProfilesStatus>("loading")
   const [document, setDocument] = useState<ModProfilesDocument>(emptyModProfilesDocument)
   const [switchingTo, setSwitchingTo] = useState<string | null>(null)
+  const [switchReport, setSwitchReport] = useState<Readonly<{ files: readonly string[] }> | null>(null)
+  const [switchReportOpen, setSwitchReportOpen] = useState(false)
 
   // The ref is the guard and the state only paints it: a second press lands before React has
   // rendered the first one's state.
@@ -189,6 +197,8 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   async function applyProfile(path: string, target: ModProfile): Promise<void> {
     const mods = await scanFolder(path)
     if (!mods) return
+    setSwitchReport(null)
+    setSwitchReportOpen(false)
     const begun = beginModProfileSwitch(document, mods)
     if (!(await save(path, begun))) {
       logMods("error", `${LOG_TAG} [switchTo] Stopped before any rename: the outgoing profile could not be recorded.`)
@@ -206,7 +216,11 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
 
     // Nothing is rolled back. Every rename is atomic, so the folder is valid, and with no profile
     // active the next switch cannot record this mix into either profile.
-    if (failed > 0) return addNotification(t("features.mods.profileSwitchPartial", { profile: target.name, count: failed, ...RAW_NAME }), "warning")
+    if (failed > 0) {
+      const failedFiles = [...new Set(results.filter((result) => !result.ok).map((result) => lastPathSegment(result.path)))]
+      setSwitchReport({ files: failedFiles })
+      return addNotification(t("features.mods.profileSwitchPartial", { profile: target.name, count: failed, ...RAW_NAME }), "warning")
+    }
 
     if (!(await save(path, finishModProfileSwitch(begun, target.id)))) {
       return addNotification(t("features.mods.profileSwitchNotRecorded", { profile: target.name, ...RAW_NAME }), "warning")
@@ -214,6 +228,7 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
 
     const skipped = plan.missing + plan.unresolved
     const counts = { profile: target.name, on: turnedOn, off: turnedOff, ...RAW_NAME }
+    if (skipped > 0) setSwitchReport({ files: plan.skippedFiles ?? [] })
     addNotification(skipped > 0 ? t("features.mods.profileSwitchedWithSkipped", { ...counts, count: skipped }) : t("features.mods.profileSwitched", counts), "success")
   }
 
@@ -245,6 +260,9 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
     activeProfile: document.profiles.find((profile) => profile.id === document.activeProfileId),
     working,
     switchingTo,
+    switchReport,
+    switchReportOpen,
+    setSwitchReportOpen,
     create,
     rename,
     remove,

@@ -190,6 +190,21 @@ function ModProfilesPopup({ isOpen, close, profiles, locked }: Readonly<{ isOpen
 
         {notice && <p role="status">{t(notice)}</p>}
 
+        {profiles.switchReport && (
+          <details open={profiles.switchReportOpen} onToggle={(event) => profiles.setSwitchReportOpen(event.currentTarget.open)} className="text-sm text-zinc-300">
+            <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2">
+              {t("features.mods.profileSwitchAffectedFiles", { count: profiles.switchReport.files.length })}
+            </summary>
+            {profiles.switchReportOpen && (
+              <ul className="max-h-48 overflow-y-auto break-words px-2 pt-1">
+                {profiles.switchReport.files.map((file) => (
+                  <li key={file}>{file}</li>
+                ))}
+              </ul>
+            )}
+          </details>
+        )}
+
         {ready && profiles.profiles.length === 0 && <p>{t("features.mods.profilesFirstHint")}</p>}
         {ready && profiles.profiles.length > 0 && !profiles.activeProfile && <p role="status">{t("features.mods.noProfileActive")}</p>}
 

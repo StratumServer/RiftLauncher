@@ -402,6 +402,12 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(screen.getAllByText(NO_PROFILE_NOTE)).toHaveLength(2)
     expect(profilesButton().textContent).toContain("No profile")
 
+    const affectedFiles = within(dialog).getByText("Show affected archive names (1)")
+    const affectedDisclosure = affectedFiles.closest("details") as HTMLDetailsElement
+    expect(affectedDisclosure.open).toBe(false)
+    await user.click(affectedFiles)
+    expect(within(affectedDisclosure).getByRole("listitem").textContent).toBe("gamma-3.0.0.zip")
+
     // The log carries counts, never a profile, a Mod or a path.
     const lines = logMessage.mock.calls.map((call) => call.join(" "))
     expect(lines.filter((line) => /Solo|Server|Mod\b|\/games\/a/.test(line.replace(/\[.*?\]/g, "")))).toEqual([])
@@ -420,6 +426,28 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(setModEnabled.mock.calls).toEqual([[GAMMA, false]])
     // No profile was active, so nothing was recorded over Server with the mixed folder.
     expect(stored()).toEqual(aDocument([{ ...SERVER, mods: LIVE }, SOLO], "solo"))
+  })
+
+  it("names the missing profile file and every ambiguous installed copy behind the skipped count", async () => {
+    const ambiguous: ModProfile = { ...SOLO, mods: [...SOLO.mods, { modid: "quirkid", file: "delta-0.9.0.zip" }] }
+    const mods = [...aFolder(), aMod("Delta Copy", "quirkid", `${MODS}/delta-1.0.1.zip`)]
+    const { user } = renderProfiles({ mods, document: aDocument([SERVER, ambiguous], "server") })
+    const dialog = await openProfiles(user, "Solo")
+
+    await user.click(useButtonOf(dialog, "Solo"))
+
+    await switchLanded()
+    expect(await screen.findByText(/^Switched to Solo: .*2 Mods it lists were left alone/)).toBeTruthy()
+    const affectedFiles = within(dialog).getByText("Show affected archive names (4)")
+    const affectedDisclosure = affectedFiles.closest("details") as HTMLDetailsElement
+    expect(affectedDisclosure.open).toBe(false)
+    await user.click(affectedFiles)
+
+    expect(
+      within(affectedDisclosure)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["zeta-1.0.0.zip", "delta-0.9.0.zip", "delta-4.0.0.zip", "delta-1.0.1.zip"])
   })
 
   it("stops before any rename when the outgoing profile cannot be recorded", async () => {
