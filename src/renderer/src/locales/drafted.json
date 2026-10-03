@@ -651,7 +651,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "de-DE": [
     "breadcrumbs.addInstallation",
@@ -1357,7 +1361,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "es-ES": [
     "breadcrumbs.manageServers",
@@ -1901,7 +1909,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "fr-FR": ["features.config.userDataFolder"],
   "hu-HU": [
@@ -2491,7 +2503,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "it-IT": [
     "breadcrumbs.manageServers",
@@ -3042,7 +3058,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "nl-NL": [
     "breadcrumbs.addInstallation",
@@ -3752,7 +3772,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "pl-PL": [
     "breadcrumbs.manageServers",
@@ -4300,7 +4324,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "pt-BR": [
     "breadcrumbs.manageServers",
@@ -4752,7 +4780,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "pt-PT": [
     "breadcrumbs.manageServers",
@@ -5310,7 +5342,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "ru-RU": [
     "breadcrumbs.manageServers",
@@ -5952,7 +5988,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "uk-UA": [
     "breadcrumbs.manageServers",
@@ -6519,7 +6559,11 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ],
   "zh-CN": [
     "breadcrumbs.addInstallation",
@@ -7195,6 +7239,10 @@
     "features.mods.suggestionsNoThanks",
     "features.mods.suggestionsTurnOff",
     "features.config.modSuggestions",
-    "features.config.modSuggestionsDesc"
+    "features.config.modSuggestionsDesc",
+    "features.mods.importModConfigsSkip",
+    "features.mods.importModConfigsApply",
+    "features.mods.exportModConfigsSkip",
+    "features.mods.exportModConfigsApply"
   ]
 }

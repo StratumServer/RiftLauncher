@@ -40,7 +40,8 @@ function ImportModpackPopup({
   installation,
   installedMods,
   onFinish,
-  selection
+  selection,
+  carriesConfigs
 }: Readonly<{
   isOpen: boolean
   manifest: ModpackRequest | null
@@ -50,6 +51,8 @@ function ImportModpackPopup({
   onFinish: () => void
   /** Set when the entries are browse picks: how many picks were left out for sharing a modid. */
   selection?: Readonly<{ leftOut: number }>
+  /** Set when the pack carries mod configs, which is what makes a pack with no Mods worth importing. */
+  carriesConfigs?: boolean
 }>): JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -119,6 +122,12 @@ function ImportModpackPopup({
 
   const planByModid = useMemo(() => new Map((plan?.items ?? []).map((item): [string, ModpackPlanItem] => [item.modid, item])), [plan])
 
+  // Whether this pack is about anything at all. Zero Mods is not a dead pack any more: a settings
+  // block alone is an import, and the button that offers it is the same button. The count is the
+  // caller's to give, because ModpackRequest is the domain's request type and a settings block is
+  // not something its planner is meant to know about.
+  const hasConfigs = carriesConfigs
+
   const notOnModDbCount = useMemo(() => (plan?.items ?? []).filter((item) => item.decision === "skip" && item.reason === "not-on-moddb").length, [plan])
 
   const lookupFailedCount = useMemo(() => (plan?.items ?? []).filter((item) => item.decision === "skip" && item.reason === "lookup-failed").length, [plan])
@@ -154,8 +163,22 @@ function ImportModpackPopup({
   async function handleImport(): Promise<void> {
     if (!manifest || !plan) return
 
+    // A pack that carries mod configs and no Mods is a real thing: configs are what a player is
+    // most often after, and a modlist of zero is what a pack assembled from a folder rather than
+    // from ModDB looks like. There is nothing to install, so the Mods dialog has nothing to say,
+    // and the caller reads the manifest before it is cleared — which is how the configs survive
+    // long enough for the dialog that is about them to ask. Closing first is the other half of it:
+    // onFinish is reached from nowhere else, and leaving this popup open underneath the next one
+    // puts two dialogs on top of each other.
+    if (manifest.mods.length === 0) {
+      handleClose()
+      return onFinish()
+    }
+
     // The same precondition every sibling flow has. Importing a pack writes to the Mods folder just
-    // as an update does, and it was the one write that ran straight through a backup.
+    // as an update does, and it was the one write that ran straight through a backup. A pack with no
+    // Mods never reached it: it writes nothing here, and the configs are written by the dialog
+    // behind this one, which takes its own lease over the same Installation.
     if (modsFolderInUse(installation)) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
 
     setImporting(true)
@@ -342,7 +365,7 @@ function ImportModpackPopup({
                       className="p-1 px-4 h-8"
                       onClick={handleImport}
                       variant="primary"
-                      disabled={manifest.mods.length === 0 || !plan}
+                      disabled={(manifest.mods.length === 0 && !hasConfigs) || !plan}
                     >
                       {plan ? <PiDownloadDuotone className="text-xl" /> : <FiLoader className="animate-spin text-xl" />}
                       <p>{!plan ? t("features.mods.importModpackChecking") : selection ? t("features.mods.installPickedButton") : t("features.mods.importModpackButton")}</p>

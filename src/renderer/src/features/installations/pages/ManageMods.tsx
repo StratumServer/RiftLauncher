@@ -35,6 +35,7 @@ import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
 import ImportServersDialog from "@renderer/features/servers/components/ImportServersDialog"
+import ImportModConfigsDialog from "@renderer/features/mods/components/ImportModConfigsDialog"
 import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
 import InstalledModItem from "@renderer/features/mods/components/InstalledModItem"
 import InstalledModDetails from "@renderer/features/mods/components/InstalledModDetails"
@@ -108,6 +109,10 @@ function ListMods(): JSX.Element {
   // The servers a finished import carried, held here so the question comes after the Mods are in
   // rather than on top of them. Null while there is nothing to ask about.
   const [importedServers, setImportedServers] = useState<readonly ServerBookmarkType[] | null>(null)
+  // The mod configs a finished import carried, asked about on the same footing and for the same
+  // reason: the pack is read off disk and the manifest is thrown away the moment it has been used,
+  // so whatever it carried is held here while the question is asked. Null while there is nothing.
+  const [importedConfigs, setImportedConfigs] = useState<Record<string, ModConfigEntry> | null>(null)
   // A mod id and a name, not a Mod: the install popup already takes a mod id and finds the installed
   // copy itself, so the health panel can point it at a dependency nobody has installed yet.
   const [modToUpdate, setModToUpdate] = useState<{ modid: string; name?: string } | null>(null)
@@ -412,16 +417,21 @@ function ListMods(): JSX.Element {
                     close={clearModpack}
                     installation={installation}
                     installedMods={installedMods}
+                    carriesConfigs={Object.keys(importManifest?.settings ?? {}).length > 0}
                     onFinish={() => {
                       // Read before clearModpack, which takes the manifest away.
                       const carried = importManifest?.servers
+                      const carriedConfigs = importManifest?.settings
                       clearModpack()
                       if (carried && carried.length > 0) setImportedServers(carried)
+                      if (carriedConfigs && Object.keys(carriedConfigs).length > 0) setImportedConfigs(carriedConfigs)
                       refresh()
                     }}
                   />
 
                   <ImportServersDialog servers={importedServers} installation={installation} close={() => setImportedServers(null)} />
+
+                  <ImportModConfigsDialog settings={importedConfigs} installation={installation} close={() => setImportedConfigs(null)} />
 
                   <ModChangeSummaryPopup
                     isOpen={showSummary}

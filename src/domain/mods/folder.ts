@@ -10,6 +10,14 @@ import type { PathBuilder } from "../ports"
 export const MODS_FOLDER_NAME = "Mods"
 
 /**
+ * The subfolder of an installation that Vintage Story reads mod configs from, the same way
+ * {@link MODS_FOLDER_NAME} is a fact about the game rather than a launcher preference. Its wiki page
+ * is also the reason these files are treated as somebody's own work: it describes them as intended
+ * to be human edited, and as editable only while the game is not running.
+ */
+export const MOD_CONFIG_FOLDER_NAME = "ModConfig"
+
+/**
  * The Mods folder of one installation, joined with the host's separator.
  *
  * @param paths Host path joining.

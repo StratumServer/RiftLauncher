@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import type { IpcMainInvokeEvent } from "electron"
@@ -19,6 +20,7 @@ import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertManagedPath } from "@src/ipc/pathPolicy"
 import { pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
+import { MAX_MODPACK_BYTES, MAX_MODPACK_ENTRIES, parseModpackSettings } from "@src/ipc/handlers/modConfigs"
 
 vi.mock("@src/ipc/adapters/modScan", async (importOriginal) => {
   const original = await importOriginal<typeof import("@src/ipc/adapters/modScan")>()
@@ -54,9 +56,26 @@ let temporaryRoot: string
 let userDataFolder: string
 let modsFolder: string
 
+/**
+ * The Installation's own folder is the one path in this file that cannot move between tests.
+ *
+ * `getConfig()` keeps the first config it reads for the whole module, and the export handler asks
+ * the config manager whether the path it was handed is a configured Installation. An Installation
+ * whose path changed per test would therefore only be recognised by whichever test filled that
+ * cache, and the ones after it would refuse for a reason that has nothing to do with them. The
+ * ModConfig folder under it is emptied per test so the counts stay honest.
+ */
+const installationPath = join(tmpdir(), "mods-handlers-installation")
+
 type GetInstalledModsHandler = (event: IpcMainInvokeEvent, path: string) => Promise<InstalledModsScan>
-type ExportModpackHandler = (event: IpcMainInvokeEvent, manifest: unknown) => Promise<{ success: boolean; path?: string }>
-type ImportModpackHandler = (event: IpcMainInvokeEvent) => Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }>
+type ExportModpackHandler = (
+  event: IpcMainInvokeEvent,
+  manifest: unknown,
+  installationPath?: unknown,
+  includeConfigs?: boolean,
+  configNames?: readonly string[]
+) => Promise<{ success: boolean; path?: string; reason?: string; name?: string }>
+type ImportModpackHandler = (event: IpcMainInvokeEvent) => Promise<{ success: boolean; manifest?: ModpackManifestType; settingsRefused?: SettingsRefused; error?: string }>
 
 function getInstalledModsHandler(): GetInstalledModsHandler {
   return getIpcHandler<GetInstalledModsHandler>(IPC_CHANNELS.MODS_MANAGER.GET_INSTALLED_MODS)
@@ -85,6 +104,7 @@ beforeEach(async () => {
   modsFolder = join(temporaryRoot, "mods")
   mkdirSync(userDataFolder, { recursive: true })
   mkdirSync(modsFolder, { recursive: true })
+  rmSync(join(installationPath, "ModConfig"), { recursive: true, force: true })
 
   setElectronUserDataPath(userDataFolder)
   setElectronPath("appData", join(temporaryRoot, "appData"))
@@ -103,7 +123,10 @@ beforeEach(async () => {
       window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
       accounts: [],
       activeAccountId: null,
-      installations: [{ name: "test", path: modsFolder, gameVersion: "", startParams: "", mesaGlThread: false, envVars: "", backups: [] }],
+      installations: [
+        { id: "inst-1", name: "test", path: modsFolder, gameVersion: "", startParams: "", mesaGlThread: false, envVars: "", backups: [] },
+        { id: "inst-stable", name: "test", path: installationPath, gameVersion: "", startParams: "", mesaGlThread: false, envVars: "", backups: [] }
+      ],
       gameVersions: [],
       favMods: [],
       customIcons: []
@@ -249,6 +272,210 @@ describe("EXPORT_MODPACK", () => {
     } finally {
       chmodSync(exportDirectory, 0o700)
     }
+  })
+
+  // The reason the picker exists: a request that asks for "the configs" without saying which ones is
+  // a blind sweep of everything in the folder, which is what #363 asked not to be able to happen.
+  // The host refuses it before it opens a save dialog, so nothing is read and nothing is written.
+  it("refuses to export the whole ModConfig folder, before it opens the save dialog", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig", "ConfigureEverything", "Client")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), '{"blocksize":8}', "utf-8")
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true)
+
+    assert.deepEqual(result, { success: false })
+    assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
+  })
+
+  // #363: the configs are read here rather than handed in, so what is under test is the file that
+  // comes out and the point at which a refusal stops the export.
+  it("writes the Installation's mod configs into the pack when the box was ticked, keys and all", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig", "ConfigureEverything", "Client")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), '{"blocksize":8}', "utf-8")
+    const destination = join(temporaryRoot, "exports", "With configs.json")
+    mkdirSync(dirname(destination), { recursive: true })
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["ConfigureEverything/Client/RoomSize.json"])
+
+    assert.equal(result.success, true)
+    const written = JSON.parse(readFileSync(destination, "utf-8")) as ModpackManifestType
+    assert.deepEqual(Object.keys(written.settings ?? {}), ["ConfigureEverything/Client/RoomSize.json"])
+    assert.equal(written.settings?.["ConfigureEverything/Client/RoomSize.json"]?.text, '{"blocksize":8}')
+    assert.equal(written.settings?.["ConfigureEverything/Client/RoomSize.json"]?.sha256, createHash("sha256").update(Buffer.from('{"blocksize":8}', "utf8")).digest("hex"))
+  })
+
+  // The one asymmetry that would cost a player their whole settings block: export reads whatever is
+  // on disk without a length or emptiness rule of its own, and import drops the entire block on the
+  // first entry it cannot parse. A launcher that writes a pack its own importer refuses is the wound
+  // the plan named for the size cap, one layer down. This runs the export for real and hands what it
+  // wrote to the parser the import uses, so the two ends are proved to agree rather than assumed to.
+  it("writes a pack its own importer accepts, whatever the files happen to be", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    // 64 KB is over the launcher's 8 KiB cap for an identifier-sized string, and 0 bytes is what a
+    // mod leaves behind when it truncates its config. Both are legal files on disk.
+    const big = JSON.stringify({ padding: "p".repeat(64 * 1024) })
+    writeFileSync(join(modConfigFolder, "Big.json"), big, "utf-8")
+    writeFileSync(join(modConfigFolder, "Empty.json"), "", "utf-8")
+    const destination = join(temporaryRoot, "exports", "Round trip.json")
+    mkdirSync(dirname(destination), { recursive: true })
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["Big.json", "Empty.json"])
+
+    assert.equal(result.success, true)
+    const written = JSON.parse(readFileSync(destination, "utf-8")) as ModpackManifestType
+    const parsed = parseModpackSettings(written.settings)
+
+    assert.equal(parsed.ok, true, parsed.ok ? "" : `the launcher refused its own pack: ${JSON.stringify(parsed.refused)}`)
+    if (parsed.ok) {
+      assert.equal(parsed.settings["Big.json"]?.text, big)
+      assert.equal(parsed.settings["Empty.json"]?.text, "")
+    }
+  })
+
+  it("leaves the settings out of the pack entirely when the box was not ticked", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), "{}", "utf-8")
+    const destination = join(temporaryRoot, "exports", "Without configs.json")
+    mkdirSync(dirname(destination), { recursive: true })
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, false)
+
+    assert.equal(result.success, true)
+    // Absent rather than empty: an older launcher reading this pack has to see a field it does not
+    // know, not a block it will find a reason to complain about.
+    assert.equal("settings" in JSON.parse(readFileSync(destination, "utf-8")), false)
+  })
+
+  it("refuses a config a pack cannot carry before the save dialog is ever opened", async () => {
+    // 0xE7 is the e-acute in latin-1. Read as UTF-8 it is not a character at all, and the launcher
+    // would be shipping a pack its own importer has to reject.
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "latin1.json"), Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0xe7, 0x7d]))
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["latin1.json"])
+
+    assert.deepEqual(result, { success: false, reason: "not-utf8", name: "latin1.json" })
+    assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
+  })
+
+  // #363's last gap: the picker exists so a player can leave one file out, and that is only true if
+  // the file they left out stops being the export's problem. The same folder is exported twice below,
+  // once with the bad file ticked and once without it.
+  it("carries only the configs it was handed by name", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig", "ConfigureEverything")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), '{"blocksize":8}', "utf-8")
+    writeFileSync(join(modConfigFolder, "Spacing.json"), '{"gap":2}', "utf-8")
+    const destination = join(temporaryRoot, "exports", "One config.json")
+    mkdirSync(dirname(destination), { recursive: true })
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["ConfigureEverything/RoomSize.json"])
+
+    assert.equal(result.success, true)
+    const written = JSON.parse(readFileSync(destination, "utf-8")) as ModpackManifestType
+    assert.deepEqual(Object.keys(written.settings ?? {}), ["ConfigureEverything/RoomSize.json"])
+  })
+
+  it("exports the rest of the pack when the one file a pack cannot carry is left out", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "latin1.json"), Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0xe7, 0x7d]))
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), "{}", "utf-8")
+
+    const refused = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["latin1.json", "RoomSize.json"])
+    assert.deepEqual(refused, { success: false, reason: "not-utf8", name: "latin1.json" })
+
+    const destination = join(temporaryRoot, "exports", "Without the bad one.json")
+    mkdirSync(dirname(destination), { recursive: true })
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["RoomSize.json"])
+
+    assert.equal(result.success, true)
+    const written = JSON.parse(readFileSync(destination, "utf-8")) as ModpackManifestType
+    assert.deepEqual(Object.keys(written.settings ?? {}), ["RoomSize.json"])
+  })
+
+  it("leaves the settings out of the pack when the player ticked none of them", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), "{}", "utf-8")
+    const destination = join(temporaryRoot, "exports", "None ticked.json")
+    mkdirSync(dirname(destination), { recursive: true })
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, [])
+
+    assert.equal(result.success, true)
+    // Absent rather than an empty block, exactly like an export that never asked for configs: a
+    // pack with `settings: {}` in it is a pack that claims something and carries nothing.
+    assert.equal("settings" in JSON.parse(readFileSync(destination, "utf-8")), false)
+  })
+
+  it("drops a chosen name that matches nothing rather than exporting something else", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), "{}", "utf-8")
+    const destination = join(temporaryRoot, "exports", "Ghost.json")
+    mkdirSync(dirname(destination), { recursive: true })
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination })
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["ghost.json"])
+
+    assert.equal(result.success, true)
+    assert.equal("settings" in JSON.parse(readFileSync(destination, "utf-8")), false)
+  })
+
+  it("refuses a chosen-name list that is not a list of strings, without opening the dialog", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), "{}", "utf-8")
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, "RoomSize.json" as unknown as readonly string[])
+
+    assert.deepEqual(result, { success: false })
+    assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
+  })
+
+  // The ceiling is on rows of every kind together, so the two numbers below are only correct as a
+  // sum: a full list of Mods is fine on its own and a single config is fine on its own.
+  it("refuses a pack whose Mods and configs together pass the entry ceiling", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    writeFileSync(join(modConfigFolder, "RoomSize.json"), "{}", "utf-8")
+    const manifest: ModpackManifestType = {
+      ...validManifest(),
+      mods: Array.from({ length: MAX_MODPACK_ENTRIES }, (_, index) => ({ modid: `m${index}`, version: "1.0.0" }))
+    }
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), manifest, installationPath, true, ["RoomSize.json"])
+
+    assert.deepEqual(result, { success: false, reason: "too-many" })
+    assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
+  })
+
+  // The byte ceiling is checked on the manifest as it would be written, so it counts the configs too.
+  // Both files below are legal on their own and together put the pack past the cap.
+  it("refuses a pack past the byte ceiling, before the save dialog is opened", async () => {
+    const modConfigFolder = join(installationPath, "ModConfig")
+    mkdirSync(modConfigFolder, { recursive: true })
+    const big = "x".repeat(4 * 1024 * 1024)
+    writeFileSync(join(modConfigFolder, "Big.json"), big, "utf-8")
+    writeFileSync(join(modConfigFolder, "Bigger.json"), big, "utf-8")
+
+    const result = await exportModpackHandler()(await createTrustedEvent(), validManifest(), installationPath, true, ["Big.json", "Bigger.json"])
+
+    assert.deepEqual(result, { success: false, reason: "too-large" })
+    assert.equal(vi.mocked(dialog.showSaveDialog).mock.calls.length, 0)
   })
 
   it("exports to a picked destination that does not exist yet, the normal save-as case", async () => {
@@ -415,17 +642,46 @@ describe("IMPORT_MODPACK", () => {
     assert.deepEqual(result, { success: false })
   })
 
-  it("returns success: false when the picked file exceeds the 2 MiB size cap", async () => {
+  it("returns success: false when the picked file exceeds the size cap", async () => {
     const importDirectory = join(temporaryRoot, "imports")
     mkdirSync(importDirectory, { recursive: true })
     const oversizeFile = join(importDirectory, "huge.json")
-    writeFileSync(oversizeFile, "x".repeat(2 * 1024 * 1024 + 1), "utf-8")
+    // Against the constant rather than a number of its own: the cap moved from 2 MiB to 8 MiB when
+    // packs began carrying their mod configs, and a test with its own copy of the old number would
+    // have kept passing while saying nothing about the cap at all.
+    writeFileSync(oversizeFile, "x".repeat(MAX_MODPACK_BYTES + 1), "utf-8")
 
     vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [oversizeFile] })
 
     const event = await createTrustedEvent()
     const result = await importModpackHandler()(event)
     assert.deepEqual(result, { success: false, error: "Error reading modpack file." })
+  })
+
+  it("imports the Mods of a pack whose mod configs cannot be read, and says so rather than dropping it", async () => {
+    const importDirectory = join(temporaryRoot, "imports")
+    mkdirSync(importDirectory, { recursive: true })
+    const file = join(importDirectory, "refused-configs.json")
+    writeFileSync(
+      file,
+      JSON.stringify({
+        name: "Pack",
+        gameVersion: "1.20.0",
+        mods: [{ modid: "a", version: "1.0.0" }],
+        settings: { "../clientsettings.json": { text: "{}", sha256: "0".repeat(64) } }
+      }),
+      "utf-8"
+    )
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [file] })
+
+    const result = await importModpackHandler()(await createTrustedEvent())
+
+    // The mods are the point of the pack, so a bad key in the configs costs the player the configs
+    // and nothing else. Silently importing them would look exactly like a pack that never had any.
+    assert.equal(result.success, true)
+    assert.equal(result.manifest?.mods.length, 1)
+    assert.equal(result.manifest?.settings, undefined)
+    assert.deepEqual(result.settingsRefused, { reason: "bad-key", name: "../clientsettings.json" })
   })
 
   it("returns success: false with a generic error when the picked file is not a valid modpack manifest", async () => {

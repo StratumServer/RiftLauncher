@@ -27,6 +27,10 @@ export function useModpackImportPicker(): ModpackImportPicker {
   async function pickModpack(): Promise<void> {
     const result = await importModpackArchive()
     if (result.success && result.manifest) {
+      // The host reports a settings block it had to drop, and the manifest it hands back is
+      // already the manifest without it. Nobody is going to notice that on their own, so it is
+      // said here, while the file being read is still the thing the player is looking at.
+      if (result.settingsRefused) addNotification(t("features.mods.importModConfigsSettingsRefused"), "warning")
       setManifest(result.manifest)
     } else if (result.error) {
       addNotification(t("features.mods.importModpackInvalidFile"), "error")
