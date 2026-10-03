@@ -10,6 +10,7 @@ import type { ModHealthFinding, ModHealthSection } from "@domain/mods/health"
 import type { InstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
 
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
+import ExpandableNameList from "@renderer/components/ui/ExpandableNameList"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 
@@ -51,23 +52,13 @@ const RAW = { interpolation: { escapeValue: false } }
  */
 function NotCheckedMods({ mods, labelOf }: Readonly<{ mods: readonly InstalledModType[]; labelOf: (iMod: InstalledModType) => string }>): JSX.Element {
   const { t } = useTranslation()
+  return <ExpandableNameList summary={t("features.mods.healthNotChecked", { count: mods.length })} groups={mods.map((iMod) => ({ key: iMod.path, label: labelOf(iMod) }))} />
+}
 
-  // Mirrors the element's own state, which the browser flips on a click or a key press. Held here
-  // rather than on the panel so a list that leaves and comes back starts closed, like its element.
-  const [opened, setOpened] = useState(false)
-
-  return (
-    <details className="text-zinc-400 text-sm" onToggle={(event) => setOpened(event.currentTarget.open)}>
-      <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-vsl focus-visible:outline-offset-2">{t("features.mods.healthNotChecked", { count: mods.length })}</summary>
-      {opened && (
-        <ul className="max-h-48 overflow-y-auto break-words px-2 pt-1">
-          {mods.map((iMod) => (
-            <li key={iMod.path}>{labelOf(iMod)}</li>
-          ))}
-        </ul>
-      )}
-    </details>
-  )
+/** Archive names behind the unreadable count, disclosed only when asked for (#576). */
+function UnreadableMods({ mods }: Readonly<{ mods: readonly ErrorInstalledModType[] }>): JSX.Element {
+  const { t } = useTranslation()
+  return <ExpandableNameList summary={t("features.mods.healthUnreadable", { count: mods.length })} groups={mods.map((mod) => ({ key: mod.path, label: mod.zipname }))} />
 }
 
 /**
@@ -83,7 +74,7 @@ function NotCheckedMods({ mods, labelOf }: Readonly<{ mods: readonly InstalledMo
  * one category whose outcome is close to certain.
  *
  * @param installedMods Everything the last scan read, disabled copies included.
- * @param unreadableCount Archives the scan could not read at all, counted rather than left silent.
+ * @param unreadableMods Archives the scan could not read at all, counted and named on request.
  * @param gameVersion The Installation's game version, without a leading "v".
  * @param suspended Mod ids the player holds, which drop every finding about them.
  * @param labelOf The Mod's name, with its file name added when a second copy shares it (batch.labelOf).
@@ -95,7 +86,7 @@ function NotCheckedMods({ mods, labelOf }: Readonly<{ mods: readonly InstalledMo
  */
 function ModHealthPanel({
   installedMods,
-  unreadableCount,
+  unreadableMods,
   gameVersion,
   suspended,
   labelOf,
@@ -104,7 +95,7 @@ function ModHealthPanel({
   onUpdateAll
 }: Readonly<{
   installedMods: readonly InstalledModType[]
-  unreadableCount: number
+  unreadableMods: readonly ErrorInstalledModType[]
   gameVersion: string
   suspended: readonly string[]
   labelOf: (iMod: InstalledModType) => string
@@ -152,7 +143,7 @@ function ModHealthPanel({
   const problems = findings.filter((finding) => finding.section !== "update").length
   const updates = findings.length - problems
 
-  if (findings.length < 1 && notChecked.length < 1 && unreadableCount < 1) return null
+  if (findings.length < 1 && notChecked.length < 1 && unreadableMods.length < 1) return null
 
   const open = openedByHand ?? findings.some((finding) => finding.section === "blocking")
 
@@ -279,7 +270,7 @@ function ModHealthPanel({
           })}
 
           {notChecked.length > 0 && <NotCheckedMods mods={notChecked} labelOf={labelOf} />}
-          {unreadableCount > 0 && <p className="text-zinc-400 text-sm">{t("features.mods.healthUnreadable", { count: unreadableCount })}</p>}
+          {unreadableMods.length > 0 && <UnreadableMods mods={unreadableMods} />}
         </div>
       </ListGroup>
     </ListWrapper>
