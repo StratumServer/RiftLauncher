@@ -67,6 +67,13 @@ const SCRIPT_OR_STYLE = /<(script|style)\b[^<>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi
  */
 const HTML_TAG = /<\/?[a-zA-Z][a-zA-Z0-9]*(?:\s*\/?>|\s+[^<>]*=[^<>]*\/?>)/g
 
+/**
+ * An inline code span that opens and closes on one line. Release notes write their commands in
+ * these, and a command carries placeholders (`<file>`) that fit {@link HTML_TAG}'s "a name with no
+ * attributes" shape. A span wrapped across two lines is not recognized and is stripped like any other text.
+ */
+const CODE_SPAN = /`[^`\n]+`/g
+
 /** `![alt](url)`: dropped whole, alt text included. Nothing downstream can render an image, and an alt text alone reads as a stray word in the middle of a sentence. */
 const MARKDOWN_IMAGE = /!\[[^\]]*\]\([^()]*\)/g
 
@@ -112,6 +119,17 @@ function stripEmphasisMarkers(text: string): string {
 
     return intraword || isolated ? run : ""
   })
+}
+
+/**
+ * Hides the `<` of every code span from the comment, script and tag strips by writing it as the
+ * entity {@link toPlainText} decodes once all three have run, so what a code span holds reaches
+ * the dialog as the text it is (`certutil -hashfile <file> SHA256`). Text outside a code span goes
+ * through those strips as before. Keeping it is safe because nothing downstream renders text as
+ * markup: the renderer shows `block.text` as React text, which escapes it.
+ */
+function keepCodeSpansLiteral(markdown: string): string {
+  return markdown.replace(CODE_SPAN, (span) => span.replace(/</g, "&lt;"))
 }
 
 /** Strips markup and markdown formatting from one block's worth of text, decodes the five entities above, then collapses whitespace. */
@@ -162,7 +180,8 @@ function boundInput(markdown: string): string {
  *    this function collapses: a command turned into one run-on paragraph is worse than the
  *    releases-page link both screens already offer;
  *  - link text survives, the URL does not; emphasis markers go only where they are markers; the
- *    five entities GitHub writes are decoded; every HTML tag, comment and script body is stripped.
+ *    five entities GitHub writes are decoded; every HTML tag, comment and script body is stripped,
+ *    except inside an inline code span, where `<file>` stays as the text it is.
  *
  * The result is meant for React text children: nothing here is HTML, and nothing downstream may
  * render it as any.
@@ -172,7 +191,7 @@ function boundInput(markdown: string): string {
 export function releaseNotesToBlocks(markdown: unknown): WhatsNewBlock[] {
   if (typeof markdown !== "string" || markdown.length === 0) return []
 
-  const body = boundInput(markdown).replace(HTML_COMMENT, "").replace(SCRIPT_OR_STYLE, "")
+  const body = keepCodeSpansLiteral(boundInput(markdown)).replace(HTML_COMMENT, "").replace(SCRIPT_OR_STYLE, "")
   const lines = body.replace(/\r\n?/g, "\n").split("\n")
 
   const blocks: WhatsNewBlock[] = []
