@@ -45,8 +45,8 @@ export const DEFAULT_MAX_RELEASES_TO_SHOW = 5
 
 /**
  * 64 KiB of markdown, sliced before any parsing runs. Real release notes are a few KB (the
- * longest this project has published is under 7 KB); this is headroom for that, not a promise to
- * render a body anywhere near this size. The 256 KiB response cap in
+ * longest this project has published is about 10 KB); this is headroom for that, not a promise to
+ * render a body anywhere near this size. The 1 MiB response cap in
  * src/ipc/handlers/netHandlers.ts already bounds the whole releases list, and that file caps each
  * body on its own before it crosses IPC, so this is the last of three floors rather than the only
  * one.
