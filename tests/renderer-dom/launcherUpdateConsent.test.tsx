@@ -412,3 +412,28 @@ describe("the download's progress bar (#185)", () => {
     expect(unsubscribe).toHaveBeenCalledTimes(6)
   })
 })
+
+/**
+ * Nothing installs when the launcher closes any more (#648), so the "Restart and update" a player
+ * left behind by closing the banner is the only way to install in the same session. The banner
+ * leaving must not take it along. It is read off the Activity Center, not off the banner's leftover
+ * node (see the note at the top of this file).
+ */
+describe("the restart once its banner is closed (#648)", () => {
+  it("is still in the Activity Center, and installs from there", () => {
+    const { api, listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    fireDownloaded(listeners)
+    act(() => {
+      vi.advanceTimersByTime(2_000)
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
+    expect(api.appUpdater.updateAndRestart).not.toHaveBeenCalled()
+
+    openActivityCenter()
+    fireEvent.click(within(screen.getByRole("region", { name: "Activity Center" })).getByRole("button", { name: "Restart and update" }))
+
+    expect(api.appUpdater.updateAndRestart).toHaveBeenCalledTimes(1)
+  })
+})

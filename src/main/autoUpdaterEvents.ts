@@ -80,9 +80,21 @@ export function toTaskProgress(percent: number): number {
  * user afterwards" into an offer the user answers (#184). Nothing downloads
  * until DOWNLOAD_UPDATE arrives from the renderer, and that channel refuses to
  * act until markUpdateAvailable has been called, which only happens below.
+ *
+ * autoInstallOnAppQuit is turned off for the same reason, one step later (#648):
+ * the answer to "install it" is the player's too. electron-updater defaults it
+ * to on, and with it on the first finished download hooks the app's quit event
+ * and runs the installer silently the next time the launcher closes, whatever
+ * the player did with the "ready" toast. Off, a finished download installs
+ * through UPDATE_AND_RESTART and nowhere else, the "Restart and update" button
+ * on that toast and on its Activity Center entry. A download left waiting is
+ * not lost: electron-updater keeps it in its cache, the next launch offers the
+ * update again, and accepting that offer finds the cached file and reports it
+ * downloaded without fetching it a second time.
  */
 export function registerAutoUpdaterEvents(autoUpdater: AppUpdater, send: SendToRenderer): void {
   autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = false
 
   autoUpdater.on("update-available", (info) => {
     offeredVersion = info?.version ?? ""
