@@ -109,12 +109,12 @@ function ListMods(): JSX.Element {
   const batch = useModBatchActions(installation, installedMods, displayedMods, refresh)
   // Handed the Installation only, never the filtered list: a profile records and applies the whole folder.
   const profiles = useModProfiles(installation)
+  const [profilesOpen, setProfilesOpen] = useState(false)
   // One predicate for every surface that writes the whole Mods folder. Each of those write paths
   // already refuses on modsFolderInUse, so a control that would be refused has to read as off:
   // Import Modpack used to stay live through Update all and only refuse after the player had been
   // through the native file dialog.
   const folderInUse = installation ? modsFolderInUse(installation) : false
-  const [profilesOpen, setProfilesOpen] = useState(false)
   // The servers a finished import carried, held here so the question comes after the Mods are in
   // rather than on top of them. Null while there is nothing to ask about.
   const [importedServers, setImportedServers] = useState<readonly ServerBookmarkType[] | null>(null)
@@ -334,7 +334,7 @@ function ListMods(): JSX.Element {
                    */}
                   <ModHealthPanel
                     installedMods={installedMods}
-                    unreadableCount={modsWithErrors.length}
+                    unreadableMods={modsWithErrors}
                     gameVersion={installation.version}
                     suspended={suspendedModUpdates}
                     labelOf={batch.labelOf}
