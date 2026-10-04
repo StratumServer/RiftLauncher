@@ -366,7 +366,7 @@ describe("ImportModConfigsDialog, what came back", () => {
     await waitFor(() => expect(screen.getByText("the copy for the backup folder could not be made")).toBeTruthy())
     const rows = screen.getAllByRole("listitem")
     assertReasons(["Copy.json", "the copy for the backup folder could not be made"], rows)
-    assertReasons(["Short.json", "the copy landed shorter than it should have"], rows)
+    assertReasons(["Short.json", "the backup copy does not match the file on disk"], rows)
     assertReasons(["Long.json", "the file could not be written"], rows)
   })
 })
