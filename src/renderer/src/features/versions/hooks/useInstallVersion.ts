@@ -3,9 +3,10 @@ import { useNavigate } from "react-router-dom"
 
 import { installGameVersion } from "@domain/versions/install"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { CONFIG_ACTIONS, useGameVersions, useInstallations, useSettingsConfig, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useGameVersions, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { createInstallPorts, describeInstallFailure, toDownloadableGameVersion } from "@renderer/features/versions/adapters/install"
+import { useFoldersInUse } from "@renderer/features/versions/hooks/useFoldersInUse"
 import { useOptimumActions } from "@renderer/features/versions/hooks/useOptimumActions"
 
 const LOG_TAG = "[front] [versions] [features/versions/hooks/useInstallVersion.ts] [useInstallVersion > installVersion]"
@@ -27,8 +28,7 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
   const installedGameVersions = useGameVersions()
-  const installations = useInstallations()
-  const settings = useSettingsConfig()
+  const foldersInUse = useFoldersInUse()
   const configDispatch = useConfigDispatch()
   const { startDownload, startExtract, startInstall } = useTaskContext()
   const { applyOptimum } = useOptimumActions()
@@ -55,7 +55,7 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
         version: toDownloadableGameVersion(version),
         targetFolder: folder,
         installedVersions: installedGameVersions.map((gv) => ({ version: gv.version, path: gv.path })),
-        foldersInUse: [settings.backupsFolder, ...installedGameVersions.map((gv) => gv.path), ...installations.map((i) => i.path)]
+        foldersInUse
       },
       {
         onRegistered: () => {

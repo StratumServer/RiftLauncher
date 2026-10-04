@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { FiLoader } from "react-icons/fi"
+import { FiFolder, FiLoader } from "react-icons/fi"
 import { PiMagnifyingGlassDuotone } from "react-icons/pi"
 import clsx from "clsx"
 
@@ -14,6 +14,7 @@ import { backgroundThumbnailSource } from "@renderer/utils/backgroundThumbnail"
 
 import { useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 
 import defaultBackground from "@renderer/assets/background.jpg"
 
@@ -40,8 +41,12 @@ import { useConfigFolderPicker } from "@renderer/features/config/hooks/useConfig
 import { useBackgroundCatalog } from "@renderer/features/config/hooks/useBackgroundCatalog"
 import { useSelectBackground } from "@renderer/features/config/hooks/useSelectBackground"
 
+// The launcher's translation project on Hosted Weblate. Covered by BROWSER_URL_RULES (src/ipc/validation.ts).
+const HELP_TRANSLATE_URL = "https://hosted.weblate.org/engage/riftlauncher/"
+
 function ConfigPage(): JSX.Element {
   const { t } = useTranslation()
+  const { openOnBrowser } = useExternalLinks()
 
   const settings = useSettingsConfig()
 
@@ -50,6 +55,11 @@ function ConfigPage(): JSX.Element {
   const pickBackupsFolder = useConfigFolderPicker(CONFIG_ACTIONS.SET_DEFAULT_BACKUPS_FOLDER)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [userDataPath, setUserDataPath] = useState("")
+
+  useEffect(() => {
+    void window.api.pathsManager.getCurrentUserDataPath().then(setUserDataPath, () => undefined)
+  }, [])
 
   return (
     <ScrollableContainer ref={scrollRef}>
@@ -77,6 +87,13 @@ function ConfigPage(): JSX.Element {
 
               <FormBody>
                 <LanguagesMenu />
+
+                <FormFieldGroupWithDescription>
+                  <NormalButton title={t("features.config.helpTranslate")} onClick={() => openOnBrowser(HELP_TRANSLATE_URL)} variant="link" className="w-fit text-left">
+                    {t("features.config.helpTranslate")}
+                  </NormalButton>
+                  <FormFieldDescription content={t("features.config.helpTranslateDesc")} />
+                </FormFieldGroupWithDescription>
               </FormBody>
             </FromGroup>
 
@@ -162,6 +179,21 @@ function ConfigPage(): JSX.Element {
           </FormGroupWrapper>
 
           <FormGroupWrapper title={t("generic.folders")}>
+            <FromGroup>
+              <FormHead>
+                <FormLabel content={t("features.config.userDataFolder")} />
+              </FormHead>
+
+              <FormBody>
+                <FormFieldGroup alignment="x">
+                  <FormInputText value={userDataPath} readOnly className="w-full" />
+                  <FormButton onClick={() => void window.api.pathsManager.openPathOnFileExplorer(userDataPath)} disabled={!userDataPath} title={t("generic.openOnFileExplorer")} className="px-2 py-1">
+                    <FiFolder />
+                  </FormButton>
+                </FormFieldGroup>
+              </FormBody>
+            </FromGroup>
+
             <FromGroup>
               <FormHead>
                 <FormLabel content={t("features.config.defaultInstallationsFolder")} />

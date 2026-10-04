@@ -347,6 +347,10 @@
       "summaryFailed": "Non riuscita",
       "summaryAlreadyPresent": "Già installata",
       "summaryClose": "Fatto",
+      "importModConfigsSkip": "Non scriverne nessuno",
+      "importModConfigsApply": "Scrivi le config scelte",
+      "exportModConfigsSkip": "Esporta senza config",
+      "exportModConfigsApply": "Esporta le config scelte",
       "cantPlayWhileUpdatingMods": "Non puoi giocare a questa Installazione mentre le sue Mods si stanno aggiornando.",
       "showModDetails": "Mostra i dettagli di {{mod}}",
       "closeModDetails": "Chiudi i dettagli",
@@ -542,6 +546,7 @@
       "suggestionsEmpty": "Nessun suggerimento al momento."
     },
     "config": {
+      "userDataFolder": "Cartella profilo",
       "defaultInstallationsFolder": "Cartella delle installazioni",
       "defaultVersionsFolder": "Cartella delle versioni",
       "backupsFolder": "Cartella dei backups",

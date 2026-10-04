@@ -38,11 +38,33 @@ export function cacheModImage(url: string): Promise<string | undefined> {
   return window.api.modsManager.cacheModImage(url)
 }
 
-export function exportModpackArchive(manifest: ModpackManifestType): Promise<{ success: boolean; path?: string }> {
-  return window.api.modsManager.exportModpack(manifest)
+/**
+ * Reads the mod configs an Installation already has, so a pack's rows can be told apart from the
+ * ones a player has never seen. The host names the folder; this names the Installation.
+ */
+export function fetchModConfigs(installationPath: string): Promise<ModConfigsReadResult> {
+  return window.api.modsManager.getModConfigs(installationPath)
 }
 
-export function importModpackArchive(): Promise<{ success: boolean; manifest?: ModpackManifestType; error?: string }> {
+/** Writes the chosen configs into an Installation. The host does the backups, the refusals and the writes. */
+export function applyModConfigs(installationPath: string, files: { name: string; text: string; sha256: string }[]): Promise<ApplyModConfigsResult> {
+  return window.api.modsManager.applyModConfigs(installationPath, files)
+}
+
+/**
+ * `includeConfigs` is a request to read the Installation's own `ModConfig` folder, not a list of
+ * files: the host is what reads it, so a renderer cannot put a path in a pack.
+ */
+export function exportModpackArchive(
+  manifest: ModpackManifestType,
+  installationPath: string,
+  includeConfigs: boolean,
+  configNames?: readonly string[]
+): Promise<{ success: boolean; path?: string; reason?: ExportModpackRefusal; name?: string }> {
+  return window.api.modsManager.exportModpack(manifest, installationPath, includeConfigs, configNames)
+}
+
+export function importModpackArchive(): Promise<{ success: boolean; manifest?: ModpackManifestType; settingsRefused?: SettingsRefused; error?: string }> {
   return window.api.modsManager.importModpack()
 }
 

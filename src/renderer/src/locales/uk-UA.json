@@ -347,6 +347,10 @@
       "summaryFailed": "Не вдалося",
       "summaryAlreadyPresent": "Уже встановлено",
       "summaryClose": "Готово",
+      "importModConfigsSkip": "Не записувати жодного",
+      "importModConfigsApply": "Записати вибрані конфіги",
+      "exportModConfigsSkip": "Експортувати без конфігів",
+      "exportModConfigsApply": "Експортувати вибрані конфіги",
       "cantPlayWhileUpdatingMods": "Ви не можете грати в цю інсталяцію, поки оновлюються її моди.",
       "showModDetails": "Показати подробиці про {{mod}}",
       "closeModDetails": "Закрити подробиці",
@@ -542,6 +546,7 @@
       "suggestionsEmpty": "Зараз немає пропозицій."
     },
     "config": {
+      "userDataFolder": "Папка профілю",
       "defaultInstallationsFolder": "Папка інсталяцій",
       "defaultVersionsFolder": "Папка версій VS",
       "backupsFolder": "Папка резервних копій",

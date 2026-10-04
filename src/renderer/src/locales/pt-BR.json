@@ -347,6 +347,10 @@
       "summaryFailed": "Falhou",
       "summaryAlreadyPresent": "Já instalado",
       "summaryClose": "Concluído",
+      "importModConfigsSkip": "Não escrever nenhum",
+      "importModConfigsApply": "Escrever as configs escolhidas",
+      "exportModConfigsSkip": "Exportar sem configs",
+      "exportModConfigsApply": "Exportar as configs escolhidas",
       "cantPlayWhileUpdatingMods": "Você não pode jogar esta Instalação enquanto os Mods dela estão sendo atualizados.",
       "showModDetails": "Mostrar os detalhes de {{mod}}",
       "closeModDetails": "Fechar os detalhes",
@@ -542,6 +546,7 @@
       "suggestionsEmpty": "Nenhuma sugestão no momento."
     },
     "config": {
+      "userDataFolder": "Pasta de perfil",
       "defaultInstallationsFolder": "Instalações",
       "defaultVersionsFolder": "Versões",
       "backupsFolder": "Backups",
@@ -665,8 +670,8 @@
       "copy": "Copiar mundo",
       "move": "Mover mundo",
       "backupCount_one": "{{count}} backup",
-      "backupCount_other": "{{count}} backups",
       "backupCount_many": "{{count}} backups",
+      "backupCount_other": "{{count}} backups",
       "transferTarget": "Transferir para…",
       "differentVersion": "versão diferente",
       "versionCompatibilityWarning": "Um mundo aberto em uma versão mais recente do Vintage Story geralmente não funciona em uma versão mais antiga.",

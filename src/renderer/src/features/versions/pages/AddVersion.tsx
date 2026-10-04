@@ -6,6 +6,7 @@ import { PiDownloadDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "r
 
 import { useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useGameVersionCatalog } from "@renderer/features/versions/hooks/useGameVersionCatalog"
+import { useFoldersInUse } from "@renderer/features/versions/hooks/useFoldersInUse"
 import { useVersionInstallFolder } from "@renderer/features/versions/hooks/useVersionInstallFolder"
 import { useInstallVersion } from "@renderer/features/versions/hooks/useInstallVersion"
 import { useOptimumManifest } from "@renderer/features/versions/hooks/useOptimumManifest"
@@ -36,10 +37,11 @@ function AddVersion(): JSX.Element {
   const { gameVersions, loading, failed, retry } = useGameVersionCatalog()
   const [version, setVersion] = useState<DownloadableGameVersionTypeType | undefined>()
   const [versionFilters, setVersionFilters] = useState({ stable: true, rc: false, pre: false })
-  const { folder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder)
   const installVersion = useInstallVersion()
   const optimum = useOptimumManifest()
   const [withOptimum, setWithOptimum] = useState(false)
+  const foldersInUse = useFoldersInUse()
+  const { folder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder, withOptimum ? "optimum" : "official", foldersInUse)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const buildFieldId = useId()

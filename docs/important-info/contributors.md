@@ -23,6 +23,7 @@ RiftLauncher is a fork of [VS Launcher](https://github.com/XurxoMF/vs-launcher),
 - [**XurxoMF**](https://github.com/XurxoMF) - Original author and main developer.
 - [**scgm0**](https://github.com/scgm0) - Reverse engineering VS to learn how to log in with the VS account.
 - [**Tipsy The Cat**](https://github.com/TipsyTheCat) - Backups compression level code contribution.
+- [**Graphight**](https://github.com/Graphight) - Modpack export and import, the Mod update summary, and the move to the official version API for game downloads.
 
 ### Translators
 

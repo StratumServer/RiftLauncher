@@ -15,15 +15,26 @@ import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/d
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 import { isSafeWorldName } from "@domain/worlds/worlds"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
+import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME } from "@domain/userData/migrationPlan"
 
 const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
 
-const defaultConfig: ConfigType = {
+let defaultConfig: ConfigType = {
   ...DEFAULT_CONFIG_BASE,
   schemaVersion: CURRENT_CONFIG_SCHEMA,
-  defaultInstallationsFolder: join(app.getPath("appData"), "RiftLauncherInstallations"),
-  defaultVersionsFolder: join(app.getPath("appData"), "RiftLauncherGameVersions"),
-  backupsFolder: join(app.getPath("appData"), "RiftLauncherBackups")
+  defaultInstallationsFolder: join(app.getPath("appData"), DEFAULT_INSTALLATIONS_FOLDER_NAME),
+  defaultVersionsFolder: join(app.getPath("appData"), DEFAULT_VERSIONS_FOLDER_NAME),
+  backupsFolder: join(app.getPath("appData"), DEFAULT_BACKUPS_FOLDER_NAME)
+}
+
+/** Use a different root for future default folders in portable mode. */
+export function setDefaultFolderPathRoot(root: string): void {
+  defaultConfig = {
+    ...defaultConfig,
+    defaultInstallationsFolder: join(root, DEFAULT_INSTALLATIONS_FOLDER_NAME),
+    defaultVersionsFolder: join(root, DEFAULT_VERSIONS_FOLDER_NAME),
+    backupsFolder: join(root, DEFAULT_BACKUPS_FOLDER_NAME)
+  }
 }
 
 const defaultInstallation: InstallationType = {
@@ -55,6 +66,11 @@ let scheduledConfigWrite: Promise<void> | null = null
  * GET_CONFIG landing together) share this instead of each running their own copy-and-recover pass,
  * which would otherwise preserve the same unreadable file twice and leave two competing notices. */
 let configLoadPromise: Promise<ConfigType> | null = null
+/** The in-flight first pass over the disk. `configLoadPromise` above covers reading; this covers the
+ * `ensureConfig` step in front of it, which is the one that writes. Without it, the window's
+ * `ready-to-show` handler and the renderer's first `GET_CONFIG` can both find no `config.json` and
+ * both write the default one on a first run. */
+let ensureConfigPromise: Promise<boolean> | null = null
 
 /**
  * Set once the original `config.json` must never be overwritten for the rest of this session: a
@@ -358,6 +374,14 @@ async function recoverUnreadableConfig(): Promise<{ config: ConfigType; restored
 
 export async function ensureConfig(): Promise<boolean> {
   if (configReady) return true
+  ensureConfigPromise ??= ensureConfigOnDisk().finally(() => {
+    ensureConfigPromise = null
+  })
+  return await ensureConfigPromise
+}
+
+/** The body of the first `ensureConfig` call. Concurrent callers share one run of this. */
+async function ensureConfigOnDisk(): Promise<boolean> {
   configPath = join(app.getPath("userData"), "config.json")
   try {
     if (!(await fse.pathExists(configPath))) {

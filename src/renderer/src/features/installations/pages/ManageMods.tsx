@@ -35,6 +35,7 @@ import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import InstallModPopup from "@renderer/features/mods/components/InstallModPopup"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
 import ImportServersDialog from "@renderer/features/servers/components/ImportServersDialog"
+import ImportModConfigsDialog from "@renderer/features/mods/components/ImportModConfigsDialog"
 import DeleteModDialog from "@renderer/features/mods/components/DeleteModDialog"
 import InstalledModItem from "@renderer/features/mods/components/InstalledModItem"
 import InstalledModDetails from "@renderer/features/mods/components/InstalledModDetails"
@@ -92,22 +93,35 @@ function ListMods(): JSX.Element {
   const hasActiveFilters = hasActiveInstalledModFilters(filters)
   const nothingMatches = (query.length > 0 || hasActiveFilters) && visibleMods.length < 1 && visibleModsWithErrors.length < 1
 
+  // The selection follows the order on screen: update status first, then name within each section.
+  // Shift+click ranges must match what the player sees, not the archive scan's order.
+  // Deliberately blind to suspension: a held-back Mod still belongs under "Mods with updates",
+  // because watching for the new version is exactly why the player suspended it (#194).
+  const updatableMods = visibleMods.filter((iMod) => iMod._updatableTo).sort(byName)
+  const incompatibleMods = visibleMods.filter((iMod) => !iMod._updatableTo && iMod._lastVersion).sort(byName)
+  const upToDateMods = visibleMods.filter((iMod) => !iMod._updatableTo && !iMod._lastVersion).sort(byName)
+  const displayedMods = [...updatableMods, ...incompatibleMods, ...upToDateMods]
+
   const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
   const actions = useInstalledModActions(installation, refresh)
-  const batch = useModBatchActions(installation, installedMods, visibleMods, refresh)
+  const batch = useModBatchActions(installation, installedMods, displayedMods, refresh)
   // Handed the Installation only, never the filtered list: a profile records and applies the whole folder.
   const profiles = useModProfiles(installation)
+  const [profilesOpen, setProfilesOpen] = useState(false)
   // One predicate for every surface that writes the whole Mods folder. Each of those write paths
   // already refuses on modsFolderInUse, so a control that would be refused has to read as off:
   // Import Modpack used to stay live through Update all and only refuse after the player had been
   // through the native file dialog.
   const folderInUse = installation ? modsFolderInUse(installation) : false
-  const [profilesOpen, setProfilesOpen] = useState(false)
   // The servers a finished import carried, held here so the question comes after the Mods are in
   // rather than on top of them. Null while there is nothing to ask about.
   const [importedServers, setImportedServers] = useState<readonly ServerBookmarkType[] | null>(null)
+  // The mod configs a finished import carried, asked about on the same footing and for the same
+  // reason: the pack is read off disk and the manifest is thrown away the moment it has been used,
+  // so whatever it carried is held here while the question is asked. Null while there is nothing.
+  const [importedConfigs, setImportedConfigs] = useState<Record<string, ModConfigEntry> | null>(null)
   // A mod id and a name, not a Mod: the install popup already takes a mod id and finds the installed
   // copy itself, so the health panel can point it at a dependency nobody has installed yet.
   const [modToUpdate, setModToUpdate] = useState<{ modid: string; name?: string } | null>(null)
@@ -154,12 +168,6 @@ function ListMods(): JSX.Element {
     setDetailsFocusRequest((request) => request + 1)
   }
 
-  // Deliberately blind to suspension: a held-back Mod still belongs under "Mods with updates",
-  // because watching for the new version is exactly why the player suspended it (#194).
-  const updatableMods = visibleMods.filter((iMod) => iMod._updatableTo).sort(byName)
-  const incompatibleMods = visibleMods.filter((iMod) => !iMod._updatableTo && iMod._lastVersion).sort(byName)
-  const upToDateMods = visibleMods.filter((iMod) => !iMod._updatableTo && !iMod._lastVersion).sort(byName)
-
   /** Every list below renders its rows the same way, suspension state and all. */
   function modRow(iMod: InstalledModType): JSX.Element {
     const suspended = suspendedModUpdates.includes(iMod.modid)
@@ -171,7 +179,7 @@ function ListMods(): JSX.Element {
         busy={actions.isBusy(iMod.path) || (batch.running && batch.isChecked(iMod.path))}
         checked={batch.isChecked(iMod.path)}
         distinctName={batch.labelOf(iMod)}
-        onCheckedChange={(checked) => batch.setChecked(iMod.path, checked)}
+        onCheckedChange={(checked, shiftKey) => batch.setChecked(iMod.path, checked, shiftKey)}
         onToggleEnabledClick={() => actions.toggleEnabled(iMod)}
         onToggleSuspendClick={() => actions.toggleSuspended(iMod.modid)}
         onDeleteClick={() => actions.requestDelete(iMod)}
@@ -326,7 +334,7 @@ function ListMods(): JSX.Element {
                    */}
                   <ModHealthPanel
                     installedMods={installedMods}
-                    unreadableCount={modsWithErrors.length}
+                    unreadableMods={modsWithErrors}
                     gameVersion={installation.version}
                     suspended={suspendedModUpdates}
                     labelOf={batch.labelOf}
@@ -412,16 +420,21 @@ function ListMods(): JSX.Element {
                     close={clearModpack}
                     installation={installation}
                     installedMods={installedMods}
+                    carriesConfigs={Object.keys(importManifest?.settings ?? {}).length > 0}
                     onFinish={() => {
                       // Read before clearModpack, which takes the manifest away.
                       const carried = importManifest?.servers
+                      const carriedConfigs = importManifest?.settings
                       clearModpack()
                       if (carried && carried.length > 0) setImportedServers(carried)
+                      if (carriedConfigs && Object.keys(carriedConfigs).length > 0) setImportedConfigs(carriedConfigs)
                       refresh()
                     }}
                   />
 
                   <ImportServersDialog servers={importedServers} installation={installation} close={() => setImportedServers(null)} />
+
+                  <ImportModConfigsDialog settings={importedConfigs} installation={installation} close={() => setImportedConfigs(null)} />
 
                   <ModChangeSummaryPopup
                     isOpen={showSummary}

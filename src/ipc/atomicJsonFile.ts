@@ -27,3 +27,29 @@ export async function writeJsonAtomic(filePath: string, data: unknown, options: 
   const json = JSON.stringify(data, undefined, options.spaces)
   await writeFileAtomic(filePath, json, options.mode === undefined ? {} : { mode: options.mode })
 }
+
+/**
+ * The longest name `write-file-atomic` adds beside a destination before opening anything:
+ * one dot plus the ten digits its `readUInt32BE(0)` can reach
+ * (`node_modules/write-file-atomic/lib/index.js:29-38`). A caller that has to decide whether
+ * Windows can open a path at all has to leave this much room, because the temp file beside the
+ * destination is the first thing opened, not the destination.
+ */
+export const ATOMIC_WRITE_TEMP_SUFFIX_MAX = 11
+
+/**
+ * The same write for text that is not JSON.
+ *
+ * A mod config is copied out of somebody's `ModConfig` folder verbatim and put back verbatim, so
+ * `writeJsonAtomic` would be the wrong tool twice over: it would reformat what the game reads and it
+ * would call `Buffer.from(text, "utf8")` for us, which silently replaces every byte that is not
+ * valid UTF-8 rather than failing. Everything above about the temp file, the fsync and the single
+ * `rename()` over the destination applies unchanged.
+ *
+ * @param filePath Destination file. Its directory must already exist.
+ * @param text Bytes exactly as they should land, encoded UTF-8 on the way in.
+ * @param options.mode Exact file mode for the destination (subject to umask).
+ */
+export async function writeTextAtomic(filePath: string, text: string, options: { mode?: number } = {}): Promise<void> {
+  await writeFileAtomic(filePath, Buffer.from(text, "utf8"), options.mode === undefined ? {} : { mode: options.mode })
+}

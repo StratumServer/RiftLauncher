@@ -1,11 +1,16 @@
-import { join } from "node:path"
+import { realpathSync } from "node:fs"
+import { basename, dirname, join, posix, relative, win32 } from "node:path"
 import fse from "fs-extra"
 
-import { planUserDataMigration } from "@domain/userData/migrationPlan"
+import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, MIGRATED_USER_DATA_ENTRIES, planUserDataMigration } from "@domain/userData/migrationPlan"
 import type { UserDataMigrationAction } from "@domain/userData/migrationPlan"
 
 /** Folder RiftLauncher keeps its own user data in, under the platform's appData. */
 export const RIFT_USER_DATA_FOLDER = "RiftLauncher"
+
+/** Marker and profile folder are siblings of the install tree, outside NSIS `$INSTDIR`. */
+export const PORTABLE_MARKER_FILE = "RiftLauncher.portable"
+export const PORTABLE_USER_DATA_FOLDER = "RiftLauncherData"
 
 /** Folder VS Launcher keeps its user data in. Read from, never written to. */
 export const LEGACY_USER_DATA_FOLDER = "VSLauncher"
@@ -13,11 +18,17 @@ export const LEGACY_USER_DATA_FOLDER = "VSLauncher"
 /** Sibling a migration builds in, renamed onto {@link RIFT_USER_DATA_FOLDER} once complete. */
 export const MIGRATION_TEMP_FOLDER = "RiftLauncher.migrating"
 
+/** Portable profile copies are staged beside the destination and renamed into place. */
+export const PORTABLE_MIGRATION_TEMP_SUFFIX = ".migrating"
+
 /** What happened, on top of the three planned actions. */
 export type UserDataSetupOutcome =
   | UserDataMigrationAction
+  | "portable-profile-migrated"
   /** A copy started and did not finish. The launcher starts on an empty folder. */
   | "migration-failed"
+  /** No folder was chosen at all, because preparing one failed before the profile was decided. */
+  | "unavailable"
 
 export interface UserDataSetup {
   /** Folder to hand to `app.setPath("userData", ...)`. */
@@ -27,6 +38,86 @@ export interface UserDataSetup {
   readonly copied: readonly string[]
   /** Whether a half-finished copy from an earlier run was thrown away first. */
   readonly cleanedStaleMigration: boolean
+}
+
+export interface PortableUserDataPaths {
+  readonly markerPath: string
+  readonly dataPath: string
+  readonly installPath?: string
+}
+
+/** Windows path containment is case-insensitive and respects directory boundaries. */
+export function isWindowsPathEqualOrWithin(directory: string, candidate: string): boolean {
+  const relativePath = win32.relative(win32.resolve(directory), win32.resolve(candidate))
+  return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${win32.sep}`) && !win32.isAbsolute(relativePath))
+}
+
+/**
+ * Whether a folder or marker belongs to the account running the launcher.
+ *
+ * Windows has no cheap equivalent (`fs.Stats.uid` is 0 everywhere there and the profile is under
+ * the player's own roaming folder anyway), so this is a no-op there and the Windows docs say so.
+ * On POSIX a marker or profile folder another account can write is not this player's: adopting it
+ * would hand one user a profile, and its logs, to another.
+ */
+export function isOwnedByThisUser(stats: fse.Stats): boolean {
+  const uid = process.getuid?.()
+  return uid === undefined || stats.uid === uid
+}
+
+/** Chromium rebuilds these from scratch, so a copy that includes them is only slower. */
+const REGENERABLE_PROFILE_ENTRIES = [
+  "Blob Storage",
+  "Code Cache",
+  "Component CRX Cache",
+  "Crashpad",
+  "DawnCache",
+  "DawnGraphiteCache",
+  "DawnWebGPUCache",
+  "GPUCache",
+  "GrShaderCache",
+  "ShaderCache",
+  "blob_storage",
+  "component_crx_cache",
+  "crashpad"
+]
+
+const REGENERABLE_PROFILE_PATHS = [join("Cache", "Cache_Data"), join("Cache", "No_Vary_Search")]
+
+function portablePathsOverlapInstall(installPath: string, candidatePaths: readonly string[]): boolean {
+  const overlaps = (firstPath: string, secondPath: string): boolean => isWindowsPathEqualOrWithin(firstPath, secondPath) || isWindowsPathEqualOrWithin(secondPath, firstPath)
+  if (candidatePaths.some((candidatePath) => overlaps(installPath, candidatePath))) return true
+
+  try {
+    const realInstallPath = realpathSync.native(installPath)
+    return candidatePaths.some((candidatePath) => {
+      const realCandidatePath = fse.existsSync(candidatePath) ? realpathSync.native(candidatePath) : win32.join(realpathSync.native(win32.dirname(candidatePath)), win32.basename(candidatePath))
+      return overlaps(realInstallPath, realCandidatePath)
+    })
+  } catch (error) {
+    throw new Error(`Could not verify that the portable profile and its migration folder are outside the install folder: ${String(error)}`)
+  }
+}
+
+/** Finds the opt-in marker beside a Windows install tree or a Linux AppImage. */
+export function getPortableUserDataPaths(platform: "win32" | "linux", executablePath: string, appImagePath: string | undefined): PortableUserDataPaths | null {
+  if (platform === "win32") {
+    if (!win32.isAbsolute(executablePath)) return null
+    const installPath = win32.dirname(executablePath)
+    const installParent = win32.dirname(installPath)
+    return {
+      markerPath: win32.join(installParent, PORTABLE_MARKER_FILE),
+      dataPath: win32.join(installParent, PORTABLE_USER_DATA_FOLDER),
+      installPath
+    }
+  }
+
+  if (!appImagePath || !posix.isAbsolute(appImagePath)) return null
+  const appImageFolder = posix.dirname(appImagePath)
+  return {
+    markerPath: posix.join(appImageFolder, PORTABLE_MARKER_FILE),
+    dataPath: posix.join(appImageFolder, PORTABLE_USER_DATA_FOLDER)
+  }
 }
 
 /**
@@ -89,6 +180,151 @@ export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
   return { path: riftPath, outcome: "migrate", copied, cleanedStaleMigration: plan.cleanStaleMigration }
 }
 
+function migratePortableDefaultFolders(profilePath: string, sourceProfilePath: string, appDataPath: string, dataPath: string): void {
+  const folderDefaults = [
+    ["defaultInstallationsFolder", DEFAULT_INSTALLATIONS_FOLDER_NAME],
+    ["defaultVersionsFolder", DEFAULT_VERSIONS_FOLDER_NAME],
+    ["backupsFolder", DEFAULT_BACKUPS_FOLDER_NAME]
+  ] as const
+
+  for (const fileName of ["config.json", "config.pre-migration.bak.json"]) {
+    const configPath = join(profilePath, fileName)
+    let isSymbolicLink: boolean
+    try {
+      isSymbolicLink = fse.lstatSync(configPath).isSymbolicLink()
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+      throw error
+    }
+
+    const contents = fse.readFileSync(isSymbolicLink ? join(sourceProfilePath, fileName) : configPath)
+    let output: Buffer | string = contents
+    let changed = false
+    try {
+      // A config.json written by an editor on Windows can start with a BOM, and JSON.parse rejects
+      // it, which would silently leave the old default folders in place after the profile moved.
+      const parsed: unknown = JSON.parse(contents.toString("utf8").replace(/^\uFEFF/, ""))
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        const config = parsed as Record<string, unknown>
+        for (const [key, folderName] of folderDefaults) {
+          if (config[key] !== join(appDataPath, folderName)) continue
+          config[key] = join(dataPath, folderName)
+          changed = true
+        }
+        if (changed) output = JSON.stringify(config, null, 2) + "\n"
+      }
+    } catch {
+      // Keep an unreadable snapshot byte for byte; startup recovery handles it later.
+    }
+
+    if (isSymbolicLink) fse.unlinkSync(configPath)
+    if (changed || isSymbolicLink) fse.writeFileSync(configPath, output)
+  }
+}
+
+/**
+ * Sets up a profile selected by the portable marker. Existing RiftLauncher data
+ * is copied except for regenerable Chromium caches; saved background images stay
+ * with the profile. The older VS Launcher migration stays limited to its existing
+ * config-and-icons allowlist.
+ */
+export function setUpPortableUserDataFolder(appDataPath: string, dataPath: string, installPath?: string): UserDataSetup {
+  const currentProfilePath = join(appDataPath, RIFT_USER_DATA_FOLDER)
+  const legacyProfilePath = join(appDataPath, LEGACY_USER_DATA_FOLDER)
+  const temporaryPath = `${dataPath}${PORTABLE_MIGRATION_TEMP_SUFFIX}`
+  if (installPath && portablePathsOverlapInstall(installPath, [dataPath, temporaryPath])) {
+    throw new Error("Portable profile or migration folder overlaps the NSIS install folder. Rename the install folder so updates cannot delete it.")
+  }
+
+  const cleanedStaleMigration = fse.existsSync(temporaryPath)
+
+  if (cleanedStaleMigration) fse.removeSync(temporaryPath)
+
+  // lstat, not stat: a link pointing at a folder elsewhere is not a portable profile, and a
+  // profile folder owned by another account is not this player's either.
+  const existingData = ((): fse.Stats | null => {
+    try {
+      return fse.lstatSync(dataPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+      throw error
+    }
+  })()
+
+  if (existingData) {
+    if (!existingData.isDirectory()) throw new Error(`Portable data path is not a folder: ${dataPath}`)
+    if (!isOwnedByThisUser(existingData)) throw new Error(`Portable data folder belongs to another user: ${dataPath}`)
+    if (fse.readdirSync(dataPath).length > 0) {
+      return { path: dataPath, outcome: "use-existing", copied: [], cleanedStaleMigration }
+    }
+    fse.removeSync(dataPath)
+  }
+
+  const hasCurrentProfile = fse.existsSync(currentProfilePath)
+  const hasLegacyProfile = !hasCurrentProfile && fse.existsSync(legacyProfilePath)
+  if (!hasCurrentProfile && !hasLegacyProfile) {
+    fse.ensureDirSync(dataPath)
+    return { path: dataPath, outcome: "fresh", copied: [], cleanedStaleMigration }
+  }
+
+  const copied: string[] = []
+  try {
+    if (hasCurrentProfile) {
+      const sourceProfilePath = realpathSync.native(currentProfilePath)
+      fse.copySync(sourceProfilePath, temporaryPath, {
+        filter: (source) => {
+          const profileEntry = relative(sourceProfilePath, source)
+          const entryName = basename(source)
+          if (dirname(profileEntry) === "." && REGENERABLE_PROFILE_ENTRIES.includes(entryName)) return false
+          if (REGENERABLE_PROFILE_PATHS.includes(profileEntry)) return false
+          if (!fse.lstatSync(source).isSymbolicLink()) return true
+          if (profileEntry === "config.json" || profileEntry === "config.pre-migration.bak.json") return true
+          if (["SingletonLock", "SingletonCookie", "SingletonSocket"].includes(entryName)) return false
+          throw new Error(`Profile contains a symbolic link that cannot be copied safely: ${profileEntry}`)
+        }
+      })
+      migratePortableDefaultFolders(temporaryPath, sourceProfilePath, appDataPath, dataPath)
+    } else {
+      fse.ensureDirSync(temporaryPath)
+      for (const entry of MIGRATED_USER_DATA_ENTRIES) {
+        const source = join(legacyProfilePath, entry)
+        let sourceIsSymbolicLink = false
+        try {
+          sourceIsSymbolicLink = fse.lstatSync(source).isSymbolicLink()
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+          throw error
+        }
+
+        const destination = join(temporaryPath, entry)
+        if (entry === "config.json" && sourceIsSymbolicLink) {
+          fse.writeFileSync(destination, fse.readFileSync(source))
+        } else {
+          fse.copySync(source, destination, {
+            filter: (sourceEntry) => {
+              if (!fse.lstatSync(sourceEntry).isSymbolicLink()) return true
+              throw new Error(`Legacy profile contains a symbolic link that cannot be copied safely: ${relative(legacyProfilePath, sourceEntry)}`)
+            }
+          })
+        }
+        copied.push(entry)
+      }
+    }
+
+    fse.moveSync(temporaryPath, dataPath)
+  } catch (error) {
+    fse.removeSync(temporaryPath)
+    throw new Error(`Could not copy the existing profile to the portable data folder: ${String(error)}`)
+  }
+
+  return {
+    path: dataPath,
+    outcome: hasCurrentProfile ? "portable-profile-migrated" : "migrate",
+    copied,
+    cleanedStaleMigration
+  }
+}
+
 /** One line for the startup log, describing what {@link setUpUserDataFolder} did. */
 export function describeUserDataSetup(setup: UserDataSetup): string {
   const stale = setup.cleanedStaleMigration ? " Discarded an unfinished migration from an earlier run." : ""
@@ -98,9 +334,13 @@ export function describeUserDataSetup(setup: UserDataSetup): string {
       return `Using the existing RiftLauncher user data folder.${stale}`
     case "migrate":
       return `Copied ${setup.copied.length > 0 ? setup.copied.join(", ") : "nothing"} from the VS Launcher user data folder, which was left untouched.${stale}`
+    case "portable-profile-migrated":
+      return `Copied the existing RiftLauncher profile to the portable data folder; the original was left untouched.${stale}`
     case "migration-failed":
       return `Could not copy the VS Launcher user data folder. Starting on an empty RiftLauncher folder.${stale}`
     case "fresh":
       return `Created a new RiftLauncher user data folder.${stale}`
+    case "unavailable":
+      return `No RiftLauncher user data folder was prepared.${stale}`
   }
 }

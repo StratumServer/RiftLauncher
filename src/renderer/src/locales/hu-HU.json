@@ -345,6 +345,10 @@
       "summaryFailed": "Sikertelen",
       "summaryAlreadyPresent": "Már telepítve",
       "summaryClose": "Kész",
+      "importModConfigsSkip": "Egyiket sem ír",
+      "importModConfigsApply": "A kiválasztott konfigurációk kiírása",
+      "exportModConfigsSkip": "Exportálás konfigurációk nélkül",
+      "exportModConfigsApply": "A kiválasztott konfigurációk exportálása",
       "cantPlayWhileUpdatingMods": "Nem játszhatsz ezzel a Telepítéssel, amíg a modjai frissülnek.",
       "showModDetails": "A(z) {{mod}} részleteinek mutatása",
       "closeModDetails": "Részletek bezárása",
@@ -520,6 +524,7 @@
       "suggestionsEmpty": "Jelenleg nincs javaslat."
     },
     "config": {
+      "userDataFolder": "Profilmappa",
       "defaultInstallationsFolder": "Telepítések könyvtára",
       "defaultVersionsFolder": "Verziók könyvtára",
       "backupsFolder": "Biztonsági mentések könyvtára",

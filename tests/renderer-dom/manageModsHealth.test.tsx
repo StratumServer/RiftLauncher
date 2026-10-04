@@ -117,6 +117,19 @@ async function healthBody(): Promise<HTMLElement> {
   return document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement
 }
 
+/** The panel's body for a folder with nothing that would open it by itself, opened by hand. */
+async function openedHealthBody(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+  const toggle = await screen.findByRole("button", { name: "Installation check" }, { timeout: 3000 })
+  await user.click(toggle)
+  expect(toggle.getAttribute("aria-expanded")).toBe("true")
+  return document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement
+}
+
+/** What a list reads as, item by item, in the order the page holds them. */
+function itemsOf(list: ParentNode): (string | null)[] {
+  return Array.from(list.querySelectorAll("li"), (item) => item.textContent)
+}
+
 /** One finding's line, by the sentence it reads as. */
 async function lineSaying(text: RegExp): Promise<HTMLElement> {
   return (await screen.findByText(text, {}, { timeout: 3000 })).closest("li") as HTMLElement
@@ -175,6 +188,79 @@ describe("ManageMods: the Installation check", () => {
     expect(within(body).getByText("6 Mods could not be checked against the ModDB.")).toBeTruthy()
     expect(within(body).queryByRole("heading", { level: 3, name: "Update available" })).toBeNull()
     expect(within(body).queryByRole("heading", { level: 3, name: "Not declared for this Vintage Story version" })).toBeNull()
+  })
+
+  it("names the Mods it could not check behind that sentence, the way their rows are named", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+    const body = await healthBody()
+
+    // The sentence is the summary: the count reads first and the names open under it.
+    const summary = await within(body).findByText("3 Mods could not be checked against the ModDB.", {}, { timeout: 3000 })
+    expect(summary.tagName).toBe("SUMMARY")
+    const details = summary.closest("details") as HTMLDetailsElement
+
+    await user.click(summary)
+
+    // In the order of the scan, the two copies that share a name told apart by their file name as
+    // their rows are, and Epsilon, unanswered like them but turned off, neither counted nor named.
+    await waitFor(() => expect(itemsOf(details)).toEqual(["Delta Mod (delta-1.0.0.zip)", "Delta Mod (delta-1.0.1.zip)", "Zeta Mod"]))
+  })
+
+  it("names them by file name only, never by a path, even a Windows one under a user folder", async () => {
+    const user = userEvent.setup()
+    const folder = "C:\\Users\\player\\AppData\\Roaming\\VintagestoryData\\Mods"
+    // One name on two mod ids, so each row's name has to carry its file name to be told apart.
+    const twin = (modid: string): InstalledModType => ({ name: "Twin Mod", modid, version: "1.0.0", path: `${folder}\\${modid}-1.0.0.zip`, enabled: true, authors: [] })
+    renderManageMods({
+      netManager: { queryURL: vi.fn(async () => JSON.stringify({ statuscode: "404" })) },
+      modsManager: { getInstalledMods: vi.fn(async () => ({ mods: [twin("twina"), twin("twinb")], errors: [] })) }
+    })
+
+    const body = await openedHealthBody(user)
+    const summary = within(body).getByText("2 Mods could not be checked against the ModDB.")
+    const details = summary.closest("details") as HTMLDetailsElement
+
+    await user.click(summary)
+
+    await waitFor(() => expect(itemsOf(details)).toEqual(["Twin Mod (twina-1.0.0.zip)", "Twin Mod (twinb-1.0.0.zip)"]))
+    expect(details.textContent).not.toMatch(/Users|AppData|VintagestoryData|player|[\\/]/)
+  })
+
+  it("keeps a long list closed until it is opened, and scrolls it on its own", async () => {
+    const user = userEvent.setup()
+    // Offline, every Mod is in this state, which is how a whole folder lands in one list.
+    const mods: InstalledModType[] = Array.from({ length: 60 }, (_, index) => {
+      const number = String(index + 1).padStart(3, "0")
+      return { name: `Mod ${number}`, modid: `mod${number}`, version: "1.0.0", path: `/games/a/Mods/mod${number}-1.0.0.zip`, enabled: true, authors: [] }
+    })
+    renderManageMods({
+      netManager: { queryURL: vi.fn(async () => JSON.stringify({ statuscode: "404" })) },
+      modsManager: { getInstalledMods: vi.fn(async () => ({ mods, errors: [] })) }
+    })
+
+    const body = await openedHealthBody(user)
+    const summary = within(body).getByText("60 Mods could not be checked against the ModDB.")
+    const details = summary.closest("details") as HTMLDetailsElement
+
+    // Nothing is mounted for a list nobody asked for. Every one of these names is already on the
+    // page, on its own row, and a copy in the panel would make every lookup by name find two.
+    expect(details.open).toBe(false)
+    expect(itemsOf(details)).toEqual([])
+
+    await user.click(summary)
+    await waitFor(() => expect(itemsOf(details)).toEqual(mods.map((mod) => mod.name)))
+    expect(details.open).toBe(true)
+
+    // jsdom has no layout to measure, so the bound is read off the classes that apply it.
+    const list = details.querySelector("ul") as HTMLElement
+    expect(list.className).toMatch(/\bmax-h-/)
+    expect(list.className).toMatch(/\boverflow-y-auto\b/)
+
+    // And it goes away again with the click that closes it.
+    await user.click(summary)
+    await waitFor(() => expect(itemsOf(details)).toEqual([]))
+    expect(details.open).toBe(false)
   })
 
   it("opens the install popup on the dependency nobody has installed yet", async () => {
@@ -324,6 +410,44 @@ describe("ManageMods: the Installation check", () => {
     // Nothing to fix still leaves the unreadable archive to say, which is what opening it shows.
     await user.click(toggle)
     expect(toggle.getAttribute("aria-expanded")).toBe("true")
-    expect(screen.getByText("1 archive could not be read, so it was left out of this check.")).toBeTruthy()
+    const body = document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement
+    const summary = within(body).getByText("1 archive could not be read, so it was left out of this check.")
+    const disclosure = summary.closest("details") as HTMLDetailsElement
+    expect(disclosure).toBeTruthy()
+    expect(disclosure.open).toBe(false)
+    expect(disclosure.querySelector("ul")).toBeNull()
+    // Every enabled Mod was answered for, so there is no ModDB sentence; only the unreadable-file list can open.
+    expect(within(disclosure).queryByRole("listitem")).toBeNull()
+  })
+
+  it("names unreadable archives on demand without exposing their paths", async () => {
+    const user = userEvent.setup()
+    const root = "C:/Users/player/AppData/RiftLauncherInstallations/Save/Mods"
+    renderManageMods({
+      modsManager: {
+        getInstalledMods: vi.fn(async () => ({
+          mods: [],
+          errors: [
+            { zipname: "broken one.zip", path: `${root}/broken one.zip` },
+            { zipname: "broken two.zip", path: `${root}/broken two.zip` }
+          ]
+        }))
+      }
+    })
+
+    const body = await openedHealthBody(user)
+    const summary = within(body).getByText("2 archives could not be read, so they were left out of this check.")
+    const disclosure = summary.closest("details") as HTMLDetailsElement
+    expect(within(disclosure).queryByRole("listitem")).toBeNull()
+
+    await user.click(summary)
+
+    expect(
+      within(disclosure)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["broken one.zip", "broken two.zip"])
+    expect(disclosure.querySelector(":scope > ul")?.classList.contains("max-h-48")).toBe(true)
+    expect(disclosure.textContent).not.toContain(root)
   })
 })

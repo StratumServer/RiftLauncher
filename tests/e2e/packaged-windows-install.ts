@@ -64,7 +64,7 @@
  */
 
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, writeFileSync, type Dirent } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, type Dirent } from "node:fs"
 import { request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 import { randomUUID } from "node:crypto"
@@ -152,6 +152,10 @@ type Report = {
   scratchAppData: string
   /** What the app itself says its userData folder is, which is the only honest record of whether the scratch redirection took. */
   userDataPath: string | null
+  /** Whether that folder was already there before this run launched the app. */
+  userDataExistedBeforeLaunch: boolean | null
+  /** The line the launcher logged when it chose its user data folder. */
+  userDataSetup: string | null
   defaultVersionsFolder: string | null
   version: string | null
   fileName: string | null
@@ -557,6 +561,33 @@ async function waitForBridge(cdp: CdpConnection): Promise<void> {
   throw new Error(`The packaged app's preload bridge was not usable within ${APP_READY_TIMEOUT_MS}ms: ${lastError}`)
 }
 
+/** The folder names the launcher's user data can land under, as they were before the app ran. */
+const USER_DATA_FOLDER = "RiftLauncher"
+
+/** Windows compares paths without case and with either separator, so two spellings of one folder must match here too. */
+function samePath(left: string, right: string): boolean {
+  const fold = (path: string): string => path.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase()
+  return fold(left) === fold(right)
+}
+
+/**
+ * The line the launcher logs when it chooses its user data folder.
+ *
+ * On a machine that has never run it, anything but "Created a new" (or a VS Launcher copy) means
+ * the folder existed before the choice was made. Something wrote there while the main process was
+ * still loading its modules, and from then on the launcher believes a profile is in place: a
+ * first-time player's VS Launcher data is never carried over. Linux hides this, because Electron's
+ * default folder there is a differently cased sibling.
+ */
+function readUserDataSetupLine(userDataPath: string): string | null {
+  try {
+    const lines = readFileSync(join(userDataPath, "Logs", "info.log"), "utf8").split(/\r?\n/)
+    return lines.find((line) => line.includes("[setUpUserDataFolder]")) ?? null
+  } catch {
+    return null
+  }
+}
+
 function safeListDir(root: string, maxDepth = 2): string[] {
   const results: string[] = []
   const walk = (current: string, depth: number): void => {
@@ -594,6 +625,8 @@ async function main(): Promise<void> {
     exePath: null,
     scratchAppData,
     userDataPath: null,
+    userDataExistedBeforeLaunch: null,
+    userDataSetup: null,
     defaultVersionsFolder: null,
     version: null,
     fileName: null,
@@ -649,6 +682,10 @@ async function main(): Promise<void> {
     report.exePath = exePath
     console.log(`Launching ${exePath} with --remote-debugging-port=${REMOTE_DEBUGGING_PORT}`)
 
+    // Taken before the app runs: where its user data may land, and which of those already exist.
+    const userDataCandidates = [join(scratchAppData, USER_DATA_FOLDER), ...(process.env.APPDATA ? [join(process.env.APPDATA, USER_DATA_FOLDER)] : [])]
+    const userDataBeforeLaunch = userDataCandidates.filter((folder) => existsSync(folder))
+
     const launchedAt = Date.now()
     app = launchApp(exePath, scratchAppData)
     const target = await waitForAppPage(app)
@@ -669,6 +706,12 @@ async function main(): Promise<void> {
     report.userDataPath = environment.userDataPath
     report.defaultVersionsFolder = environment.defaultVersionsFolder
     console.log(`userData is ${environment.userDataPath}, versions go under ${environment.defaultVersionsFolder}.`)
+
+    const userDataExistedBeforeLaunch = userDataBeforeLaunch.some((folder) => samePath(folder, environment.userDataPath))
+    const userDataSetup = readUserDataSetupLine(environment.userDataPath)
+    report.userDataExistedBeforeLaunch = userDataExistedBeforeLaunch
+    report.userDataSetup = userDataSetup
+    console.log(`User data folder existed before launch: ${userDataExistedBeforeLaunch}. The launcher logged: ${userDataSetup ?? "nothing"}`)
 
     const targetFolder = await evaluateInPage<string>(cdp, FORMAT_PATH_SOURCE, [environment.defaultVersionsFolder, version], CDP_CALL_TIMEOUT_MS)
     report.targetFolder = targetFolder
@@ -701,14 +744,18 @@ async function main(): Promise<void> {
     report.targetListing = safeListDir(targetFolder)
 
     const installOk = isRecord(installResult) && installResult.ok === true
-    report.failed = !installOk || !executableLanded || !versionMarkerLanded
-    report.verdict = !installOk
-      ? `RUN_INSTALLER refused the install through the packaged app (${isRecord(installResult) && typeof installResult.reason === "string" ? installResult.reason : "no reason on the wire"}).`
-      : !executableLanded
-        ? "RUN_INSTALLER reported ok but Vintagestory.exe did not land at the target root."
-        : !versionMarkerLanded
-          ? `RUN_INSTALLER reported ok but ${versionMarkerRelativePath} did not land.`
-          : `The packaged app downloaded and unpacked ${version} through its own IPC: worker spawning, asar path resolution and the path policy all hold once electron-builder has packed the app.`
+    // A folder this run did not find before launching has to be reported as new, or as a VS Launcher copy.
+    const profileChoiceOk = userDataExistedBeforeLaunch || (userDataSetup !== null && !userDataSetup.includes("Using the existing RiftLauncher user data folder"))
+    report.failed = !installOk || !executableLanded || !versionMarkerLanded || !profileChoiceOk
+    report.verdict = !profileChoiceOk
+      ? `The launcher treated a user data folder that did not exist before it started as an existing profile (${userDataSetup ?? "no setup line in info.log"}). Something wrote there before the folder was chosen, which skips the VS Launcher migration for a first-time player.`
+      : !installOk
+        ? `RUN_INSTALLER refused the install through the packaged app (${isRecord(installResult) && typeof installResult.reason === "string" ? installResult.reason : "no reason on the wire"}).`
+        : !executableLanded
+          ? "RUN_INSTALLER reported ok but Vintagestory.exe did not land at the target root."
+          : !versionMarkerLanded
+            ? `RUN_INSTALLER reported ok but ${versionMarkerRelativePath} did not land.`
+            : `The packaged app downloaded and unpacked ${version} through its own IPC: worker spawning, asar path resolution and the path policy all hold once electron-builder has packed the app.`
 
     report.phase = report.failed ? "failed" : "done"
     cdp.close()

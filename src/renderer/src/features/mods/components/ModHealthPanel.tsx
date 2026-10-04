@@ -10,6 +10,7 @@ import type { ModHealthFinding, ModHealthSection } from "@domain/mods/health"
 import type { InstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
 
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
+import ExpandableNameList from "@renderer/components/ui/ExpandableNameList"
 import { FormButton } from "@renderer/components/ui/FormComponents"
 import { NormalButton } from "@renderer/components/ui/Buttons"
 
@@ -37,6 +38,30 @@ const SECTIONS: readonly { section: ModHealthSection; titleKey: string; classNam
 const RAW = { interpolation: { escapeValue: false } }
 
 /**
+ * The line that counts the Mods the ModDB never answered for, with the Mods themselves under it for
+ * whoever opens it (#573). A bare count left the player hunting for the rows that had lost their
+ * ModDB link.
+ *
+ * The sentence is the `<summary>` of a native `<details>`, so opening it, keyboard included, is the
+ * browser's own. The names mount only once it is open: offline every Mod is in this list, and a name
+ * nobody asked to see would sit in the page a second time beside its row. Open, the list scrolls on
+ * its own, so it cannot push the Mod list a whole folder further down.
+ *
+ * @param mods The enabled Mods with no ModDB answer, in the order the folder was scanned.
+ * @param labelOf Each Mod named the way its row is named: a file name is added to a name two copies share, never a path.
+ */
+function NotCheckedMods({ mods, labelOf }: Readonly<{ mods: readonly InstalledModType[]; labelOf: (iMod: InstalledModType) => string }>): JSX.Element {
+  const { t } = useTranslation()
+  return <ExpandableNameList summary={t("features.mods.healthNotChecked", { count: mods.length })} groups={mods.map((iMod) => ({ key: iMod.path, label: labelOf(iMod) }))} />
+}
+
+/** Archive names behind the unreadable count, disclosed only when asked for (#576). */
+function UnreadableMods({ mods }: Readonly<{ mods: readonly ErrorInstalledModType[] }>): JSX.Element {
+  const { t } = useTranslation()
+  return <ExpandableNameList summary={t("features.mods.healthUnreadable", { count: mods.length })} groups={mods.map((mod) => ({ key: mod.path, label: mod.zipname }))} />
+}
+
+/**
  * Everything wrong with one Installation's Mods, above the list itself.
  *
  * There is no button to run it. The scan behind this page already fetches every Mod's ModDB detail,
@@ -49,7 +74,7 @@ const RAW = { interpolation: { escapeValue: false } }
  * one category whose outcome is close to certain.
  *
  * @param installedMods Everything the last scan read, disabled copies included.
- * @param unreadableCount Archives the scan could not read at all, counted rather than left silent.
+ * @param unreadableMods Archives the scan could not read at all, counted and named on request.
  * @param gameVersion The Installation's game version, without a leading "v".
  * @param suspended Mod ids the player holds, which drop every finding about them.
  * @param labelOf The Mod's name, with its file name added when a second copy shares it (batch.labelOf).
@@ -61,7 +86,7 @@ const RAW = { interpolation: { escapeValue: false } }
  */
 function ModHealthPanel({
   installedMods,
-  unreadableCount,
+  unreadableMods,
   gameVersion,
   suspended,
   labelOf,
@@ -70,7 +95,7 @@ function ModHealthPanel({
   onUpdateAll
 }: Readonly<{
   installedMods: readonly InstalledModType[]
-  unreadableCount: number
+  unreadableMods: readonly ErrorInstalledModType[]
   gameVersion: string
   suspended: readonly string[]
   labelOf: (iMod: InstalledModType) => string
@@ -111,13 +136,14 @@ function ModHealthPanel({
   }
 
   // A Mod the ModDB never answered for gets neither of the two verdicts that need it, so the
-  // count has to be said out loud. Offline and not listed are indistinguishable from here, and
-  // the sentence is true of both. Only the copies that are actually checked are counted.
-  const notCheckedCount = installedMods.filter((iMod) => iMod.enabled && !iMod._mod).length
+  // count has to be said out loud, with the Mods behind it named on request. Offline and not
+  // listed are indistinguishable from here, and the sentence is true of both. Only the copies
+  // that are actually checked are counted, and they stay in the order the folder was scanned.
+  const notChecked = installedMods.filter((iMod) => iMod.enabled && !iMod._mod)
   const problems = findings.filter((finding) => finding.section !== "update").length
   const updates = findings.length - problems
 
-  if (findings.length < 1 && notCheckedCount < 1 && unreadableCount < 1) return null
+  if (findings.length < 1 && notChecked.length < 1 && unreadableMods.length < 1) return null
 
   const open = openedByHand ?? findings.some((finding) => finding.section === "blocking")
 
@@ -243,8 +269,8 @@ function ModHealthPanel({
             )
           })}
 
-          {notCheckedCount > 0 && <p className="text-zinc-400 text-sm">{t("features.mods.healthNotChecked", { count: notCheckedCount })}</p>}
-          {unreadableCount > 0 && <p className="text-zinc-400 text-sm">{t("features.mods.healthUnreadable", { count: unreadableCount })}</p>}
+          {notChecked.length > 0 && <NotCheckedMods mods={notChecked} labelOf={labelOf} />}
+          {unreadableMods.length > 0 && <UnreadableMods mods={unreadableMods} />}
         </div>
       </ListGroup>
     </ListWrapper>

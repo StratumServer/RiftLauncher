@@ -347,6 +347,10 @@
       "summaryFailed": "Nieudane",
       "summaryAlreadyPresent": "Już zainstalowane",
       "summaryClose": "Gotowe",
+      "importModConfigsSkip": "Nie zapisuj żadnego",
+      "importModConfigsApply": "Zapisz wybrane konfiguracje",
+      "exportModConfigsSkip": "Eksportuj bez konfiguracji",
+      "exportModConfigsApply": "Eksportuj wybrane konfiguracje",
       "cantPlayWhileUpdatingMods": "Nie możesz grać na tej instancji, gdy jej mody są aktualizowane.",
       "showModDetails": "Pokaż szczegóły {{mod}}",
       "closeModDetails": "Zamknij szczegóły",
@@ -542,6 +546,7 @@
       "suggestionsEmpty": "Brak sugestii w tej chwili."
     },
     "config": {
+      "userDataFolder": "Folder profilu",
       "defaultInstallationsFolder": "Folder instancji",
       "defaultVersionsFolder": "Folder wersji VS",
       "backupsFolder": "Folder kopii zapasowych",
