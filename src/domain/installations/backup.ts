@@ -1,4 +1,5 @@
 import { cleanFolderName, formatTimestampForFilename } from "../naming"
+import { parentFolder } from "../paths"
 import type { Archiver, Clock, CloseGuard, CompressOutcome, FileSystem, IdGenerator, PathBuilder } from "../ports"
 import { deleteInstallationBackup } from "./backupDeletion"
 
@@ -80,7 +81,7 @@ export interface MakeInstallationBackupInput {
 export interface MakeInstallationBackupEvents {
   /** Fired once the work is committed to, right after the close guard is held. */
   onStarted?(): void
-  /** Fired for each pruned archive, in deletion order. */
+  /** Fired for each backup dropped: records whose archive was already gone first, then the pruned archives, oldest first. */
   onBackupDeleted?(backup: BackupRecord): void
   /** Fired once the work is over, success or not, after the close guard is released. */
   onFinished?(): void
@@ -95,9 +96,41 @@ function refuse(reason: MakeInstallationBackupFailure, deletedBackupIds: string[
 /** What pruning removed, and whether it got all the way to the limit. */
 type PruneOutcome = { ok: true; deletedBackupIds: string[] } | { ok: false; reason: "prune-failed"; deletedBackupIds: string[]; failedBackupId: string }
 
+/** What is known of one record's archive: it is on disk, it is gone from a folder that is still there, or its folder cannot be reached to say. */
+type ArchiveState = "on-disk" | "gone" | "unreachable"
+
+/**
+ * Tells an archive that was deleted from one that cannot be checked.
+ *
+ * An archive that is not there is only gone when the folder that held it is still
+ * there: the file was taken out. A folder that is missing too is a drive that is
+ * unplugged, a share that is offline or a Backups folder that moved, and the
+ * archives may all be where they were. The same goes for a path the host will not
+ * answer about, which is what a Backups folder changed in Config leaves behind.
+ * Not knowing is never read as gone.
+ */
+async function archiveState(fileSystem: FileSystem, backup: BackupRecord): Promise<ArchiveState> {
+  try {
+    if (await fileSystem.exists(backup.path)) return "on-disk"
+
+    const folder = parentFolder(backup.path)
+    return folder !== undefined && (await fileSystem.exists(folder)) ? "gone" : "unreachable"
+  } catch {
+    return "unreachable"
+  }
+}
+
 /**
  * Removes archives from the oldest end until the installation has room for one
  * more under its limit.
+ *
+ * Only the archives still on disk count. A record whose archive is gone from a
+ * folder that is still there comes off first, by the same "already gone counts as
+ * deleted" rule deleteInstallationBackup applies: counted with the rest, it would
+ * hold a slot and send the walk below onto an archive that is still there (#610).
+ * A record whose folder cannot be reached, a drive that is unplugged or a Backups
+ * folder that moved, holds no slot either, but it stays as it is: it is never
+ * deleted and never reported, so it is still listed when the drive comes back.
  *
  * Archives are held newest first, so the walk runs backwards from the end.
  * Whatever came off is reported either way, since a caller that gives up
@@ -105,10 +138,18 @@ type PruneOutcome = { ok: true; deletedBackupIds: string[] } | { ok: false; reas
  */
 async function pruneOldestBackups(fileSystem: FileSystem, installation: InstallationSnapshot, events: MakeInstallationBackupEvents): Promise<PruneOutcome> {
   const deletedBackupIds: string[] = []
-  let remaining = installation.backups.length
+
+  const states = await Promise.all(installation.backups.map((backup) => archiveState(fileSystem, backup)))
+  const archives = installation.backups.filter((_, index) => states[index] === "on-disk")
+  for (const backup of installation.backups.filter((_, index) => states[index] === "gone")) {
+    deletedBackupIds.push(backup.id)
+    events.onBackupDeleted?.(backup)
+  }
+
+  let remaining = archives.length
 
   while (remaining > 0 && remaining >= installation.backupsLimit) {
-    const oldest = installation.backups[remaining - 1]
+    const oldest = archives[remaining - 1]
     if (!oldest) break
     remaining--
 

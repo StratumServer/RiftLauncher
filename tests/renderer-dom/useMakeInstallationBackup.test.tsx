@@ -140,3 +140,102 @@ describe("useMakeInstallationBackup with an archive missing from the Backups fol
     await waitFor(() => expect(result.current.installations[0]?.backups.map((backup) => backup.id)).not.toContain("backup-6"))
   })
 })
+
+/**
+ * Issue #610. An archive removed by hand leaves a record that still held a slot: with one archive on
+ * disk against a limit of two, the prune deleted that archive to make room.
+ */
+describe("useMakeInstallationBackup with a stale record under the limit", () => {
+  const MISSING_ARCHIVE = "/backups/a/backup-2.tar.gz"
+  const KEPT_ARCHIVE = "/backups/a/backup-1.tar.gz"
+
+  it("keeps the archive that is on disk and drops the record whose archive is gone", async () => {
+    const deletePath = vi.fn(async () => true)
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            backupsFolder: "/backups",
+            installations: [
+              {
+                ...anInstallation(),
+                backupsLimit: 2,
+                // Newest first, the order the config keeps them in.
+                backups: [
+                  { id: "backup-2", date: 1_700_000_000_001, path: MISSING_ARCHIVE },
+                  { id: "backup-1", date: 1_700_000_000_000, path: KEPT_ARCHIVE }
+                ]
+              }
+            ]
+          })
+        )
+      },
+      pathsManager: {
+        checkPathExists: vi.fn(async (path: string) => path !== MISSING_ARCHIVE),
+        deletePath,
+        compressOnPath: vi.fn(async () => true)
+      }
+    })
+
+    const { result } = renderHook(() => ({ makeBackup: useMakeInstallationBackup(), installations: useInstallations() }), { wrapper })
+    await waitFor(() => expect(result.current.installations).toHaveLength(1))
+
+    const outcome = await result.current.makeBackup("install-a")
+
+    expect(outcome).toEqual({ ok: true })
+    expect(deletePath).not.toHaveBeenCalledWith(KEPT_ARCHIVE)
+    await waitFor(() => expect(result.current.installations[0]?.backups.map((backup) => backup.id)).not.toContain("backup-2"))
+    // The kept record and the one the backup just made.
+    expect(result.current.installations[0]?.backups).toHaveLength(2)
+    expect(result.current.installations[0]?.backups.map((backup) => backup.id)).toContain("backup-1")
+  })
+})
+
+/**
+ * Issue #610, the other half. An archive missing from a folder that is missing too is a drive that is
+ * not connected, not a file the player deleted: the rows have to survive the attempt, so the archives
+ * are listed again once the drive is back.
+ */
+describe("useMakeInstallationBackup with the Backups folder on a drive that is not connected", () => {
+  it("keeps every record and sends nothing to be deleted", async () => {
+    const deletePath = vi.fn(async () => true)
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            backupsFolder: "/drive/backups",
+            installations: [
+              {
+                ...anInstallation(),
+                backupsLimit: 2,
+                backups: [
+                  { id: "backup-2", date: 1_700_000_000_001, path: "/drive/backups/a/backup-2.tar.gz" },
+                  { id: "backup-1", date: 1_700_000_000_000, path: "/drive/backups/a/backup-1.tar.gz" }
+                ]
+              }
+            ]
+          })
+        )
+      },
+      pathsManager: {
+        // The Installation folder answers, nothing on the drive does.
+        checkPathExists: vi.fn(async (path: string) => !path.startsWith("/drive")),
+        deletePath,
+        compressOnPath: vi.fn(async () => {
+          throw new Error("Compression failed: the drive is not there")
+        })
+      }
+    })
+
+    const { result } = renderHook(() => ({ makeBackup: useMakeInstallationBackup(), installations: useInstallations() }), { wrapper })
+    await waitFor(() => expect(result.current.installations).toHaveLength(1))
+
+    const outcome = await result.current.makeBackup("install-a")
+
+    expect(outcome).toEqual({ ok: false, reason: "compress-failed" })
+    expect(deletePath).not.toHaveBeenCalled()
+    // Dropping a record logs this line from the same handler that removes it from the Installation.
+    expect(api.utils.logMessage).not.toHaveBeenCalledWith("info", expect.stringContaining("Deleted an old backup"))
+    expect(result.current.installations[0]?.backups.map((backup) => backup.id)).toEqual(["backup-2", "backup-1"])
+  })
+})

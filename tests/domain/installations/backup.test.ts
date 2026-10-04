@@ -14,16 +14,20 @@ const FIXED_NOW = new Date(2025, 7, 16, 1, 20, 0).getTime()
 let trace: string[] = []
 
 /**
- * `missing` holds archive paths that are no longer on disk: the host refuses to
- * delete a path it cannot find (assertManagedDeletionPath in ipc/pathPolicy.ts
- * runs with allowMissing false), so those answer false to both calls.
+ * `missing` holds paths that are no longer on disk, an archive or a whole folder:
+ * the host refuses to delete a path it cannot find (assertManagedDeletionPath in
+ * ipc/pathPolicy.ts runs with allowMissing false), so those answer false to both
+ * calls. `refused` holds paths the host will not answer about at all, the way
+ * assertManagedPath turns away one outside the folders the config names.
  */
-function fakeFileSystem(options: { exists?: boolean; removals?: Record<string, boolean>; missing?: readonly string[] } = {}): FileSystem {
+function fakeFileSystem(options: { exists?: boolean; removals?: Record<string, boolean>; missing?: readonly string[]; refused?: readonly string[] } = {}): FileSystem {
   const removals = options.removals ?? {}
   const missing = new Set(options.missing ?? [])
+  const refused = new Set(options.refused ?? [])
   return {
     exists: async (path: string): Promise<boolean> => {
       trace.push(`exists:${path}`)
+      if (refused.has(path)) throw new TypeError("Unmanaged path")
       if (missing.has(path)) return false
       return options.exists ?? true
     },
@@ -76,7 +80,7 @@ function fakePorts(overrides: Partial<MakeInstallationBackupPorts> = {}): MakeIn
   }
 }
 
-function backup(id: string, overrides: { isDeleting?: boolean; isRestoring?: boolean } = {}): BackupRecord & { isDeleting?: boolean; isRestoring?: boolean } {
+function backup(id: string, overrides: { isDeleting?: boolean; isRestoring?: boolean; path?: string } = {}): BackupRecord & { isDeleting?: boolean; isRestoring?: boolean } {
   return { id, date: 1, path: `/backups/${id}.tar.gz`, ...overrides }
 }
 
@@ -255,12 +259,153 @@ describe("makeInstallationBackup pruning", () => {
     const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
 
     assert.equal(result.ok, true)
-    // The stale record comes off with the archives: reporting it as deleted is
-    // what drops it from the installation, so it stops taking a slot.
-    assert.deepEqual(result.deletedBackupIds, ["b6"])
+    // Four archives are on disk against a limit of six, so none has to go. Both
+    // stale records come off: reporting a record as deleted is what drops it from
+    // the installation, so it stops taking a slot.
+    assert.deepEqual(result.deletedBackupIds, ["b5", "b6"])
     assert.equal(
       trace.some((entry) => entry.startsWith("compress:")),
       true
+    )
+  })
+
+  it("keeps the only archive on disk when a record whose archive is gone holds the other slot", async () => {
+    // #610: a limit of two, two backups made, then the newer archive deleted from the Backups
+    // folder by hand. Counting records, the prune took the older one, the last archive left.
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b2"), backup("b1")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/backups/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b2"])
+    // The stale record comes off with no delete call, and b1 is never touched.
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      ["deleted:b2"]
+    )
+  })
+
+  it("counts only the archives on disk against the limit, wherever the stale record sits", async () => {
+    // Three archives are on disk (b1, b3, b4) against a limit of three, so room for the new one
+    // takes exactly one removal, the oldest, whatever b2 did to the number of records.
+    const installation = snapshot({ backupsLimit: 3, backups: [backup("b1"), backup("b2"), backup("b3"), backup("b4")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/backups/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b2", "b4"])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      ["deleted:b2", "remove:/backups/b4.tar.gz", "deleted:b4"]
+    )
+  })
+
+  it("drops every record, without a delete call, when all the archives were deleted by hand", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/backups/b1.tar.gz", "/backups/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b1", "b2"])
+    assert.equal(
+      trace.some((entry) => entry.startsWith("remove:")),
+      false
+    )
+    assert.equal(
+      trace.some((entry) => entry.startsWith("compress:")),
+      true
+    )
+  })
+
+  it("keeps a live archive past a stale record and a deletion in flight", async () => {
+    // b1 is gone from disk and b3 is on its way out through a manual delete, so b2 is the one
+    // archive that stays and nothing makes it go.
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2"), backup("b3", { isDeleting: true })] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/backups/b1.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b1"])
+    assert.equal(
+      trace.some((entry) => entry.startsWith("remove:")),
+      false
+    )
+  })
+
+  it("keeps a record whose folder is not there, uncounted, and deletes nothing because of it", async () => {
+    // The Backups folder sits on a drive that is not connected. Nothing says its archive is gone,
+    // and the archive that is on disk must not be deleted to make room for a record that holds no slot.
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b2", { path: "/drive/b2.tar.gz" }), backup("b1")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/drive", "/drive/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, [])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      []
+    )
+    assert.equal(trace.includes("exists:/drive"), true)
+  })
+
+  it("leaves every record alone when the drive holding the archives is not connected", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1", { path: "/drive/b1.tar.gz" }), backup("b2", { path: "/drive/b2.tar.gz" })] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/drive", "/drive/b1.tar.gz", "/drive/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, [])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      []
+    )
+    assert.equal(
+      trace.some((entry) => entry.startsWith("compress:")),
+      true
+    )
+  })
+
+  it("tells gone, unreachable and live records apart in one list", async () => {
+    // b3 was deleted by hand from a folder that is still there. b2 and b6 sit on a drive that is not.
+    // Only b3 comes off the list, and the three archives on disk (b1, b4, b5) are at the limit of three,
+    // so the oldest of them goes.
+    const installation = snapshot({
+      backupsLimit: 3,
+      backups: [backup("b1"), backup("b2", { path: "/drive/b2.tar.gz" }), backup("b3"), backup("b4"), backup("b5"), backup("b6", { path: "/drive/b6.tar.gz" })]
+    })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/drive", "/drive/b2.tar.gz", "/drive/b6.tar.gz", "/backups/b3.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b3", "b5"])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      ["deleted:b3", "remove:/backups/b5.tar.gz", "deleted:b5"]
+    )
+    // A folder is only asked about when its archive is missing: b3, b2 and b6.
+    assert.deepEqual(trace.filter((entry) => entry === "exists:/backups" || entry === "exists:/drive").sort(), ["exists:/backups", "exists:/drive", "exists:/drive"])
+  })
+
+  it("reads a path the host will not answer about as unreachable", async () => {
+    // A Backups folder changed in Config leaves b3 in a folder the host no longer manages, and asking
+    // about it is refused. The host refuses b2's own path too. Neither proves a deleted file, so both stay.
+    const installation = snapshot({ backupsLimit: 3, backups: [backup("b3", { path: "/old-backups/b3.tar.gz" }), backup("b2"), backup("b1")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/old-backups/b3.tar.gz"], refused: ["/old-backups", "/backups/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, [])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      []
     )
   })
 
@@ -318,6 +463,7 @@ describe("makeInstallationBackup archiving", () => {
       "exists:/games/my-install",
       "guard-acquire:Making and installation backup.",
       "started",
+      "exists:/backups/b1.tar.gz",
       "remove:/backups/b1.tar.gz",
       "deleted:b1",
       "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
