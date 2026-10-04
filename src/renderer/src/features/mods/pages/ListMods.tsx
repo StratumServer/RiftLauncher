@@ -74,7 +74,7 @@ function ListMods(): JSX.Element {
   const browseState = browseStateRef.current
   const restoreBrowseRef = useRef(browseState.scrollTop > 0 || browseState.visibleMods > DEFAULT_LOADED_MODS)
 
-  const [modsList, setModsList] = useState<DownloadableModOnListType[]>([])
+  const [queriedMods, setQueriedMods] = useState<DownloadableModOnListType[]>([])
   const [visibleMods, setVisibleModsState] = useState<number>(browseState.visibleMods)
 
   // Derived (not copied into state) so an EDIT_INSTALLATION on the current
@@ -114,6 +114,10 @@ function ListMods(): JSX.Element {
   // step with the committed state on every render; `filters` itself stays the one React reads.
   const filtersRef = useRef(filters)
   filtersRef.current = filters
+
+  // The favorites filter reads the favorites as they are now, not as they were when the last search
+  // ran: a star turned off while it is on drops its card at once, and the ModDB is not asked again.
+  const modsList = useMemo(() => (filters.onlyFav ? queriedMods.filter((mod) => favMods.includes(mod.modid)) : queriedMods), [queriedMods, filters.onlyFav, favMods])
 
   const [searching, setSearching] = useState<boolean>(true)
 
@@ -332,9 +336,7 @@ function ListMods(): JSX.Element {
     if (filters.installedFilter === "installed") mods = mods.filter((mod) => installedCopiesOf(mod.modidstrs, installationInstalledMods).length > 0)
     if (filters.installedFilter === "not-installed") mods = mods.filter((mod) => installedCopiesOf(mod.modidstrs, installationInstalledMods).length < 1)
 
-    if (filters.onlyFav) mods = mods.filter((mod) => favMods.includes(mod.modid))
-
-    setModsList(mods)
+    setQueriedMods(mods)
     setSearching(false)
   }
 
