@@ -301,6 +301,7 @@
       "resumeUpdates": "Resume updates for this Mod: Update all will include it again",
       "modsUpdatedSuccessfully": "All the Mods were updated successfully.",
       "modsPartiallyUpdated": "{{updated}} Mods updated, {{failed}} left as they were. The summary says which ones.",
+      "nothingToUpdate": "There is nothing to update. Disabled Mods and Mods with suspended updates are left as they are.",
       "errorReplacingOldModVersion": "The old version of {{mod}} is still on disk, so it was left alone. Close Vintage Story and anything else holding that file, then update it again.",
       "exportModpack": "Export the installed Mods as a sharable modpack file",
       "exportModpackButton": "Export Modpack",

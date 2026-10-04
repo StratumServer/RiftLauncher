@@ -253,6 +253,12 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   }, [stack, records])
 
   // Only a banner on screen owns a timer. Queued messages cannot expire unseen.
+  //
+  // This runs again whenever `records` changes, and a click that does so (a repeat folding into the
+  // record still waiting here) renders ahead of the update this effect queued the first time, so the
+  // second run sees the same queue and the same stack and admits the same id. That is why the update
+  // checks what the stack really holds: one id twice gives two banners one key, and one of them can
+  // no longer be closed (#613).
   useEffect(() => {
     if (toastQueue.length === 0) return
     const live = toastQueue.filter((id) => records.some((record) => record.id === id))
@@ -262,7 +268,12 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       return
     }
     const waiting = live.length - admitted.length
-    setStack((current) => [...current, ...admitted.map((id) => ({ id, turn: backlogToastDuration(records.find((record) => record.id === id)?.options?.duration ?? null, waiting) }))])
+    setStack((current) => [
+      ...current,
+      ...admitted
+        .filter((id) => !current.some((entry) => entry.id === id))
+        .map((id) => ({ id, turn: backlogToastDuration(records.find((record) => record.id === id)?.options?.duration ?? null, waiting) }))
+    ])
     setToastQueue(live.slice(admitted.length))
   }, [stack, records, toastQueue])
 

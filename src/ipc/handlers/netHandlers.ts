@@ -262,10 +262,10 @@ const REDIRECT_ERROR = /\bERR_[A-Z_]*REDIRECT/
 
 /**
  * Per-field ceilings, applied here so no single release can push the renderer a field larger than
- * the whole list is supposed to be. The 256 KiB response cap bounds all ten releases together;
+ * the whole list is supposed to be. The 1 MiB response cap bounds all ten releases together;
  * without these a response could spend all of it on one body. 128 for a tag (a semver string with
  * room to spare), 256 for a name (one line), 64 KiB for a body (the longest this project has
- * published is under 7 KB, and it is what releaseNotesToBlocks slices to anyway), 64 for an ISO
+ * published is about 10 KB, and it is what releaseNotesToBlocks slices to anyway), 64 for an ISO
  * timestamp.
  */
 const MAX_RELEASE_TAG_LENGTH = 128

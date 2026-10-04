@@ -58,6 +58,14 @@
  * ride along in it, because a packaged app that fails to reach its window has
  * nothing else to say for itself.
  *
+ * When the launcher itself dies on the run (issue #614), the report also says
+ * how: its exit code or signal, read before this script's own kill so that kill
+ * does not pass for a death, the tail of each of its own log files, and what
+ * Crashpad left in its user data folder. A native crash writes no line in those
+ * logs, so the workflow prints the Windows Application Error events as well.
+ * The parts that need no Windows live in launcher-death.ts, where a test can
+ * reach them.
+ *
  * The CI guard below matches windows-install.ts: this downloads and unpacks
  * most of a gigabyte and leaves a launcher process running until the finally
  * block gets it, which is not something to do to a machine by accident.
@@ -73,6 +81,7 @@ import { join, relative } from "node:path"
 
 import { assertAllowedApiUrl, assertAllowedDownloadUrl, assertSafeFileName, isRecord, MAX_RESPONSE_BYTES } from "../../src/ipc/validation"
 import { buildInstallerTreeKillCommand, shouldKillInstallerTree } from "../../src/ipc/handlers/installerTimeoutOutcome"
+import { describeLauncherExit, explainSocketClose, readLauncherExit, readLogTails, type LauncherExit } from "./launcher-death"
 
 if (!process.env.CI) {
   console.error("Refusing to run outside CI: this launches the packaged launcher, downloads a full game version and unpacks it. Run it only through the packaged-windows-conformance workflow.")
@@ -108,6 +117,10 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1_000
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1_000
 /** Kept per stream so a chatty app cannot grow the report without bound. */
 const MAX_CAPTURED_OUTPUT_CHARS = 64 * 1024
+/** How long a closed DevTools socket waits for the launcher's exit event before the process is called still running. */
+const LAUNCHER_EXIT_GRACE_MS = 5_000
+/** Lines kept from the end of each of the launcher's own log files when it dies. */
+const LOG_TAIL_LINES = 60
 
 type CatalogPlatformEntry = {
   filename: string
@@ -171,6 +184,12 @@ type Report = {
   durationsMs: Record<string, number>
   appStdout: string
   appStderr: string
+  /** How the launcher ended, when it did so before this script killed it. */
+  appExit: LauncherExit | null
+  /** Only when the launcher died: the tail of each of its own log files, by file name. */
+  appLogTails: Record<string, string[]> | null
+  /** Only when the launcher died: what is under its Crashpad folder, null when it has none. */
+  appCrashpadFiles: string[] | null
   failed: boolean | null
   verdict: string | null
 }
@@ -371,8 +390,12 @@ function killApp(app: AppProcess): void {
   spawnSync(command, args, { windowsHide: true })
 }
 
-/** A tiny DevTools client over Node's built-in WebSocket: request/response by id, nothing else. The protocol events this run would receive are all ignored. */
-function connectCdp(webSocketDebuggerUrl: string): Promise<CdpConnection> {
+/**
+ * A tiny DevTools client over Node's built-in WebSocket: request/response by id, nothing else. The protocol events this run would receive are all ignored.
+ *
+ * `explainClose` says why the socket closed, for the error a command still waiting on it gets.
+ */
+function connectCdp(webSocketDebuggerUrl: string, explainClose: () => Promise<string>): Promise<CdpConnection> {
   return new Promise((resolvePromise, rejectPromise) => {
     const socket = new WebSocket(webSocketDebuggerUrl)
     const pending = new Map<number, { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void }>()
@@ -416,7 +439,7 @@ function connectCdp(webSocketDebuggerUrl: string): Promise<CdpConnection> {
     socket.addEventListener("close", () => {
       closed = true
       clearTimeout(connectTimer)
-      failAllPending(new Error("DevTools WebSocket closed before the command answered: the launcher process is probably gone"))
+      void explainClose().then((why) => failAllPending(new Error(`DevTools WebSocket closed before the command answered: ${why}`)))
     })
 
     socket.addEventListener("error", () => {
@@ -528,7 +551,7 @@ async function waitForAppPage(app: AppProcess): Promise<{ url: string; webSocket
   const deadline = Date.now() + APP_READY_TIMEOUT_MS
 
   while (Date.now() < deadline) {
-    if (app.child.exitCode !== null) break
+    if (readLauncherExit(app.child)) break
 
     try {
       const target = findAppPageTarget(await fetchDevToolsTargets())
@@ -541,7 +564,8 @@ async function waitForAppPage(app: AppProcess): Promise<{ url: string; webSocket
     await delay(APP_READY_POLL_INTERVAL_MS)
   }
 
-  const exited = app.child.exitCode !== null ? ` The process exited with code ${app.child.exitCode}.` : ""
+  const exit = readLauncherExit(app.child)
+  const exited = exit ? ` The process ${describeLauncherExit(exit)}.` : ""
   throw new Error(`The packaged app never exposed an app:// page on the DevTools port within ${APP_READY_TIMEOUT_MS}ms.${exited}\nstdout:\n${app.readStdout()}\nstderr:\n${app.readStderr()}`)
 }
 
@@ -642,6 +666,9 @@ async function main(): Promise<void> {
     durationsMs: {},
     appStdout: "",
     appStderr: "",
+    appExit: null,
+    appLogTails: null,
+    appCrashpadFiles: null,
     failed: null,
     verdict: null
   }
@@ -695,7 +722,8 @@ async function main(): Promise<void> {
     report.phase = "attaching-devtools"
     persistReport()
 
-    const cdp = await connectCdp(target.webSocketDebuggerUrl)
+    const { child } = app
+    const cdp = await connectCdp(target.webSocketDebuggerUrl, () => explainSocketClose(child, LAUNCHER_EXIT_GRACE_MS))
     await waitForBridge(cdp)
     console.log("Attached, and the preload API is exposed.")
 
@@ -764,9 +792,18 @@ async function main(): Promise<void> {
     report.verdict = error instanceof Error ? (error.stack ?? error.message) : String(error)
     report.phase = `${report.phase}-failed`
   } finally {
-    if (app) killApp(app)
+    if (app) {
+      // Read before the kill below: after it, a launcher this script ended would look like one that died.
+      report.appExit = readLauncherExit(app.child)
+      if (report.appExit && report.userDataPath) {
+        report.appLogTails = readLogTails(report.userDataPath, LOG_TAIL_LINES)
+        const crashpadPath = join(report.userDataPath, "Crashpad")
+        report.appCrashpadFiles = existsSync(crashpadPath) ? safeListDir(crashpadPath) : null
+      }
+      killApp(app)
+    }
     const reportDir = persistReport()
-    console.log(JSON.stringify({ ...report, appStdout: undefined, appStderr: undefined }, null, 2))
+    console.log(JSON.stringify({ ...report, appStdout: undefined, appStderr: undefined, appLogTails: undefined }, null, 2))
     if (report.failed) {
       console.error(`\nFAIL: ${report.verdict} Report at ${reportDir}.`)
       process.exitCode = 1

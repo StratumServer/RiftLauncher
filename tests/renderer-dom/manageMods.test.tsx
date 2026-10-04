@@ -71,6 +71,11 @@ function scanWithADisabledMod(): { mods: InstalledModType[]; errors: ErrorInstal
   }
 }
 
+/** A folder whose only Mod is at the newest release the ModDB lists (queryModDb gives Alpha 1.1.0), so nothing on the page has an update. */
+function scanWithNothingToUpdate(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
+  return { mods: [{ name: "Alpha Mod", modid: "alpha", version: "1.1.0", path: "/games/a/Mods/alpha-1.1.0.zip", enabled: true, authors: ["Ann"], contributors: [] }], errors: [] }
+}
+
 function duplicateModScan(): { mods: InstalledModType[]; errors: ErrorInstalledModType[] } {
   return {
     mods: [
@@ -393,6 +398,23 @@ describe("ManageMods", () => {
     // Gamma had no compatible update, so the bulk run never touched it.
     expect(downloadOnPath).toHaveBeenCalledTimes(2)
     expect(deletePath.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([ALPHA_PATH, BETA_PATH]))
+  })
+
+  it("says there is nothing to update, and opens no summary, when no Mod has an update (#608)", async () => {
+    const user = userEvent.setup()
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async () => "/games/a/Mods/alpha-1.1.0.zip")
+    renderManageMods({ pathsManager: { downloadOnPath }, modsManager: { getInstalledMods: vi.fn(async () => scanWithNothingToUpdate()) } })
+
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    expect(screen.queryByText("Mods with updates")).toBeNull()
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("There is nothing to update. Disabled Mods and Mods with suspended updates are left as they are.", {}, { timeout: 3000 })).toBeTruthy()
+    // An empty run is not a run that went well, and a summary with no rows has nothing to show.
+    expect(screen.queryByText("All the Mods were updated successfully.")).toBeNull()
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(downloadOnPath).not.toHaveBeenCalled()
   })
 })
 
@@ -999,6 +1021,25 @@ describe("ManageMods: enabling and disabling a Mod", () => {
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
     expect(downloadOnPath.mock.calls[0]?.[1]).toContain("alpha")
     expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ALPHA_PATH])
+  })
+
+  it("says there is nothing to update when the only Mods with an update are held back or turned off (#608)", async () => {
+    const user = userEvent.setup()
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async () => "/games/a/Mods/alpha-1.1.0.zip")
+    renderWithADisabledMod({ pathsManager: { downloadOnPath } })
+
+    // Alpha is held back by the player and Epsilon is off. Both still sit under the heading that lists updates.
+    await user.click(within(await rowFor("Alpha Mod")).getByTitle(SUSPEND_TOGGLE_TITLE))
+    const updatesSection = screen.getByText("Mods with updates").closest("ul") as HTMLElement
+    expect(within(updatesSection).getByText("Alpha Mod")).toBeTruthy()
+    expect(within(updatesSection).getByText("Epsilon Mod")).toBeTruthy()
+
+    await user.click(screen.getByText("Update all").closest("button") as HTMLElement)
+
+    expect(await screen.findByText("There is nothing to update. Disabled Mods and Mods with suspended updates are left as they are.", {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.queryByText("All the Mods were updated successfully.")).toBeNull()
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(downloadOnPath).not.toHaveBeenCalled()
   })
 
   it("keeps a disabled Mod out of both modpack exports, because an export is the playable set", async () => {

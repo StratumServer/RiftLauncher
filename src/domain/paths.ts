@@ -20,6 +20,19 @@ function detectPlatform(path: string): "win32" | "posix" {
   return /^(?:[a-zA-Z]:|\\\\|\/\/)/.test(path) ? "win32" : "posix"
 }
 
+/**
+ * The folder a file sits in: its path up to the last separator.
+ *
+ * Text only, like normalizeFolderForComparison: nothing is resolved and the case and the separators
+ * come back as given, so the result can go straight back to the host. Windows reads / and \ alike,
+ * Linux only /. Undefined when there is no folder to name, a path with no separator or one directly
+ * under a root, so a caller never asks the host about an empty path.
+ */
+export function parentFolder(filePath: string): string | undefined {
+  const cut = detectPlatform(filePath) === "win32" ? Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\")) : filePath.lastIndexOf("/")
+  return cut > 0 ? filePath.slice(0, cut) : undefined
+}
+
 /** Checks whether a folder is already spoken for, with path normalization. */
 export function folderIsInUse(folder: string, foldersInUse: readonly string[], platform?: "win32" | "posix"): boolean {
   const target = normalizeFolderForComparison(folder, platform)

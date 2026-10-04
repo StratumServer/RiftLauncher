@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { firstFreeFolder, folderIsInUse, normalizeFolderForComparison } from "@domain/paths"
+import { firstFreeFolder, folderIsInUse, normalizeFolderForComparison, parentFolder } from "@domain/paths"
 
 describe("normalizeFolderForComparison", () => {
   it("strips a trailing forward slash", () => {
@@ -98,5 +98,36 @@ describe("firstFreeFolder", () => {
     const free = firstFreeFolder("/v/1.22.7", many)
     assert.equal(free, "/v/1.22.7-502")
     assert.equal(folderIsInUse(free, many), false)
+  })
+})
+
+describe("parentFolder", () => {
+  it("names the folder a Linux file sits in", () => {
+    assert.equal(parentFolder("/home/a/Backups/Installations/Main/Main_2026-08-16_01-20-00.tar.gz"), "/home/a/Backups/Installations/Main")
+  })
+
+  it("names the folder of a Windows file, whichever separator the path was written with", () => {
+    assert.equal(parentFolder("C:\\Users\\a\\Backups\\Main\\Main.tar.gz"), "C:\\Users\\a\\Backups\\Main")
+    assert.equal(parentFolder("C:/Users/a/Backups/Main.tar.gz"), "C:/Users/a/Backups")
+    assert.equal(parentFolder("C:\\Users/a\\Backups/Main.zip"), "C:\\Users/a\\Backups")
+  })
+
+  it("names the folder of a file on a network share", () => {
+    assert.equal(parentFolder("\\\\server\\share\\Backups\\Main\\Main.tar.gz"), "\\\\server\\share\\Backups\\Main")
+  })
+
+  it("keeps the case and the separators it was given", () => {
+    assert.equal(parentFolder("D:\\Backups\\MAIN\\file.zip"), "D:\\Backups\\MAIN")
+  })
+
+  it("reads a backslash as part of a name on Linux", () => {
+    assert.equal(parentFolder("/home/a/dir/we\\ird.tar.gz"), "/home/a/dir")
+    assert.equal(parentFolder("/home/a/dir\\x/file.tar.gz"), "/home/a/dir\\x")
+  })
+
+  it("names no folder for a path with no separator or one directly under a root", () => {
+    assert.equal(parentFolder("file.tar.gz"), undefined)
+    assert.equal(parentFolder("/file.tar.gz"), undefined)
+    assert.equal(parentFolder(""), undefined)
   })
 })

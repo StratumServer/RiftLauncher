@@ -71,10 +71,13 @@ export const MAX_CUSTOM_ICON_BYTES = 512 * 1024
 // The rule it applies to (mods.vintagestory.at/download) is shared with the mod downloader, which
 // streams to disk under its own limits, so this ceiling is passed per call rather than per rule.
 export const MAX_MODDB_LISTING_RESPONSE_BYTES = 256 * 1024
-// GitHub's own releases API answer for ten releases: each entry's `body` is a release's full
-// markdown notes, so this is sized like the mods catalog exception above rather than the generic
-// ceiling, while still refusing anything that could not plausibly be ten releases of notes.
-export const MAX_RELEASE_NOTES_RESPONSE_BYTES = 256 * 1024
+// GitHub's own releases API answer for ten releases. The notes are the small part of it: each
+// entry also carries its author and a record per asset with its uploader, about 15 KB per release
+// that the launcher never reads and the API cannot be asked to leave out. The answer weighed
+// 203 KB when a 256 KiB ceiling left 58 KB of headroom, shrinking as releases landed (#611).
+// 1 MiB holds ten releases with every body at the 64 KiB per-body cap in netHandlers.ts plus that
+// metadata (about 800 KB), and is still a quarter of the generic ceiling.
+export const MAX_RELEASE_NOTES_RESPONSE_BYTES = 1024 * 1024
 
 /**
  * Namespace used by temporary download siblings and the orphan sweep in the main process.

@@ -12,8 +12,9 @@ const LOG_TAG = "[front] [mods] [features/mods/hooks/useBulkUpdateMods.ts]"
 export interface BulkUpdateMods {
   /**
    * Updates every Mod of `mods` the scan marked updatable, then reports one verdict and opens the
-   * summary. The list is the caller's to pick: the action bar hands it what the player can see
-   * (#228), the Installation check hands it the whole folder, which is what that panel judges.
+   * summary. With none to update it says so and opens no summary. The list is the caller's to
+   * pick: the action bar hands it what the player can see (#228), the Installation check hands it
+   * the whole folder, which is what that panel judges.
    */
   updateAllMods: (mods: readonly InstalledModType[]) => Promise<void>
   /** What each attempted update did, ready for the summary table. */
@@ -46,18 +47,24 @@ export function useBulkUpdateMods(installation: InstallationType | undefined): B
 
     if (installation._backuping || installation._restoringBackup) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
 
+    // A suspended Mod is held back here and nowhere else: it keeps its update notice, and its own
+    // row keeps updating it on demand, which is the whole point of suspending it (#194).
+    //
+    // A disabled Mod is held back for a different reason (#287): a Mod that is off is not part of
+    // what the player is running, and changing its version behind their back means the thing they
+    // turn back on later is not the thing they turned off. Its row still updates it on demand.
+    const modsToUpdate = mods.filter((iMod) => iMod.enabled && iMod._updatableTo && !suspendedModUpdates.includes(iMod.modid))
+
+    // An empty list is told to the player, not run: it used to fall through to "all updated" and
+    // open a summary with no rows (#608). It is not rare, since the two rules above leave out Mods
+    // that are still listed as having an update. Returned before the folder is marked busy, because
+    // nothing is about to change.
+    if (modsToUpdate.length === 0) return addNotification(t("features.mods.nothingToUpdate"), "info")
+
     const collected: ModChangeSummaryEntry[] = []
 
     try {
       configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { _updatingMods: true } } })
-
-      // A suspended Mod is held back here and nowhere else: it keeps its update notice, and its own
-      // row keeps updating it on demand, which is the whole point of suspending it (#194).
-      //
-      // A disabled Mod is held back for a different reason (#287): a Mod that is off is not part of
-      // what the player is running, and changing its version behind their back means the thing they
-      // turn back on later is not the thing they turned off. Its row still updates it on demand.
-      const modsToUpdate = mods.filter((iMod) => iMod.enabled && iMod._updatableTo && !suspendedModUpdates.includes(iMod.modid))
 
       await Promise.all(
         modsToUpdate.map(async (modToUpdate) => {

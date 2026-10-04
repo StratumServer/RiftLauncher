@@ -303,6 +303,7 @@
       "resumeUpdates": "Reprendre les mises à jour de ce mod : Tout mettre à jour le prendra à nouveau en compte",
       "modsUpdatedSuccessfully": "Tous les mods ont été mis à jour avec succès.",
       "modsPartiallyUpdated": "{{updated}} mods mis à jour, {{failed}} laissés en l'état. Le récapitulatif indique lesquels.",
+      "nothingToUpdate": "Il n'y a rien à mettre à jour. Les mods désactivés et ceux dont les mises à jour sont suspendues sont laissés en l'état.",
       "errorReplacingOldModVersion": "L'ancienne version de {{mod}} est toujours sur le disque, elle n'a donc pas été touchée. Fermez Vintage Story et tout ce qui retient ce fichier, puis relancez la mise à jour.",
       "exportModpack": "Exporter les mods installés dans un fichier modpack partageable",
       "exportModpackButton": "Exporter le modpack",
