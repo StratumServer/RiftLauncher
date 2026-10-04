@@ -77,6 +77,13 @@ export async function changeLanguage(language: string): Promise<boolean> {
   return true
 }
 
+// The document language sets how a screen reader pronounces the text (WCAG 3.1.1), so it follows
+// i18next itself, which every switch goes through. Registered before init because, with inline
+// resources, init emits languageChanged for the starting language straight away.
+i18n.on("languageChanged", (language) => {
+  document.documentElement.lang = language
+})
+
 i18n.use(initReactI18next).init({
   resources,
   lng: "en-US",
