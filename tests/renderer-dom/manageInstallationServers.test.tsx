@@ -299,7 +299,7 @@ describe("ManageInstallationServers", () => {
     renderServersPage([{ id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched }])
 
     const stamp = await screen.findByText(/Last launched/)
-    expect(stamp.textContent).toBe(`Last launched ${new Date(lastLaunched).toLocaleString("es")}`)
+    expect(stamp.textContent).toBe(`Last launched ${new Date(lastLaunched).toLocaleString("en-US")}`)
   })
 
   /**

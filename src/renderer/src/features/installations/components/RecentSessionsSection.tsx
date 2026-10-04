@@ -6,6 +6,7 @@ import { MAX_SESSIONS_PER_INSTALLATION, peakRssBytes } from "@domain/sessions/sa
 import { steadyClimbVerdict } from "@domain/sessions/steadyClimb"
 import { usePlaySessions } from "@renderer/features/installations/hooks/usePlaySessions"
 import { formatBytes, formatDuration, SessionMemoryChart, SessionSparkline } from "@renderer/features/installations/components/SessionMemoryChart"
+import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import { FormButton, FormFieldDescription, FormGroupWrapper } from "@renderer/components/ui/FormComponents"
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
@@ -28,7 +29,8 @@ export interface RecentSessionsSectionProps {
 }
 
 export function RecentSessionsSection({ installationId, isPlaying, measuring }: Readonly<RecentSessionsSectionProps>): JSX.Element | null {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
+  const { formatDateTime } = useDateFormat()
   const { sessions, problem, loading, forget } = usePlaySessions(installationId, isPlaying)
   const [openSession, setOpenSession] = useState<PlaySession | null>(null)
 
@@ -77,7 +79,7 @@ export function RecentSessionsSection({ installationId, isPlaying, measuring }: 
                   title={t("features.sessions.openSession")}
                   className="w-full flex gap-3 items-center justify-between rounded-sm p-2 text-left text-sm text-zinc-200 bg-zinc-800/30 hover:bg-zinc-800/60 focus:outline-none focus-visible:outline-2 focus-visible:outline-vsl cursor-pointer"
                 >
-                  <span className="shrink-0">{new Date(session.startedAt).toLocaleString(i18n.resolvedLanguage)}</span>
+                  <span className="shrink-0">{formatDateTime(session.startedAt)}</span>
                   <span className="shrink-0 text-zinc-400">{formatDuration(session.endedAt - session.startedAt)}</span>
                   <span className="shrink-0 text-zinc-400">{formatBytes(peakRssBytes(session.samples))}</span>
                   <SessionSparkline session={session} />
@@ -105,7 +107,7 @@ export function RecentSessionsSection({ installationId, isPlaying, measuring }: 
               <p className="text-sm text-zinc-200">
                 {t("features.sessions.ranFor", { duration: formatDuration(openSession.endedAt - openSession.startedAt) })}{" "}
                 <span className="text-zinc-400">
-                  {t("features.sessions.ended")} {new Date(openSession.endedAt).toLocaleString(i18n.resolvedLanguage)}
+                  {t("features.sessions.ended")} {formatDateTime(openSession.endedAt)}
                 </span>
               </p>
 

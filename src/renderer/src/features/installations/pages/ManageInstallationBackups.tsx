@@ -14,6 +14,7 @@ import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/us
 import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -28,6 +29,7 @@ function ManageInstallationBackups(): JSX.Element {
   const { id } = useParams()
 
   const { t } = useTranslation()
+  const { formatDateTime } = useDateFormat()
   const installations = useInstallations()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
@@ -148,7 +150,7 @@ function ManageInstallationBackups(): JSX.Element {
                 <ListItem key={backup.id}>
                   <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
                     <div className="w-full flex items-center justify-center text-start font-bold pl-1">
-                      <p className="w-full">{new Date(backup.date).toLocaleString("es")}</p>
+                      <p className="w-full">{formatDateTime(backup.date)}</p>
                     </div>
 
                     <ThinSeparator />
