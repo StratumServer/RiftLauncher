@@ -93,11 +93,20 @@ function ListMods(): JSX.Element {
   const hasActiveFilters = hasActiveInstalledModFilters(filters)
   const nothingMatches = (query.length > 0 || hasActiveFilters) && visibleMods.length < 1 && visibleModsWithErrors.length < 1
 
+  // The selection follows the order on screen: update status first, then name within each section.
+  // Shift+click ranges must match what the player sees, not the archive scan's order.
+  // Deliberately blind to suspension: a held-back Mod still belongs under "Mods with updates",
+  // because watching for the new version is exactly why the player suspended it (#194).
+  const updatableMods = visibleMods.filter((iMod) => iMod._updatableTo).sort(byName)
+  const incompatibleMods = visibleMods.filter((iMod) => !iMod._updatableTo && iMod._lastVersion).sort(byName)
+  const upToDateMods = visibleMods.filter((iMod) => !iMod._updatableTo && !iMod._lastVersion).sort(byName)
+  const displayedMods = [...updatableMods, ...incompatibleMods, ...upToDateMods]
+
   const { updateAllMods, summaryEntries, showSummary, closeSummary } = useBulkUpdateMods(installation)
   const { manifest: importManifest, pickModpack, clearModpack } = useModpackImportPicker()
 
   const actions = useInstalledModActions(installation, refresh)
-  const batch = useModBatchActions(installation, installedMods, visibleMods, refresh)
+  const batch = useModBatchActions(installation, installedMods, displayedMods, refresh)
   // Handed the Installation only, never the filtered list: a profile records and applies the whole folder.
   const profiles = useModProfiles(installation)
   // One predicate for every surface that writes the whole Mods folder. Each of those write paths
@@ -159,12 +168,6 @@ function ListMods(): JSX.Element {
     setDetailsFocusRequest((request) => request + 1)
   }
 
-  // Deliberately blind to suspension: a held-back Mod still belongs under "Mods with updates",
-  // because watching for the new version is exactly why the player suspended it (#194).
-  const updatableMods = visibleMods.filter((iMod) => iMod._updatableTo).sort(byName)
-  const incompatibleMods = visibleMods.filter((iMod) => !iMod._updatableTo && iMod._lastVersion).sort(byName)
-  const upToDateMods = visibleMods.filter((iMod) => !iMod._updatableTo && !iMod._lastVersion).sort(byName)
-
   /** Every list below renders its rows the same way, suspension state and all. */
   function modRow(iMod: InstalledModType): JSX.Element {
     const suspended = suspendedModUpdates.includes(iMod.modid)
@@ -176,7 +179,7 @@ function ListMods(): JSX.Element {
         busy={actions.isBusy(iMod.path) || (batch.running && batch.isChecked(iMod.path))}
         checked={batch.isChecked(iMod.path)}
         distinctName={batch.labelOf(iMod)}
-        onCheckedChange={(checked) => batch.setChecked(iMod.path, checked)}
+        onCheckedChange={(checked, shiftKey) => batch.setChecked(iMod.path, checked, shiftKey)}
         onToggleEnabledClick={() => actions.toggleEnabled(iMod)}
         onToggleSuspendClick={() => actions.toggleSuspended(iMod.modid)}
         onDeleteClick={() => actions.requestDelete(iMod)}

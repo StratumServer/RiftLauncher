@@ -1,3 +1,4 @@
+import { useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { Input } from "@headlessui/react"
 import { PiArrowClockwiseDuotone, PiMoonDuotone, PiMoonFill, PiPowerDuotone, PiPowerFill, PiTrashDuotone } from "react-icons/pi"
@@ -40,7 +41,7 @@ function InstalledModItem({
   checked: boolean
   /** The name the checkbox goes by: the Mod's own, plus the file name when another copy shares it. */
   distinctName: string
-  onCheckedChange: (checked: boolean) => void
+  onCheckedChange: (checked: boolean, shiftKey: boolean) => void
   onToggleEnabledClick: () => void
   onToggleSuspendClick: () => void
   onDeleteClick: () => void
@@ -54,6 +55,7 @@ function InstalledModItem({
 }>): JSX.Element {
   const { t } = useTranslation()
   const { openOnBrowser: openExternalLink } = useExternalLinks()
+  const shiftClick = useRef(false)
 
   return (
     <ListItem key={iMod.modid + iMod.path}>
@@ -70,7 +72,14 @@ function InstalledModItem({
           aria-label={t("features.mods.selectMod", { mod: distinctName })}
           checked={checked}
           disabled={busy}
-          onChange={(e) => onCheckedChange(e.target.checked)}
+          onClick={(e) => {
+            shiftClick.current = e.shiftKey
+          }}
+          onChange={(e) => {
+            const shiftKey = shiftClick.current
+            shiftClick.current = false
+            onCheckedChange(e.target.checked, shiftKey)
+          }}
           className="shrink-0 cursor-pointer"
         />
 
