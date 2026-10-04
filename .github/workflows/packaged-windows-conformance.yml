@@ -67,6 +67,19 @@ jobs:
         run: npx electron-builder --win --x64 --dir
       - name: Drive the packaged app through a real version install
         run: npx tsx tests/e2e/packaged-windows-install.ts
+      - name: Print the Windows crash events for the launcher
+        # A launcher cannot log its own native crash, so on a run where it died
+        # the report may hold no more than an exit code (issue #614). Windows
+        # writes an Application Error event, which names the faulting module, and
+        # a Windows Error Reporting one, which carries the crash signature, to
+        # its Application log. Bounded on every side (the last hour, the newest
+        # fifty events, two minutes), and one line long when the launcher left none.
+        if: failure()
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $crashes = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'Application Error', 'Windows Error Reporting'; StartTime = (Get-Date).AddHours(-1) } -MaxEvents 50 -ErrorAction SilentlyContinue | Where-Object { $_.Message -like '*RiftLauncher.exe*' }
+          if ($crashes) { $crashes | Format-List TimeCreated, ProviderName, Id, Message | Out-String -Width 300 } else { 'No Application Error or Windows Error Reporting event for RiftLauncher.exe in the last hour.' }
       - name: Upload the conformance report
         if: always()
         uses: actions/upload-artifact@v4
