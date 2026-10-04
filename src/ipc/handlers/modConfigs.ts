@@ -443,11 +443,11 @@ async function resolveConfigDestination(root: string, key: string, directories: 
     if (!folder) return { ok: true, destination: join(current, ...segments.slice(index)) }
     if (folder.isSymbolicLink() || !folder.isDirectory()) return { ok: false, reason: "not-directory" }
 
-    // Re-check the real spelling before listing it. The case-folded path the pack asked for may
-    // have been absent, so validating only that spelling would miss a linked existing directory.
-    await assertManagedPath(current, "mod config folder")
     let indexByName = directories.get(current)
     if (!indexByName) {
+      // Re-check the real spelling before listing it. The case-folded path the pack asked for may
+      // have been absent, so validating only that spelling would miss a linked existing directory.
+      await assertManagedPath(current, "mod config folder")
       indexByName = new Map<string, ModConfigDirectoryEntry[]>()
       for (const entry of await fse.readdir(current, { withFileTypes: true })) {
         const foldedName = entry.name.toLowerCase()
@@ -463,8 +463,7 @@ async function resolveConfigDestination(root: string, key: string, directories: 
 
     const exact = matches.find((entry) => entry.name === segment)
     if (matches.length > 1 && !exact) return { ok: false, reason: "ambiguous" }
-    const selected = exact ?? matches[0]
-    if (!selected) return { ok: true, destination: join(current, ...segments.slice(index)) }
+    const selected = exact ?? matches[0]!
     if (index < segments.length - 1 && !selected.isDirectory()) return { ok: false, reason: "not-directory" }
     current = join(current, selected.name)
   }
@@ -677,6 +676,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       try {
         const resolution = await resolveConfigDestination(modConfigRoot, entry.key, configDirectories)
         if (!resolution.ok) {
+          logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${resolution.reason}`)
           failed.push({ name: entry.key, reason: "write-failed" })
           refused.add(entry.key)
           continue
@@ -741,7 +741,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       }
 
       kinds.set(entry.key, "replace")
-      const backupPath = join(await recoveryFolderFor(), ...entry.key.split("/"))
+      const backupPath = join(await recoveryFolderFor(), relative(modConfigRoot, entry.destination))
       // The recovery copy is the first thing opened for a file that already exists, and it is not
       // opened under the destination: it carries the backups root, the Installation's backup folder
       // and the recovery folder itself, so it is usually the longer of the two. Measured here rather
@@ -792,6 +792,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       }
     }
 
+    const appliedRecords: string[] = []
     for (const entry of pending) {
       if (refused.has(entry.key)) continue
 
@@ -803,14 +804,15 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
         await writeTextAtomic(entry.destination, entry.text)
         applied.push({ name: entry.key, kind: kinds.get(entry.key) ?? "new" })
+        appliedRecords.push(relative(modConfigRoot, entry.destination).replaceAll("\\", "/"))
       } catch (err) {
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
         failed.push({ name: entry.key, reason: "write-failed" })
       }
     }
 
-    if (applied.length > 0 && recoveryFolder) {
-      const landed = applied.map((entry) => entry.name).join("\n")
+    if (appliedRecords.length > 0 && recoveryFolder) {
+      const landed = appliedRecords.join("\n")
       await writeTextAtomic(join(recoveryFolder, APPLIED_RECORD_NAME), `${landed}\n`).catch((err: unknown) => {
         logMessage("error", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not write the applied record.`)
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)

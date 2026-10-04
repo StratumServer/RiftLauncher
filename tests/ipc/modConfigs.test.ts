@@ -45,10 +45,23 @@ function modConfigFolder(): string {
   return join(installationPath, "ModConfig")
 }
 
-/** Enables NTFS's per-directory case-sensitive mode when a Windows runner can support the edge. */
+/** Enables NTFS's per-directory case-sensitive mode or probes case-sensitivity on non-Windows volumes. */
 function enableCaseSensitiveDirectory(path: string): boolean {
-  if (process.platform !== "win32") return true
-  return spawnSync("fsutil.exe", ["file", "setCaseSensitiveInfo", path, "enable"], { encoding: "utf-8" }).status === 0
+  if (process.platform === "win32") {
+    return spawnSync("fsutil.exe", ["file", "setCaseSensitiveInfo", path, "enable"], { encoding: "utf-8" }).status === 0
+  }
+  const probeUpper = join(path, ".probe-case.tmp")
+  const probeLower = join(path, ".probe-CASE.tmp")
+  try {
+    writeFileSync(probeUpper, "a")
+    writeFileSync(probeLower, "b")
+    const isSensitive = existsSync(probeUpper) && existsSync(probeLower) && readFileSync(probeUpper, "utf8") === "a"
+    rmSync(probeUpper, { force: true })
+    rmSync(probeLower, { force: true })
+    return isSensitive
+  } catch {
+    return false
+  }
 }
 
 function writeConfig(overrides: { backupsFolder?: string; backupsLimit?: number; alsoInstall?: { id: string; name: string; path: string; backupsLimit: number } } = {}): void {
@@ -407,7 +420,7 @@ describe("collectModConfigs", () => {
     const collected = await collectModConfigs(installationPath)
 
     assert.deepEqual(collected, { ok: false, reason: "too-many" })
-  }, 20_000)
+  })
 
   it("carries only the names it was given, so a file it cannot carry stops being the export's problem", async () => {
     const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
@@ -528,7 +541,8 @@ describe("APPLY_MOD_CONFIGS", () => {
     assert.deepEqual(readdirSync(modConfigFolder()), ["Config.json"])
     assert.equal(readFileSync(join(modConfigFolder(), "Config.json"), "utf-8"), "new")
     assert.notEqual(applied.backupFolder, "")
-    assert.equal(readFileSync(join(applied.backupFolder, "config.json"), "utf-8"), "old")
+    assert.equal(readFileSync(join(applied.backupFolder, "Config.json"), "utf-8"), "old")
+    assert.match(readFileSync(join(applied.backupFolder, "applied.txt"), "utf-8"), /^Config\.json$/m)
   })
 
   it("resolves case differences in parent folders as well as the config filename", async (context) => {
@@ -553,7 +567,49 @@ describe("APPLY_MOD_CONFIGS", () => {
     assert.deepEqual(applied.applied, [{ name: "client/config.json", kind: "replace" }])
     assert.deepEqual(readdirSync(clientFolder), ["Config.json"])
     assert.equal(readFileSync(join(clientFolder, "Config.json"), "utf-8"), "new")
-    assert.equal(readFileSync(join(applied.backupFolder, "client", "config.json"), "utf-8"), "old")
+    assert.equal(readFileSync(join(applied.backupFolder, "Client", "Config.json"), "utf-8"), "old")
+    assert.match(readFileSync(join(applied.backupFolder, "applied.txt"), "utf-8"), /^Client\/Config\.json$/m)
+  })
+
+  it("imports configs into an Installation that has no ModConfig folder yet", async () => {
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [
+      { name: "Client/a.json", ...entry("alpha") },
+      { name: "b.json", ...entry("beta") }
+    ])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [
+      { name: "Client/a.json", kind: "new" },
+      { name: "b.json", kind: "new" }
+    ])
+    assert.deepEqual(applied.failed, [])
+    assert.equal(readFileSync(join(modConfigFolder(), "Client", "a.json"), "utf-8"), "alpha")
+    assert.equal(readFileSync(join(modConfigFolder(), "b.json"), "utf-8"), "beta")
+    assert.equal(applied.backupFolder, "")
+  })
+
+  it("prefers the exact case match when multiple case variants already exist on disk", async (context) => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    if (!enableCaseSensitiveDirectory(modConfigFolder())) {
+      context.skip()
+      return
+    }
+    writeFileSync(join(modConfigFolder(), "Config.json"), "capital", "utf-8")
+    writeFileSync(join(modConfigFolder(), "config.json"), "lower", "utf-8")
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "config.json", ...entry("new-lower") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "config.json", kind: "replace" }])
+    assert.deepEqual(applied.failed, [])
+    assert.equal(readFileSync(join(modConfigFolder(), "Config.json"), "utf-8"), "capital")
+    assert.equal(readFileSync(join(modConfigFolder(), "config.json"), "utf-8"), "new-lower")
+    assert.equal(readFileSync(join(applied.backupFolder, "config.json"), "utf-8"), "lower")
   })
 
   it("refuses an ambiguous case-folded match on disk without changing either file", async (context) => {
