@@ -344,7 +344,7 @@
       "importModConfigsInsufficientSpace": "Il n'y a pas assez d'espace libre pour conserver une copie de chaque fichier et écrire ceux du pack. Rien n'a été écrit.",
       "importModConfigsReasonDigest": "la copie du pack ne correspond pas à la somme de contrôle qu'elle porte",
       "importModConfigsReasonCopy": "la copie pour le dossier de sauvegardes n'a pas pu être faite",
-      "importModConfigsReasonNotLanded": "la copie est arrivée plus courte qu'elle n'aurait dû",
+      "importModConfigsReasonNotLanded": "la copie de sauvegarde ne correspond pas au fichier sur le disque",
       "importModConfigsReasonWrite": "le fichier n'a pas pu être écrit",
       "importModConfigsSkip": "N'en écrire aucun",
       "importModConfigsApply": "Écrire les configs cochées",

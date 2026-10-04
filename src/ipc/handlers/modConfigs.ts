@@ -38,14 +38,15 @@ export const MAX_MODPACK_BYTES = 8 * 1024 * 1024
 const MAX_MOD_CONFIG_KEY_LENGTH = 512
 
 /**
- * The longest path Windows takes without the `\\?\` prefix, in characters.
+ * The legacy MAX_PATH limit (260 characters) on Windows.
  *
- * Not the launcher's own `MAX_PATH_LENGTH` (src/ipc/validation.ts, 4096), which is the bound on
- * what a caller may send over IPC. Past this a write fails with an error that names nothing, so a
- * pack that would land there is refused as a named failure instead of half-written. The documented
- * way past it is the `\\?\` prefix, which this launcher does not use: it is the path a player would
- * never type, and `write-file-atomic` builds its own temporary name beside the target, which is why
- * a path is only writable here if `ATOMIC_WRITE_TEMP_SUFFIX_MAX` is still room at the end of it.
+ * Even though modern Node and .NET runtimes can namespace paths with the `\\?\` prefix or handle
+ * longer paths when LongPathsEnabled is enabled, this limit is kept as a cautious compatibility
+ * guard for external scripts, tools, and legacy tooling that interact with installation folders
+ * without extended-path awareness. Past this length, a pack entry is refused proactively with a
+ * named error instead of risking unhandled IO failures down the line. `write-file-atomic` also
+ * constructs its temporary filename beside the target, so a path is only writable here if
+ * `ATOMIC_WRITE_TEMP_SUFFIX_MAX` still fits within the bound.
  */
 const WINDOWS_LEGACY_MAX_PATH = 260
 
@@ -195,16 +196,16 @@ export function parseModpackSettings(value: unknown): { ok: true; settings: Reco
  * Parses the config names a player ticked in the export picker.
  *
  * An empty list means the player unticked everything, which produces a pack with no settings block
- * at all. When configs are included, the export handler requires an explicit list of chosen names
- * rather than falling back to an unprompted sweep; `undefined` or `null` is only expected when
- * configs are omitted from the export request.
+ * at all. When configs are included, the export caller requires an explicit list of chosen names;
+ * an absent list (`undefined` or `null`) returns `undefined`, which the export handler refuses as
+ * an unprompted sweep.
  *
  * Nothing here validates a name as a path, and nothing needs to: these names are matched against the
  * keys `walkModConfigs` produced, so a name that matches nothing is dropped and no name can reach a
  * file the walk did not find. A shape that is not a list of strings is a malformed request rather
  * than a refusal, because nothing about the folder or the pack can produce one.
  *
- * @param value The request's config names, or `undefined` when configs are omitted.
+ * @param value The request's config names.
  * @throws {TypeError} When the value is neither absent nor a list of strings.
  */
 export function parseChosenConfigNames(value: unknown): readonly string[] | undefined {
@@ -605,8 +606,8 @@ async function pruneRecoveryFolders(parent: string, limit: number, keep: string)
  *     the pack's own bytes, which is exactly the folder a player reaches for when something is
  *     wrong;
  *  8. the writes happen, one file at a time, each naming its own failure;
- *  9. a record of what landed is written, so a run that was killed part way through still says
- *     which half it got through;
+ *  9. a record of what landed is written into the recovery folder if existing files were
+ *     displaced, so a run that was killed part way through still says which half it got through;
  *  10. the recovery folders past the limit are pruned, non-fatally, and only by a run that
  *     displaced something: a run that wrote nothing has no newest folder to keep, and one that
  *     removed the folder it created has nothing left to name.

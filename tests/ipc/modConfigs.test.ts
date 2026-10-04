@@ -473,7 +473,7 @@ describe("parseChosenConfigNames", () => {
     assert.deepEqual(parseChosenConfigNames([]), [])
   })
 
-  it("reads no list and a null as the same thing, which is every config", async () => {
+  it("returns undefined for an omitted list and for null", async () => {
     const { parseChosenConfigNames } = await import("@src/ipc/handlers/modConfigs")
 
     assert.equal(parseChosenConfigNames(undefined), undefined)
@@ -1090,16 +1090,15 @@ describe("APPLY_MOD_CONFIGS", () => {
     const { ATOMIC_WRITE_TEMP_SUFFIX_MAX } = await import("@src/ipc/atomicJsonFile")
     const wfa = (await import("write-file-atomic")) as unknown as { _getTmpname?: (filename: string) => string }
     const _getTmpname = wfa._getTmpname
-    if (typeof _getTmpname === "function") {
-      let maxSuffix = 0
-      for (let i = 0; i < 500; i++) {
-        const tmp = _getTmpname("x")
-        const suffixLen = tmp.length - 1
-        if (suffixLen > maxSuffix) maxSuffix = suffixLen
-      }
-      assert.ok(maxSuffix <= ATOMIC_WRITE_TEMP_SUFFIX_MAX, "write-file-atomic suffix must not exceed ATOMIC_WRITE_TEMP_SUFFIX_MAX")
-      assert.equal(ATOMIC_WRITE_TEMP_SUFFIX_MAX, 11)
+    assert.equal(typeof _getTmpname, "function", "write-file-atomic must expose _getTmpname for temp name validation")
+    let maxSuffix = 0
+    for (let i = 0; i < 500; i++) {
+      const tmp = _getTmpname!("x")
+      const suffixLen = tmp.length - 1
+      if (suffixLen > maxSuffix) maxSuffix = suffixLen
     }
+    assert.ok(maxSuffix <= ATOMIC_WRITE_TEMP_SUFFIX_MAX, "write-file-atomic suffix must not exceed ATOMIC_WRITE_TEMP_SUFFIX_MAX")
+    assert.equal(ATOMIC_WRITE_TEMP_SUFFIX_MAX, 11)
     const longest = 260 - ATOMIC_WRITE_TEMP_SUFFIX_MAX
     const ofLength = (total: number): string => {
       const room = total - modConfigFolder().length - 1 - "/x.json".length
@@ -1145,7 +1144,7 @@ describe("APPLY_MOD_CONFIGS", () => {
     assert.equal(applied.backupFolder, "", "nothing was displaced, so nothing may be offered as a way back")
     const settings = join(customBackups, "Settings")
     const instFolder = join(settings, "test-inst-1")
-    assert.ok(!existsSync(instFolder) || readdirSync(instFolder).length === 0, "no recovery folder may be made for a copy that was refused before it opened")
+    assert.ok(!existsSync(instFolder) || readdirSync(instFolder).length === 0, "no recovery folder may be retained for a copy that was refused before it opened")
   })
 
   /**
