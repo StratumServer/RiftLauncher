@@ -516,7 +516,6 @@
       "healthUpdates_one": "{{count}} aktualizacja",
       "healthUpdates_few": "{{count}} aktualizacje",
       "healthUpdates_many": "{{count}} aktualizacji",
-      "healthClean": "Nie ma nic do poprawienia.",
       "healthBlockingTitle": "Nie zostanie wczytane",
       "healthDependencyMissing": "{{mod}} potrzebuje {{dependency}}, którego nie ma w tym folderze.",
       "healthDependencyMissingVersion": "{{mod}} potrzebuje {{dependency}} {{required}} lub nowszego, którego nie ma w tym folderze.",

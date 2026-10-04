@@ -476,7 +476,6 @@
       "healthTitle": "安装检查",
       "healthProblems_other": "{{count}} 个问题",
       "healthUpdates_other": "{{count}} 项更新",
-      "healthClean": "没有需要处理的问题。",
       "healthBlockingTitle": "无法加载",
       "healthDependencyMissing": "{{mod}} 需要 {{dependency}}，而这个文件夹里没有它。",
       "healthDependencyMissingVersion": "{{mod}} 需要 {{dependency}} {{required}} 或更高版本，而这个文件夹里没有它。",

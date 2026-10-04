@@ -164,6 +164,9 @@ describe("ManageMods: the Installation check", () => {
     // The two footnotes: what the ModDB never answered for, and the archive that was never read.
     expect(within(body).getByText("3 Mods could not be checked against the ModDB.")).toBeTruthy()
     expect(within(body).getByText("1 archive could not be read, so it was left out of this check.")).toBeTruthy()
+
+    // The header counts all four, so what was left out reads without opening the panel.
+    expect(screen.getByText("6 problems, 2 updates, 3 Mods not checked, 1 archive unreadable")).toBeTruthy()
   })
 
   it("says the Installation's game version is too old rather than offering to install the game", async () => {
@@ -392,7 +395,30 @@ describe("ManageMods: the Installation check", () => {
     await waitFor(() => expect(deletePath).toHaveBeenCalledWith(GAMMA_PATH), { timeout: 3000 })
   })
 
-  it("stays collapsed and says the folder is clean when there is nothing to fix", async () => {
+  it("counts the Mods it could not check in its header, not nothing to fix, when the ModDB cannot be reached", async () => {
+    renderManageMods({
+      netManager: { queryURL: vi.fn(() => Promise.reject(new Error("Network request failed"))) },
+      modsManager: {
+        getInstalledMods: vi.fn(async () => ({
+          mods: [
+            { name: "Alpha Mod", modid: "alpha", version: "1.0.0", path: ALPHA_PATH, enabled: true, authors: [], dependencies: { game: "1.12.14" } },
+            { name: "Gamma Mod", modid: "gamma", version: "3.0.0", path: GAMMA_PATH, enabled: true, authors: [] }
+          ],
+          errors: []
+        }))
+      }
+    })
+
+    // Nothing else is wrong and the updates and compatibility lines need the ModDB's answer, so the
+    // only thing this panel has to say is how much of the folder it never looked at.
+    const toggle = await screen.findByRole("button", { name: "Installation check" }, { timeout: 3000 })
+    expect(await screen.findByText("2 Mods not checked", {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.queryByText("Nothing to fix.")).toBeNull()
+    // Not a blocking finding, so the panel stays shut.
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("counts an archive it could not read in its header, not nothing to fix, and stays collapsed", async () => {
     const user = userEvent.setup()
     renderManageMods({
       modsManager: {
@@ -404,10 +430,11 @@ describe("ManageMods: the Installation check", () => {
     })
 
     const toggle = await screen.findByRole("button", { name: "Installation check" }, { timeout: 3000 })
-    await waitFor(() => expect(screen.getByText("Nothing to fix.")).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText("1 archive unreadable")).toBeTruthy(), { timeout: 3000 })
+    expect(screen.queryByText("Nothing to fix.")).toBeNull()
     expect(toggle.getAttribute("aria-expanded")).toBe("false")
 
-    // Nothing to fix still leaves the unreadable archive to say, which is what opening it shows.
+    // The header is the count, and opening the panel shows the sentence and, behind it, the archive.
     await user.click(toggle)
     expect(toggle.getAttribute("aria-expanded")).toBe("true")
     const body = document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement
@@ -418,6 +445,21 @@ describe("ManageMods: the Installation check", () => {
     expect(disclosure.querySelector("ul")).toBeNull()
     // Every enabled Mod was answered for, so there is no ModDB sentence; only the unreadable-file list can open.
     expect(within(disclosure).queryByRole("listitem")).toBeNull()
+  })
+
+  it("draws nothing for a folder it checked whole and found nothing wrong with", async () => {
+    renderManageMods({
+      modsManager: {
+        getInstalledMods: vi.fn(async () => ({
+          mods: [{ name: "Alpha Mod", modid: "alpha", version: "1.1.0", path: ALPHA_PATH, enabled: true, authors: [], dependencies: { game: "1.12.14" } }],
+          errors: []
+        }))
+      }
+    })
+
+    // The header is only ever drawn over a finding or a count, so it has no line for a clean folder.
+    await screen.findByText("Alpha Mod", {}, { timeout: 3000 })
+    expect(screen.queryByRole("button", { name: "Installation check" })).toBeNull()
   })
 
   it("names unreadable archives on demand without exposing their paths", async () => {
