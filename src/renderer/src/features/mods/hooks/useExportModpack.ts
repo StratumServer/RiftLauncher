@@ -15,7 +15,7 @@ export function useExportModpack(): ({
   installation: InstallationType
   includeServers?: boolean
   includeConfigs?: boolean
-  /** Which config files the pack carries, or undefined for all of them. Ignored unless `includeConfigs`. */
+  /** Which config files the pack carries. Ignored unless `includeConfigs`. */
   configNames?: readonly string[]
 }) => Promise<void> {
   const { t } = useTranslation()

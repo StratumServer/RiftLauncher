@@ -338,7 +338,7 @@
       "importModConfigsInsufficientSpace": "There is not enough free space to keep a copy of every file and write the pack's. Nothing was written.",
       "importModConfigsReasonDigest": "the pack's copy does not match the checksum it carries",
       "importModConfigsReasonCopy": "the copy for the backup folder could not be made",
-      "importModConfigsReasonNotLanded": "the copy landed shorter than it should have",
+      "importModConfigsReasonNotLanded": "the backup copy does not match the file on disk",
       "importModConfigsReasonWrite": "the file could not be written",
       "importModConfigsSkip": "Write none of them",
       "importModConfigsApply": "Write the chosen configs",

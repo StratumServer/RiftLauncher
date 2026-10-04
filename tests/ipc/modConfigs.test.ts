@@ -732,11 +732,15 @@ describe("APPLY_MOD_CONFIGS", () => {
     writeFileSync(join(outside, "secret.json"), "theirs", "utf-8")
     mkdirSync(modConfigFolder(), { recursive: true })
     symlinkSync(outside, join(modConfigFolder(), "link"))
+    writeFileSync(join(modConfigFolder(), "regular.json"), "old-regular", "utf-8")
     const event = await createTrustedEvent()
 
+    // Mixed pack: regular.json lands and displaces an existing file, so a recovery folder is retained.
+    // The link destinations are refused, so no file or bytes from outside may appear in that backup.
     const applied = await applyModConfigsHandler()(event, installationPath, [
       { name: "link/secret.json", ...entry("mine") },
-      { name: "link/deep/er/x.json", ...entry("mine") }
+      { name: "link/deep/er/x.json", ...entry("mine") },
+      { name: "regular.json", ...entry("new-regular") }
     ])
 
     assert.equal(applied.ok, true)
@@ -745,12 +749,30 @@ describe("APPLY_MOD_CONFIGS", () => {
       { name: "link/secret.json", reason: "write-failed" },
       { name: "link/deep/er/x.json", reason: "write-failed" }
     ])
-    assert.deepEqual(applied.applied, [])
+    assert.deepEqual(applied.applied, [{ name: "regular.json", kind: "replace" }])
     assert.equal(readFileSync(join(outside, "secret.json"), "utf-8"), "theirs")
     assert.equal(existsSync(join(outside, "deep")), false)
-    // Nothing was displaced, so there is nothing to go back to and no folder claiming otherwise.
-    assert.equal(applied.backupFolder, "")
-    assert.deepEqual(recoveryFolders(), [])
+    assert.equal(readFileSync(join(modConfigFolder(), "regular.json"), "utf-8"), "new-regular")
+
+    assert.notEqual(applied.backupFolder, "")
+    assert.equal(existsSync(applied.backupFolder), true)
+    assert.equal(readFileSync(join(applied.backupFolder, "regular.json"), "utf-8"), "old-regular")
+    assert.equal(existsSync(join(applied.backupFolder, "link")), false)
+    assert.equal(existsSync(join(applied.backupFolder, "secret.json")), false)
+
+    const walkFiles = (dir: string): string[] => {
+      const paths: string[] = []
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) paths.push(...walkFiles(full))
+        else paths.push(full)
+      }
+      return paths
+    }
+    const backupFiles = walkFiles(applied.backupFolder)
+    for (const file of backupFiles) {
+      assert.ok(!readFileSync(file).includes(Buffer.from("theirs")), `file ${file} must not contain outside bytes`)
+    }
   })
 
   it("refuses a ModConfig that is a file rather than a folder", async () => {
@@ -950,6 +972,56 @@ describe("APPLY_MOD_CONFIGS", () => {
     }
   })
 
+  it("does not prune older recovery folders when a partial import displaces no file", async () => {
+    writeConfig({ backupsLimit: 1 })
+    const parent = join(backupsFolder, "Settings", "test-inst-1")
+    const older = join(parent, "settings_20200101-000000")
+    mkdirSync(older, { recursive: true })
+    writeFileSync(join(older, "old.json"), "older-content", "utf-8")
+    utimesSync(older, new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"))
+
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const lockedDir = join(modConfigFolder(), "Locked")
+    mkdirSync(lockedDir, { recursive: true })
+    const lockedFile = join(lockedDir, "a.json")
+    writeFileSync(lockedFile, "theirs", "utf-8")
+
+    // On Windows, the read-only attribute prevents atomic rename/write.
+    // On POSIX, directory permissions prevent writing.
+    if (process.platform === "win32") {
+      chmodSync(lockedFile, 0o444)
+    } else {
+      chmodSync(lockedDir, 0o555)
+    }
+
+    let applied: Awaited<ReturnType<ReturnType<typeof applyModConfigsHandler>>>
+    try {
+      applied = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [
+        { name: "Locked/a.json", ...entry("new-locked") },
+        { name: "fresh.json", ...entry("new-fresh") }
+      ])
+    } finally {
+      if (process.platform === "win32") {
+        chmodSync(lockedFile, 0o666)
+      } else {
+        chmodSync(lockedDir, 0o777)
+      }
+    }
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "fresh.json", kind: "new" }])
+    assert.deepEqual(applied.failed, [{ name: "Locked/a.json", reason: "write-failed" }])
+    assert.equal(readFileSync(join(modConfigFolder(), "fresh.json"), "utf-8"), "new-fresh")
+    assert.equal(readFileSync(lockedFile, "utf-8"), "theirs")
+
+    // Nothing was displaced, so no recovery folder is offered and the older backup is not pruned.
+    assert.equal(applied.backupFolder, "")
+    assert.equal(existsSync(older), true)
+    assert.equal(readFileSync(join(older, "old.json"), "utf-8"), "older-content")
+    assert.deepEqual(recoveryFolders(), ["settings_20200101-000000"])
+  })
+
   // One config in a directory the player can no longer read is a failure of that file, not of the
   // other forty-nine in the pack. Before this, the `readFile` that backs it up rejected the whole
   // invoke, so nothing was written and the player was told nothing at all.
@@ -1016,6 +1088,18 @@ describe("APPLY_MOD_CONFIGS", () => {
     writeConfig()
     mkdirSync(modConfigFolder(), { recursive: true })
     const { ATOMIC_WRITE_TEMP_SUFFIX_MAX } = await import("@src/ipc/atomicJsonFile")
+    const wfa = (await import("write-file-atomic")) as unknown as { _getTmpname?: (filename: string) => string }
+    const _getTmpname = wfa._getTmpname
+    if (typeof _getTmpname === "function") {
+      let maxSuffix = 0
+      for (let i = 0; i < 500; i++) {
+        const tmp = _getTmpname("x")
+        const suffixLen = tmp.length - 1
+        if (suffixLen > maxSuffix) maxSuffix = suffixLen
+      }
+      assert.ok(maxSuffix <= ATOMIC_WRITE_TEMP_SUFFIX_MAX, "write-file-atomic suffix must not exceed ATOMIC_WRITE_TEMP_SUFFIX_MAX")
+      assert.equal(ATOMIC_WRITE_TEMP_SUFFIX_MAX, 11)
+    }
     const longest = 260 - ATOMIC_WRITE_TEMP_SUFFIX_MAX
     const ofLength = (total: number): string => {
       const room = total - modConfigFolder().length - 1 - "/x.json".length
@@ -1046,7 +1130,8 @@ describe("APPLY_MOD_CONFIGS", () => {
    * promised.
    */
   it("refuses a file whose backup path is past what Windows can open, and leaves its config alone", async () => {
-    writeConfig({ backupsFolder: join(temporaryRoot, "Backups", "B".repeat(200)) })
+    const customBackups = join(temporaryRoot, "Backups", "B".repeat(200))
+    writeConfig({ backupsFolder: customBackups })
     mkdirSync(modConfigFolder(), { recursive: true })
     writeFileSync(join(modConfigFolder(), "a.json"), '{"n":1}', "utf-8")
 
@@ -1058,8 +1143,9 @@ describe("APPLY_MOD_CONFIGS", () => {
     assert.deepEqual(applied.applied, [])
     assert.equal(readFileSync(join(modConfigFolder(), "a.json"), "utf-8"), '{"n":1}')
     assert.equal(applied.backupFolder, "", "nothing was displaced, so nothing may be offered as a way back")
-    const settings = join(temporaryRoot, "Backups", "Settings")
-    assert.ok(!existsSync(settings) || readdirSync(settings).length === 0, "no recovery folder may be made for a copy that was refused before it opened")
+    const settings = join(customBackups, "Settings")
+    const instFolder = join(settings, "test-inst-1")
+    assert.ok(!existsSync(instFolder) || readdirSync(instFolder).length === 0, "no recovery folder may be made for a copy that was refused before it opened")
   })
 
   /**

@@ -194,17 +194,17 @@ export function parseModpackSettings(value: unknown): { ok: true; settings: Reco
 /**
  * Parses the config names a player ticked in the export picker.
  *
- * `undefined` means every config, which is what the export checkbox asks for on its own: it is also
- * what the renderer sends when the folder held nothing to tick. An empty list is a different answer
- * and means the player unticked everything, which produces a pack with no settings block at all
- * rather than a pack with all of them.
+ * An empty list means the player unticked everything, which produces a pack with no settings block
+ * at all. When configs are included, the export handler requires an explicit list of chosen names
+ * rather than falling back to an unprompted sweep; `undefined` or `null` is only expected when
+ * configs are omitted from the export request.
  *
  * Nothing here validates a name as a path, and nothing needs to: these names are matched against the
  * keys `walkModConfigs` produced, so a name that matches nothing is dropped and no name can reach a
  * file the walk did not find. A shape that is not a list of strings is a malformed request rather
  * than a refusal, because nothing about the folder or the pack can produce one.
  *
- * @param value The request's config names, or `undefined` when the caller did not narrow them.
+ * @param value The request's config names, or `undefined` when configs are omitted.
  * @throws {TypeError} When the value is neither absent nor a list of strings.
  */
 export function parseChosenConfigNames(value: unknown): readonly string[] | undefined {
@@ -811,21 +811,20 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       }
     }
 
-    if (appliedRecords.length > 0 && recoveryFolder) {
+    const hasReplaced = applied.some((entry) => entry.kind === "replace")
+
+    // The backup limit is spent by what a run actually displaced, so the prune waits until the write
+    // loop is done and only runs when something was actually replaced. An apply that wrote nothing,
+    // or wrote only new files without displacing existing ones, does not cost the player the
+    // recovery folder that would have taken them back to prior state.
+    if (hasReplaced && recoveryFolder) {
       const landed = appliedRecords.join("\n")
       await writeTextAtomic(join(recoveryFolder, APPLIED_RECORD_NAME), `${landed}\n`).catch((err: unknown) => {
         logMessage("error", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not write the applied record.`)
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
       })
-    }
-
-    // The backup limit is spent by what a run actually displaced, so the prune waits until the write
-    // loop is done and only runs when something landed. An apply that wrote nothing because every
-    // file was refused, or every write died, no longer costs the player the recovery folder that
-    // would have taken them back to.
-    if (applied.length > 0) {
       try {
-        if (recoveryFolder) await pruneRecoveryFolders(dirname(recoveryFolder), record.backupsLimit, recoveryFolder)
+        await pruneRecoveryFolders(dirname(recoveryFolder), record.backupsLimit, recoveryFolder)
       } catch (err) {
         // Non-fatal: the backups this run needed are already written. A prune that cannot finish is
         // about old folders piling up, which is the next backup's problem and the log's business.
@@ -833,11 +832,11 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
       }
     } else if (recoveryFolder) {
-      // A recovery folder with nothing in it reads as a way back when there is nothing to go back
-      // to, so it is dropped rather than left to the next run's prune. The result must not name it
-      // either: `backupFolder` is what the dialog offers as the place to look.
+      // A recovery folder with nothing displaced reads as a way back when there is nothing to go
+      // back to (or only holds files from write failures that were never replaced), so it is dropped
+      // rather than left to the next run's prune. The result must not name it either.
       await fse.remove(recoveryFolder).catch((err: unknown) => {
-        logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not remove the empty recovery folder. ${getErrorMessage(err)}`)
+        logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not remove the unneeded recovery folder. ${getErrorMessage(err)}`)
       })
       recoveryFolder = null
     }
