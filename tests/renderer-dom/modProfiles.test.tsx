@@ -459,7 +459,7 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(outerList?.classList.contains("max-h-48")).toBe(true)
     const groups = Array.from(outerList?.querySelectorAll(":scope > li") ?? [])
     expect(groups).toHaveLength(2)
-    expect(groups.map((group) => group.firstChild?.textContent)).toEqual(["zeta", "quirkid"])
+    expect(groups.map((group) => group.firstChild?.textContent)).toEqual(["zeta (not installed)", "quirkid"])
     expect(Array.from(groups[0]?.querySelectorAll(":scope > ul > li") ?? [], (item) => item.textContent)).toEqual(["zeta-1.0.0.zip"])
     expect(Array.from(groups[1]?.querySelectorAll(":scope > ul > li") ?? [], (item) => item.textContent)).toEqual(["delta-0.9.0.zip", "delta-4.0.0.zip", "delta-1.0.1.zip"])
 
@@ -474,14 +474,14 @@ describe("Mod profiles", { timeout: 20000 }, () => {
 
     await user.click(useButtonOf(dialog, "Solo"))
     await switchLanded()
-    expect(within(dialog).getByText("Show affected archive names (1)")).toBeTruthy()
+    expect(within(dialog).getByText("Show affected archive names (2)")).toBeTruthy()
 
     takeFolderOffline()
     await user.click(useButtonOf(dialog, "Server"))
 
     expect(await screen.findByText(FOLDER_UNREADABLE)).toBeTruthy()
     await waitFor(() => expect(profilesButton().disabled).toBe(false))
-    expect(within(dialog).queryByText("Show affected archive names (1)")).toBeNull()
+    expect(within(dialog).queryByText("Show affected archive names (2)")).toBeNull()
   })
 
   it("stops before any rename when the outgoing profile cannot be recorded", async () => {
@@ -523,18 +523,52 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(profilesButton().getAttribute("aria-label")).toBe(`Mod profiles, Mods & "more" <3 in use: save the Mods that are on as a named set, and switch between sets`)
   })
 
-  it("counts two Mods that kept their state in the plural", async () => {
+  it("counts a Mod the profile lists that is not installed with the two that kept their state, and names it marked as not installed (#622)", async () => {
     const { user, refused } = renderProfiles({ document: aDocument([SERVER, SOLO], "server") })
     refused.add(GAMMA).add(DELTA)
     const dialog = await openProfiles(user, "Solo")
+    const logMessage = vi.mocked(window.api.utils.logMessage)
+    logMessage.mockClear()
 
     await user.click(useButtonOf(dialog, "Solo"))
 
-    expect(await screen.findByText("Switching to Solo did not finish: 2 Mods kept their state. No profile is active until you switch again.")).toBeTruthy()
+    // Gamma and Delta are refused and Zeta is gone from the folder: three Mods, which the log already counted as 2 failed and 1 missing.
+    expect(await screen.findByText("Switching to Solo did not finish: 3 Mods kept their state. No profile is active until you switch again.")).toBeTruthy()
+    await switchLanded()
+    expect(logMessage.mock.calls.filter((call) => call.join(" ").includes("Profile switch: 1 on, 1 off, 2 failed, 1 missing, 0 unresolved."))).toHaveLength(1)
+
+    const affectedFiles = within(dialog).getByText("Show affected archive names (3)")
+    await user.click(affectedFiles)
+    const groups = Array.from((affectedFiles.closest("details") as HTMLDetailsElement).querySelectorAll(":scope > ul > li"))
+    expect(groups.map((group) => group.firstChild?.textContent)).toEqual(["gamma", "quirkid", "zeta (not installed)"])
+    expect(groups.map((group) => Array.from(group.querySelectorAll(":scope > ul > li"), (item) => item.textContent))).toEqual([["gamma-3.0.0.zip"], ["delta-4.0.0.zip"], ["zeta-1.0.0.zip"]])
+  })
+
+  it("counts a Mod whose copies none is the one the profile recorded when a switch did not finish, and does not call it not installed", async () => {
+    const newer = `${MODS}/alpha-1.1.0.zip.disabled`
+    const mods = [aMod("Alpha Mod", "alpha", ALPHA), aMod("Alpha Mod", "alpha", newer, false), aMod("Beta Mod", "beta", BETA)]
+    const pinned: ModProfile = { id: "pinned", name: "Pinned", mods: [{ modid: "alpha", file: "alpha-0.9.0.zip" }] }
+    const { user, refused } = renderProfiles({ mods, document: aDocument([SERVER, pinned], "server") })
+    refused.add(BETA)
+    const dialog = await openProfiles(user, "Pinned")
+
+    await user.click(useButtonOf(dialog, "Pinned"))
+
+    // Beta is refused, and Alpha has two copies and neither is the recorded one.
+    expect(await screen.findByText("Switching to Pinned did not finish: 2 Mods kept their state. No profile is active until you switch again.")).toBeTruthy()
+    await switchLanded()
+    const affectedFiles = within(dialog).getByText("Show affected archive names (4)")
+    await user.click(affectedFiles)
+    const groups = Array.from((affectedFiles.closest("details") as HTMLDetailsElement).querySelectorAll(":scope > ul > li"))
+    expect(groups.map((group) => group.firstChild?.textContent)).toEqual(["beta", "alpha"])
+    expect(groups.map((group) => Array.from(group.querySelectorAll(":scope > ul > li"), (item) => item.textContent))).toEqual([
+      ["beta-2.0.0.zip"],
+      ["alpha-0.9.0.zip", "alpha-1.0.0.zip", "alpha-1.1.0.zip.disabled"]
+    ])
   })
 
   it.each([
-    ["did not finish", GAMMA, [], `Switching to Mods & "more" <3 did not finish: 1 Mod kept its state. No profile is active until you switch again.`],
+    ["did not finish", GAMMA, [], `Switching to Mods & "more" <3 did not finish: 2 Mods kept their state. No profile is active until you switch again.`],
     ["was not recorded", null, [{ ok: true }, { ok: false, reason: "refused" }], `The Mods now match Mods & "more" <3, but it couldn't be recorded as the active profile.`]
   ] as const)("shows a profile name exactly as typed when a switch %s", async (_case, refuse, saveAnswers, verdict) => {
     const named: ModProfile = { ...SOLO, id: "named", name: `Mods & "more" <3` }
