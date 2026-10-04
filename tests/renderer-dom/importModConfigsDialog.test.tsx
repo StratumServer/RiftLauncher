@@ -81,7 +81,7 @@ async function rowFor(name: string): Promise<HTMLInputElement> {
 
 describe("ImportModConfigsDialog, the boxes", () => {
   it("ticks a file this Installation has never seen and clears one it has", async () => {
-    mount({ "New.json": entry("{}"), "Mine.json": entry("{}") }, { ok: true, configs: [{ name: "Mine.json", bytes: 2 }] })
+    mount({ "New.json": entry("{}"), "Mine.json": entry("{}") }, { ok: true, configs: [{ name: "Mine.json", bytes: 2 }], linked: [] })
 
     await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
     expect((await rowFor("Mine.json")).checked).toBe(false)
@@ -91,9 +91,66 @@ describe("ImportModConfigsDialog, the boxes", () => {
   it("calls a file the same file whatever case the two names are written in", async () => {
     // One file on NTFS and on APFS, two on Linux. A dialog that read the pack's capital C as a new
     // file would tick a box that overwrites the config.json sitting on disk.
-    mount({ "Config.json": entry("{}") }, { ok: true, configs: [{ name: "config.json", bytes: 2 }] })
+    mount({ "Config.json": entry("{}") }, { ok: true, configs: [{ name: "config.json", bytes: 2 }], linked: [] })
 
     await waitFor(async () => expect((await rowFor("Config.json")).checked).toBe(false))
+  })
+
+  it("clears a row a link blocks and says why, instead of calling the name new (#621)", async () => {
+    // A link at a name, or on a folder above it, is somewhere the host never writes. The listing used
+    // to say nothing of it, so the row read "no file at this name", came ticked, and the refusal only
+    // arrived after the button. The names are compared the way the replace check compares them, whole
+    // folder names only: `ClientExtra` is not under the link called `Client`.
+    const { sent } = mount(
+      { "Pointed.json": entry("{}"), "client/RoomSize.json": entry("{}"), "ClientExtra/a.json": entry("{}"), "New.json": entry("{}") },
+      { ok: true, configs: [], linked: ["pointed.json", "Client"] }
+    )
+
+    await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
+    for (const name of ["Pointed.json", "client/RoomSize.json"]) {
+      const box = await rowFor(name)
+      expect(box.checked, `${name} is ticked`).toBe(false)
+      expect(box.disabled, `${name} can be ticked`).toBe(true)
+      const row = box.closest("li") as HTMLElement
+      expect(within(row).getByText("Blocked by a link: the launcher never writes through a link")).toBeTruthy()
+      expect(within(row).queryByText("This Installation has no file at this name")).toBeNull()
+    }
+
+    for (const name of ["ClientExtra/a.json", "New.json"]) {
+      const box = await rowFor(name)
+      expect(box.checked, `${name} is not ticked`).toBe(true)
+      expect(box.disabled, `${name} cannot be ticked`).toBe(false)
+      expect(within(box.closest("li") as HTMLElement).getByText("This Installation has no file at this name")).toBeTruthy()
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Write the chosen configs" }))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect((sent[0] as { name: string }[]).map((file) => file.name)).toEqual(["ClientExtra/a.json", "New.json"])
+  })
+
+  it("reads a name as blocked, and not as replaced, when a file and a link share it in different cases (#621)", async () => {
+    // On a case-sensitive disk `config.json` can be a file and `CONFIG.json` a link. The two are one
+    // name to this dialog, which folds case, so the row is not offered at all rather than offered
+    // under "Replaces yours" for the host to refuse; the host still decides what is written.
+    mount({ "Config.json": entry("{}") }, { ok: true, configs: [{ name: "config.json", bytes: 2 }], linked: ["CONFIG.json"] })
+
+    const box = await rowFor("Config.json")
+    await waitFor(() => expect(box.disabled).toBe(true))
+    expect(box.checked).toBe(false)
+    const row = box.closest("li") as HTMLElement
+    expect(within(row).getByText("Blocked by a link: the launcher never writes through a link")).toBeTruthy()
+    expect(within(row).queryByText("Replaces yours")).toBeNull()
+  })
+
+  it("does not call the folder empty when the only thing in it is a link (#621)", async () => {
+    mount({ "Pointed.json": entry("{}") }, { ok: true, configs: [], linked: ["Pointed.json"] })
+
+    await waitFor(async () => expect((await rowFor("Pointed.json")).disabled).toBe(true))
+    // "Empty, so every file below is new" would sit right above a row that says a link is in the way.
+    expect(screen.queryByText("This Installation's ModConfig folder is empty, so every file below is new.")).toBeNull()
+    expect(screen.getByText("This Installation has 0 files in its ModConfig folder.")).toBeTruthy()
+    // Nothing is ticked, so there is nothing to write.
+    expect((screen.getByRole("button", { name: "Write the chosen configs" }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it("lists nothing at all until the host has answered, because no answer is not an empty folder", async () => {
@@ -119,7 +176,7 @@ describe("ImportModConfigsDialog, the boxes", () => {
     expect(screen.queryByText("New.json")).toBeNull()
     expect((screen.getByRole("button", { name: "Write the chosen configs" }) as HTMLButtonElement).disabled).toBe(true)
 
-    await act(async () => void answer({ ok: true, configs: [] }))
+    await act(async () => void answer({ ok: true, configs: [], linked: [] }))
     expect((await rowFor("New.json")).checked).toBe(true)
   })
 
@@ -133,7 +190,7 @@ describe("ImportModConfigsDialog, the boxes", () => {
 
 describe("ImportModConfigsDialog, what it sends", () => {
   it("sends the ticked files with their text and digest, and nothing else", async () => {
-    const { sent } = mount({ "New.json": entry('{"a":1}'), "Mine.json": entry('{"b":2}') }, { ok: true, configs: [{ name: "Mine.json", bytes: 7 }] })
+    const { sent } = mount({ "New.json": entry('{"a":1}'), "Mine.json": entry('{"b":2}') }, { ok: true, configs: [{ name: "Mine.json", bytes: 7 }], linked: [] })
 
     await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
     fireEvent.click(screen.getByRole("button", { name: "Write the chosen configs" }))
@@ -145,7 +202,7 @@ describe("ImportModConfigsDialog, what it sends", () => {
   it("closes without asking the host to write anything when the last box is cleared", async () => {
     const close = vi.fn()
     const applyModConfigs = vi.fn()
-    installMockWindowApi({ modsManager: { getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [] })), applyModConfigs } })
+    installMockWindowApi({ modsManager: { getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [], linked: [] })), applyModConfigs } })
     renderWithProviders(
       <>
         <NotificationsOverlay />
@@ -167,7 +224,7 @@ describe("ImportModConfigsDialog, what it sends", () => {
     // files past the cap with no box to agree to, which is the one outcome the box is there to stop.
     const settings: Record<string, ModConfigEntry> = {}
     for (let index = 0; index < 52; index += 1) settings[`c${index}.json`] = entry("{}")
-    const { sent } = mount(settings, { ok: true, configs: [] })
+    const { sent } = mount(settings, { ok: true, configs: [], linked: [] })
 
     await waitFor(async () => expect((await rowFor("c0.json")).checked).toBe(true))
     expect((await rowFor("c49.json")).checked).toBe(true)
@@ -207,7 +264,7 @@ describe("ImportModConfigsDialog, when the host throws", () => {
   it("says so instead of leaving the button press with nothing to show for it", async () => {
     // The channel rejects on malformed input rather than answering with a refusal, so this is a
     // designed outcome. Before, the rejection was unhandled: no notification, no state, no answer.
-    const { sent } = mount({ "New.json": entry("{}") }, { ok: true, configs: [] }, () => Promise.reject(new Error("Invalid mod config request")))
+    const { sent } = mount({ "New.json": entry("{}") }, { ok: true, configs: [], linked: [] }, () => Promise.reject(new Error("Invalid mod config request")))
 
     await waitFor(async () => expect((await rowFor("New.json")).checked).toBe(true))
     fireEvent.click(screen.getByRole("button", { name: "Write the chosen configs" }))
@@ -224,7 +281,7 @@ describe("ImportModConfigsDialog, what came back", () => {
     const openPathOnFileExplorer = vi.fn()
     installMockWindowApi({
       modsManager: {
-        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [{ name: "Mine.json", bytes: 2 }] })),
+        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [{ name: "Mine.json", bytes: 2 }], linked: [] })),
         applyModConfigs: vi.fn(
           async (): Promise<ApplyModConfigsResult> => ({
             ok: true,
@@ -258,7 +315,7 @@ describe("ImportModConfigsDialog, what came back", () => {
     const close = vi.fn()
     installMockWindowApi({
       modsManager: {
-        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [] })),
+        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [], linked: [] })),
         applyModConfigs: vi.fn(async (): Promise<ApplyModConfigsResult> => ({ ok: false, reason: "no-backups-folder" as const }))
       }
     })
@@ -293,7 +350,7 @@ describe("ImportModConfigsDialog, what came back", () => {
     for (const { reason, said } of refusals) {
       installMockWindowApi({
         modsManager: {
-          getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [] })),
+          getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [], linked: [] })),
           applyModConfigs: vi.fn(async (): Promise<ApplyModConfigsResult> => ({ ok: false, reason }))
         }
       })
@@ -312,7 +369,7 @@ describe("ImportModConfigsDialog, what came back", () => {
 
     installMockWindowApi({
       modsManager: {
-        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [] })),
+        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [], linked: [] })),
         applyModConfigs: vi.fn(async (): Promise<ApplyModConfigsResult> => Promise.reject(new TypeError("Invalid mod config request")))
       }
     })
@@ -338,7 +395,7 @@ describe("ImportModConfigsDialog, what came back", () => {
   it("gives every reason the host can answer its own line, all four in one apply", async () => {
     installMockWindowApi({
       modsManager: {
-        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [{ name: "Mine.json", bytes: 2 }] })),
+        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [{ name: "Mine.json", bytes: 2 }], linked: [] })),
         applyModConfigs: vi.fn(
           async (): Promise<ApplyModConfigsResult> => ({
             ok: true,

@@ -241,20 +241,25 @@ export type ExportModpackConfigFailure = Exclude<ExportModpackRefusal, "too-larg
  *
  * The folder is reached through `assertManagedPath`, so it is inside a managed installation and has
  * no symbolic link in any of its existing ancestors, and every file is read with `lstat` so a link
- * *inside* the folder is skipped rather than followed out of it. A `.json` extension is what makes a
- * file a candidate at all, compared without case because Windows does not.
+ * *inside* the folder is set aside rather than followed out of it. A `.json` extension is what makes
+ * a file a candidate at all, compared without case because Windows does not.
+ *
+ * A link is not a file, but it is not nothing either: the apply refuses a config at its name and
+ * below it, so the walk reports it by name for the import dialog to say so. That is all it does with
+ * one. It is neither opened nor followed, which is why the folder a link points at is never listed.
  *
  * @param installationPath An installation folder, already asserted as a configured one.
  * @param options.readText Read each file's bytes. Off for the import dialog, which shows names and
  *   sizes and has no use for the contents.
  * @param options.only The keys to look at, or undefined for all of them. Filtered before the read,
- *   so a pack the player narrowed down does not read the files they left out of it.
- * @returns The files, relative to the folder with `/` between directories.
+ *   so a pack the player narrowed down does not read the files they left out of it. It narrows the
+ *   files and never the links, which are a fact about the folder and not a choice of the player's.
+ * @returns The files and the links, each relative to the folder with `/` between directories.
  * @throws When the folder cannot be listed, or a file cannot be read.
  */
-async function walkModConfigs(installationPath: string, options: { readText: boolean; only?: ReadonlySet<string> }): Promise<CollectedConfig[]> {
+async function walkModConfigs(installationPath: string, options: { readText: boolean; only?: ReadonlySet<string> }): Promise<{ files: CollectedConfig[]; linked: string[] }> {
   const root = join(installationPath, MOD_CONFIG_FOLDER_NAME)
-  if (!(await fse.pathExists(root))) return []
+  if (!(await fse.pathExists(root))) return { files: [], linked: [] }
 
   const safeRoot = await assertManagedPath(root, "mod config folder")
   const rootStats = await fse.lstat(safeRoot)
@@ -263,6 +268,9 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
   if (!rootStats.isDirectory()) throw new Error("The ModConfig folder is not a folder")
 
   const found: CollectedConfig[] = []
+  const linked: string[] = []
+  // The one shape a name leaves this walk in, for a file and for a link: relative, `/` between directories.
+  const keyOf = (path: string): string => relative(safeRoot, path).replaceAll("\\", "/")
 
   const visit = async (folder: string): Promise<void> => {
     const entries = await fse.readdir(folder, { withFileTypes: true })
@@ -272,15 +280,22 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
         await visit(entryPath)
         continue
       }
-      // `isFile()` is false for a link, and that is the answer we want: reading through one would
-      // let a link in the folder hand the launcher a file from anywhere on the disk.
+      // `isDirectory()` and `isFile()` are both false for a link, and that is the answer we want:
+      // reading through one would let a link in the folder hand the launcher a file from anywhere on
+      // the disk, and descending into one would list a folder from anywhere on it. It is named and
+      // nothing more, and whatever it is called: a folder that is a link has no reason to end in
+      // `.json`, and the pack's names that sit under it are refused all the same.
+      if (entry.isSymbolicLink()) {
+        linked.push(keyOf(entryPath))
+        continue
+      }
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) continue
 
       const stats = await fse.lstat(entryPath)
       // No key rule here. This walk answers "what is in the folder", and a folder can hold a name
       // that is legal on the file system it was created on and unusable in a pack; the caller that
       // builds a pack is the one that has to say so, because only it can name the file.
-      const key = relative(safeRoot, entryPath).replaceAll("\\", "/")
+      const key = keyOf(entryPath)
       // Before the read and before the ceiling, so a narrowed pack neither reads nor counts what it
       // left out. The keys are the walk's own, which is why the caller can pass the player's
       // selection through without validating it as a path: a name that matches nothing matches
@@ -298,7 +313,7 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
   }
 
   await visit(safeRoot)
-  return found
+  return { files: found, linked }
 }
 
 /**
@@ -323,7 +338,7 @@ export async function collectModConfigs(
 ): Promise<{ ok: true; settings: Record<string, ModConfigEntry> } | { ok: false; reason: ExportModpackConfigFailure; name?: string }> {
   let files: CollectedConfig[]
   try {
-    files = await walkModConfigs(installationPath, { readText: true, only: chosenNames ? new Set(chosenNames) : undefined })
+    files = (await walkModConfigs(installationPath, { readText: true, only: chosenNames ? new Set(chosenNames) : undefined })).files
   } catch (err) {
     if (err instanceof RangeError) {
       logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] The ModConfig folder holds more files than a modpack may carry.`)
@@ -392,6 +407,10 @@ async function installationRecordAt(installationPath: string): Promise<{ record:
  * load, so it opened on "the folder could not be read" with no rows and a disabled button. A read
  * does not need to exclude a read, and it does need to stay out of a folder the game is writing,
  * which is the one thing `playing` says.
+ *
+ * Besides the files it names the links in the folder, for the import dialog alone. A name a link
+ * sits at is not a name this Installation "has no file at", and the dialog has to be able to tell
+ * the two apart before the apply refuses it.
  */
 ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_MOD_CONFIGS, async (event, installationPath: unknown): Promise<ModConfigsReadResult> => {
   assertTrustedIpcSender(event)
@@ -404,8 +423,8 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_MOD_CONFIGS, async (event, installa
       return { ok: false, reason: "playing" }
     }
 
-    const files = await walkModConfigs(installation, { readText: false })
-    return { ok: true, configs: files.map(({ name, bytes }) => ({ name, bytes })) }
+    const { files, linked } = await walkModConfigs(installation, { readText: false })
+    return { ok: true, configs: files.map(({ name, bytes }) => ({ name, bytes })), linked }
   } catch (err) {
     logMessage("error", `${LOG_PREFIX} [GET_MOD_CONFIGS] Could not list the ModConfig folder.`)
     logMessage("debug", `${LOG_PREFIX} [GET_MOD_CONFIGS] ${getErrorMessage(err)}`)

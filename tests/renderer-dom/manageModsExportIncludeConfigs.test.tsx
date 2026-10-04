@@ -80,7 +80,7 @@ describe("Manage Mods: the Export Modpack mod config box", () => {
     await openTheExportMenu()
     expect(screen.queryByText("Include mod configs")).toBeNull()
 
-    await act(async () => void answer({ ok: true, configs: [{ name: "RoomSize.json", bytes: 2 }] }))
+    await act(async () => void answer({ ok: true, configs: [{ name: "RoomSize.json", bytes: 2 }], linked: [] }))
 
     const box = await screen.findByLabelText("Include mod configs", {}, { timeout: 3000 })
     expect((box as HTMLInputElement).checked).toBe(false)
@@ -104,7 +104,7 @@ describe("Manage Mods: the Export Modpack mod config box", () => {
 
   it("stays away from an Installation with no mod configs at all", async () => {
     const { answer } = mountWithPendingConfigs()
-    await act(async () => void answer({ ok: true, configs: [] }))
+    await act(async () => void answer({ ok: true, configs: [], linked: [] }))
     await openTheExportMenu()
 
     expect(screen.queryByText("Include mod configs")).toBeNull()

@@ -45,7 +45,7 @@ function mountWithConfigs(configs: ModConfigListingEntry[]): {
   answerNextRead: (value: ModConfigsReadResult) => void
   exportModpack: ReturnType<typeof vi.fn>
 } {
-  let answer: ModConfigsReadResult = { ok: true, configs }
+  let answer: ModConfigsReadResult = { ok: true, configs, linked: [] }
   const exportModpack = vi.fn(async () => ({ success: true, path: "/out/pack.json" }))
 
   installMockWindowApi({
@@ -168,7 +168,7 @@ describe("Manage Mods: the mod config export picker", () => {
     // The page's own listing is a snapshot from when the Mods page loaded, and this dialog outlives
     // it. A file the game wrote in between is one the player has not been shown and must still be
     // offered, because the alternative is it travelling in the pack with no row to agree to.
-    answerNextRead({ ok: true, configs: [ROOM_SIZE, SERVER_LIST] })
+    answerNextRead({ ok: true, configs: [ROOM_SIZE, SERVER_LIST], linked: [] })
     await act(async () => void (await screen.findByText("Mod configs to export", {}, { timeout: 3000 })))
     await openThePicker()
 
