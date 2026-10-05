@@ -467,6 +467,7 @@
       "profileSwitchPartial_other": "Switching to {{profile}} did not finish: {{count}} Mods kept their state. No profile is active until you switch again.",
       "profileSwitchNotStarted": "Couldn't record the current profile, so nothing was changed.",
       "profileSwitchAffectedFiles": "Show affected archive names ({{count}})",
+      "profileSwitchNotInstalledMod": "{{modid}} (not installed)",
       "profileSwitchNotRecorded": "The Mods now match {{profile}}, but it couldn't be recorded as the active profile.",
       "cantChangeProfilesWhileInUse": "You can't change profiles while this Installation is being backed up, restored or having its Mods updated.",
       "profilesFolderUnreadable": "Couldn't read this Installation's Mods folder, so nothing was recorded or changed.",

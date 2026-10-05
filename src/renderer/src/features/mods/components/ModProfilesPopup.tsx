@@ -196,7 +196,11 @@ function ModProfilesPopup({ isOpen, close, profiles, locked }: Readonly<{ isOpen
             summary={t("features.mods.profileSwitchAffectedFiles", {
               count: profiles.switchReport.groups.reduce((total, group) => total + group.files.length, 0)
             })}
-            groups={profiles.switchReport.groups.map((group) => ({ key: group.modid.toLowerCase(), label: group.modid, names: group.files }))}
+            groups={profiles.switchReport.groups.map((group) => ({
+              key: group.modid.toLowerCase(),
+              label: group.missing ? t("features.mods.profileSwitchNotInstalledMod", { modid: group.modid, interpolation: { escapeValue: false } }) : group.modid,
+              names: group.files
+            }))}
             className="text-sm text-zinc-300 text-left"
           />
         )}

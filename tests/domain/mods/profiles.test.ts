@@ -245,7 +245,7 @@ describe("planModProfileSwitch", () => {
     })
   })
 
-  it("returns only archive names grouped under their missing or unresolved Mod", () => {
+  it("returns only archive names grouped under their missing or unresolved Mod, and marks the one the folder holds nothing of (#622)", () => {
     const plan = planModProfileSwitch(
       aProfile("a", "Server", [
         { modid: "lost", file: "lost-1.0.0.zip" },
@@ -257,7 +257,7 @@ describe("planModProfileSwitch", () => {
     assert.equal(plan.missing, 1)
     assert.equal(plan.unresolved, 1)
     assert.deepEqual(plan.skippedMods, [
-      { modid: "lost", files: ["lost-1.0.0.zip"] },
+      { modid: "lost", files: ["lost-1.0.0.zip"], missing: true },
       { modid: "beta", files: ["beta-wanted.zip", "beta-1.0.0.zip", "beta-1.1.0.zip.disabled"] }
     ])
     assert.equal(
@@ -276,7 +276,7 @@ describe("planModProfileSwitch", () => {
       [on("alpha", "/x/Mods/alpha.zip")]
     )
 
-    assert.deepEqual(plan, { changes: [], missing: 1, unresolved: 0, skippedMods: [{ modid: "delta", files: ["delta-1.0.0.zip", "delta-2.0.0.zip"] }] })
+    assert.deepEqual(plan, { changes: [], missing: 1, unresolved: 0, skippedMods: [{ modid: "delta", files: ["delta-1.0.0.zip", "delta-2.0.0.zip"], missing: true }] })
   })
 
   it("plans nothing the second time, once the folder matches", () => {
