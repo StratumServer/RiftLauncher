@@ -97,7 +97,7 @@ ipcMain.handle(IPC_CHANNELS.UTILS.SELECT_FOLDER_DIALOG, async (event, options?: 
   if (options?.mode === "multi") properties.push("multiSelections")
 
   const result = await dialog.showOpenDialog({
-    title: "Selecciona una carpeta",
+    title: options?.type === "file" ? "Select a file" : "Select a folder",
     properties,
     filters: options?.extensions && [{ name: options.extensions.join(", "), extensions: options.extensions }]
   })
