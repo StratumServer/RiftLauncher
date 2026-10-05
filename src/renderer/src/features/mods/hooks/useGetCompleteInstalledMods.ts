@@ -18,7 +18,7 @@ const INSTALLED_MOD_LOOKUP_LIMIT = 2
 /** Shared by every installed-Mod lookup, so that together they stay inside the share described above. */
 export const installedModLookups = new ConcurrencyLimiter(INSTALLED_MOD_LOOKUP_LIMIT)
 
-export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number) => void }) => Promise<{
+export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number, failedLookups?: number) => void }) => Promise<{
   mods: InstalledModType[]
   errors: ErrorInstalledModType[]
 }> {
@@ -31,10 +31,10 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
    * @param {Object} props
    * @param {string} [props.path] Path to look for mods.
    * @param {string} [props.version] Installation/Server version to check if there are compatible updates WITHOUT "v"! Example: ~~v1.2.3~~ 1.2.3
-   * @param {(updates: number) => void} [props.onFinish] Fuction called before returning mods. Updates is the number of updates found.
+   * @param {(updates: number, failedLookups?: number) => void} [props.onFinish] Function called before returning mods. Updates is the number of updates found, and failedLookups is the number of mod lookups that failed.
    * @returns {Promise<{mods: InstalledModType[]errors: ErrorInstalledModType[]}>} Mods with ModDB mods and updates(if any) and mods with errors.
    */
-  async function getCompleteInstalledMods({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number) => void }): Promise<{
+  async function getCompleteInstalledMods({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number, failedLookups?: number) => void }): Promise<{
     mods: InstalledModType[]
     errors: ErrorInstalledModType[]
   }> {
@@ -47,18 +47,24 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
 
     // Two installed files can refer to the same ModDB entry. Keep one in-flight lookup per id
     // for this scan, while still evaluating every installed file against its own version.
-    const modDetails = new Map<string, Promise<DownloadableModType | undefined>>()
+    type ModLookupResult = { mod?: DownloadableModType; failed: boolean }
+    const modDetails = new Map<string, Promise<ModLookupResult>>()
     const modImages = new Map<string, Promise<string | undefined>>()
 
-    function queryModOnce(modid: number | string): Promise<DownloadableModType | undefined> {
+    function queryModOnce(modid: number | string): Promise<ModLookupResult> {
       const key = String(modid)
       const pending = modDetails.get(key)
       if (pending) return pending
 
-      // Not-found and lookup-failed both leave this scan with no detail for the mod, which is all
-      // it has ever distinguished (a plain compatibility/update pass, not the modpack import
-      // table this outcome type exists for).
-      const request = installedModLookups.run(() => queryMod({ modid })).then((outcome) => (outcome.status === "found" ? outcome.mod : undefined))
+      // Not-found means the mod is not known to ModDB, while lookup failure means the database
+      // could not be reached or the request timed out. We track failed lookups separately so
+      // callers know whether the update scan was complete.
+      const request = installedModLookups.run(async (): Promise<ModLookupResult> => {
+        const outcome = await queryMod({ modid })
+        if (outcome.status === "found") return { mod: outcome.mod, failed: false }
+        if (outcome.status === "failed") return { failed: true }
+        return { failed: false }
+      })
       modDetails.set(key, request)
       return request
     }
@@ -77,7 +83,8 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
 
     await Promise.all(
       mods.mods.map(async (mod) => {
-        const dmod = await queryModOnce(mod.modid)
+        const result = await queryModOnce(mod.modid)
+        const dmod = result.mod
         mod._mod = dmod
 
         if (!mod._image && dmod?.logofile) mod._image = await cacheModImageOnce(dmod.logofile)
@@ -93,9 +100,17 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
       })
     )
 
+    let failedLookups = 0
+    for (const lookup of await Promise.all(Array.from(modDetails.values()))) {
+      if (lookup.failed) failedLookups++
+    }
+
     logMods("info", `[front] [mods] [features/mods/hooks/useGetCompleteInstalledMods.ts] [useGetCompleteInstalledMods > getCompleteInstalledMods] Found ${availableModUpdates} mod updates.`)
 
-    if (onFinish) onFinish(availableModUpdates)
+    if (onFinish) {
+      if (failedLookups > 0) onFinish(availableModUpdates, failedLookups)
+      else onFinish(availableModUpdates)
+    }
     return mods
   }
 

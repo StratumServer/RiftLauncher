@@ -23,9 +23,11 @@ function GlobalModUpdateChecker(): null {
     getCompleteInstalledMods({
       path: lastUsedInstallation.path,
       version: lastUsedInstallation.version,
-      onFinish: (updates) => {
+      onFinish: (updates, failedLookups = 0) => {
         if (updates > 0 && !notifiedInstallations.includes(lastUsedInstallation.id)) {
-          configDispatch({ type: CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE, payload: { installationId: lastUsedInstallation.id } })
+          if (failedLookups === 0) {
+            configDispatch({ type: CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE, payload: { installationId: lastUsedInstallation.id } })
+          }
           window.setTimeout(() => {
             addNotification(t("features.mods.updatesAvailableInstallation", { count: updates }), "info", {
               actions: [

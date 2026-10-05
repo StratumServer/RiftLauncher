@@ -153,4 +153,16 @@ describe("the mods/authors catalog survives a slow, steady transfer (pre-release
 
     await assert.rejects(pending, /timed out/)
   })
+
+  it("resolves /api/mod/123 when the body trickles slower than 15s total (#618)", async () => {
+    const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
+
+    const chunks = ['{"statuscode":', '"200",', '"mod":{}}']
+    respondWithTrickle(chunks, 10_000)
+
+    const pending = queryUrl("https://mods.vintagestory.at/api/mod/123")
+    await vi.advanceTimersByTimeAsync(40_000)
+
+    assert.equal(await pending, chunks.join(""))
+  })
 })

@@ -102,6 +102,7 @@ export type UrlRule = Readonly<{
 export const API_URL_RULES: readonly UrlRule[] = [
   { hostname: "api.vintagestory.at", pathPrefixes: ["/stable.json", "/unstable.json"] },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods", "/api/authors"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES, timeoutMs: MODS_CATALOG_TIMEOUT_MS },
+  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mod"], timeoutMs: MODS_CATALOG_TIMEOUT_MS },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api"] },
   { hostname: "auth3.vintagestory.at", pathPrefixes: ["/v2/gamelogin"] },
   // The release list FETCH_RELEASE_NOTES reads for the "what's new" dialog and the Info & Help
