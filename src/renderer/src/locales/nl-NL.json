@@ -496,7 +496,6 @@
       "healthProblems_other": "{{count}} problemen",
       "healthUpdates_one": "{{count}} update",
       "healthUpdates_other": "{{count}} updates",
-      "healthClean": "Niets te verhelpen.",
       "healthBlockingTitle": "Wordt niet geladen",
       "healthDependencyMissing": "{{mod}} heeft {{dependency}} nodig, en die staat niet in deze map.",
       "healthDependencyMissingVersion": "{{mod}} heeft {{dependency}} {{required}} of nieuwer nodig, en die staat niet in deze map.",

@@ -516,7 +516,6 @@
       "healthUpdates_one": "{{count}} обновление",
       "healthUpdates_few": "{{count}} обновления",
       "healthUpdates_many": "{{count}} обновлений",
-      "healthClean": "Исправлять нечего.",
       "healthBlockingTitle": "Не загрузится",
       "healthDependencyMissing": "{{mod}} требует {{dependency}}, которого нет в этой папке.",
       "healthDependencyMissingVersion": "{{mod}} требует {{dependency}} {{required}} или новее, которого нет в этой папке.",

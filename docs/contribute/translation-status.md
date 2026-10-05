@@ -17,22 +17,22 @@ Community translation happens on [Weblate](https://hosted.weblate.org/projects/r
 
 <!-- i18n-status:start -->
 
-en-US is the source and carries 897 keys.
+en-US is the source and carries 900 keys.
 
 | Locale | Keys | Missing | Stale | Drafted to review |
 | ------ | ---: | ------: | ----: | ----------------: |
-| be-BY  |  884 |      45 |     0 |               656 |
-| de-DE  |  857 |      40 |     0 |               708 |
-| es-ES  |  884 |      45 |     0 |               546 |
-| fr-FR  |  929 |       0 |     0 |                 1 |
-| hu-HU  |  857 |      40 |     0 |               591 |
-| it-IT  |  884 |      45 |     0 |               553 |
-| nl-NL  |  857 |      40 |     0 |               712 |
-| pl-PL  |  884 |      45 |     0 |               550 |
-| pt-BR  |  884 |      45 |     0 |               454 |
-| pt-PT  |  884 |      45 |     0 |               560 |
-| ru-RU  |  884 |      45 |     0 |               644 |
-| uk-UA  |  884 |      45 |     0 |               569 |
-| zh-CN  |  830 |      35 |     0 |               678 |
+| be-BY  |  883 |      51 |     0 |               655 |
+| de-DE  |  856 |      44 |     0 |               707 |
+| es-ES  |  883 |      51 |     0 |               545 |
+| fr-FR  |  934 |       0 |     0 |                 1 |
+| hu-HU  |  856 |      44 |     0 |               590 |
+| it-IT  |  883 |      51 |     0 |               552 |
+| nl-NL  |  856 |      44 |     0 |               711 |
+| pl-PL  |  883 |      51 |     0 |               549 |
+| pt-BR  |  883 |      51 |     0 |               453 |
+| pt-PT  |  883 |      51 |     0 |               559 |
+| ru-RU  |  883 |      51 |     0 |               643 |
+| uk-UA  |  883 |      51 |     0 |               568 |
+| zh-CN  |  829 |      37 |     0 |               677 |
 
 <!-- i18n-status:end -->

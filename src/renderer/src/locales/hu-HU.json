@@ -496,7 +496,6 @@
       "healthProblems_other": "{{count}} probléma",
       "healthUpdates_one": "{{count}} frissítés",
       "healthUpdates_other": "{{count}} frissítés",
-      "healthClean": "Nincs javítanivaló.",
       "healthBlockingTitle": "Nem fog betöltődni",
       "healthDependencyMissing": "A(z) {{mod}} igényli a(z) {{dependency}} modot, ami nincs ebben a könyvtárban.",
       "healthDependencyMissingVersion": "A(z) {{mod}} igényli a(z) {{dependency}} {{required}} vagy újabb verzióját, ami nincs ebben a könyvtárban.",

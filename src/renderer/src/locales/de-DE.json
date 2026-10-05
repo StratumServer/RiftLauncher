@@ -496,7 +496,6 @@
       "healthProblems_other": "{{count}} Probleme",
       "healthUpdates_one": "{{count}} Aktualisierung",
       "healthUpdates_other": "{{count}} Aktualisierungen",
-      "healthClean": "Nichts zu beheben.",
       "healthBlockingTitle": "Wird nicht geladen",
       "healthDependencyMissing": "{{mod}} braucht {{dependency}}, das nicht in diesem Ordner liegt.",
       "healthDependencyMissingVersion": "{{mod}} braucht {{dependency}} {{required}} oder neuer, das nicht in diesem Ordner liegt.",
