@@ -1,7 +1,33 @@
+import { useEffect, useState } from "react"
 import { Dialog, DialogPanel, DialogTitle } from "@headlessui/react"
 import { POPUP_VARIANTS, POPUP_WRAPPER_VARIANTS } from "@renderer/utils/animateVariants"
 import clsx from "clsx"
 import { AnimatePresence, motion } from "motion/react"
+
+/**
+ * Headless UI's Dialog, mounted closed and opened from the first effect instead of mounted open.
+ *
+ * Headless UI hides the page behind a dialog (aria-hidden and inert on the top-level node that
+ * holds the application) from one effect, run when the Dialog turns open. Which node that is only
+ * becomes known one render after the Dialog mounts. A panel is only rendered while it is open, so
+ * every dialog here mounted already open, ran that effect before the node was known, found nothing
+ * to hide and never ran it again: the page stayed exposed to assistive technology (#624). The
+ * first dialog of a session was the exception, because Headless UI also holds back "open" until
+ * its own first effect. Opening from our own effect gives every dialog the order Headless UI is
+ * written for. The state lives here and not in PopupDialogPanel so that it starts closed again
+ * each time a dialog mounts.
+ */
+function DialogOpenedAfterMount({ onClose, className, children }: Readonly<{ onClose: (value: boolean) => void; className: string; children: React.ReactNode }>): JSX.Element {
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => setOpen(true), [])
+
+  return (
+    <Dialog static open={open} onClose={onClose} className={className}>
+      {children}
+    </Dialog>
+  )
+}
 
 function PopupDialogPanel({
   children,
@@ -26,7 +52,7 @@ function PopupDialogPanel({
   return (
     <AnimatePresence onExitComplete={onExitComplete}>
       {isOpen && (
-        <Dialog static open={isOpen} onClose={close} className="w-full h-full absolute top-0 left-0 z-200 flex justify-center items-center select-none bg-zinc">
+        <DialogOpenedAfterMount onClose={close} className="w-full h-full absolute top-0 left-0 z-200 flex justify-center items-center select-none bg-zinc">
           <motion.div
             variants={POPUP_WRAPPER_VARIANTS}
             initial="initial"
@@ -65,7 +91,7 @@ function PopupDialogPanel({
               </DialogPanel>
             </motion.div>
           </motion.div>
-        </Dialog>
+        </DialogOpenedAfterMount>
       )}
     </AnimatePresence>
   )
