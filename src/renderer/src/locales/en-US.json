@@ -325,6 +325,7 @@
       "importModConfigsDesc_other": "This modpack carries {{count}} mod config files. Choose which ones to write.",
       "importModConfigsNew": "This Installation has no file at this name",
       "importModConfigsReplaces": "Replaces yours",
+      "importModConfigsLinked": "Blocked by a link: the launcher never writes through a link",
       "importModConfigsHave_one": "This Installation has {{count}} file in its ModConfig folder.",
       "importModConfigsHave_other": "This Installation has {{count}} files in its ModConfig folder.",
       "importModConfigsHaveNone": "This Installation's ModConfig folder is empty, so every file below is new.",

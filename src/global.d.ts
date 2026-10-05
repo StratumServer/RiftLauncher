@@ -725,10 +725,17 @@ declare global {
    * to list. `bytes` is the size on THIS Installation's disk, which is not the size the pack's own
    * entry claims: the digest is what says whether the two hold the same bytes, and a size cannot.
    *
+   * `linked` names the links the folder holds, whether they point at a file or at a folder. The
+   * names have the shape of `configs` (relative, `/` between directories) but not its `.json` rule:
+   * a link to a folder is called what the folder is. The launcher never writes through a link, so an
+   * apply refuses a config at one of these names and any config below one. They are kept out of
+   * `configs`, which the export builds its rows from and can only carry what it reads, and they are
+   * names and nothing else: no link was read or followed to where it points.
+   *
    * - `playing`: the game owns the folder. Vintage Story documents its configs as human-editable
    *   "only while the game is not running", so this is the game's rule, not the launcher's.
    */
-  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
+  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[]; linked: string[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
 
   /** Why one file of an apply did not land. Every value names a step that refused it, never a guess. */
   type ApplyFailureReason = "copy-failed" | "not-landed" | "digest-mismatch" | "write-failed"

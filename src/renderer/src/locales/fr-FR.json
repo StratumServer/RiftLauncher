@@ -328,6 +328,7 @@
       "importModConfigsDesc_other": "Ce modpack contient {{count}} fichiers de config de mods. Choisissez ceux à écrire.",
       "importModConfigsNew": "Cette installation n'a aucun fichier à ce nom",
       "importModConfigsReplaces": "Remplace le vôtre",
+      "importModConfigsLinked": "Bloqué par un lien : le launcher n'écrit jamais à travers un lien",
       "importModConfigsHave_one": "Cette installation a {{count}} fichier dans son dossier ModConfig.",
       "importModConfigsHave_many": "Cette installation a {{count}} fichiers dans son dossier ModConfig.",
       "importModConfigsHave_other": "Cette installation a {{count}} fichiers dans son dossier ModConfig.",

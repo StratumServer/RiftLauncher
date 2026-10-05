@@ -22,6 +22,18 @@ const MAX_LISTED_FAILURES = 50
 type AppliedSummary = Extract<ApplyModConfigsResult, { ok: true }>
 
 /**
+ * Whether a link sits at this name or at one of the folders above it, which is where the host will
+ * not write. Whole segments are compared, so `ClientExtra/a.json` is not below a link called `Client`.
+ *
+ * @param name A key the pack carries.
+ * @param linked The listing's links, already folded to lower case.
+ */
+function isBehindLink(name: string, linked: ReadonlySet<string>): boolean {
+  const segments = name.toLowerCase().split("/")
+  return segments.some((_, index) => linked.has(segments.slice(0, index + 1).join("/")))
+}
+
+/**
  * What a modpack's mod configs get before any of them reach an Installation.
  *
  * A modpack is a stranger's file and a mod config is the one part of an Installation that belongs
@@ -40,6 +52,15 @@ type AppliedSummary = Extract<ApplyModConfigsResult, { ok: true }>
  * APFS and two on Linux, and a dialog that called the second one new would tick a box that
  * overwrites the first. The listing arrives already normalised to `/` between directories by the
  * host, which is the same shape a pack's keys are validated into, so nothing here re-derives it.
+ *
+ * A name a link sits at, or one below a link that is a folder, is a third state, and the one that
+ * is neither new nor replaced: the host never writes through a link and refuses those names at the
+ * apply. The dialog reads them from the listing, leaves the box clear and switched off, and says
+ * why, so a player is not told a name is free, ticks it on that word, and learns afterwards that
+ * something else sits there (#621). Whole folder names are compared, folded the same way, so a name
+ * that only starts like a link's is not under it. When two spellings differ only in case and only
+ * one of them is a link, both read as blocked: the row errs toward not offering, and the host still
+ * decides what is written.
  */
 function ImportModConfigsDialog({
   settings,
@@ -64,6 +85,12 @@ function ImportModConfigsDialog({
   /** The names this Installation already has, folded the way the file systems that merge case fold them. */
   const existing = useMemo(() => new Set((listing?.ok ? listing.configs : []).map((entry) => entry.name.toLowerCase())), [listing])
 
+  /** The links this Installation has in its ModConfig folder, folded the same way. */
+  const linked = useMemo(() => new Set((listing?.ok ? listing.linked : []).map((name) => name.toLowerCase())), [listing])
+
+  /** The names in the pack the host would refuse because of a link: their boxes stay clear and cannot be ticked. */
+  const blocked = useMemo(() => new Set(carried.filter((key) => isBehindLink(key, linked))), [carried, linked])
+
   useEffect(() => {
     // A new pack is a new question, and this dialog stays mounted between packs. Without this the
     // second import opened on the first one's summary, and the listing read when the page loaded
@@ -79,8 +106,8 @@ function ImportModConfigsDialog({
       setChosen([])
       return
     }
-    setChosen(carried.filter((key) => !existing.has(key.toLowerCase())))
-  }, [listing, carried, existing])
+    setChosen(carried.filter((key) => !existing.has(key.toLowerCase()) && !blocked.has(key)))
+  }, [listing, carried, existing, blocked])
 
   const listed = listing?.ok ? listing.configs : []
 
@@ -122,6 +149,12 @@ function ImportModConfigsDialog({
     if (reason === "copy-failed") return t("features.mods.importModConfigsReasonCopy")
     if (reason === "not-landed") return t("features.mods.importModConfigsReasonNotLanded")
     return t("features.mods.importModConfigsReasonWrite")
+  }
+
+  /** What a row says about its name, in the order the states are decided: a link first, since nothing is written there at all. */
+  function captionFor(name: string): string {
+    if (blocked.has(name)) return t("features.mods.importModConfigsLinked")
+    return existing.has(name.toLowerCase()) ? t("features.mods.importModConfigsReplaces") : t("features.mods.importModConfigsNew")
   }
 
   if (applied) {
@@ -173,13 +206,12 @@ function ImportModConfigsDialog({
                   id={`import-mod-config-${name}`}
                   type="checkbox"
                   checked={chosen.includes(name)}
+                  disabled={blocked.has(name)}
                   onChange={(e) => setChosen((current) => (e.target.checked ? [...current, name] : current.filter((key) => key !== name)))}
                 />
                 <label htmlFor={`import-mod-config-${name}`} className="flex-1 overflow-hidden">
                   <span className="block truncate font-bold">{name}</span>
-                  <span className="block truncate text-sm text-zinc-300">
-                    {existing.has(name.toLowerCase()) ? t("features.mods.importModConfigsReplaces") : t("features.mods.importModConfigsNew")}
-                  </span>
+                  <span className="block truncate text-sm text-zinc-300">{captionFor(name)}</span>
                 </label>
               </li>
             ))}
@@ -187,8 +219,14 @@ function ImportModConfigsDialog({
         )}
 
         {/* Only when the host answered. A listing that failed renders as an empty one here, and the
-            player would read "the folder is empty" under "the folder could not be read". */}
-        {listing?.ok && <p className="text-sm text-zinc-300">{listed.length > 0 ? t("features.mods.importModConfigsHave", { count: listed.length }) : t("features.mods.importModConfigsHaveNone")}</p>}
+            player would read "the folder is empty" under "the folder could not be read". A folder
+            holding only links is not empty either: "empty, so every file below is new" would sit
+            right above a row that says a link is in the way. */}
+        {listing?.ok && (
+          <p className="text-sm text-zinc-300">
+            {listed.length > 0 || linked.size > 0 ? t("features.mods.importModConfigsHave", { count: listed.length }) : t("features.mods.importModConfigsHaveNone")}
+          </p>
+        )}
 
         <ButtonsWrapper className="text-base" bgDark={false} equalWidth flush>
           <FormButton title={t("features.mods.importModConfigsSkip")} onClick={close} variant="secondary" size="md" icon={<PiXCircleDuotone />} />
