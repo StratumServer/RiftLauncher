@@ -9,11 +9,14 @@ import { ATOMIC_WRITE_TEMP_SUFFIX_MAX, writeTextAtomic } from "@src/ipc/atomicJs
 import { isInstallationPlaying, tryAcquireInstallationOperation } from "@src/ipc/installationActivity"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertConfiguredInstallationPath, assertManagedPath } from "@src/ipc/pathPolicy"
-import { assertBoundedString, assertSafeFileName, assertString, comparablePath, isRecord } from "@src/ipc/validation"
+import { assertBoundedString, assertString, comparablePath, isRecord } from "@src/ipc/validation"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { describeBackupSpaceShortfall } from "@domain/installations/backupCapacity"
 import { MOD_CONFIG_FOLDER_NAME } from "@domain/mods/folder"
+import { assertModConfigKey, HIDDEN_UNICODE_NAME_CHARACTER, isValidModConfigKey, MAX_MOD_CONFIG_KEY_LENGTH, showDefaultIgnorables } from "@domain/mods/modConfigs"
 import { cleanFolderName, formatTimestampForFilename } from "@domain/naming"
+
+export { assertModConfigKey, HIDDEN_UNICODE_NAME_CHARACTER, isValidModConfigKey, MAX_MOD_CONFIG_KEY_LENGTH, showDefaultIgnorables }
 
 const LOG_PREFIX = "[back] [mods] [ipc/handlers/modConfigs.ts]"
 
@@ -34,9 +37,6 @@ export const MAX_MODPACK_ENTRIES = 2_000
  */
 export const MAX_MODPACK_BYTES = 8 * 1024 * 1024
 
-/** The longest whole key a pack may use. Each of its segments is held to assertSafeFileName's 255. */
-const MAX_MOD_CONFIG_KEY_LENGTH = 512
-
 /**
  * The legacy MAX_PATH limit (260 characters) on Windows.
  *
@@ -50,41 +50,6 @@ const MAX_MOD_CONFIG_KEY_LENGTH = 512
  */
 const WINDOWS_LEGACY_MAX_PATH = 260
 
-/**
- * Names Windows refuses to create a file under, with or without an extension: the DOS device names
- * that predate NTFS and still work, and the numbered variants of the two port families. `¹` is not a
- * digit to Windows either, which is why it is spelled out rather than written as a range.
- */
-const WINDOWS_RESERVED_BASE_NAME = /^(con|prn|aux|nul|clock\$|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i
-
-/**
- * Characters no Windows file name may hold, and the control characters no file system should.
- *
- * The control-character half is the point of the rule, so the lint that objects to a control range
- * inside a character class is the rule being wrong here.
- */
-// eslint-disable-next-line no-control-regex
-const WINDOWS_FORBIDDEN_CHARACTER = /[?*<>|":\u0000-\u001f\u007f]/
-
-/**
- * Unicode characters a reader must not be allowed to hide or reorder in a file name.
- *
- * `Default_Ignorable_Code_Point` includes format characters and other code points that render as
- * nothing or as blank fillers in the launcher's Chromium. This also covers bidi controls and U+180E.
- */
-const HIDDEN_UNICODE_NAME_CHARACTER = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u
-
-/** Makes hidden code points in an on-disk name visible in an export refusal. */
-function showDefaultIgnorables(value: string): string {
-  return [...value]
-    .map((character) => {
-      if (!HIDDEN_UNICODE_NAME_CHARACTER.test(character)) return character
-      const codePoint = character.codePointAt(0) as number
-      return `<U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}>`
-    })
-    .join("")
-}
-
 /** How many times a recovery folder name may be bumped before the apply gives up. */
 const MAX_RECOVERY_FOLDER_ATTEMPTS = 32
 
@@ -96,54 +61,6 @@ const SETTINGS_BACKUP_PREFIX = "settings_"
 
 /** The record an apply leaves in its recovery folder, so a half-finished run is still readable. */
 const APPLIED_RECORD_NAME = "applied.txt"
-
-/**
- * A pack key has to be a relative path of `.json` names below `ModConfig`, written the way every
- * other archive in this launcher writes one: forward slashes, because a pack is read on every
- * platform and `path.sep` would bake in the platform that exported it. The repo already has this
- * rule written down for archive entries (src/ipc/validation.ts), and a key that came from somewhere
- * else is exactly as untrusted as an archive entry.
- *
- * Every segment is held to what `assertSafeFileName` already allows, and the rest is what Windows
- * adds on top of that: a device name, a character it will not put in a name, a space or a dot at
- * the end. Bidi controls and invisible zero-width characters are refused too, so a pack cannot
- * display a different name to the player than the file on disk.
- *
- * @param value Key as a pack or a dialog sent it.
- * @returns The key, unchanged, once every rule has passed.
- * @throws TypeError, naming the rule that refused it.
- */
-export function assertModConfigKey(value: unknown): string {
-  const key = assertString(value, "mod config key", MAX_MOD_CONFIG_KEY_LENGTH)
-  const segments = key.split("/")
-
-  // Only the last segment is the file. The ones before it are folders, made by the game and by
-  // players, and `ConfigureEverything/Client/RoomSize.json` is what a real ModConfig folder looks
-  // like: holding the ones before it to the .json rule would refuse every nested config there is.
-  const fileName = segments.at(-1) ?? ""
-  if (!fileName.toLowerCase().endsWith(".json")) throw new TypeError("Mod config keys must name a .json file")
-  // Everything ahead of the extension is the part Windows looks at when it decides whether a name is
-  // a device, or is a name that differs from another in a way no file manager will show.
-  const stem = fileName.slice(0, -".json".length)
-
-  for (const segment of segments) {
-    // Covers the empty segment a leading, doubled or trailing slash produces, "." and "..", the
-    // backslash a pack written on Windows may carry, and anything over 255 characters.
-    assertSafeFileName(segment, "mod config key")
-
-    if (WINDOWS_FORBIDDEN_CHARACTER.test(segment) || HIDDEN_UNICODE_NAME_CHARACTER.test(segment)) {
-      throw new TypeError("Invalid mod config key")
-    }
-    // A device name and a trailing dot or space are not visible in a file manager, so two keys that
-    // differ only by one are one file on Windows and the second write is the only one to land. The
-    // regex's own optional extension is what lets a folder called Client past and a folder called
-    // nul not, which is the same line Windows draws.
-    const tail = segment === fileName ? stem : segment
-    if (WINDOWS_RESERVED_BASE_NAME.test(segment) || /[. ]$/.test(tail)) throw new TypeError("Invalid mod config key")
-  }
-
-  return key
-}
 
 /**
  * Checks one settings entry's shape and returns it rebuilt from named fields.
