@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from "react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest"
 import { act, fireEvent, render, screen, within } from "@testing-library/react"
 
 import { NotificationsProvider, useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -11,9 +11,9 @@ import ActivityCenter from "@renderer/components/ui/ActivityCenter"
 import { installMockWindowApi } from "./helpers/windowApi"
 import type { MockedBridgeAPI } from "./helpers/windowApi"
 
-// Registers the i18n instance useTranslation() reads inside both providers,
-// the same way renderWithProviders (./helpers/render) does.
-import "@renderer/i18n"
+// Importing it registers the i18n instance useTranslation() reads inside both
+// providers, the same way renderWithProviders (./helpers/render) does.
+import { changeLanguage } from "@renderer/i18n"
 
 /**
  * The renderer half of issues #184 and #185, mounted the way App.tsx mounts it:
@@ -435,5 +435,44 @@ describe("the restart once its banner is closed (#648)", () => {
     fireEvent.click(within(screen.getByRole("region", { name: "Activity Center" })).getByRole("button", { name: "Restart and update" }))
 
     expect(api.appUpdater.updateAndRestart).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * Restart and update closes the launcher, installs the update without asking anything and opens
+ * the new version by itself (#672). On Windows nothing is on screen for 13 to 30 s in between, and
+ * a player who takes that for a crash and starts the launcher again lands in the middle of the
+ * install (#673). The Linux updaters close and reopen it too, only faster, so the notice that
+ * offers the restart says so, with the button that does it.
+ */
+describe("the restart notice says the launcher comes back by itself (#673)", () => {
+  it("tells the player RiftLauncher closes and opens again by itself, and that it can take up to half a minute", () => {
+    const { listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    fireDownloaded(listeners)
+    act(() => {
+      vi.advanceTimersByTime(2_000)
+    })
+
+    const notice = screen.getByText("The update is ready to install. RiftLauncher closes and opens again by itself, which can take up to half a minute.")
+    expect(within(notice.parentElement as HTMLElement).getByRole("button", { name: "Restart and update" })).toBeTruthy()
+  })
+
+  it("says the same in French", async () => {
+    expect(await changeLanguage("fr-FR")).toBe(true)
+    onTestFinished(async () => {
+      await changeLanguage("en-US")
+    })
+    const { listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    fireDownloaded(listeners)
+    act(() => {
+      vi.advanceTimersByTime(2_000)
+    })
+
+    const notice = screen.getByText("La mise à jour est prête à être installée. RiftLauncher se ferme puis se rouvre tout seul, ce qui peut prendre jusqu'à une demi-minute.")
+    expect(within(notice.parentElement as HTMLElement).getByRole("button", { name: "Redémarrer et mettre à jour" })).toBeTruthy()
   })
 })

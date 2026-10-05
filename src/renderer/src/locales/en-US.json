@@ -895,7 +895,7 @@
       "folderDoesntExists": "That folder does not exist any more.",
       "updateAvailableConsent": "RiftLauncher {{version}} is available. Do you want to download it now?",
       "updateDownloadFailedRetry": "The download of RiftLauncher {{version}} failed. Do you want to try again?",
-      "updateDownloaded": "The update is ready to install.",
+      "updateDownloaded": "The update is ready to install. RiftLauncher closes and opens again by itself, which can take up to half a minute.",
       "downloaded": "Downloaded {{downloadName}}.",
       "downloadError": "Couldn't download {{downloadName}}. Check your connection and try again.",
       "extracted": "Unpacked {{extractName}}.",

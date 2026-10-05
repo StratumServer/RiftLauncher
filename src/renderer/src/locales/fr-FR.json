@@ -930,7 +930,7 @@
       "folderDoesntExists": "Ce dossier n'existe plus.",
       "updateAvailableConsent": "RiftLauncher {{version}} est disponible. Voulez-vous le télécharger maintenant ?",
       "updateDownloadFailedRetry": "Le téléchargement de RiftLauncher {{version}} a échoué. Voulez-vous réessayer ?",
-      "updateDownloaded": "La mise à jour est prête à être installée.",
+      "updateDownloaded": "La mise à jour est prête à être installée. RiftLauncher se ferme puis se rouvre tout seul, ce qui peut prendre jusqu'à une demi-minute.",
       "downloaded": "Téléchargement terminé : {{downloadName}}.",
       "downloadError": "Impossible de télécharger {{downloadName}}. Vérifiez votre connexion et réessayez.",
       "extracted": "Décompression terminée : {{extractName}}.",
