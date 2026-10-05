@@ -2,9 +2,11 @@ import { describe, expect, it, onTestFinished, vi } from "vitest"
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
+import type { UninstallGameVersionFailure } from "@domain/versions/uninstall"
 import ListVersions from "@renderer/features/versions/pages/ListVersions"
+import { describeUninstallFailure } from "@renderer/features/versions/adapters/uninstall"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
-import { changeLanguage } from "@renderer/i18n"
+import i18n, { changeLanguage } from "@renderer/i18n"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -28,6 +30,46 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
     envVars: "",
     ...overrides
   }
+}
+
+/** The two buttons that lead to the in-use warning, as each language labels them. */
+const DELETE_BUTTONS = {
+  "en-US": { remove: "Delete Version", uninstall: "Uninstall" },
+  "fr-FR": { remove: "Supprimer la version", uninstall: "Désinstaller" }
+} as const
+
+/**
+ * Sets the launcher to `language`, then takes the 1.20.4 build that every Installation in `names` runs on
+ * through Delete and Uninstall, up to the in-use warning. The caller reads the warning.
+ */
+async function openInUseWarning(language: keyof typeof DELETE_BUTTONS, names: string[]): Promise<void> {
+  expect(await changeLanguage(language)).toBe(true)
+  onTestFinished(async () => {
+    await changeLanguage("en-US")
+  })
+
+  const user = userEvent.setup()
+  installMockWindowApi({
+    configManager: {
+      getConfig: vi.fn(async () =>
+        createMockConfig({
+          gameVersions: [{ version: "1.20.4", path: "/versions/1.20.4" }],
+          installations: names.map((name, index) => anInstallation({ id: `install-${index}`, name }))
+        })
+      )
+    }
+  })
+
+  renderWithProviders(
+    <TaskProvider>
+      <ListVersions />
+    </TaskProvider>,
+    { route: "/versions" }
+  )
+
+  await screen.findByText("1.20.4")
+  await user.click(screen.getByTitle(DELETE_BUTTONS[language].remove))
+  await user.click(await screen.findByTitle(DELETE_BUTTONS[language].uninstall))
 }
 
 describe("ListVersions", () => {
@@ -191,6 +233,44 @@ describe("ListVersions", () => {
     expect(warning.textContent).not.toMatch(/\b(and|more)\b/i)
   })
 
+  // The warning names the Installations on the build and says what deleting it does to them, so the verb
+  // and the pronouns go by how many there are: one Installation is "it", two are "they". Only en-US and
+  // fr-FR have the singular so far; the other languages keep their one sentence until Weblate brings theirs.
+  it.each([
+    {
+      language: "en-US",
+      count: 1,
+      sentence: "Alpha still uses this VS Version. Deleting it now means it won't launch until you point it at another one."
+    },
+    {
+      language: "en-US",
+      count: 2,
+      sentence: "Alpha, Beta still use this VS Version. Deleting it now means they won't launch until you point them at another one."
+    },
+    {
+      language: "fr-FR",
+      count: 1,
+      sentence: "Alpha utilise encore cette version de VS. La supprimer maintenant l'empêchera de démarrer tant que vous ne lui en aurez pas indiqué une autre."
+    },
+    {
+      language: "fr-FR",
+      count: 2,
+      sentence: "Alpha, Beta utilisent encore cette version de VS. La supprimer maintenant les empêchera de démarrer tant que vous ne leur en aurez pas indiqué une autre."
+    }
+  ] as const)("words the in-use warning for $count Installation(s) in $language so the verb and the pronouns agree", async ({ language, count, sentence }) => {
+    await openInUseWarning(language, ["Alpha", "Beta"].slice(0, count))
+
+    await screen.findByText(sentence)
+  })
+
+  it("counts the installations folded into 'and N more' as well, so six of them still read as plural", async () => {
+    // Five names are spelled out and one is folded. Counting only the folded one would read as a single
+    // installation and pick the singular sentence for a version that six of them run on.
+    await openInUseWarning("en-US", ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta"])
+
+    await screen.findByText("Alpha, Beta, Gamma, Delta, Epsilon and 1 more still use this VS Version. Deleting it now means they won't launch until you point them at another one.")
+  })
+
   it("checks installations against the selected build id when version numbers are shared", async () => {
     const user = userEvent.setup()
     installMockWindowApi({
@@ -222,7 +302,7 @@ describe("ListVersions", () => {
     await screen.findByText("Are you sure you want to uninstall VS Version Vanilla?")
     await user.click(screen.getByTitle("Uninstall"))
 
-    await screen.findByText("Vanilla World still use this VS Version. Deleting it now means they won't launch until you point them at another one.")
+    await screen.findByText("Vanilla World still uses this VS Version. Deleting it now means it won't launch until you point it at another one.")
     expect(screen.queryByText(/Optimum World still use/)).toBeNull()
   })
 
@@ -667,5 +747,23 @@ describe("ListVersions", () => {
       // it to leave too: what has to be gone is the action on the row.
       await waitFor(() => expect(screen.queryByTitle("Remove Optimum")).toBeNull())
     })
+  })
+})
+
+describe("describeUninstallFailure", () => {
+  // useUninstallGameVersion renders the key as t(messageKey, { version }): no count and no installation
+  // names. A plural family needs a count to pick a form and comes out as its raw key without one, and a
+  // placeholder other than {{version}} stays unfilled. tests/i18n cannot see this, since the key reaches
+  // t() through a variable.
+  it("keys every refusal to a sentence that renders with nothing but the version's name", () => {
+    const reasons: UninstallGameVersionFailure[] = ["version-playing", "version-busy", "version-in-use", "file-delete-failed"]
+
+    for (const reason of reasons) {
+      const { messageKey } = describeUninstallFailure(reason)
+      const sentence = i18n.t(messageKey, { version: "1.20.4" })
+
+      expect(sentence, `${reason} renders as the raw key ${messageKey}`).not.toBe(messageKey)
+      expect(sentence, `${reason} leaves a placeholder unfilled`).not.toContain("{{")
+    }
   })
 })

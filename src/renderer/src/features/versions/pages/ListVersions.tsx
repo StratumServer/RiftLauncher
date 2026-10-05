@@ -143,6 +143,10 @@ function ListVersions(): JSX.Element {
     await uninstallVersion(version, { usedByInstallations, confirmedInUse: true })
   }
 
+  // Every installation on the refused version, the ones folded into "and N more" included: the verb and the
+  // pronouns of the warning go by how many there are, not by how many names fit on the line.
+  const inUseNames = versionInUseWarning?.usedByInstallations ?? []
+
   return (
     <ScrollableContainer ref={scrollRef}>
       <div className="min-h-full flex flex-col items-center justify-center gap-2">
@@ -307,7 +311,7 @@ function ListVersions(): JSX.Element {
         >
           <div className="flex items-center justify-center gap-2 rounded-sm bg-orange-500/10 border border-orange-500/30 px-3 py-2 text-sm text-orange-300">
             <PiWarningDuotone className="text-lg shrink-0" />
-            <span>{t("features.versions.versionInUseByInstallations", { installations: installationsInUseLabel(versionInUseWarning?.usedByInstallations ?? []) })}</span>
+            <span>{t("features.versions.versionInUseByInstallations", { installations: installationsInUseLabel(inUseNames), count: inUseNames.length })}</span>
           </div>
         </ConfirmDialog>
       </div>
