@@ -207,6 +207,25 @@ describe("assertModConfigKey", () => {
     assert.throws(() => assertModConfigKey("what?.json"), /Invalid mod config key/)
     assert.equal(assertModConfigKey("ROOM.JSON"), "ROOM.JSON")
   })
+
+  it("refuses bidi controls and zero-width characters that disguise a name", async () => {
+    const { assertModConfigKey } = await import("@src/ipc/handlers/modConfigs")
+
+    // Right-to-left override and bidi controls:
+    assert.throws(() => assertModConfigKey("safe\u202Egnp.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("\u202Eevil.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("folder\u202A/config.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("bidi\u061C.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("isolate\u2066.json"), /Invalid mod config key/)
+
+    // Zero-width space and invisible format characters:
+    assert.throws(() => assertModConfigKey("zero\u200Bwidth.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("non\u200Cjoiner.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("joiner\u200D.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("word\u2060joiner.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("bom\uFEFF.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("mongolian\u180Espace.json"), /Invalid mod config key/)
+  })
 })
 
 describe("parseModpackSettings", () => {
@@ -239,6 +258,18 @@ describe("parseModpackSettings", () => {
     const good = parseModpackSettings({ "a.json": entry("{}") })
     assert.equal(good.ok, true)
     assert.deepEqual(Object.keys(good.ok && good.settings), ["a.json"])
+  })
+
+  it("refuses a pack carrying bidi controls or zero-width characters in a key and names it", async () => {
+    const { parseModpackSettings } = await import("@src/ipc/handlers/modConfigs")
+
+    const bidiRefused = parseModpackSettings({ "safe\u202Egnp.json": entry("{}") })
+    assert.equal(bidiRefused.ok, false)
+    assert.deepEqual(bidiRefused.ok === false && bidiRefused.refused, { reason: "bad-key", name: "safe\u202Egnp.json" })
+
+    const zeroWidthRefused = parseModpackSettings({ "zero\u200Bwidth.json": entry("{}") })
+    assert.equal(zeroWidthRefused.ok, false)
+    assert.deepEqual(zeroWidthRefused.ok === false && zeroWidthRefused.refused, { reason: "bad-key", name: "zero\u200Bwidth.json" })
   })
 
   it("refuses two keys that are one file on a case-insensitive filesystem", async () => {
