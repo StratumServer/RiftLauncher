@@ -44,14 +44,12 @@ export const MAX_BACKUP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 // either, it is already past the generic 4 MB cap at 4,215,149 bytes for 116,847 accounts,
 // and it grows by roughly 1.35 MB a year, so 16 MB is years of headroom here too.
 export const MAX_MODS_CATALOG_RESPONSE_BYTES = 16 * 1024 * 1024
-// The same two endpoints (uncompressed, multi-megabyte, no Content-Length) also outgrew the
-// generic 15s request timeout: at ordinary slow ModDB speed the transfer itself takes longer
-// than 15s even though bytes are still arriving throughout, so the wall clock cut it mid-flight.
-// requestBoundedBuffer already resets a 15s inactivity window on every chunk received (see
-// REQUEST_TIMEOUT_MS in network.ts), which is what lets a slow-but-steady transfer finish; this
-// is only the outer ceiling on top of that, six times the generic timeout, mirroring how far
-// above the generic byte ceiling MAX_MODS_CATALOG_RESPONSE_BYTES already sits.
-export const MODS_CATALOG_TIMEOUT_MS = 90_000
+// The catalog's uncompressed response is multi-megabyte with no Content-Length, and detail lookups
+// can wait behind that transfer before returning headers. Both can outlast the generic 15s timeout.
+// requestBoundedBuffer starts its 15s inactivity window when headers arrive and resets it on each
+// chunk (see REQUEST_TIMEOUT_MS in network.ts); this is the outer ceiling that bounds the wait and
+// transfer together, six times the generic timeout, providing headroom for slow catalog transfers.
+export const MODS_API_TIMEOUT_MS = 90_000
 // The background manifest is a list of {id, name, file, thumbnail} rows, about 1 KB for the eleven
 // scenes on the branch today. 32 KB is room for hundreds of them and still refuses anything that
 // is not a small list of names.
@@ -101,8 +99,8 @@ export type UrlRule = Readonly<{
 
 export const API_URL_RULES: readonly UrlRule[] = [
   { hostname: "api.vintagestory.at", pathPrefixes: ["/stable.json", "/unstable.json"] },
-  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods", "/api/authors"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES, timeoutMs: MODS_CATALOG_TIMEOUT_MS },
-  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mod"], timeoutMs: MODS_CATALOG_TIMEOUT_MS },
+  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mods", "/api/authors"], maxBytes: MAX_MODS_CATALOG_RESPONSE_BYTES, timeoutMs: MODS_API_TIMEOUT_MS },
+  { hostname: "mods.vintagestory.at", pathPrefixes: ["/api/mod"], timeoutMs: MODS_API_TIMEOUT_MS },
   { hostname: "mods.vintagestory.at", pathPrefixes: ["/api"] },
   { hostname: "auth3.vintagestory.at", pathPrefixes: ["/v2/gamelogin"] },
   // The release list FETCH_RELEASE_NOTES reads for the "what's new" dialog and the Info & Help
@@ -483,7 +481,7 @@ export function getApiUrlMaxBytes(url: URL): number {
 /**
  * Resolves the overall wall-clock ceiling for an already-validated API URL, honoring a per-rule
  * override (see API_URL_RULES) the same way {@link getApiUrlMaxBytes} does for the byte ceiling.
- * Undefined when the rule sets none, which is every rule but the mods/authors catalog:
+ * Undefined when the rule sets none, which is every rule but the ModDB catalog and detail lookups:
  * requestBoundedText/Buffer already default to REQUEST_TIMEOUT_MS on their own when handed no
  * override, so nothing else has to repeat that number here.
  */

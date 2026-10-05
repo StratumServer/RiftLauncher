@@ -140,7 +140,7 @@ describe("useGetCompleteInstalledMods: the update count", () => {
 
     expect(mods.map((mod) => mod._updatableTo)).toEqual(["1.1.0", undefined, undefined])
     expect(onFinish).toHaveBeenCalledTimes(1)
-    expect(onFinish).toHaveBeenCalledWith(1)
+    expect(onFinish).toHaveBeenCalledWith(1, 0)
   })
 
   it("reports the count of failed mod lookups alongside available updates (#618)", async () => {
@@ -167,5 +167,24 @@ describe("useGetCompleteInstalledMods: the update count", () => {
     expect(mods.map((mod) => mod._updatableTo)).toEqual(["1.1.0", undefined, undefined])
     expect(onFinish).toHaveBeenCalledTimes(1)
     expect(onFinish).toHaveBeenCalledWith(1, 1)
+  })
+
+  it("counts failed lookups once per mod id, not once per installed file", async () => {
+    const installed = (modid: number): InstalledModType => ({ name: `Mod ${modid}`, modid: String(modid), version: "1.0.0", path: `/games/a/Mods/mod-${modid}.zip`, enabled: true })
+    const queryURL = vi.fn(async () => {
+      throw new Error("Network request timed out")
+    })
+    installMockWindowApi({
+      netManager: { queryURL },
+      modsManager: { getInstalledMods: vi.fn(async () => ({ mods: [installed(1), installed(1), installed(2)], errors: [] })) }
+    })
+    const onFinish = vi.fn()
+
+    const { result } = renderHook(() => useGetCompleteInstalledMods())
+    await result.current({ path: "/games/a", version: "1.21.0", onFinish })
+
+    expect(queryURL).toHaveBeenCalledTimes(2)
+    expect(onFinish).toHaveBeenCalledTimes(1)
+    expect(onFinish).toHaveBeenCalledWith(0, 2)
   })
 })

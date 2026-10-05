@@ -23,13 +23,18 @@ function GlobalModUpdateChecker(): null {
     getCompleteInstalledMods({
       path: lastUsedInstallation.path,
       version: lastUsedInstallation.version,
-      onFinish: (updates, failedLookups = 0) => {
-        if (updates > 0 && !notifiedInstallations.includes(lastUsedInstallation.id)) {
+      onFinish: (updates, failedLookups) => {
+        if ((updates > 0 || failedLookups > 0) && !notifiedInstallations.includes(lastUsedInstallation.id)) {
           if (failedLookups === 0) {
             configDispatch({ type: CONFIG_ACTIONS.ADD_NOTIFIED_MOD_UPDATE, payload: { installationId: lastUsedInstallation.id } })
           }
           window.setTimeout(() => {
-            addNotification(t("features.mods.updatesAvailableInstallation", { count: updates }), "info", {
+            if (updates === 0) {
+              addNotification(t("features.mods.updatesCheckFailedSome"), "info")
+              return
+            }
+            const message = failedLookups > 0 ? t("features.mods.updatesAvailableInstallationIncomplete", { count: updates }) : t("features.mods.updatesAvailableInstallation", { count: updates })
+            addNotification(message, "info", {
               actions: [
                 {
                   id: "view-updates",

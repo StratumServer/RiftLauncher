@@ -18,7 +18,7 @@ const INSTALLED_MOD_LOOKUP_LIMIT = 2
 /** Shared by every installed-Mod lookup, so that together they stay inside the share described above. */
 export const installedModLookups = new ConcurrencyLimiter(INSTALLED_MOD_LOOKUP_LIMIT)
 
-export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number, failedLookups?: number) => void }) => Promise<{
+export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number, failedLookups: number) => void }) => Promise<{
   mods: InstalledModType[]
   errors: ErrorInstalledModType[]
 }> {
@@ -31,10 +31,10 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
    * @param {Object} props
    * @param {string} [props.path] Path to look for mods.
    * @param {string} [props.version] Installation/Server version to check if there are compatible updates WITHOUT "v"! Example: ~~v1.2.3~~ 1.2.3
-   * @param {(updates: number, failedLookups?: number) => void} [props.onFinish] Function called before returning mods. Updates is the number of updates found, and failedLookups is the number of mod lookups that failed.
+   * @param {(updates: number, failedLookups: number) => void} [props.onFinish] Function called before returning mods. Updates is the number of updates found, and failedLookups is the number of distinct mod ids whose lookups failed.
    * @returns {Promise<{mods: InstalledModType[]errors: ErrorInstalledModType[]}>} Mods with ModDB mods and updates(if any) and mods with errors.
    */
-  async function getCompleteInstalledMods({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number, failedLookups?: number) => void }): Promise<{
+  async function getCompleteInstalledMods({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number, failedLookups: number) => void }): Promise<{
     mods: InstalledModType[]
     errors: ErrorInstalledModType[]
   }> {
@@ -107,10 +107,7 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
 
     logMods("info", `[front] [mods] [features/mods/hooks/useGetCompleteInstalledMods.ts] [useGetCompleteInstalledMods > getCompleteInstalledMods] Found ${availableModUpdates} mod updates.`)
 
-    if (onFinish) {
-      if (failedLookups > 0) onFinish(availableModUpdates, failedLookups)
-      else onFinish(availableModUpdates)
-    }
+    if (onFinish) onFinish(availableModUpdates, failedLookups)
     return mods
   }
 

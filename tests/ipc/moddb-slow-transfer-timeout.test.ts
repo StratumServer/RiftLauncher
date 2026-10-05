@@ -55,7 +55,8 @@ class FakeRequest extends EventEmitter {
   constructor(
     private readonly chunkBodies: string[],
     private readonly gapMs: number,
-    private readonly stallAfterChunks?: number
+    private readonly stallAfterChunks?: number,
+    private readonly responseDelayMs = 0
   ) {
     super()
   }
@@ -70,8 +71,6 @@ class FakeRequest extends EventEmitter {
 
   end(): void {
     const response = new FakeResponse()
-    this.emit("response", response)
-
     let sent = 0
     const sendNext = (): void => {
       if (this.aborted) return
@@ -85,12 +84,17 @@ class FakeRequest extends EventEmitter {
       sent++
       setTimeout(sendNext, this.gapMs)
     }
-    setTimeout(sendNext, this.gapMs)
+    const beginResponse = (): void => {
+      if (this.aborted) return
+      this.emit("response", response)
+      setTimeout(sendNext, this.gapMs)
+    }
+    setTimeout(beginResponse, this.responseDelayMs)
   }
 }
 
-function respondWithTrickle(chunkBodies: string[], gapMs: number, stallAfterChunks?: number): void {
-  mockState.requestHandler = (): FakeRequest => new FakeRequest(chunkBodies, gapMs, stallAfterChunks)
+function respondWithTrickle(chunkBodies: string[], gapMs: number, stallAfterChunks?: number, responseDelayMs = 0): void {
+  mockState.requestHandler = (): FakeRequest => new FakeRequest(chunkBodies, gapMs, stallAfterChunks, responseDelayMs)
 }
 
 const AUTHORS_URL = "https://mods.vintagestory.at/api/authors"
@@ -164,5 +168,29 @@ describe("the mods/authors catalog survives a slow, steady transfer (pre-release
     await vi.advanceTimersByTimeAsync(40_000)
 
     assert.equal(await pending, chunks.join(""))
+  })
+
+  it("lets /api/mod/123 wait more than 15s for response headers (#618)", async () => {
+    const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
+
+    const body = '{"statuscode":"200","mod":{}}'
+    respondWithTrickle([body], 1_000, undefined, 20_000)
+
+    const pending = queryUrl("https://mods.vintagestory.at/api/mod/123")
+    await vi.advanceTimersByTimeAsync(22_000)
+
+    assert.equal(await pending, body)
+  })
+
+  it("cuts /api/mod/123 at 15s when headers arrive at once and nothing follows", async () => {
+    const { queryUrl } = await import("@src/ipc/handlers/netHandlers")
+
+    respondWithTrickle(["a"], 10_000, 0)
+
+    const pending = queryUrl("https://mods.vintagestory.at/api/mod/123")
+    pending.catch(() => {})
+    await vi.advanceTimersByTimeAsync(16_000)
+
+    await assert.rejects(pending, /timed out/)
   })
 })
