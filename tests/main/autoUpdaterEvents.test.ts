@@ -21,7 +21,7 @@ const mockState = vi.hoisted(() => {
     userDataDir: "",
     updaterListeners: new Map<string, (payload?: unknown) => void>(),
     onListeners: new Map<string, (...args: unknown[]) => void>(),
-    autoUpdater: { autoDownload: true, allowPrerelease: false } as { autoDownload: boolean; allowPrerelease: boolean },
+    autoUpdater: { autoDownload: true, autoInstallOnAppQuit: true, allowPrerelease: false } as { autoDownload: boolean; autoInstallOnAppQuit: boolean; allowPrerelease: boolean },
     downloadUpdate: vi.fn(() => Promise.resolve([] as string[])),
     quitAndInstall: vi.fn(),
     /** What allowPrerelease was at the moment each check went out, which is the only moment it matters. */
@@ -127,6 +127,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockState.updaterListeners.clear()
   mockState.autoUpdater.autoDownload = true
+  mockState.autoUpdater.autoInstallOnAppQuit = true
   mockState.autoUpdater.allowPrerelease = false
   mockState.allowPrereleaseWhenChecked.length = 0
   temporaryRoot = mkdtempSync(join(tmpdir(), "auto-updater-events-"))
@@ -258,6 +259,31 @@ describe("the handshake, end to end", () => {
     await sendFromRenderer(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART)
 
     assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [false, true])
+  })
+})
+
+/**
+ * Who installs a finished download (#648).
+ *
+ * electron-updater's autoInstallOnAppQuit defaults to true. With it on, the first finished download
+ * hooks the app's quit event and runs the installer silently the next time the launcher closes,
+ * whatever the player did with the "ready" toast, so someone who closed that toast and then the
+ * window started their next session on a version they never chose. electron-updater reads the flag
+ * in two places, when a download finishes and again when the app quits, and both reads are inside
+ * the package, which a double cannot reach. What this file can pin is what it hands the updater:
+ * the flag is off from registration on, and nothing in the event flow turns it back on.
+ */
+describe("installing a finished download (#648)", () => {
+  it("turns installing on quit off, so only the restart button installs", () => {
+    assert.equal(mockState.autoUpdater.autoInstallOnAppQuit, false)
+  })
+
+  it("keeps it off through a whole download, which is when electron-updater looks at it", () => {
+    emit("update-available", { version: "1.7.0-beta.3" })
+    emit("download-progress", { percent: 100 })
+    emit("update-downloaded", { version: "1.7.0-beta.3" })
+
+    assert.equal(mockState.autoUpdater.autoInstallOnAppQuit, false)
   })
 })
 
