@@ -38,6 +38,17 @@ const OPTIMUM_STATE_MANIFEST = join(OPTIMUM_STATE_FOLDER, "manifest.json")
 /** The file the patch leaves at the game root, which the launcher's own rollback has to take back out. */
 export const OPTIMUM_CONTRACTS_ASSEMBLY = "Optimum.Api.Contracts.dll"
 
+/**
+ * The assembly the patched `Mods/VSEssentials.dll` references, which an overlay
+ * that ships it leaves at the game root next to the contracts.
+ *
+ * Unlike the contracts it is not necessarily the patch's alone to remove: the
+ * patch backs up a file of that name the build already had, under the same name
+ * in the vanilla folder, or writes `Optimum.GameContent.dll.absent` there when
+ * it had none.
+ */
+export const OPTIMUM_GAME_CONTENT_ASSEMBLY = "Optimum.GameContent.dll"
+
 /** Streams a file through SHA-256, so a 200 MB assembly is never held in memory to be hashed. */
 export function sha256File(path: string): Promise<string> {
   return new Promise((resolvePromise, rejectPromise) => {

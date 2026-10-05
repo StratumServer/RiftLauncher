@@ -12,7 +12,7 @@ import { join } from "node:path"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
 import { cliFileName, OPTIMUM_STATE_FOLDER, OPTIMUM_VANILLA_FOLDER, supportsGameVersion } from "@domain/optimum/plan"
-import { OPTIMUM_CONTRACTS_ASSEMBLY, sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
+import { OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_GAME_CONTENT_ASSEMBLY, sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
 import { isOptimumRuntimeAvailable, runOptimumCli } from "@src/ipc/optimumPatch"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
@@ -182,7 +182,18 @@ async function rollBackFailedRun(gameDirectory: string, failure: { ok: false; re
 }
 
 /**
- * Puts the four assemblies back and takes the launcher's own marks off.
+ * Puts the four assemblies back, takes the two Optimum assemblies the patch left
+ * at the game root back out, and takes the launcher's own marks off.
+ *
+ * The contracts assembly is always removed. `Optimum.GameContent.dll` is put
+ * back from the copy of an earlier file in the vanilla folder when there is one,
+ * as in Optimum's own rollback (`RestoreGameContentAsset` in `GamePatcher.cs`),
+ * and removed when there is not: the patch writes a marker instead of a copy
+ * when the build had no such file, and a build patched by an overlay that never
+ * shipped it has nothing to remove. A file with neither is the one place the two
+ * differ, Optimum's rollback leaving it and this taking it out, since the file
+ * is Optimum's. It is done before the state folder goes, since the copy lives
+ * there, so a failure leaves the backups for a second try.
  *
  * Partial by construction, and the dialog says so: the overlaid shaders, the
  * merged language keys and anything else written into `assets/` stay until the
@@ -208,6 +219,12 @@ export async function restoreVanillaBuild(gameDirectory: string): Promise<Optimu
     }
 
     await fse.remove(join(gameDirectory, OPTIMUM_CONTRACTS_ASSEMBLY))
+
+    const gameContentBackup = join(vanillaFolder, OPTIMUM_GAME_CONTENT_ASSEMBLY)
+    const gameContent = join(gameDirectory, OPTIMUM_GAME_CONTENT_ASSEMBLY)
+    if (await fse.pathExists(gameContentBackup)) await fse.copy(gameContentBackup, gameContent, { overwrite: true })
+    else await fse.remove(gameContent)
+
     await fse.remove(join(gameDirectory, OPTIMUM_STATE_FOLDER))
   } catch {
     return refuse("restore-failed")

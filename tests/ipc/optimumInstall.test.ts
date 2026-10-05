@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
@@ -81,6 +81,16 @@ for (const assembly of assemblies) {
   records.push({ assembly, vanillaHash: "sha256:" + "0".repeat(64), patchedHash: "sha256:" + crypto.createHash("sha256").update(contents).digest("hex") })
 }
 fs.writeFileSync(path.join(gameDirectory, "Optimum.Api.Contracts.dll"), "contracts")
+// The assembly the patched VSEssentials.dll references, as Optimum's patcher deploys it: the
+// file that was there first is backed up, or a marker says there was none, and only the first
+// time, so a second run does not mistake its own copy for the build's.
+const gameContent = path.join(gameDirectory, "Optimum.GameContent.dll")
+const gameContentBackup = path.join(gameDirectory, ".optimum", "vanilla", "Optimum.GameContent.dll")
+if (!fs.existsSync(gameContentBackup) && !fs.existsSync(gameContentBackup + ".absent")) {
+  if (fs.existsSync(gameContent)) fs.copyFileSync(gameContent, gameContentBackup)
+  else fs.writeFileSync(gameContentBackup + ".absent", "")
+}
+fs.writeFileSync(gameContent, "optimum game content")
 fs.writeFileSync(path.join(gameDirectory, ".optimum", "version"), "0.3.14")
 fs.writeFileSync(path.join(gameDirectory, ".optimum", "manifest.json"), JSON.stringify({ optimumVersion: "0.3.14", patchedAtUtc: "2026-09-14T00:00:00Z", gameDirectory, targets: records }))
 
@@ -157,6 +167,29 @@ function buildOverlay(options: { cliMode?: string; extraFiles?: Record<string, s
 
 function apply(manifest: OptimumManifest, gameVersion = "1.22.7"): Promise<OptimumPatchResult> {
   return applyOptimumOverlay({ manifest, archivePath, overlayDirectory, gameDirectory, gameVersion, platform: "linux" })
+}
+
+/**
+ * A patched build written by hand, so a restore can be driven without a CLI: the
+ * vanilla copy of each assembly the patch replaces, the patched one in its place,
+ * and the contracts assembly at the root. What the patch did about
+ * `Optimum.GameContent.dll` is left to each case.
+ *
+ * @returns the folder the backups are in.
+ */
+function patchedBuild(): string {
+  const vanilla = join(gameDirectory, ".optimum", "vanilla")
+  mkdirSync(join(vanilla, "Mods"), { recursive: true })
+  for (const [live, backup] of [
+    ["VintagestoryLib.dll", "VintagestoryLib.vanilla.dll"],
+    ["VintagestoryAPI.dll", "VintagestoryAPI.vanilla.dll"],
+    [join("Mods", "VSEssentials.dll"), join("Mods", "VSEssentials.dll")]
+  ] as const) {
+    copyFileSync(join(gameDirectory, live), join(vanilla, backup))
+    writeFileSync(join(gameDirectory, live), `patched ${live}`)
+  }
+  writeFileSync(join(gameDirectory, "Optimum.Api.Contracts.dll"), "contracts")
+  return vanilla
 }
 
 beforeEach(() => {
@@ -297,6 +330,17 @@ describe("applyOptimumOverlay", () => {
     assert.equal(existsSync(join(gameDirectory, "Optimum.Api.Contracts.dll")), false)
   })
 
+  needsTheFakeCli("takes the game content assembly back out when the run is refused after deploying it", async () => {
+    // The overlay deploys Optimum.GameContent.dll before the launcher's own check can
+    // still refuse the run, and the marker its rollback would read sits in the state
+    // folder this rollback removes, so whether the file stays is decided here.
+    const result = await apply(buildOverlay({ cliMode: "short" }))
+
+    assert.deepEqual(result, { ok: false, reason: "output-unverified", rolledBack: true })
+    assert.equal(existsSync(join(gameDirectory, "Optimum.GameContent.dll")), false)
+    assert.equal(existsSync(join(gameDirectory, ".optimum")), false)
+  })
+
   needsTheFakeCli("keeps the plain refusal when the run failed before it wrote anything", async () => {
     // Nothing was replaced and nothing was backed up, so there is nothing to put
     // back and nothing to claim about it.
@@ -309,12 +353,14 @@ describe("restoreVanillaBuild", () => {
   needsTheFakeCli("puts the assemblies back and takes Optimum's own marks off", async () => {
     await apply(buildOverlay())
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "patched VintagestoryLib.dll")
+    assert.equal(existsSync(join(gameDirectory, "Optimum.GameContent.dll")), true)
 
     assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: true })
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryAPI.dll"), "utf8"), "vanilla api")
     assert.equal(readFileSync(join(gameDirectory, "Mods", "VSEssentials.dll"), "utf8"), "vanilla essentials")
     assert.equal(existsSync(join(gameDirectory, "Optimum.Api.Contracts.dll")), false)
+    assert.equal(existsSync(join(gameDirectory, "Optimum.GameContent.dll")), false)
     assert.equal(existsSync(join(gameDirectory, ".optimum")), false)
   })
 
@@ -335,5 +381,71 @@ describe("restoreVanillaBuild", () => {
 
     assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: true })
     assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: false, reason: "backup-missing" })
+  })
+
+  describe("the game content assembly", () => {
+    it("removes it when the patch put it in a build that had none", async () => {
+      const vanilla = patchedBuild()
+      writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "optimum game content")
+      // What the patch writes in place of a backup when there was no file to back up.
+      writeFileSync(join(vanilla, "Optimum.GameContent.dll.absent"), "")
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: true })
+      assert.equal(existsSync(join(gameDirectory, "Optimum.GameContent.dll")), false)
+      assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
+      assert.equal(existsSync(join(gameDirectory, ".optimum")), false)
+    })
+
+    it("puts the build's own copy back when the patch backed one up", async () => {
+      const vanilla = patchedBuild()
+      writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "optimum game content")
+      writeFileSync(join(vanilla, "Optimum.GameContent.dll"), "the copy the build had")
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: true })
+      assert.equal(readFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "utf8"), "the copy the build had")
+      assert.equal(existsSync(join(gameDirectory, ".optimum")), false)
+    })
+
+    it("restores a build patched by an overlay that never shipped it as before", async () => {
+      patchedBuild()
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: true })
+      assert.equal(existsSync(join(gameDirectory, "Optimum.GameContent.dll")), false)
+      assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
+      assert.equal(readFileSync(join(gameDirectory, "VintagestoryAPI.dll"), "utf8"), "vanilla api")
+      assert.equal(readFileSync(join(gameDirectory, "Mods", "VSEssentials.dll"), "utf8"), "vanilla essentials")
+      assert.equal(existsSync(join(gameDirectory, "Optimum.Api.Contracts.dll")), false)
+      assert.equal(existsSync(join(gameDirectory, ".optimum")), false)
+    })
+
+    it("removes one that nothing recorded either way, as it does the contracts", async () => {
+      patchedBuild()
+      writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "optimum game content")
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: true })
+      assert.equal(existsSync(join(gameDirectory, "Optimum.GameContent.dll")), false)
+      assert.equal(existsSync(join(gameDirectory, ".optimum")), false)
+    })
+
+    it("is left where it is by the refusal that restores nothing", async () => {
+      const vanilla = patchedBuild()
+      writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "optimum game content")
+      writeFileSync(join(vanilla, "Optimum.GameContent.dll.absent"), "")
+      rmSync(join(vanilla, "VintagestoryLib.vanilla.dll"))
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: false, reason: "backup-missing" })
+      assert.equal(readFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "utf8"), "optimum game content")
+      assert.equal(existsSync(join(vanilla, "Optimum.GameContent.dll.absent")), true)
+    })
+
+    it("keeps the state folder when it cannot be put back, so the backups are still there to try again", async () => {
+      const vanilla = patchedBuild()
+      writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "optimum game content")
+      // A folder where the backup should be is a copy that cannot be made, on every platform.
+      mkdirSync(join(vanilla, "Optimum.GameContent.dll"))
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: false, reason: "restore-failed" })
+      assert.equal(existsSync(join(vanilla, "VintagestoryLib.vanilla.dll")), true)
+    })
   })
 })
