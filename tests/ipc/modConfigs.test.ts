@@ -207,6 +207,35 @@ describe("assertModConfigKey", () => {
     assert.throws(() => assertModConfigKey("what?.json"), /Invalid mod config key/)
     assert.equal(assertModConfigKey("ROOM.JSON"), "ROOM.JSON")
   })
+
+  it("refuses bidi controls and zero-width characters that disguise a name", async () => {
+    const { assertModConfigKey } = await import("@src/ipc/handlers/modConfigs")
+
+    // Right-to-left override and bidi controls:
+    assert.throws(() => assertModConfigKey("safe\u202Egnp.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("\u202Eevil.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("folder\u202A/config.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("bidi\u061C.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("isolate\u2066.json"), /Invalid mod config key/)
+
+    // Zero-width space and invisible format characters:
+    assert.throws(() => assertModConfigKey("zero\u200Bwidth.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("non\u200Cjoiner.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("joiner\u200D.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("word\u2060joiner.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("bom\uFEFF.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("mongolian\u180Espace.json"), /Invalid mod config key/)
+  })
+
+  it("refuses representative default-ignorable characters in file and folder segments", async () => {
+    const { assertModConfigKey } = await import("@src/ipc/handlers/modConfigs")
+    const hiddenCharacters = ["\u034F", "\u115F", "\u17B4", "\u180B", "\u180F", "\u2065", "\u3164", "\uFE0F", "\uFFA0", "\uFFF0", "\u{E0000}", "\u{E0080}", "\u{E0100}", "\u{E0FFF}"]
+
+    for (const hidden of hiddenCharacters) {
+      assert.throws(() => assertModConfigKey(`Client/config${hidden}.json`), /Invalid mod config key/)
+      assert.throws(() => assertModConfigKey(`Client/Sub${hidden}/config.json`), /Invalid mod config key/)
+    }
+  })
 })
 
 describe("parseModpackSettings", () => {
@@ -239,6 +268,18 @@ describe("parseModpackSettings", () => {
     const good = parseModpackSettings({ "a.json": entry("{}") })
     assert.equal(good.ok, true)
     assert.deepEqual(Object.keys(good.ok && good.settings), ["a.json"])
+  })
+
+  it("refuses a pack carrying bidi controls or zero-width characters in a key and names it", async () => {
+    const { parseModpackSettings } = await import("@src/ipc/handlers/modConfigs")
+
+    const bidiRefused = parseModpackSettings({ "safe\u202Egnp.json": entry("{}") })
+    assert.equal(bidiRefused.ok, false)
+    assert.deepEqual(bidiRefused.ok === false && bidiRefused.refused, { reason: "bad-key", name: "safe\u202Egnp.json" })
+
+    const zeroWidthRefused = parseModpackSettings({ "zero\u200Bwidth.json": entry("{}") })
+    assert.equal(zeroWidthRefused.ok, false)
+    assert.deepEqual(zeroWidthRefused.ok === false && zeroWidthRefused.refused, { reason: "bad-key", name: "zero\u200Bwidth.json" })
   })
 
   it("refuses two keys that are one file on a case-insensitive filesystem", async () => {
@@ -379,6 +420,16 @@ describe("collectModConfigs", () => {
     const collected = await collectModConfigs(installationPath)
 
     assert.deepEqual(collected, { ok: false, reason: "bad-name", name: "trailing .json" })
+  })
+
+  it("shows default-ignorable code points in the export refusal", async () => {
+    const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "config\u034F.json"), "{}", "utf-8")
+
+    const collected = await collectModConfigs(installationPath)
+
+    assert.deepEqual(collected, { ok: false, reason: "hidden-character", name: "config<U+034F>.json" })
   })
 
   it.skipIf(process.platform === "win32")("refuses two names that differ only in case, and says which one it found second", async () => {

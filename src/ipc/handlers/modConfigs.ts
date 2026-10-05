@@ -66,6 +66,25 @@ const WINDOWS_RESERVED_BASE_NAME = /^(con|prn|aux|nul|clock\$|com[0-9¹²³]|lpt
 // eslint-disable-next-line no-control-regex
 const WINDOWS_FORBIDDEN_CHARACTER = /[?*<>|":\u0000-\u001f\u007f]/
 
+/**
+ * Unicode characters a reader must not be allowed to hide or reorder in a file name.
+ *
+ * `Default_Ignorable_Code_Point` includes format characters and other code points that render as
+ * nothing or as blank fillers in the launcher's Chromium. This also covers bidi controls and U+180E.
+ */
+const HIDDEN_UNICODE_NAME_CHARACTER = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u
+
+/** Makes hidden code points in an on-disk name visible in an export refusal. */
+function showDefaultIgnorables(value: string): string {
+  return [...value]
+    .map((character) => {
+      if (!HIDDEN_UNICODE_NAME_CHARACTER.test(character)) return character
+      const codePoint = character.codePointAt(0) as number
+      return `<U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}>`
+    })
+    .join("")
+}
+
 /** How many times a recovery folder name may be bumped before the apply gives up. */
 const MAX_RECOVERY_FOLDER_ATTEMPTS = 32
 
@@ -87,7 +106,8 @@ const APPLIED_RECORD_NAME = "applied.txt"
  *
  * Every segment is held to what `assertSafeFileName` already allows, and the rest is what Windows
  * adds on top of that: a device name, a character it will not put in a name, a space or a dot at
- * the end. Those are refused here rather than discovered on a Windows machine by everybody else.
+ * the end. Bidi controls and invisible zero-width characters are refused too, so a pack cannot
+ * display a different name to the player than the file on disk.
  *
  * @param value Key as a pack or a dialog sent it.
  * @returns The key, unchanged, once every rule has passed.
@@ -111,7 +131,9 @@ export function assertModConfigKey(value: unknown): string {
     // backslash a pack written on Windows may carry, and anything over 255 characters.
     assertSafeFileName(segment, "mod config key")
 
-    if (WINDOWS_FORBIDDEN_CHARACTER.test(segment)) throw new TypeError("Invalid mod config key")
+    if (WINDOWS_FORBIDDEN_CHARACTER.test(segment) || HIDDEN_UNICODE_NAME_CHARACTER.test(segment)) {
+      throw new TypeError("Invalid mod config key")
+    }
     // A device name and a trailing dot or space are not visible in a file manager, so two keys that
     // differ only by one are one file on Windows and the second write is the only one to land. The
     // regex's own optional extension is what lets a folder called Client past and a folder called
@@ -361,6 +383,9 @@ export async function collectModConfigs(
       assertModConfigKey(file.name)
     } catch (err) {
       logMessage("debug", `${LOG_PREFIX} [EXPORT_MODPACK] ${getErrorMessage(err)}`)
+      if ([...file.name].some((character) => HIDDEN_UNICODE_NAME_CHARACTER.test(character))) {
+        return { ok: false, reason: "hidden-character", name: showDefaultIgnorables(file.name) }
+      }
       return { ok: false, reason: "bad-name", name: file.name }
     }
     const lower = file.name.toLowerCase()
