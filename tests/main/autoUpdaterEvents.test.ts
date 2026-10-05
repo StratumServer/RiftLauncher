@@ -2,9 +2,11 @@ import assert from "node:assert/strict"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import Logger from "electron-log"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { createUpdaterLogger } from "@src/utils/updaterLogger"
 
 /**
  * src/main/autoUpdaterEvents.ts: the main-to-renderer half of the launcher's
@@ -21,7 +23,12 @@ const mockState = vi.hoisted(() => {
     userDataDir: "",
     updaterListeners: new Map<string, (payload?: unknown) => void>(),
     onListeners: new Map<string, (...args: unknown[]) => void>(),
-    autoUpdater: { autoDownload: true, autoInstallOnAppQuit: true, allowPrerelease: false } as { autoDownload: boolean; autoInstallOnAppQuit: boolean; allowPrerelease: boolean },
+    autoUpdater: { autoDownload: true, autoInstallOnAppQuit: true, allowPrerelease: false, logger: null as unknown } as {
+      autoDownload: boolean
+      autoInstallOnAppQuit: boolean
+      allowPrerelease: boolean
+      logger: unknown
+    },
     downloadUpdate: vi.fn(() => Promise.resolve([] as string[])),
     quitAndInstall: vi.fn(),
     /** What allowPrerelease was at the moment each check went out, which is the only moment it matters. */
@@ -129,6 +136,7 @@ beforeEach(() => {
   mockState.autoUpdater.autoDownload = true
   mockState.autoUpdater.autoInstallOnAppQuit = true
   mockState.autoUpdater.allowPrerelease = false
+  mockState.autoUpdater.logger = null
   mockState.allowPrereleaseWhenChecked.length = 0
   temporaryRoot = mkdtempSync(join(tmpdir(), "auto-updater-events-"))
   mockState.userDataDir = join(temporaryRoot, "userData")
@@ -326,6 +334,158 @@ describe("scheduling the update check", () => {
 
     await vi.waitFor(() => assert.equal(mockState.checkForUpdates.mock.calls.length, 1))
     assert.equal(mockState.autoUpdater.allowPrerelease, true)
+  })
+})
+
+/**
+ * What a failed update check leaves in the log (#650).
+ *
+ * electron-updater reports a failed check itself, before the promise rejects: its constructor
+ * listens to its own "error" event and writes `Error: ${error.stack}` at error level through
+ * whatever logger is installed at that moment (AppUpdater.js). With the GitHub provider the message
+ * is a first line naming the reason followed by the whole releases feed, and the check's caller used
+ * to log it a second time at info level. So one failed check left two lines in the log files, each
+ * carrying the feed, one of them in error.log. tests/main/updateCheckFailureLog.test.ts holds the
+ * same flow against the real package; the double below only has to fail the way the package does.
+ */
+describe("a failed update check in the log (#650)", () => {
+  const REASON = "Cannot parse releases feed: Error: Unable to find latest version on GitHub, please ensure a production release exists: HttpError: 406 Not Acceptable"
+  const FEED = `<?xml version="1.0" encoding="UTF-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">${"<entry><title>A release</title></entry>".repeat(3_000)}</feed>`
+  const CHECK_PREFIX = "[back] [autoUpdaterEvents] [main/autoUpdaterEvents.ts] [scheduleUpdateCheck]"
+  const UPDATER_PREFIX = "[back] [index] [utils/updaterLogger.ts] [autoUpdater]"
+
+  type LogLine = { level: "error" | "warn" | "info" | "debug"; text: string }
+
+  /** Runs `attempt` and hands back every line that reached electron-log while it ran, after logManager's own redaction. */
+  async function logLinesDuring(attempt: (lines: LogLine[]) => Promise<void>): Promise<LogLine[]> {
+    const lines: LogLine[] = []
+    const spies = (["error", "warn", "info", "debug"] as const).map((level) =>
+      vi.spyOn(Logger, level).mockImplementation((...params: unknown[]) => {
+        lines.push({ level, text: String(params[0]) })
+      })
+    )
+
+    try {
+      await attempt(lines)
+      return lines
+    } finally {
+      for (const spy of spies) spy.mockRestore()
+    }
+  }
+
+  /**
+   * The next check fails the way electron-updater's does: it says it is checking, then writes the
+   * failure through the logger in place at that moment, then rejects.
+   */
+  function failTheNextCheck(failure: unknown): void {
+    mockState.checkForUpdates.mockImplementationOnce(async () => {
+      autoUpdater.logger?.info("Checking for update")
+      autoUpdater.logger?.error(`Error: ${failure instanceof Error ? failure.stack : String(failure)}`)
+      throw failure
+    })
+  }
+
+  /** Arms the check, waits for the updater to be asked, then for whatever reports its failure to have run. */
+  async function runTheScheduledCheck(): Promise<void> {
+    scheduleUpdateCheck(autoUpdater, async () => false, 1)
+
+    await vi.waitFor(() => assert.equal(mockState.checkForUpdates.mock.calls.length, 1))
+    await Promise.resolve(mockState.checkForUpdates.mock.results[0]?.value).catch(() => undefined)
+    // The catch that reports the failure runs a few microtasks after the promise settles.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  beforeEach(() => {
+    autoUpdater.logger = createUpdaterLogger()
+  })
+
+  it("is one warn line holding only the reason, not the feed that follows it", async () => {
+    failTheNextCheck(new Error(`${REASON}\n${FEED}`))
+
+    const lines = await logLinesDuring(runTheScheduledCheck)
+
+    assert.deepEqual(
+      lines.filter((line) => line.level === "warn").map((line) => line.text),
+      [`${CHECK_PREFIX} Update check failed: ${REASON}.`]
+    )
+    assert.deepEqual(
+      lines.filter((line) => line.level === "error").map((line) => line.text.length),
+      [],
+      "the updater's own record of the failure reached error.log"
+    )
+    assert.deepEqual(
+      lines.filter((line) => line.text.length > 1_000).map((line) => `${line.level}: ${line.text.length} characters`),
+      [],
+      "a line carries more than the reason"
+    )
+  })
+
+  it("cuts at a Windows line break too", async () => {
+    failTheNextCheck(new Error(`${REASON}\r\n${FEED}`))
+
+    const lines = await logLinesDuring(runTheScheduledCheck)
+
+    assert.deepEqual(
+      lines.filter((line) => line.level === "warn").map((line) => line.text),
+      [`${CHECK_PREFIX} Update check failed: ${REASON}.`]
+    )
+  })
+
+  it("reports a rejection that is not an Error by its text", async () => {
+    failTheNextCheck("offline")
+
+    const lines = await logLinesDuring(runTheScheduledCheck)
+
+    assert.deepEqual(
+      lines.filter((line) => line.level === "warn").map((line) => line.text),
+      [`${CHECK_PREFIX} Update check failed: offline.`]
+    )
+  })
+
+  it("still reports a check that could not start, which the updater never heard of", async () => {
+    const lines = await logLinesDuring(async (recorded) => {
+      scheduleUpdateCheck(autoUpdater, () => Promise.reject(new Error("settings unreadable")), 1)
+      await vi.waitFor(() => assert.equal(recorded.length, 1))
+    })
+
+    assert.equal(mockState.checkForUpdates.mock.calls.length, 0)
+    assert.deepEqual(lines, [{ level: "warn", text: `${CHECK_PREFIX} Update check failed: settings unreadable.` }])
+  })
+
+  it("mutes only the updater's error level while the check runs, and puts its logger back", async () => {
+    const logger = createUpdaterLogger()
+    autoUpdater.logger = logger
+    mockState.checkForUpdates.mockImplementationOnce(async () => {
+      autoUpdater.logger?.info("Checking for update")
+      autoUpdater.logger?.warn("Cannot compare versions")
+      autoUpdater.logger?.debug?.("Provider answered")
+      autoUpdater.logger?.error("Error: offline")
+      throw new Error("offline")
+    })
+
+    const lines = await logLinesDuring(async () => {
+      await runTheScheduledCheck()
+      // Not part of any check: this one is still the updater's to record.
+      autoUpdater.logger?.error("download failed")
+    })
+
+    assert.equal(autoUpdater.logger, logger)
+    assert.deepEqual(lines, [
+      { level: "info", text: `${UPDATER_PREFIX} Checking for update` },
+      { level: "warn", text: `${UPDATER_PREFIX} Cannot compare versions` },
+      { level: "debug", text: `${UPDATER_PREFIX} Provider answered` },
+      { level: "warn", text: `${CHECK_PREFIX} Update check failed: offline.` },
+      { level: "error", text: `${UPDATER_PREFIX} download failed` }
+    ])
+  })
+
+  it("puts the updater's logger back after a check that succeeds too", async () => {
+    const logger = createUpdaterLogger()
+    autoUpdater.logger = logger
+
+    await logLinesDuring(runTheScheduledCheck)
+
+    assert.equal(autoUpdater.logger, logger)
   })
 })
 

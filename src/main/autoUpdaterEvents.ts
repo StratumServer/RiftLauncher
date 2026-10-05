@@ -45,6 +45,13 @@ const UPDATE_CHECK_DELAY_MS = 5_000
  * renderer hears about it the usual way; this only keeps the rejection of that same failure from
  * going nowhere.
  *
+ * The catch is also where a failed check is logged: once, as a warn line holding the first line of
+ * the message and nothing after it. With the GitHub provider that first line is the reason, and
+ * what follows is the whole releases feed (#650). It is a warning because a check that fails is no
+ * fault of the launcher's. It lives here, and not in a listener on the updater's "error" event,
+ * because a check that never went out (the beta setting could not be read) fails without the
+ * updater having heard of it.
+ *
  * `autoUpdater` is handed in rather than imported, here and in
  * registerAutoUpdaterEvents, because the module is loaded on demand now
  * (src/utils/autoUpdaterLoader.ts). Taking it as an argument is what keeps the
@@ -55,12 +62,45 @@ export function scheduleUpdateCheck(autoUpdater: AppUpdater, readAllowPrerelease
   const timer = setTimeout(() => {
     void (async (): Promise<void> => {
       autoUpdater.allowPrerelease = await readAllowPrerelease()
-      await autoUpdater.checkForUpdates()
+      await checkWithoutErrorRecord(autoUpdater)
     })().catch((error) => {
-      logMessage("info", `[back] [autoUpdaterEvents] [main/autoUpdaterEvents.ts] [scheduleUpdateCheck] Update check failed: ${error instanceof Error ? error.message : String(error)}.`)
+      const reason = (error instanceof Error ? error.message : String(error)).split(/\r?\n/, 1)[0] ?? ""
+      logMessage("warn", `[back] [autoUpdaterEvents] [main/autoUpdaterEvents.ts] [scheduleUpdateCheck] Update check failed: ${reason}.`)
     })
   }, delayMs)
   timer.unref()
+}
+
+/**
+ * Runs the check with electron-updater's own record of its failure switched off.
+ *
+ * The package reports a failed check by itself, before the promise rejects: its constructor listens
+ * to its own "error" event and writes `Error: ${error.stack}` through its logger, at error level.
+ * With the GitHub provider that message is a first line naming the reason followed by the whole
+ * releases feed, so a check that failed, for want of a network or of a regular release to find, put
+ * a page of XML in error.log at every launch (#650). scheduleUpdateCheck reports the same failure
+ * once, in one line, which makes the package's line the duplicate.
+ *
+ * Only the error level of the logger in place is swapped out, and it goes back whatever the check
+ * does. A download or an install that fails has no check around it, so the package's record of those
+ * stays as it was. A launch makes one check, so two of these swaps never overlap. The swap reaches
+ * the package because it looks its logger up when it writes the line instead of keeping a copy;
+ * tests/main/updateCheckFailureLog.test.ts holds that against the real package.
+ */
+async function checkWithoutErrorRecord(autoUpdater: AppUpdater): Promise<void> {
+  const logger = autoUpdater.logger
+  autoUpdater.logger = {
+    info: (message?: unknown): void => logger?.info(message),
+    warn: (message?: unknown): void => logger?.warn(message),
+    error: (): void => {},
+    debug: (message: string): void => logger?.debug?.(message)
+  }
+
+  try {
+    await autoUpdater.checkForUpdates()
+  } finally {
+    autoUpdater.logger = logger
+  }
 }
 
 /** Percent as a whole number between 0 and 100, the shape every other task in the app reports. */
@@ -114,7 +154,8 @@ export function registerAutoUpdaterEvents(autoUpdater: AppUpdater, send: SendToR
     send(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED)
   })
 
-  // electron-updater already logs this through autoUpdater.logger; forwarding
+  // electron-updater already logs this through autoUpdater.logger (a failed
+  // check apart: scheduleUpdateCheck reports that one, once); forwarding
   // it exists so a download that dies halfway does not leave a progress bar
   // frozen at whatever percentage it reached. A failed check (no window of
   // consent open yet) forwards too, and lands on a task that is not there,
