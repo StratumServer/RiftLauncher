@@ -36,32 +36,30 @@ export const OPTIMUM_STATE_FOLDER = ".optimum"
 /** Where the patch keeps its copy of the untouched assemblies, under {@link OPTIMUM_STATE_FOLDER}. */
 export const OPTIMUM_VANILLA_FOLDER = "vanilla"
 
-/**
- * Assemblies deployed by Optimum at the game root.
- *
- * Optimum.Api.Contracts.dll has been deployed since the earliest releases.
- * Optimum.GameContent.dll was introduced in 0.3.19 for game content integration.
- */
-export const OPTIMUM_DEPLOYED_ASSEMBLIES = ["Optimum.Api.Contracts.dll", "Optimum.GameContent.dll"] as const
-
-/** The assembly Optimum has deployed since its earliest releases. */
+/** The assembly Optimum patches have required since the first published overlay. */
 export const OPTIMUM_CONTRACTS_ASSEMBLY = "Optimum.Api.Contracts.dll"
 
-/** The assembly introduced in Optimum 0.3.19 for game content integration. */
+/** The assembly referenced by patched VSEssentials since overlay packaging began. */
 export const OPTIMUM_GAME_CONTENT_ASSEMBLY = "Optimum.GameContent.dll"
 
 /**
- * Assemblies required for a given Optimum version.
+ * Files that every supported Optimum overlay requires at the game root.
  *
- * Optimum 0.3.19 and newer requires both Optimum.Api.Contracts.dll and Optimum.GameContent.dll.
- * Older releases require Optimum.Api.Contracts.dll only.
+ * Patched VSEssentials has referenced GameContent since overlays first shipped.
+ * Releases 0.3.18 and 0.3.19 both omit that file; it is included starting with
+ * the release after Optimum#131.
  */
-export function requiredOptimumAssemblies(optimumVersion?: string): readonly string[] {
-  if (!optimumVersion) return OPTIMUM_DEPLOYED_ASSEMBLIES
-  const valid = semver.valid(semver.coerce(optimumVersion))
-  if (valid && semver.lt(valid, "0.3.19")) {
-    return [OPTIMUM_CONTRACTS_ASSEMBLY]
-  }
+export const OPTIMUM_DEPLOYED_ASSEMBLIES = [OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_GAME_CONTENT_ASSEMBLY] as const
+
+/** Game-relative folders the launcher checks for required assemblies. */
+export const OPTIMUM_ASSEMBLY_SEARCH_FOLDERS = ["", "Lib", "Mods"] as const
+
+/**
+ * Files required by every Optimum row, including rows whose version or backup
+ * state is unknown. The published version number does not change the references
+ * VSEssentials carries.
+ */
+export function requiredOptimumAssemblies(_optimumVersion?: string): readonly string[] {
   return OPTIMUM_DEPLOYED_ASSEMBLIES
 }
 

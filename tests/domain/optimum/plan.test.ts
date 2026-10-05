@@ -6,12 +6,15 @@ import {
   cliFileName,
   hostRid,
   isUpdateAvailable,
+  OPTIMUM_DEPLOYED_ASSEMBLIES,
+  OPTIMUM_ASSEMBLY_SEARCH_FOLDERS,
   optimumManifestDownloadUrl,
   optimumManifestFileName,
   overlayCacheFolder,
   overlayDownloadUrl,
   patchArgs,
   rollbackArgs,
+  requiredOptimumAssemblies,
   supportsGameVersion
 } from "@domain/optimum/plan"
 
@@ -51,6 +54,19 @@ describe("supportsGameVersion", () => {
   it("refuses anything that is not a version rather than matching it as text", () => {
     assert.equal(supportsGameVersion(manifest(), "1.22"), false)
     assert.equal(supportsGameVersion(manifest(), ""), false)
+  })
+})
+
+describe("the Optimum assemblies every patched row needs", () => {
+  it("checks both files for every released overlay version and when the version is unknown", () => {
+    for (const version of ["0.3.15", "0.3.18", "0.3.19", "0.3.20"]) {
+      assert.deepEqual(requiredOptimumAssemblies(version), OPTIMUM_DEPLOYED_ASSEMBLIES)
+    }
+    assert.deepEqual(requiredOptimumAssemblies(), OPTIMUM_DEPLOYED_ASSEMBLIES)
+  })
+
+  it("checks the folders Vintage Story searches for managed assemblies", () => {
+    assert.deepEqual(OPTIMUM_ASSEMBLY_SEARCH_FOLDERS, ["", "Lib", "Mods"])
   })
 })
 

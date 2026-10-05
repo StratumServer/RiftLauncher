@@ -7,8 +7,9 @@ import { afterEach, beforeEach, describe, it } from "vitest"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
 import { cliFileName } from "@domain/optimum/plan"
-import { findReferencedOptimumAssemblies, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
+import { verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
 import { isOptimumRuntimeAvailable, readRunOutcome, runOptimumCli } from "@src/ipc/optimumPatch"
+import { makeManagedAssembly } from "../fixtures/managedAssembly"
 
 /**
  * The patch runner, driven end to end against a CLI that is a Node script.
@@ -36,6 +37,8 @@ import { isOptimumRuntimeAvailable, readRunOutcome, runOptimumCli } from "@src/i
  */
 
 const needsTheFakeCli = it.skipIf(process.platform === "win32")
+const PATCHED_ASSEMBLY_BASE64 = makeManagedAssembly(["Optimum.Api.Contracts", "Optimum.GameContent"], ["Optimum.Namespace.Type", "Optimum.Tests.dll"]).toString("base64")
+const CONTRACTS_ONLY_ASSEMBLY_BASE64 = makeManagedAssembly(["Optimum.Api.Contracts"], ["Optimum.Namespace.Type", "Optimum.Tests.dll"]).toString("base64")
 
 const TARGETS = [
   { assembly: "VintagestoryLib.dll", donor: ".optimum/donors/VintagestoryLib.Donor.dll", mode: "transplant" },
@@ -106,19 +109,25 @@ fs.mkdirSync(path.join(gameDirectory, ".optimum", "vanilla"), { recursive: true 
 const records = []
 for (const assembly of TARGET_LIST) {
   const full = path.join(gameDirectory, assembly)
-  const contents = "patched " + assembly
+  const assemblyBase64 = assembly === "Mods/VSEssentials.dll" ? "PATCHED_ASSEMBLY_BASE64" : "CONTRACTS_ONLY_ASSEMBLY_BASE64"
+  const contents = Buffer.from(assemblyBase64, "base64")
   fs.mkdirSync(path.dirname(full), { recursive: true })
   if (written.includes(assembly)) fs.writeFileSync(full, contents)
   // Recorded either way, which is the point of the short mode: a failed mod
   // donor only warns, so the run still exits 0 claiming an assembly it never wrote.
   records.push({ assembly, vanillaHash: "sha256:" + "0".repeat(64), patchedHash: "sha256:" + crypto.createHash("sha256").update(contents).digest("hex") })
 }
+fs.writeFileSync(path.join(gameDirectory, "Optimum.Api.Contracts.dll"), "contracts")
+fs.writeFileSync(path.join(gameDirectory, "Optimum.GameContent.dll"), "game content")
 fs.writeFileSync(path.join(gameDirectory, ".optimum", "manifest.json"), JSON.stringify({ optimumVersion: "0.3.14", patchedAtUtc: "2026-09-14T00:00:00Z", gameDirectory, targets: records }))
 
 line({ type: "progress", phase: "verify", progress: 99, detail: gameDirectory })
 line({ type: "result", ok: true, runtimePath: gameDirectory })
 process.exit(0)
-`.replaceAll("TARGET_LIST", JSON.stringify(TARGETS.map((target) => target.assembly)))
+`
+  .replaceAll("TARGET_LIST", JSON.stringify(TARGETS.map((target) => target.assembly)))
+  .replaceAll("PATCHED_ASSEMBLY_BASE64", PATCHED_ASSEMBLY_BASE64)
+  .replaceAll("CONTRACTS_ONLY_ASSEMBLY_BASE64", CONTRACTS_ONLY_ASSEMBLY_BASE64)
 
 let workspace: string
 let overlayDirectory: string
@@ -194,7 +203,7 @@ describe.skipIf(process.platform === "win32")("runOptimumCli", () => {
 
     assert.deepEqual(result, { ok: true })
     assert.deepEqual(progress, [10, 40, 90, 99])
-    assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "patched VintagestoryLib.dll")
+    assert.deepEqual(readFileSync(join(gameDirectory, "VintagestoryLib.dll")), Buffer.from(CONTRACTS_ONLY_ASSEMBLY_BASE64, "base64"))
   })
 
   it("passes the game folder and the overlay folder, both absolute, asks for JSON, and never asks for a run without a backup", async () => {
@@ -380,34 +389,18 @@ describe("verifyStagedOverlay", () => {
   })
 })
 
-describe("findReferencedOptimumAssemblies", () => {
-  it("extracts Optimum assembly references from null-terminated tokens", () => {
-    const buffer = Buffer.from("\0Optimum.Api.Contracts\0some other text\0Optimum.GameContent\0", "latin1")
-    assert.deepEqual(findReferencedOptimumAssemblies(buffer).sort(), ["Optimum.Api.Contracts.dll", "Optimum.GameContent.dll"])
-  })
-
-  it("strips trailing .dll when present in token", () => {
-    const text = "binary data\0Optimum.GameContent.dll\0more data"
-    assert.deepEqual(findReferencedOptimumAssemblies(text), ["Optimum.GameContent.dll"])
-  })
-
-  it("ignores non-Optimum assemblies", () => {
-    const text = "binary data\0VintagestoryAPI.dll\0System.Runtime\0"
-    assert.deepEqual(findReferencedOptimumAssemblies(text), [])
-  })
-})
-
 describe("verifyPatchedOutput", () => {
   needsTheFakeCli("accepts a folder whose recorded hashes match what is on disk", async () => {
     await run("ok")
 
-    assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), true)
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest()), { ok: true })
   })
 
   needsTheFakeCli("refuses a folder where a referenced Optimum assembly is missing", async () => {
     await run("ok")
     const patchedEssentials = join(gameDirectory, "Mods", "VSEssentials.dll")
-    writeFileSync(patchedEssentials, "patched Mods/VSEssentials.dll\0Optimum.GameContent\0")
+    writeFileSync(patchedEssentials, Buffer.from(PATCHED_ASSEMBLY_BASE64, "base64"))
+    rmSync(join(gameDirectory, "Optimum.GameContent.dll"))
     // Update recorded hash so hash validation passes and assembly reference check runs
     const manifestPath = join(gameDirectory, ".optimum", "manifest.json")
     const data = JSON.parse(readFileSync(manifestPath, "utf8"))
@@ -415,39 +408,58 @@ describe("verifyPatchedOutput", () => {
     target.patchedHash = "sha256:" + createHash("sha256").update(readFileSync(patchedEssentials)).digest("hex")
     writeFileSync(manifestPath, JSON.stringify(data))
 
-    assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), false)
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest()), {
+      ok: false,
+      reason: "missing-assembly",
+      target: "Mods/VSEssentials.dll",
+      assembly: "Optimum.GameContent.dll"
+    })
 
     writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "fake game content")
-    assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), true)
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest()), { ok: true })
+  })
+
+  needsTheFakeCli("resolves references from the game root, Lib, or Mods", async () => {
+    await run("ok")
+    const rootAssembly = join(gameDirectory, "Optimum.GameContent.dll")
+    rmSync(rootAssembly)
+    mkdirSync(join(gameDirectory, "Lib"), { recursive: true })
+    writeFileSync(join(gameDirectory, "Lib", "Optimum.GameContent.dll"), "game content")
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest()), { ok: true })
+
+    rmSync(join(gameDirectory, "Lib", "Optimum.GameContent.dll"))
+    mkdirSync(join(gameDirectory, "Mods"), { recursive: true })
+    writeFileSync(join(gameDirectory, "Mods", "Optimum.GameContent.dll"), "game content")
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest()), { ok: true })
   })
 
   needsTheFakeCli("refuses the half patch a failed mod donor leaves behind, which still exits 0", async () => {
     const result = await run("short")
 
     assert.deepEqual(result, { ok: true })
-    assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), false)
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest()), { ok: false, reason: "unverified" })
   })
 
   needsTheFakeCli("refuses a folder whose assemblies were rewritten after the patch", async () => {
     await run("ok")
     writeFileSync(join(gameDirectory, "VintagestoryLib.dll"), "something else entirely")
 
-    assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), false)
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest()), { ok: false, reason: "unverified" })
   })
 
   it("refuses a folder the patch never wrote anything into", async () => {
-    assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), false)
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest()), { ok: false, reason: "unverified" })
   })
 
   needsTheFakeCli("refuses a record written by a different overlay version", async () => {
     await run("ok")
 
-    assert.equal(await verifyPatchedOutput(gameDirectory, manifest({ optimumVersion: "0.4.0" })), false)
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest({ optimumVersion: "0.4.0" })), { ok: false, reason: "unverified" })
   })
 
   needsTheFakeCli("refuses a manifest that names no target, since it vouches for nothing", async () => {
     await run("ok")
 
-    assert.equal(await verifyPatchedOutput(gameDirectory, manifest({ targets: [] })), false)
+    assert.deepEqual(await verifyPatchedOutput(gameDirectory, manifest({ targets: [] })), { ok: false, reason: "unverified" })
   })
 })

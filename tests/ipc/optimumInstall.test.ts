@@ -8,6 +8,7 @@ import * as tar from "tar"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
 import { applyOptimumOverlay, restoreVanillaBuild } from "@src/ipc/optimumInstall"
+import { makeManagedAssembly } from "../fixtures/managedAssembly"
 
 /**
  * src/ipc/optimumInstall.ts, driven against a real archive and a real child
@@ -30,6 +31,8 @@ import { applyOptimumOverlay, restoreVanillaBuild } from "@src/ipc/optimumInstal
  */
 
 const needsTheFakeCli = it.skipIf(process.platform === "win32")
+const contractsAssembly = makeManagedAssembly(["Optimum.Api.Contracts"]).toString("base64")
+const essentialsAssembly = makeManagedAssembly(["Optimum.Api.Contracts", "Optimum.GameContent"]).toString("base64")
 
 const TARGETS = [
   { assembly: "VintagestoryLib.dll", donor: ".optimum/donors/VintagestoryLib.Donor.dll", mode: "transplant" },
@@ -76,7 +79,8 @@ for (const assembly of assemblies) {
   // The backup the real patch takes, with the suffix only the root assemblies carry.
   const backup = assembly.includes("/") ? path.join(gameDirectory, ".optimum", "vanilla", assembly) : path.join(gameDirectory, ".optimum", "vanilla", assembly.replace(".dll", ".vanilla.dll"))
   if (fs.existsSync(full)) fs.copyFileSync(full, backup)
-  const contents = mode === "missing-ref" && assembly === "Mods/VSEssentials.dll" ? "patched " + assembly + "\\0Optimum.GameContent\\0" : "patched " + assembly
+  const assemblyBase64 = assembly === "Mods/VSEssentials.dll" ? "ESSENTIALS_ASSEMBLY" : "CONTRACTS_ASSEMBLY"
+  const contents = Buffer.from(assemblyBase64, "base64")
   if (written.includes(assembly)) fs.writeFileSync(full, contents)
   records.push({ assembly, vanillaHash: "sha256:" + "0".repeat(64), patchedHash: "sha256:" + crypto.createHash("sha256").update(contents).digest("hex") })
 }
@@ -90,7 +94,7 @@ if (!fs.existsSync(gameContentBackup) && !fs.existsSync(gameContentBackup + ".ab
   if (fs.existsSync(gameContent)) fs.copyFileSync(gameContent, gameContentBackup)
   else fs.writeFileSync(gameContentBackup + ".absent", "")
 }
-fs.writeFileSync(gameContent, "optimum game content")
+if (mode !== "missing-ref") fs.writeFileSync(gameContent, "optimum game content")
 fs.writeFileSync(path.join(gameDirectory, ".optimum", "version"), "0.3.14")
 fs.writeFileSync(path.join(gameDirectory, ".optimum", "manifest.json"), JSON.stringify({ optimumVersion: "0.3.14", patchedAtUtc: "2026-09-14T00:00:00Z", gameDirectory, targets: records }))
 
@@ -105,6 +109,8 @@ line({ type: "progress", phase: "verify", progress: 99, detail: gameDirectory })
 line({ type: "result", ok: true, runtimePath: gameDirectory })
 process.exit(0)
 `
+    .replaceAll("ESSENTIALS_ASSEMBLY", essentialsAssembly)
+    .replaceAll("CONTRACTS_ASSEMBLY", contractsAssembly)
 }
 
 const ARCHIVE_NAME = "Optimum-v0.3.14-linux-x64-overlay.tar.gz"
@@ -218,7 +224,7 @@ describe("applyOptimumOverlay", () => {
 
     assert.deepEqual(result, { ok: true })
     assert.deepEqual(progress, [40, 99])
-    assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "patched VintagestoryLib.dll")
+    assert.deepEqual(readFileSync(join(gameDirectory, "VintagestoryLib.dll")), makeManagedAssembly(["Optimum.Api.Contracts"]))
     assert.equal(existsSync(join(gameDirectory, ".optimum", "vanilla", "VintagestoryLib.vanilla.dll")), true)
   })
 
@@ -233,7 +239,7 @@ describe("applyOptimumOverlay", () => {
 
     assert.deepEqual(await apply(manifest), { ok: true })
     assert.deepEqual(await apply(manifest), { ok: true })
-    assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "patched VintagestoryLib.dll")
+    assert.deepEqual(readFileSync(join(gameDirectory, "VintagestoryLib.dll")), makeManagedAssembly(["Optimum.Api.Contracts"]))
   })
 
   needsTheFakeCli("re-stages an overlay something has tampered with since", async () => {
@@ -318,7 +324,7 @@ describe("applyOptimumOverlay", () => {
   })
 
   needsTheFakeCli("rolls back when patched assemblies reference a missing Optimum assembly", async () => {
-    assert.deepEqual(await apply(buildOverlay({ cliMode: "missing-ref" })), { ok: false, reason: "output-unverified", rolledBack: true })
+    assert.deepEqual(await apply(buildOverlay({ cliMode: "missing-ref" })), { ok: false, reason: "missing-assembly", missingAssembly: "Optimum.GameContent.dll", rolledBack: true })
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
   })
 
@@ -357,8 +363,7 @@ describe("applyOptimumOverlay", () => {
 describe("restoreVanillaBuild", () => {
   needsTheFakeCli("puts the assemblies back and takes Optimum's own marks off", async () => {
     await apply(buildOverlay())
-    writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "game content")
-    assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "patched VintagestoryLib.dll")
+    assert.deepEqual(readFileSync(join(gameDirectory, "VintagestoryLib.dll")), makeManagedAssembly(["Optimum.Api.Contracts"]))
     assert.equal(existsSync(join(gameDirectory, "Optimum.GameContent.dll")), true)
 
     assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: true })

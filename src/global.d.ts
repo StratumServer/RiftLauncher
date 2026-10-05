@@ -940,6 +940,7 @@ declare global {
     | "timed-out"
     | "runtime-missing"
     | "output-unverified"
+    | "missing-assembly"
     | "manifest-unavailable"
     | "overlay-unverified"
     | "backup-missing"
@@ -951,7 +952,7 @@ declare global {
    * build that is simply unpatched and one holding two overlay versions at
    * once, and it is what the sentence the player reads is chosen on.
    */
-  type OptimumPatchResult = { ok: true } | { ok: false; reason: OptimumPatchFailureReason; rolledBack?: boolean }
+  type OptimumPatchResult = { ok: true } | { ok: false; reason: OptimumPatchFailureReason; rolledBack?: boolean; missingAssembly?: string }
 
   declare module "*.png" {
     const value: string

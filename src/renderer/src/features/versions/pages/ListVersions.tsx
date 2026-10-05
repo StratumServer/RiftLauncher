@@ -62,6 +62,7 @@ function ListVersions(): JSX.Element {
   const [versionToRestore, setVersionToRestore] = useState<GameVersionType | null>(null)
 
   const renameFieldId = useId()
+  const brokenOptimumDescriptionId = useId()
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   function installationsUsing(version: GameVersionType): string[] {
@@ -191,7 +192,7 @@ function ListVersions(): JSX.Element {
             {gameVersions
               .slice()
               .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
-              .map((gv) => {
+              .map((gv, index) => {
                 const optimumAction = optimumActionFor(gv)
                 const isBrokenOptimum = brokenOptimumVersions.has(gv.id)
                 // Everything that writes into the folder, or launches out of it,
@@ -201,16 +202,23 @@ function ListVersions(): JSX.Element {
                 return (
                   <ListItem key={gv.id}>
                     <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
-                      <div className="w-full flex items-center gap-2 text-start font-bold pl-1">
-                        <p className="truncate">{gv.label}</p>
+                      <div className="w-full min-w-0 flex items-center justify-center gap-2 text-start font-bold pl-1">
+                        <p className={isBrokenOptimum ? "min-w-0 truncate" : "w-full"}>{gv.label}</p>
                         {isBrokenOptimum && (
-                          <span
-                            className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-red-400"
-                            role="status"
-                            title={t("features.versions.optimumMissingAssembliesDesc")}
-                          >
-                            {t("features.versions.optimumMissingAssemblies")}
-                          </span>
+                          <>
+                            <span id={`${brokenOptimumDescriptionId}-${index}`} className="sr-only">
+                              {t("features.versions.optimumMissingAssembliesDesc")}
+                            </span>
+                            <span
+                              className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-red-400"
+                              role="note"
+                              tabIndex={0}
+                              aria-describedby={`${brokenOptimumDescriptionId}-${index}`}
+                              title={t("features.versions.optimumMissingAssembliesDesc")}
+                            >
+                              {t("features.versions.optimumMissingAssemblies")}
+                            </span>
+                          </>
                         )}
                       </div>
 
@@ -229,7 +237,7 @@ function ListVersions(): JSX.Element {
                             <PiArrowCircleUpDuotone />
                           </NormalButton>
                         )}
-                        {(gv.variant || optimumBackups.has(gv.id) || isBrokenOptimum) && (
+                        {(gv.variant || optimumBackups.has(gv.id)) && (
                           <NormalButton className="p-1" title={t("features.versions.restoreVanilla")} variant="ghost" disabled={busy} onClick={() => setVersionToRestore(gv)}>
                             <PiArrowUUpLeftDuotone />
                           </NormalButton>

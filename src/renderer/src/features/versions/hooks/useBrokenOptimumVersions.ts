@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react"
 
-import { requiredOptimumAssemblies } from "@domain/optimum/plan"
+import { OPTIMUM_ASSEMBLY_SEARCH_FOLDERS, requiredOptimumAssemblies } from "@domain/optimum/plan"
 
 /**
  * Which registered Optimum builds are missing assemblies required to run.
  *
  * Hash verification after a patch proves what the overlay wrote, but cannot
- * catch an assembly the overlay forgot to ship (such as Optimum.GameContent.dll
- * in 0.3.19). A build whose required assemblies are missing on disk cannot
+ * catch an assembly the overlay forgot to ship (as overlays 0.3.18 and 0.3.19
+ * did with Optimum.GameContent.dll). A build whose required assemblies are missing on disk cannot
  * enter a world. The Versions list flags that broken state on its row and
  * keeps Remove Optimum reachable so the player has a way back.
  */
-export function useBrokenOptimumVersions(versions: readonly GameVersionType[], optimumBackups: ReadonlySet<string> = new Set()): ReadonlySet<string> {
+export function useBrokenOptimumVersions(versions: readonly GameVersionType[], optimumBackups: ReadonlySet<string>): ReadonlySet<string> {
   const [brokenIds, setBrokenIds] = useState<ReadonlySet<string>>(new Set())
 
   useEffect(() => {
@@ -23,12 +23,19 @@ export function useBrokenOptimumVersions(versions: readonly GameVersionType[], o
           const isOptimum = version.variant?.name === "Optimum" || optimumBackups.has(version.id)
           if (!isOptimum) return undefined
 
-          const required = requiredOptimumAssemblies(version.variant?.version)
+          const required = requiredOptimumAssemblies()
           try {
             for (const assembly of required) {
-              const fullPath = await window.api.pathsManager.formatPath([version.path, assembly])
-              const exists = await window.api.pathsManager.checkPathExists(fullPath)
-              if (!exists) return version.id
+              let found = false
+              for (const folder of OPTIMUM_ASSEMBLY_SEARCH_FOLDERS) {
+                const parts = folder ? [version.path, folder, assembly] : [version.path, assembly]
+                const fullPath = await window.api.pathsManager.formatPath(parts)
+                if (await window.api.pathsManager.checkPathExists(fullPath)) {
+                  found = true
+                  break
+                }
+              }
+              if (!found) return version.id
             }
             return undefined
           } catch {

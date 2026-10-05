@@ -11,8 +11,8 @@ import fse from "fs-extra"
 import { join } from "node:path"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
-import { cliFileName, OPTIMUM_STATE_FOLDER, OPTIMUM_VANILLA_FOLDER, supportsGameVersion } from "@domain/optimum/plan"
-import { OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_GAME_CONTENT_ASSEMBLY, sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
+import { cliFileName, OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_GAME_CONTENT_ASSEMBLY, OPTIMUM_STATE_FOLDER, OPTIMUM_VANILLA_FOLDER, supportsGameVersion } from "@domain/optimum/plan"
+import { sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
 import { isOptimumRuntimeAvailable, runOptimumCli } from "@src/ipc/optimumPatch"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
@@ -157,7 +157,14 @@ export async function applyOptimumOverlay(options: ApplyOverlayOptions): Promise
   const run = await runOptimumCli({ overlayDirectory, gameDirectory, mode: "patch", stderrLogPath, onProgress, platform })
   if (!run.ok) return rollBackFailedRun(gameDirectory, run)
 
-  if (!(await verifyPatchedOutput(gameDirectory, manifest))) return rollBackFailedRun(gameDirectory, refuse("output-unverified"))
+  const verification = await verifyPatchedOutput(gameDirectory, manifest)
+  if (!verification.ok) {
+    if (verification.reason === "missing-assembly") {
+      logMessage("error", `${LOG_PREFIX} [OVERLAY] ${verification.target} references missing ${verification.assembly}.`)
+      return rollBackFailedRun(gameDirectory, { ...refuse("missing-assembly"), missingAssembly: verification.assembly })
+    }
+    return rollBackFailedRun(gameDirectory, refuse("output-unverified"))
+  }
 
   return { ok: true }
 }
@@ -176,7 +183,7 @@ export async function applyOptimumOverlay(options: ApplyOverlayOptions): Promise
  * no backup to restore from (a run that failed before it wrote anything) keeps
  * the plain refusal.
  */
-async function rollBackFailedRun(gameDirectory: string, failure: { ok: false; reason: OptimumPatchFailureReason }): Promise<OptimumPatchResult> {
+async function rollBackFailedRun(gameDirectory: string, failure: { ok: false; reason: OptimumPatchFailureReason; missingAssembly?: string }): Promise<OptimumPatchResult> {
   const restored = await restoreVanillaBuild(gameDirectory)
   return restored.ok ? { ...failure, rolledBack: true } : failure
 }

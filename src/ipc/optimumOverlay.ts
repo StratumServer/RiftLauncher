@@ -13,10 +13,12 @@
  *
  * The second is completion. After a successful run, `.optimum/manifest.json`
  * names what the patch wrote and what it hashed to, and every one of those is
- * checked against the file on disk. That catches the half patch a failed mod
- * donor leaves behind, which still exits 0. It proves the patch finished and
- * that nothing rewrote the assemblies after it; it cannot prove provenance,
- * which the first pass already did upstream.
+ * checked against the file on disk. Its CLR metadata references are also read
+ * from the AssemblyRef table and checked against the game's root, `Lib` and
+ * `Mods` folders. That catches the half patch a failed mod donor leaves behind,
+ * which still exits 0. It proves the patch finished and that nothing rewrote
+ * the assemblies after it; it cannot prove provenance, which the first pass
+ * already did upstream.
  */
 
 import fse from "fs-extra"
@@ -24,11 +26,10 @@ import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
 import { join, relative, sep } from "node:path"
 
+import { readOptimumAssemblyReferences } from "@domain/optimum/assemblyReferences"
 import { type OptimumManifest } from "@domain/optimum/manifest"
-import { OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_DEPLOYED_ASSEMBLIES, OPTIMUM_STATE_FOLDER } from "@domain/optimum/plan"
+import { OPTIMUM_ASSEMBLY_SEARCH_FOLDERS, OPTIMUM_STATE_FOLDER } from "@domain/optimum/plan"
 import { isRecord } from "@domain/records"
-
-export { OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_DEPLOYED_ASSEMBLIES }
 
 /** The manifest file the archive carries that `files[]` never names: the walk ran before it was written. */
 function isUnlistedManifestFile(path: string, manifest: OptimumManifest): boolean {
@@ -36,41 +37,6 @@ function isUnlistedManifestFile(path: string, manifest: OptimumManifest): boolea
 }
 
 const OPTIMUM_STATE_MANIFEST = join(OPTIMUM_STATE_FOLDER, "manifest.json")
-
-/**
- * Scans binary or text content for references to Optimum assemblies.
- *
- * In CLI assemblies, referenced assembly names appear as null-terminated UTF-8
- * tokens in the metadata strings heap. Word or null boundaries are accepted so
- * that both compiled assemblies and plain test fixtures are scanned reliably.
- */
-export function findReferencedOptimumAssemblies(content: Buffer | string): string[] {
-  const text = typeof content === "string" ? content : content.toString("latin1")
-  const matches = new Set<string>()
-  // eslint-disable-next-line no-control-regex
-  const regex = /(?:^|[\x00\r\n\t ])(Optimum\.[A-Za-z0-9_.]+)(?:$|[\x00\r\n\t ])/g
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(text)) !== null) {
-    let name = match[1]
-    if (!name) continue
-    if (name.endsWith(".dll")) {
-      name = name.slice(0, -4)
-    }
-    matches.add(`${name}.dll`)
-  }
-  return Array.from(matches)
-}
-
-/**
- * The assembly the patched `Mods/VSEssentials.dll` references, which an overlay
- * that ships it leaves at the game root next to the contracts.
- *
- * Unlike the contracts it is not necessarily the patch's alone to remove: the
- * patch backs up a file of that name the build already had, under the same name
- * in the vanilla folder, or writes `Optimum.GameContent.dll.absent` there when
- * it had none.
- */
-export const OPTIMUM_GAME_CONTENT_ASSEMBLY = "Optimum.GameContent.dll"
 
 /** Streams a file through SHA-256, so a 200 MB assembly is never held in memory to be hashed. */
 export function sha256File(path: string): Promise<string> {
@@ -161,57 +127,82 @@ function readPatchedTargets(document: unknown): PatchedTarget[] | undefined {
  * Whether the patch really wrote what it says it wrote.
  *
  * Every target the overlay manifest names has to appear in
- * `<game-dir>/.optimum/manifest.json`, and every hash recorded there has to
- * match the file sitting at that path now.
+ * `<game-dir>/.optimum/manifest.json`, every hash recorded there has to match
+ * the file on disk, and its AssemblyRef entries must resolve to a file in the
+ * game's root, `Lib` or `Mods` folder.
  *
  * @returns true when the patch is complete and intact.
  */
-export async function verifyPatchedOutput(gameDirectory: string, manifest: OptimumManifest): Promise<boolean> {
+export type PatchedOutputVerification = { ok: true } | { ok: false; reason: "unverified" } | { ok: false; reason: "missing-assembly"; target: string; assembly: string }
+
+type OptimumReferenceVerification = { ok: true } | { ok: false; reason: "unverified" } | { ok: false; reason: "missing-assembly"; assembly: string }
+
+export async function verifyPatchedOutput(gameDirectory: string, manifest: OptimumManifest): Promise<PatchedOutputVerification> {
   // A manifest that names no target vouches for nothing, so there would be
   // nothing to check and no reason to believe a patch happened.
-  if (manifest.targets.length === 0) return false
+  if (manifest.targets.length === 0) return { ok: false, reason: "unverified" }
 
   let document: unknown
   try {
     document = await fse.readJSON(join(gameDirectory, OPTIMUM_STATE_MANIFEST))
   } catch {
-    return false
+    return { ok: false, reason: "unverified" }
   }
 
-  if (!isRecord(document) || document.optimumVersion !== manifest.optimumVersion) return false
+  if (!isRecord(document) || document.optimumVersion !== manifest.optimumVersion) return { ok: false, reason: "unverified" }
 
   const written = readPatchedTargets(document)
-  if (!written) return false
+  if (!written) return { ok: false, reason: "unverified" }
 
   for (const target of manifest.targets) {
     const record = written.find((entry) => entry.assembly === target.assembly)
-    if (!record) return false
+    if (!record) return { ok: false, reason: "unverified" }
 
     const path = join(gameDirectory, ...target.assembly.split("/"))
     // The assembly paths came out of the overlay manifest, which refuses a `..`
     // segment and a leading slash, so this is belt to that brace rather than the
     // only thing holding the join inside the game folder.
-    if (relative(gameDirectory, path).startsWith(`..${sep}`)) return false
+    if (relative(gameDirectory, path).startsWith(`..${sep}`)) return { ok: false, reason: "unverified" }
 
     try {
       const stats = await fse.lstat(path)
-      if (!stats.isFile() || stats.isSymbolicLink()) return false
-      if ((await sha256File(path)) !== record.patchedHash) return false
-
-      const content = await fse.readFile(path)
-      const referenced = findReferencedOptimumAssemblies(content)
-      for (const requiredAssembly of referenced) {
-        const inRoot = join(gameDirectory, requiredAssembly)
-        const inLib = join(gameDirectory, "Lib", requiredAssembly)
-        const inMods = join(gameDirectory, "Mods", requiredAssembly)
-        if (!(await fse.pathExists(inRoot)) && !(await fse.pathExists(inLib)) && !(await fse.pathExists(inMods))) {
-          return false
-        }
+      if (!stats.isFile() || stats.isSymbolicLink()) return { ok: false, reason: "unverified" }
+      if ((await sha256File(path)) !== record.patchedHash) return { ok: false, reason: "unverified" }
+      const references = await verifyOptimumReferences(gameDirectory, path)
+      if (!references.ok) {
+        if (references.reason === "missing-assembly") return { ok: false, reason: "missing-assembly", target: target.assembly, assembly: references.assembly }
+        return references
       }
     } catch {
-      return false
+      return { ok: false, reason: "unverified" }
     }
   }
 
-  return true
+  return { ok: true }
+}
+
+/** Reads one verified target's CLR references and checks Vintage Story's game assembly folders. */
+async function verifyOptimumReferences(gameDirectory: string, targetPath: string): Promise<OptimumReferenceVerification> {
+  let image: Buffer
+  try {
+    // Metadata tables need random access. Buffer keeps the single image read in
+    // memory; unlike the former latin1 scan it does not allocate a second copy.
+    image = await fse.readFile(targetPath)
+  } catch {
+    return { ok: false, reason: "unverified" }
+  }
+
+  const references = readOptimumAssemblyReferences(image)
+  if (!references) return { ok: false, reason: "unverified" }
+
+  const checks = await Promise.all(
+    references.map(async (assembly) => {
+      const available = await Promise.all(OPTIMUM_ASSEMBLY_SEARCH_FOLDERS.map((folder) => fse.pathExists(join(gameDirectory, folder, assembly))))
+      return available.some(Boolean) ? undefined : assembly
+    })
+  )
+  const missing = checks.find((assembly) => assembly !== undefined)
+  if (missing) return { ok: false, reason: "missing-assembly", assembly: missing }
+
+  return { ok: true }
 }

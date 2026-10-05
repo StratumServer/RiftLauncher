@@ -771,6 +771,62 @@ describe("ListVersions", () => {
 
       expect(await screen.findByText("Missing Optimum files")).toBeTruthy()
       expect(screen.getByTitle("Remove Optimum")).toBeTruthy()
+      const badge = screen.getByText("Missing Optimum files")
+      const description = document.getElementById(badge.getAttribute("aria-describedby") ?? "")
+      expect(badge.getAttribute("role")).toBe("note")
+      expect(badge.getAttribute("tabindex")).toBe("0")
+      expect(description?.textContent).toBe("This VS Version is missing a file Optimum needs, so it cannot enter a world. Remove Optimum to put the original game files back.")
+    })
+
+    it("accepts required assemblies in Lib and Mods, not only at the build root", async () => {
+      withRows(
+        [{ version: "1.22.7", path: "/versions/optimum-libraries", label: "1.22.7 Optimum 0.3.19", variant: { name: "Optimum", version: "0.3.19" } }],
+        { ok: true, manifest: anOptimumManifest({ optimumVersion: "0.3.19" }) },
+        {
+          pathsManager: {
+            checkPathExists: vi.fn(async (path: string) => path === "/versions/optimum-libraries/Lib/Optimum.Api.Contracts.dll" || path === "/versions/optimum-libraries/Mods/Optimum.GameContent.dll")
+          }
+        }
+      )
+
+      renderList()
+      await screen.findByText("1.22.7 Optimum 0.3.19")
+
+      expect(screen.queryByText("Missing Optimum files")).toBeNull()
+      const label = screen.getByText("1.22.7 Optimum 0.3.19")
+      expect(label.closest("p")?.classList.contains("w-full")).toBe(true)
+      expect(label.closest("p")?.parentElement?.classList.contains("justify-center")).toBe(true)
+    })
+
+    it("checks backups-only Optimum rows and keeps their removal action", async () => {
+      withRows(
+        [{ version: "1.22.7", path: "/versions/unregistered-optimum" }],
+        { ok: true, manifest: anOptimumManifest() },
+        {
+          pathsManager: {
+            checkPathExists: vi.fn(async (path: string) => path === "/versions/unregistered-optimum/.optimum/vanilla" || path === "/versions/unregistered-optimum/Lib/Optimum.Api.Contracts.dll")
+          }
+        }
+      )
+
+      renderList()
+      await screen.findByText("1.22.7")
+
+      expect(await screen.findByText("Missing Optimum files")).toBeTruthy()
+      expect(screen.getByTitle("Remove Optimum")).toBeTruthy()
+    })
+
+    it("does not call a build broken when its assembly folders cannot be inspected", async () => {
+      withRows(
+        [{ version: "1.22.7", path: "/versions/unreadable", label: "1.22.7 Optimum 0.3.19", variant: { name: "Optimum", version: "0.3.19" } }],
+        { ok: true, manifest: anOptimumManifest({ optimumVersion: "0.3.19" }) },
+        { pathsManager: { checkPathExists: vi.fn(async () => Promise.reject(new Error("access denied"))) } }
+      )
+
+      renderList()
+      await screen.findByText("1.22.7 Optimum 0.3.19")
+
+      await waitFor(() => expect(screen.queryByText("Missing Optimum files")).toBeNull())
     })
 
     it("does not flag an intact Optimum build when all required assemblies are present", async () => {

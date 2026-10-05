@@ -28,6 +28,8 @@ import { isRecord } from "../records"
  *   nothing was ever run against the game folder.
  * - `output-unverified`: the CLI reported success and the files it claims to
  *   have written do not match what is on disk.
+ * - `missing-assembly`: a verified patched target references an Optimum file
+ *   that is absent from the game's root, `Lib` and `Mods` folders.
  */
 export type OptimumFailureReason =
   | "bad-input"
@@ -44,6 +46,7 @@ export type OptimumFailureReason =
   | "timed-out"
   | "runtime-missing"
   | "output-unverified"
+  | "missing-assembly"
 
 /** The ten tokens the CLI itself can send. Anything else on the wire is not one of its reasons. */
 const WIRE_REASONS: readonly OptimumFailureReason[] = [

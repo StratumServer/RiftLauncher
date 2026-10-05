@@ -22,7 +22,7 @@ export interface ModGroup {
 
 export interface AttributionResult {
   groups: ModGroup[]
-  /** Errors and warnings no rule could name a Mod for. An honest bucket, not a guess. */
+  /** Errors, warnings and fatal lines no rule could name a Mod for. An honest bucket, not a guess. */
   unattributed: LogEntry[]
 }
 
@@ -61,20 +61,30 @@ export function attributeEntries(entries: readonly LogEntry[], installedModids: 
   for (const entry of entries) {
     if (!isReportable(entry)) continue
 
+    const severity = entry.severity.toLowerCase()
     const prefix = MODID_PREFIX.exec(entry.message)
     const phase = prefix ? null : MOD_PHASE.exec(entry.message)
     const modid = prefix ? (prefix[1] as string) : phase ? modidForAssembly(phase[2] as string, installedModids) : undefined
 
     if (!modid) {
-      if (unattributed.length < MAX_UNATTRIBUTED_ENTRIES) unattributed.push(entry)
+      if (severity === "fatal") {
+        unattributed.unshift(entry)
+        if (unattributed.length > MAX_UNATTRIBUTED_ENTRIES) unattributed.pop()
+      } else if (unattributed.length < MAX_UNATTRIBUTED_ENTRIES) {
+        unattributed.push(entry)
+      }
       continue
     }
 
     const group = byModid.get(modid) ?? { modid, signal: prefix ? "modid-prefix" : "assembly", errors: 0, warnings: 0, entries: [] }
-    const severity = entry.severity.toLowerCase()
     if (severity === "error" || severity === "fatal") group.errors += 1
     else group.warnings += 1
-    if (group.entries.length < MAX_ENTRIES_PER_GROUP) group.entries.push(entry)
+    if (severity === "fatal") {
+      group.entries.unshift(entry)
+      if (group.entries.length > MAX_ENTRIES_PER_GROUP) group.entries.pop()
+    } else if (group.entries.length < MAX_ENTRIES_PER_GROUP) {
+      group.entries.push(entry)
+    }
     byModid.set(modid, group)
   }
 

@@ -12,6 +12,8 @@ export interface OptimumFailureFeedback {
   messageKey: string
   /** Whether the refusal also goes to the log. */
   logged: boolean
+  /** Safe interpolation values for a failure message. */
+  values?: Record<string, string>
 }
 
 /**
@@ -48,7 +50,10 @@ export function describeOptimumManifestFailure(reason: OptimumManifestFailureRea
  * What a player needs from that sentence is the state of their build, and every
  * one of those runs ends the same way: the original game files are back.
  */
-export function describeOptimumFailure(failure: { reason: OptimumPatchFailureReason; rolledBack?: boolean }): OptimumFailureFeedback {
+export function describeOptimumFailure(failure: { reason: OptimumPatchFailureReason; rolledBack?: boolean; missingAssembly?: string }): OptimumFailureFeedback {
+  if (failure.reason === "missing-assembly") {
+    return { messageKey: "features.versions.optimumMissingRequiredAssembly", logged: true, values: { assembly: failure.missingAssembly ?? "Optimum assembly" } }
+  }
   if (failure.rolledBack) return { messageKey: "features.versions.optimumRolledBack", logged: true }
 
   switch (failure.reason) {
