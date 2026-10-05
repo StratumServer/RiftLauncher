@@ -25,8 +25,10 @@ import { createReadStream } from "node:fs"
 import { join, relative, sep } from "node:path"
 
 import { type OptimumManifest } from "@domain/optimum/manifest"
-import { OPTIMUM_STATE_FOLDER } from "@domain/optimum/plan"
+import { OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_DEPLOYED_ASSEMBLIES, OPTIMUM_STATE_FOLDER } from "@domain/optimum/plan"
 import { isRecord } from "@domain/records"
+
+export { OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_DEPLOYED_ASSEMBLIES }
 
 /** The manifest file the archive carries that `files[]` never names: the walk ran before it was written. */
 function isUnlistedManifestFile(path: string, manifest: OptimumManifest): boolean {
@@ -35,8 +37,29 @@ function isUnlistedManifestFile(path: string, manifest: OptimumManifest): boolea
 
 const OPTIMUM_STATE_MANIFEST = join(OPTIMUM_STATE_FOLDER, "manifest.json")
 
-/** The file the patch leaves at the game root, which the launcher's own rollback has to take back out. */
-export const OPTIMUM_CONTRACTS_ASSEMBLY = "Optimum.Api.Contracts.dll"
+/**
+ * Scans binary or text content for references to Optimum assemblies.
+ *
+ * In CLI assemblies, referenced assembly names appear as null-terminated UTF-8
+ * tokens in the metadata strings heap. Word or null boundaries are accepted so
+ * that both compiled assemblies and plain test fixtures are scanned reliably.
+ */
+export function findReferencedOptimumAssemblies(content: Buffer | string): string[] {
+  const text = typeof content === "string" ? content : content.toString("latin1")
+  const matches = new Set<string>()
+  // eslint-disable-next-line no-control-regex
+  const regex = /(?:^|[\x00\r\n\t ])(Optimum\.[A-Za-z0-9_.]+)(?:$|[\x00\r\n\t ])/g
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(text)) !== null) {
+    let name = match[1]
+    if (!name) continue
+    if (name.endsWith(".dll")) {
+      name = name.slice(0, -4)
+    }
+    matches.add(`${name}.dll`)
+  }
+  return Array.from(matches)
+}
 
 /**
  * The assembly the patched `Mods/VSEssentials.dll` references, which an overlay
@@ -174,6 +197,17 @@ export async function verifyPatchedOutput(gameDirectory: string, manifest: Optim
       const stats = await fse.lstat(path)
       if (!stats.isFile() || stats.isSymbolicLink()) return false
       if ((await sha256File(path)) !== record.patchedHash) return false
+
+      const content = await fse.readFile(path)
+      const referenced = findReferencedOptimumAssemblies(content)
+      for (const requiredAssembly of referenced) {
+        const inRoot = join(gameDirectory, requiredAssembly)
+        const inLib = join(gameDirectory, "Lib", requiredAssembly)
+        const inMods = join(gameDirectory, "Mods", requiredAssembly)
+        if (!(await fse.pathExists(inRoot)) && !(await fse.pathExists(inLib)) && !(await fse.pathExists(inMods))) {
+          return false
+        }
+      }
     } catch {
       return false
     }

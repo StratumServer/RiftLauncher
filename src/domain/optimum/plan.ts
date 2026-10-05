@@ -37,6 +37,35 @@ export const OPTIMUM_STATE_FOLDER = ".optimum"
 export const OPTIMUM_VANILLA_FOLDER = "vanilla"
 
 /**
+ * Assemblies deployed by Optimum at the game root.
+ *
+ * Optimum.Api.Contracts.dll has been deployed since the earliest releases.
+ * Optimum.GameContent.dll was introduced in 0.3.19 for game content integration.
+ */
+export const OPTIMUM_DEPLOYED_ASSEMBLIES = ["Optimum.Api.Contracts.dll", "Optimum.GameContent.dll"] as const
+
+/** The assembly Optimum has deployed since its earliest releases. */
+export const OPTIMUM_CONTRACTS_ASSEMBLY = "Optimum.Api.Contracts.dll"
+
+/** The assembly introduced in Optimum 0.3.19 for game content integration. */
+export const OPTIMUM_GAME_CONTENT_ASSEMBLY = "Optimum.GameContent.dll"
+
+/**
+ * Assemblies required for a given Optimum version.
+ *
+ * Optimum 0.3.19 and newer requires both Optimum.Api.Contracts.dll and Optimum.GameContent.dll.
+ * Older releases require Optimum.Api.Contracts.dll only.
+ */
+export function requiredOptimumAssemblies(optimumVersion?: string): readonly string[] {
+  if (!optimumVersion) return OPTIMUM_DEPLOYED_ASSEMBLIES
+  const valid = semver.valid(semver.coerce(optimumVersion))
+  if (valid && semver.lt(valid, "0.3.19")) {
+    return [OPTIMUM_CONTRACTS_ASSEMBLY]
+  }
+  return OPTIMUM_DEPLOYED_ASSEMBLIES
+}
+
+/**
  * The runtime identifier for a host, or undefined when Optimum publishes no
  * overlay for it.
  *

@@ -22,6 +22,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUninstallGameVersion"
 import { useOpenVersionFolder } from "@renderer/features/versions/hooks/useOpenVersionFolder"
 import { summarizeUsedByInstallations } from "@renderer/features/versions/adapters/uninstall"
+import { useBrokenOptimumVersions } from "@renderer/features/versions/hooks/useBrokenOptimumVersions"
 import { useOptimumActions } from "@renderer/features/versions/hooks/useOptimumActions"
 import { useOptimumBackups } from "@renderer/features/versions/hooks/useOptimumBackups"
 import { useOptimumManifest } from "@renderer/features/versions/hooks/useOptimumManifest"
@@ -51,6 +52,7 @@ function ListVersions(): JSX.Element {
   const openVersionFolder = useOpenVersionFolder()
   const optimum = useOptimumManifest()
   const optimumBackups = useOptimumBackups(gameVersions)
+  const brokenOptimumVersions = useBrokenOptimumVersions(gameVersions, optimumBackups)
   const { applyOptimum, restoreVanilla } = useOptimumActions()
 
   const [versionToDelete, setVersionToDelete] = useState<GameVersionType | null>(null)
@@ -191,6 +193,7 @@ function ListVersions(): JSX.Element {
               .sort((a, b) => compareGameVersionsDesc(a.version, b.version))
               .map((gv) => {
                 const optimumAction = optimumActionFor(gv)
+                const isBrokenOptimum = brokenOptimumVersions.has(gv.id)
                 // Everything that writes into the folder, or launches out of it,
                 // is refused while the launcher is writing into it itself.
                 const busy = gv._installing === true
@@ -198,8 +201,17 @@ function ListVersions(): JSX.Element {
                 return (
                   <ListItem key={gv.id}>
                     <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
-                      <div className="w-full flex items-center justify-center text-start font-bold pl-1">
-                        <p className="w-full">{gv.label}</p>
+                      <div className="w-full flex items-center gap-2 text-start font-bold pl-1">
+                        <p className="truncate">{gv.label}</p>
+                        {isBrokenOptimum && (
+                          <span
+                            className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-red-400"
+                            role="status"
+                            title={t("features.versions.optimumMissingAssembliesDesc")}
+                          >
+                            {t("features.versions.optimumMissingAssemblies")}
+                          </span>
+                        )}
                       </div>
 
                       <ThinSeparator />
@@ -217,7 +229,7 @@ function ListVersions(): JSX.Element {
                             <PiArrowCircleUpDuotone />
                           </NormalButton>
                         )}
-                        {(gv.variant || optimumBackups.has(gv.id)) && (
+                        {(gv.variant || optimumBackups.has(gv.id) || isBrokenOptimum) && (
                           <NormalButton className="p-1" title={t("features.versions.restoreVanilla")} variant="ghost" disabled={busy} onClick={() => setVersionToRestore(gv)}>
                             <PiArrowUUpLeftDuotone />
                           </NormalButton>

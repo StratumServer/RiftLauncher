@@ -171,7 +171,9 @@
       "updateOptimumTo": "Update Optimum to {{version}}",
       "restoreVanilla": "Remove Optimum",
       "areYouSureRestoreVanilla": "Are you sure you want to remove Optimum from {{version}}?",
-      "restoreVanillaIsPartial": "The four game files Optimum replaced are put back, and the row reads as the plain version again. Optimum's shaders and its added language lines stay until you install this VS Version again."
+      "restoreVanillaIsPartial": "The four game files Optimum replaced are put back, and the row reads as the plain version again. Optimum's shaders and its added language lines stay until you install this VS Version again.",
+      "optimumMissingAssemblies": "Missing Optimum files",
+      "optimumMissingAssembliesDesc": "This Optimum build is missing required files and cannot enter a world. Remove Optimum to restore original game files."
     },
     "installations": {
       "noInstallationsFound": "No Installations found.",

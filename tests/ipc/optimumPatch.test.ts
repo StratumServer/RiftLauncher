@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, it } from "vitest"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
 import { cliFileName } from "@domain/optimum/plan"
-import { verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
+import { findReferencedOptimumAssemblies, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
 import { isOptimumRuntimeAvailable, readRunOutcome, runOptimumCli } from "@src/ipc/optimumPatch"
 
 /**
@@ -380,10 +380,44 @@ describe("verifyStagedOverlay", () => {
   })
 })
 
+describe("findReferencedOptimumAssemblies", () => {
+  it("extracts Optimum assembly references from null-terminated tokens", () => {
+    const buffer = Buffer.from("\0Optimum.Api.Contracts\0some other text\0Optimum.GameContent\0", "latin1")
+    assert.deepEqual(findReferencedOptimumAssemblies(buffer).sort(), ["Optimum.Api.Contracts.dll", "Optimum.GameContent.dll"])
+  })
+
+  it("strips trailing .dll when present in token", () => {
+    const text = "binary data\0Optimum.GameContent.dll\0more data"
+    assert.deepEqual(findReferencedOptimumAssemblies(text), ["Optimum.GameContent.dll"])
+  })
+
+  it("ignores non-Optimum assemblies", () => {
+    const text = "binary data\0VintagestoryAPI.dll\0System.Runtime\0"
+    assert.deepEqual(findReferencedOptimumAssemblies(text), [])
+  })
+})
+
 describe("verifyPatchedOutput", () => {
   needsTheFakeCli("accepts a folder whose recorded hashes match what is on disk", async () => {
     await run("ok")
 
+    assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), true)
+  })
+
+  needsTheFakeCli("refuses a folder where a referenced Optimum assembly is missing", async () => {
+    await run("ok")
+    const patchedEssentials = join(gameDirectory, "Mods", "VSEssentials.dll")
+    writeFileSync(patchedEssentials, "patched Mods/VSEssentials.dll\0Optimum.GameContent\0")
+    // Update recorded hash so hash validation passes and assembly reference check runs
+    const manifestPath = join(gameDirectory, ".optimum", "manifest.json")
+    const data = JSON.parse(readFileSync(manifestPath, "utf8"))
+    const target = data.targets.find((entry: { assembly: string }) => entry.assembly === "Mods/VSEssentials.dll")
+    target.patchedHash = "sha256:" + createHash("sha256").update(readFileSync(patchedEssentials)).digest("hex")
+    writeFileSync(manifestPath, JSON.stringify(data))
+
+    assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), false)
+
+    writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "fake game content")
     assert.equal(await verifyPatchedOutput(gameDirectory, manifest()), true)
   })
 

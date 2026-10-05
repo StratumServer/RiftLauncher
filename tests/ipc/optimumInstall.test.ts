@@ -76,7 +76,7 @@ for (const assembly of assemblies) {
   // The backup the real patch takes, with the suffix only the root assemblies carry.
   const backup = assembly.includes("/") ? path.join(gameDirectory, ".optimum", "vanilla", assembly) : path.join(gameDirectory, ".optimum", "vanilla", assembly.replace(".dll", ".vanilla.dll"))
   if (fs.existsSync(full)) fs.copyFileSync(full, backup)
-  const contents = "patched " + assembly
+  const contents = mode === "missing-ref" && assembly === "Mods/VSEssentials.dll" ? "patched " + assembly + "\\0Optimum.GameContent\\0" : "patched " + assembly
   if (written.includes(assembly)) fs.writeFileSync(full, contents)
   records.push({ assembly, vanillaHash: "sha256:" + "0".repeat(64), patchedHash: "sha256:" + crypto.createHash("sha256").update(contents).digest("hex") })
 }
@@ -317,6 +317,11 @@ describe("applyOptimumOverlay", () => {
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
   })
 
+  needsTheFakeCli("rolls back when patched assemblies reference a missing Optimum assembly", async () => {
+    assert.deepEqual(await apply(buildOverlay({ cliMode: "missing-ref" })), { ok: false, reason: "output-unverified", rolledBack: true })
+    assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "vanilla lib")
+  })
+
   needsTheFakeCli("puts the assemblies back when the run stops partway, rather than leaving two overlays in one folder", async () => {
     // What a killed patch leaves: one assembly replaced, three not, and a state
     // file recording an overlay version that matches neither. Saying the build
@@ -352,6 +357,7 @@ describe("applyOptimumOverlay", () => {
 describe("restoreVanillaBuild", () => {
   needsTheFakeCli("puts the assemblies back and takes Optimum's own marks off", async () => {
     await apply(buildOverlay())
+    writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "game content")
     assert.equal(readFileSync(join(gameDirectory, "VintagestoryLib.dll"), "utf8"), "patched VintagestoryLib.dll")
     assert.equal(existsSync(join(gameDirectory, "Optimum.GameContent.dll")), true)
 

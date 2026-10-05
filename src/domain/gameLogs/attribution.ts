@@ -37,7 +37,7 @@ const MOD_PHASE = /Failed to run mod phase (\w+) for mod ([\w.]+)/
 
 function isReportable(entry: LogEntry): boolean {
   const severity = entry.severity.toLowerCase()
-  return severity === "error" || severity === "warning"
+  return severity === "error" || severity === "warning" || severity === "fatal"
 }
 
 /**
@@ -71,7 +71,8 @@ export function attributeEntries(entries: readonly LogEntry[], installedModids: 
     }
 
     const group = byModid.get(modid) ?? { modid, signal: prefix ? "modid-prefix" : "assembly", errors: 0, warnings: 0, entries: [] }
-    if (entry.severity.toLowerCase() === "error") group.errors += 1
+    const severity = entry.severity.toLowerCase()
+    if (severity === "error" || severity === "fatal") group.errors += 1
     else group.warnings += 1
     if (group.entries.length < MAX_ENTRIES_PER_GROUP) group.entries.push(entry)
     byModid.set(modid, group)
