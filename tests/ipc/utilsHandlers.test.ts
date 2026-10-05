@@ -303,6 +303,26 @@ describe("SELECT_FOLDER_DIALOG", () => {
     assert.deepEqual(options?.properties, ["openDirectory"])
   })
 
+  // The main process has no translations, so these titles are English whatever language the launcher is set to.
+  it("titles a folder pick in English, with no options and with an explicit folder type", async () => {
+    const event = await createTrustedEvent()
+    for (const args of [[], [{ type: "folder" }]]) {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] })
+      await handler(IPC_CHANNELS.UTILS.SELECT_FOLDER_DIALOG)(event, ...args)
+    }
+
+    const titles = vi.mocked(dialog.showOpenDialog).mock.calls.map(([options]) => options.title)
+    assert.deepEqual(titles, ["Select a folder", "Select a folder"])
+  })
+
+  it("titles a file pick in English", async () => {
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    const event = await createTrustedEvent()
+    await handler(IPC_CHANNELS.UTILS.SELECT_FOLDER_DIALOG)(event, { type: "file", extensions: ["png"] })
+
+    assert.equal(vi.mocked(dialog.showOpenDialog).mock.calls[0]?.[0]?.title, "Select a file")
+  })
+
   it("returns the selected paths and registers them as approved for a multi file picker", async () => {
     const selected = [join(temporaryRoot, "a.zip"), join(temporaryRoot, "b.zip")]
     vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: selected })
