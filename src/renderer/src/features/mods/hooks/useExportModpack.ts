@@ -56,6 +56,10 @@ export function useExportModpack(): ({
       addNotification(t("features.mods.exportModpackConfigBadName", { name: result.name ?? "" }), "error")
       return
     }
+    if (result.reason === "hidden-character") {
+      addNotification(t("features.mods.exportModpackConfigHiddenCharacter", { name: result.name ?? "" }), "error")
+      return
+    }
     if (result.reason === "collides") {
       addNotification(t("features.mods.exportModpackConfigCollides", { name: result.name ?? "" }), "error")
       return

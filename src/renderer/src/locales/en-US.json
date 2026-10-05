@@ -556,6 +556,7 @@
       "serverModsCountTruncated": "and more",
       "serverModsRemoveTruncated": "This folder holds more Mods than the list shows. Removing it clears everything inside it.",
       "exportModpackConfigBadName": "{{name}} cannot travel in a modpack: Windows does not accept that file name. Rename it in the ModConfig folder and export again.",
+      "exportModpackConfigHiddenCharacter": "{{name}} contains invisible Unicode characters and cannot travel in a modpack. The hidden characters are shown as <U+XXXX>; rename it in the ModConfig folder and export again.",
       "exportModpackConfigCollides": "{{name}} differs from another config file only in letter case, and on Windows the two are one file. Rename one of them and export again.",
       "exportModConfigsTitle": "Mod configs to export",
       "exportModConfigsDesc_one": "This modpack will carry {{count}} mod config file from this Installation. Untick the ones it should not carry.",

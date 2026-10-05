@@ -226,6 +226,16 @@ describe("assertModConfigKey", () => {
     assert.throws(() => assertModConfigKey("bom\uFEFF.json"), /Invalid mod config key/)
     assert.throws(() => assertModConfigKey("mongolian\u180Espace.json"), /Invalid mod config key/)
   })
+
+  it("refuses representative default-ignorable characters in file and folder segments", async () => {
+    const { assertModConfigKey } = await import("@src/ipc/handlers/modConfigs")
+    const hiddenCharacters = ["\u034F", "\u115F", "\u17B4", "\u180B", "\u180F", "\u2065", "\u3164", "\uFE0F", "\uFFA0", "\uFFF0", "\u{E0000}", "\u{E0080}", "\u{E0100}", "\u{E0FFF}"]
+
+    for (const hidden of hiddenCharacters) {
+      assert.throws(() => assertModConfigKey(`Client/config${hidden}.json`), /Invalid mod config key/)
+      assert.throws(() => assertModConfigKey(`Client/Sub${hidden}/config.json`), /Invalid mod config key/)
+    }
+  })
 })
 
 describe("parseModpackSettings", () => {
@@ -410,6 +420,16 @@ describe("collectModConfigs", () => {
     const collected = await collectModConfigs(installationPath)
 
     assert.deepEqual(collected, { ok: false, reason: "bad-name", name: "trailing .json" })
+  })
+
+  it("shows default-ignorable code points in the export refusal", async () => {
+    const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "config\u034F.json"), "{}", "utf-8")
+
+    const collected = await collectModConfigs(installationPath)
+
+    assert.deepEqual(collected, { ok: false, reason: "hidden-character", name: "config<U+034F>.json" })
   })
 
   it.skipIf(process.platform === "win32")("refuses two names that differ only in case, and says which one it found second", async () => {
