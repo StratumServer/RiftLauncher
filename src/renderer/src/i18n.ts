@@ -87,7 +87,9 @@ i18n.on("languageChanged", (language) => {
 i18n.use(initReactI18next).init({
   resources,
   lng: "en-US",
-  fallbackLng: "en-US"
+  fallbackLng: "en-US",
+  // React escapes whatever it renders as text, so i18next escaping the values too shows a player "Bob&#39;s World".
+  interpolation: { escapeValue: false }
 })
 
 /**
