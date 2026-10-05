@@ -290,14 +290,16 @@ describe("UPDATE_AND_RESTART", () => {
     assert.equal(mockState.quitAndInstall.mock.calls.length, 0)
   })
 
-  it("restarts for a trusted sender once the update is downloaded", async () => {
+  it("restarts for a trusted sender once the update is downloaded, as a silent install that starts the launcher again (#668)", async () => {
     const handlers = await loadHandlers()
     handlers.markUpdateDownloaded()
     const event = (await createTrustedEvent()) as unknown as IpcMainEvent
 
     await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
 
-    assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [false, true])
+    // (isSilent, isForceRunAfter), both true on purpose. Not silent, the Windows installer opens its
+    // assisted wizard and waits for two clicks, and electron-updater drops the second argument.
+    assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [true, true])
   })
 
   it("forgets the downloaded update when quitAndInstall throws, so a retry is refused rather than looping", async () => {

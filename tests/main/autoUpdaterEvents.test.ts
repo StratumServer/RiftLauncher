@@ -266,7 +266,8 @@ describe("the handshake, end to end", () => {
 
     await sendFromRenderer(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART)
 
-    assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [false, true])
+    // Silent and starting the launcher again (#668), the same pair tests/ipc/appUpdaterHandlers.test.ts pins.
+    assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [true, true])
   })
 })
 
