@@ -78,10 +78,19 @@ ipcMain.on(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, (event) => {
 // offer, which only main/index.ts's canAutoUpdate-ok branch arranges. A build that cannot install
 // an update therefore never loads the module through here either, however many times the renderer
 // sends the channel.
+//
+// The arguments are (isSilent, isForceRunAfter), and both are true on purpose (#668). Not silent,
+// the Windows installer (oneClick: false in electron-builder.yml) opens its assisted wizard and
+// waits on two pages, install mode and then Finish, while the launcher is already gone.
+// electron-updater also drops isForceRunAfter when not silent, and that installer acts on
+// --force-run only when silent, so the restart would rest on the Finish page's "Run RiftLauncher"
+// box staying ticked. Silent, it updates the existing install in place and starts the launcher
+// again. The Linux updaters ignore isSilent and start the launcher again on isForceRunAfter, and
+// macOS never gets here.
 ipcMain.on(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, (event) => {
   if (!isTrustedIpcSender(event) || !updateDownloaded) return
   void loadAutoUpdater()
-    .then((autoUpdater) => autoUpdater.quitAndInstall(false, true))
+    .then((autoUpdater) => autoUpdater.quitAndInstall(true, true))
     .catch(() => {
       updateDownloaded = false
     })
