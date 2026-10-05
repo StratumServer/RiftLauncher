@@ -618,7 +618,7 @@ function normalizeInstallation(value: unknown): InstallationType | null {
       ? value.worldBackups
           .map(normalizeWorldBackup)
           .filter((backup): backup is WorldBackupType => backup !== null)
-          .slice(0, 100)
+          .slice(0, 1_000)
       : [],
     lastTimePlayed: asNumber(value.lastTimePlayed, defaultInstallation.lastTimePlayed, -1, Number.MAX_SAFE_INTEGER),
     totalTimePlayed: asNumber(value.totalTimePlayed, defaultInstallation.totalTimePlayed, 0, Number.MAX_SAFE_INTEGER),

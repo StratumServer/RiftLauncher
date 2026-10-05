@@ -1,6 +1,6 @@
 import { ipcMain } from "electron"
 import fse from "fs-extra"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 
@@ -13,6 +13,7 @@ import { setShouldPreventClose } from "@src/utils/shouldPreventClose"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { SAVES_FOLDER_NAME, WORLD_FILE_EXTENSION, canTransferWorld, collisionFreeWorldName, hasWorldSidecars, isSafeWorldName, listWorlds, worldVersionWarning } from "@domain/worlds/worlds"
 import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
+import { pruneOldestBackups } from "@domain/installations/backup"
 
 const WORLD_BACKUPS_FOLDER = "Worlds"
 const LOG_PREFIX = "[back] [ipc] [ipc/handlers/worldsHandlers.ts]"
@@ -26,6 +27,7 @@ type WorldOperationFailure =
   | "world-busy"
   | "world-has-sidecars"
   | "archive-not-found"
+  | "backups-disabled"
   | "operation-failed"
 type WorldOperationResult = { ok: true } | { ok: false; reason: WorldOperationFailure }
 type WorldFailureResult = { ok: false; reason: WorldOperationFailure }
@@ -124,60 +126,42 @@ function updateInstallation(config: ConfigType, installationId: string, update: 
 
 let worldBackupConfigWriteQueue: Promise<void> = Promise.resolve()
 
-interface SaveWorldBackupOutcome {
-  ok: boolean
-  deletedBackupIds: string[]
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+async function removeWorldBackupArchive(archivePath: string, expectedBackupId: string): Promise<boolean> {
+  if (typeof archivePath !== "string" || typeof expectedBackupId !== "string") return false
+  if (!UUID_V4_REGEX.test(expectedBackupId)) return false
+  const filename = basename(archivePath)
+  if (filename !== `${expectedBackupId}.tar.gz`) return false
+  if (basename(dirname(archivePath)) !== WORLD_BACKUPS_FOLDER) return false
+
+  if (!(await fse.pathExists(archivePath))) return true
+
+  try {
+    const safePath = await assertManagedDeletionPath(archivePath)
+    const safeFilename = basename(safePath)
+    if (safeFilename !== `${expectedBackupId}.tar.gz`) return false
+    if (basename(dirname(safePath)) !== WORLD_BACKUPS_FOLDER) return false
+    if (basename(dirname(dirname(safePath))) === "Installations") return false
+
+    const stat = await fse.lstat(safePath)
+    if (!stat.isFile() || stat.isSymbolicLink()) return false
+    await fse.remove(safePath)
+    return !(await fse.pathExists(safePath))
+  } catch {
+    return false
+  }
 }
 
-function saveWorldBackupRecord(installationId: string, backup: WorldBackupType): Promise<SaveWorldBackupOutcome> {
-  let outcome: SaveWorldBackupOutcome = { ok: false, deletedBackupIds: [] }
+function addWorldBackupRecord(installationId: string, backup: WorldBackupType): Promise<boolean> {
   const write = worldBackupConfigWriteQueue.then(async () => {
     const currentConfig = await getConfig()
-    const currentInstallation = currentConfig.installations.find((inst) => inst.id === installationId)
-    if (!currentInstallation) {
-      outcome = { ok: false, deletedBackupIds: [] }
-      return false
-    }
-
-    const effectiveLimit = Math.max(1, currentInstallation.backupsLimit)
-    const maxExisting = effectiveLimit - 1
-    const staleIds = new Set<string>()
-    let existingCount = 0
-
-    for (const existing of currentInstallation.worldBackups ?? []) {
-      if (existing.worldName !== backup.worldName) continue
-      if (existingCount < maxExisting && (await fse.pathExists(existing.path))) {
-        existingCount++
-      } else {
-        staleIds.add(existing.id)
-        await fse.remove(existing.path).catch(() => undefined)
-      }
-    }
-
-    const deletedBackupIds = Array.from(staleIds)
-    const nextWorldBackups = [backup, ...(currentInstallation.worldBackups ?? []).filter((existing) => !staleIds.has(existing.id))].slice(0, 100)
+    const hasInstallation = currentConfig.installations.some((inst) => inst.id === installationId)
+    if (!hasInstallation) return false
 
     const nextConfig = updateInstallation(currentConfig, installationId, (current) => ({
       ...current,
-      worldBackups: nextWorldBackups
-    }))
-    const saved = await saveConfig(nextConfig)
-    outcome = { ok: saved, deletedBackupIds: saved ? deletedBackupIds : [] }
-    return saved
-  })
-  worldBackupConfigWriteQueue = write.then(
-    () => undefined,
-    () => undefined
-  )
-  return write.then(() => outcome)
-}
-
-function removeWorldBackupRecord(installationId: string, backupId: string): Promise<boolean> {
-  const write = worldBackupConfigWriteQueue.then(async () => {
-    const currentConfig = await getConfig()
-    const nextConfig = updateInstallation(currentConfig, installationId, (current) => ({
-      ...current,
-      worldBackups: (current.worldBackups ?? []).filter((candidate) => candidate.id !== backupId)
+      worldBackups: [backup, ...(current.worldBackups ?? [])]
     }))
     return saveConfig(nextConfig)
   })
@@ -188,11 +172,32 @@ function removeWorldBackupRecord(installationId: string, backupId: string): Prom
   return write
 }
 
+function removeWorldBackupRecords(installationId: string, backupIds: Set<string>): Promise<boolean> {
+  const write = worldBackupConfigWriteQueue.then(async () => {
+    const currentConfig = await getConfig()
+    const nextConfig = updateInstallation(currentConfig, installationId, (current) => ({
+      ...current,
+      worldBackups: (current.worldBackups ?? []).filter((candidate) => !backupIds.has(candidate.id))
+    }))
+    return saveConfig(nextConfig)
+  })
+  worldBackupConfigWriteQueue = write.then(
+    () => undefined,
+    () => undefined
+  )
+  return write
+}
+
+function removeWorldBackupRecord(installationId: string, backupId: string): Promise<boolean> {
+  return removeWorldBackupRecords(installationId, new Set([backupId]))
+}
+
 async function makeWorldBackup(installationId: unknown, requestedName: unknown): Promise<WorldBackupResult> {
   const checked = await checkedInstallation(installationId)
   if ("error" in checked) return checked.error
   const { config, installation, savesPath } = checked
   if (isInstallationPlaying(installation.id)) return failure("installation-playing")
+  if (installation.backupsLimit <= 0) return failure("backups-disabled")
   if (!(await fse.pathExists(savesPath))) return failure("saves-unavailable")
   const lease = tryAcquireInstallationOperation([installation.id])
   if (!lease.ok) return operationFailure(lease.reason)
@@ -213,12 +218,41 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
         const { runCompression } = await import("@src/ipc/workers/compression")
         await runCompression({ inputPath: world.path, outputPath: outputFolder, outputFileName: `${backupId}.tar.gz`, compressionLevel: installation.compressionLevel })
         const backup: WorldBackupType = { id: backupId, date: Date.now(), path: archivePath, worldName: world.name }
-        const saveOutcome = await saveWorldBackupRecord(installation.id, backup)
-        if (!saveOutcome.ok) {
+        const committed = await addWorldBackupRecord(installation.id, backup)
+        if (!committed) {
           await fse.remove(archivePath).catch(() => undefined)
           return failure("operation-failed")
         }
-        return { ok: true, backup, deletedBackupIds: saveOutcome.deletedBackupIds }
+
+        let deletedBackupIds: string[] = []
+        try {
+          const freshConfig = await getConfig()
+          const freshInstallation = freshConfig.installations.find((inst) => inst.id === installation.id)
+          const olderBackups = (freshInstallation?.worldBackups ?? []).filter((candidate) => candidate.worldName === world.name && candidate.id !== backup.id)
+          const backupIdByPath = new Map(olderBackups.map((b) => [b.path, b.id]))
+          const fileSystem = {
+            exists: (path: string): Promise<boolean> => fse.pathExists(path),
+            remove: (path: string): Promise<boolean> => {
+              const expectedId = backupIdByPath.get(path)
+              if (!expectedId) return Promise.resolve(false)
+              return removeWorldBackupArchive(path, expectedId)
+            }
+          }
+          const pruneOutcome = await pruneOldestBackups(fileSystem, {
+            backups: olderBackups.map((b) => ({ id: b.id, date: b.date, path: b.path })),
+            backupsLimit: installation.backupsLimit
+          })
+          if (pruneOutcome.deletedBackupIds.length > 0) {
+            const deletedSet = new Set(pruneOutcome.deletedBackupIds)
+            await removeWorldBackupRecords(installation.id, deletedSet)
+            deletedBackupIds = pruneOutcome.deletedBackupIds
+          }
+        } catch (error) {
+          logMessage("warn", `${LOG_PREFIX} [BACKUP] Pruning older world backups encountered an error.`)
+          logMessage("debug", `${LOG_PREFIX} [BACKUP] ${getErrorMessage(error)}`)
+        }
+
+        return { ok: true, backup, deletedBackupIds }
       } catch (error) {
         await fse.remove(archivePath).catch(() => undefined)
         logMessage("warn", `${LOG_PREFIX} [BACKUP] Could not finish compressing or recording this world backup.`)
@@ -409,14 +443,7 @@ async function deleteWorldBackup(installationId: unknown, backupIdValue: unknown
   try {
     const fileSystem = {
       exists: (path: string): Promise<boolean> => fse.pathExists(path),
-      remove: async (path: string): Promise<boolean> => {
-        try {
-          await fse.remove(path)
-          return true
-        } catch {
-          return false
-        }
-      }
+      remove: async (path: string): Promise<boolean> => removeWorldBackupArchive(path, backup.id)
     }
     const result = await deleteInstallationBackup({ fileSystem }, { backup: { id: backup.id, path: backup.path, isDeleting: false, isRestoring: false } })
     if (!result.ok) return failure("operation-failed")

@@ -16,5 +16,7 @@ Vintage Story has its SQLite `-wal` or `-shm` sidecar open. Both guards depend
 on the live `Saves` folder being free of the game's own locks.
 
 World backups are stored beneath the configured Backups folder and survive
-deleting the live world. A restore replaces only the selected `.vcdbs` file;
-other files in `Saves` are left untouched.
+deleting the live world. Each world retains up to the Installation's configured
+backup limit, pruning older backups when a new one is created. Individual
+backups can also be deleted directly from their row. A restore replaces only
+the selected `.vcdbs` file; other files in `Saves` are left untouched.
