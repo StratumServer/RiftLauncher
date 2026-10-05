@@ -417,8 +417,10 @@ describe("Mod profiles", { timeout: 20000 }, () => {
     expect(lines.filter((line) => /Solo|Server|Mod\b|\/games\/a/.test(line.replace(/\[.*?\]/g, "")))).toEqual([])
     expect(lines.filter((line) => line.includes("Profile switch: 1 on, 2 off, 1 failed, 0 missing, 0 unresolved."))).toHaveLength(1)
 
-    // The toast sits outside the dialog, so dismissing it is a click outside, which closes the dialog.
+    // The toast sits outside the dialog but counts as inside it, so dismissing it leaves the dialog open.
     await discardToast(user)
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     refused.clear()
     setModEnabled.mockClear()

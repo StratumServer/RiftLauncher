@@ -99,7 +99,8 @@ describe("SessionButton with more than one saved account", () => {
 
     expect(removeAccount).toHaveBeenCalledWith("uid-a")
     expect(await screen.findByText("Couldn't remove that account. Try again.")).toBeTruthy()
-    // Still there: the trigger keeps showing Alice, not falling back to "Log in".
-    expect(screen.getByRole("button", { name: "Alice" })).toBeTruthy()
+    // Still there: the trigger keeps showing Alice, not falling back to "Log in". The confirm dialog
+    // stays open after a refused removal, so the trigger is behind it and out of the accessibility tree.
+    expect(screen.getByRole("button", { name: "Alice", hidden: true })).toBeTruthy()
   })
 })
