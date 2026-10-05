@@ -7,6 +7,7 @@ import { formatServerAddress, MAX_SERVER_BOOKMARKS, NEVER_LAUNCHED, orderServerB
 
 import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useDateFormat } from "@renderer/hooks/useDateFormat"
 import { useLaunchGame } from "@renderer/features/launch/hooks/useLaunchGame"
 
 import LaunchBackupPrompt from "@renderer/features/launch/components/LaunchBackupPrompt"
@@ -32,6 +33,7 @@ function ManageInstallationServers(): JSX.Element {
   const { id } = useParams()
 
   const { t } = useTranslation()
+  const { formatDateTime } = useDateFormat()
   const installations = useInstallations()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
@@ -138,7 +140,7 @@ function ManageInstallationServers(): JSX.Element {
                     {server.lastLaunched === NEVER_LAUNCHED
                       ? t("features.servers.neverLaunched")
                       : /* escapeValue: false, or i18next turns the date's own slashes into &#x2F; and React renders the entities. */
-                        t("features.servers.lastLaunched", { when: new Date(server.lastLaunched).toLocaleString("es"), interpolation: { escapeValue: false } })}
+                        t("features.servers.lastLaunched", { when: formatDateTime(server.lastLaunched), interpolation: { escapeValue: false } })}
                   </p>
 
                   <ThinSeparator />

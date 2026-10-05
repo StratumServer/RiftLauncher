@@ -63,7 +63,8 @@ describe("formatTimestampForFilename", () => {
     const at = new Date(2026, 8, 8, 22, 18, 8).getTime()
 
     assert.equal(formatTimestampForFilename(at), "2026-09-08_22-18-08")
-    // ManageInstallationBackups renders exactly this for the row next to the file.
+    // ManageInstallationBackups prints this instant through toLocaleString too, in the launcher's
+    // language. Spanish stands in for it here because it reads a 24 hour clock, like the stamp.
     assert.ok(new Date(at).toLocaleString("es").includes("22:18:08"), "the list row and the file name disagree")
   })
 })

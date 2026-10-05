@@ -6,6 +6,7 @@ import { PiArchiveDuotone, PiArrowCounterClockwiseDuotone, PiCopyDuotone, PiFold
 import { worldVersionWarning } from "@domain/worlds/worlds"
 import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useDateFormat } from "@renderer/hooks/useDateFormat"
 import { ListGroup, ListItem, ListWrapper } from "@renderer/components/ui/List"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
 import ConfirmDialog from "@renderer/components/ui/ConfirmDialog"
@@ -37,6 +38,7 @@ interface PendingConfirmation {
 function ManageInstallationWorlds(): JSX.Element {
   const { id } = useParams()
   const { t } = useTranslation()
+  const { formatDateTime } = useDateFormat()
   const installations = useInstallations()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
@@ -254,8 +256,7 @@ function ManageInstallationWorlds(): JSX.Element {
                         {world.isDefault ? ` · ${t("generic.default")}` : ""}
                       </p>
                       <p className="text-sm text-zinc-400">
-                        {liveWorld ? formatBytes(world.size) : t("features.worlds.backupOnly")} · {new Date(world.lastModified).toLocaleString()} ·{" "}
-                        {t("features.worlds.backupCount", { count: backups.length })}
+                        {liveWorld ? formatBytes(world.size) : t("features.worlds.backupOnly")} · {formatDateTime(world.lastModified)} · {t("features.worlds.backupCount", { count: backups.length })}
                       </p>
                     </div>
                     {liveWorld && (
@@ -290,7 +291,7 @@ function ManageInstallationWorlds(): JSX.Element {
                   </div>
                   {backups.map((backup) => (
                     <div key={backup.id} className="flex items-center justify-end gap-2 px-3 pb-2 text-sm text-zinc-400">
-                      <span>{new Date(backup.date).toLocaleString()}</span>
+                      <span>{formatDateTime(backup.date)}</span>
                       <NormalButton title={t("generic.restore")} variant="ghost" className="p-1" disabled={isPlaying} onClick={() => void restore(backup)}>
                         <PiArrowCounterClockwiseDuotone />
                       </NormalButton>

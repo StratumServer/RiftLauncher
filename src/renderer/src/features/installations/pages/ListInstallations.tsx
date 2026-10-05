@@ -23,6 +23,7 @@ import { installationIconSrc } from "@renderer/utils/installationIcons"
 
 import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { createDeleteInstallationPorts, describeDeleteInstallationFailure, toInstallationDeleteSnapshot } from "@renderer/features/installations/adapters/delete"
@@ -39,6 +40,7 @@ const LOG_TAG = "[front] [installations] [features/installations/pages/ListInsta
 
 function ListInslallations(): JSX.Element {
   const { t } = useTranslation()
+  const { formatDateTime } = useDateFormat()
   const { addNotification } = useNotificationsContext()
   const installations = useInstallations()
   const gameVersions = useGameVersions()
@@ -142,7 +144,7 @@ function ListInslallations(): JSX.Element {
                       </div>
 
                       <div className="w-full flex gap-1 items-center justify-start text-sm text-zinc-400">
-                        <p>{installation.lastTimePlayed === -1 ? t("generic.notPlayedYet") : new Date(installation.lastTimePlayed).toLocaleString("es")}</p>
+                        <p>{installation.lastTimePlayed === -1 ? t("generic.notPlayedYet") : formatDateTime(installation.lastTimePlayed)}</p>
 
                         <span>·</span>
 

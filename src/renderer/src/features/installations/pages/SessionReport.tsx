@@ -10,6 +10,7 @@ import { useSessionReport } from "@renderer/features/installations/hooks/useSess
 import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
 import { useInstallations } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import DropdownSection from "@renderer/components/ui/DropdownSection"
 import ScrollableContainer from "@renderer/components/ui/ScrollableContainer"
@@ -81,7 +82,8 @@ function ModSection({ mod }: Readonly<{ mod: ReportModGroup }>): JSX.Element {
 
 function SessionReport(): JSX.Element {
   const { id } = useParams()
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
+  const { formatDateTime } = useDateFormat()
   const installations = useInstallations()
   const { addNotification } = useNotificationsContext()
   const openPathInExplorer = useOpenPathInExplorer()
@@ -109,7 +111,7 @@ function SessionReport(): JSX.Element {
     report && report.source.fileName
       ? t("features.sessionReport.provenance", {
           file: report.source.fileName,
-          when: lastWritten ? new Date(lastWritten).toLocaleString(i18n.language, { dateStyle: "long", timeStyle: "short" }) : t("features.sessionReport.unknownTime")
+          when: lastWritten ? formatDateTime(lastWritten, { dateStyle: "long", timeStyle: "short" }) : t("features.sessionReport.unknownTime")
         })
       : null
 
