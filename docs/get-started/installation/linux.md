@@ -51,6 +51,8 @@ From there just open it like any other app. All three update themselves the same
 
 For example the Desktop, the you'll be able to open it whenever you want.
 
+While you're at it, rename the file to `RiftLauncher.AppImage`, or to any name without a version number in it. An update replaces a file named like that in place, so shortcuts to it keep working; a file named after its version is deleted and the update writes a new one named after the new version, which breaks every shortcut to the old name.
+
 {% hint style="warning" %}
 Some users reported that AppImage Launcher is breaking automaitc updates so if you want to use it make sure to download the latest RiftLauncher version when it's published!
 {% endhint %}
@@ -62,7 +64,7 @@ Some users reported that AppImage Launcher is breaking automaitc updates so if y
 This should be done by default by sometimes you've to manually do it.
 
 ```sh
-chmod +x ./riftlauncher-X.X.X.AppImage
+chmod +x ./RiftLauncher.AppImage
 ```
 
 {% endstep %}
