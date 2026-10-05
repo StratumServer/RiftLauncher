@@ -137,6 +137,50 @@ export function getPortableUserDataPaths(platform: "win32" | "linux", executable
  * @param appDataPath The platform's roaming application-data folder.
  * @returns The folder to use and what was done to get there.
  */
+function assertTrustedLegacyProfile(legacyPath: string): void {
+  const legacyStats = ((): fse.Stats | null => {
+    try {
+      return fse.lstatSync(legacyPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+      throw error
+    }
+  })()
+
+  if (legacyStats) {
+    if (!legacyStats.isDirectory()) throw new Error(`Legacy profile is not a folder: ${legacyPath}`)
+    if (!isOwnedByThisUser(legacyStats)) throw new Error(`Legacy profile belongs to another user: ${legacyPath}`)
+  }
+}
+
+function copyLegacyUserDataEntries(legacyPath: string, temporaryPath: string, entries: readonly string[]): string[] {
+  const copied: string[] = []
+  for (const entry of entries) {
+    const source = join(legacyPath, entry)
+    let sourceIsSymbolicLink = false
+    try {
+      sourceIsSymbolicLink = fse.lstatSync(source).isSymbolicLink()
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+      throw error
+    }
+
+    const destination = join(temporaryPath, entry)
+    if (entry === "config.json" && sourceIsSymbolicLink) {
+      fse.writeFileSync(destination, fse.readFileSync(source))
+    } else {
+      fse.copySync(source, destination, {
+        filter: (sourceEntry) => {
+          if (!fse.lstatSync(sourceEntry).isSymbolicLink()) return true
+          throw new Error(`Legacy profile contains a symbolic link that cannot be copied safely: ${relative(legacyPath, sourceEntry)}`)
+        }
+      })
+    }
+    copied.push(entry)
+  }
+  return copied
+}
+
 export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
   const riftPath = join(appDataPath, RIFT_USER_DATA_FOLDER)
   const legacyPath = join(appDataPath, LEGACY_USER_DATA_FOLDER)
@@ -155,19 +199,12 @@ export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
     return { path: riftPath, outcome: plan.action, copied: [], cleanedStaleMigration: plan.cleanStaleMigration }
   }
 
-  const copied: string[] = []
-
   try {
+    assertTrustedLegacyProfile(legacyPath)
     fse.ensureDirSync(temporaryPath)
-
-    for (const entry of plan.copy) {
-      const source = join(legacyPath, entry)
-      if (!fse.existsSync(source)) continue
-      fse.copySync(source, join(temporaryPath, entry))
-      copied.push(entry)
-    }
-
+    const copied = copyLegacyUserDataEntries(legacyPath, temporaryPath, plan.copy)
     fse.moveSync(temporaryPath, riftPath)
+    return { path: riftPath, outcome: "migrate", copied, cleanedStaleMigration: plan.cleanStaleMigration }
   } catch {
     // A migration that cannot finish must not stop the launcher from starting.
     // The leftover goes, the player gets an empty folder, and VS Launcher's own
@@ -176,8 +213,6 @@ export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
     fse.ensureDirSync(riftPath)
     return { path: riftPath, outcome: "migration-failed", copied: [], cleanedStaleMigration: plan.cleanStaleMigration }
   }
-
-  return { path: riftPath, outcome: "migrate", copied, cleanedStaleMigration: plan.cleanStaleMigration }
 }
 
 function migratePortableDefaultFolders(profilePath: string, sourceProfilePath: string, appDataPath: string, dataPath: string): void {
@@ -270,6 +305,18 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
   const copied: string[] = []
   try {
     if (hasCurrentProfile) {
+      const currentStats = ((): fse.Stats | null => {
+        try {
+          return fse.lstatSync(currentProfilePath)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+          throw error
+        }
+      })()
+      if (currentStats && !isOwnedByThisUser(currentStats)) {
+        throw new Error(`Profile folder belongs to another user: ${currentProfilePath}`)
+      }
+
       const sourceProfilePath = realpathSync.native(currentProfilePath)
       fse.copySync(sourceProfilePath, temporaryPath, {
         filter: (source) => {
@@ -285,30 +332,9 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
       })
       migratePortableDefaultFolders(temporaryPath, sourceProfilePath, appDataPath, dataPath)
     } else {
+      assertTrustedLegacyProfile(legacyProfilePath)
       fse.ensureDirSync(temporaryPath)
-      for (const entry of MIGRATED_USER_DATA_ENTRIES) {
-        const source = join(legacyProfilePath, entry)
-        let sourceIsSymbolicLink = false
-        try {
-          sourceIsSymbolicLink = fse.lstatSync(source).isSymbolicLink()
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
-          throw error
-        }
-
-        const destination = join(temporaryPath, entry)
-        if (entry === "config.json" && sourceIsSymbolicLink) {
-          fse.writeFileSync(destination, fse.readFileSync(source))
-        } else {
-          fse.copySync(source, destination, {
-            filter: (sourceEntry) => {
-              if (!fse.lstatSync(sourceEntry).isSymbolicLink()) return true
-              throw new Error(`Legacy profile contains a symbolic link that cannot be copied safely: ${relative(legacyProfilePath, sourceEntry)}`)
-            }
-          })
-        }
-        copied.push(entry)
-      }
+      copied.push(...copyLegacyUserDataEntries(legacyProfilePath, temporaryPath, MIGRATED_USER_DATA_ENTRIES))
     }
 
     fse.moveSync(temporaryPath, dataPath)
