@@ -90,4 +90,14 @@ i18n.use(initReactI18next).init({
   fallbackLng: "en-US"
 })
 
+/**
+ * Applies the language the picker stored. i18next starts in en-US and gets there a moment after
+ * the first render, so whatever turns a key into a finished sentence at startup has to wait for
+ * this before it does.
+ */
+export async function restoreStoredLanguage(): Promise<boolean> {
+  const language = window.localStorage.getItem("lang")
+  return language ? changeLanguage(language) : true
+}
+
 export default i18n

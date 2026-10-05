@@ -5,6 +5,7 @@ import { survivesBulkClear } from "@domain/notifications/bulkClear"
 import { duplicateToastId, type RepeatableToast } from "@domain/notifications/duplicateToast"
 import { type FailureReason } from "@domain/notifications/failureReason"
 import { MAX_VISIBLE_TOASTS, backlogToastDuration, capNotificationRecords, waitingBehindStack } from "@domain/notifications/toastQueue"
+import { restoreStoredLanguage } from "@renderer/i18n"
 
 export type NotificationTypes = "success" | "error" | "info" | "warning"
 export type NotificationPresentation = "toast" | "center" | "both"
@@ -357,8 +358,13 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     // `ready-to-show` handler), and a push sent with nobody subscribed yet is simply lost. Pulling
     // once on mount instead means whatever is waiting is still there however late this asks.
     let cancelled = false
-    void fetchConfigRecoveryNoticeOnce().then((notice) => {
+    void fetchConfigRecoveryNoticeOnce().then(async (notice) => {
       if (cancelled || !notice) return
+
+      // The record keeps the finished sentence, like every other notification, and the renderer
+      // reaches the stored language a moment after its first render: translating before that lands
+      // would leave this one in English for good (#619).
+      await restoreStoredLanguage()
 
       if (notice.kind === "read-failed") {
         addNotificationRef.current(t("notifications.body.configReadFailed"), "warning", { duration: null })
