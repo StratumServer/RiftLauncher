@@ -614,7 +614,12 @@ function normalizeInstallation(value: unknown): InstallationType | null {
           .filter((backup): backup is BackupType => backup !== null)
           .slice(0, 100)
       : [],
-    worldBackups: Array.isArray(value.worldBackups) ? value.worldBackups.map(normalizeWorldBackup).filter((backup): backup is WorldBackupType => backup !== null) : [],
+    worldBackups: Array.isArray(value.worldBackups)
+      ? value.worldBackups
+          .map(normalizeWorldBackup)
+          .filter((backup): backup is WorldBackupType => backup !== null)
+          .slice(0, 100)
+      : [],
     lastTimePlayed: asNumber(value.lastTimePlayed, defaultInstallation.lastTimePlayed, -1, Number.MAX_SAFE_INTEGER),
     totalTimePlayed: asNumber(value.totalTimePlayed, defaultInstallation.totalTimePlayed, 0, Number.MAX_SAFE_INTEGER),
     mesaGlThread: asBoolean(value.mesaGlThread, defaultInstallation.mesaGlThread),

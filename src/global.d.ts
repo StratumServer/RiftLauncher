@@ -235,7 +235,7 @@ declare global {
   }
 
   type WorldListResult = { ok: true; worlds: WorldType[] } | { ok: false; reason: string }
-  type WorldBackupResult = { ok: true; backup: WorldBackupType } | { ok: false; reason: string }
+  type WorldBackupResult = { ok: true; backup: WorldBackupType; deletedBackupIds?: string[] } | { ok: false; reason: string }
   type WorldOperationResult = { ok: true } | { ok: false; reason: string }
   type WorldTransferResult = { ok: true; targetWorldName: string; warning?: "different-version" } | { ok: false; reason: string }
 

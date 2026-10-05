@@ -33,7 +33,8 @@ function anInstallation(worldBackups: WorldBackupType[] = [{ id: "backup-1", dat
 function renderWorlds(
   deleteWorld: BridgeAPI["worldsManager"]["delete"],
   restoreWorld: BridgeAPI["worldsManager"]["restore"] = vi.fn(async () => ({ ok: true as const })),
-  worldBackups?: WorldBackupType[]
+  worldBackups?: WorldBackupType[],
+  deleteBackup: BridgeAPI["worldsManager"]["deleteBackup"] = vi.fn(async () => ({ ok: true as const }))
 ): void {
   installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(worldBackups)] })) },
@@ -43,6 +44,7 @@ function renderWorlds(
         worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
       })),
       delete: deleteWorld,
+      deleteBackup,
       restore: restoreWorld
     }
   })
@@ -332,12 +334,14 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     const moveButton = (await screen.findByRole("button", { name: "Move world" })) as HTMLButtonElement
     const deleteButton = (await screen.findByRole("button", { name: "Delete" })) as HTMLButtonElement
     const restoreButton = (await screen.findByRole("button", { name: "Restore" })) as HTMLButtonElement
+    const deleteBackupButton = (await screen.findByRole("button", { name: "Delete Backup" })) as HTMLButtonElement
 
     expect(backupButton.disabled).toBe(true)
     expect(copyButton.disabled).toBe(true)
     expect(moveButton.disabled).toBe(true)
     expect(deleteButton.disabled).toBe(true)
     expect(restoreButton.disabled).toBe(true)
+    expect(deleteBackupButton.disabled).toBe(true)
   })
   it("disables transfer buttons for a playing target installation", async () => {
     const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b", _playing: true }
@@ -619,6 +623,49 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(deleteButton))
+  })
+
+  it("prompts before deleting a world backup and does not delete when cancelled", async () => {
+    const user = userEvent.setup()
+    const deleteBackup = vi.fn<BridgeAPI["worldsManager"]["deleteBackup"]>(async () => ({ ok: true as const }))
+    renderWorlds(
+      vi.fn(async () => ({ ok: true as const })),
+      undefined,
+      undefined,
+      deleteBackup
+    )
+
+    const deleteBackupButton = await screen.findByTitle("Delete Backup")
+    await user.click(deleteBackupButton)
+
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Are you sure you want to delete this Backup?")).not.toBeNull()
+    expect(within(dialog).getByText("Deletion is not reversible so you'll not be able to restore your worlds, data and other info using this Backup anymore.")).not.toBeNull()
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(deleteBackup).not.toHaveBeenCalled()
+  })
+
+  it("deletes a world backup when confirmed and removes it from the list", async () => {
+    const user = userEvent.setup()
+    const deleteBackup = vi.fn<BridgeAPI["worldsManager"]["deleteBackup"]>(async () => ({ ok: true as const }))
+    renderWorlds(
+      vi.fn(async () => ({ ok: true as const })),
+      undefined,
+      undefined,
+      deleteBackup
+    )
+
+    expect(await screen.findByTitle("Delete Backup")).not.toBeNull()
+    await user.click(await screen.findByTitle("Delete Backup"))
+
+    const dialog = await screen.findByRole("dialog")
+    const confirmButton = within(dialog).getByRole("button", { name: "Delete" })
+    await user.click(confirmButton)
+
+    await waitFor(() => expect(deleteBackup).toHaveBeenCalledWith("install-a", "backup-1"))
+    await waitFor(() => expect(screen.queryByTitle("Delete Backup")).toBeNull())
   })
 })
 it("does not refetch in a loop when listing fails", async () => {

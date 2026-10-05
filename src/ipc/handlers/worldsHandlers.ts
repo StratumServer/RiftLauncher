@@ -12,6 +12,7 @@ import { isInstallationPlaying, tryAcquireInstallationOperation } from "@src/ipc
 import { setShouldPreventClose } from "@src/utils/shouldPreventClose"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { SAVES_FOLDER_NAME, WORLD_FILE_EXTENSION, canTransferWorld, collisionFreeWorldName, hasWorldSidecars, isSafeWorldName, listWorlds, worldVersionWarning } from "@domain/worlds/worlds"
+import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
 
 const WORLD_BACKUPS_FOLDER = "Worlds"
 const LOG_PREFIX = "[back] [ipc] [ipc/handlers/worldsHandlers.ts]"
@@ -123,10 +124,61 @@ function updateInstallation(config: ConfigType, installationId: string, update: 
 
 let worldBackupConfigWriteQueue: Promise<void> = Promise.resolve()
 
-function saveWorldBackupRecord(installationId: string, backup: WorldBackupType): Promise<boolean> {
+interface SaveWorldBackupOutcome {
+  ok: boolean
+  deletedBackupIds: string[]
+}
+
+function saveWorldBackupRecord(installationId: string, backup: WorldBackupType): Promise<SaveWorldBackupOutcome> {
+  let outcome: SaveWorldBackupOutcome = { ok: false, deletedBackupIds: [] }
   const write = worldBackupConfigWriteQueue.then(async () => {
     const currentConfig = await getConfig()
-    const nextConfig = updateInstallation(currentConfig, installationId, (current) => ({ ...current, worldBackups: [backup, ...(current.worldBackups ?? [])] }))
+    const currentInstallation = currentConfig.installations.find((inst) => inst.id === installationId)
+    if (!currentInstallation) {
+      outcome = { ok: false, deletedBackupIds: [] }
+      return false
+    }
+
+    const effectiveLimit = Math.max(1, currentInstallation.backupsLimit)
+    const maxExisting = effectiveLimit - 1
+    const staleIds = new Set<string>()
+    let existingCount = 0
+
+    for (const existing of currentInstallation.worldBackups ?? []) {
+      if (existing.worldName !== backup.worldName) continue
+      if (existingCount < maxExisting && (await fse.pathExists(existing.path))) {
+        existingCount++
+      } else {
+        staleIds.add(existing.id)
+        await fse.remove(existing.path).catch(() => undefined)
+      }
+    }
+
+    const deletedBackupIds = Array.from(staleIds)
+    const nextWorldBackups = [backup, ...(currentInstallation.worldBackups ?? []).filter((existing) => !staleIds.has(existing.id))].slice(0, 100)
+
+    const nextConfig = updateInstallation(currentConfig, installationId, (current) => ({
+      ...current,
+      worldBackups: nextWorldBackups
+    }))
+    const saved = await saveConfig(nextConfig)
+    outcome = { ok: saved, deletedBackupIds: saved ? deletedBackupIds : [] }
+    return saved
+  })
+  worldBackupConfigWriteQueue = write.then(
+    () => undefined,
+    () => undefined
+  )
+  return write.then(() => outcome)
+}
+
+function removeWorldBackupRecord(installationId: string, backupId: string): Promise<boolean> {
+  const write = worldBackupConfigWriteQueue.then(async () => {
+    const currentConfig = await getConfig()
+    const nextConfig = updateInstallation(currentConfig, installationId, (current) => ({
+      ...current,
+      worldBackups: (current.worldBackups ?? []).filter((candidate) => candidate.id !== backupId)
+    }))
     return saveConfig(nextConfig)
   })
   worldBackupConfigWriteQueue = write.then(
@@ -161,11 +213,12 @@ async function makeWorldBackup(installationId: unknown, requestedName: unknown):
         const { runCompression } = await import("@src/ipc/workers/compression")
         await runCompression({ inputPath: world.path, outputPath: outputFolder, outputFileName: `${backupId}.tar.gz`, compressionLevel: installation.compressionLevel })
         const backup: WorldBackupType = { id: backupId, date: Date.now(), path: archivePath, worldName: world.name }
-        if (!(await saveWorldBackupRecord(installation.id, backup))) {
+        const saveOutcome = await saveWorldBackupRecord(installation.id, backup)
+        if (!saveOutcome.ok) {
           await fse.remove(archivePath).catch(() => undefined)
           return failure("operation-failed")
         }
-        return { ok: true, backup }
+        return { ok: true, backup, deletedBackupIds: saveOutcome.deletedBackupIds }
       } catch (error) {
         await fse.remove(archivePath).catch(() => undefined)
         logMessage("warn", `${LOG_PREFIX} [BACKUP] Could not finish compressing or recording this world backup.`)
@@ -339,6 +392,47 @@ ipcMain.handle(IPC_CHANNELS.WORLDS_MANAGER.BACKUP, async (event, installationId:
 ipcMain.handle(IPC_CHANNELS.WORLDS_MANAGER.DELETE, async (event, installationId: unknown, worldName: unknown): Promise<WorldOperationResult> => {
   assertTrustedIpcSender(event)
   return deleteWorld(installationId, worldName)
+})
+
+async function deleteWorldBackup(installationId: unknown, backupIdValue: unknown): Promise<WorldOperationResult> {
+  const checked = await checkedInstallation(installationId)
+  if ("error" in checked) return checked.error
+  const { installation } = checked
+  if (isInstallationPlaying(installation.id)) return failure("installation-playing")
+  if (typeof backupIdValue !== "string") return failure("invalid-request")
+  const backup = (installation.worldBackups ?? []).find((candidate) => candidate.id === backupIdValue)
+  if (!backup) return failure("archive-not-found")
+
+  const lease = tryAcquireInstallationOperation([installation.id])
+  if (!lease.ok) return operationFailure(lease.reason)
+
+  try {
+    const fileSystem = {
+      exists: (path: string): Promise<boolean> => fse.pathExists(path),
+      remove: async (path: string): Promise<boolean> => {
+        try {
+          await fse.remove(path)
+          return true
+        } catch {
+          return false
+        }
+      }
+    }
+    const result = await deleteInstallationBackup({ fileSystem }, { backup: { id: backup.id, path: backup.path, isDeleting: false, isRestoring: false } })
+    if (!result.ok) return failure("operation-failed")
+
+    const removed = await removeWorldBackupRecord(installation.id, backup.id)
+    if (!removed) return failure("operation-failed")
+
+    return { ok: true }
+  } finally {
+    lease.release()
+  }
+}
+
+ipcMain.handle(IPC_CHANNELS.WORLDS_MANAGER.DELETE_BACKUP, async (event, installationId: unknown, backupId: unknown): Promise<WorldOperationResult> => {
+  assertTrustedIpcSender(event)
+  return deleteWorldBackup(installationId, backupId)
 })
 
 ipcMain.handle(IPC_CHANNELS.WORLDS_MANAGER.RESTORE, async (event, installationId: unknown, backupId: unknown): Promise<WorldOperationResult> => {

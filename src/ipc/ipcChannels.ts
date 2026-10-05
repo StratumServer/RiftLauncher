@@ -89,6 +89,7 @@ export const IPC_CHANNELS = {
     BACKUP: "worlds-backup",
     RESTORE: "worlds-restore",
     DELETE: "worlds-delete",
+    DELETE_BACKUP: "worlds-delete-backup",
     TRANSFER: "worlds-transfer"
   }
 }

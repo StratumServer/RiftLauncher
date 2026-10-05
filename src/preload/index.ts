@@ -117,6 +117,7 @@ const api: BridgeAPI = {
     backup: (installationId: string, worldName: string): Promise<WorldBackupResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.BACKUP, installationId, worldName),
     restore: (installationId: string, backupId: string): Promise<WorldOperationResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.RESTORE, installationId, backupId),
     delete: (installationId: string, worldName: string): Promise<WorldOperationResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.DELETE, installationId, worldName),
+    deleteBackup: (installationId: string, backupId: string): Promise<WorldOperationResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.DELETE_BACKUP, installationId, backupId),
     transfer: (sourceId: string, worldName: string, targetId: string, mode: "copy" | "move"): Promise<WorldTransferResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.TRANSFER, sourceId, worldName, targetId, mode)
   }

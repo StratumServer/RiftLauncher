@@ -27,6 +27,7 @@ function formatBytes(bytes: number): string {
 const RAW_NAME = { interpolation: { escapeValue: false } }
 
 interface PendingConfirmation {
+  title?: string
   question: string
   consequence?: string
   confirmLabel: string
@@ -76,7 +77,9 @@ function ManageInstallationWorlds(): JSX.Element {
       addNotification(t(`features.worlds.error.${result.reason}`), "error")
       return false
     }
-    configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { worldBackups: [result.backup, ...(installation.worldBackups ?? [])] } } })
+    const deletedSet = new Set(result.deletedBackupIds ?? [])
+    const nextWorldBackups = [result.backup, ...(installation.worldBackups ?? []).filter((candidate) => !deletedSet.has(candidate.id))].slice(0, 100)
+    configDispatch({ type: CONFIG_ACTIONS.EDIT_INSTALLATION, payload: { id: installation.id, updates: { worldBackups: nextWorldBackups } } })
     addNotification(t("features.worlds.backupDone"), "success")
     await refresh()
     return true
@@ -159,6 +162,41 @@ function ManageInstallationWorlds(): JSX.Element {
       confirmLabel: t("generic.restore"),
       confirmIcon: <PiArrowCounterClockwiseDuotone />,
       run: () => performRestore(backup)
+    })
+  }
+
+  async function performDeleteWorldBackup(backup: WorldBackupType): Promise<void> {
+    if (!installation || isPlaying) return
+    let result: WorldOperationResult
+    try {
+      result = await window.api.worldsManager.deleteBackup(installation.id, backup.id)
+    } catch {
+      return addNotification(t("features.worlds.error.operation-failed"), "error")
+    }
+    if (!result.ok) return addNotification(t(`features.worlds.error.${result.reason}`), "error")
+    configDispatch({
+      type: CONFIG_ACTIONS.EDIT_INSTALLATION,
+      payload: {
+        id: installation.id,
+        updates: {
+          worldBackups: (installation.worldBackups ?? []).filter((candidate) => candidate.id !== backup.id)
+        }
+      }
+    })
+    addNotification(t("features.backups.backupDeletedSuccesfully"), "success")
+    await refresh()
+  }
+
+  function requestDeleteWorldBackup(backup: WorldBackupType): void {
+    if (!installation || isPlaying) return
+    setPendingConfirmation({
+      title: t("features.backups.deleteBackup"),
+      question: t("features.backups.areYouSureDelete"),
+      consequence: t("features.backups.deletingNotReversible"),
+      confirmLabel: t("generic.delete"),
+      confirmIcon: <PiTrashDuotone />,
+      confirmVariant: "destructive",
+      run: () => performDeleteWorldBackup(backup)
     })
   }
 
@@ -295,6 +333,9 @@ function ManageInstallationWorlds(): JSX.Element {
                       <NormalButton title={t("generic.restore")} variant="ghost" className="p-1" disabled={isPlaying} onClick={() => void restore(backup)}>
                         <PiArrowCounterClockwiseDuotone />
                       </NormalButton>
+                      <NormalButton title={t("features.backups.deleteBackup")} variant="ghost" className="p-1" disabled={isPlaying} onClick={() => requestDeleteWorldBackup(backup)}>
+                        <PiTrashDuotone />
+                      </NormalButton>
                       <NormalButton title={t("generic.openOnFileExplorer")} variant="ghost" className="p-1" onClick={() => void window.api.pathsManager.openPathOnFileExplorer(backup.path)}>
                         <PiFolderOpenDuotone />
                       </NormalButton>
@@ -306,7 +347,7 @@ function ManageInstallationWorlds(): JSX.Element {
           </ListGroup>
         </ListWrapper>
         <ConfirmDialog
-          title={t("breadcrumbs.manageWorlds")}
+          title={pendingConfirmation?.title ?? t("breadcrumbs.manageWorlds")}
           isOpen={pendingConfirmation !== null}
           close={() => setPendingConfirmation(null)}
           question={pendingConfirmation?.question}

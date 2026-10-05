@@ -152,7 +152,7 @@ afterEach(() => {
 describe("worlds IPC handlers", () => {
   it("registers every worlds channel and rejects an untrusted sender", async () => {
     const event = createUntrustedEvent()
-    const channels = ["worlds-list", "worlds-backup", "worlds-restore", "worlds-delete", "worlds-transfer"]
+    const channels = ["worlds-list", "worlds-backup", "worlds-restore", "worlds-delete", "worlds-delete-backup", "worlds-transfer"]
 
     for (const channel of channels) {
       await assert.rejects(() => handler(channel)(event, "install-a", "World.vcdbs", "install-b", "copy"), /Unauthorized IPC sender/)
@@ -639,5 +639,128 @@ describe("worlds IPC handlers", () => {
       .map((backup) => backup.worldName)
       .sort()
     expect(savedWorldNames).toEqual(["First.vcdbs", "Second.vcdbs"])
+  })
+
+  it("deletes a world backup archive and removes its record from configuration", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    const backupId = "backup-delete-test"
+    const backupDir = join(backupsFolder, "Worlds")
+    mkdirSync(backupDir, { recursive: true })
+    const archivePath = join(backupDir, `${backupId}.tar.gz`)
+    writeFileSync(archivePath, "backup-archive", "utf8")
+
+    const existingBackup: WorldBackupType = {
+      id: backupId,
+      date: 12345,
+      path: archivePath,
+      worldName: "World.vcdbs"
+    }
+    writeConfig([installation("install-a", sourcePath, "1.22.7", [existingBackup])])
+    const event = await createTrustedEvent()
+
+    const result = await handler("worlds-delete-backup")(event, "install-a", backupId)
+    assert.deepEqual(result, { ok: true })
+    expect(existsSync(archivePath)).toBe(false)
+
+    const savedConfig = JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType
+    expect(savedConfig.installations[0]?.worldBackups ?? []).toEqual([])
+  })
+
+  it("treats a missing world backup archive as deleted and drops its record", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    const backupId = "backup-missing-archive"
+    const nonExistentPath = join(backupsFolder, "Worlds", `${backupId}.tar.gz`)
+
+    const existingBackup: WorldBackupType = {
+      id: backupId,
+      date: 12345,
+      path: nonExistentPath,
+      worldName: "World.vcdbs"
+    }
+    writeConfig([installation("install-a", sourcePath, "1.22.7", [existingBackup])])
+    const event = await createTrustedEvent()
+
+    const result = await handler("worlds-delete-backup")(event, "install-a", backupId)
+    assert.deepEqual(result, { ok: true })
+
+    const savedConfig = JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType
+    expect(savedConfig.installations[0]?.worldBackups ?? []).toEqual([])
+  })
+
+  it("returns archive-not-found when deleting an unknown world backup id", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    writeConfig([installation("install-a", sourcePath)])
+    const event = await createTrustedEvent()
+
+    const result = await handler("worlds-delete-backup")(event, "install-a", "no-such-backup")
+    assert.deepEqual(result, { ok: false, reason: "archive-not-found" })
+  })
+
+  it("prunes oldest world backups for that world when backupsLimit is reached and deletes their archives", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    writeFileSync(join(sourcePath, "Saves", "World.vcdbs"), "live-world", "utf8")
+
+    const backupDir = join(backupsFolder, "Worlds")
+    mkdirSync(backupDir, { recursive: true })
+
+    const archive1 = join(backupDir, "wb-1.tar.gz")
+    const archive2 = join(backupDir, "wb-2.tar.gz")
+    const archiveOther = join(backupDir, "wb-other.tar.gz")
+    writeFileSync(archive1, "archive-1", "utf8")
+    writeFileSync(archive2, "archive-2", "utf8")
+    writeFileSync(archiveOther, "archive-other", "utf8")
+
+    const existingBackups: WorldBackupType[] = [
+      { id: "wb-1", date: 200, path: archive1, worldName: "World.vcdbs" },
+      { id: "wb-other", date: 150, path: archiveOther, worldName: "Other.vcdbs" },
+      { id: "wb-2", date: 100, path: archive2, worldName: "World.vcdbs" }
+    ]
+
+    const inst = installation("install-a", sourcePath, "1.22.7", existingBackups)
+    inst.backupsLimit = 2
+    writeConfig([inst])
+
+    const event = await createTrustedEvent()
+    const result = (await handler("worlds-backup")(event, "install-a", "World.vcdbs")) as WorldBackupResult
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+
+    expect(result.deletedBackupIds).toEqual(["wb-2"])
+    expect(existsSync(archive2)).toBe(false)
+    expect(existsSync(archive1)).toBe(true)
+    expect(existsSync(archiveOther)).toBe(true)
+
+    const savedConfig = JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType
+    const savedBackups = savedConfig.installations[0]?.worldBackups ?? []
+    expect(savedBackups).toHaveLength(3)
+    expect(savedBackups.map((b) => b.id)).toEqual([result.backup.id, "wb-1", "wb-other"])
+  })
+
+  it("cleans up dead records whose archive was missing on disk when creating a new world backup", async () => {
+    const sourcePath = join(installationsRoot, "install-a")
+    mkdirSync(join(sourcePath, "Saves"), { recursive: true })
+    writeFileSync(join(sourcePath, "Saves", "World.vcdbs"), "live-world", "utf8")
+
+    const existingBackups: WorldBackupType[] = [{ id: "wb-dead", date: 100, path: join(backupsFolder, "Worlds", "missing.tar.gz"), worldName: "World.vcdbs" }]
+
+    const inst = installation("install-a", sourcePath, "1.22.7", existingBackups)
+    inst.backupsLimit = 3
+    writeConfig([inst])
+
+    const event = await createTrustedEvent()
+    const result = (await handler("worlds-backup")(event, "install-a", "World.vcdbs")) as WorldBackupResult
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+
+    expect(result.deletedBackupIds).toEqual(["wb-dead"])
+
+    const savedConfig = JSON.parse(readFileSync(join(userDataPath, "config.json"), "utf8")) as ConfigType
+    const savedBackups = savedConfig.installations[0]?.worldBackups ?? []
+    expect(savedBackups).toHaveLength(1)
+    expect(savedBackups[0]?.id).toBe(result.backup.id)
   })
 })
