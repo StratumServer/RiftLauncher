@@ -59,6 +59,19 @@ describe("i18n status report", () => {
     assert.match(run("--dir", dir), /^\| ru-RU\s+\|\s+4 \|\s+0 \|\s+0 \|\s+1 \|$/m)
   })
 
+  it("counts an exact empty value as missing, the way the launcher treats it (#680)", () => {
+    // Hosted Weblate writes a plural form nobody has translated yet as "", and the launcher shows the English
+    // sentence for exactly that value, so it is missing and not a key the file carries. Whitespace is not "":
+    // it renders as a blank sentence, so it still counts as carried.
+    const dir = fixture({
+      "en-US.json": { features: { mods: { modsCount_one: "{{count}} mod", modsCount_other: "{{count}} mods" }, config: { title: "Config", hint: "Hint" } } },
+      "de-DE.json": { features: { mods: { modsCount_one: "{{count}} Mod", modsCount_other: "" }, config: { title: "", hint: " " } } }
+    })
+
+    // Carries modsCount_one and hint. Missing modsCount_other and title.
+    assert.match(run("--dir", dir), /^\| de-DE\s+\|\s+2 \|\s+2 \|\s+0 \|\s+0 \|$/m)
+  })
+
   it("renders the table Prettier's way, with drafted counts from drafted.json", () => {
     const dir = fixture({
       "en-US.json": SOURCE,
