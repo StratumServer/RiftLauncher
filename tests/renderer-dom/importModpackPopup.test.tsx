@@ -120,6 +120,12 @@ function mountPopup(): void {
 async function rowFor(label: string): Promise<HTMLElement> {
   const row = (await screen.findByText(label)).closest("li")
   if (!row) throw new Error(`No table row found for "${label}".`)
+
+  // A pack entry's name comes from the manifest, so its row is on screen, still reading "Pending",
+  // before the lookups that fill in its status have answered (#676). Every caller below then reads
+  // that status, so hold them all here until the plan to that row is in.
+  await waitFor(() => expect(within(row).queryByText("Pending")).toBeNull())
+
   return row
 }
 
