@@ -144,12 +144,20 @@ function assertTrustedLegacyProfile(legacyPath: string): void {
 /** Config copies accept regular files up to 16 MiB, including a config link's target. */
 const MAX_MIGRATED_CONFIG_BYTES = 16 * 1024 * 1024
 
-function readMigrationConfig(source: string): Buffer {
+/**
+ * Reads a config a migration is about to carry over, refusing anything that is not a regular file
+ * of at most 16 MiB.
+ *
+ * `reportedPath` is the path its messages name. The portable copy reads a temporary copy of the
+ * profile, which is deleted before a player could look at it, so that call names the profile's own
+ * file instead.
+ */
+function readMigrationConfig(source: string, reportedPath = source): Buffer {
   const descriptor = fse.openSync(source, constants.O_RDONLY | constants.O_NONBLOCK)
   try {
     const stats = fse.fstatSync(descriptor)
-    if (!stats.isFile()) throw new Error(`Legacy config is not a regular file: ${source}`)
-    if (stats.size > MAX_MIGRATED_CONFIG_BYTES) throw new Error(`Legacy config exceeds the 16 MiB migration limit: ${source}`)
+    if (!stats.isFile()) throw new Error(`Config is not a regular file: ${reportedPath}`)
+    if (stats.size > MAX_MIGRATED_CONFIG_BYTES) throw new Error(`Config exceeds the 16 MiB migration limit: ${reportedPath}`)
     const contents = Buffer.alloc(stats.size + 1)
     let length = 0
     while (length < contents.length) {
@@ -157,7 +165,7 @@ function readMigrationConfig(source: string): Buffer {
       if (count === 0) break
       length += count
     }
-    if (length > stats.size) throw new Error(`Legacy config changed size during migration: ${source}`)
+    if (length > stats.size) throw new Error(`Config changed size while it was read: ${reportedPath}`)
     return contents.subarray(0, length)
   } finally {
     fse.closeSync(descriptor)
@@ -272,7 +280,7 @@ function migratePortableDefaultFolders(profilePath: string, sourceProfilePath: s
       throw error
     }
 
-    const contents = readMigrationConfig(isSymbolicLink ? join(sourceProfilePath, fileName) : configPath)
+    const contents = readMigrationConfig(isSymbolicLink ? join(sourceProfilePath, fileName) : configPath, join(sourceProfilePath, fileName))
     let output: Buffer | string = contents
     let changed = false
     try {

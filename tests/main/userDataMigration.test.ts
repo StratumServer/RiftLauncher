@@ -698,6 +698,7 @@ describe("migration review regressions", () => {
     const setup = setUpUserDataFolder(appDataPath)
     assert.equal(setup.outcome, "migration-failed")
     assert.match(setup.failureReason ?? "", /16 MiB/)
+    assert.ok((setup.failureReason ?? "").endsWith(config), setup.failureReason ?? "")
     assert.deepEqual(readdirSync(riftPath()), [])
   })
 
@@ -711,6 +712,26 @@ describe("migration review regressions", () => {
     } finally {
       getuid.mockRestore()
     }
+  })
+
+  it("names the profile's own config, not the migration copy, when the portable copy is refused", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    // The refusal names the profile after resolving it, which differs from the temp path when
+    // tmpdir() itself sits behind a symlink.
+    const configPath = join(realpathSync.native(riftPath()), "config.json")
+    writeFileSync(configPath, "")
+    truncateSync(configPath, 16 * 1024 * 1024 + 1)
+
+    assert.throws(
+      () => setUpPortableUserDataFolder(appDataPath, join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)),
+      (error: unknown) => {
+        const message = String(error)
+        assert.match(message, /16 MiB migration limit/)
+        assert.ok(message.endsWith(configPath), message)
+        assert.equal(message.includes(PORTABLE_MIGRATION_TEMP_SUFFIX), false, message)
+        return true
+      }
+    )
   })
 })
 
