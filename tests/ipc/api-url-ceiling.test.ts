@@ -9,7 +9,7 @@ import {
   MAX_BACKGROUND_MANIFEST_BYTES,
   MAX_MODS_CATALOG_RESPONSE_BYTES,
   MAX_RESPONSE_BYTES,
-  MODS_CATALOG_TIMEOUT_MS
+  MODS_API_TIMEOUT_MS
 } from "../../src/ipc/validation"
 import { BACKGROUNDS_MANIFEST_URL, backgroundImageUrl, backgroundThumbnailUrl } from "../../src/domain/backgrounds"
 
@@ -31,14 +31,14 @@ describe("per-endpoint response ceilings (issue #24)", () => {
     assert.equal(getApiUrlMaxBytes(assertAllowedApiUrl("https://mods.vintagestory.at/api/authors")), MAX_MODS_CATALOG_RESPONSE_BYTES)
   })
 
-  it("raises the overall timeout for the same two listing endpoints, and only them", () => {
-    assert.equal(MODS_CATALOG_TIMEOUT_MS, 90_000)
-    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/mods")), MODS_CATALOG_TIMEOUT_MS)
-    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/authors")), MODS_CATALOG_TIMEOUT_MS)
+  it("raises the overall timeout for the catalog and detail endpoints", () => {
+    assert.equal(MODS_API_TIMEOUT_MS, 90_000)
+    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/mods")), MODS_API_TIMEOUT_MS)
+    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/authors")), MODS_API_TIMEOUT_MS)
+    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/mod/123")), MODS_API_TIMEOUT_MS)
     // Every other allow-listed endpoint sets no override, which is how it keeps
     // requestBoundedText/Buffer's own default (REQUEST_TIMEOUT_MS, 15s in network.ts).
     assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/tags")), undefined)
-    assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://mods.vintagestory.at/api/mod/123")), undefined)
     assert.equal(getApiUrlTimeoutMs(assertAllowedApiUrl("https://auth3.vintagestory.at/v2/gamelogin")), undefined)
   })
 

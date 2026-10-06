@@ -57,8 +57,8 @@ function SwitchInstallation(): JSX.Element {
 describe("GlobalModUpdateChecker", () => {
   beforeEach(() => {
     getCompleteInstalledMods.mockReset()
-    getCompleteInstalledMods.mockImplementation(({ onFinish }: { onFinish?: (updates: number) => void }) => {
-      onFinish?.(2)
+    getCompleteInstalledMods.mockImplementation(({ onFinish }: { onFinish?: (updates: number, failedLookups: number) => void }) => {
+      onFinish?.(2, 0)
       return Promise.resolve({ mods: [], errors: [] })
     })
   })
@@ -98,5 +98,67 @@ describe("GlobalModUpdateChecker", () => {
     // going to, then confirm it did not.
     await new Promise((resolve) => setTimeout(resolve, 2_200))
     expect(screen.getAllByText(/Mods with updates available/i)).toHaveLength(1)
+    expect(screen.queryByText(/could not be checked/i)).toBeNull()
+  }, 10_000)
+
+  it("does not suppress notifications on revisit when lookups failed (#618)", async () => {
+    getCompleteInstalledMods.mockImplementation(({ onFinish }: { onFinish?: (updates: number, failedLookups: number) => void }) => {
+      onFinish?.(2, 1)
+      return Promise.resolve({ mods: [], errors: [] })
+    })
+
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [anInstallation()] }))
+      }
+    })
+
+    renderWithProviders(
+      <>
+        <GlobalModUpdateChecker />
+        <NotificationsOverlay />
+        <SwitchInstallation />
+      </>
+    )
+
+    await screen.findByText(/Mods with updates available/i, {}, { timeout: 4_000 })
+    await screen.findByText(/Some installed Mods could not be checked, so more updates may be available\./i, {}, { timeout: 4_000 })
+    expect(getCompleteInstalledMods).toHaveBeenCalledTimes(1)
+    expect(screen.getAllByText(/Mods with updates available/i)).toHaveLength(1)
+
+    // Revisit: leave the installation, then come back to it. Because failedLookups was 1,
+    // ADD_NOTIFIED_MOD_UPDATE was not dispatched, so revisit produces another notification.
+    await user.click(screen.getByRole("button", { name: "leave installation" }))
+    await user.click(screen.getByRole("button", { name: "revisit installation" }))
+
+    await act(async () => {})
+    expect(getCompleteInstalledMods).toHaveBeenCalledTimes(2)
+
+    await new Promise((resolve) => setTimeout(resolve, 2_200))
+    expect(screen.getAllByText(/Mods with updates available/i)).toHaveLength(2)
+  }, 10_000)
+
+  it("reports an incomplete scan even when no update was confirmed", async () => {
+    getCompleteInstalledMods.mockImplementation(({ onFinish }: { onFinish?: (updates: number, failedLookups: number) => void }) => {
+      onFinish?.(0, 3)
+      return Promise.resolve({ mods: [], errors: [] })
+    })
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [anInstallation()] }))
+      }
+    })
+
+    renderWithProviders(
+      <>
+        <GlobalModUpdateChecker />
+        <NotificationsOverlay />
+      </>
+    )
+
+    expect(await screen.findByText(/Some installed Mods could not be checked for updates\./i, {}, { timeout: 4_000 })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /View updates/i })).toBeNull()
+    expect(screen.queryByText(/with updates available/i)).toBeNull()
   }, 10_000)
 })
