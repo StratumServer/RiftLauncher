@@ -718,6 +718,11 @@
       "restoreDone": "World restored.",
       "transferDone": "World transferred as {{name}}.",
       "versionWarning": "World transferred as {{name}} between different Vintage Story versions.",
+      "deleteBackup": "Delete backup",
+      "confirmDeleteBackup": "Permanently delete this backup of {{name}} from {{date}}?",
+      "confirmDeleteLastBackup": "Permanently delete this backup of {{name}} from {{date}}? This is the only remaining copy of this world.",
+      "confirmBackupPruneConsequence_one": "The oldest backup of this world will be deleted to stay within the backup limit.",
+      "confirmBackupPruneConsequence_other": "The {{count}} oldest backups of this world will be deleted to stay within the backup limit.",
       "error": {
         "installation-not-found": "Installation not found.",
         "installation-playing": "Stop playing before managing worlds.",
@@ -727,6 +732,7 @@
         "world-has-sidecars": "This world is active. Close Vintage Story and try again.",
         "archive-not-found": "World backup not found.",
         "invalid-request": "That world operation is not valid.",
+        "backups-disabled": "No backup made: this Installation's Backups max amount is set to 0. Raise it on the Installation's edit page to turn backups back on.",
         "operation-failed": "The world operation failed. Nothing else was changed."
       }
     },

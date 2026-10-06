@@ -750,6 +750,12 @@
       "restoreDone": "Monde restauré.",
       "transferDone": "Monde transféré sous le nom {{name}}.",
       "versionWarning": "Monde transféré sous le nom {{name}} entre différentes versions de Vintage Story.",
+      "deleteBackup": "Supprimer la sauvegarde",
+      "confirmDeleteBackup": "Supprimer définitivement cette sauvegarde de {{name}} du {{date}} ?",
+      "confirmDeleteLastBackup": "Supprimer définitivement cette sauvegarde de {{name}} du {{date}} ? C'est la seule copie restante de ce monde.",
+      "confirmBackupPruneConsequence_one": "La plus ancienne sauvegarde de ce monde sera supprimée pour respecter la limite de sauvegardes.",
+      "confirmBackupPruneConsequence_many": "Les {{count}} plus anciennes sauvegardes de ce monde seront supprimées pour respecter la limite de sauvegardes.",
+      "confirmBackupPruneConsequence_other": "Les {{count}} plus anciennes sauvegardes de ce monde seront supprimées pour respecter la limite de sauvegardes.",
       "error": {
         "installation-not-found": "Installation introuvable.",
         "installation-playing": "Arrêtez de jouer avant de gérer les mondes.",
@@ -759,6 +765,7 @@
         "world-has-sidecars": "Ce monde est actif. Fermez Vintage Story puis réessayez.",
         "archive-not-found": "Sauvegarde du monde introuvable.",
         "invalid-request": "Cette opération sur le monde n'est pas valide.",
+        "backups-disabled": "Aucune sauvegarde faite : le nombre maximum de sauvegardes de cette installation est à 0. Augmentez-le dans la page de modification de l'installation pour réactiver les sauvegardes.",
         "operation-failed": "L'opération sur le monde a échoué. Rien d'autre n'a été modifié."
       }
     },

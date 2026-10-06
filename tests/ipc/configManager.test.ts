@@ -282,6 +282,37 @@ describe("normalizeConfig: installations", () => {
     assert.deepEqual(result.installations[0]!.backups, [])
   })
 
+  it("keeps worldBackups only when they are valid records with safe worldName, capped at 1,000", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({
+      installations: [
+        {
+          id: "a",
+          path: "/a",
+          worldBackups: [
+            "not a record",
+            null,
+            { id: "", path: "/empty-id", worldName: "World.vcdbs" },
+            { id: "no-path", worldName: "World.vcdbs" },
+            { id: "unsafe", path: "/unsafe", worldName: "../bad.vcdbs" },
+            { id: "wb1", path: "/wb1", date: 123, worldName: "World.vcdbs" }
+          ]
+        }
+      ]
+    })
+    assert.deepEqual(result.installations[0]!.worldBackups, [{ id: "wb1", date: 123, path: "/wb1", worldName: "World.vcdbs" }])
+
+    const tooMany = Array.from({ length: 1_005 }, (_, i) => ({ id: `wb${i}`, path: `/wb${i}`, worldName: `World${i}.vcdbs` }))
+    const capped = normalizeConfig({ installations: [{ id: "a", path: "/a", worldBackups: tooMany }] })
+    assert.equal(capped.installations[0]!.worldBackups?.length, 1_000)
+  })
+
+  it("falls back to [] when worldBackups is not an array", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ installations: [{ id: "a", path: "/a", worldBackups: "nope" }] })
+    assert.deepEqual(result.installations[0]!.worldBackups, [])
+  })
+
   it("truncates a string field past its own maximum length back to the default", async () => {
     const { normalizeConfig } = await freshConfigManager()
     const result = normalizeConfig({ installations: [{ id: "a", path: "/a", envVars: "x".repeat(9_000) }] })

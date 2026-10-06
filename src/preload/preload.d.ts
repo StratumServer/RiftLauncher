@@ -136,6 +136,7 @@ declare global {
       backup: (installationId: string, worldName: string) => Promise<WorldBackupResult>
       restore: (installationId: string, backupId: string) => Promise<WorldOperationResult>
       delete: (installationId: string, worldName: string) => Promise<WorldOperationResult>
+      deleteBackup: (installationId: string, backupId: string) => Promise<WorldOperationResult>
       transfer: (sourceId: string, worldName: string, targetId: string, mode: "copy" | "move") => Promise<WorldTransferResult>
     }
   }

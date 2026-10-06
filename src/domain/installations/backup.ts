@@ -94,10 +94,10 @@ function refuse(reason: MakeInstallationBackupFailure, deletedBackupIds: string[
 }
 
 /** What pruning removed, and whether it got all the way to the limit. */
-type PruneOutcome = { ok: true; deletedBackupIds: string[] } | { ok: false; reason: "prune-failed"; deletedBackupIds: string[]; failedBackupId: string }
+export type PruneOutcome = { ok: true; deletedBackupIds: string[] } | { ok: false; reason: "prune-failed"; deletedBackupIds: string[]; failedBackupId: string }
 
 /** What is known of one record's archive: it is on disk, it is gone from a folder that is still there, or its folder cannot be reached to say. */
-type ArchiveState = "on-disk" | "gone" | "unreachable"
+export type ArchiveState = "on-disk" | "gone" | "unreachable"
 
 /**
  * Tells an archive that was deleted from one that cannot be checked.
@@ -109,7 +109,7 @@ type ArchiveState = "on-disk" | "gone" | "unreachable"
  * answer about, which is what a Backups folder changed in Config leaves behind.
  * Not knowing is never read as gone.
  */
-async function archiveState(fileSystem: FileSystem, backup: BackupRecord): Promise<ArchiveState> {
+export async function archiveState(fileSystem: Pick<FileSystem, "exists">, backup: BackupRecord): Promise<ArchiveState> {
   try {
     if (await fileSystem.exists(backup.path)) return "on-disk"
 
@@ -136,7 +136,11 @@ async function archiveState(fileSystem: FileSystem, backup: BackupRecord): Promi
  * Whatever came off is reported either way, since a caller that gives up
  * halfway still has to mirror the deletions that did happen.
  */
-async function pruneOldestBackups(fileSystem: FileSystem, installation: InstallationSnapshot, events: MakeInstallationBackupEvents): Promise<PruneOutcome> {
+export async function pruneOldestBackups(
+  fileSystem: Pick<FileSystem, "exists" | "remove">,
+  installation: Pick<InstallationSnapshot, "backups" | "backupsLimit">,
+  events: MakeInstallationBackupEvents = {}
+): Promise<PruneOutcome> {
   const deletedBackupIds: string[] = []
 
   const states = await Promise.all(installation.backups.map((backup) => archiveState(fileSystem, backup)))

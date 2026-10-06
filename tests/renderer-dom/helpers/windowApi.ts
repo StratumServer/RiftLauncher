@@ -166,6 +166,7 @@ export function createMockWindowApi(overrides: WindowApiOverrides = {}): MockedB
       backup: vi.fn(notMocked("worldsManager.backup")),
       restore: vi.fn(notMocked("worldsManager.restore")),
       delete: vi.fn(notMocked("worldsManager.delete")),
+      deleteBackup: vi.fn(notMocked("worldsManager.deleteBackup")),
       transfer: vi.fn(notMocked("worldsManager.transfer"))
     }
   }
