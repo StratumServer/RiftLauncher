@@ -17,9 +17,9 @@ const SOURCE_EXTENSIONS = [".ts", ".tsx"]
  */
 const NON_LOCALE_FILES = ["drafted.json"]
 
-/** The locale files the launcher ships, sorted, e.g. ["be-BY.json", "de-DE.json", ...]. */
-export function listLocaleFiles(): string[] {
-  return readdirSync(LOCALES_DIR)
+/** The locale files in `dir`, the ones the launcher ships by default, sorted, e.g. ["be-BY.json", "de-DE.json", ...]. */
+export function listLocaleFiles(dir: string = LOCALES_DIR): string[] {
+  return readdirSync(dir)
     .filter((file) => file.endsWith(".json") && !NON_LOCALE_FILES.includes(file))
     .sort()
 }

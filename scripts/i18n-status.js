@@ -9,6 +9,11 @@
  * wrote), maintained by whoever seeds a locale; a locale absent from it counts
  * as fully human-written.
  *
+ * A value that is exactly "" is missing, not carried (#680): Hosted Weblate
+ * writes a plural form it has not had translated yet that way, and the launcher
+ * shows the English sentence for it (returnEmptyString is false in
+ * src/renderer/src/i18n.ts).
+ *
  * This is a report, not a gate: lag is expected (see the coverage snapshot in
  * tests/i18n/i18n-parity.test.ts) and no number here fails anything. A locale
  * file that does not parse still throws, since that is a real breakage the
@@ -91,7 +96,12 @@ function localeRows(dir) {
     .sort()
     .map((file) => {
       const locale = basename(file, ".json")
-      const keys = new Set(Object.keys(flattenLocale(readJson(join(dir, file)))))
+      // Only what has a value to show: an exact "" is missing, as the header says.
+      const keys = new Set(
+        Object.entries(flattenLocale(readJson(join(dir, file))))
+          .filter(([, value]) => value !== "")
+          .map(([key]) => key)
+      )
       const draftedKeys = Array.isArray(drafted[locale]) ? drafted[locale] : []
 
       // en-US's key set, expanded to the plural categories this locale's own
