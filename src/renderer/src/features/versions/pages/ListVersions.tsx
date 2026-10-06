@@ -205,9 +205,7 @@ function ListVersions(): JSX.Element {
                         <p className={isBrokenOptimum ? "w-full min-w-0 truncate" : "w-full"}>{gv.label}</p>
                         {isBrokenOptimum && (
                           <>
-                            <span className="sr-only">
-                              {t("features.versions.optimumMissingAssembliesDesc")}
-                            </span>
+                            <span className="sr-only">{t("features.versions.optimumMissingAssembliesDesc")}</span>
                             <span
                               className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-red-400"
                               title={t("features.versions.optimumMissingAssembliesDesc")}

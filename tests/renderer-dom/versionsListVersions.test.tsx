@@ -772,10 +772,8 @@ describe("ListVersions", () => {
       expect(await screen.findByText("Missing Optimum files")).toBeTruthy()
       expect(screen.getByTitle("Remove Optimum")).toBeTruthy()
       const badge = screen.getByText("Missing Optimum files")
-      const description = document.getElementById(badge.getAttribute("aria-describedby") ?? "")
-      expect(badge.getAttribute("role")).toBe("note")
-      expect(badge.getAttribute("tabindex")).toBe("0")
-      expect(description?.textContent).toBe("This VS Version is missing a file Optimum needs, so it cannot enter a world. Remove Optimum to put the original game files back.")
+      expect(badge.getAttribute("title")).toBe("This VS Version is missing a file Optimum needs, so it cannot enter a world. Remove Optimum to put the original game files back.")
+      expect(screen.getByText("This VS Version is missing a file Optimum needs, so it cannot enter a world. Remove Optimum to put the original game files back.")).toBeTruthy()
     })
 
     it("accepts required assemblies in Lib and Mods, not only at the build root", async () => {
