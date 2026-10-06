@@ -346,3 +346,5 @@ The copy skips Chromium's regenerable caches, including `Cache/Cache_Data` and `
 {% hint style="info" %}
 If you find any issue report it on the [GitHub Issue Tracker](https://github.com/StratumServer/RiftLauncher/issues) and if you need help ask us on the [Stratum Discord server](https://discord.gg/vQm6z2urZs), the [GitHub Discussions](https://github.com/StratumServer/RiftLauncher/discussions) or the [Official Vintage Story Discord Server](https://discord.com/channels/302152934249070593/1314991001571557488).
 {% endhint %}
+
+Migration reads `config.json` only when its target is a regular file of at most 16 MiB. A dangling config link is skipped so Icons can still be copied. On POSIX, an existing RiftLauncher profile must belong to the current account in both default and portable mode; linked source profiles are checked by their resolved folder.

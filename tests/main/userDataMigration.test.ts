@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { chmodSync, existsSync, truncateSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -585,6 +586,73 @@ describe("setUpUserDataFolder", () => {
     chmodSync(join(legacyPath(), "Icons"), 0o700)
     assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "abc" }))
     assert.deepEqual(readdirSync(join(legacyPath(), "Icons")), ["custom.png"])
+  })
+})
+
+describe("migration review regressions", () => {
+  it("refuses an Icons directory link itself in both migration paths", () => {
+    const target = join(appDataPath, "external-icons")
+    mkdirSync(target)
+    mkdirSync(legacyPath())
+    symlinkSync(target, join(legacyPath(), "Icons"), process.platform === "win32" ? "junction" : "dir")
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migration-failed")
+    assert.match(setup.failureReason ?? "", /symbolic link/)
+    rmSync(riftPath(), { recursive: true })
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, join(appDataPath, "portable")), /symbolic link/)
+    assert.deepEqual(readdirSync(target), [])
+  })
+
+  it.skipIf(process.platform === "win32")("keeps Icons when a config link is dangling", () => {
+    mkdirSync(join(legacyPath(), "Icons"), { recursive: true })
+    writeFileSync(join(legacyPath(), "Icons", "custom.png"), "icon")
+    symlinkSync("missing.json", join(legacyPath(), "config.json"))
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migrate")
+    assert.deepEqual(setup.copied, ["Icons"])
+    assert.equal(readFileSync(join(riftPath(), "Icons", "custom.png"), "utf8"), "icon")
+    assert.equal(lstatSync(join(legacyPath(), "config.json")).isSymbolicLink(), true)
+  })
+
+  it.skipIf(process.platform === "win32")("rejects a config link to a FIFO without waiting for a writer", () => {
+    mkdirSync(legacyPath())
+    const fifo = join(appDataPath, "config-pipe")
+    execFileSync("mkfifo", [fifo])
+    symlinkSync(fifo, join(legacyPath(), "config.json"))
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migration-failed")
+    assert.match(setup.failureReason ?? "", /not a regular file/)
+  })
+
+  it.skipIf(process.platform !== "linux")("rejects a config link to a device", () => {
+    mkdirSync(legacyPath())
+    symlinkSync("/dev/zero", join(legacyPath(), "config.json"))
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migration-failed")
+    assert.match(setup.failureReason ?? "", /not a regular file/)
+  })
+
+  it("rejects an oversized regular config before reading it", () => {
+    mkdirSync(legacyPath())
+    const config = join(legacyPath(), "config.json")
+    writeFileSync(config, "")
+    truncateSync(config, 16 * 1024 * 1024 + 1)
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migration-failed")
+    assert.match(setup.failureReason ?? "", /16 MiB/)
+    assert.deepEqual(readdirSync(riftPath()), [])
+  })
+
+  it.skipIf(process.platform === "win32")("refuses an existing foreign-owned default profile just as the portable path does", () => {
+    mkdirSync(riftPath())
+    writeFileSync(join(riftPath(), "config.json"), "{}")
+    const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
+    try {
+      assert.throws(() => setUpUserDataFolder(appDataPath), /Profile folder belongs to another user/)
+      assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), "{}")
+    } finally {
+      getuid.mockRestore()
+    }
   })
 })
 

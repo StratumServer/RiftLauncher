@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs"
+import { constants, realpathSync } from "node:fs"
 import { basename, dirname, join, posix, relative, win32 } from "node:path"
 import fse from "fs-extra"
 
@@ -141,21 +141,54 @@ function assertTrustedLegacyProfile(legacyPath: string): void {
   }
 }
 
+/** Config copies accept regular files up to 16 MiB, including a config link's target. */
+const MAX_MIGRATED_CONFIG_BYTES = 16 * 1024 * 1024
+
+function readMigrationConfig(source: string): Buffer {
+  const descriptor = fse.openSync(source, constants.O_RDONLY | constants.O_NONBLOCK)
+  try {
+    const stats = fse.fstatSync(descriptor)
+    if (!stats.isFile()) throw new Error(`Legacy config is not a regular file: ${source}`)
+    if (stats.size > MAX_MIGRATED_CONFIG_BYTES) throw new Error(`Legacy config exceeds the 16 MiB migration limit: ${source}`)
+    const contents = Buffer.alloc(stats.size + 1)
+    let length = 0
+    while (length < contents.length) {
+      const count = fse.readSync(descriptor, contents, length, contents.length - length, null)
+      if (count === 0) break
+      length += count
+    }
+    if (length > stats.size) throw new Error(`Legacy config changed size during migration: ${source}`)
+    return contents.subarray(0, length)
+  } finally {
+    fse.closeSync(descriptor)
+  }
+}
+
+function assertOwnedSourceProfile(profilePath: string): void {
+  const stats = fse.statSync(profilePath)
+  if (!stats.isDirectory()) throw new Error(`Profile path is not a folder: ${profilePath}`)
+  if (!isOwnedByThisUser(stats)) throw new Error(`Profile folder belongs to another user: ${profilePath}`)
+}
+
 function copyLegacyUserDataEntries(legacyPath: string, temporaryPath: string, entries: readonly string[]): string[] {
   const copied: string[] = []
   for (const entry of entries) {
     const source = join(legacyPath, entry)
-    let sourceIsSymbolicLink = false
     try {
-      sourceIsSymbolicLink = fse.lstatSync(source).isSymbolicLink()
+      fse.lstatSync(source)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
       throw error
     }
 
     const destination = join(temporaryPath, entry)
-    if (entry === "config.json" && sourceIsSymbolicLink) {
-      fse.writeFileSync(destination, fse.readFileSync(source))
+    if (entry === "config.json") {
+      try {
+        fse.writeFileSync(destination, readMigrationConfig(source))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+        throw error
+      }
     } else {
       fse.copySync(source, destination, {
         filter: (sourceEntry) => {
@@ -200,6 +233,7 @@ export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
   if (plan.cleanStaleMigration) fse.removeSync(temporaryPath)
 
   if (plan.action !== "migrate") {
+    if (plan.action === "use-existing") assertOwnedSourceProfile(realpathSync.native(riftPath))
     fse.ensureDirSync(riftPath)
     return { path: riftPath, outcome: plan.action, copied: [], cleanedStaleMigration: plan.cleanStaleMigration }
   }
@@ -238,7 +272,7 @@ function migratePortableDefaultFolders(profilePath: string, sourceProfilePath: s
       throw error
     }
 
-    const contents = fse.readFileSync(isSymbolicLink ? join(sourceProfilePath, fileName) : configPath)
+    const contents = readMigrationConfig(isSymbolicLink ? join(sourceProfilePath, fileName) : configPath)
     let output: Buffer | string = contents
     let changed = false
     try {
@@ -312,17 +346,7 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
   try {
     if (hasCurrentProfile) {
       const sourceProfilePath = realpathSync.native(currentProfilePath)
-      const currentStats = ((): fse.Stats | null => {
-        try {
-          return fse.statSync(sourceProfilePath)
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
-          throw error
-        }
-      })()
-      if (currentStats && !isOwnedByThisUser(currentStats)) {
-        throw new Error(`Profile folder belongs to another user: ${sourceProfilePath}`)
-      }
+      assertOwnedSourceProfile(sourceProfilePath)
 
       fse.copySync(sourceProfilePath, temporaryPath, {
         filter: (source) => {

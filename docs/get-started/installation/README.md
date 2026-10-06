@@ -23,3 +23,5 @@ Depending on the operating system you use, the process changes a bit, so we are 
 {% content-ref url="macos.md" %}
 [macos.md](macos.md)
 {% endcontent-ref %}
+
+Migration reads `config.json` only when its target is a regular file of at most 16 MiB. A dangling config link is skipped so Icons can still be copied. On POSIX, an existing RiftLauncher profile must belong to the current account in both default and portable mode; linked source profiles are checked by their resolved folder.

@@ -96,3 +96,5 @@ For reference, the `1.7.0-beta.10` installer came back clean when it was scanned
 {% endstepper %}
 
 Every build on the releases page is produced by GitHub Actions from the public source, and the workflow that does it is in the repository.
+
+Migration reads `config.json` only when its target is a regular file of at most 16 MiB. A dangling config link is skipped so Icons can still be copied. On POSIX, an existing RiftLauncher profile must belong to the current account in both default and portable mode; linked source profiles are checked by their resolved folder.
