@@ -38,6 +38,8 @@ export interface UserDataSetup {
   readonly copied: readonly string[]
   /** Whether a half-finished copy from an earlier run was thrown away first. */
   readonly cleanedStaleMigration: boolean
+  /** Failure details when outcome is "migration-failed". */
+  readonly failureReason?: string
 }
 
 export interface PortableUserDataPaths {
@@ -120,23 +122,7 @@ export function getPortableUserDataPaths(platform: "win32" | "linux", executable
   }
 }
 
-/**
- * Picks the user-data folder and carries VS Launcher's data over the first time.
- *
- * Runs synchronously and before anything else, because `app.setPath` has to be
- * called before the logger, the config manager or any handler reads `userData`.
- *
- * The copy lands in a temporary sibling and is renamed into place as the last
- * step, so an interrupted run leaves a folder that is obviously incomplete
- * rather than a RiftLauncher folder that looks migrated and is not. The next
- * run deletes that leftover and starts over.
- *
- * The VS Launcher folder is only ever read. An installed VS Launcher keeps
- * every byte it had, and a player can go back to it at any time.
- *
- * @param appDataPath The platform's roaming application-data folder.
- * @returns The folder to use and what was done to get there.
- */
+/** Throws if a legacy profile path is a symlink, junction or owned by another user. */
 function assertTrustedLegacyProfile(legacyPath: string): void {
   const legacyStats = ((): fse.Stats | null => {
     try {
@@ -148,7 +134,9 @@ function assertTrustedLegacyProfile(legacyPath: string): void {
   })()
 
   if (legacyStats) {
-    if (!legacyStats.isDirectory()) throw new Error(`Legacy profile is not a folder: ${legacyPath}`)
+    if (legacyStats.isSymbolicLink() || !legacyStats.isDirectory()) {
+      throw new Error(`Legacy profile is not a folder (link or junction): ${legacyPath}`)
+    }
     if (!isOwnedByThisUser(legacyStats)) throw new Error(`Legacy profile belongs to another user: ${legacyPath}`)
   }
 }
@@ -181,6 +169,23 @@ function copyLegacyUserDataEntries(legacyPath: string, temporaryPath: string, en
   return copied
 }
 
+/**
+ * Picks the user-data folder and carries VS Launcher's data over the first time.
+ *
+ * Runs synchronously and before anything else, because `app.setPath` has to be
+ * called before the logger, the config manager or any handler reads `userData`.
+ *
+ * The copy lands in a temporary sibling and is renamed into place as the last
+ * step, so an interrupted run leaves a folder that is obviously incomplete
+ * rather than a RiftLauncher folder that looks migrated and is not. The next
+ * run deletes that leftover and starts over.
+ *
+ * The VS Launcher folder is only ever read. An installed VS Launcher keeps
+ * every byte it had, and a player can go back to it at any time.
+ *
+ * @param appDataPath The platform's roaming application-data folder.
+ * @returns The folder to use and what was done to get there.
+ */
 export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
   const riftPath = join(appDataPath, RIFT_USER_DATA_FOLDER)
   const legacyPath = join(appDataPath, LEGACY_USER_DATA_FOLDER)
@@ -205,13 +210,14 @@ export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
     const copied = copyLegacyUserDataEntries(legacyPath, temporaryPath, plan.copy)
     fse.moveSync(temporaryPath, riftPath)
     return { path: riftPath, outcome: "migrate", copied, cleanedStaleMigration: plan.cleanStaleMigration }
-  } catch {
+  } catch (error) {
     // A migration that cannot finish must not stop the launcher from starting.
-    // The leftover goes, the player gets an empty folder, and VS Launcher's own
-    // data is still there to try again from on the next run.
+    // The leftover goes, the player gets an empty folder, and deleting the empty
+    // RiftLauncher folder allows retrying once the issue is resolved.
     fse.removeSync(temporaryPath)
     fse.ensureDirSync(riftPath)
-    return { path: riftPath, outcome: "migration-failed", copied: [], cleanedStaleMigration: plan.cleanStaleMigration }
+    const failureReason = error instanceof Error ? error.message : String(error)
+    return { path: riftPath, outcome: "migration-failed", copied: [], cleanedStaleMigration: plan.cleanStaleMigration, failureReason }
   }
 }
 
@@ -305,19 +311,19 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
   const copied: string[] = []
   try {
     if (hasCurrentProfile) {
+      const sourceProfilePath = realpathSync.native(currentProfilePath)
       const currentStats = ((): fse.Stats | null => {
         try {
-          return fse.lstatSync(currentProfilePath)
+          return fse.statSync(sourceProfilePath)
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
           throw error
         }
       })()
       if (currentStats && !isOwnedByThisUser(currentStats)) {
-        throw new Error(`Profile folder belongs to another user: ${currentProfilePath}`)
+        throw new Error(`Profile folder belongs to another user: ${sourceProfilePath}`)
       }
 
-      const sourceProfilePath = realpathSync.native(currentProfilePath)
       fse.copySync(sourceProfilePath, temporaryPath, {
         filter: (source) => {
           const profileEntry = relative(sourceProfilePath, source)
@@ -363,7 +369,7 @@ export function describeUserDataSetup(setup: UserDataSetup): string {
     case "portable-profile-migrated":
       return `Copied the existing RiftLauncher profile to the portable data folder; the original was left untouched.${stale}`
     case "migration-failed":
-      return `Could not copy the VS Launcher user data folder. Starting on an empty RiftLauncher folder.${stale}`
+      return `Could not copy the VS Launcher user data folder${setup.failureReason ? ` (${setup.failureReason})` : ""}. Starting on an empty RiftLauncher folder.${stale}`
     case "fresh":
       return `Created a new RiftLauncher user data folder.${stale}`
     case "unavailable":

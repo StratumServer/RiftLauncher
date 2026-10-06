@@ -314,6 +314,7 @@ describe("setUpUserDataFolder", () => {
 
     assert.equal(setup.outcome, "migration-failed")
     assert.deepEqual(setup.copied, [])
+    assert.match(setup.failureReason ?? "", /link or junction/i)
     assert.equal(existsSync(riftPath()), true)
     assert.deepEqual(readdirSync(riftPath()), [])
     assert.equal(readFileSync(join(externalLegacyPath, "config.json"), "utf8"), JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "abc" }))
@@ -331,6 +332,7 @@ describe("setUpUserDataFolder", () => {
 
     assert.equal(setup.outcome, "migration-failed")
     assert.deepEqual(setup.copied, [])
+    assert.match(setup.failureReason ?? "", /symbolic link that cannot be copied safely/i)
     assert.equal(existsSync(riftPath()), true)
     assert.deepEqual(readdirSync(riftPath()), [])
     assert.equal(existsSync(temporaryPath()), false)
@@ -396,6 +398,22 @@ describe("setUpUserDataFolder", () => {
   it.skipIf(process.platform === "win32")("rejects a source RiftLauncher profile that belongs to another user in portable setup", () => {
     mkdirSync(riftPath(), { recursive: true })
     writeFileSync(join(riftPath(), "config.json"), '{"source":true}', "utf8")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
+
+    try {
+      assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /Profile folder belongs to another user/i)
+      assert.equal(existsSync(dataPath), false)
+    } finally {
+      getuid.mockRestore()
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("rejects a symlinked source RiftLauncher profile whose target belongs to another user", () => {
+    const targetPath = join(appDataPath, "other-user-profile")
+    mkdirSync(targetPath, { recursive: true })
+    writeFileSync(join(targetPath, "config.json"), '{"source":true}', "utf8")
+    symlinkSync(targetPath, riftPath(), "dir")
     const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
     const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
 
@@ -581,6 +599,19 @@ describe("describeUserDataSetup", () => {
     assert.equal(
       describeUserDataSetup({ path: "/x", outcome: "migration-failed", copied: [], cleanedStaleMigration: false }),
       "Could not copy the VS Launcher user data folder. Starting on an empty RiftLauncher folder."
+    )
+  })
+
+  it("includes the failure reason when a migration fails", () => {
+    assert.equal(
+      describeUserDataSetup({
+        path: "/x",
+        outcome: "migration-failed",
+        copied: [],
+        cleanedStaleMigration: false,
+        failureReason: "Legacy profile belongs to another user: /appData/VSLauncher"
+      }),
+      "Could not copy the VS Launcher user data folder (Legacy profile belongs to another user: /appData/VSLauncher). Starting on an empty RiftLauncher folder."
     )
   })
 
