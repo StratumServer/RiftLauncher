@@ -84,6 +84,17 @@ function rvaToOffset(image: Buffer, rva: number, sections: readonly { address: n
   throw new Error("Managed assembly RVA is outside its sections")
 }
 
+function peDirectoryOffsets(magic: number): { directories: number; count: number } | undefined {
+  switch (magic) {
+    case 0x10b:
+      return { directories: 96, count: 92 }
+    case 0x20b:
+      return { directories: 112, count: 108 }
+    default:
+      return undefined
+  }
+}
+
 function readMetadata(image: Buffer): Buffer {
   if (image.toString("ascii", 0, 2) !== "MZ") throw new Error("Not a PE image")
   const pe = readU32(image, 0x3c)
@@ -93,13 +104,12 @@ function readMetadata(image: Buffer): Buffer {
   const optionalSize = readU16(image, pe + 20)
   const optional = pe + 24
   const magic = readU16(image, optional)
-  const directoriesOffset = magic === 0x10b ? 96 : magic === 0x20b ? 112 : 0
-  const countOffset = magic === 0x10b ? 92 : magic === 0x20b ? 108 : 0
-  if (!directoriesOffset || optionalSize < directoriesOffset + 15 * 8 || readU32(image, optional + countOffset) < 15) {
+  const offsets = peDirectoryOffsets(magic)
+  if (!offsets || optionalSize < offsets.directories + 15 * 8 || readU32(image, optional + offsets.count) < 15) {
     throw new Error("PE image has no CLI directory")
   }
 
-  const cliDirectory = optional + directoriesOffset + 14 * 8
+  const cliDirectory = optional + offsets.directories + 14 * 8
   const cliRva = readU32(image, cliDirectory)
   const cliSize = readU32(image, cliDirectory + 4)
   if (cliRva === 0 || cliSize < 72) throw new Error("PE image has no CLI directory")
@@ -184,13 +194,32 @@ function tableColumns(table: number, rows: readonly number[]): readonly Column[]
 function readString(strings: Buffer, index: number): string {
   if (index === 0) return ""
   checkedRange(strings, index, 1)
-  const end = strings.indexOf(0, index)
-  if (end < 0) throw new Error("CLI string heap entry is unterminated")
-  return strings.toString("utf8", index, end)
+  const end = strings.subarray(index, index + 1025).indexOf(0)
+  const absoluteEnd = index + end
+  if (end < 0) throw new Error("CLI assembly name is unterminated or exceeds 1024 bytes")
+  return strings.toString("utf8", index, absoluteEnd)
 }
 
 function isOptimumAssemblyName(name: string): boolean {
-  return /^Optimum\.[A-Za-z0-9_.-]+$/i.test(name)
+  return /^Optimum\.[a-z0-9_.-]+$/i.test(name)
+}
+
+function readReferences(tables: Buffer, strings: Buffer, referenceCount: number, cursor: number, heapSizes: number): string[] {
+  if (referenceCount === 0) return []
+  const blobWidth = heapSizes & 4 ? 4 : 2
+  const stringWidth = heapSizes & 1 ? 4 : 2
+  const rowSize = 12 + blobWidth + stringWidth * 2 + blobWidth
+  const nameOffset = 12 + blobWidth
+  const found = new Map<string, string>()
+
+  for (let index = 0; index < referenceCount; index += 1) {
+    const row = cursor + index * rowSize
+    checkedRange(tables, row, rowSize)
+    const nameIndex = stringWidth === 2 ? readU16(tables, row + nameOffset) : readU32(tables, row + nameOffset)
+    const name = readString(strings, nameIndex)
+    if (isOptimumAssemblyName(name)) found.set(name.toLowerCase(), `${name}.dll`)
+  }
+  return Array.from(found.values())
 }
 
 /** Returns referenced Optimum assembly filenames, or `undefined` for an invalid/non-managed image. */
@@ -199,7 +228,7 @@ export function readOptimumAssemblyReferences(image: Buffer): string[] | undefin
     const { tables, strings } = readStreamMetadata(readMetadata(image))
     const valid = tables.readBigUInt64LE(8)
     const heapSizes = tables[6] ?? 0
-    const rows = Array<number>(64).fill(0)
+    const rows: number[] = Array.from({ length: 64 }, () => 0)
     let cursor = 24
 
     for (let table = 0; table < 64; table += 1) {
@@ -217,23 +246,7 @@ export function readOptimumAssemblyReferences(image: Buffer): string[] | undefin
       checkedRange(tables, cursor, 0)
     }
 
-    const referenceCount = rows[35] ?? 0
-    if (referenceCount === 0) return []
-    const blobWidth = heapSizes & 4 ? 4 : 2
-    const stringWidth = heapSizes & 1 ? 4 : 2
-    const rowSize = 12 + blobWidth + stringWidth * 2 + blobWidth
-    const nameOffset = 12 + blobWidth
-    const found = new Map<string, string>()
-
-    for (let index = 0; index < referenceCount; index += 1) {
-      const row = cursor + index * rowSize
-      checkedRange(tables, row, rowSize)
-      const nameIndex = stringWidth === 2 ? readU16(tables, row + nameOffset) : readU32(tables, row + nameOffset)
-      const name = readString(strings, nameIndex)
-      if (isOptimumAssemblyName(name)) found.set(name.toLowerCase(), `${name}.dll`)
-    }
-
-    return Array.from(found.values())
+    return readReferences(tables, strings, rows[35] ?? 0, cursor, heapSizes)
   } catch {
     return undefined
   }

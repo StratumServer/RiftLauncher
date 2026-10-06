@@ -131,6 +131,18 @@ describe("attributing an error to a Mod", () => {
     assert.match(unattributed[0]?.message ?? "", /Optimum\.GameContent/)
   })
 
+  it.each(["", "[madeupmod] "])("keeps the first fatal cause and log order past the cap: %s", (prefix) => {
+    const warnings = Array.from({ length: 12 }, (_, i) => `1.1.2026 0:00:00 [Warning] ${prefix}warning ${i}`)
+    const fatal = Array.from({ length: 13 }, (_, i) => `1.1.2026 0:00:00 [Fatal] ${prefix}cause ${i}`)
+    const report = attributeEntries(parseLogLines([...warnings, ...fatal].join("\n")), ["madeupmod"])
+    const entries = prefix ? report.groups[0]?.entries : report.unattributed
+    assert.equal(entries?.length, 12)
+    assert.deepEqual(
+      entries?.map((entry) => entry.message),
+      Array.from({ length: 12 }, (_, i) => `${prefix}cause ${i}`)
+    )
+  })
+
   it("keeps an honest bucket for what no rule could name", () => {
     assert.deepEqual(
       attributed.unattributed.map((entry) => entry.message),

@@ -14,7 +14,6 @@ import {
   overlayDownloadUrl,
   patchArgs,
   rollbackArgs,
-  requiredOptimumAssemblies,
   supportsGameVersion
 } from "@domain/optimum/plan"
 
@@ -58,11 +57,8 @@ describe("supportsGameVersion", () => {
 })
 
 describe("the Optimum assemblies every patched row needs", () => {
-  it("checks both files for every released overlay version and when the version is unknown", () => {
-    for (const version of ["0.3.15", "0.3.18", "0.3.19", "0.3.20"]) {
-      assert.deepEqual(requiredOptimumAssemblies(version), OPTIMUM_DEPLOYED_ASSEMBLIES)
-    }
-    assert.deepEqual(requiredOptimumAssemblies(), OPTIMUM_DEPLOYED_ASSEMBLIES)
+  it("requires contracts and GameContent without a version split", () => {
+    assert.deepEqual(OPTIMUM_DEPLOYED_ASSEMBLIES, ["Optimum.Api.Contracts.dll", "Optimum.GameContent.dll"])
   })
 
   it("checks the folders Vintage Story searches for managed assemblies", () => {

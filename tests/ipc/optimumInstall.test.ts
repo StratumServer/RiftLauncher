@@ -80,7 +80,7 @@ for (const assembly of assemblies) {
   const backup = assembly.includes("/") ? path.join(gameDirectory, ".optimum", "vanilla", assembly) : path.join(gameDirectory, ".optimum", "vanilla", assembly.replace(".dll", ".vanilla.dll"))
   if (fs.existsSync(full)) fs.copyFileSync(full, backup)
   const assemblyBase64 = assembly === "Mods/VSEssentials.dll" ? "ESSENTIALS_ASSEMBLY" : "CONTRACTS_ASSEMBLY"
-  const contents = Buffer.from(assemblyBase64, "base64")
+  const contents = mode === "not-managed" ? Buffer.from("not a managed image") : Buffer.from(assemblyBase64, "base64")
   if (written.includes(assembly)) fs.writeFileSync(full, contents)
   records.push({ assembly, vanillaHash: "sha256:" + "0".repeat(64), patchedHash: "sha256:" + crypto.createHash("sha256").update(contents).digest("hex") })
 }
@@ -216,6 +216,10 @@ afterEach(() => {
 })
 
 describe("applyOptimumOverlay", () => {
+  needsTheFakeCli("rolls back a hash-matching target that is not a managed image", async () => {
+    assert.deepEqual(await apply(buildOverlay({ cliMode: "not-managed" })), { ok: false, reason: "output-unverified", rolledBack: true })
+  })
+
   needsTheFakeCli("stages the archive, runs the patch, and accepts what it wrote", async () => {
     const progress: number[] = []
     const manifest = buildOverlay()

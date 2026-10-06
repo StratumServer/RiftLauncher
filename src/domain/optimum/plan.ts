@@ -55,15 +55,6 @@ export const OPTIMUM_DEPLOYED_ASSEMBLIES = [OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_
 export const OPTIMUM_ASSEMBLY_SEARCH_FOLDERS = ["", "Lib", "Mods"] as const
 
 /**
- * Files required by every Optimum row, including rows whose version or backup
- * state is unknown. The published version number does not change the references
- * VSEssentials carries.
- */
-export function requiredOptimumAssemblies(_optimumVersion?: string): readonly string[] {
-  return OPTIMUM_DEPLOYED_ASSEMBLIES
-}
-
-/**
  * The runtime identifier for a host, or undefined when Optimum publishes no
  * overlay for it.
  *

@@ -46,14 +46,14 @@ async function start(executable, args, cwd) {
 async function stop(child, closed) {
   if (child.exitCode !== null || child.signalCode !== null) return closed
   child.kill("SIGTERM")
-  const stopped = await Promise.race([closed, delay(STOP_TIMEOUT_MS).then(() => undefined)])
+  const stopped = await Promise.race([closed, delay(STOP_TIMEOUT_MS, undefined, { ref: false }).then(() => undefined)])
   if (stopped) return stopped
   child.kill("SIGKILL")
   return closed
 }
 
 async function waitForClose(handle, timeoutMs) {
-  const result = await Promise.race([handle.closed, delay(timeoutMs).then(() => undefined)])
+  const result = await Promise.race([handle.closed, delay(timeoutMs, undefined, { ref: false }).then(() => undefined)])
   if (result) return result
   await stop(handle.child, handle.closed)
   throw new Error(`The server process did not exit within ${timeoutMs} ms.\n${handle.output()}`)
@@ -125,11 +125,6 @@ async function main() {
   }
   if (typeof patchManifest?.optimumVersion !== "string" || !Array.isArray(patchManifest.targets)) {
     throw new Error("The game's .optimum/manifest.json does not describe a completed Optimum patch.")
-  }
-  try {
-    await access(join(gameDirectory, "Optimum.GameContent.dll"), constants.R_OK)
-  } catch {
-    throw new Error(`Optimum ${patchManifest.optimumVersion} did not install Optimum.GameContent.dll. The server smoke cannot pass without it.`)
   }
 
   const server = await findServer(gameDirectory)

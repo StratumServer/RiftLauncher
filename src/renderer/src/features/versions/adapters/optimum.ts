@@ -2,9 +2,8 @@
  * How the Optimum flow's refusals reach the player.
  *
  * Same shape as `describeInstallFailure` next door: one i18n key per reason,
- * and a flag for whether the refusal is also worth a line in the log. Nothing
- * here ever renders a string the CLI wrote, because nothing here is ever handed
- * one: what crosses the bridge is a token out of a closed set.
+ * and a flag for whether the refusal is also worth a line in the log. The bridge carries a reason from a closed set. A missing-assembly message
+ * also interpolates the bounded Optimum assembly name read from CLR metadata.
  */
 
 export interface OptimumFailureFeedback {
@@ -51,8 +50,8 @@ export function describeOptimumManifestFailure(reason: OptimumManifestFailureRea
  * one of those runs ends the same way: the original game files are back.
  */
 export function describeOptimumFailure(failure: { reason: OptimumPatchFailureReason; rolledBack?: boolean; missingAssembly?: string }): OptimumFailureFeedback {
-  if (failure.reason === "missing-assembly") {
-    return { messageKey: "features.versions.optimumMissingRequiredAssembly", logged: true, values: { assembly: failure.missingAssembly ?? "Optimum assembly" } }
+  if (failure.reason === "missing-assembly" && failure.missingAssembly) {
+    return { messageKey: "features.versions.optimumMissingRequiredAssembly", logged: true, values: { assembly: failure.missingAssembly } }
   }
   if (failure.rolledBack) return { messageKey: "features.versions.optimumRolledBack", logged: true }
 

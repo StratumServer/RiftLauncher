@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 
-import { OPTIMUM_ASSEMBLY_SEARCH_FOLDERS, requiredOptimumAssemblies } from "@domain/optimum/plan"
+import { OPTIMUM_ASSEMBLY_SEARCH_FOLDERS, OPTIMUM_DEPLOYED_ASSEMBLIES } from "@domain/optimum/plan"
 
 /**
  * Which registered Optimum builds are missing assemblies required to run.
@@ -23,7 +23,7 @@ export function useBrokenOptimumVersions(versions: readonly GameVersionType[], o
           const isOptimum = version.variant?.name === "Optimum" || optimumBackups.has(version.id)
           if (!isOptimum) return undefined
 
-          const required = requiredOptimumAssemblies()
+          const required = OPTIMUM_DEPLOYED_ASSEMBLIES
           try {
             for (const assembly of required) {
               let found = false

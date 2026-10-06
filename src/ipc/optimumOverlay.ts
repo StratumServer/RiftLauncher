@@ -158,27 +158,36 @@ export async function verifyPatchedOutput(gameDirectory: string, manifest: Optim
     const record = written.find((entry) => entry.assembly === target.assembly)
     if (!record) return { ok: false, reason: "unverified" }
 
-    const path = join(gameDirectory, ...target.assembly.split("/"))
-    // The assembly paths came out of the overlay manifest, which refuses a `..`
-    // segment and a leading slash, so this is belt to that brace rather than the
-    // only thing holding the join inside the game folder.
-    if (relative(gameDirectory, path).startsWith(`..${sep}`)) return { ok: false, reason: "unverified" }
-
-    try {
-      const stats = await fse.lstat(path)
-      if (!stats.isFile() || stats.isSymbolicLink()) return { ok: false, reason: "unverified" }
-      if ((await sha256File(path)) !== record.patchedHash) return { ok: false, reason: "unverified" }
-      const references = await verifyOptimumReferences(gameDirectory, path)
-      if (!references.ok) {
-        if (references.reason === "missing-assembly") return { ok: false, reason: "missing-assembly", target: target.assembly, assembly: references.assembly }
-        return references
-      }
-    } catch {
-      return { ok: false, reason: "unverified" }
-    }
+    const result = await verifyPatchedTarget(gameDirectory, target.assembly, record.patchedHash)
+    if (!result.ok) return result
   }
 
   return { ok: true }
+}
+
+/** Hash and reference verification for one manifest target, with failures kept local to that target. */
+async function verifyPatchedTarget(gameDirectory: string, assembly: string, patchedHash: string): Promise<PatchedOutputVerification> {
+  const path = join(gameDirectory, ...assembly.split("/"))
+  // The assembly paths came out of the overlay manifest, which refuses a `..`
+  // segment and a leading slash, so this is belt to that brace rather than the
+  // only thing holding the join inside the game folder.
+  if (relative(gameDirectory, path).startsWith(`..${sep}`)) return { ok: false, reason: "unverified" }
+
+  try {
+    const stats = await fse.lstat(path)
+    if (!stats.isFile() || stats.isSymbolicLink()) return { ok: false, reason: "unverified" }
+    if ((await sha256File(path)) !== patchedHash) return { ok: false, reason: "unverified" }
+    const references = await verifyOptimumReferences(gameDirectory, path)
+    if (!references.ok) return failedReferenceVerification(references, assembly)
+  } catch {
+    return { ok: false, reason: "unverified" }
+  }
+  return { ok: true }
+}
+
+function failedReferenceVerification(failure: Exclude<OptimumReferenceVerification, { ok: true }>, target: string): PatchedOutputVerification {
+  if (failure.reason === "missing-assembly") return { ...failure, target }
+  return failure
 }
 
 /** Reads one verified target's CLR references and checks Vintage Story's game assembly folders. */
