@@ -127,7 +127,7 @@
       "installNewVersion": "安装新的 VS 版本",
       "deleteVersion": "删除版本",
       "versionInUse": "游戏版本使用中",
-      "versionInUseByInstallations": "{{installations}} 仍在使用该游戏版本。现在删除会导致它们无法启动，除非您为它们另选一个版本。",
+      "versionInUseByInstallations_other": "{{installations}} 仍在使用该游戏版本。现在删除会导致它们无法启动，除非您为它们另选一个版本。",
       "installationsAndMore": "以及其他 {{count}} 个",
       "deleteAnyway": "仍要删除",
       "noDownloadForYourSystem": "游戏版本 {{version}} 没有适用于您操作系统的下载。请另选一个版本。",
