@@ -4,6 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
+import i18n from "@renderer/i18n"
 
 import type { ModpackEntry, ModpackRequest } from "@domain/mods/importModpack"
 
@@ -121,10 +122,20 @@ async function rowFor(label: string): Promise<HTMLElement> {
   const row = (await screen.findByText(label)).closest("li")
   if (!row) throw new Error(`No table row found for "${label}".`)
 
-  // A pack entry's name comes from the manifest, so its row is on screen, still reading "Pending",
-  // before the lookups that fill in its status have answered (#676). Every caller below then reads
-  // that status, so hold them all here until the plan to that row is in.
-  await waitFor(() => expect(within(row).queryByText("Pending")).toBeNull())
+  // A pack entry's name comes from the manifest, so its row is on screen, still reading the pending
+  // label, before the lookups that fill in its status have answered (#676). Every caller below then
+  // reads that status, so hold them all here until the plan to that row is in. The label comes from
+  // the app so that a reworded or translated status keeps being waited on.
+  const pending = i18n.t("features.mods.importModpackStatusPending")
+  const timedOut = `Row "${label}" still reads "${pending}": the lookups that fill in its status have not landed.`
+
+  try {
+    await waitFor(() => {
+      if (within(row).queryByText(pending)) throw new Error(timedOut)
+    })
+  } catch {
+    throw new Error(timedOut)
+  }
 
   return row
 }
