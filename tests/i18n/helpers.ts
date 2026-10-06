@@ -10,17 +10,10 @@ export const LOCALES_DIR = join(RENDERER_SRC_DIR, "locales")
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx"]
 
-/**
- * JSON files under LOCALES_DIR that are not locales. drafted.json maps a locale
- * to the keys a seeding pass machine-drafted (issue #496), read by
- * scripts/i18n-status.js; holding it to a locale's contract would be nonsense.
- */
-const NON_LOCALE_FILES = ["drafted.json"]
-
 /** The locale files in `dir`, the ones the launcher ships by default, sorted, e.g. ["be-BY.json", "de-DE.json", ...]. */
 export function listLocaleFiles(dir: string = LOCALES_DIR): string[] {
   return readdirSync(dir)
-    .filter((file) => file.endsWith(".json") && !NON_LOCALE_FILES.includes(file))
+    .filter((file) => file.endsWith(".json"))
     .sort()
 }
 
