@@ -153,18 +153,24 @@ async function main() {
     const logPath = join(dataDirectory, "Logs", "server-main.log")
     const deadline = Date.now() + TIMEOUT_MS
     let serverLog = ""
+    let reachedRunGameAt = null
+    const SETTLE_MS = 5_000
     while (Date.now() < deadline) {
       serverLog = await readServerLog(logPath)
-      if (RUN_GAME.test(serverLog)) {
-        process.stdout.write(`PASS: The dedicated server with Optimum ${patchManifest.optimumVersion} reached RunGame on a loopback-only server.\n`)
-        return
-      }
       if (OPTIMUM_FAILURE.test(serverLog)) {
         throw new Error(`The dedicated server reported an Optimum assembly load failure.\n${lastLines(serverLog)}`)
       }
       if (processHandle.child.exitCode !== null || processHandle.child.signalCode !== null) {
         const result = await processHandle.closed
-        throw new Error(`The dedicated server exited before RunGame (code ${result.code}, signal ${result.signal}).\n${lastLines(serverLog || processHandle.output())}`)
+        throw new Error(`The dedicated server exited before or during startup (code ${result.code}, signal ${result.signal}).\n${lastLines(serverLog || processHandle.output())}`)
+      }
+      if (RUN_GAME.test(serverLog)) {
+        if (reachedRunGameAt === null) {
+          reachedRunGameAt = Date.now()
+        } else if (Date.now() - reachedRunGameAt >= SETTLE_MS) {
+          process.stdout.write(`PASS: The dedicated server with Optimum ${patchManifest.optimumVersion} reached RunGame on a loopback-only server.\n`)
+          return
+        }
       }
       await delay(250)
     }

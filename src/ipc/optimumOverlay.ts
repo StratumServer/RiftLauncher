@@ -123,6 +123,10 @@ function readPatchedTargets(document: unknown): PatchedTarget[] | undefined {
   return targets
 }
 
+export type PatchedOutputVerification = { ok: true } | { ok: false; reason: "unverified" } | { ok: false; reason: "missing-assembly"; target: string; assembly: string }
+
+type OptimumReferenceVerification = { ok: true } | { ok: false; reason: "unverified" } | { ok: false; reason: "missing-assembly"; assembly: string }
+
 /**
  * Whether the patch really wrote what it says it wrote.
  *
@@ -131,12 +135,8 @@ function readPatchedTargets(document: unknown): PatchedTarget[] | undefined {
  * the file on disk, and its AssemblyRef entries must resolve to a file in the
  * game's root, `Lib` or `Mods` folder.
  *
- * @returns true when the patch is complete and intact.
+ * @returns PatchedOutputVerification describing whether the patch is complete and intact.
  */
-export type PatchedOutputVerification = { ok: true } | { ok: false; reason: "unverified" } | { ok: false; reason: "missing-assembly"; target: string; assembly: string }
-
-type OptimumReferenceVerification = { ok: true } | { ok: false; reason: "unverified" } | { ok: false; reason: "missing-assembly"; assembly: string }
-
 export async function verifyPatchedOutput(gameDirectory: string, manifest: OptimumManifest): Promise<PatchedOutputVerification> {
   // A manifest that names no target vouches for nothing, so there would be
   // nothing to check and no reason to believe a patch happened.

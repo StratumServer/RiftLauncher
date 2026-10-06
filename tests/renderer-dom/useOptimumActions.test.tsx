@@ -169,7 +169,7 @@ describe("useOptimumActions", () => {
     })
 
     expect(
-      await screen.findByText("Optimum patched a game file to require Optimum.GameContent.dll, but its overlay did not install it. Remove Optimum to put the original game files back.")
+      await screen.findByText("This Optimum build needs Optimum.GameContent.dll but does not include it, so the original game files were put back. Trying again with this build ends the same way.")
     ).toBeTruthy()
   })
 
