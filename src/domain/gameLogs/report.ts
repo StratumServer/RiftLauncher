@@ -174,7 +174,10 @@ export function buildSessionReport(input: SessionReportInput): SessionReport {
   // Decide the verdict from every parsed entry before attribution applies its display caps. A
   // bounded report may omit an error from the visible list, but it must not say that no errors
   // were logged when the source contains one.
-  const anyErrors = entries.some((entry) => entry.severity.toLowerCase() === "error")
+  const anyErrors = entries.some((entry) => {
+    const severity = entry.severity.toLowerCase()
+    return severity === "error" || severity === "fatal"
+  })
   const verdict: SessionReport["verdict"] = crash ? (crash.modLabel ? { kind: "crashed-in-mod", modLabel: crash.modLabel } : { kind: "crashed" }) : anyErrors ? { kind: "errors" } : { kind: "clean" }
 
   return {

@@ -45,13 +45,13 @@ export function useOptimumActions(): OptimumActions {
   const { startDownload, startOptimumPatch } = useTaskContext()
   const configDispatch = useConfigDispatch()
 
-  function refuse(failure: { reason: OptimumPatchFailureReason; rolledBack?: boolean }): false {
-    const { messageKey, logged } = describeOptimumFailure(failure)
+  function refuse(failure: { reason: OptimumPatchFailureReason; rolledBack?: boolean; missingAssembly?: string }): false {
+    const { messageKey, logged, values } = describeOptimumFailure(failure)
     if (logged) {
       window.api.utils.logMessage("error", `${LOG_TAG} Optimum was not applied.`)
       window.api.utils.logMessage("debug", `${LOG_TAG} Optimum was not applied: ${failure.reason}.`)
     }
-    addNotification(t(messageKey), "error")
+    addNotification(values ? t(messageKey, values) : t(messageKey), "error")
     return false
   }
 

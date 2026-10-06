@@ -172,7 +172,10 @@
       "updateOptimumTo": "Mettre Optimum à jour vers {{version}}",
       "restoreVanilla": "Retirer Optimum",
       "areYouSureRestoreVanilla": "Voulez-vous vraiment retirer Optimum de {{version}} ?",
-      "restoreVanillaIsPartial": "Les quatre fichiers de jeu remplacés par Optimum sont restaurés et la ligne réaffiche la version simple. Les shaders d'Optimum et les lignes de langue qu'il a ajoutées restent en place jusqu'à la prochaine installation de cette VS Version."
+      "restoreVanillaIsPartial": "Les quatre fichiers de jeu remplacés par Optimum sont restaurés et la ligne réaffiche la version simple. Les shaders d'Optimum et les lignes de langue qu'il a ajoutées restent en place jusqu'à la prochaine installation de cette VS Version.",
+      "optimumMissingAssemblies": "Fichiers Optimum manquants",
+      "optimumMissingAssembliesDesc": "Il manque à cette VS Version un fichier dont Optimum a besoin : elle ne peut entrer dans aucun monde. Retirez Optimum pour restaurer les fichiers de jeu d'origine.",
+      "optimumMissingRequiredAssembly": "Ce build d'Optimum a besoin de {{assembly}} mais ne le fournit pas, les fichiers de jeu d'origine ont donc été restaurés. Réessayer avec ce build donnera le même résultat."
     },
     "installations": {
       "noInstallationsFound": "Aucune installation trouvée !",

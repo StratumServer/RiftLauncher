@@ -50,7 +50,7 @@ function LogLines({ lines }: Readonly<{ lines: readonly ReportLine[] }>): JSX.El
         <div key={`${line.clock ?? ""}-${index}`} className="py-0.5">
           <p className="break-words">
             <span className="text-zinc-400">{line.clock ? `${line.clock} ` : ""}</span>
-            <span className={line.severity.toLowerCase() === "error" ? SEVERITY_COLORS.error : SEVERITY_COLORS.warning}>{`[${line.severity}] `}</span>
+            <span className={["error", "fatal"].includes(line.severity.toLowerCase()) ? SEVERITY_COLORS.error : SEVERITY_COLORS.warning}>{`[${line.severity}] `}</span>
             {line.text}
           </p>
           {line.continuation.map((frame, frameIndex) => (

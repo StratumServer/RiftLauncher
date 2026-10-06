@@ -157,6 +157,22 @@ describe("useOptimumActions", () => {
     })
   }
 
+  it("names a missing Optimum assembly after the rollback", async () => {
+    const { result } = mountWith({
+      pathsManager: { downloadOnPath: vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz") },
+      optimumManager: { applyOverlay: vi.fn(async () => ({ ok: false, reason: "missing-assembly", missingAssembly: "Optimum.GameContent.dll", rolledBack: true }) as OptimumPatchResult) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.actions.applyOptimum(TARGET, MANIFEST)
+    })
+
+    expect(
+      await screen.findByText("This Optimum build needs Optimum.GameContent.dll but does not include it, so the original game files were put back. Trying again with this build ends the same way.")
+    ).toBeTruthy()
+  })
+
   it("marks the build as being written to for as long as the patch runs", async () => {
     // Play, Delete and a second patch all read this flag. Without it the row is
     // live for the twenty minutes a patch can take to rewrite four assemblies.

@@ -22,7 +22,7 @@ export interface ModGroup {
 
 export interface AttributionResult {
   groups: ModGroup[]
-  /** Errors and warnings no rule could name a Mod for. An honest bucket, not a guess. */
+  /** Errors, warnings and fatal lines no rule could name a Mod for. An honest bucket, not a guess. */
   unattributed: LogEntry[]
 }
 
@@ -37,7 +37,7 @@ const MOD_PHASE = /Failed to run mod phase (\w+) for mod ([\w.]+)/
 
 function isReportable(entry: LogEntry): boolean {
   const severity = entry.severity.toLowerCase()
-  return severity === "error" || severity === "warning"
+  return severity === "error" || severity === "warning" || severity === "fatal"
 }
 
 /**
@@ -54,6 +54,19 @@ export function modidForAssembly(assembly: string, installedModids: readonly str
   return installedModids.find((modid) => modid.toLowerCase() === leading)
 }
 
+/** Keep the first fatal cause, followed by later fatal lines in log order, ahead of other entries. */
+function keepReportEntry(entries: LogEntry[], entry: LogEntry, limit: number): void {
+  if (entry.severity.toLowerCase() === "fatal") {
+    const firstOther = entries.findIndex((kept) => kept.severity.toLowerCase() !== "fatal")
+    const index = firstOther < 0 ? entries.length : firstOther
+    if (index >= limit) return
+    entries.splice(index, 0, entry)
+    if (entries.length > limit) entries.pop()
+  } else if (entries.length < limit) {
+    entries.push(entry)
+  }
+}
+
 export function attributeEntries(entries: readonly LogEntry[], installedModids: readonly string[]): AttributionResult {
   const byModid = new Map<string, ModGroup>()
   const unattributed: LogEntry[] = []
@@ -61,19 +74,20 @@ export function attributeEntries(entries: readonly LogEntry[], installedModids: 
   for (const entry of entries) {
     if (!isReportable(entry)) continue
 
+    const severity = entry.severity.toLowerCase()
     const prefix = MODID_PREFIX.exec(entry.message)
     const phase = prefix ? null : MOD_PHASE.exec(entry.message)
     const modid = prefix ? (prefix[1] as string) : phase ? modidForAssembly(phase[2] as string, installedModids) : undefined
 
     if (!modid) {
-      if (unattributed.length < MAX_UNATTRIBUTED_ENTRIES) unattributed.push(entry)
+      keepReportEntry(unattributed, entry, MAX_UNATTRIBUTED_ENTRIES)
       continue
     }
 
     const group = byModid.get(modid) ?? { modid, signal: prefix ? "modid-prefix" : "assembly", errors: 0, warnings: 0, entries: [] }
-    if (entry.severity.toLowerCase() === "error") group.errors += 1
+    if (severity === "error" || severity === "fatal") group.errors += 1
     else group.warnings += 1
-    if (group.entries.length < MAX_ENTRIES_PER_GROUP) group.entries.push(entry)
+    keepReportEntry(group.entries, entry, MAX_ENTRIES_PER_GROUP)
     byModid.set(modid, group)
   }
 

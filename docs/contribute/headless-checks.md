@@ -154,3 +154,24 @@ side-by-side screenshot instead of trusting the diff to say what the page looks 
 that reads as a behavioral claim in the PR description ("the Mods list now shows X"), the same setup
 answers it directly: seed a profile that exercises the claim, launch, `eval`/`text`/`shot` to check
 it, `stop.sh` when done.
+
+## Optimum dedicated-server pre-release smoke
+
+Before a RiftLauncher release that changes Optimum installation or validation, apply the latest
+Optimum overlay to an isolated copy of a licensed Vintage Story game folder, then start its
+dedicated server through the smoke command:
+
+```sh
+node scripts/smoke/optimum-dedicated-server.mjs /path/to/the/patched/game-folder
+```
+
+The script requires the launcher's `.optimum/manifest.json`, creates a throwaway server data folder, generates a fresh server config,
+disables server listing and UPnP, binds to loopback on a free port, and waits for
+`Entering runphase RunGame` in `server-main.log`, then watches for five seconds and fails on an Optimum assembly load failure or an early exit. It lets the server resolve its own dependencies instead of requiring one DLL at the game root. It stops the server and removes the temporary
+data folder on either result. Set `VINTAGESTORY_SERVER` to the dedicated-server executable path
+when it is outside the game folder. Set `RIFTLAUNCHER_SERVER_SMOKE_TIMEOUT_MS` to change the
+120-second start limit.
+
+This smoke needs the proprietary game files, so the public CI workflow cannot provision it. Run it
+against the real game folder before publishing a RiftLauncher release; the automated checks still
+exercise reference reading, rollback and the Versions row against fixtures.

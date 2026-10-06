@@ -20,6 +20,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:tests",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "smoke:optimum-server": "node scripts/smoke/optimum-dedicated-server.mjs",
     "audit:prod": "npm audit --omit=dev",
     "i18n:status": "node scripts/i18n-status.js",
     "headless:seed": "node scripts/headless/seed.mjs",

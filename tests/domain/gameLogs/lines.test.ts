@@ -113,6 +113,36 @@ describe("attributing an error to a Mod", () => {
     assert.equal(group?.warnings, 1)
   })
 
+  it("counts a fatal line for its Mod as an error", () => {
+    const { groups } = attributeEntries(parseLogLines("1.1.2026 0:00:00 [Fatal] [madeupmod] Optimum.GameContent is missing"), ["madeupmod"])
+
+    assert.equal(groups[0]?.errors, 1)
+    assert.equal(groups[0]?.warnings, 0)
+    assert.equal(groups[0]?.entries[0]?.severity, "Fatal")
+  })
+
+  it("keeps a fatal line ahead of the unattributed warning cap", () => {
+    const warnings = Array.from({ length: MAX_ENTRIES_PER_GROUP }, (_, index) => `1.1.2026 0:00:${String(index).padStart(2, "0")} [Warning] issue ${index}`).join("\n")
+    const fatal = "1.1.2026 0:00:00 [Fatal] System.IO.FileNotFoundException: Optimum.GameContent is missing"
+    const { unattributed } = attributeEntries(parseLogLines(`${warnings}\n${fatal}`), [])
+
+    assert.equal(unattributed.length, MAX_ENTRIES_PER_GROUP)
+    assert.equal(unattributed[0]?.severity, "Fatal")
+    assert.match(unattributed[0]?.message ?? "", /Optimum\.GameContent/)
+  })
+
+  it.each(["", "[madeupmod] "])("keeps the first fatal cause and log order past the cap: %s", (prefix) => {
+    const warnings = Array.from({ length: 12 }, (_, i) => `1.1.2026 0:00:00 [Warning] ${prefix}warning ${i}`)
+    const fatal = Array.from({ length: 13 }, (_, i) => `1.1.2026 0:00:00 [Fatal] ${prefix}cause ${i}`)
+    const report = attributeEntries(parseLogLines([...warnings, ...fatal].join("\n")), ["madeupmod"])
+    const entries = prefix ? report.groups[0]?.entries : report.unattributed
+    assert.equal(entries?.length, 12)
+    assert.deepEqual(
+      entries?.map((entry) => entry.message),
+      Array.from({ length: 12 }, (_, i) => `${prefix}cause ${i}`)
+    )
+  })
+
   it("keeps an honest bucket for what no rule could name", () => {
     assert.deepEqual(
       attributed.unattributed.map((entry) => entry.message),
