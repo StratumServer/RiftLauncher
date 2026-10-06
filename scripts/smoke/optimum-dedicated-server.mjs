@@ -17,11 +17,13 @@ const RUN_GAME = /Entering runphase RunGame/
 // A missing assembly is not the only way Optimum takes the server down: a type
 // that cannot be resolved throws a TypeLoadException naming an `Optimum.` type,
 // and the server keeps running after it, so the smoke script has to read that as
-// a failure. Matching on the word Exception rather than on the two file-load
-// messages covers FileNotFoundException, TypeLoadException and
-// TypeInitializationException alike, and still requires an `Optimum.` type in
-// the same line so an unrelated exception is not read as an Optimum failure.
-const OPTIMUM_FAILURE = /(?:Exception|Could not load file or assembly).*Optimum\./i
+// a failure. Matching the exception's type name rather than only the two
+// file-load messages covers FileNotFoundException, TypeLoadException,
+// BadImageFormatException and TypeInitializationException alike. The name has to
+// be a word ending in Exception, so a line that merely says "exceptions" or
+// "exceptional" about Optimum is not read as a failure, and an `Optimum.` token
+// still has to appear on the same line.
+const OPTIMUM_FAILURE = /(?:\w+Exception\b|Could not load file or assembly).*Optimum\./i
 
 function usage() {
   return "Usage: node scripts/smoke/optimum-dedicated-server.mjs <freshly-patched-game-directory>\nSet VINTAGESTORY_SERVER to select a server executable when the folder has more than one."
@@ -159,16 +161,17 @@ async function main() {
     const SETTLE_MS = 5_000
     // The startup limit measures how long the server may take to reach RunGame.
     // The settle window after that is proof the server stays up, not part of the
-    // startup it is measuring, so once RunGame is seen the window runs outside the
-    // limit instead of against it. Both branches of the window condition are the
-    // same instant read two ways, so leaving the deadline in this condition would
-    // make the loop end one tick before the pass it is waiting for could fire.
+    // startup it is measuring, so once RunGame is seen the window has to run
+    // outside the limit instead of against it — otherwise a server that reaches
+    // RunGame near the limit is failed for being slow when it was in fact up.
     while (Date.now() < deadline || reachedRunGameAt !== null) {
       serverLog = await readServerLog(logPath)
       // The console output carries whatever the server prints that the log file
-      // does not, so a fatal line that only reaches stdout or stderr has to be
-      // searched too, or the server can fail this way and still pass.
-      const seen = serverLog + processHandle.output()
+      // does not, so a line that only reaches stdout or stderr has to be searched
+      // too, or the server can fail this way and still pass. Joined with a newline
+      // so a line ending in one source cannot be read together with the start of
+      // the other.
+      const seen = `${serverLog}\n${processHandle.output()}`
       if (OPTIMUM_FAILURE.test(seen)) {
         throw new Error(`The dedicated server reported an Optimum load failure.\n${lastLines(seen)}`)
       }
@@ -176,7 +179,9 @@ async function main() {
         const result = await processHandle.closed
         throw new Error(`The dedicated server exited before or during startup (code ${result.code}, signal ${result.signal}).\n${lastLines(serverLog || processHandle.output())}`)
       }
-      if (RUN_GAME.test(serverLog)) {
+      // Readiness is looked for in the same combined text: a server that prints
+      // RunGame only to its console has started just as much as one that logs it.
+      if (RUN_GAME.test(seen)) {
         if (reachedRunGameAt === null) reachedRunGameAt = Date.now()
       }
       // Settling is judged on the recorded moment, not on the RunGame line still
