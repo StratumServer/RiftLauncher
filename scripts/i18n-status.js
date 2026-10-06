@@ -3,11 +3,12 @@
  * Translation status for `src/renderer/src/locales`, as one markdown table.
  *
  * Per locale: how many keys the file carries, how many en-US keys it is still
- * missing, how many keys it has that en-US no longer does (stale), and how many
- * of its values are machine drafts nobody has reviewed yet. The drafted counts
- * come from `drafted.json` in the same folder (locale -> the keys that pass
- * wrote), maintained by whoever seeds a locale; a locale absent from it counts
- * as fully human-written.
+ * missing, how many keys it has that en-US no longer does (stale), and a link to
+ * the strings Hosted Weblate marks "Needs editing" for that language. What
+ * still wants a native review lives there rather than in this repository: the
+ * machine drafts a seeding pass wrote before Weblate carry that state, Weblate
+ * sets it again on a string whose English changed, and a translator clears it
+ * by correcting or confirming the string.
  *
  * A value that is exactly "" is missing, not carried (#680): Hosted Weblate
  * writes a plural form it has not had translated yet that way, and the launcher
@@ -15,9 +16,10 @@
  * src/renderer/src/i18n.ts).
  *
  * This is a report, not a gate: lag is expected (see the coverage snapshot in
- * tests/i18n/i18n-parity.test.ts) and no number here fails anything. A locale
- * file that does not parse still throws, since that is a real breakage the
- * parity suite fails on too.
+ * tests/i18n/i18n-parity.test.ts) and no number here fails anything. Two things
+ * still throw. A locale file that does not parse is a real breakage the parity
+ * suite fails on too. A locale file with no entry in WEBLATE_CODES would get a
+ * dead link, so a new language cannot be added without one.
  *
  * No dependency on purpose: the workflow runs it straight from a checkout,
  * with no `npm ci` in front of it.
@@ -33,9 +35,27 @@ const { basename, join } = require("node:path")
 
 const DEFAULT_DIR = join(__dirname, "..", "src", "renderer", "src", "locales")
 const SOURCE = "en-US.json"
-const DRAFTED = "drafted.json"
 const START = "<!-- i18n-status:start -->"
 const END = "<!-- i18n-status:end -->"
+
+// Hosted Weblate's language code for each locale file. It cannot be derived from the file name
+// (pt-BR is pt_BR there, zh-CN is zh_Hans), so a new locale file has to be added here by hand.
+const WEBLATE_CODES = {
+  "be-BY": "be",
+  "de-DE": "de",
+  "es-ES": "es",
+  "fr-FR": "fr",
+  "hu-HU": "hu",
+  "it-IT": "it",
+  "nl-NL": "nl",
+  "pl-PL": "pl",
+  "pt-BR": "pt_BR",
+  "pt-PT": "pt_PT",
+  "ru-RU": "ru",
+  "uk-UA": "uk",
+  "zh-CN": "zh_Hans"
+}
+const WEBLATE_COMPONENT = "https://hosted.weblate.org/translate/riftlauncher/launcher"
 
 /**
  * Flattens a nested translation object into dot-path keys, e.g.
@@ -78,21 +98,21 @@ function pluralFamiliesOf(keys) {
   return families
 }
 
+/** The markdown link to `locale`'s strings Weblate marks "Needs editing". Throws for a locale with no Weblate code. */
+function reviewLink(locale) {
+  if (!Object.hasOwn(WEBLATE_CODES, locale)) throw new Error(`No Weblate language code for ${locale}.json: add it to WEBLATE_CODES in scripts/i18n-status.js`)
+
+  return `[Needs editing](${WEBLATE_COMPONENT}/${WEBLATE_CODES[locale]}/?q=state:needs-editing)`
+}
+
 /** One row per locale file in `dir`, en-US excluded (it is the source). */
 function localeRows(dir) {
   const enKeys = [...Object.keys(flattenLocale(readJson(join(dir, SOURCE))))]
   const nonPluralEnKeys = enKeys.filter((key) => !PLURAL_SUFFIXES.some((suffix) => key.endsWith(suffix)))
   const pluralFamilies = [...pluralFamiliesOf(enKeys)]
 
-  let drafted = {}
-  try {
-    drafted = readJson(join(dir, DRAFTED))
-  } catch {
-    // No drafted list in this folder: nothing is flagged for review.
-  }
-
   const rows = readdirSync(dir)
-    .filter((file) => file.endsWith(".json") && file !== SOURCE && file !== DRAFTED)
+    .filter((file) => file.endsWith(".json") && file !== SOURCE)
     .sort()
     .map((file) => {
       const locale = basename(file, ".json")
@@ -102,7 +122,6 @@ function localeRows(dir) {
           .filter(([, value]) => value !== "")
           .map(([key]) => key)
       )
-      const draftedKeys = Array.isArray(drafted[locale]) ? drafted[locale] : []
 
       // en-US's key set, expanded to the plural categories this locale's own
       // grammar selects (Intl.PluralRules), instead of en-US's one/other: a
@@ -117,9 +136,7 @@ function localeRows(dir) {
         keys: keys.size,
         missing: [...expected].filter((key) => !keys.has(key)).length,
         stale: [...keys].filter((key) => !expected.has(key)).length,
-        // A drafted key this locale's own grammar has no use for is counted as
-        // stale above, not as review work, so it is not counted twice here.
-        drafted: draftedKeys.filter((key) => expected.has(key)).length
+        review: reviewLink(locale)
       }
     })
 
@@ -128,13 +145,14 @@ function localeRows(dir) {
 
 /** Markdown table, padded the way Prettier formats one so `format:check` stays green. */
 function renderTable(rows) {
-  const header = ["Locale", "Keys", "Missing", "Stale", "Drafted to review"]
-  const body = rows.map((row) => [row.locale, String(row.keys), String(row.missing), String(row.stale), String(row.drafted)])
+  const header = ["Locale", "Keys", "Missing", "Stale", "To review on Weblate"]
+  const body = rows.map((row) => [row.locale, String(row.keys), String(row.missing), String(row.stale), row.review])
   const widths = header.map((title, column) => Math.max(title.length, ...body.map((cells) => cells[column].length)))
-  // First column left-aligned (names), the counts right-aligned.
-  const pad = (value, column) => (column === 0 ? value.padEnd(widths[column]) : value.padStart(widths[column]))
+  // The name and link columns are left-aligned, the counts right-aligned.
+  const leftAligned = (column) => column === 0 || column === header.length - 1
+  const pad = (value, column) => (leftAligned(column) ? value.padEnd(widths[column]) : value.padStart(widths[column]))
   const line = (cells) => `| ${cells.map(pad).join(" | ")} |`
-  const rule = `| ${widths.map((width, column) => (column === 0 ? "-".repeat(width) : `${"-".repeat(width - 1)}:`)).join(" | ")} |`
+  const rule = `| ${widths.map((width, column) => (leftAligned(column) ? "-".repeat(width) : `${"-".repeat(width - 1)}:`)).join(" | ")} |`
 
   return [line(header), rule, ...body.map(line)].join("\n")
 }
