@@ -14,7 +14,14 @@ import { setTimeout as delay } from "node:timers/promises"
 const TIMEOUT_MS = Number(process.env.RIFTLAUNCHER_SERVER_SMOKE_TIMEOUT_MS ?? 120_000)
 const STOP_TIMEOUT_MS = 10_000
 const RUN_GAME = /Entering runphase RunGame/
-const OPTIMUM_FAILURE = /(?:FileNotFoundException|Could not load file or assembly).*Optimum\./i
+// A missing assembly is not the only way Optimum takes the server down: a type
+// that cannot be resolved throws a TypeLoadException naming an `Optimum.` type,
+// and the server keeps running after it, so the smoke script has to read that as
+// a failure. Matching on the word Exception rather than on the two file-load
+// messages covers FileNotFoundException, TypeLoadException and
+// TypeInitializationException alike, and still requires an `Optimum.` type in
+// the same line so an unrelated exception is not read as an Optimum failure.
+const OPTIMUM_FAILURE = /(?:Exception|Could not load file or assembly).*Optimum\./i
 
 function usage() {
   return "Usage: node scripts/smoke/optimum-dedicated-server.mjs <freshly-patched-game-directory>\nSet VINTAGESTORY_SERVER to select a server executable when the folder has more than one."
@@ -150,22 +157,34 @@ async function main() {
     let serverLog = ""
     let reachedRunGameAt = null
     const SETTLE_MS = 5_000
-    while (Date.now() < deadline) {
+    // The startup limit measures how long the server may take to reach RunGame.
+    // The settle window after that is proof the server stays up, not part of the
+    // startup it is measuring, so once RunGame is seen the window runs outside the
+    // limit instead of against it. Both branches of the window condition are the
+    // same instant read two ways, so leaving the deadline in this condition would
+    // make the loop end one tick before the pass it is waiting for could fire.
+    while (Date.now() < deadline || reachedRunGameAt !== null) {
       serverLog = await readServerLog(logPath)
-      if (OPTIMUM_FAILURE.test(serverLog)) {
-        throw new Error(`The dedicated server reported an Optimum assembly load failure.\n${lastLines(serverLog)}`)
+      // The console output carries whatever the server prints that the log file
+      // does not, so a fatal line that only reaches stdout or stderr has to be
+      // searched too, or the server can fail this way and still pass.
+      const seen = serverLog + processHandle.output()
+      if (OPTIMUM_FAILURE.test(seen)) {
+        throw new Error(`The dedicated server reported an Optimum load failure.\n${lastLines(seen)}`)
       }
       if (processHandle.child.exitCode !== null || processHandle.child.signalCode !== null) {
         const result = await processHandle.closed
         throw new Error(`The dedicated server exited before or during startup (code ${result.code}, signal ${result.signal}).\n${lastLines(serverLog || processHandle.output())}`)
       }
       if (RUN_GAME.test(serverLog)) {
-        if (reachedRunGameAt === null) {
-          reachedRunGameAt = Date.now()
-        } else if (Date.now() - reachedRunGameAt >= SETTLE_MS) {
-          process.stdout.write(`PASS: The dedicated server with Optimum ${patchManifest.optimumVersion} reached RunGame on a loopback-only server.\n`)
-          return
-        }
+        if (reachedRunGameAt === null) reachedRunGameAt = Date.now()
+      }
+      // Settling is judged on the recorded moment, not on the RunGame line still
+      // being in the log, so a log that stops carrying it ends the window instead
+      // of keeping the loop waiting.
+      if (reachedRunGameAt !== null && Date.now() - reachedRunGameAt >= SETTLE_MS) {
+        process.stdout.write(`PASS: The dedicated server with Optimum ${patchManifest.optimumVersion} reached RunGame on a loopback-only server.\n`)
+        return
       }
       await delay(250)
     }

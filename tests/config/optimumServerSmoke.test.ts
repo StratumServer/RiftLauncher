@@ -5,11 +5,44 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { describe, it } from "vitest"
 
+const FILE_LOAD = "FileNotFoundException: Could not load file or assembly Optimum.Other\\n"
+const TYPE_LOAD = "TypeLoadException: Could not load type 'Optimum.ModContracts.Blocks.IBlock' from assembly 'Optimum.GameContent.dll'\\n"
+
+/**
+ * One fake server per failure mode Optimum can produce on a dedicated server,
+ * and the answer the smoke script has to give for it.
+ *
+ * `then` is code spliced into the fixture, where `log` is the server-main.log
+ * path, and runs 750 ms in — late enough for the script to be watching by then.
+ *
+ * `runGameAfter` delays the RunGame line so the settle window can be tested
+ * against a startup limit that is nearly spent: the window is proof the server
+ * stays up, not part of the startup being measured, so a server that reaches
+ * RunGame just inside the limit still has to pass.
+ */
+const MODES = {
+  fatal: { timeout: 9000, runGameAfter: 0, then: () => `fs.appendFileSync(log, ${JSON.stringify(FILE_LOAD)})`, code: 1, output: /Optimum load failure/ },
+  // A type that cannot be resolved throws a TypeLoadException, not a
+  // FileNotFoundException, and the server keeps running after it. Matching only
+  // the two file-load messages let this through as a pass.
+  typeload: { timeout: 9000, runGameAfter: 0, then: () => `fs.appendFileSync(log, ${JSON.stringify(TYPE_LOAD)})`, code: 1, output: /Optimum load failure/ },
+  // The same line on stdout instead of in the log file. Reading only
+  // server-main.log left the console output unsearched, so this passed too.
+  console: { timeout: 9000, runGameAfter: 0, then: () => `console.log(${JSON.stringify(TYPE_LOAD.trimEnd())})`, code: 1, output: /Optimum load failure/ },
+  exit: { timeout: 9000, runGameAfter: 0, then: () => "process.exit(0)", code: 1, output: /exited before or during startup/ },
+  late: { timeout: 2000, runGameAfter: 1500, then: () => "", code: 0, output: /PASS:/ },
+  // The server is up and the log stops carrying the RunGame line. Settling is
+  // judged on when RunGame was seen, not on the line surviving in the log, so
+  // this still settles instead of waiting for a line that never comes back.
+  vanishing: { timeout: 2000, runGameAfter: 0, then: () => `fs.writeFileSync(log, "Still running\\n")`, code: 0, output: /PASS:/ },
+  stable: { timeout: 9000, runGameAfter: 0, then: () => "", code: 0, output: /PASS:/ }
+} as const
+
 /** Linux executable fixtures exercise the shipped script, including its child lifetime. */
 describe.skipIf(process.platform === "win32")("Optimum dedicated server smoke", () => {
-  it.each(["fatal", "exit", "stable"])(
-    "settles RunGame before reporting success: %s",
-    async (mode) => {
+  it.each(Object.entries(MODES))(
+    "reports %s",
+    async (_name, mode) => {
       const folder = mkdtempSync(join(tmpdir(), "rift-smoke-regression-"))
       const server = join(folder, "fake-server")
       mkdirSync(join(folder, ".optimum"))
@@ -26,9 +59,8 @@ if (process.argv.includes("--genconfig")) {
 }
 fs.mkdirSync(path.join(data, "Logs"), { recursive: true })
 const log = path.join(data, "Logs", "server-main.log")
-fs.writeFileSync(log, "Entering runphase RunGame\\n")
-if (${JSON.stringify(mode)} === "fatal") setTimeout(() => fs.appendFileSync(log, "FileNotFoundException: Could not load file or assembly Optimum.Other\\n"), 750)
-if (${JSON.stringify(mode)} === "exit") setTimeout(() => process.exit(0), 750)
+setTimeout(() => fs.writeFileSync(log, "Entering runphase RunGame\\n"), ${mode.runGameAfter})
+setTimeout(() => { ${mode.then()} }, 750)
 setInterval(() => {}, 1000)
 `,
         { mode: 0o755 }
@@ -36,7 +68,7 @@ setInterval(() => {}, 1000)
       try {
         const result = await new Promise<{ code: number | null; output: string }>((resolveResult, reject) => {
           const child = spawn(process.execPath, [resolve("scripts/smoke/optimum-dedicated-server.mjs"), folder], {
-            env: { ...process.env, VINTAGESTORY_SERVER: server, RIFTLAUNCHER_SERVER_SMOKE_TIMEOUT_MS: "9000" }
+            env: { ...process.env, VINTAGESTORY_SERVER: server, RIFTLAUNCHER_SERVER_SMOKE_TIMEOUT_MS: String(mode.timeout) }
           })
           let output = ""
           child.stdout.on("data", (chunk) => {
@@ -48,16 +80,16 @@ setInterval(() => {}, 1000)
           child.on("error", reject)
           child.on("close", (code) => resolveResult({ code, output }))
         })
-        assert.equal(result.code, mode === "stable" ? 0 : 1, result.output)
-        if (mode === "stable") assert.match(result.output, /PASS:/)
+        assert.equal(result.code, mode.code, result.output)
+        if (mode.code === 0) assert.match(result.output, mode.output)
         else {
           assert.doesNotMatch(result.output, /PASS:/)
-          assert.match(result.output, mode === "fatal" ? /Optimum assembly load failure/ : /exited before or during startup/)
+          assert.match(result.output, mode.output)
         }
       } finally {
         rmSync(folder, { recursive: true, force: true })
       }
     },
-    15000
+    20000
   )
 })
