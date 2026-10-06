@@ -142,7 +142,6 @@ async function removeWorldBackupArchive(archivePath: string, expectedBackupId: s
     const safeFilename = basename(safePath)
     if (safeFilename !== `${expectedBackupId}.tar.gz`) return false
     if (basename(dirname(safePath)) !== WORLD_BACKUPS_FOLDER) return false
-    if (basename(dirname(dirname(safePath))) === "Installations") return false
 
     const stat = await fse.lstat(safePath)
     if (!stat.isFile() || stat.isSymbolicLink()) return false
