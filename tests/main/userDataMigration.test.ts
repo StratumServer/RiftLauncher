@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { chmodSync, existsSync, truncateSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, truncateSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import fse from "fs-extra"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import {
@@ -53,6 +54,20 @@ function seedLegacyFolder(): void {
   writeFileSync(join(legacyPath(), "Icons", "custom.png"), "not really a png", "utf8")
   writeFileSync(join(legacyPath(), "Logs", "info.log"), "an old line", "utf8")
   writeFileSync(join(legacyPath(), "Cache", "ModCatalog", "catalog.json"), "[]", "utf8")
+}
+
+/**
+ * Makes only `targetPath` report another account as its owner. Mocking `process.getuid` instead
+ * would make a link foreign as well, and a check that reads the link rather than its target
+ * would still pass.
+ */
+function spyOnForeignOwnedTarget(targetPath: string): ReturnType<typeof vi.spyOn> {
+  const realTarget = realpathSync.native(targetPath)
+  const original = fse.statSync.bind(fse)
+  return vi.spyOn(fse, "statSync").mockImplementation(((path: string, ...rest: unknown[]) => {
+    const stats = (original as (...args: unknown[]) => fse.Stats)(path, ...rest)
+    return String(path) === realTarget ? Object.assign(stats, { uid: stats.uid + 1 }) : stats
+  }) as typeof fse.statSync)
 }
 
 beforeEach(() => {
@@ -590,6 +605,49 @@ describe("setUpUserDataFolder", () => {
 })
 
 describe("migration review regressions", () => {
+  it.skipIf(process.platform === "win32")("rejects a link to a foreign-owned profile in portable setup even when the link itself is ours", () => {
+    const targetPath = join(appDataPath, "other-user-profile")
+    mkdirSync(targetPath, { recursive: true })
+    writeFileSync(join(targetPath, "config.json"), '{"source":true}', "utf8")
+    writeFileSync(join(targetPath, "account-secrets.json"), "sealed:placeholder", "utf8")
+    symlinkSync(targetPath, riftPath(), "dir")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    const statSpy = spyOnForeignOwnedTarget(targetPath)
+
+    try {
+      assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /Profile folder belongs to another user/i)
+      assert.equal(existsSync(dataPath), false)
+    } finally {
+      statSpy.mockRestore()
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("refuses to start on a linked default profile whose target is foreign-owned", () => {
+    const targetPath = join(appDataPath, "other-user-profile")
+    mkdirSync(targetPath, { recursive: true })
+    writeFileSync(join(targetPath, "config.json"), '{"source":true}', "utf8")
+    symlinkSync(targetPath, riftPath(), "dir")
+    const statSpy = spyOnForeignOwnedTarget(targetPath)
+
+    try {
+      assert.throws(() => setUpUserDataFolder(appDataPath), /Profile folder belongs to another user/i)
+    } finally {
+      statSpy.mockRestore()
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("uses a linked default profile whose target is the player's own folder", () => {
+    const targetPath = join(appDataPath, "own-profile")
+    mkdirSync(targetPath, { recursive: true })
+    writeFileSync(join(targetPath, "config.json"), '{"source":true}', "utf8")
+    symlinkSync(targetPath, riftPath(), "dir")
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "use-existing")
+    assert.equal(readFileSync(join(targetPath, "config.json"), "utf8"), '{"source":true}')
+  })
+
   it("refuses an Icons directory link itself in both migration paths", () => {
     const target = join(appDataPath, "external-icons")
     mkdirSync(target)
