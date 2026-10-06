@@ -48,10 +48,22 @@ export function describeOptimumManifestFailure(reason: OptimumManifestFailureRea
  * A run the launcher rolled back afterwards is one line whatever stopped it.
  * What a player needs from that sentence is the state of their build, and every
  * one of those runs ends the same way: the original game files are back.
+ *
+ * That is a claim about the folder, so it is only made once `rolledBack` says it
+ * happened. A rollback that fails leaves the run's own reason in place with the
+ * flag unset, and the folder still holding the patched assemblies, the Optimum
+ * contracts and the `.optimum` folder, which the row reports as missing Optimum
+ * files with a Remove Optimum action. Telling that player their files were put
+ * back sends them looking for a problem that is not the one they have.
  */
 export function describeOptimumFailure(failure: { reason: OptimumPatchFailureReason; rolledBack?: boolean; missingAssembly?: string }): OptimumFailureFeedback {
   if (failure.reason === "missing-assembly" && failure.missingAssembly) {
-    return { messageKey: "features.versions.optimumMissingRequiredAssembly", logged: true, values: { assembly: failure.missingAssembly } }
+    // The only refusal whose sentence names a state of the folder rather than
+    // the run, so the assembly is only worth naming once the restore is known
+    // to have happened. Without it the sentence that is true is the restore one.
+    return failure.rolledBack
+      ? { messageKey: "features.versions.optimumMissingRequiredAssembly", logged: true, values: { assembly: failure.missingAssembly } }
+      : { messageKey: "features.versions.optimumRestoreFailed", logged: true }
   }
   if (failure.rolledBack) return { messageKey: "features.versions.optimumRolledBack", logged: true }
 
