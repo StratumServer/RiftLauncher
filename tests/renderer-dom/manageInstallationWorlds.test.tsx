@@ -1,12 +1,13 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest"
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
 import ManageInstallationWorlds from "@renderer/features/installations/pages/ManageInstallationWorlds"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
+import i18n, { changeLanguage } from "@renderer/i18n"
 
-import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
+import { createMockConfig, installMockWindowApi, type MockedBridgeAPI } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 function anInstallation(worldBackups: WorldBackupType[] = [{ id: "backup-1", date: 1, path: "/backups/backup-1.tar.gz", worldName: "World.vcdbs" }]): InstallationType {
@@ -785,4 +786,104 @@ it("does not refetch in a loop when listing fails", async () => {
 
   await new Promise((resolve) => setTimeout(resolve, 150))
   expect(list).toHaveBeenCalledTimes(1)
+})
+
+/**
+ * A crash or a power cut leaves the world's SQLite journal files, `-wal` and `-shm`, beside it in
+ * Saves, and the main process refuses every change to that world while they are there (#692;
+ * tests/ipc/worldsHandlers.test.ts pins the refusal with real files). Nothing has the world open
+ * then, so the old answer, "This world is active. Close Vintage Story and try again.", sent the
+ * player to close a game that was already closed. The refusal stays, and the sentence now names
+ * both causes and both ways out, so this is what each action on the page shows for it.
+ */
+const JOURNAL_REFUSAL = [
+  {
+    language: "en-US",
+    sentence: "This world is open in Vintage Story, or was not closed cleanly after a crash or a power cut. Close the game, or open the world in it once and quit normally, then try again."
+  },
+  {
+    language: "fr-FR",
+    sentence:
+      "Ce monde est ouvert dans Vintage Story, ou n'a pas été fermé correctement après un plantage ou une coupure de courant. Fermez le jeu, ou ouvrez ce monde une fois dans le jeu et quittez-le normalement, puis réessayez."
+  }
+] as const
+
+type Player = ReturnType<typeof userEvent.setup>
+
+/** Opens a row action's confirmation and confirms it. The labels are read in the language on screen, so the same steps drive English and French. */
+async function confirmRowAction(user: Player, key: string, fill?: (dialog: HTMLElement) => Promise<void>): Promise<void> {
+  await user.click(await screen.findByTitle(i18n.t(key)))
+  const dialog = await screen.findByRole("dialog")
+  await fill?.(dialog)
+  await user.click(within(dialog).getByRole("button", { name: i18n.t(key) }))
+}
+
+/** Each action that can come back "world-has-sidecars", the bridge call it makes, and the clicks that get there. Copy and move share one call site, so copy stands for both. */
+const REFUSED_ACTIONS: { action: string; call: "backup" | "restore" | "transfer" | "delete"; run: (user: Player) => Promise<void> }[] = [
+  { action: "backing up", call: "backup", run: (user) => confirmRowAction(user, "features.worlds.backup") },
+  { action: "restoring", call: "restore", run: (user) => confirmRowAction(user, "generic.restore") },
+  {
+    action: "copying",
+    call: "transfer",
+    run: async (user) => {
+      await user.selectOptions(await screen.findByRole("combobox"), "install-b")
+      await confirmRowAction(user, "features.worlds.copy")
+    }
+  },
+  { action: "deleting", call: "delete", run: (user) => confirmRowAction(user, "generic.delete", (dialog) => user.type(within(dialog).getByRole("textbox"), "World.vcdbs")) }
+]
+
+/** Manage Worlds for an Installation that is not running, whose one world the main process refuses to touch because its journal files are still there. */
+function renderWorldWithLeftoverJournal(): MockedBridgeAPI {
+  const refusal = { ok: false as const, reason: "world-has-sidecars" }
+  const api = installMockWindowApi({
+    configManager: {
+      getConfig: vi.fn(async () =>
+        createMockConfig({
+          installations: [
+            { ...anInstallation(), _playing: false },
+            { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b" }
+          ]
+        })
+      )
+    },
+    worldsManager: {
+      list: vi.fn(async () => ({ ok: true as const, worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 1 }] })),
+      backup: vi.fn(async () => refusal),
+      restore: vi.fn(async () => refusal),
+      transfer: vi.fn(async () => refusal),
+      delete: vi.fn(async () => refusal)
+    }
+  })
+
+  renderWithProviders(
+    <>
+      <NotificationsOverlay />
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>
+    </>,
+    { route: "/installations/worlds/install-a" }
+  )
+  return api
+}
+
+describe.each(JOURNAL_REFUSAL)("a world left with its journal files and no game running, in $language (#692)", ({ language, sentence }) => {
+  beforeEach(async () => {
+    expect(await changeLanguage(language)).toBe(true)
+    // After the test, which is after the cleanup that unmounts the page: a language switch on a
+    // mounted page would re-render it outside act().
+    onTestFinished(async () => {
+      await changeLanguage("en-US")
+    })
+  })
+
+  it.each(REFUSED_ACTIONS)("shows the sentence for a crash or a power cut when $action is refused", async ({ call, run }) => {
+    const api = renderWorldWithLeftoverJournal()
+
+    await run(userEvent.setup())
+
+    expect(await screen.findByText(sentence)).not.toBeNull()
+    expect(api.worldsManager[call]).toHaveBeenCalledTimes(1)
+  })
 })

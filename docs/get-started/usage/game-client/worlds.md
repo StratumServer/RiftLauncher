@@ -12,8 +12,19 @@ versions are allowed but show a warning.
 The launcher refuses every world change while Vintage Story is running in the
 same session: close the game first. A session already closed before the launcher
 restarted is not tracked, so the launcher also refuses to change a world while
-Vintage Story has its SQLite `-wal` or `-shm` sidecar open. Both guards depend
-on the live `Saves` folder being free of the game's own locks.
+its SQLite journal files, `<world>.vcdbs-wal` or `<world>.vcdbs-shm`, are in
+`Saves` beside it. Both guards depend on the live `Saves` folder being free of
+the game's own locks.
+
+Those two files hold the latest changes the game made to the world, and a
+backup, a copy or a move that leaves them out would lose those changes, so the
+launcher refuses until they are gone. A crash or a power cut leaves them behind
+too, and the launcher cannot tell that from a game that still has the world
+open: it can refuse with the game closed, even after a reboot. To clear it, open
+the world once in Vintage Story and quit normally. The files go away when the
+game opens the world again and closes it cleanly, and then the launcher accepts
+the change again. Do not delete the `-wal` or `-shm` file yourself, because
+whatever the world file does not hold yet would be lost with it.
 
 World backups are stored beneath the configured Backups folder and survive
 deleting the live world. Each world retains up to the Installation's configured

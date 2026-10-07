@@ -732,7 +732,7 @@
         "saves-unavailable": "The Saves folder is unavailable.",
         "world-not-found": "World not found.",
         "world-busy": "This world is already being changed.",
-        "world-has-sidecars": "This world is active. Close Vintage Story and try again.",
+        "world-has-sidecars": "This world is open in Vintage Story, or was not closed cleanly after a crash or a power cut. Close the game, or open the world in it once and quit normally, then try again.",
         "archive-not-found": "World backup not found.",
         "invalid-request": "That world operation is not valid.",
         "backups-disabled": "No backup made: this Installation's Backups max amount is set to 0. Raise it on the Installation's edit page to turn backups back on.",
