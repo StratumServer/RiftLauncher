@@ -765,7 +765,7 @@
         "saves-unavailable": "Le dossier Saves est indisponible.",
         "world-not-found": "Monde introuvable.",
         "world-busy": "Ce monde est déjà en cours de modification.",
-        "world-has-sidecars": "Ce monde est actif. Fermez Vintage Story puis réessayez.",
+        "world-has-sidecars": "Ce monde est ouvert dans Vintage Story, ou n'a pas été fermé correctement après un plantage ou une coupure de courant. Fermez le jeu, ou ouvrez ce monde une fois dans le jeu et quittez-le normalement, puis réessayez.",
         "archive-not-found": "Sauvegarde du monde introuvable.",
         "invalid-request": "Cette opération sur le monde n'est pas valide.",
         "backups-disabled": "Aucune sauvegarde faite : le nombre maximum de sauvegardes de cette installation est à 0. Augmentez-le dans la page de modification de l'installation pour réactiver les sauvegardes.",
