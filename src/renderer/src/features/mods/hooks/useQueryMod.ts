@@ -13,7 +13,7 @@ import { logMods } from "@renderer/features/moddb/adapters/log"
  * as a v1 envelope). A caller that folds the two together ends up telling the player a mod is a
  * fork or a private build when the real story is that the database could not be reached.
  */
-export type QueryModOutcome = { status: "found"; mod: DownloadableModType } | { status: "not-found" } | { status: "failed" }
+export type QueryModOutcome = { status: "found"; mod: DownloadableModType } | { status: "not-found" } | { status: "failed"; timedOut?: boolean }
 
 export function useQueryMod(): ({ modid, onFinish }: { modid: number | string; onFinish?: () => void }) => Promise<QueryModOutcome> {
   /**
@@ -44,7 +44,11 @@ export function useQueryMod(): ({ modid, onFinish }: { modid: number | string; o
     } catch (err) {
       logMods("error", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching a Mod's versions.`)
       logMods("debug", `[front] [mods] [features/mods/hooks/useQueryMod.ts] [useQueryMod > queryMod] Error fetching a Mod's versions: ${err}`)
-      return { status: "failed" }
+      // invoke() wraps the handler's Error with its own prefix, so match the transport's exact
+      // timeout message inside that wrapper. Other network failures and malformed bodies must not
+      // stop a batch: they fail quickly and each remaining Mod can still be checked.
+      const message = err instanceof Error ? err.message : String(err)
+      return { status: "failed", timedOut: message.includes("Network request timed out") }
     }
   }, [])
 }

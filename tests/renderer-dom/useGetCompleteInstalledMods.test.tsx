@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { renderHook, waitFor } from "@testing-library/react"
 
 import { useGetCompleteInstalledMods } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
+import { installedModLookups } from "@renderer/features/mods/hooks/modDetailLookups"
 
 import { installMockWindowApi } from "./helpers/windowApi"
 
@@ -121,6 +122,43 @@ function aModDetail(modid: number, releases: { modversion: string; tags: string[
 }
 
 describe("useGetCompleteInstalledMods: the update count", () => {
+  it("stops queued lookups after a ModDB request times out", async () => {
+    const installed = (modid: number): InstalledModType => ({ name: `Mod ${modid}`, modid: String(modid), version: "1.0.0", path: `/games/a/Mods/mod-${modid}.zip`, enabled: true })
+    let rejectFirst!: (error: Error) => void
+    let resolveSecond!: (response: string) => void
+    const queryURL = vi.fn((url: string): Promise<string> => {
+      const modid = url.match(/\/mod\/(\d+)/)?.[1]
+      if (modid === "1") return new Promise<string>((_resolve, reject) => (rejectFirst = reject))
+      if (modid === "2") return new Promise<string>((resolve) => (resolveSecond = resolve))
+      return Promise.resolve(JSON.stringify({ statuscode: "404" }))
+    })
+    installMockWindowApi({
+      netManager: { queryURL },
+      modsManager: { getInstalledMods: vi.fn(async () => ({ mods: Array.from({ length: 6 }, (_, index) => installed(index + 1)), errors: [] })) }
+    })
+    const onFinish = vi.fn()
+    const { result } = renderHook(() => useGetCompleteInstalledMods())
+
+    const scan = result.current({ path: "/games/a", version: "1.21.0", onFinish })
+    await waitFor(() => expect(queryURL).toHaveBeenCalledTimes(FAN_OUT_LIMIT))
+
+    rejectFirst(new Error("Error invoking remote method 'query-url': Error: Network request timed out"))
+    await waitFor(() => expect(installedModLookups.queuedCount).toBe(0))
+    expect(queryURL).toHaveBeenCalledTimes(FAN_OUT_LIMIT)
+
+    resolveSecond(aModDetail(2, [{ modversion: "1.1.0", tags: ["1.21.0"] }]))
+    const { mods } = await scan
+
+    expect(mods).toHaveLength(6)
+    expect(mods.find((mod) => mod.modid === "2")?._updatableTo).toBe("1.1.0")
+    expect(queryURL).toHaveBeenCalledTimes(FAN_OUT_LIMIT)
+    expect(onFinish).toHaveBeenCalledWith(1, 5)
+
+    queryURL.mockResolvedValue(JSON.stringify({ statuscode: "404" }))
+    await result.current({ path: "/games/a", version: "1.21.0" })
+    expect(queryURL).toHaveBeenCalledTimes(FAN_OUT_LIMIT + 6)
+  })
+
   it("counts only the Mods with a newer release tagged for the game version", async () => {
     const installed = (modid: number): InstalledModType => ({ name: `Mod ${modid}`, modid: String(modid), version: "1.0.0", path: `/games/a/Mods/mod-${modid}.zip`, enabled: true })
     // 1 has a tagged update, 2 only a newer release for another series, 3 is already current.
@@ -153,7 +191,7 @@ describe("useGetCompleteInstalledMods: the update count", () => {
       netManager: {
         queryURL: vi.fn(async (url: string) => {
           const modid = url.match(/\/mod\/(\d+)/)?.[1] ?? ""
-          if (modid === "2") throw new Error("Network request timed out")
+          if (modid === "2") throw new Error("Error invoking remote method 'query-url': Error: Connection refused")
           return details[modid] ?? JSON.stringify({ statuscode: "404" })
         })
       },
@@ -172,7 +210,7 @@ describe("useGetCompleteInstalledMods: the update count", () => {
   it("counts failed lookups once per mod id, not once per installed file", async () => {
     const installed = (modid: number): InstalledModType => ({ name: `Mod ${modid}`, modid: String(modid), version: "1.0.0", path: `/games/a/Mods/mod-${modid}.zip`, enabled: true })
     const queryURL = vi.fn(async () => {
-      throw new Error("Network request timed out")
+      throw new Error("Error invoking remote method 'query-url': Error: Connection refused")
     })
     installMockWindowApi({
       netManager: { queryURL },
