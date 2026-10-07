@@ -71,6 +71,27 @@ export function formatTimestampForFilename(epochMillis: number): string {
 }
 
 /**
+ * The name a file the launcher could not read is kept under when it is set aside or copied aside
+ * (#554 for `config.json`, #691 for an Installation's `clientsettings.json`): the file's own name,
+ * `.unreadable-`, the instant in UTC, and `.json`.
+ *
+ * The instant is ISO 8601 with every `:` and `.` turned into a dash, which every file system takes,
+ * and it is UTC so that every machine, and every bug report, spells one instant the same way.
+ * Nothing reads the name back. `attempt` is for a caller whose name was already taken: 0 is the bare
+ * name and every later one adds `-<attempt>`, so a second failure in the same millisecond still gets
+ * a name of its own instead of overwriting the first.
+ *
+ * @param stem The file's name without its extension, such as "config" or "clientsettings".
+ * @param epochMillis Milliseconds since the Unix epoch. Read once by the caller, so that every attempt names the same instant.
+ * @param attempt Which try this is, counting from 0.
+ * @returns A name like "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json".
+ */
+export function unreadableCopyName(stem: string, epochMillis: number, attempt = 0): string {
+  const instant = new Date(epochMillis).toISOString().replace(/[:.]/g, "-")
+  return `${stem}.unreadable-${instant}${attempt === 0 ? "" : `-${attempt}`}.json`
+}
+
+/**
  * Spells out how a registered build is named in the VS Versions list.
  *
  * One place rather than one per caller: the "add an already installed VS

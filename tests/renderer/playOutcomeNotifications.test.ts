@@ -33,6 +33,10 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
     assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "session-write-failed" }, "linux"), { key: "notifications.body.gameLaunchSessionWriteFailed" })
   })
 
+  it("keys client-settings-unreadable to its own sentence, which names the file instead of telling the player to log in again", () => {
+    assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "client-settings-unreadable" }, "linux"), { key: "notifications.body.gameLaunchClientSettingsUnreadable" })
+  })
+
   it("keys invalid-request to its own sentence", () => {
     assert.deepEqual(pickPlayOutcomeNotification({ ok: false, reason: "invalid-request" }, "linux"), { key: "notifications.body.gameLaunchInvalidEnvironment" })
   })
@@ -61,7 +65,15 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
   })
 
   it("gives every other reason a bare message, so only missing-dotnet grows an action", () => {
-    const reasons: GameExecutionFailureReason[] = ["unsupported-platform", "no-executable", "session-write-failed", "invalid-request", "installation-busy", "launch-failed"]
+    const reasons: GameExecutionFailureReason[] = [
+      "unsupported-platform",
+      "no-executable",
+      "session-write-failed",
+      "client-settings-unreadable",
+      "invalid-request",
+      "installation-busy",
+      "launch-failed"
+    ]
     for (const reason of reasons) assert.equal(pickPlayOutcomeNotification({ ok: false, reason }, "linux")?.link, undefined)
   })
 
@@ -71,7 +83,16 @@ describe("pickPlayOutcomeNotification on a refusal", () => {
    * session's one, which is worse than not offering it (#462).
    */
   it("offers the session report only where a session actually happened", () => {
-    const reasons: GameExecutionFailureReason[] = ["unsupported-platform", "no-executable", "session-write-failed", "invalid-request", "installation-busy", "missing-dotnet", "launch-failed"]
+    const reasons: GameExecutionFailureReason[] = [
+      "unsupported-platform",
+      "no-executable",
+      "session-write-failed",
+      "client-settings-unreadable",
+      "invalid-request",
+      "installation-busy",
+      "missing-dotnet",
+      "launch-failed"
+    ]
     for (const reason of reasons) assert.equal(pickPlayOutcomeNotification({ ok: false, reason }, "linux")?.report, undefined)
     assert.equal(pickPlayOutcomeNotification({ ok: true, exitCode: 0 }, "linux"), null)
     assert.equal(pickPlayOutcomeNotification({ ok: true, exitCode: 1 }, "linux")?.report?.labelKey, "notifications.actions.seeWhatWentWrong")

@@ -3,7 +3,7 @@ import { execFile, spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import fse from "fs-extra"
 import { constants } from "node:fs"
-import { delimiter, isAbsolute, join } from "node:path"
+import { basename, delimiter, dirname, isAbsolute, join } from "node:path"
 import os from "node:os"
 import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
@@ -22,10 +22,12 @@ import { scanInstalledMods } from "@domain/mods/scanInstalled"
 import { createScanInstalledModsPorts } from "@src/ipc/adapters/modScan"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
 import { joinTargetUrl, resolveServerBookmark } from "@domain/servers/bookmarks"
+import { unreadableCopyName } from "@domain/naming"
 import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
 import { MODS_FOLDER_NAME } from "@domain/mods/folder"
 import {
   appendStderrScan,
+  clientSettingsUnreadableResult,
   gameProcessOutcomeToResult,
   hasMissingDotnetSentinel,
   invalidExecutableResult,
@@ -41,6 +43,7 @@ import type {
   GameProcessRequest,
   JsonFile,
   JsonFileReadResult,
+  JsonFileSetAsideResult,
   JsonFileWriteResult,
   PathBuilder,
   ProcessProbe,
@@ -49,6 +52,9 @@ import type {
 } from "@domain/ports"
 
 const LOG_PREFIX = "[back] [ipc] [ipc/handlers/gameHandlers.ts]"
+
+/** How many names an unreadable settings file is offered before giving up on it, as many as the config's own copy tries. */
+const SET_ASIDE_MAX_ATTEMPTS = 1_000
 
 async function assertExecutable(pathValue: string): Promise<string> {
   const stats = await fse.lstat(pathValue)
@@ -119,8 +125,9 @@ async function resolveLaunchWrapper(value: string): Promise<string | undefined> 
  * absent document rather than as a failure.
  *
  * The split matters for the game's settings file: no file means the launcher
- * writes a fresh one, a file that exists but holds no readable JSON means it
- * writes nothing at all.
+ * writes a fresh one, and a file that exists but holds no readable JSON is
+ * never written over. It is moved aside by `setAside` first (#691), which turns
+ * it into no file.
  */
 function realJsonFile(): JsonFile {
   return {
@@ -139,6 +146,27 @@ function realJsonFile(): JsonFile {
       } catch (err) {
         return { ok: false, error: getErrorMessage(err) }
       }
+    },
+    setAside: async (path: string): Promise<JsonFileSetAsideResult> => {
+      // Read once, so every attempt names the same instant and a taken name costs a suffix only.
+      const now = Date.now()
+      for (let attempt = 0; attempt < SET_ASIDE_MAX_ATTEMPTS; attempt++) {
+        const name = unreadableCopyName(basename(path, ".json"), now, attempt)
+        try {
+          // The copy lands beside the file, but it is a path of its own and the launch's path
+          // policy is asked about it like every other one, rather than assumed from its neighbour.
+          const target = await assertManagedPath(join(dirname(path), name), "settings copy", { allowMissing: true })
+          // A rename silently replaces what is at its destination, so a taken name is skipped here
+          // and refused once more by the move below, which is told never to overwrite.
+          if (await fse.pathExists(target)) continue
+          await fse.move(path, target, { overwrite: false })
+          return { ok: true, name }
+        } catch (err) {
+          logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] Could not set the unreadable settings file aside: ${getErrorMessage(err)}`)
+          return { ok: false }
+        }
+      }
+      return { ok: false }
     }
   }
 }
@@ -167,6 +195,22 @@ async function adoptRefreshedSession(accountId: string, secrets: AccountSecrets)
     logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Could not store the session the game refreshed. Launching anyway.`)
     logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] ${getErrorMessage(err)}`)
   }
+}
+
+/**
+ * Says that an unreadable settings file was moved aside, and nothing about it.
+ *
+ * Not its new name, which is the player's to be told and is no business of a log, and above all
+ * not what it held: a settings file can carry a session key, and the read error that sent it
+ * here can quote the bytes it choked on, so neither is ever passed to a line.
+ */
+function logSettingsSetAside(): void {
+  logMessage("warn", `${LOG_PREFIX} [EXECUTE_GAME] The game's settings file could not be read, so it was set aside in the Installation's folder under a name of its own. Carrying on without it.`)
+}
+
+/** The refusal for a settings file that could neither be read nor moved aside. The same line from both launch paths. */
+function logSettingsUnreadable(): void {
+  logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] The game's settings file could not be read, and could not be set aside either. Refusing to launch over it.`)
 }
 
 /**
@@ -346,6 +390,10 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     return invalidExecutableResult()
   }
 
+  // The name of the settings file this launch moved aside, if it had to. Told to the player with
+  // the result, which is the only answer EXECUTE_GAME gives and comes when the game closes.
+  let settingsSetAside: string | undefined
+
   if (account && accountSecrets) {
     logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Logged in. Setting session keys.`)
 
@@ -378,6 +426,11 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       }
     )
 
+    if ("setAside" in written && written.setAside !== undefined) {
+      settingsSetAside = written.setAside
+      logSettingsSetAside()
+    }
+
     // Never logs what the file held: the path this installation was copied out of is untrusted
     // input and stays out of the log. The path we put there is our own and may be named.
     const modPathsNotice = "modPaths" in written ? written.modPaths : undefined
@@ -393,6 +446,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
         await adoptRefreshedSession(account.playerUid, written.secrets)
         break
       case "unreadable-settings":
+        logSettingsUnreadable()
+        return clientSettingsUnreadableResult()
       case "write-failed":
         logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Error setting login session keys.`)
         logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] Error setting login session keys: ${written.outcome}.`)
@@ -423,8 +478,16 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
         logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Cleared another player's session before launching without one of our own.`)
         break
       case "not-foreign":
+        // An unreadable file moved aside is the one way to get here with something to say: no file
+        // is left for the game to find, so nothing foreign is either, and the launch goes ahead.
+        if (cleared.setAside !== undefined) {
+          settingsSetAside = cleared.setAside
+          logSettingsSetAside()
+        }
         break
       case "unreadable-settings":
+        logSettingsUnreadable()
+        return clientSettingsUnreadableResult()
       case "write-failed":
         logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Could not confirm this installation is not still signed in as another player.`)
         logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] ${cleared.outcome}.`)
@@ -471,7 +534,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   if (!outcome.started) logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Failed to run Vintage Story${launchWrapper ? ` through ${launchWrapper}` : ""}: ${outcome.error ?? "unknown error"}.`)
   else logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Vintage Story closed: ${outcome.exitCode}`)
 
-  return gameProcessOutcomeToResult(outcome)
+  return gameProcessOutcomeToResult(outcome, settingsSetAside)
 })
 
 /**

@@ -14,10 +14,20 @@
  *
  * That file belongs to the game and holds every preference in it: resolution,
  * volumes, key bindings, language. Only the session keys are touched, and
- * everything else in the document comes back out unchanged. A file that exists
- * but holds no readable JSON stops the launch instead of being overwritten,
- * which is the behaviour the launcher has always had: losing somebody's game
- * settings to install a session in them would be a very bad trade.
+ * everything else in the document comes back out unchanged.
+ *
+ * ## A file that is not JSON is set aside, never written over
+ *
+ * Losing somebody's game settings to install a session in them would be a very
+ * bad trade, so a file that exists but holds no readable JSON is not written
+ * over. It used to stop the launch instead, and that outlived its cause: a power
+ * cut left a file that was not JSON, and every launch after it refused until
+ * somebody renamed the file by hand, under a message that told the player to log
+ * in again (issue #691). The file is now moved aside, whole, next to where it
+ * was, and the launch carries on exactly as it would with no file at all: the
+ * session goes into a fresh one, or, with none to write, nothing is written. The
+ * settings are kept just the same, and the caller can say where. Only a file
+ * that cannot be moved still stops the launch.
  *
  * ## The game's own session wins
  *
@@ -183,21 +193,54 @@ export type ModPathsNotice = "repointed" | "left-as-found" | "repoint-write-fail
  * the session in it was left alone (only a repointed mod folder list may have
  * been written), so the caller has to store the carried secrets as its own or
  * the next launch will stomp them again. `unreadable-settings` means the
- * file is there and holds something that is not JSON. `write-failed` means the
- * merged document could not be put back.
+ * file is there, holds something that is not JSON, and could not be set aside
+ * either, so nothing was written. `write-failed` means the merged document could
+ * not be put back.
+ *
+ * `setAside` is the bare name an unreadable file was moved to on the way (#691).
+ * The launch then went on as it does with no file, so it rides on the two
+ * outcomes that follow a write: `written`, and `write-failed` for a fresh file
+ * that then did not land, which still leaves a file somebody should hear about.
  *
  * One tagged field, no `ok` boolean, because `adopted` is neither a success a
  * caller may ignore nor a failure it may report: it carries work. A caller that
  * switches on this cannot quietly skip it.
  */
 export type WriteClientSettingsSessionResult =
-  | { outcome: "written"; modPaths?: ModPathsNotice }
+  | { outcome: "written"; modPaths?: ModPathsNotice; setAside?: string }
   | { outcome: "adopted"; secrets: AccountSecrets; modPaths?: ModPathsNotice }
   | { outcome: "unreadable-settings" }
-  | { outcome: "write-failed" }
+  | { outcome: "write-failed"; setAside?: string }
 
 export interface WriteClientSettingsSessionPorts {
   jsonFile: JsonFile
+}
+
+/**
+ * What reading the settings file came to: a document (undefined when there is no file, which
+ * includes one that was just set aside) with the name it was kept under when it was, or a file
+ * that could not be read and could not be moved aside either.
+ *
+ * `kept` is empty or holds `setAside`, so that a caller can spread it into the result it answers
+ * with and leave the key out altogether on the ordinary launch.
+ */
+type ReadSettings = { ok: true; document: unknown; kept: { setAside?: string } } | { ok: false }
+
+/**
+ * Reads the settings file, and when it is there but holds no readable JSON, moves it aside and
+ * answers as if it had never been there (#691).
+ *
+ * The move comes before anything is written, which is the whole point of it: the writes below
+ * replace a file by renaming a new one over it, so a file left where it is would be destroyed by
+ * the very write that was meant to repair the launch. A file that is not there is not moved, since
+ * there is nothing to move and the host could only fail at it.
+ */
+async function readOrSetAside(jsonFile: JsonFile, settingsPath: string): Promise<ReadSettings> {
+  const read = await jsonFile.read(settingsPath)
+  if (read.ok) return { ok: true, document: read.document, kept: {} }
+
+  const kept = await jsonFile.setAside(settingsPath)
+  return kept.ok ? { ok: true, document: undefined, kept: { setAside: kept.name } } : { ok: false }
 }
 
 export interface WriteClientSettingsSessionInput {
@@ -213,7 +256,9 @@ export interface WriteClientSettingsSessionInput {
 
 /**
  * Reads the settings file, and either lays the session over it and writes it
- * back, or steps aside for the session the game put there.
+ * back, or steps aside for the session the game put there. A file that cannot
+ * be read is set aside first and then treated as missing (see
+ * {@link readOrSetAside}).
  *
  * ## The mod folder list rides along
  *
@@ -235,7 +280,7 @@ export interface WriteClientSettingsSessionInput {
  * @returns What became of the session, adoption included, and what the mod folder list needed.
  */
 export async function writeClientSettingsSession(ports: WriteClientSettingsSessionPorts, input: WriteClientSettingsSessionInput): Promise<WriteClientSettingsSessionResult> {
-  const existing = await ports.jsonFile.read(input.settingsPath)
+  const existing = await readOrSetAside(ports.jsonFile, input.settingsPath)
   if (!existing.ok) return { outcome: "unreadable-settings" }
 
   const modPaths = input.modPaths ? repointModPaths(existing.document, input.modPaths) : { document: existing.document, outcome: "unchanged" as const }
@@ -250,7 +295,7 @@ export async function writeClientSettingsSession(ports: WriteClientSettingsSessi
 
   const written = await ports.jsonFile.write(input.settingsPath, mergeSessionIntoClientSettings(modPaths.document, input.session))
 
-  return written.ok ? { outcome: "written", ...notice } : { outcome: "write-failed" }
+  return written.ok ? { outcome: "written", ...notice, ...existing.kept } : { outcome: "write-failed", ...existing.kept }
 }
 
 /**
@@ -270,9 +315,12 @@ export function removeSessionFromClientSettings(existingDocument: unknown): Reco
 
 export type ClearClientSettingsSessionResult =
   | { outcome: "cleared" }
-  // Covers both a file with no session in it, and one that already holds our own: neither can
-  // launch anyone into the wrong identity, so neither is touched.
-  | { outcome: "not-foreign" }
+  // Covers a file with no session in it, one that already holds our own, and no file at all: none
+  // of them can launch anyone into the wrong identity, so none is touched. The last includes an
+  // unreadable file that was just moved aside, which `setAside` names (#691): what it held is no
+  // longer where the game will look, so there is nothing foreign left to clear.
+  | { outcome: "not-foreign"; setAside?: string }
+  // The file is there and holds no readable JSON, and could not be set aside either.
   | { outcome: "unreadable-settings" }
   | { outcome: "write-failed" }
 
@@ -301,12 +349,12 @@ export interface ClearForeignClientSettingsSessionInput {
  * shows nobody, or shows us.
  */
 export async function clearForeignClientSettingsSession(ports: WriteClientSettingsSessionPorts, input: ClearForeignClientSettingsSessionInput): Promise<ClearClientSettingsSessionResult> {
-  const existing = await ports.jsonFile.read(input.settingsPath)
+  const existing = await readOrSetAside(ports.jsonFile, input.settingsPath)
   if (!existing.ok) return { outcome: "unreadable-settings" }
 
   const stringSettings = existingStringSettings(existing.document)
   const foreignUid = typeof stringSettings.playeruid === "string" ? stringSettings.playeruid : null
-  if (foreignUid === null || foreignUid === input.playerUid) return { outcome: "not-foreign" }
+  if (foreignUid === null || foreignUid === input.playerUid) return { outcome: "not-foreign", ...existing.kept }
 
   const written = await ports.jsonFile.write(input.settingsPath, removeSessionFromClientSettings(existing.document))
   return written.ok ? { outcome: "cleared" } : { outcome: "write-failed" }
