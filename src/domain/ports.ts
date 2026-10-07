@@ -279,6 +279,9 @@ export type JsonFileReadResult = { ok: true; document: unknown } | { ok: false; 
 
 export type JsonFileWriteResult = { ok: true } | { ok: false; error?: string }
 
+/** `name` is the bare file name the file is now kept under, in the folder it was in. */
+export type JsonFileSetAsideResult = { ok: true; name: string } | { ok: false }
+
 /**
  * Reads and writes whole JSON documents the launcher shares with another
  * program.
@@ -293,12 +296,25 @@ export type JsonFileWriteResult = { ok: true } | { ok: false; error?: string }
  * so a read-modify-write service creates the file on its first run without
  * having to ask whether it exists. A file that exists but holds no readable
  * JSON IS a failure, because overwriting it would destroy whatever it holds.
+ * {@link JsonFile.setAside} is the way out of that failure: it moves the file out
+ * of the way without destroying it, and a path with nothing at it is the missing
+ * file this port already handles.
  */
 export interface JsonFile {
   /** Never rejects: an unreadable file resolves `ok: false`. */
   read(path: string): Promise<JsonFileReadResult>
   /** Never rejects: a write that did not happen resolves `ok: false`. */
   write(path: string, document: unknown): Promise<JsonFileWriteResult>
+  /**
+   * Moves the file at `path` out of the way, into the folder it is in and under a name of the
+   * host's own choosing, and resolves that bare name. Never rejects: a file that could not be moved
+   * resolves `ok: false` and is still where it was.
+   *
+   * Only for a file `read` failed on: a missing one has nothing to move. The file is moved whole,
+   * never rewritten and never deleted, so whatever it holds is still there for its owner to
+   * recover, and nothing that already exists is overwritten to make room for it.
+   */
+  setAside(path: string): Promise<JsonFileSetAsideResult>
 }
 
 /** One reading of a running process, as the host's own bookkeeping answers it. */

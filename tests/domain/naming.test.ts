@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { buildGameVersionLabel, cleanFolderName, formatTimestampForFilename } from "../../src/domain/naming"
+import { buildGameVersionLabel, cleanFolderName, formatTimestampForFilename, unreadableCopyName } from "../../src/domain/naming"
 
 describe("cleanFolderName", () => {
   it("replaces characters a folder name cannot carry", () => {
@@ -86,5 +86,30 @@ describe("buildGameVersionLabel", () => {
 
     assert.equal(label.length, 256)
     assert.ok(label.startsWith("1.22.7 Optimum 0.3.14-"))
+  })
+})
+
+describe("unreadableCopyName", () => {
+  const AT = Date.UTC(2026, 9, 7, 12, 34, 56, 789)
+
+  it("names the copy after the file, the UTC instant and the extension", () => {
+    assert.equal(unreadableCopyName("config", AT), "config.unreadable-2026-10-07T12-34-56-789Z.json")
+    assert.equal(unreadableCopyName("clientsettings", AT), "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json")
+  })
+
+  it("carries no character a Windows file name refuses", () => {
+    assert.doesNotMatch(unreadableCopyName("clientsettings", AT), /[<>:"/\\|?*]/)
+  })
+
+  it("reads the UTC clock, not the one on the wall", () => {
+    // 23:30 in UTC is already the next day in Tokyo and still the same one in Honolulu: only a
+    // name that ignores the host's zone gives every machine the same spelling for one instant.
+    assert.equal(unreadableCopyName("config", Date.UTC(2026, 11, 31, 23, 30, 0, 5)), "config.unreadable-2026-12-31T23-30-00-005Z.json")
+  })
+
+  it("adds a numeric suffix for every attempt after the first, and none for the first", () => {
+    assert.equal(unreadableCopyName("config", AT, 0), "config.unreadable-2026-10-07T12-34-56-789Z.json")
+    assert.equal(unreadableCopyName("config", AT, 1), "config.unreadable-2026-10-07T12-34-56-789Z-1.json")
+    assert.equal(unreadableCopyName("config", AT, 12), "config.unreadable-2026-10-07T12-34-56-789Z-12.json")
   })
 })

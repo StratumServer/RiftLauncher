@@ -3,6 +3,7 @@ import { describe, it } from "vitest"
 
 import {
   appendStderrScan,
+  clientSettingsUnreadableResult,
   gameProcessOutcomeToResult,
   hasMissingDotnetSentinel,
   invalidExecutableResult,
@@ -39,6 +40,19 @@ describe("gameProcessOutcomeToResult", () => {
 
   it("leaves a non-zero exit without the flag alone: the exit code is still never judged", () => {
     assert.deepEqual(gameProcessOutcomeToResult({ started: true, exitCode: 150, missingRuntime: false }), { ok: true, exitCode: 150 })
+  })
+
+  it("names the settings file this launch set aside on the exit that follows", () => {
+    assert.deepEqual(gameProcessOutcomeToResult({ started: true, exitCode: 0 }, "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"), {
+      ok: true,
+      exitCode: 0,
+      settingsSetAside: "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
+    })
+  })
+
+  it("carries no key at all for a launch that set nothing aside, which is what every launch before this one answered", () => {
+    assert.equal("settingsSetAside" in gameProcessOutcomeToResult({ started: true, exitCode: 0 }), false)
+    assert.equal("settingsSetAside" in gameProcessOutcomeToResult({ started: true, exitCode: 0 }, undefined), false)
   })
 })
 
@@ -84,6 +98,10 @@ describe("the other named refusals", () => {
 
   it("sessionWriteFailedResult", () => {
     assert.deepEqual(sessionWriteFailedResult(), { ok: false, reason: "session-write-failed" })
+  })
+
+  it("clientSettingsUnreadableResult is its own reason, not session-write-failed, which tells the player to log in again", () => {
+    assert.deepEqual(clientSettingsUnreadableResult(), { ok: false, reason: "client-settings-unreadable" })
   })
 
   it("invalidRequestResult", () => {

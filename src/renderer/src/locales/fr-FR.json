@@ -963,6 +963,8 @@
       "gameLaunchInvalidEnvironment": "Les variables d'environnement de cette installation ne sont pas utilisables. Vérifiez-les et réessayez.",
       "gameLaunchInstallationBusy": "Cette installation gère un monde. Réessayez de lancer le jeu dans un instant.",
       "gameLaunchMissingDotnet": "Cette version du jeu a besoin d'un runtime .NET qui n'est pas installé. C'est Vintage Story qui a besoin de .NET, pas le launcher : installez-le et relancez.",
+      "gameLaunchClientSettingsUnreadable": "Le fichier de réglages du jeu de cette installation est illisible et n'a pas pu être mis de côté. Renommez clientsettings.json dans le dossier de l'installation, puis relancez le jeu.",
+      "gameClientSettingsSetAside": "Le fichier de réglages du jeu de cette installation n'a pas pu être lu : il a été mis de côté sous le nom {{file}} dans le dossier de l'installation, et Vintage Story a démarré avec ses réglages par défaut.",
       "configSaveInvalidPayload": "Vos réglages n'ont pas pu être enregistrés à cause d'une erreur inattendue. Essayez de redémarrer RiftLauncher, et dites-le-nous si cela se reproduit.",
       "configSaveUnauthorizedPath": "Vos réglages n'ont pas pu être enregistrés : l'un de vos dossiers n'est pas géré par RiftLauncher. Choisissez-le à nouveau sur la page Configuration.",
       "configSaveWriteFailed": "Vos réglages n'ont pas pu être écrits sur le disque. Vérifiez que RiftLauncher peut écrire dans son dossier de données, puis réessayez.",

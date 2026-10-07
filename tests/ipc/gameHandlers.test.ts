@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import type { IpcMainInvokeEvent } from "electron"
@@ -1223,6 +1223,238 @@ describe("EXECUTE_GAME", () => {
       [["uid-b", { sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token" }]],
       "the adopted session is stored under the uid it was issued for, and under no other"
     )
+  })
+})
+
+/**
+ * Issue #691: a power cut left an installation's clientsettings.json as something that is not JSON,
+ * and every launch after it stopped on "Couldn't save your login to this installation", which
+ * logging in again cannot fix. The file is now moved aside, whole, and the launch goes on as it
+ * would with no file at all.
+ *
+ * The game here is a shell script that leaves a marker and exits, so a launch that proceeds
+ * resolves ok and a refused one provably never spawned anything.
+ */
+describe("EXECUTE_GAME when the installation's clientsettings.json cannot be read", () => {
+  /**
+   * What a power cut leaves: JSON cut off in the middle of a value, then blocks of zeroes. The key
+   * in it is the kind of value that must never reach a log line.
+   */
+  const CUT_OFF_SECRET = "stale-session-key-from-the-cut-off-file"
+  const UNREADABLE_BYTES = Buffer.concat([Buffer.from(`{"stringSettings":{"language":"es-es","sessionkey":"${CUT_OFF_SECRET}`), Buffer.alloc(24)])
+  const KEPT_NAME_PATTERN = /^clientsettings\.unreadable-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/
+
+  interface UnreadableInstallation {
+    gameVersionFolder: string
+    installationFolder: string
+    settingsPath: string
+    /** Created by the game the moment it starts. */
+    launchMarker: string
+  }
+
+  /** An Installation holding the unreadable bytes, signed in as account "1" whose secrets the mocked store answers. */
+  function setUpInstallation(): UnreadableInstallation {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    const installationFolder = join(managedFolder, "Main")
+    const launchMarker = join(temporaryRoot, "game-ran")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    mkdirSync(installationFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), `#!/bin/sh\ntouch '${launchMarker}'\nexit 0\n`)
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
+      activeAccountId: "1"
+    })
+    const settingsPath = join(installationFolder, "clientsettings.json")
+    writeFileSync(settingsPath, UNREADABLE_BYTES)
+
+    return { gameVersionFolder, installationFolder, settingsPath, launchMarker }
+  }
+
+  async function launch({ gameVersionFolder, installationFolder }: UnreadableInstallation): Promise<GameExecutionResult> {
+    return executeGameHandler()(await createTrustedEvent(), { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
+  }
+
+  /** Makes the launcher find no session of its own for the account, like a locked keyring does. */
+  async function withNoSecretsOfOurOwn(): Promise<void> {
+    const { getAccountSecrets } = await import("@src/ipc/accountStore")
+    vi.mocked(getAccountSecrets).mockResolvedValueOnce(null)
+  }
+
+  function keptCopies(installationFolder: string): string[] {
+    return readdirSync(installationFolder).filter((name) => name.startsWith("clientsettings.unreadable-"))
+  }
+
+  it.skipIf(process.platform !== "linux")("moves the file aside with its bytes intact, writes the session into a fresh one and launches", async () => {
+    const installation = setUpInstallation()
+
+    const result = await launch(installation)
+
+    const [keptName, ...otherCopies] = keptCopies(installation.installationFolder)
+    assert.ok(keptName)
+    assert.deepEqual(otherCopies, [])
+    assert.match(keptName, KEPT_NAME_PATTERN)
+    assert.deepEqual(result, { ok: true, exitCode: 0, settingsSetAside: keptName }, "the launch went ahead and says what it kept")
+    assert.ok(readFileSync(join(installation.installationFolder, keptName)).equals(UNREADABLE_BYTES), "the kept file is the original, byte for byte, and not a reparsed one")
+
+    const settings = JSON.parse(readFileSync(installation.settingsPath, "utf-8"))
+    assert.equal(settings.stringSettings.sessionkey, "session-key", "a fresh file holds the session")
+    assert.equal(settings.stringSettings.playeruid, "1")
+    assert.equal(settings.stringSettings.language, undefined, "nothing of the unreadable file is carried over by guesswork")
+    assert.equal(existsSync(installation.launchMarker), true, "the game started")
+  })
+
+  it.skipIf(process.platform !== "linux")("launches with no settings file at all when there is no session of our own to put in one", async () => {
+    const installation = setUpInstallation()
+    await withNoSecretsOfOurOwn()
+
+    const result = await launch(installation)
+
+    const [keptName, ...otherCopies] = keptCopies(installation.installationFolder)
+    assert.ok(keptName)
+    assert.deepEqual(otherCopies, [])
+    assert.deepEqual(result, { ok: true, exitCode: 0, settingsSetAside: keptName })
+    assert.ok(readFileSync(join(installation.installationFolder, keptName)).equals(UNREADABLE_BYTES))
+    assert.equal(existsSync(installation.settingsPath), false, "no file means no session, ours or anybody else's")
+    assert.equal(vi.mocked(writeJsonAtomic).mock.calls.filter((call) => call[0] === installation.settingsPath).length, 0, "nothing was written for the game to find")
+    assert.equal(existsSync(installation.launchMarker), true, "the game started")
+  })
+
+  it.skipIf(process.platform !== "linux")("logs that a file was set aside without ever putting what it held in a line", async () => {
+    const installation = setUpInstallation()
+
+    // Spied at the source, ahead of redactSensitiveText, so this asserts on what the handler chose
+    // to say rather than on what the redactor saved it from.
+    const logSpy = vi.spyOn(await import("@src/utils/logManager"), "logMessage")
+    await launch(installation)
+
+    const logged = logSpy.mock.calls.map(([, message]) => message)
+    assert.ok(
+      logged.some((message) => message.includes("[EXECUTE_GAME]") && message.includes("set aside")),
+      "setting a player's file aside should leave a trail"
+    )
+    for (const secret of [CUT_OFF_SECRET, "es-es", "session-key", "session-signature"]) {
+      assert.equal(
+        logged.some((message) => message.includes(secret)),
+        false,
+        `something the file held, or a session value, reached the log: ${secret}`
+      )
+    }
+  })
+
+  it.skipIf(process.platform !== "linux")("keeps a file that is already named like the copy, and takes the next free name", async () => {
+    // Only Date is faked, as in the config manager's own collision test: the clock pinned is what
+    // makes two launches choose the same name, which the real one never does.
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"))
+      const installation = setUpInstallation()
+      const taken = join(installation.installationFolder, "clientsettings.unreadable-2026-01-01T00-00-00-000Z.json")
+      writeFileSync(taken, "someone else's file")
+
+      const result = await launch(installation)
+
+      assert.deepEqual(result, { ok: true, exitCode: 0, settingsSetAside: "clientsettings.unreadable-2026-01-01T00-00-00-000Z-1.json" })
+      assert.equal(readFileSync(taken, "utf-8"), "someone else's file", "a file that was there is never overwritten")
+      assert.ok(readFileSync(join(installation.installationFolder, "clientsettings.unreadable-2026-01-01T00-00-00-000Z-1.json")).equals(UNREADABLE_BYTES))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("gives up, with the file where it was, when every name it could use is already taken", async () => {
+    const installation = setUpInstallation()
+    // Only the copy's names are answered as taken, so the config and the settings file read as they do.
+    const fse = (await import("fs-extra")).default
+    const pathExists = fse.pathExists.bind(fse) as (path: string) => Promise<boolean>
+    vi.spyOn(fse, "pathExists").mockImplementation((async (path: string) => (basename(path).startsWith("clientsettings.unreadable-") ? true : pathExists(path))) as unknown as typeof fse.pathExists)
+
+    const result = await launch(installation)
+
+    assert.deepEqual(result, { ok: false, reason: "client-settings-unreadable" })
+    assert.ok(readFileSync(installation.settingsPath).equals(UNREADABLE_BYTES), "nothing is moved over a name that is not free")
+    assert.deepEqual(keptCopies(installation.installationFolder), [])
+    assert.equal(existsSync(installation.launchMarker), false)
+  })
+
+  it.skipIf(process.platform !== "linux")("sets nothing aside, and says nothing, for a settings file it can read", async () => {
+    const installation = setUpInstallation()
+    writeFileSync(installation.settingsPath, JSON.stringify({ intSettings: { maxFps: 60 } }))
+
+    const result = await launch(installation)
+
+    assert.deepEqual(result, { ok: true, exitCode: 0 }, "no key at all, which is what every launch answered before")
+    assert.deepEqual(keptCopies(installation.installationFolder), [])
+    assert.deepEqual(JSON.parse(readFileSync(installation.settingsPath, "utf-8")).intSettings, { maxFps: 60 })
+  })
+
+  it.skipIf(process.platform !== "linux")("sets nothing aside, and says nothing, when there is no settings file to begin with", async () => {
+    const installation = setUpInstallation()
+    rmSync(installation.settingsPath)
+
+    const result = await launch(installation)
+
+    assert.deepEqual(result, { ok: true, exitCode: 0 })
+    assert.deepEqual(keptCopies(installation.installationFolder), [])
+    assert.equal(JSON.parse(readFileSync(installation.settingsPath, "utf-8")).stringSettings.sessionkey, "session-key", "a missing file is still written fresh")
+  })
+
+  // chmod 0o500 on the folder lets the read that finds the file unreadable through and refuses the
+  // rename, which is how a file that cannot be moved looks on a POSIX filesystem. NTFS has no such
+  // mode bits (see the session write tests above).
+  describe.skipIf(process.platform === "win32")("when the file cannot be moved aside", () => {
+    it("refuses the launch with a reason of its own and leaves the file where it was", async () => {
+      const installation = setUpInstallation()
+
+      chmodSync(installation.installationFolder, 0o500)
+      try {
+        const result = await launch(installation)
+
+        assert.deepEqual(result, { ok: false, reason: "client-settings-unreadable" })
+      } finally {
+        chmodSync(installation.installationFolder, 0o700)
+      }
+      assert.ok(readFileSync(installation.settingsPath).equals(UNREADABLE_BYTES), "the file is untouched")
+      assert.deepEqual(keptCopies(installation.installationFolder), [])
+      assert.equal(existsSync(installation.launchMarker), false, "nothing was launched")
+    })
+
+    it("refuses the launch with the same reason when there is no session of our own either", async () => {
+      const installation = setUpInstallation()
+      await withNoSecretsOfOurOwn()
+
+      chmodSync(installation.installationFolder, 0o500)
+      try {
+        const result = await launch(installation)
+
+        assert.deepEqual(result, { ok: false, reason: "client-settings-unreadable" })
+      } finally {
+        chmodSync(installation.installationFolder, 0o700)
+      }
+      assert.ok(readFileSync(installation.settingsPath).equals(UNREADABLE_BYTES))
+      assert.equal(existsSync(installation.launchMarker), false)
+    })
+  })
+
+  it("moves nothing the path policy refuses: the copy's own path is checked, not only the settings file's", async () => {
+    const installation = setUpInstallation()
+    const pathPolicy = await import("@src/ipc/pathPolicy")
+    const assertManagedPath = pathPolicy.assertManagedPath
+    const policy = vi.spyOn(pathPolicy, "assertManagedPath").mockImplementation(async (value, ...rest) => {
+      if (typeof value === "string" && basename(value).startsWith("clientsettings.unreadable-")) throw new TypeError("Unmanaged settings copy")
+      return assertManagedPath(value, ...rest)
+    })
+
+    const result = await launch(installation)
+
+    const askedAbout = policy.mock.calls.map(([value]) => String(value)).filter((value) => KEPT_NAME_PATTERN.test(basename(value)))
+    assert.equal(askedAbout.length, 1, "the policy was asked about the place the copy would land")
+    assert.equal(dirname(askedAbout[0] ?? ""), installation.installationFolder, "and that place is beside the file, in the Installation's own folder")
+    assert.deepEqual(result, { ok: false, reason: "client-settings-unreadable" })
+    assert.ok(readFileSync(installation.settingsPath).equals(UNREADABLE_BYTES), "a refused target moves nothing")
+    assert.deepEqual(keptCopies(installation.installationFolder), [])
+    assert.equal(existsSync(installation.launchMarker), false)
   })
 })
 

@@ -543,7 +543,13 @@ declare global {
    *
    * - `unsupported-platform` / `no-executable`: {@link BuildGameLaunchPlanFailure}.
    * - `session-write-failed`: the account session could not be written into
-   *   the installation's clientsettings.json (unreadable or unwritable file).
+   *   the installation's clientsettings.json (an unwritable file).
+   * - `client-settings-unreadable`: the installation's clientsettings.json is
+   *   there and holds nothing the launcher can read, and it could not be moved
+   *   aside either (#691). Its own reason because logging in again cannot fix
+   *   it and renaming the file can, which is what the notice says. A file that
+   *   could be moved aside is not a refusal: the launch goes ahead and the
+   *   result carries {@link GameExecutionResult}'s `settingsSetAside`.
    * - `launch-failed`: the executable failed its last check before spawning,
    *   or the spawn itself failed.
    * - `invalid-request`: the installation's own start environment variables
@@ -554,7 +560,15 @@ declare global {
    *   reason drawn from the game's own output, and a fixed token: what the
    *   host printed (the version, the paths) never leaves the verbose log.
    */
-  type GameExecutionFailureReason = "unsupported-platform" | "no-executable" | "session-write-failed" | "launch-failed" | "invalid-request" | "installation-busy" | "missing-dotnet"
+  type GameExecutionFailureReason =
+    | "unsupported-platform"
+    | "no-executable"
+    | "session-write-failed"
+    | "client-settings-unreadable"
+    | "launch-failed"
+    | "invalid-request"
+    | "installation-busy"
+    | "missing-dotnet"
 
   /**
    * EXECUTE_GAME's verdict.
@@ -564,8 +578,15 @@ declare global {
    * read as a launch failure, since Vintage Story exits non-zero often enough
    * that treating it as one would blame a player for closing their own game.
    * `ok: false` means the game never ran at all.
+   *
+   * `settingsSetAside` is the bare name of the copy of an unreadable
+   * clientsettings.json that this launch moved aside before it started the game
+   * (#691), in the Installation's own folder, so the player can be told their
+   * game settings were reset and where the old file went. Absent for every
+   * launch that set nothing aside. It rides on the success because EXECUTE_GAME
+   * answers once, when the game closes.
    */
-  type GameExecutionResult = { ok: true; exitCode: number | null } | { ok: false; reason: GameExecutionFailureReason }
+  type GameExecutionResult = { ok: true; exitCode: number | null; settingsSetAside?: string } | { ok: false; reason: GameExecutionFailureReason }
 
   /** The session report as the domain builds it. Declared by reference so the shape has one home (src/domain/gameLogs/report.ts). */
   type SessionReportType = import("@domain/gameLogs/report").SessionReport

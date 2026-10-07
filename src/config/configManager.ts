@@ -8,6 +8,7 @@ import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/ac
 import { isRecord, toWireBuildVariant } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeAccentColorId } from "@domain/accentColors"
+import { unreadableCopyName } from "@domain/naming"
 import { normalizeBackgroundId } from "@domain/backgrounds"
 import { normalizeModDbVisibility } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
@@ -309,9 +310,10 @@ function isFileExistsError(error: unknown): boolean {
 /**
  * Copies the unreadable `config.json` aside, byte for byte, before anything else touches it, so a
  * parse failure never destroys the only copy of a player's settings (#554). Named from the current
- * instant, sanitized for a Windows-safe filename, with a numeric suffix appended until a free name
- * is found: a second failure right behind the first (same millisecond, under a fast test clock or
- * a fast retry) still gets its own copy rather than silently losing to a name collision.
+ * instant (see `unreadableCopyName`, which an Installation's own unreadable settings file shares,
+ * #691), with a numeric suffix appended until a free name is found: a second failure right behind
+ * the first (same millisecond, under a fast test clock or a fast retry) still gets its own copy
+ * rather than silently losing to a name collision.
  *
  * Uses `fs.copyFile` with `COPYFILE_EXCL` rather than fs-extra's own `copy`: fs-extra 11's `copy`
  * throws a plain `Error` with no `code` when `errorOnExist` trips, which a `code === "EEXIST"`
@@ -324,10 +326,9 @@ function isFileExistsError(error: unknown): boolean {
  * for some other reason, or a thousand names in the same instant were all taken).
  */
 async function preserveUnreadableConfig(): Promise<string | null> {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+  const now = Date.now()
   for (let attempt = 0; attempt < 1_000; attempt++) {
-    const suffix = attempt === 0 ? "" : `-${attempt}`
-    const name = `config.unreadable-${stamp}${suffix}.json`
+    const name = unreadableCopyName("config", now, attempt)
     try {
       await fse.copyFile(configPath, join(app.getPath("userData"), name), fse.constants.COPYFILE_EXCL)
       return name

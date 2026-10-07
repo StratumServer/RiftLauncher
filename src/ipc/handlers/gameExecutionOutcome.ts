@@ -39,6 +39,15 @@ export function sessionWriteFailedResult(): GameExecutionResult {
   return { ok: false, reason: "session-write-failed" }
 }
 
+/**
+ * The installation's clientsettings.json is there and holds nothing the launcher can read, and it
+ * could not be moved aside either (#691). Apart from {@link sessionWriteFailedResult} because the
+ * sentence a player gets for that one, to log in again, cannot fix this.
+ */
+export function clientSettingsUnreadableResult(): GameExecutionResult {
+  return { ok: false, reason: "client-settings-unreadable" }
+}
+
 /** The installation's own start environment variables could not be parsed. */
 export function invalidRequestResult(): GameExecutionResult {
   return { ok: false, reason: "invalid-request" }
@@ -51,10 +60,15 @@ export function invalidRequestResult(): GameExecutionResult {
  * `started: false` means the spawn itself never happened, which now resolves
  * `launch-failed` instead of rejecting: rejecting with a bare boolean was the
  * anti-pattern that left the renderer unable to clear `_playing` on this path.
+ *
+ * `settingsSetAside` is the name of the file this launch moved aside before it
+ * started the game (#691), and only an exit carries it. It is left out of the
+ * result altogether when nothing was set aside, so a launch that set nothing
+ * aside answers exactly what it always did.
  */
-export function gameProcessOutcomeToResult(outcome: GameProcessOutcome): GameExecutionResult {
+export function gameProcessOutcomeToResult(outcome: GameProcessOutcome, settingsSetAside?: string): GameExecutionResult {
   if (!outcome.started) return { ok: false, reason: "launch-failed" }
-  return outcome.missingRuntime ? { ok: false, reason: "missing-dotnet" } : { ok: true, exitCode: outcome.exitCode }
+  return outcome.missingRuntime ? { ok: false, reason: "missing-dotnet" } : { ok: true, exitCode: outcome.exitCode, ...(settingsSetAside === undefined ? {} : { settingsSetAside }) }
 }
 
 /**

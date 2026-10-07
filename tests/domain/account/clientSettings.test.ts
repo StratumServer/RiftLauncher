@@ -9,7 +9,7 @@ import {
   writeClientSettingsSession
 } from "../../../src/domain/account/clientSettings"
 import type { AccountSessionFields } from "../../../src/domain/account/clientSettings"
-import type { JsonFile, JsonFileReadResult, JsonFileWriteResult } from "../../../src/domain/ports"
+import type { JsonFile, JsonFileReadResult, JsonFileSetAsideResult, JsonFileWriteResult } from "../../../src/domain/ports"
 
 const SETTINGS_PATH = `/data/survival/${CLIENT_SETTINGS_FILE_NAME}`
 
@@ -42,21 +42,41 @@ function stringSettingsOf(document: Record<string, unknown>): Record<string, unk
   return document.stringSettings as Record<string, unknown>
 }
 
+/** What the host names a file it set aside, as it answers one. The domain never builds this name. */
+const KEPT_NAME = "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
+
 interface FakeJsonFile {
   jsonFile: JsonFile
   writes: { path: string; document: unknown }[]
+  /** The paths asked to be set aside, in order. */
+  setAsides: string[]
+  /** Every write and set-aside in the order they happened, which is what tells a file kept from a file overwritten. */
+  events: string[]
 }
 
-function fakeJsonFile(read: JsonFileReadResult = { ok: true, document: undefined }, write: JsonFileWriteResult = { ok: true }): FakeJsonFile {
+/** The host cannot move the file: the default, so a test that is not about set-asides never sees one succeed. */
+const CANNOT_SET_ASIDE: JsonFileSetAsideResult = { ok: false }
+
+function fakeJsonFile(read: JsonFileReadResult = { ok: true, document: undefined }, write: JsonFileWriteResult = { ok: true }, setAside: JsonFileSetAsideResult = CANNOT_SET_ASIDE): FakeJsonFile {
   const writes: { path: string; document: unknown }[] = []
+  const setAsides: string[] = []
+  const events: string[] = []
 
   return {
     writes,
+    setAsides,
+    events,
     jsonFile: {
       read: async () => read,
       write: async (path: string, document: unknown): Promise<JsonFileWriteResult> => {
         writes.push({ path, document })
+        events.push("write")
         return write
+      },
+      setAside: async (path: string): Promise<JsonFileSetAsideResult> => {
+        setAsides.push(path)
+        events.push("set-aside")
+        return setAside
       }
     }
   }
@@ -188,13 +208,14 @@ describe("writeClientSettingsSession", () => {
     assert.deepEqual(writes[0]?.document, { stringSettings: WRITTEN_SESSION })
   })
 
-  it("writes nothing when the settings file exists but cannot be read", async () => {
-    const { jsonFile, writes } = fakeJsonFile({ ok: false, error: "Unexpected token }" })
+  it("writes nothing when the settings file cannot be read and cannot be set aside either", async () => {
+    const { jsonFile, writes, setAsides } = fakeJsonFile({ ok: false, error: "Unexpected token }" })
 
     const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
 
     assert.deepEqual(result, { outcome: "unreadable-settings" })
-    assert.deepEqual(writes, [])
+    assert.deepEqual(setAsides, [SETTINGS_PATH], "keeping the file is tried before giving up on it")
+    assert.deepEqual(writes, [], "a file that could not be kept must never be written over")
   })
 
   it("reports a write that did not happen", async () => {
@@ -203,6 +224,77 @@ describe("writeClientSettingsSession", () => {
     const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
 
     assert.deepEqual(result, { outcome: "write-failed" })
+  })
+})
+
+/**
+ * Issue #691: a power cut left an installation's settings file as something that is not JSON, and
+ * every launch after it stopped on it, with a message that told the player to log in again, which
+ * cannot fix a file. The file is now set aside whole and the launch goes on as if it had never been
+ * there, so these pin both halves: what is kept, and what happens next.
+ */
+describe("writeClientSettingsSession when the settings file cannot be read", () => {
+  const UNREADABLE: JsonFileReadResult = { ok: false, error: "Unexpected token }" }
+
+  it("sets the file aside, then writes the session into a fresh one", async () => {
+    const { jsonFile, writes, setAsides } = fakeJsonFile(UNREADABLE, { ok: true }, { ok: true, name: KEPT_NAME })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "written", setAside: KEPT_NAME })
+    assert.deepEqual(setAsides, [SETTINGS_PATH])
+    assert.equal(writes.length, 1)
+    assert.equal(writes[0]?.path, SETTINGS_PATH)
+    assert.deepEqual(writes[0]?.document, { stringSettings: WRITTEN_SESSION }, "exactly what a missing file gets")
+  })
+
+  it("sets the file aside before anything is written, since the write would otherwise replace it", async () => {
+    const { jsonFile, events } = fakeJsonFile(UNREADABLE, { ok: true }, { ok: true, name: KEPT_NAME })
+
+    await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(events, ["set-aside", "write"])
+  })
+
+  it("carries on as with a missing file when the mod folder list is being checked too", async () => {
+    const { jsonFile, writes } = fakeJsonFile(UNREADABLE, { ok: true }, { ok: true, name: KEPT_NAME })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION, modPaths: { installationPath: "/data/survival", modsPath: "/data/survival/Mods" } })
+
+    assert.deepEqual(result, { outcome: "written", setAside: KEPT_NAME }, "there is no list to repoint, and nothing is said about one")
+    assert.deepEqual(writes[0]?.document, { stringSettings: WRITTEN_SESSION })
+  })
+
+  it("refuses, writing nothing, when the file cannot be set aside", async () => {
+    const { jsonFile, writes, events } = fakeJsonFile(UNREADABLE, { ok: true }, { ok: false })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "unreadable-settings" })
+    assert.deepEqual(writes, [])
+    assert.deepEqual(events, ["set-aside"])
+  })
+
+  it("still names the kept file when the fresh one then cannot be written", async () => {
+    const { jsonFile } = fakeJsonFile(UNREADABLE, { ok: false, error: "ENOSPC" }, { ok: true, name: KEPT_NAME })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "write-failed", setAside: KEPT_NAME })
+  })
+
+  it("never sets aside a file it could read, nor one that is not there", async () => {
+    for (const read of [
+      { ok: true, document: { intSettings: { maxFps: 60 } } },
+      { ok: true, document: undefined }
+    ] satisfies JsonFileReadResult[]) {
+      const { jsonFile, setAsides } = fakeJsonFile(read, { ok: true }, { ok: true, name: KEPT_NAME })
+
+      const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+      assert.deepEqual(result, { outcome: "written" })
+      assert.deepEqual(setAsides, [])
+    }
   })
 })
 
@@ -369,13 +461,42 @@ describe("clearForeignClientSettingsSession", () => {
     assert.deepEqual(writes, [])
   })
 
-  it("reports the settings file as unreadable rather than guessing", async () => {
-    const { jsonFile, writes } = fakeJsonFile({ ok: false, error: "Unexpected token }" })
+  it("reports the settings file as unreadable rather than guessing when it cannot be set aside either", async () => {
+    const { jsonFile, writes, setAsides } = fakeJsonFile({ ok: false, error: "Unexpected token }" })
 
     const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
 
     assert.deepEqual(result, { outcome: "unreadable-settings" })
+    assert.deepEqual(setAsides, [SETTINGS_PATH])
     assert.deepEqual(writes, [])
+  })
+
+  /**
+   * Issue #691 again, from the side that has no session of its own to write. The file is set
+   * aside and nothing takes its place: no file carries no session, which is what this function
+   * exists to guarantee, so the launch goes on with none.
+   */
+  it("sets an unreadable file aside and writes nothing, since no file holds no foreign session", async () => {
+    const { jsonFile, writes, setAsides } = fakeJsonFile({ ok: false, error: "Unexpected token }" }, { ok: true }, { ok: true, name: KEPT_NAME })
+
+    const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+    assert.deepEqual(result, { outcome: "not-foreign", setAside: KEPT_NAME })
+    assert.deepEqual(setAsides, [SETTINGS_PATH])
+    assert.deepEqual(writes, [])
+  })
+
+  it("never sets aside a file it could read, nor one that is not there", async () => {
+    for (const read of [
+      { ok: true, document: { stringSettings: FOREIGN_SESSION } },
+      { ok: true, document: undefined }
+    ] satisfies JsonFileReadResult[]) {
+      const { jsonFile, setAsides } = fakeJsonFile(read, { ok: true }, { ok: true, name: KEPT_NAME })
+
+      await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+      assert.deepEqual(setAsides, [])
+    }
   })
 
   it("reports a clear that did not land", async () => {

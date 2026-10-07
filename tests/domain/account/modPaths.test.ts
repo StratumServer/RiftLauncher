@@ -50,7 +50,9 @@ function fakeJsonFile(read: JsonFileReadResult, write: JsonFileWriteResult = { o
       write: async (path: string, document: unknown): Promise<JsonFileWriteResult> => {
         writes.push({ path, document })
         return write
-      }
+      },
+      // Every file here reads fine, so nothing asks for one to be set aside.
+      setAside: async () => ({ ok: false })
     }
   }
 }
