@@ -4,6 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import ImportModpackPopup from "@renderer/features/mods/components/ImportModpackPopup"
+import { modDetailLookups } from "@renderer/features/mods/hooks/modDetailLookups"
 import i18n from "@renderer/i18n"
 
 import type { ModpackEntry, ModpackRequest } from "@domain/mods/importModpack"
@@ -358,6 +359,44 @@ describe("ImportModpackPopup, when the mod database cannot be reached", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
 
     expect(within(await rowFor("Unreachable Mod")).getByText("New install")).toBeTruthy()
+  })
+})
+
+describe("ImportModpackPopup, after a ModDB request times out", () => {
+  it("does not dispatch the rest of a pack after the timeout, marks them unchecked and retries a new run", async () => {
+    const manifest: ModpackManifestType = {
+      name: "Silent ModDB pack",
+      gameVersion: GAME_VERSION,
+      mods: Array.from({ length: 7 }, (_, index) => ({ modid: `silent-${index + 1}`, version: "1.0.0", name: `Silent Mod ${index + 1}` }))
+    }
+    const requests: Array<{ modid: string; resolve: (response: string) => void; reject: (error: Error) => void }> = []
+    const queryURL = vi.fn((url: string): Promise<string> => {
+      const modid = url.split("/mod/")[1] ?? ""
+      return new Promise<string>((resolve, reject) => requests.push({ modid, resolve, reject }))
+    })
+    installMockWindowApi({ netManager: { queryURL } })
+    renderWithProviders(
+      <TaskProvider>
+        <ImportModpackPopup isOpen manifest={manifest} close={(): void => {}} installation={installation()} installedMods={[]} onFinish={(): void => {}} />
+      </TaskProvider>
+    )
+
+    await waitFor(() => expect(queryURL).toHaveBeenCalledTimes(4))
+    requests[0]!.reject(new Error("Error invoking remote method 'query-url': Error: Network request timed out"))
+    await waitFor(() => expect(modDetailLookups.queuedCount).toBe(0))
+    expect(queryURL).toHaveBeenCalledTimes(4)
+
+    for (const request of requests.slice(1)) request.resolve(JSON.stringify({ statuscode: "404" }))
+
+    expect(await screen.findAllByText("Couldn't reach the mod database")).toHaveLength(4)
+    expect(await screen.findAllByText("Not on the mod database")).toHaveLength(3)
+    expect(queryURL).toHaveBeenCalledTimes(4)
+
+    queryURL.mockImplementation(async () => detailResponse("Recovered Mod", ["1.0.0"]))
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+
+    expect(await screen.findAllByText("Recovered Mod")).toHaveLength(7)
+    expect(queryURL).toHaveBeenCalledTimes(11)
   })
 })
 

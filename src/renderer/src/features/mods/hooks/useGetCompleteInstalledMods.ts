@@ -1,10 +1,10 @@
 import { useGetInstalledMods } from "./useGetInstalledMods"
 import { useQueryMod } from "./useQueryMod"
 
-import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { findModUpdate } from "@domain/mods/compatibility"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 import { cacheModImage } from "@renderer/features/moddb/adapters/modsManager"
+import { installedModLookups, modDetailLookups } from "./modDetailLookups"
 
 /**
  * A big Mods folder queries the ModDB once per installed mod with nothing of its own capping how
@@ -13,11 +13,6 @@ import { cacheModImage } from "@renderer/features/moddb/adapters/modsManager"
  * another page queue behind the whole scan instead of running immediately. 2 is well under that
  * shared cap, so a scan never takes more than a third of it and the rest of the app stays quick.
  */
-const INSTALLED_MOD_LOOKUP_LIMIT = 2
-
-/** Shared by every installed-Mod lookup, so that together they stay inside the share described above. */
-export const installedModLookups = new ConcurrencyLimiter(INSTALLED_MOD_LOOKUP_LIMIT)
-
 export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { path: string; version: string; onFinish?: (updates: number, failedLookups: number) => void }) => Promise<{
   mods: InstalledModType[]
   errors: ErrorInstalledModType[]
@@ -48,6 +43,7 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
     // Two installed files can refer to the same ModDB entry. Keep one in-flight lookup per id
     // for this scan, while still evaluating every installed file against its own version.
     type ModLookupResult = { mod?: DownloadableModType; failed: boolean }
+    let lookupTimedOut = false
     const modDetails = new Map<string, Promise<ModLookupResult>>()
     const modImages = new Map<string, Promise<string | undefined>>()
 
@@ -59,12 +55,19 @@ export function useGetCompleteInstalledMods(): ({ path, version, onFinish }: { p
       // Not-found means the mod is not known to ModDB, while lookup failure means the database
       // could not be reached or the request timed out. We track failed lookups separately so
       // callers know whether the update scan was complete.
-      const request = installedModLookups.run(async (): Promise<ModLookupResult> => {
-        const outcome = await queryMod({ modid })
-        if (outcome.status === "found") return { mod: outcome.mod, failed: false }
-        if (outcome.status === "failed") return { failed: true }
-        return { failed: false }
-      })
+      const request = installedModLookups.run(() =>
+        modDetailLookups.run(async (): Promise<ModLookupResult> => {
+          if (lookupTimedOut) return { failed: true }
+
+          const outcome = await queryMod({ modid })
+          if (outcome.status === "found") return { mod: outcome.mod, failed: false }
+          if (outcome.status === "failed") {
+            if (outcome.timedOut) lookupTimedOut = true
+            return { failed: true }
+          }
+          return { failed: false }
+        })
+      )
       modDetails.set(key, request)
       return request
     }

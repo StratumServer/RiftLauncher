@@ -9,7 +9,7 @@ import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 
 import { useQueryMods } from "@renderer/features/mods/hooks/useQueryMods"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
-import { installedModLookups } from "@renderer/features/mods/hooks/useGetCompleteInstalledMods"
+import { installedModLookups, modDetailLookups } from "@renderer/features/mods/hooks/modDetailLookups"
 import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
 import { useQueryMod } from "@renderer/features/mods/hooks/useQueryMod"
 import { useModSuggestions } from "@renderer/features/mods/hooks/useModSuggestions"
@@ -285,7 +285,7 @@ function ListMods(): JSX.Element {
       requestedModDetails.current.add(mod.modid)
 
       void installedModLookups
-        .run(() => queryMod({ modid: mod.modid }))
+        .run(() => modDetailLookups.run(() => queryMod({ modid: mod.modid })))
         .then((lookup) => {
           if (lookup.status === "found") setModDetails((previous) => new Map(previous).set(mod.modid, lookup.mod))
         })
