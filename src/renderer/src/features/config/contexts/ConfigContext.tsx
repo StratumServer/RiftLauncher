@@ -118,7 +118,7 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
 
       if (notice.kind === "failing") {
         window.api.utils.logMessage("error", `[front] [config] [features/config/contexts/ConfigContext.tsx] [ConfigProvider] Config saves are failing: ${notice.reason}.`)
-        addNotification(t(configSaveFailureMessageKey(notice.reason)), "error")
+        addNotification(t(configSaveFailureMessageKey(notice.reason)), "error", { duration: null })
       } else {
         addNotification(t("notifications.body.configSaveRecovered"), "success")
       }

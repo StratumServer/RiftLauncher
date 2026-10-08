@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
+import fs from "node:fs"
 import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, it } from "vitest"
 
-import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
+import { writeJsonAtomic, writeTextAtomic } from "@src/ipc/atomicJsonFile"
 
 /**
  * writeJsonAtomic, the shared persistence adapter behind config, account secrets, the
@@ -68,6 +69,145 @@ describe("writeJsonAtomic", () => {
 
     const leftovers = readdirSync(temporaryRoot).filter((name) => name !== "doc.json")
     assert.deepEqual(leftovers, [])
+  })
+
+  it.each(["EACCES", "EPERM", "EBUSY"] as const)("retries a transient %s rename failure", async (code) => {
+    const dest = join(temporaryRoot, `${code}.json`)
+    const originalRename = fs.rename
+    let renameAttempts = 0
+    fs.rename = ((source: string, target: string, callback: (error: NodeJS.ErrnoException | null) => void) => {
+      if (target !== dest) {
+        originalRename(source, target, callback)
+        return
+      }
+      renameAttempts += 1
+      if (renameAttempts === 1) {
+        callback(Object.assign(new Error(code), { code, syscall: "rename" }))
+        return
+      }
+      originalRename(source, target, callback)
+    }) as unknown as typeof fs.rename
+
+    try {
+      await writeJsonAtomic(dest, { marker: code })
+    } finally {
+      fs.rename = originalRename
+    }
+
+    assert.equal(renameAttempts, 2)
+    assert.deepEqual(JSON.parse(readFileSync(dest, "utf8")), { marker: code })
+    assert.deepEqual(
+      readdirSync(temporaryRoot).filter((name) => name !== `${code}.json`),
+      []
+    )
+  })
+
+  it("keeps same-path writes in call order while the earlier write retries", async () => {
+    const dest = join(temporaryRoot, "ordered.json")
+    const originalRename = fs.rename
+    let renameAttempts = 0
+    fs.rename = ((source: string, target: string, callback: (error: NodeJS.ErrnoException | null) => void) => {
+      if (target !== dest) {
+        originalRename(source, target, callback)
+        return
+      }
+      renameAttempts += 1
+      if (renameAttempts === 1) {
+        callback(Object.assign(new Error("file busy"), { code: "EBUSY", syscall: "rename" }))
+        return
+      }
+      originalRename(source, target, callback)
+    }) as unknown as typeof fs.rename
+
+    try {
+      await Promise.all([writeJsonAtomic(dest, { value: "first" }), writeJsonAtomic(dest, { value: "second" })])
+    } finally {
+      fs.rename = originalRename
+    }
+
+    assert.equal(renameAttempts, 3)
+    assert.deepEqual(JSON.parse(readFileSync(dest, "utf8")), { value: "second" })
+  })
+
+  it("retries transient rename failures for text writes too", async () => {
+    const dest = join(temporaryRoot, "mod-config.json")
+    const originalRename = fs.rename
+    let renameAttempts = 0
+    fs.rename = ((source: string, target: string, callback: (error: NodeJS.ErrnoException | null) => void) => {
+      if (target !== dest) {
+        originalRename(source, target, callback)
+        return
+      }
+      renameAttempts += 1
+      if (renameAttempts === 1) {
+        callback(Object.assign(new Error("access denied"), { code: "EACCES", syscall: "rename" }))
+        return
+      }
+      originalRename(source, target, callback)
+    }) as unknown as typeof fs.rename
+
+    try {
+      await writeTextAtomic(dest, '{"kept": true}\n')
+    } finally {
+      fs.rename = originalRename
+    }
+
+    assert.equal(renameAttempts, 2)
+    assert.equal(readFileSync(dest, "utf8"), '{"kept": true}\n')
+  })
+
+  it("stops after the retry window, preserves the old file, and releases the path queue", async () => {
+    const dest = join(temporaryRoot, "locked.json")
+    writeFileSync(dest, JSON.stringify({ marker: "old" }))
+    const originalRename = fs.rename
+    let renameAttempts = 0
+    fs.rename = ((source: string, target: string, callback: (error: NodeJS.ErrnoException | null) => void) => {
+      if (target !== dest) {
+        originalRename(source, target, callback)
+        return
+      }
+      renameAttempts += 1
+      callback(Object.assign(new Error("file remains busy"), { code: "EBUSY", syscall: "rename" }))
+    }) as unknown as typeof fs.rename
+
+    try {
+      await assert.rejects(writeJsonAtomic(dest, { marker: "new" }), /file remains busy/)
+    } finally {
+      fs.rename = originalRename
+    }
+
+    assert.ok(renameAttempts > 1, "the writer should retry before it gives up")
+    assert.deepEqual(JSON.parse(readFileSync(dest, "utf8")), { marker: "old" })
+    assert.deepEqual(
+      readdirSync(temporaryRoot).filter((name) => name !== "locked.json"),
+      []
+    )
+
+    await writeJsonAtomic(dest, { marker: "after-failure" })
+    assert.deepEqual(JSON.parse(readFileSync(dest, "utf8")), { marker: "after-failure" })
+  }, 10_000)
+
+  it("does not retry errors from a syscall other than rename", async () => {
+    const dest = join(temporaryRoot, "wrong-syscall.json")
+    const originalRename = fs.rename
+    let renameAttempts = 0
+    fs.rename = ((source: string, target: string, callback: (error: NodeJS.ErrnoException | null) => void) => {
+      if (target !== dest) {
+        originalRename(source, target, callback)
+        return
+      }
+      renameAttempts += 1
+      callback(Object.assign(new Error("access denied"), { code: "EPERM", syscall: "open" }))
+    }) as unknown as typeof fs.rename
+
+    try {
+      await assert.rejects(writeJsonAtomic(dest, { marker: "never-written" }), /access denied/)
+    } finally {
+      fs.rename = originalRename
+    }
+
+    assert.equal(renameAttempts, 1)
+    assert.equal(existsSync(dest), false)
   })
 })
 
