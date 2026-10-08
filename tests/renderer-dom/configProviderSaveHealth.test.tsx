@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { act, screen } from "@testing-library/react"
+import { act, fireEvent, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import { CONFIG_ACTIONS, useConfigDispatch, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
@@ -61,6 +61,42 @@ describe("ConfigProvider save health", () => {
     const notice = await screen.findByText(/couldn't be saved to disk/i)
     expect(notice).toBeTruthy()
     expect(saveConfig).toHaveBeenCalledTimes(2)
+  })
+
+  it("keeps the failure notice visible beyond eight seconds until the player dismisses it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const saveConfig = vi.fn(async () => ({ ok: false, reason: "write-failed" }) as SaveConfigResult)
+      installMockWindowApi({ configManager: { getConfig: vi.fn(async () => createMockConfig()), saveConfig } })
+
+      renderWithProviders(
+        <>
+          <BumpInstallationsFolder />
+          <NotificationsOverlay />
+        </>
+      )
+
+      const bump = await screen.findByRole("button", { name: "bump" })
+      fireEvent.click(bump)
+      await act(async () => {})
+      fireEvent.click(bump)
+      const notice = await screen.findByText(/couldn't be saved to disk/i)
+      expect(notice).toBeTruthy()
+      expect(screen.getByRole("alert").textContent).toMatch(/couldn't be saved to disk/i)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8_001)
+      })
+      expect(screen.getByText(/couldn't be saved to disk/i)).toBeTruthy()
+
+      fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+      expect(screen.queryByRole("alert")).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("never writes back a config it could not read", async () => {

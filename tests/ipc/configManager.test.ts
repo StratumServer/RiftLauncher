@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import fs from "node:fs"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -913,6 +914,40 @@ describe("saveConfig and flushConfigWrites", () => {
 
     const reread = await getConfig()
     assert.equal(reread.lastUsedInstallation, "b", "the later config wins the coalesced write")
+  })
+
+  it("saves config through a transient rename lock so the next launch reads the new settings", async () => {
+    const path = join(userDataFolder, "config.json")
+    writeFileSync(path, JSON.stringify(minimalConfig({ schemaVersion: CURRENT_CONFIG_SCHEMA, lastUsedInstallation: "before" })), "utf-8")
+
+    const { getConfig, saveConfig } = await freshConfigManager()
+    const config = await getConfig()
+    const originalRename = fs.rename
+    let renameAttempts = 0
+    fs.rename = ((source: string, target: string, callback: (error: NodeJS.ErrnoException | null) => void) => {
+      if (target !== path) {
+        originalRename(source, target, callback)
+        return
+      }
+      renameAttempts += 1
+      if (renameAttempts === 1) {
+        callback(Object.assign(new Error("file busy"), { code: "EBUSY", syscall: "rename" }))
+        return
+      }
+      originalRename(source, target, callback)
+    }) as unknown as typeof fs.rename
+
+    try {
+      assert.equal(await saveConfig({ ...config, lastUsedInstallation: "after" }), true)
+    } finally {
+      fs.rename = originalRename
+    }
+
+    assert.equal(renameAttempts, 2)
+    assert.equal(JSON.parse(readFileSync(path, "utf-8")).lastUsedInstallation, "after")
+
+    const restarted = await freshConfigManager()
+    assert.equal((await restarted.getConfig()).lastUsedInstallation, "after")
   })
 
   it("returns null when nothing is scheduled", async () => {
