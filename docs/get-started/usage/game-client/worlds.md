@@ -12,19 +12,21 @@ versions are allowed but show a warning.
 The launcher refuses every world change while Vintage Story is running in the
 same session: close the game first. A session already closed before the launcher
 restarted is not tracked, so the launcher also refuses to change a world while
-its SQLite journal files, `<world>.vcdbs-wal` or `<world>.vcdbs-shm`, are in
+its SQLite files, `<world>.vcdbs-wal` or `<world>.vcdbs-shm`, are in
 `Saves` beside it. Both guards depend on the live `Saves` folder being free of
 the game's own locks.
 
-Those two files hold the latest changes the game made to the world, and a
-backup, a copy or a move that leaves them out would lose those changes, so the
-launcher refuses until they are gone. A crash or a power cut leaves them behind
-too, and the launcher cannot tell that from a game that still has the world
-open: it can refuse with the game closed, even after a reboot. To clear it, open
-the world once in Vintage Story and quit normally. The files go away when the
-game opens the world again and closes it cleanly, and then the launcher accepts
-the change again. Do not delete the `-wal` or `-shm` file yourself, because
-whatever the world file does not hold yet would be lost with it.
+The two files play different roles. The `-wal` file is SQLite's write-ahead log:
+it can hold committed changes that have not been written into the world file
+yet, so a backup, a copy or a move that leaves it out can lose them, and so can
+deleting it. The `-shm` file is only an index of the log that SQLite rebuilds on
+its own. It belongs with the `-wal` file all the same, so the launcher refuses
+while either one is there. A crash or a power cut leaves them behind too, and
+the launcher cannot tell that from a game that still has the world open: it can
+refuse with the game closed, even after a reboot. To clear it, open the world
+once in Vintage Story and quit normally. The game folds the log back into the
+world file and removes both files when it closes cleanly, and then the launcher
+accepts the change again. Do not delete either file by hand.
 
 World backups are stored beneath the configured Backups folder and survive
 deleting the live world. Each world retains up to the Installation's configured
