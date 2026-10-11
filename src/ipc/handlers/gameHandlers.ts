@@ -34,7 +34,8 @@ import {
   invalidRequestResult,
   launchPlanFailureResult,
   noExecutableResult,
-  sessionWriteFailedResult
+  sessionWriteFailedResult,
+  withSettingsSetAside
 } from "@src/ipc/handlers/gameExecutionOutcome"
 import type { AccountSecrets } from "@domain/account/credentials"
 import type {
@@ -391,7 +392,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   }
 
   // The name of the settings file this launch moved aside, if it had to. Told to the player with
-  // the result, which is the only answer EXECUTE_GAME gives and comes when the game closes.
+  // the result, which is the only answer EXECUTE_GAME gives. Every answer from here on carries it,
+  // a refusal as much as the exit, since the file is in the folder whichever way the launch ends.
   let settingsSetAside: string | undefined
 
   if (account && accountSecrets) {
@@ -451,7 +453,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
       case "write-failed":
         logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Error setting login session keys.`)
         logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] Error setting login session keys: ${written.outcome}.`)
-        return sessionWriteFailedResult()
+        return withSettingsSetAside(sessionWriteFailedResult(), settingsSetAside)
     }
   } else if (account && !accountSecrets) {
     // The active account has no usable session (a locked keyring, or a store this build cannot
@@ -500,7 +502,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   // The id comes from the config the launcher wrote, never from the renderer's own object, so the
   // file name a session lands under cannot be chosen by whatever sent the launch.
   const markedPlaying = installationId ? markInstallationPlaying(installationId) : false
-  if (installationId && !markedPlaying) return { ok: false, reason: "installation-busy" }
+  if (installationId && !markedPlaying) return withSettingsSetAside({ ok: false, reason: "installation-busy" }, settingsSetAside)
   // Windows has no /proc, so its sampler reads `tasklist` and needs a probe to run it with. Passing
   // it only there keeps macOS on the absent sampler, which is what the factory answers with none.
   const platform = os.platform()

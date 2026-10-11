@@ -1252,17 +1252,23 @@ describe("EXECUTE_GAME when the installation's clientsettings.json cannot be rea
     launchMarker: string
   }
 
-  /** An Installation holding the unreadable bytes, signed in as account "1" whose secrets the mocked store answers. */
-  function setUpInstallation(): UnreadableInstallation {
+  /**
+   * An Installation holding the unreadable bytes, signed in as account "1" whose secrets the mocked
+   * store answers. `game` is the script the game runs, which leaves the marker by default;
+   * `recorded` saves the Installation in the config too, which is what lets the launch take its
+   * lease on it.
+   */
+  function setUpInstallation({ game, recorded = false }: { game?: string; recorded?: boolean } = {}): UnreadableInstallation {
     const gameVersionFolder = join(versionsFolder, "1.20.0")
     const installationFolder = join(managedFolder, "Main")
     const launchMarker = join(temporaryRoot, "game-ran")
     mkdirSync(gameVersionFolder, { recursive: true })
     mkdirSync(installationFolder, { recursive: true })
-    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), `#!/bin/sh\ntouch '${launchMarker}'\nexit 0\n`)
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), game ?? `#!/bin/sh\ntouch '${launchMarker}'\nexit 0\n`)
     chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
     writeConfig({
       gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      ...(recorded ? { installations: [{ id: "main-1", path: installationFolder, backups: [] }] as unknown as ConfigType["installations"] } : {}),
       accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
       activeAccountId: "1"
     })
@@ -1398,6 +1404,89 @@ describe("EXECUTE_GAME when the installation's clientsettings.json cannot be rea
     assert.deepEqual(result, { ok: true, exitCode: 0 })
     assert.deepEqual(keptCopies(installation.installationFolder), [])
     assert.equal(JSON.parse(readFileSync(installation.settingsPath, "utf-8")).stringSettings.sessionkey, "session-key", "a missing file is still written fresh")
+  })
+
+  /**
+   * The file is moved aside before anything can go wrong with the launch itself, so a launch that
+   * then fails has still left a file in the Installation's folder that only the answer can name.
+   * Every refusal that can follow the move carries that name beside its reason.
+   */
+  describe.skipIf(process.platform !== "linux")("when the launch then fails", () => {
+    /** The folder holds exactly one kept copy, byte for byte the original, and the answer names it. */
+    function assertNamesTheKeptCopy(installation: UnreadableInstallation, result: GameExecutionResult): void {
+      const [keptName, ...otherCopies] = keptCopies(installation.installationFolder)
+      assert.ok(keptName)
+      assert.deepEqual(otherCopies, [])
+      assert.equal(result.settingsSetAside, keptName, "the refusal says where the player's file went")
+      assert.ok(readFileSync(join(installation.installationFolder, keptName)).equals(UNREADABLE_BYTES))
+    }
+
+    it("names the kept file when the game cannot be spawned", async () => {
+      const installation = setUpInstallation({ game: "#!/nonexistent/interpreter\n" })
+
+      const result = await launch(installation)
+
+      assert.equal(result.ok, false)
+      assert.equal(!result.ok && result.reason, "launch-failed")
+      assertNamesTheKeptCopy(installation, result)
+    })
+
+    it("names the kept file when the game cannot be spawned and there was no session of our own to write", async () => {
+      const installation = setUpInstallation({ game: "#!/nonexistent/interpreter\n" })
+      await withNoSecretsOfOurOwn()
+
+      const result = await launch(installation)
+
+      assert.equal(!result.ok && result.reason, "launch-failed")
+      assertNamesTheKeptCopy(installation, result)
+    })
+
+    it("names the kept file when the game reports a missing .NET runtime", async () => {
+      const installation = setUpInstallation({ game: "#!/bin/sh\necho 'You must install or update .NET to run this application.' >&2\nexit 150\n" })
+
+      const result = await launch(installation)
+
+      assert.equal(!result.ok && result.reason, "missing-dotnet")
+      assertNamesTheKeptCopy(installation, result)
+    })
+
+    it("names the kept file when the Installation is busy by the time the game would start", async () => {
+      const installation = setUpInstallation({ recorded: true })
+      const activity = await import("@src/ipc/installationActivity")
+      const lease = activity.tryAcquireInstallationOperation(["main-1"])
+      assert.equal(lease.ok, true)
+      if (!lease.ok) return
+
+      try {
+        const result = await launch(installation)
+
+        assert.equal(!result.ok && result.reason, "installation-busy")
+        assertNamesTheKeptCopy(installation, result)
+        assert.equal(existsSync(installation.launchMarker), false, "the game never started")
+      } finally {
+        lease.release()
+      }
+    })
+
+    it("names the kept file when the session then cannot be written into the fresh one", async () => {
+      const installation = setUpInstallation()
+      vi.mocked(writeJsonAtomic).mockRejectedValueOnce(new Error("disk full"))
+
+      const result = await launch(installation)
+
+      assert.equal(!result.ok && result.reason, "session-write-failed")
+      assertNamesTheKeptCopy(installation, result)
+      assert.equal(existsSync(installation.launchMarker), false, "the game never started")
+    })
+
+    it("names nothing on a failure after a settings file that could be read", async () => {
+      const installation = setUpInstallation({ game: "#!/nonexistent/interpreter\n" })
+      writeFileSync(installation.settingsPath, JSON.stringify({ intSettings: { maxFps: 60 } }))
+
+      const result = await launch(installation)
+
+      assert.deepEqual(result, { ok: false, reason: "launch-failed" }, "no key at all, which is what every failed launch answered before")
+    })
   })
 
   // chmod 0o500 on the folder lets the read that finds the file unreadable through and refuses the

@@ -549,7 +549,8 @@ declare global {
    *   aside either (#691). Its own reason because logging in again cannot fix
    *   it and renaming the file can, which is what the notice says. A file that
    *   could be moved aside is not a refusal: the launch goes ahead and the
-   *   result carries {@link GameExecutionResult}'s `settingsSetAside`.
+   *   result carries {@link GameExecutionResult}'s `settingsSetAside`, whatever
+   *   becomes of the launch after that.
    * - `launch-failed`: the executable failed its last check before spawning,
    *   or the spawn itself failed.
    * - `invalid-request`: the installation's own start environment variables
@@ -580,13 +581,14 @@ declare global {
    * `ok: false` means the game never ran at all.
    *
    * `settingsSetAside` is the bare name of the copy of an unreadable
-   * clientsettings.json that this launch moved aside before it started the game
-   * (#691), in the Installation's own folder, so the player can be told their
-   * game settings were reset and where the old file went. Absent for every
-   * launch that set nothing aside. It rides on the success because EXECUTE_GAME
-   * answers once, when the game closes.
+   * clientsettings.json that this launch moved aside before it did anything
+   * else (#691), in the Installation's own folder, so the player can be told
+   * their game settings were reset and where the old file went. Absent for
+   * every launch that set nothing aside. It rides on every answer a launch can
+   * give once the move has happened, a failure as much as an exit: the file is
+   * in the folder either way, and its generated name is only known here.
    */
-  type GameExecutionResult = { ok: true; exitCode: number | null; settingsSetAside?: string } | { ok: false; reason: GameExecutionFailureReason }
+  type GameExecutionResult = { ok: true; exitCode: number | null; settingsSetAside?: string } | { ok: false; reason: GameExecutionFailureReason; settingsSetAside?: string }
 
   /** The session report as the domain builds it. Declared by reference so the shape has one home (src/domain/gameLogs/report.ts). */
   type SessionReportType = import("@domain/gameLogs/report").SessionReport

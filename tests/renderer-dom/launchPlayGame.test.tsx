@@ -338,11 +338,12 @@ describe("MainMenu Play button", () => {
   /**
    * Issue #691: EXECUTE_GAME moved an unreadable clientsettings.json aside and launched on a fresh
    * one. The player's settings are back to the game's defaults, which is theirs to be told, along
-   * with where the old file went. The answer only arrives when the game closes, so the notice is
-   * written in the past tense.
+   * with where the old file went. The answer only arrives when the game closes, or when the launch
+   * fails after the move, and the file is in the Installation's folder either way, so the notice is
+   * shown whatever the outcome.
    */
   const SET_ASIDE_NAME = "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
-  const SET_ASIDE_NOTICE = `This Installation's game settings file couldn't be read, so it was set aside as ${SET_ASIDE_NAME} in the Installation's folder, and Vintage Story started with its default settings.`
+  const SET_ASIDE_NOTICE = `This Installation's game settings file couldn't be read, so it was set aside as ${SET_ASIDE_NAME} in the Installation's folder, and Vintage Story will use its default settings.`
 
   function withExecuteGameAnswering(result: GameExecutionResult): void {
     installMockWindowApi({
@@ -382,6 +383,25 @@ describe("MainMenu Play button", () => {
 
     await screen.findByText(SET_ASIDE_NOTICE)
     await screen.findByText("Vintage Story exited with errors. The log has the details.")
+  })
+
+  it.each([
+    { reason: "launch-failed", message: "Something went wrong starting the game. The log has the details." },
+    { reason: "missing-dotnet", message: "This game version needs a .NET runtime that is not installed. Vintage Story needs .NET, not the launcher: install it and launch again." },
+    { reason: "installation-busy", message: "This Installation is busy managing a world. Try launching again in a moment." },
+    { reason: "session-write-failed", message: "Couldn't save your login to this installation. Try logging in again." }
+  ] as const)("names the set-aside file and still shows the $reason notice when the launch fails after the move", async ({ reason, message }) => {
+    const user = userEvent.setup()
+    withExecuteGameAnswering({ ok: false, reason, settingsSetAside: SET_ASIDE_NAME })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText(SET_ASIDE_NOTICE)
+    await screen.findByText(message)
+    expect(liveNotifications.filter((notification) => notification.body === SET_ASIDE_NOTICE).map((notification) => notification.type)).toEqual(["info"])
+    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
+    expect(readProbe().lastTimePlayed, "a launch that never ran credits no playtime").toBe(-1)
   })
 
   it("shows no set-aside notice for a launch that set nothing aside", async () => {

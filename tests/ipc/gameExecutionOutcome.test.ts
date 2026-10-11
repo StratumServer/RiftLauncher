@@ -10,7 +10,8 @@ import {
   invalidRequestResult,
   launchPlanFailureResult,
   noExecutableResult,
-  sessionWriteFailedResult
+  sessionWriteFailedResult,
+  withSettingsSetAside
 } from "../../src/ipc/handlers/gameExecutionOutcome"
 
 describe("gameProcessOutcomeToResult", () => {
@@ -48,6 +49,19 @@ describe("gameProcessOutcomeToResult", () => {
       exitCode: 0,
       settingsSetAside: "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
     })
+  })
+
+  it("names the file on the failures that follow the move too, since they leave it in the Installation's folder all the same", () => {
+    const kept = "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
+    assert.deepEqual(gameProcessOutcomeToResult({ started: false, error: "ENOENT" }, kept), { ok: false, reason: "launch-failed", settingsSetAside: kept })
+    assert.deepEqual(gameProcessOutcomeToResult({ started: true, exitCode: 150, missingRuntime: true }, kept), { ok: false, reason: "missing-dotnet", settingsSetAside: kept })
+  })
+
+  it("adds the name to any other result, and nothing at all when no file was set aside", () => {
+    const kept = "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
+    assert.deepEqual(withSettingsSetAside({ ok: false, reason: "installation-busy" }, kept), { ok: false, reason: "installation-busy", settingsSetAside: kept })
+    assert.deepEqual(withSettingsSetAside(sessionWriteFailedResult(), kept), { ok: false, reason: "session-write-failed", settingsSetAside: kept })
+    assert.equal("settingsSetAside" in withSettingsSetAside({ ok: false, reason: "installation-busy" }, undefined), false)
   })
 
   it("carries no key at all for a launch that set nothing aside, which is what every launch before this one answered", () => {

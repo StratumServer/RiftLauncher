@@ -54,6 +54,19 @@ export function invalidRequestResult(): GameExecutionResult {
 }
 
 /**
+ * Adds the name of the settings file a launch moved aside (#691) to the result it answers with.
+ *
+ * The move comes before every refusal that can still follow it (the session write, a busy
+ * Installation, a spawn that fails, a missing runtime), and the file stays in the Installation's
+ * folder whichever of them ends the launch, so each of them carries the name. It is left out of the
+ * result altogether when nothing was set aside, so a launch that set nothing aside answers exactly
+ * what it always did.
+ */
+export function withSettingsSetAside(result: GameExecutionResult, settingsSetAside?: string): GameExecutionResult {
+  return settingsSetAside === undefined ? result : { ...result, settingsSetAside }
+}
+
+/**
  * Maps the terminal {@link GameProcessOutcome} onto the wire.
  *
  * `started: true` becomes the exit, at whatever exit code it exited with.
@@ -62,13 +75,11 @@ export function invalidRequestResult(): GameExecutionResult {
  * anti-pattern that left the renderer unable to clear `_playing` on this path.
  *
  * `settingsSetAside` is the name of the file this launch moved aside before it
- * started the game (#691), and only an exit carries it. It is left out of the
- * result altogether when nothing was set aside, so a launch that set nothing
- * aside answers exactly what it always did.
+ * started the game, and goes onto whichever of these results it ends in.
  */
 export function gameProcessOutcomeToResult(outcome: GameProcessOutcome, settingsSetAside?: string): GameExecutionResult {
-  if (!outcome.started) return { ok: false, reason: "launch-failed" }
-  return outcome.missingRuntime ? { ok: false, reason: "missing-dotnet" } : { ok: true, exitCode: outcome.exitCode, ...(settingsSetAside === undefined ? {} : { settingsSetAside }) }
+  if (!outcome.started) return withSettingsSetAside({ ok: false, reason: "launch-failed" }, settingsSetAside)
+  return withSettingsSetAside(outcome.missingRuntime ? { ok: false, reason: "missing-dotnet" } : { ok: true, exitCode: outcome.exitCode }, settingsSetAside)
 }
 
 /**

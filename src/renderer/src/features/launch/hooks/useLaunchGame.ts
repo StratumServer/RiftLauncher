@@ -158,11 +158,12 @@ export function useLaunchGame(): LaunchGame {
         if (serverId) configDispatch({ type: CONFIG_ACTIONS.STAMP_SERVER_LAUNCH, payload: { id: installation.id, serverId, when: finishedPlaying } })
       }
 
-      // The launch moved an unreadable clientsettings.json aside and started the game on a fresh
-      // one (#691), so the player's game settings are back to the defaults. That is theirs to be
-      // told, with where the old file went, and it is told separately from how the game then
-      // exited, since a launch can have done both. The answer only arrives once the game has closed.
-      if (result.ok && result.settingsSetAside) addNotification(t("notifications.body.gameClientSettingsSetAside", { file: result.settingsSetAside }), "info")
+      // The launch moved an unreadable clientsettings.json aside (#691), so the player's game
+      // settings are back to the defaults. That is theirs to be told, with where the old file went,
+      // and it is told whatever became of the launch after the move: the file is in the folder
+      // whether the game ran, failed to start or never got the Installation, and the name is only
+      // in this answer. It is also told separately from how the launch ended, which has its own notice.
+      if (result.settingsSetAside) addNotification(t("notifications.body.gameClientSettingsSetAside", { file: result.settingsSetAside }), "info")
 
       const outcomeNotification = pickPlayOutcomeNotification(result, os)
       if (outcomeNotification) {
