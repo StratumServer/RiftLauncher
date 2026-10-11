@@ -96,6 +96,8 @@ This marker is supported for AppImages. `.deb`, `.rpm` and `.pacman` installs co
 
 The single-instance lock stays separate from the portable profile, in the normal app data folder as `RiftLauncher.singleton`.
 
+Portable mode moves the profile only. A downloaded update is not stored in the portable data folder: it goes to `~/.cache/riftlauncher-updater/pending`, or under `$XDG_CACHE_HOME` when that variable is set. When you restart to update, RiftLauncher deletes the old AppImage and moves the new one into the folder that held it. That cache folder and the AppImage's own folder therefore both have to be writable. The portable data folder already needs the AppImage's folder, and the single-instance lock already needs your home folder.
+
 ---
 
 ## Vintage Story Dependencies
