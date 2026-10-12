@@ -344,6 +344,35 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     expect(restoreButton.disabled).toBe(true)
     expect(deleteBackupButton.disabled).toBe(true)
   })
+  // Deleting or restoring a world rewrites the Saves folder: a running backup would read it torn and a
+  // restore would swap the change away. Backing a world up only reads, so that button stays enabled.
+  it.each(["_backuping", "_restoringBackup"] as const)("disables Delete world and Restore world while the installation has %s set", async (flag) => {
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [{ ...anInstallation(), [flag]: true }] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 1 }]
+        }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const deleteButton = (await screen.findByRole("button", { name: "Delete" })) as HTMLButtonElement
+    const restoreButton = (await screen.findByRole("button", { name: "Restore" })) as HTMLButtonElement
+    const backupButton = (await screen.findByRole("button", { name: "Back up this world" })) as HTMLButtonElement
+
+    expect(deleteButton.disabled).toBe(true)
+    expect(restoreButton.disabled).toBe(true)
+    expect(backupButton.disabled).toBe(false)
+  })
+
   it("disables transfer buttons for a playing target installation", async () => {
     const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b", _playing: true }
     installMockWindowApi({
@@ -374,6 +403,44 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
       expect((copyButton as HTMLButtonElement).disabled).toBe(true)
       expect((moveButton as HTMLButtonElement).disabled).toBe(true)
       expect((backupButton as HTMLButtonElement).disabled).toBe(false)
+    })
+  })
+
+  // A restore swaps the extracted backup in and deletes the old folder, and a backup reads the folder
+  // while it is written: a world moved or copied in or out meanwhile is thrown away or torn.
+  it.each([
+    ["target", "_backuping"],
+    ["target", "_restoringBackup"],
+    ["source", "_backuping"],
+    ["source", "_restoringBackup"]
+  ] as const)("disables transfer buttons when the %s installation has %s set", async (side, flag) => {
+    const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b" }
+    const first = anInstallation()
+    const installations = side === "target" ? [first, { ...second, [flag]: true }] : [{ ...first, [flag]: true }, second]
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const copyButton = await screen.findByRole("button", { name: "Copy world" })
+    const moveButton = await screen.findByRole("button", { name: "Move world" })
+    await userEvent.selectOptions(await screen.findByRole("combobox"), "install-b")
+
+    await waitFor(() => {
+      expect((copyButton as HTMLButtonElement).disabled).toBe(true)
+      expect((moveButton as HTMLButtonElement).disabled).toBe(true)
     })
   })
 

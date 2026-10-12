@@ -203,6 +203,7 @@ function ImportModpackPopup({
         installer: {
           install: (item) =>
             installMod({
+              installationId: installation.id,
               installationPath: installation.path,
               outName: installation.name,
               modName: item.name,
@@ -475,6 +476,8 @@ function statusLabel(status: ModStatus, t: (key: string, options?: Record<string
       return t("features.mods.severalCopiesInstalled")
     case "old-version-delete-failed":
       return t("features.mods.importModpackOldVersionStuck")
+    case "new-version-cleanup-failed":
+      return t("features.mods.summaryBothVersions")
     case "pending":
       return t("features.mods.importModpackStatusPending")
     default:

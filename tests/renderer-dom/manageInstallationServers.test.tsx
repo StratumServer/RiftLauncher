@@ -211,6 +211,26 @@ describe("ManageInstallationServers", () => {
     expect(executeGame.mock.calls[0]?.[2]).not.toContain("vintagestoryjoin")
   })
 
+  it.each([
+    ["_backuping", "There is a backup already in progress."],
+    ["_restoringBackup", "There's a Backup restoration already in progress."]
+  ] as const)("refuses Join while %s is set, even with automatic backups off", async (flag, message) => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn<BridgeAPI["gameManager"]["executeGame"]>(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+    const installation = { ...anInstallation([{ id: "s-1", name: "Stratum", host: "play.example.com", port: 42_420, lastLaunched: -1 }]), [flag]: true }
+    renderServersPage(undefined, {
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ installations: [installation], gameVersions: [{ id: "gv-1", version: "1.22.7", label: "1.22.7", path: "/versions/1.22.7" }] }))
+      },
+      gameManager: { executeGame }
+    })
+
+    await user.click(await screen.findByRole("button", { name: "Join" }))
+
+    await screen.findByText(message)
+    expect(executeGame).not.toHaveBeenCalled()
+  })
+
   /**
    * useLaunchGame is Join's copy of what MainMenu's PlayHandler used to do inline, and the two had
    * drifted: PlayHandler built a see-report action off pickPlayOutcomeNotification's `report` field,

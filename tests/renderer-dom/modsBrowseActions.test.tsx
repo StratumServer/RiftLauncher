@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { Link, Route, Routes, useLocation } from "react-router-dom"
 
 import ListMods from "@renderer/features/mods/pages/ListMods"
+import InstallMod from "@renderer/features/mods/pages/InstallMod"
 import { getModsBrowseState, resetModsBrowseState, updateModsBrowseState } from "@renderer/features/mods/modsBrowseState"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -122,9 +123,20 @@ interface MountOptions {
   modsManager?: WindowApiOverrides["modsManager"]
   pathsManager?: WindowApiOverrides["pathsManager"]
   routes?: boolean
+  /** With `routes`, the real Mod page instead of a stub, so a release can be picked on it. */
+  modPage?: boolean
 }
 
-function mount({ installation = anInstallation(), catalog = [BETTER_RUINS], folder = (): InstalledModType[] => [], details = {}, modsManager, pathsManager, routes = false }: MountOptions = {}): {
+function mount({
+  installation = anInstallation(),
+  catalog = [BETTER_RUINS],
+  folder = (): InstalledModType[] => [],
+  details = {},
+  modsManager,
+  pathsManager,
+  routes = false,
+  modPage = false
+}: MountOptions = {}): {
   api: MockedBridgeAPI
   getInstalledMods: ReturnType<typeof vi.fn>
   detailLookups: () => string[]
@@ -159,7 +171,7 @@ function mount({ installation = anInstallation(), catalog = [BETTER_RUINS], fold
       {routes ? (
         <Routes>
           <Route path="/mods" element={page} />
-          <Route path="/mods/install/:modid" element={<Where />} />
+          <Route path="/mods/install/:modid" element={modPage ? <InstallMod /> : <Where />} />
         </Routes>
       ) : (
         page
@@ -412,8 +424,8 @@ describe("ModDB card actions: one installed copy", () => {
   it("offers Update only when a newer tagged release exists, and keeps a disabled Mod disabled", async () => {
     const user = userEvent.setup()
     let folder = [aCopy("betterruins", "Better Ruins", "1.0.0", false), aCopy("primitivesurvival", "Primitive Survival", "2.0.0")]
-    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => {
-      folder = folder.slice(1)
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async (path) => {
+      folder = folder.filter((copy) => copy.path !== path)
       return true
     })
     const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => {
@@ -440,7 +452,9 @@ describe("ModDB card actions: one installed copy", () => {
 
     await waitFor(() => expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/betterruins-1.5.0.zip", "/games/a/Mods", "betterruins-1.5.0.zip.disabled"))
     expect(deletePath).toHaveBeenCalledWith("/games/a/Mods/betterruins-1.0.0.zip.disabled")
-    expect(deletePath.mock.invocationCallOrder[0]).toBeLessThan(downloadOnPath.mock.invocationCallOrder[0] as number)
+    // The old archive goes only once the new one is on disk (#703).
+    await waitFor(() => expect(deletePath).toHaveBeenCalledWith("/games/a/Mods/betterruins-1.0.0.zip.disabled"))
+    expect(deletePath.mock.invocationCallOrder[0]).toBeGreaterThan(downloadOnPath.mock.invocationCallOrder[0] as number)
     await waitFor(() => expect(within(strip("Better Ruins")).queryByRole("button", { name: /^Update to/ })).toBeNull(), { timeout: 3000 })
     expect(screen.getByRole("button", { name: "Better Ruins, Installed, Disabled" })).toBeTruthy()
     // The download task's toast is the update's one notification.
@@ -449,17 +463,16 @@ describe("ModDB card actions: one installed copy", () => {
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
   }, 15_000)
 
-  it("keeps Install off on a page opened while an update of the Mod is still on its way", async () => {
+  it("keeps the installed copy on the card, and offers no second Install, on a page opened while its update is still downloading (#703)", async () => {
     const user = userEvent.setup()
     let folder = [aCopy("betterruins", "Better Ruins", "1.0.0", false)]
     const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => {
-      folder = []
+      folder = [aCopy("betterruins", "Better Ruins", "1.5.0", false)]
       return true
     })
     const download = deferred<void>()
     const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => {
       await download.promise
-      folder = [aCopy("betterruins", "Better Ruins", "1.5.0", false)]
       return `${outputPath}/${fileName}`
     })
     mount({
@@ -472,16 +485,62 @@ describe("ModDB card actions: one installed copy", () => {
     await user.click(await within(await screen.findByRole("group", { name: "Better Ruins" }, { timeout: 3000 })).findByRole("button", { name: "Update to v1.5.0" }, { timeout: 3000 }))
     await waitFor(() => expect(downloadOnPath).toHaveBeenCalledTimes(1))
 
-    // Off to the release list and back: the old archive is gone and the new one has no name yet.
+    // Off to the release list and back: the old archive is still the one on disk, and nothing was deleted yet.
     await user.click(screen.getByRole("button", { name: "Better Ruins, Installed, Disabled" }))
     await user.click(await screen.findByRole("link", { name: "Back to Mods" }))
-    const install = await within(await screen.findByRole("group", { name: "Better Ruins" }, { timeout: 3000 })).findByRole("button", { name: QUICK_INSTALL }, { timeout: 3000 })
-    expect(screen.getByRole("button", { name: "Better Ruins, Not installed" })).toBeTruthy()
-    expect((install as HTMLButtonElement).disabled).toBe(true)
+    await screen.findByRole("button", { name: "Better Ruins, Installed, Disabled" }, { timeout: 3000 })
+    expect(within(strip("Better Ruins")).queryByRole("button", { name: QUICK_INSTALL })).toBeNull()
+    expect(deletePath).not.toHaveBeenCalled()
 
     await act(async () => download.resolve())
+    await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(1))
     expect(await screen.findByRole("button", { name: "Better Ruins, Installed, Disabled" }, { timeout: 3000 })).toBeTruthy()
     expect(downloadOnPath).toHaveBeenCalledTimes(1)
+  }, 15_000)
+
+  it("keeps a second update of the Mod out while one picked on the Mod page downloads, and loses neither version (#703)", async () => {
+    const user = userEvent.setup()
+    // The Mods folder as a set of files, so a delete of a missing path fails the way the host's does.
+    const files = new Set(["/games/a/Mods/betterruins-1.0.0.zip"])
+    const folder = (): InstalledModType[] =>
+      [...files]
+        .map((path) => aCopy("betterruins", "Better Ruins", /-(\d+\.\d+\.\d+)\.zip/.exec(path)?.[1] ?? "", true))
+        .map((copy) => ({ ...copy, path: `/games/a/Mods/betterruins-${copy.version}.zip` }))
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async (path) => files.delete(path))
+    const download = deferred<void>()
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => {
+      await download.promise
+      files.add(`${outputPath}/${fileName}`)
+      return `${outputPath}/${fileName}`
+    })
+    mount({
+      folder,
+      details: { 123: aDetail(123, "Better Ruins", [aRelease("betterruins", "1.5.0", ["1.21.0"]), aRelease("betterruins", "1.0.0", ["1.20.0"])]) },
+      pathsManager: { deletePath, downloadOnPath },
+      routes: true,
+      modPage: true
+    })
+
+    // Pick 1.5.0 on the Mod page, which sends the player back to the list while it downloads.
+    await user.click(await screen.findByRole("button", { name: "Better Ruins, Installed" }, { timeout: 3000 }))
+    const row = (await screen.findByText("1.5.0", {}, { timeout: 3000 })).closest("tr, [role=row], div") as HTMLElement
+    let cell: HTMLElement | null = row
+    while (cell && within(cell).queryAllByRole("button").length === 0) cell = cell.parentElement
+    await user.click(within(cell as HTMLElement).getAllByRole("button")[0] as HTMLElement)
+    await waitFor(() => expect(downloadOnPath).toHaveBeenCalledTimes(1))
+
+    // The old copy is still listed, but nothing may start next to the download.
+    const update = await within(await screen.findByRole("group", { name: "Better Ruins" }, { timeout: 3000 })).findByRole("button", { name: "Update to v1.5.0" }, { timeout: 3000 })
+    expect((update as HTMLButtonElement).disabled).toBe(true)
+    expect((within(strip("Better Ruins")).getByRole("button", { name: ENABLED }) as HTMLButtonElement).disabled).toBe(true)
+    await user.click(update)
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+
+    await act(async () => download.resolve())
+    await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(1))
+    expect(deletePath).toHaveBeenCalledWith("/games/a/Mods/betterruins-1.0.0.zip")
+    expect([...files]).toEqual(["/games/a/Mods/betterruins-1.5.0.zip"])
+    expect(historyBodies().join("\n")).not.toMatch(/still on disk/)
   }, 15_000)
 
   it("refuses card actions while a backup holds the Installation", async () => {

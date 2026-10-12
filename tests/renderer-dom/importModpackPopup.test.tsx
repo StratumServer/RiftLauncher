@@ -488,9 +488,10 @@ describe("ImportModpackPopup, on Mods picked on the browse page", () => {
     leftOut?: number
     installationOverrides?: Partial<InstallationType>
     downloadOnPath?: BridgeAPI["pathsManager"]["downloadOnPath"]
+    deletePath?: BridgeAPI["pathsManager"]["deletePath"]
   }
 
-  function mountPicks({ mods = [FORK_PICK], gameVersion = GAME_VERSION, installedMods = [], leftOut = 0, installationOverrides = {}, downloadOnPath }: PickMount = {}): {
+  function mountPicks({ mods = [FORK_PICK], gameVersion = GAME_VERSION, installedMods = [], leftOut = 0, installationOverrides = {}, downloadOnPath, deletePath: deleteOverride }: PickMount = {}): {
     queryURL: ReturnType<typeof vi.fn>
     downloadOnPath: ReturnType<typeof vi.fn>
     deletePath: ReturnType<typeof vi.fn>
@@ -503,7 +504,7 @@ describe("ImportModpackPopup, on Mods picked on the browse page", () => {
       return answer
     })
     const download = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(downloadOnPath ?? (async (_id, _url, outputPath, fileName): Promise<string> => `${outputPath}/${fileName}`))
-    const deletePath = vi.fn(async () => true)
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(deleteOverride ?? (async (): Promise<boolean> => true))
     installMockWindowApi({
       netManager: { queryURL },
       pathsManager: { checkPathExists: vi.fn(async () => true), deletePath, downloadOnPath: download, formatPath: vi.fn(async (parts: string[]) => parts.join("/")) }
@@ -601,6 +602,38 @@ describe("ImportModpackPopup, on Mods picked on the browse page", () => {
     expect(await screen.findByRole("heading", { name: "Mod Install Summary" })).toBeTruthy()
     expect(deletePath).toHaveBeenCalledWith("/installations/main/Mods/primitivesurvival-1.0.0.zip.disabled")
     expect(downloadOnPath).toHaveBeenCalledWith(expect.any(String), "https://mods.example/primitivesurvival-2.1.0.zip", "/installations/main/Mods", "primitivesurvival-2.1.0.zip.disabled")
+  })
+
+  it("keeps the player's copy when the download that would replace it fails (#703)", async () => {
+    const disabled = { ...installedMod("Primitive Survival", "primitivesurvival", "1.0.0", false), path: "/installations/main/Mods/primitivesurvival-1.0.0.zip.disabled" }
+    const { downloadOnPath, deletePath } = mountPicks({
+      installedMods: [disabled],
+      downloadOnPath: async () => {
+        throw new Error("The transfer died.")
+      }
+    })
+
+    await rowFor("Primitive Survival Continued")
+    await install()
+
+    expect(await screen.findByRole("heading", { name: "Mod Install Summary" })).toBeTruthy()
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(deletePath).not.toHaveBeenCalled()
+  })
+
+  it("names a pick whose old and new archive are both left on disk in the row and in the summary (#703)", async () => {
+    const copy = { ...installedMod("Primitive Survival", "primitivesurvival", "1.0.0"), path: "/installations/main/Mods/primitivesurvival-1.0.0.zip" }
+    // Neither the old archive nor the take-back of the new one can be deleted.
+    const { deletePath } = mountPicks({ installedMods: [copy], deletePath: async () => false })
+
+    await rowFor("Primitive Survival Continued")
+    await install()
+
+    const summary = await screen.findByRole("dialog")
+    expect(within(summary).getByText("Mod Install Summary")).toBeTruthy()
+    expect(within(summary).getByText("Both versions on disk")).toBeTruthy()
+    expect(within(summary).queryByText("Failed")).toBeNull()
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([copy.path, "/installations/main/Mods/primitivesurvival-2.1.0.zip"])
   })
 
   it("refuses to run while Update all holds the Installation's Mods folder", async () => {

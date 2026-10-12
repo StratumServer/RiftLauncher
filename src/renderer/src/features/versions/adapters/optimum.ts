@@ -83,6 +83,10 @@ export function describeOptimumFailure(failure: { reason: OptimumPatchFailureRea
       return { messageKey: "features.versions.optimumNoVanillaBackup", logged: false }
     case "restore-failed":
       return { messageKey: "features.versions.optimumRestoreFailed", logged: true }
+    case "build-changed":
+      return { messageKey: "features.versions.optimumBuildChanged", logged: true }
+    case "build-unrecognized":
+      return { messageKey: "features.versions.optimumBuildUnrecognized", logged: true }
     case "output-unverified":
       return { messageKey: "features.versions.optimumOutputUnverified", logged: true }
     default:
