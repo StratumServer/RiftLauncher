@@ -1,5 +1,6 @@
 import type { BackupSnapshot, InstallationSnapshot, MakeInstallationBackupPorts } from "@domain/installations/backup"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
+import { createInstallationLeasePort } from "@renderer/adapters/installationLease"
 import { TASK_NOTIFICATION_POLICIES, type TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
 export interface BackupPortsOptions {
@@ -40,7 +41,8 @@ export function createBackupPorts({ startCompress, taskName, taskDescription }: 
         window.api.utils.setPreventAppClose("add", token, reason)
         return () => window.api.utils.setPreventAppClose("remove", token, "Finished installation backup.")
       }
-    }
+    },
+    installationLease: createInstallationLeasePort()
   }
 }
 
