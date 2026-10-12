@@ -67,8 +67,8 @@ function ModsGrid({
             const copies = installedCopiesOf(mod.modidstrs, installedMods)
             const copy = copies.length === 1 ? copies[0] : undefined
             const releases = copy && details.get(mod.modid)?.releases
-            // Not installed can mean an update of it is between deleting the old archive and naming
-            // the new one, so Install stays off while any download of the Mod is on its way.
+            // A Mod stays busy while any download of it is on its way, whether or not a copy is listed:
+            // the old copy stays on disk during an update, and acting on it would race the swap.
             const installing = installationId !== undefined && mod.modidstrs.some((modid) => isBusy(modWriteKey(installationId, modid)))
 
             return (
@@ -83,7 +83,7 @@ function ModsGrid({
                 installationId={installationId}
                 copyState={copies.length > 1 ? "several" : copy && (copy.enabled ? "enabled" : "disabled")}
                 suspended={copy !== undefined && suspendedModUpdates.includes(copy.modid)}
-                busy={copy ? isBusy(copy.path) : installing || isBusy(quickInstallKey(mod.modid))}
+                busy={copy ? isBusy(copy.path) || installing : installing || isBusy(quickInstallKey(mod.modid))}
                 updateTo={copy && releases ? findModUpdate(copy.version, releases, gameVersion).updatableTo : undefined}
                 onAction={onModAction}
                 picked={pickedIds?.has(mod.modid)}

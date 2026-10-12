@@ -8,7 +8,7 @@ import type { GameVersionSnapshot, UninstallGameVersionEvents, UninstallGameVers
 let trace: string[] = []
 
 function version(overrides: Partial<GameVersionSnapshot> = {}): GameVersionSnapshot {
-  return { version: "1.20.4", path: "/games/1.20.4", isPlaying: false, isDeleting: false, linked: false, ...overrides }
+  return { version: "1.20.4", path: "/games/1.20.4", isPlaying: false, isDeleting: false, linked: false, incomplete: false, ...overrides }
 }
 
 function input(overrides: Partial<Omit<UninstallGameVersionInput, "version">> & { version?: GameVersionSnapshot } = {}): UninstallGameVersionInput {
@@ -16,9 +16,13 @@ function input(overrides: Partial<Omit<UninstallGameVersionInput, "version">> & 
   return { version: versionOverride ?? version(), usedByInstallations: [], confirmedInUse: false, ...rest }
 }
 
-function ports(options: { removed?: boolean } = {}): UninstallGameVersionPorts {
+function ports(options: { removed?: boolean; present?: boolean } = {}): UninstallGameVersionPorts {
   return {
     fileSystem: {
+      exists: async (path: string): Promise<boolean> => {
+        trace.push(`exists:${path}`)
+        return options.present ?? true
+      },
       remove: async (path: string): Promise<boolean> => {
         trace.push(`remove:${path}`)
         return options.removed ?? true
@@ -148,5 +152,58 @@ describe("uninstallGameVersion linked versions", () => {
 
     assert.deepEqual(result, { ok: false, reason: "version-in-use" })
     assert.deepEqual(trace, [])
+  })
+})
+
+/**
+ * An install cut off before its first byte landed (#710) is a row whose folder was never created.
+ * The host refuses to delete a path it cannot find, so without this the row could be neither
+ * played nor removed.
+ */
+describe("uninstallGameVersion on an interrupted install", () => {
+  it("drops the row of an unfinished install whose folder was never created", async () => {
+    const result = await uninstallGameVersion(ports({ present: false, removed: false }), input({ version: version({ incomplete: true }) }), recordingEvents())
+
+    assert.deepEqual(result, { ok: true, folderRemoved: true })
+    assert.deepEqual(trace, ["started", "exists:/games/1.20.4", "finished"])
+  })
+
+  it("still deletes the folder of an unfinished install when part of it landed", async () => {
+    const result = await uninstallGameVersion(ports({ present: true }), input({ version: version({ incomplete: true }) }), recordingEvents())
+
+    assert.deepEqual(result, { ok: true, folderRemoved: true })
+    assert.deepEqual(trace, ["started", "exists:/games/1.20.4", "remove:/games/1.20.4", "finished"])
+  })
+
+  it("keeps refusing a finished install whose folder cannot be deleted, missing or not", async () => {
+    const result = await uninstallGameVersion(ports({ present: false, removed: false }), input(), recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
+    assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
+  })
+
+  it("keeps an unfinished install on the list when its folder is there and cannot be deleted", async () => {
+    const result = await uninstallGameVersion(ports({ present: true, removed: false }), input({ version: version({ incomplete: true }) }))
+
+    assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
+  })
+
+  it("leaves the verdict to the delete when the folder check itself fails", async () => {
+    const failing: UninstallGameVersionPorts = {
+      fileSystem: {
+        exists: async (): Promise<boolean> => {
+          throw new Error("Unmanaged path")
+        },
+        remove: async (path: string): Promise<boolean> => {
+          trace.push(`remove:${path}`)
+          return false
+        }
+      }
+    }
+
+    const result = await uninstallGameVersion(failing, input({ version: version({ incomplete: true }) }))
+
+    assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
+    assert.deepEqual(trace, ["remove:/games/1.20.4"])
   })
 })

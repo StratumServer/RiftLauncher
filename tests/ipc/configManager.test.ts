@@ -433,6 +433,38 @@ describe("normalizeConfig: game versions", () => {
     )
   })
 
+  // `incomplete` is what a restart reads to tell an install that was cut off from one that
+  // finished (#710). Dropped on load, the row would read as an ordinary installed build.
+  it("keeps incomplete: true across a save and the next start", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const saved = normalizeConfig({ gameVersions: [{ id: "gv-1", version: "1.22.7", path: "/v", _installing: true, incomplete: true }] })
+    const reloaded = normalizeConfig(JSON.parse(JSON.stringify(saved)), { atStartup: true })
+    assert.equal(reloaded.gameVersions[0]!.incomplete, true)
+    assert.equal("_installing" in reloaded.gameVersions[0]!, false)
+  })
+
+  it("leaves a build that finished, and a stray incomplete value, without the field", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({
+      gameVersions: [
+        { version: "1.22.7", path: "/v1" },
+        { version: "1.22.6", path: "/v2", incomplete: "yes" },
+        { version: "1.22.5", path: "/v3", incomplete: false }
+      ]
+    })
+    assert.deepEqual(
+      result.gameVersions.map((g) => "incomplete" in g),
+      [false, false, false]
+    )
+  })
+
+  it("never marks a linked build as an unfinished install", async () => {
+    const { normalizeConfig } = await freshConfigManager()
+    const result = normalizeConfig({ gameVersions: [{ version: "1.22.7", path: "/v", linked: true, incomplete: true }] })
+    assert.equal(result.gameVersions[0]!.linked, true)
+    assert.equal("incomplete" in result.gameVersions[0]!, false)
+  })
+
   // Same kind of loss as `linked` above, in the other direction: a build the player
   // patched would read as plain again on the next load, and the two actions that only
   // exist on a patched row would be gone with it.

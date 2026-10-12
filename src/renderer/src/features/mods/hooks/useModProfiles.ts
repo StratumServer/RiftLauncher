@@ -68,10 +68,14 @@ export interface ModProfiles {
  * read the folder records and applies nothing: its empty list is not what the folder holds.
  *
  * Known limits: a download already in flight when a switch starts still lands enabled, and so becomes
- * part of the profile being switched to. Updating one Mod from its row removes the old archive before
- * the new one lands without marking the folder busy, so a profile created or duplicated in that window
- * leaves that Mod out. Everything that starts during a switch is refused, because the switch holds
- * `_updatingMods`.
+ * part of the profile being switched to. Updating one Mod from its row does not mark the folder busy.
+ * The old archive stays on disk while the new one downloads, so a profile created or duplicated then
+ * still has the Mod; the only window left is the instant between the rename and the delete, when both
+ * archives are present. A switch that renames the old archive during the download (foo-1.0.zip to
+ * foo-1.0.zip.disabled) makes the delete after it fail, because DELETE_PATH refuses a missing path:
+ * the new archive is taken back out and the player gets errorReplacingOldModVersion. The folder ends
+ * up as the profile wants, at the old version. Everything that starts during a switch is refused,
+ * because the switch holds `_updatingMods`.
  */
 export function useModProfiles(installation: InstallationType | undefined): ModProfiles {
   const { t } = useTranslation()
@@ -144,8 +148,8 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   /** One write at a time, and none unless the file is one this build may write. */
   async function exclusive(task: (path: string) => Promise<void>): Promise<void> {
     if (!installationPath || status !== "ready" || workingRef.current) return
-    // A capture now would miss a Mod Update all has removed and not yet replaced, and a write during a
-    // restore lands in a folder about to be swapped out.
+    // A capture now would take a folder Update all is changing under it, with old and new archives
+    // side by side, and a write during a restore lands in a folder about to be swapped out.
     if (installation && modsFolderInUse(installation)) return addNotification(t("features.mods.cantChangeProfilesWhileInUse"), "error")
     workingRef.current = true
     setWorking(true)

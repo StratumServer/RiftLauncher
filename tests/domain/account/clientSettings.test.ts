@@ -5,6 +5,7 @@ import {
   CLIENT_SETTINGS_FILE_NAME,
   clearForeignClientSettingsSession,
   mergeSessionIntoClientSettings,
+  reconcileClientSettingsAfterPlay,
   removeSessionFromClientSettings,
   writeClientSettingsSession
 } from "../../../src/domain/account/clientSettings"
@@ -283,6 +284,135 @@ describe("writeClientSettingsSession when the game refreshed the session itself"
 
     assert.deepEqual(result, { outcome: "written" })
     assert.deepEqual(writes[0]?.document, { intSettings: { maxFps: 60 }, stringSettings: { language: "es-es", ...WRITTEN_SESSION } })
+  })
+})
+
+/**
+ * Several Installations, one account (issue #712). Each Installation has its own settings file, so
+ * a key that differs from the launcher's is not necessarily newer: the Installation launched least
+ * recently holds an older one. The launcher's session carries the time it last changed, and the
+ * file's modification time is what says whether the game wrote after that.
+ */
+describe("writeClientSettingsSession when the file's key may be older than the launcher's", () => {
+  const GAME_KEY = { ...WRITTEN_SESSION, mptoken: "game-mp-token", sessionkey: "game-session-key", sessionsignature: "game-session-signature" }
+  const SESSION_SET_AT = 1_000_000
+
+  it("writes the launcher's key over one the file has held since before the launcher's session changed", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: SESSION_SET_AT - 1 })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: { ...SESSION, sessionUpdatedAt: SESSION_SET_AT } })
+
+    assert.deepEqual(result, { outcome: "written" })
+    assert.equal(stringSettingsOf(writes[0]?.document as Record<string, unknown>).sessionkey, "session-key")
+  })
+
+  it("treats a file written at the very instant the launcher's session changed as not newer", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: SESSION_SET_AT })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: { ...SESSION, sessionUpdatedAt: SESSION_SET_AT } })
+
+    assert.deepEqual(result, { outcome: "written" })
+  })
+
+  it("adopts a key the game wrote after the launcher's session changed, and dates the adoption by the file", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: SESSION_SET_AT + 1 })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: { ...SESSION, sessionUpdatedAt: SESSION_SET_AT } })
+
+    assert.deepEqual(result, {
+      outcome: "adopted",
+      secrets: { sessionKey: "game-session-key", sessionSignature: "game-session-signature", mptoken: "game-mp-token", updatedAt: SESSION_SET_AT + 1 }
+    })
+    assert.deepEqual(writes, [])
+  })
+
+  it("keeps adopting without a date on the launcher's session, as a store written before dates existed", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: 5 })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.equal(result.outcome, "adopted")
+  })
+
+  it("does not adopt when the launcher's session is dated and the file cannot say when it was written", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY } })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: { ...SESSION, sessionUpdatedAt: SESSION_SET_AT } })
+
+    assert.deepEqual(result, { outcome: "written" })
+  })
+})
+
+describe("reconcileClientSettingsAfterPlay", () => {
+  const GAME_KEY = { ...WRITTEN_SESSION, mptoken: "game-mp-token", sessionkey: "game-session-key", sessionsignature: "game-session-signature" }
+  const HANDED: AccountSessionFields = { ...SESSION, sessionUpdatedAt: 10 }
+  const STORED = { sessionKey: "session-key", sessionSignature: "session-signature", mptoken: "mp-token", updatedAt: 10 }
+
+  it("hands back a key the game wrote after the launcher's session changed, and writes nothing", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: 20 })
+
+    const result = await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: STORED })
+
+    assert.deepEqual(result, { sessionKey: "game-session-key", sessionSignature: "game-session-signature", mptoken: "game-mp-token", updatedAt: 20 })
+    assert.deepEqual(writes, [])
+  })
+
+  it("hands back nothing for the key the launcher handed the game, however recently the game saved its settings", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: WRITTEN_SESSION }, modifiedAt: 99 })
+
+    assert.equal(await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: STORED }), null)
+    assert.deepEqual(writes, [])
+  })
+
+  it("hands back nothing for a key older than the launcher's session, or for an unreadable file", async () => {
+    const older = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: 5 })
+    const unreadable = fakeJsonFile({ ok: false })
+
+    assert.equal(await reconcileClientSettingsAfterPlay({ jsonFile: older.jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: STORED }), null)
+    assert.equal(await reconcileClientSettingsAfterPlay({ jsonFile: unreadable.jsonFile }, { settingsPath: SETTINGS_PATH, handed: SESSION, stored: STORED }), null)
+    assert.deepEqual([...older.writes, ...unreadable.writes], [])
+  })
+
+  it("lays a login made in the launcher during play over the file, so the file no longer looks newer than it (#712)", async () => {
+    // The game saved its settings 5 ms after the login, holding the key it was handed.
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: { ...WRITTEN_SESSION, language: "es-es" }, intSettings: { maxFps: 60 } }, modifiedAt: 105 })
+    const login = { sessionKey: "login-key", sessionSignature: "login-signature", mptoken: null, updatedAt: 100 }
+
+    const result = await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: login })
+
+    assert.equal(result, null, "nothing to adopt over the login")
+    assert.equal(writes.length, 1)
+    const written = writes[0]?.document as Record<string, unknown>
+    assert.deepEqual(stringSettingsOf(written), { ...WRITTEN_SESSION, language: "es-es", sessionkey: "login-key", sessionsignature: "login-signature", mptoken: null })
+    assert.deepEqual(written.intSettings, { maxFps: 60 })
+  })
+
+  it("does the same when the file holds a key the game issued, since the launcher's session is the one it can date", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: 105 })
+
+    const result = await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: { ...STORED, sessionKey: "login-key", updatedAt: 100 } })
+
+    assert.equal(result, null)
+    assert.equal(stringSettingsOf(writes[0]?.document as Record<string, unknown>).sessionkey, "login-key")
+  })
+
+  it("treats a session stored without a date as unchanged when it was handed without one", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: WRITTEN_SESSION }, modifiedAt: 99 })
+
+    assert.equal(
+      await reconcileClientSettingsAfterPlay(
+        { jsonFile },
+        { settingsPath: SETTINGS_PATH, handed: SESSION, stored: { sessionKey: "session-key", sessionSignature: "session-signature", mptoken: "mp-token" } }
+      ),
+      null
+    )
+    assert.deepEqual(writes, [])
+  })
+
+  it("does not fail when the file cannot be written", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: WRITTEN_SESSION }, modifiedAt: 105 }, { ok: false })
+
+    assert.equal(await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: { ...STORED, sessionKey: "login-key", updatedAt: 100 } }), null)
   })
 })
 

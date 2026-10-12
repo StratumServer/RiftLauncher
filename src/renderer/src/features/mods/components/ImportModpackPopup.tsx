@@ -10,6 +10,7 @@ import type { ModpackEntry, ModpackEntryStatus, ModpackModDetail, ModpackPlanIte
 import { modsFolderInUse } from "@domain/mods/install"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { toInstalledModSnapshot, toModChangeSummaryEntry, toModpackModDetail } from "@renderer/features/mods/adapters/importModpack"
+import { modDetailLookups } from "../hooks/modDetailLookups"
 import { useInstallMod } from "../hooks/useInstallMod"
 import { useQueryMod } from "../hooks/useQueryMod"
 
@@ -89,13 +90,25 @@ function ImportModpackPopup({
     if (!manifest) return
 
     let cancelled = false
+    let lookupTimedOut = false
     setDetails(null)
     setFailedModids(new Set())
 
     void (async (): Promise<void> => {
       const toResolve = modpackEntriesToResolve(manifest.mods, installed)
       // A pick is looked up by its listing, since a fork can declare the same modid as the original.
-      const fetched = await Promise.all(toResolve.map(async (entry) => [entry.modid, await queryMod({ modid: entry.listingId ?? entry.modid })] as const))
+      const fetched = await Promise.all(
+        toResolve.map(async (entry) => {
+          const outcome = await modDetailLookups.run(async () => {
+            if (cancelled || lookupTimedOut) return { status: "failed", timedOut: false } as const
+
+            const lookup = await queryMod({ modid: entry.listingId ?? entry.modid })
+            if (lookup.status === "failed" && lookup.timedOut) lookupTimedOut = true
+            return lookup
+          })
+          return [entry.modid, outcome] as const
+        })
+      )
       if (cancelled) return
 
       const resolved = new Map<string, ModpackModDetail>()
@@ -190,6 +203,7 @@ function ImportModpackPopup({
         installer: {
           install: (item) =>
             installMod({
+              installationId: installation.id,
               installationPath: installation.path,
               outName: installation.name,
               modName: item.name,
@@ -462,6 +476,8 @@ function statusLabel(status: ModStatus, t: (key: string, options?: Record<string
       return t("features.mods.severalCopiesInstalled")
     case "old-version-delete-failed":
       return t("features.mods.importModpackOldVersionStuck")
+    case "new-version-cleanup-failed":
+      return t("features.mods.summaryBothVersions")
     case "pending":
       return t("features.mods.importModpackStatusPending")
     default:
