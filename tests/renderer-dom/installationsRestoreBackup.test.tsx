@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { Routes, Route } from "react-router-dom"
 
 import ManageInstallationBackups from "@renderer/features/installations/pages/ManageInstallationBackups"
+import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
@@ -39,6 +40,7 @@ function renderManageBackups(installationId: string): ReturnType<typeof renderWi
         element={
           <TaskProvider>
             <ManageInstallationBackups />
+            <NotificationsOverlay />
           </TaskProvider>
         }
       />
@@ -190,5 +192,28 @@ describe("ManageInstallationBackups", () => {
     await screen.findByText("Are you sure you want to delete this Backup?")
     await user.click(screen.getAllByTitle("Delete")[1]!)
     await waitFor(() => expect(deletePath).toHaveBeenCalledTimes(2))
+  })
+
+  describe("an Installation whose folder holds another managed folder (#713)", () => {
+    it.each([
+      ["another Installation", { installations: [anInstallationWithBackup(), { ...anInstallationWithBackup(), id: "install-b", name: "Install B", path: "/games/a/b", backups: [] }] }, "/games/a/b"],
+      ["the Backups folder", { installations: [anInstallationWithBackup()], backupsFolder: "/games/a/Backups" }, "/games/a/Backups"],
+      ["the Installations folder", { installations: [anInstallationWithBackup()], defaultInstallationsFolder: "/games/a/Installations" }, "/games/a/Installations"],
+      ["another Installation on the same folder", { installations: [anInstallationWithBackup(), { ...anInstallationWithBackup(), id: "install-b", name: "Install B", backups: [] }] }, "/games/a"]
+    ])("says which folder to move when it holds %s, before extracting anything", async (_name, config, held) => {
+      const user = userEvent.setup()
+      const extractOnPath = vi.fn(async () => true)
+      installMockWindowApi({
+        configManager: { getConfig: vi.fn(async () => createMockConfig(config as Partial<ConfigType>)) },
+        pathsManager: { checkPathExists: vi.fn(async () => true), movePath: vi.fn(async () => true), deletePath: vi.fn(async () => true), extractOnPath, changePerms: vi.fn(async () => true) }
+      })
+
+      renderManageBackups("install-a")
+      await user.click(await screen.findByTitle("Restore Backup"))
+      await user.click(await screen.findByTitle("Restore"))
+
+      expect(await screen.findByText(new RegExp(`holds ${held.replaceAll("/", "\\/")}, which the launcher also manages`))).toBeTruthy()
+      expect(extractOnPath).not.toHaveBeenCalled()
+    })
   })
 })
