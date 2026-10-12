@@ -213,6 +213,27 @@ describe("MainMenu Play button", () => {
     expect(executeGame).not.toHaveBeenCalled()
   })
 
+  // An install the launcher did not see finish (#710) is on the list at the next start with a folder
+  // that may be empty or half copied, so Play says what happened instead of failing in the main
+  // process with a message that sends the player to a reinstall the launcher would then refuse.
+  it("refuses to launch a build whose install was cut off and says to remove it", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [anInstallation()], gameVersions: [aGameVersion({ incomplete: true })] }))
+      },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText("The install of VS Version 1.20.0 was cut off before it finished. Remove it on the VS Versions page, then install it again.")
+    expect(executeGame).not.toHaveBeenCalled()
+  })
+
   it("runs the selected installation and version, flips _playing for the run, and records playtime", async () => {
     const user = userEvent.setup()
 
