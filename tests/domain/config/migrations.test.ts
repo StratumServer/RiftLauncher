@@ -15,6 +15,7 @@ import {
   MAX_CONFIG_SCHEMA,
   migrateConfigDocument,
   repairGameVersionIdentity,
+  restampLinkedOnExternalVersions,
   singleAccountToAccountList,
   stampLinkedOnExternalVersions
 } from "../../../src/domain/config/migrations"
@@ -210,7 +211,10 @@ describe("migrateConfigDocument on real configs", () => {
     }
 
     assert.equal(result.schema, CURRENT_CONFIG_SCHEMA)
-    assert.deepEqual(result.applied, [{ fromSchema: 7, toSchema: 8 }])
+    assert.deepEqual(result.applied, [
+      { fromSchema: 7, toSchema: 8 },
+      { fromSchema: 8, toSchema: 9 }
+    ])
     assert.equal(doc.modSuggestionsFolded, false)
     assert.equal(doc.modSuggestionsConsent, true)
     assert.deepEqual(doc.dismissedModSuggestions, [12])
@@ -234,7 +238,7 @@ describe("migrateConfigDocument on real configs", () => {
 
     assert.equal(result.outcome, "migrated")
     assert.equal(result.schema, CURRENT_CONFIG_SCHEMA)
-    assert.deepEqual(result.applied.at(-1), { fromSchema: 7, toSchema: 8 })
+    assert.deepEqual(result.applied.at(-1), { fromSchema: 8, toSchema: 9 })
     assert.equal(doc.gameVersions[0]!.label, "1.22.7")
     assert.equal(typeof doc.gameVersions[0]!.id, "string")
     assert.equal(doc.gameVersions[0]!.id, repeatedDoc.gameVersions[0]!.id, "legacy ids are deterministic")
@@ -299,7 +303,7 @@ describe("migrateConfigDocument on real configs", () => {
     })
     const doc = result.doc as { gameVersions: Array<Record<string, unknown>> }
 
-    assert.deepEqual(doc.gameVersions, [{ id: "kept", version: "1.22.7", path: "/versions/valid", label: "1.22.7" }])
+    assert.deepEqual(doc.gameVersions, [{ id: "kept", version: "1.22.7", path: "/versions/valid", label: "1.22.7", linked: true }])
   })
 
   it("does not let a generated id steal one explicitly owned by a later valid build", () => {
@@ -345,7 +349,8 @@ describe("migrateConfigDocument on real configs", () => {
       { fromSchema: 4, toSchema: 5 },
       { fromSchema: 5, toSchema: 6 },
       { fromSchema: 6, toSchema: 7 },
-      { fromSchema: 7, toSchema: 8 }
+      { fromSchema: 7, toSchema: 8 },
+      { fromSchema: 8, toSchema: 9 }
     ])
 
     const doc = result.doc as Record<string, unknown>
@@ -414,10 +419,73 @@ describe("migrateConfigDocument on real configs", () => {
         [4, 5],
         [5, 6],
         [6, 7],
-        [7, 8]
+        [7, 8],
+        [8, 9]
       ]
     )
     assert.equal(CONFIG_MIGRATIONS[CONFIG_MIGRATIONS.length - 1]?.toSchema, CURRENT_CONFIG_SCHEMA)
+  })
+})
+
+/** #707: beta builds registered a version on any folder Browse returned, without the linked flag, and uninstalling it deleted the folder. */
+describe("restampLinkedOnExternalVersions", () => {
+  it("steps from schema 8 to 9", () => {
+    assert.equal(restampLinkedOnExternalVersions.fromSchema, 8)
+    assert.equal(restampLinkedOnExternalVersions.toSchema, 9)
+  })
+
+  it("stamps linked on an unlinked version outside the managed folder and leaves the managed ones", () => {
+    const doc = {
+      schemaVersion: 8,
+      defaultVersionsFolder: "/home/user/VSLGameVersions",
+      gameVersions: [
+        { version: "1.22.7", path: "/home/user/VSLGameVersions/1.22.7" },
+        { version: "1.22.6", path: "/games" },
+        { version: "1.22.5", path: "/games/vs", linked: true }
+      ]
+    }
+
+    const result = migrateConfigDocument(doc)
+
+    assert.equal(result.outcome, "migrated")
+    assert.deepEqual((result.doc as { gameVersions: unknown[] }).gameVersions, [
+      { version: "1.22.7", path: "/home/user/VSLGameVersions/1.22.7" },
+      { version: "1.22.6", path: "/games", linked: true },
+      { version: "1.22.5", path: "/games/vs", linked: true }
+    ])
+  })
+
+  it("keeps unlinked the versions the launcher installed under a default-named root that is no longer the setting", () => {
+    const doc = {
+      schemaVersion: 8,
+      // Settings moved the root (nothing was moved on disk), or portable mode rewrote it to the portable data folder.
+      defaultVersionsFolder: "/portable/RiftLauncherGameVersions",
+      gameVersions: [
+        { version: "1.22.7", path: "/home/user/.config/RiftLauncherGameVersions/1.22.7" },
+        { version: "1.22.6", path: "C:\\Users\\me\\AppData\\Roaming\\VSLGameVersions\\1.22.6" },
+        { version: "1.22.5", path: "/games/RiftLauncherGameVersions" },
+        { version: "1.22.4", path: "/games/other/1.22.4" }
+      ]
+    }
+
+    const versions = (migrateConfigDocument(doc).doc as { gameVersions: Array<{ linked?: boolean }> }).gameVersions
+
+    assert.deepEqual(
+      versions.map((version) => version.linked),
+      [undefined, undefined, true, true]
+    )
+  })
+
+  it("stamps a launcher install under a root moved to a custom name, the trade-off it documents", () => {
+    const doc = {
+      schemaVersion: 8,
+      defaultVersionsFolder: "/data/Versions",
+      gameVersions: [{ version: "1.22.7", path: "/home/user/old-root/1.22.7" }]
+    }
+
+    const versions = (migrateConfigDocument(doc).doc as { gameVersions: Array<{ linked?: boolean }> }).gameVersions
+
+    assert.equal(versions[0]?.linked, true)
   })
 })
 

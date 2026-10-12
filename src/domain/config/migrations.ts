@@ -18,9 +18,10 @@
  */
 
 import { isRecord } from "../records"
+import { DEFAULT_VERSIONS_FOLDER_NAME } from "../userData/migrationPlan"
 
 /** Schema every config the launcher writes today carries. */
-export const CURRENT_CONFIG_SCHEMA = 8
+export const CURRENT_CONFIG_SCHEMA = 9
 
 /**
  * First schema expressed as an integer.
@@ -192,27 +193,30 @@ export const floatMarkerToIntegerSchema: ConfigMigration = {
 export const stampLinkedOnExternalVersions: ConfigMigration = {
   fromSchema: 2,
   toSchema: 3,
-  migrate(doc: unknown): unknown {
-    if (!isRecord(doc)) return doc
+  migrate: (doc: unknown): unknown => stampLinkedOutsideManagedRoot(doc, () => false)
+}
 
-    const versions = doc.gameVersions
-    if (!Array.isArray(versions) || versions.length === 0) return { ...doc }
+/** The stamping both migrations share. `isManagedPath` names versions the launcher installed that the root alone does not show. */
+function stampLinkedOutsideManagedRoot(doc: unknown, isManagedPath: (path: string) => boolean): unknown {
+  if (!isRecord(doc)) return doc
 
-    const raw = typeof doc.defaultVersionsFolder === "string" ? doc.defaultVersionsFolder : ""
-    const managedRoot = raw.length > 0 ? raw : null
+  const versions = doc.gameVersions
+  if (!Array.isArray(versions) || versions.length === 0) return { ...doc }
 
-    const stamped = versions.map((entry: unknown) => {
-      if (!isRecord(entry)) return entry
-      const path = entry.path
-      if (typeof path !== "string" || !path) return entry
-      if (entry.linked === true) return entry
+  const raw = typeof doc.defaultVersionsFolder === "string" ? doc.defaultVersionsFolder : ""
+  const managedRoot = raw.length > 0 ? raw : null
 
-      const isManaged = managedRoot !== null && (path === managedRoot || path.startsWith(managedRoot + "/") || path.startsWith(managedRoot + "\\"))
-      return isManaged ? entry : { ...entry, linked: true }
-    })
+  const stamped = versions.map((entry: unknown) => {
+    if (!isRecord(entry)) return entry
+    const path = entry.path
+    if (typeof path !== "string" || !path) return entry
+    if (entry.linked === true) return entry
 
-    return { ...doc, gameVersions: stamped }
-  }
+    const isManaged = managedRoot !== null && (path === managedRoot || path.startsWith(managedRoot + "/") || path.startsWith(managedRoot + "\\"))
+    return isManaged || isManagedPath(path) ? entry : { ...entry, linked: true }
+  })
+
+  return { ...doc, gameVersions: stamped }
 }
 
 /**
@@ -382,6 +386,39 @@ export const addModSuggestionsFolded: ConfigMigration = {
   }
 }
 
+/** Names the launcher has given its default versions folder. A version below one of them was installed by the launcher. */
+const DEFAULT_VERSIONS_FOLDER_NAMES: readonly string[] = [DEFAULT_VERSIONS_FOLDER_NAME, "VSLGameVersions"]
+
+/** True when a folder named like the default versions folder is an ancestor of `path`, wherever the root has been moved to since. */
+function isBelowDefaultVersionsFolder(path: string): boolean {
+  return path
+    .split(/[\\/]/)
+    .slice(0, -1)
+    .some((segment) => DEFAULT_VERSIONS_FOLDER_NAMES.includes(segment))
+}
+
+/**
+ * Runs the external-version stamping again, for the versions registered since schema 3.
+ *
+ * Add VS Version used to accept a folder the player already used and register it without the
+ * `linked` flag, so uninstalling it deleted the whole folder (#707). The stamping is the same
+ * rule: a version outside `defaultVersionsFolder` keeps its folder on uninstall. A version below a
+ * folder named like the default one stays unlinked, because Settings changes the setting without
+ * moving anything and portable mode rewrites it to the portable data folder, so the versions the
+ * launcher installed through its own suggestion are not under the current root any more.
+ *
+ * Deliberate trade-off: a version the launcher installed into an empty folder of its own outside
+ * the current root, under a folder with another name (a root moved in Settings to a custom name),
+ * is stamped too. From then on it is only removed from the list: the launcher cannot tell it from a
+ * registered folder, and a folder left behind costs disk space, a folder deleted by mistake costs
+ * the player's files.
+ */
+export const restampLinkedOnExternalVersions: ConfigMigration = {
+  fromSchema: 8,
+  toSchema: 9,
+  migrate: (doc: unknown): unknown => stampLinkedOutsideManagedRoot(doc, isBelowDefaultVersionsFolder)
+}
+
 /** Every migration the launcher knows, lowest schema first. */
 export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
   floatMarkerToIntegerSchema,
@@ -390,7 +427,8 @@ export const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
   addGameVersionIdentity,
   addModSuggestionsPreferences,
   addWorldBackupRecords,
-  addModSuggestionsFolded
+  addModSuggestionsFolded,
+  restampLinkedOnExternalVersions
 ]
 
 function byFromSchema(migrations: readonly ConfigMigration[]): Map<number, ConfigMigration> {

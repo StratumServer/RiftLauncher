@@ -47,7 +47,7 @@ import { deflateRawSync, crc32 } from "node:zlib"
 // file's own CURRENT_CONFIG_SCHEMA whenever a schema migration lands, and shape the config
 // object below to match. If it drifts, tests/config/headlessSeed.test.ts fails instead of a
 // reviewer finding out from a broken headless check weeks later.
-const CURRENT_CONFIG_SCHEMA = 8
+const CURRENT_CONFIG_SCHEMA = 9
 const DEFAULT_COMPRESSION_LEVEL = 6
 const DEFAULT_BACKGROUND_ID = "default"
 const DEFAULT_ACCENT_ID = "amber"

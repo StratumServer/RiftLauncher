@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import {
   PiFloppyDiskBackDuotone,
   PiFolderOpenDuotone,
@@ -15,11 +15,13 @@ import {
 import { useTranslation } from "react-i18next"
 
 import { MAX_GAME_VERSION_LABEL_LENGTH } from "@domain/naming"
+import { toFolderPlatform, type FolderPlatform } from "@domain/paths"
 import { isUpdateAvailable, supportsGameVersion } from "@domain/optimum/plan"
 import { isInterruptedInstall } from "@domain/versions/interruptedInstall"
 import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
-import { CONFIG_ACTIONS, useConfigDispatch, useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useConfigDispatch, useGameVersions, useInstallations, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { findHeldManagedFolder } from "@renderer/features/installations/adapters/nesting"
 import { useUninstallGameVersion } from "@renderer/features/versions/hooks/useUninstallGameVersion"
 import { useOpenVersionFolder } from "@renderer/features/versions/hooks/useOpenVersionFolder"
 import { summarizeUsedByInstallations } from "@renderer/features/versions/adapters/uninstall"
@@ -48,6 +50,7 @@ function ListVersions(): JSX.Element {
   const { addNotification } = useNotificationsContext()
   const gameVersions = useGameVersions()
   const installations = useInstallations()
+  const settings = useSettingsConfig()
   const configDispatch = useConfigDispatch()
   const uninstallVersion = useUninstallGameVersion()
   const openVersionFolder = useOpenVersionFolder()
@@ -64,6 +67,31 @@ function ListVersions(): JSX.Element {
 
   const renameFieldId = useId()
   const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  const [platform, setPlatform] = useState<FolderPlatform>("posix")
+  useEffect(() => {
+    void window.api.utils.getOs().then((os) => setPlatform(toFolderPlatform(os)))
+  }, [])
+
+  /**
+   * True when uninstalling this version leaves its folder where it is: it was registered, not
+   * installed, or its folder holds Installations, other VS Versions or the folders the launcher is set
+   * up on (#707). The host's deletion policy refuses exactly those, through the same comparison, so
+   * the version only leaves the list instead of failing the same way on every retry.
+   */
+  function keepsFolder(version: GameVersionType | null | undefined): boolean {
+    if (!version) return false
+    if (version.linked === true) return true
+    const otherVersions = gameVersions.filter((gameVersion) => gameVersion.id !== version.id)
+    return findHeldManagedFolder(version, { settings, installations, gameVersions: otherVersions }, platform) !== null
+  }
+
+  /** The consequence line of the delete dialogs, true to what the uninstall does to this folder. */
+  function consequenceFor(version: GameVersionType | null | undefined): string {
+    if (version?.linked) return t("features.versions.unlinkingKeepsTheFolder")
+    if (keepsFolder(version)) return t("features.versions.folderKeptItHoldsOthers", { folder: version?.path })
+    return t("features.versions.uninstallingDeletesFolder", { folder: version?.path })
+  }
 
   function installationsUsing(version: GameVersionType): string[] {
     return installations.filter((installation) => installation.gameVersionId === version.id).map((installation) => installation.name)
@@ -132,7 +160,7 @@ function ListVersions(): JSX.Element {
     const usedByInstallations = installationsUsing(target)
     setVersionToDelete(null)
 
-    const result = await uninstallVersion(target, { usedByInstallations })
+    const result = await uninstallVersion(target, { usedByInstallations, keepFolder: keepsFolder(target) })
 
     if (!result.ok && result.reason === "version-in-use") setVersionInUseWarning({ version: target, usedByInstallations })
   }
@@ -143,7 +171,7 @@ function ListVersions(): JSX.Element {
     const { version, usedByInstallations } = versionInUseWarning
     setVersionInUseWarning(null)
 
-    await uninstallVersion(version, { usedByInstallations, confirmedInUse: true })
+    await uninstallVersion(version, { usedByInstallations, confirmedInUse: true, keepFolder: keepsFolder(version) })
   }
 
   // Every installation on the refused version, the ones folded into "and N more" included: the verb and the
@@ -266,7 +294,7 @@ function ListVersions(): JSX.Element {
                         </NormalButton>
                         <NormalButton
                           className="p-1"
-                          title={gv.linked ? t("features.versions.removeFromList") : t("features.versions.deleteVersion")}
+                          title={keepsFolder(gv) ? t("features.versions.removeFromList") : t("features.versions.deleteVersion")}
                           variant="ghost"
                           disabled={busy}
                           onClick={async () => {
@@ -284,12 +312,12 @@ function ListVersions(): JSX.Element {
         </ListWrapper>
 
         <ConfirmDialog
-          title={t(versionToDelete?.linked ? "features.versions.removeFromList" : "features.versions.uninstallVersion")}
+          title={t(keepsFolder(versionToDelete) ? "features.versions.removeFromList" : "features.versions.uninstallVersion")}
           isOpen={versionToDelete !== null}
           close={() => setVersionToDelete(null)}
-          question={t(versionToDelete?.linked ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall", { version: versionToDelete?.label ?? versionToDelete?.version })}
-          consequence={t(versionToDelete?.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}
-          confirmLabel={t(versionToDelete?.linked ? "features.versions.removeFromList" : "generic.uninstall")}
+          question={t(keepsFolder(versionToDelete) ? "features.versions.areYouSureUnlink" : "features.versions.areYouSureUninstall", { version: versionToDelete?.label ?? versionToDelete?.version })}
+          consequence={consequenceFor(versionToDelete)}
+          confirmLabel={t(keepsFolder(versionToDelete) ? "features.versions.removeFromList" : "generic.uninstall")}
           confirmIcon={<PiTrashDuotone />}
           onConfirm={DeleteVersionHandler}
         />
@@ -332,7 +360,7 @@ function ListVersions(): JSX.Element {
           title={t("features.versions.versionInUse")}
           isOpen={versionInUseWarning !== null}
           close={() => setVersionInUseWarning(null)}
-          consequence={t(versionInUseWarning?.version.linked ? "features.versions.unlinkingKeepsTheFolder" : "features.versions.uninstallingNotReversible")}
+          consequence={consequenceFor(versionInUseWarning?.version)}
           confirmLabel={t("features.versions.deleteAnyway")}
           confirmIcon={<PiTrashDuotone />}
           onConfirm={DeleteVersionAnywayHandler}
