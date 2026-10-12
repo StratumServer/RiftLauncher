@@ -4,7 +4,7 @@
 import { bootFailure, portableNote, userDataSetup } from "@src/main/bootUserData"
 import { logUserDataSetupUnlessBootFailed, reportBootFailure } from "@src/main/bootOutcome"
 
-import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain, dialog } from "electron"
+import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain, dialog, screen } from "electron"
 import { dirname, join } from "node:path"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import Logger from "electron-log"
@@ -33,6 +33,7 @@ import { IconMemoryCache } from "@domain/mods/iconMemoryCache"
 import { createBackgroundProtocolHandler, createCacheModImageProtocolHandler, isSafeProtocolFile } from "@src/main/protocolFiles"
 import { clearModIconMemoryCache, createClearModIconMemoryCacheHandler } from "@src/main/modIconMemoryCacheLifecycle"
 import { getOrphanedTempFileSweepTargets, sweepOrphanedTempFiles } from "@src/main/orphanedTempFiles"
+import { bringWindowToFront, placeOnScreen } from "@src/main/windowPlacement"
 import "@src/ipc"
 import { clearTimeout, setTimeout } from "node:timers"
 
@@ -132,6 +133,17 @@ app.on("child-process-gone", (_event, details) => {
   logMessage("error", `${LOG_PREFIX} [child-process-gone] ${details.type} process exited: ${details.reason} (exit code ${details.exitCode}).`)
 })
 
+// The second copy exits on the single instance lock (bootUserData.ts) and lands here. Without this the
+// player who starts the launcher again, because its window is hidden or off screen, gets nothing.
+app.on("second-instance", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  bringWindowToFront(
+    mainWindow,
+    screen.getAllDisplays().map((display) => display.workArea),
+    screen.getPrimaryDisplay().workArea
+  )
+})
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     center: true,
@@ -184,8 +196,15 @@ function createWindow(): void {
     const config = await getConfig()
     const oldWindowsState = config.window
 
+    // The saved spot can be on a monitor that is no longer connected, which Windows leaves as is.
+    const { x, y } = placeOnScreen(
+      oldWindowsState,
+      screen.getAllDisplays().map((display) => display.workArea),
+      screen.getPrimaryDisplay().workArea
+    )
+
     mainWindow.setBounds({ width: oldWindowsState.width, height: oldWindowsState.height }, true)
-    mainWindow.setPosition(oldWindowsState.x, oldWindowsState.y, true)
+    mainWindow.setPosition(x, y, true)
     if (oldWindowsState.maximized) mainWindow.maximize()
 
     mainWindow.show()

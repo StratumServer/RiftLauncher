@@ -99,7 +99,7 @@ describe("Manage Mods: the Export Modpack mod config box", () => {
     expect(box.checked).toBe(false)
     expect(box.disabled).toBe(true)
     const holder = box.closest("div")
-    expect(holder?.getAttribute("title")).toBe("This Installation is playing. The mod configs can be written once the game has closed.")
+    expect(holder?.getAttribute("title")).toBe("This Installation is playing. Its mod configs can be listed once the game has closed.")
   })
 
   it("stays away from an Installation with no mod configs at all", async () => {

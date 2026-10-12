@@ -55,6 +55,8 @@ Keep both the marker and `RiftLauncherData` beside the install folder. NSIS upda
 
 The single-instance lock stays separate from the portable profile, in the normal app data folder as `RiftLauncher.singleton`.
 
+Portable mode moves the profile only. A downloaded update is not stored in the portable data folder: it goes to `%LOCALAPPDATA%\riftlauncher-updater\pending` on the system drive, and the installer runs from there. The system drive therefore has to be writable and have room for the download, as the single-instance lock already requires.
+
 The marker is read rather than followed: it has to be an empty regular file, not a link to one somewhere else. Linux also requires the marker and data folder to belong to the account running RiftLauncher. Windows does not check file ownership or permissions, so another account with write access to the marker's parent folder can change the marker or portable profile. Keep the install and data folders in a trusted location that is not shared with other users.
 
 The install folder itself must not be named `RiftLauncherData` or `RiftLauncherData.migrating`; RiftLauncher refuses portable mode if either the profile or its temporary migration folder would overlap the NSIS install folder.

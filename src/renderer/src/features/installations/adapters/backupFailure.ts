@@ -45,10 +45,7 @@ function compressFailureNotificationKey(detail: string | undefined): string {
  * to launch the game at all, and a missed backup must never refuse to play.
  *
  * `compress-failed` picks its notification from the failure kind and keeps
- * that kind in the log line too. `prune-failed` logs only the reason token:
- * the detail it carries is the backup path that could not be removed, and a
- * log line never names one (#419). The notification stays a plain
- * translated sentence for both.
+ * that kind in the log line too.
  */
 export function describeBackupFailure(reason: MakeInstallationBackupFailure, detail?: string): BackupFailureFeedback {
   switch (reason) {
@@ -60,8 +57,6 @@ export function describeBackupFailure(reason: MakeInstallationBackupFailure, det
       return { messageKey: "features.backups.restoreInProgress", logLine: null }
     case "compress-failed":
       return { messageKey: compressFailureNotificationKey(detail), logLine: `Error creating backup: compress-failed${detail ? `. ${detail}` : ""}` }
-    case "prune-failed":
-      return { messageKey: "features.backups.pruneFailed", logLine: "Error creating backup: prune-failed" }
     case "installation-path-missing":
       return { messageKey: "features.backups.installationPathMissing", logLine: "Error creating backup: installation-path-missing" }
     case "no-backups-folder":

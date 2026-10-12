@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 
-import { getConfig, saveConfig } from "@src/config/configManager"
+import { getConfig, saveConfig, updateCachedConfig } from "@src/config/configManager"
 import { assertConfiguredInstallationPath, assertManagedDeletionPath, assertManagedPath } from "@src/ipc/pathPolicy"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
@@ -162,7 +162,23 @@ function addWorldBackupRecord(installationId: string, backup: WorldBackupType): 
       ...current,
       worldBackups: [backup, ...(current.worldBackups ?? [])]
     }))
-    return saveConfig(nextConfig)
+    const saved = await saveConfig(nextConfig)
+    if (saved) return true
+    // The caller deletes the archive when this is false, so the record must not outlive it. saveConfig
+    // keeps nextConfig in memory either way: take the record back out of the cache, then write what is
+    // left. When this write was coalesced with a later one, the earlier config (record included) may
+    // already be on disk while the later one failed, and nothing else would rewrite it before a quit.
+    // Best effort: a read-only session refuses the write, and a failure here is no worse than before.
+    let removed = false
+    updateCachedConfig((config) =>
+      updateInstallation(config, installationId, (current) => {
+        const kept = (current.worldBackups ?? []).filter((candidate) => candidate.id !== backup.id)
+        removed = kept.length !== (current.worldBackups ?? []).length
+        return { ...current, worldBackups: kept }
+      })
+    )
+    if (removed) await saveConfig(await getConfig())
+    return false
   })
   worldBackupConfigWriteQueue = write.then(
     () => undefined,
@@ -447,8 +463,11 @@ async function deleteWorldBackup(installationId: unknown, backupIdValue: unknown
     const result = await deleteInstallationBackup({ fileSystem }, { backup: { id: backup.id, path: backup.path, isDeleting: false, isRestoring: false } })
     if (!result.ok) return failure("operation-failed")
 
-    const removed = await removeWorldBackupRecord(installation.id, backup.id)
-    if (!removed) return failure("operation-failed")
+    // The archive is gone, so the backup is gone whether or not the record write lands: answering a
+    // failure would leave the renderer listing a backup that cannot be restored, and deleting its world
+    // would then skip the offer to back it up. saveConfig has already dropped the record from main's
+    // copy, so the renderer save that follows this answer writes the clean list to disk.
+    await removeWorldBackupRecord(installation.id, backup.id)
 
     return { ok: true }
   } finally {

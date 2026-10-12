@@ -40,7 +40,7 @@ function AddVersion(): JSX.Element {
   const installVersion = useInstallVersion()
   const optimum = useOptimumManifest()
   const [withOptimum, setWithOptimum] = useState(false)
-  const foldersInUse = useFoldersInUse()
+  const foldersInUse = useFoldersInUse(version?.version)
   const { folder, browseFolder } = useVersionInstallFolder(version, settings.defaultVersionsFolder, withOptimum ? "optimum" : "official", foldersInUse)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)

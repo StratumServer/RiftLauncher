@@ -274,8 +274,12 @@ export interface ProcessProbe {
   run(request: ProcessProbeRequest): Promise<ProcessProbeOutcome>
 }
 
-/** A JSON document read back off disk. `undefined` means the file was not there. */
-export type JsonFileReadResult = { ok: true; document: unknown } | { ok: false; error?: string }
+/**
+ * A JSON document read back off disk. `undefined` means the file was not there.
+ * `modifiedAt` is when the file was last written (milliseconds since the epoch), absent for a file
+ * that was not there.
+ */
+export type JsonFileReadResult = { ok: true; document: unknown; modifiedAt?: number } | { ok: false; error?: string }
 
 export type JsonFileWriteResult = { ok: true } | { ok: false; error?: string }
 
@@ -380,4 +384,20 @@ export type ReleaseCloseGuard = () => void
 /** Keeps the application from quitting while work is in flight. */
 export interface CloseGuard {
   acquire(reason: string): ReleaseCloseGuard
+}
+
+/** Why the host would not reserve an installation: a game is running on it, or another operation holds it. */
+export type InstallationLeaseRefusal = "playing" | "busy"
+
+/** The host's answer to a reservation. On success `release` hands the installation back and is safe to call twice. */
+export type InstallationLeaseOutcome = { ok: true; release: () => void } | { ok: false; reason: InstallationLeaseRefusal }
+
+/**
+ * Reserves an installation on the host side for the whole of one operation that rewrites its
+ * folder. World moves, world backups and launches check the same reservation, so none of them can
+ * run on an installation another operation is replacing. A flag the caller keeps for itself
+ * does not do that: the host never sees it.
+ */
+export interface InstallationLease {
+  acquire(installationId: string): Promise<InstallationLeaseOutcome>
 }
