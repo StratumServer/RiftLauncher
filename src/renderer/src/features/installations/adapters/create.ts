@@ -42,5 +42,6 @@ export function describeInstallationFieldsFailure(reason: InstallationFieldsFail
 /** How the UI reacts to a refused installation creation. */
 export function describeCreateInstallationFailure(reason: CreateInstallationFailure): InstallationFailureFeedback {
   if (reason === "folder-in-use") return { messageKey: "features.installations.folderAlreadyInUse", logged: false }
+  if (reason === "folder-nested") return { messageKey: "features.installations.folderNestedWithAnother", logged: false }
   return describeInstallationFieldsFailure(reason)
 }

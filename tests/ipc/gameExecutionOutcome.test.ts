@@ -3,13 +3,15 @@ import { describe, it } from "vitest"
 
 import {
   appendStderrScan,
+  clientSettingsUnreadableResult,
   gameProcessOutcomeToResult,
   hasMissingDotnetSentinel,
   invalidExecutableResult,
   invalidRequestResult,
   launchPlanFailureResult,
   noExecutableResult,
-  sessionWriteFailedResult
+  sessionWriteFailedResult,
+  withSettingsSetAside
 } from "../../src/ipc/handlers/gameExecutionOutcome"
 
 describe("gameProcessOutcomeToResult", () => {
@@ -39,6 +41,32 @@ describe("gameProcessOutcomeToResult", () => {
 
   it("leaves a non-zero exit without the flag alone: the exit code is still never judged", () => {
     assert.deepEqual(gameProcessOutcomeToResult({ started: true, exitCode: 150, missingRuntime: false }), { ok: true, exitCode: 150 })
+  })
+
+  it("names the settings file this launch set aside on the exit that follows", () => {
+    assert.deepEqual(gameProcessOutcomeToResult({ started: true, exitCode: 0 }, "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"), {
+      ok: true,
+      exitCode: 0,
+      settingsSetAside: "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
+    })
+  })
+
+  it("names the file on the failures that follow the move too, since they leave it in the Installation's folder all the same", () => {
+    const kept = "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
+    assert.deepEqual(gameProcessOutcomeToResult({ started: false, error: "ENOENT" }, kept), { ok: false, reason: "launch-failed", settingsSetAside: kept })
+    assert.deepEqual(gameProcessOutcomeToResult({ started: true, exitCode: 150, missingRuntime: true }, kept), { ok: false, reason: "missing-dotnet", settingsSetAside: kept })
+  })
+
+  it("adds the name to any other result, and nothing at all when no file was set aside", () => {
+    const kept = "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
+    assert.deepEqual(withSettingsSetAside({ ok: false, reason: "installation-busy" }, kept), { ok: false, reason: "installation-busy", settingsSetAside: kept })
+    assert.deepEqual(withSettingsSetAside(sessionWriteFailedResult(), kept), { ok: false, reason: "session-write-failed", settingsSetAside: kept })
+    assert.equal("settingsSetAside" in withSettingsSetAside({ ok: false, reason: "installation-busy" }, undefined), false)
+  })
+
+  it("carries no key at all for a launch that set nothing aside, which is what every launch before this one answered", () => {
+    assert.equal("settingsSetAside" in gameProcessOutcomeToResult({ started: true, exitCode: 0 }), false)
+    assert.equal("settingsSetAside" in gameProcessOutcomeToResult({ started: true, exitCode: 0 }, undefined), false)
   })
 })
 
@@ -84,6 +112,10 @@ describe("the other named refusals", () => {
 
   it("sessionWriteFailedResult", () => {
     assert.deepEqual(sessionWriteFailedResult(), { ok: false, reason: "session-write-failed" })
+  })
+
+  it("clientSettingsUnreadableResult is its own reason, not session-write-failed, which tells the player to log in again", () => {
+    assert.deepEqual(clientSettingsUnreadableResult(), { ok: false, reason: "client-settings-unreadable" })
   })
 
   it("invalidRequestResult", () => {

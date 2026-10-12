@@ -90,7 +90,6 @@
       "uninstallVersion": "Verzió eltávolítása",
       "noVersionsFound": "Nincsenek telepített Verziók!",
       "areYouSureUninstall": "Biztosan eltávolítod a(z) {{version}} Verziót?",
-      "uninstallingNotReversible": "Az eltávolítás végleges de később bármikor újra letöltheted ezt a Verziót!",
       "noVersionSelected": "Nincs kiválasztva Verzió!",
       "versionAlreadyInstalled": "A(z) {{version}} Verzió már telepítve van!",
       "noVersionFoundOnThatFolder": "Abban a könyvtárban nem sikerült automatikusan Verziót felismerni. Ha biztos vagy benne, hogy a Vintage Story oda van telepítve, írd be alább a verziót.",

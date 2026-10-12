@@ -90,7 +90,6 @@
       "uninstallVersion": "Desinstalar versão",
       "noVersionsFound": "Nenhuma versão encontrada!",
       "areYouSureUninstall": "Você tem certeza que deseja desinstalar a Versão {{version}} do VS?",
-      "uninstallingNotReversible": "A desinstalação não é reversível, mas você pode baixar a mesma versão novamente!",
       "noVersionSelected": "Nenhuma versão selecionada!",
       "versionAlreadyInstalled": "Versão {{version}} já está instalada!",
       "noVersionFoundOnThatFolder": "Não foi possível detectar automaticamente uma Versão do VS nessa pasta. Se tiver certeza de que o Vintage Story está instalado nela, digite a versão abaixo.",

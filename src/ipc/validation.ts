@@ -194,12 +194,12 @@ export function assertNonRootPath(value: unknown, name = "path"): string {
 
 /**
  * Puts a path in the shape two paths have to be in before they can be compared:
- * absolute, and lower cased on Windows, whose file systems do not distinguish
- * case.
+ * absolute, and lower cased on Windows and macOS, whose file systems do not
+ * distinguish case by default.
  */
 export function comparablePath(value: string): string {
   const resolved = resolve(value)
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved
+  return process.platform === "win32" || process.platform === "darwin" ? resolved.toLowerCase() : resolved
 }
 
 /** True when `candidate` sits under `root`, or is `root` itself when `allowRoot`. */

@@ -5,8 +5,11 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 /**
  * Opens the native folder picker and warns (without blocking the pick) when the
  * chosen folder isn't empty. Resolves null when the user cancels the dialog.
+ *
+ * With `refuseNonEmpty`, a folder that isn't empty is refused with an error and
+ * resolves null too, for a caller that later deletes the whole folder it was given.
  */
-export function usePickEmptyFolder(): () => Promise<string | null> {
+export function usePickEmptyFolder(refuseNonEmpty = false): () => Promise<string | null> {
   const { t } = useTranslation()
   const { addNotification } = useNotificationsContext()
 
@@ -15,7 +18,13 @@ export function usePickEmptyFolder(): () => Promise<string | null> {
     const selectedPath = paths[0]
     if (!selectedPath || selectedPath.length === 0) return null
 
-    if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) addNotification(t("notifications.body.folderNotEmpty"), "warning")
+    if (!(await window.api.pathsManager.checkPathEmpty(selectedPath))) {
+      if (refuseNonEmpty) {
+        addNotification(t("features.versions.folderMustBeEmpty"), "error")
+        return null
+      }
+      addNotification(t("notifications.body.folderNotEmpty"), "warning")
+    }
 
     return selectedPath
   }

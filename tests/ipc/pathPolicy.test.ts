@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import fse from "fs-extra"
 
+import { findHeldManagedFolder } from "../../src/renderer/src/features/installations/adapters/nesting"
+import { toFolderPlatform } from "@domain/paths"
+
 /**
  * Boundary coverage for the managed path policy (#11).
  *
@@ -291,6 +294,78 @@ describe("managed path policy: deletion and protected paths", () => {
       join(userDataFolder, "Sessions")
     ]) {
       await assert.rejects(() => policy.assertManagedDeletionPath(protectedPath), /Protected path|Unmanaged/)
+    }
+  })
+
+  it("refuses to delete a folder that holds a protected folder, another installation or a game version", async () => {
+    const outer = join(outsideFolder, "Outer")
+    const nested = join(outer, "Nested")
+    const nestedVersion = join(outer, "game", "1.21.0")
+    fse.ensureDirSync(nested)
+    fse.ensureDirSync(nestedVersion)
+    configState.config = buildConfig({
+      installations: [
+        { path: outer, backups: [] },
+        { path: nested, backups: [] }
+      ] as unknown as ConfigType["installations"],
+      gameVersions: [{ path: nestedVersion }] as unknown as ConfigType["gameVersions"]
+    })
+
+    await assert.rejects(() => policy.assertManagedDeletionPath(outer), /holds a managed folder/)
+    await assert.rejects(() => policy.assertManagedDeletionPath(join(outer, "game")), /holds a managed folder/)
+    // The inner entries themselves, and anything that holds nothing managed, still go.
+    assert.equal(await policy.assertManagedDeletionPath(nested), nested)
+    assert.equal(await policy.assertManagedDeletionPath(nestedVersion), nestedVersion)
+
+    // The Backups, Versions and Installations folders, moved inside an installation.
+    for (const folder of ["backupsFolder", "defaultVersionsFolder", "defaultInstallationsFolder"] as const) {
+      configState.config = buildConfig({ [folder]: join(mainInstallation, "inside") })
+      fse.ensureDirSync(join(mainInstallation, "inside"))
+      await assert.rejects(() => policy.assertManagedDeletionPath(mainInstallation), /holds a managed folder/, folder)
+    }
+  })
+
+  /**
+   * #707: the VS Versions list works out in the renderer whether a version's folder can be deleted,
+   * and offers "Remove from List" when it cannot. If it said yes where the host says no, the version
+   * would fail on every retry with the generic uninstall error, with nothing left to click.
+   */
+  it("refuses exactly the version folders the VS Versions list keeps", async () => {
+    const folder = join(outsideFolder, "Games")
+    const inside = join(folder, "Inside")
+    fse.ensureDirSync(inside)
+    const installation = (path: string): Partial<ConfigType> => ({ installations: [{ id: "i", path, backups: [] }] as unknown as ConfigType["installations"] })
+    const versions = (...paths: string[]): Partial<ConfigType> => ({ gameVersions: paths.map((path, index) => ({ id: `v${index}`, path })) as unknown as ConfigType["gameVersions"] })
+    const scenarios: Array<[string, Partial<ConfigType>, boolean]> = [
+      ["alone", versions(folder), false],
+      ["an Installation next to it", { ...versions(folder), ...installation(join(outsideFolder, "Sibling")) }, false],
+      ["an Installation inside", { ...versions(folder), ...installation(inside) }, true],
+      ["an Installation on the same folder", { ...versions(folder), ...installation(folder) }, true],
+      ["another VS Version inside", versions(folder, inside), true],
+      ["another VS Version on the same folder", versions(folder, folder), true],
+      ["the Installations folder inside", { ...versions(folder), defaultInstallationsFolder: inside }, true],
+      ["the VS Versions folder inside", { ...versions(folder), defaultVersionsFolder: inside }, true],
+      ["the Backups folder inside", { ...versions(folder), backupsFolder: inside }, true],
+      ["the VS Versions folder itself", { ...versions(folder), defaultVersionsFolder: folder }, true]
+    ]
+
+    for (const [label, overrides, expectedKept] of scenarios) {
+      const config = buildConfig(overrides)
+      configState.config = config
+      policy.registerUserSelectedPaths([folder])
+
+      const refused = await policy.assertManagedDeletionPath(folder).then(
+        () => false,
+        () => true
+      )
+      const held = findHeldManagedFolder(
+        { id: "v0", path: folder },
+        { settings: config, installations: config.installations, gameVersions: config.gameVersions.filter((gameVersion) => (gameVersion as { id?: string }).id !== "v0") },
+        toFolderPlatform(process.platform)
+      )
+
+      assert.equal(refused, expectedKept, `${label}: policy`)
+      assert.equal(held !== null, expectedKept, `${label}: list`)
     }
   })
 

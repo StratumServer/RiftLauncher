@@ -90,7 +90,6 @@
       "uninstallVersion": "Odinstaluj wersję VS",
       "noVersionsFound": "Nie znaleziono żadnej wersji VS!",
       "areYouSureUninstall": "Czy na pewno chcesz odinstalować wersję VS {{version}}?",
-      "uninstallingNotReversible": "Odinstalowanie jest nieodwracalne, ale można ponownie pobrać tę samą wersję VS!",
       "noVersionSelected": "Nie wybrano żadnej wersji VS!",
       "versionAlreadyInstalled": "Wersja VS {{version}} jest już zainstalowana!",
       "noVersionFoundOnThatFolder": "Nie znaleziono wersji VS w wybranym folderze!",

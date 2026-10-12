@@ -90,7 +90,6 @@
       "uninstallVersion": "Выдаліць версію VS",
       "noVersionsFound": "Версіі VS не знойдзены.",
       "areYouSureUninstall": "Вы ўпэўнены, што хочаце выдаліць версію VS {{version}}?",
-      "uninstallingNotReversible": "Выдаленне незваротнае, але вы можаце зноў спампаваць тую ж версію VS.",
       "noVersionSelected": "Версія VS не выбрана.",
       "versionAlreadyInstalled": "Версія VS {{version}} ужо ўсталяваная.",
       "noVersionFoundOnThatFolder": "Не ўдалося аўтаматычна вызначыць версію VS у гэтай папцы. Калі вы ўпэўнены, што Vintage Story там усталявана, увядзіце версію ніжэй.",
