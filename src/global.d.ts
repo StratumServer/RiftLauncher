@@ -532,6 +532,8 @@ declare global {
     toVersion: string | null
     assetid?: number
     alreadyPresent?: boolean
+    /** True when the old and the new archive are both in the Mods folder and the player has to remove one. */
+    bothVersions?: boolean
   }
 
   /**

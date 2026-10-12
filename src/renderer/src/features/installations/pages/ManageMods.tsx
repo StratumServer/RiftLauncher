@@ -9,7 +9,7 @@ import { useInstallations, useSuspendedModUpdates } from "@renderer/features/con
 import { useManageInstalledMods } from "@renderer/features/mods/hooks/useManageInstalledMods"
 import { useBulkUpdateMods } from "@renderer/features/mods/hooks/useBulkUpdateMods"
 import { useModpackImportPicker } from "@renderer/features/mods/hooks/useModpackImportPicker"
-import { useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { useInstalledModActions, modWriteKey } from "@renderer/features/mods/hooks/useInstalledModActions"
 import { useModBatchActions } from "@renderer/features/mods/hooks/useModBatchActions"
 import { useModProfiles } from "@renderer/features/mods/hooks/useModProfiles"
 import { clearModIconMemoryCache } from "@renderer/features/moddb/adapters/modsManager"
@@ -176,7 +176,7 @@ function ListMods(): JSX.Element {
         key={iMod.modid + iMod.path}
         iMod={iMod}
         suspended={suspended}
-        busy={actions.isBusy(iMod.path) || (batch.running && batch.isChecked(iMod.path))}
+        busy={actions.isBusy(iMod.path) || (installation !== undefined && actions.isBusy(modWriteKey(installation.id, iMod.modid))) || (batch.running && batch.isChecked(iMod.path))}
         checked={batch.isChecked(iMod.path)}
         distinctName={batch.labelOf(iMod)}
         onCheckedChange={(checked, shiftKey) => batch.setChecked(iMod.path, checked, shiftKey)}

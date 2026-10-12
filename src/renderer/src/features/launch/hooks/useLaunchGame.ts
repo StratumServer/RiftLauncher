@@ -92,8 +92,8 @@ export function useLaunchGame(): LaunchGame {
     try {
       if (!installation) return addNotification(t("features.installations.noInstallationSelected"), "error")
       if (installation._playing) return addNotification(t("features.installations.gameAlreadyRunning"), "error")
-      // Update all deletes each old archive before downloading its replacement, so a game started
-      // mid-run would load a Mods folder with some of its Mods missing.
+      // Update all changes the Mods folder under a running game, and old and new archives briefly sit
+      // side by side, so a game started mid-run could load either.
       if (installation._updatingMods) return addNotification(t("features.mods.cantPlayWhileUpdatingMods"), "error")
 
       const gameVersionToRun = installation.version ? gameVersions.find((gv) => gv.id === installation.gameVersionId) : undefined
