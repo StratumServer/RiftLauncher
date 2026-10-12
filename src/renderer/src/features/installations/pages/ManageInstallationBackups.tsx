@@ -5,13 +5,15 @@ import { PiArrowCounterClockwiseDuotone, PiFolderOpenDuotone, PiTrashDuotone } f
 
 import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
 import { restoreInstallationBackup } from "@domain/installations/restore"
+import { toFolderPlatform } from "@domain/paths"
 import { installedModsTotal } from "@domain/mods/scanInstalled"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
 import { toBackupSnapshot, toInstallationSnapshot } from "@renderer/features/installations/adapters/backup"
+import { findHeldManagedFolder } from "@renderer/features/installations/adapters/nesting"
 import { createBackupDeletionPorts, createRestorePorts, describeBackupDeletionFailure, describeRestoreFailure } from "@renderer/features/installations/adapters/restore"
 import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
 
-import { useInstallations, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useGameVersions, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
 import { useDateFormat } from "@renderer/hooks/useDateFormat"
@@ -31,6 +33,8 @@ function ManageInstallationBackups(): JSX.Element {
   const { t } = useTranslation()
   const { formatDateTime } = useDateFormat()
   const installations = useInstallations()
+  const gameVersions = useGameVersions()
+  const settings = useSettingsConfig()
   const configDispatch = useConfigDispatch()
   const { addNotification } = useNotificationsContext()
   const { startExtract } = useTaskContext()
@@ -49,6 +53,11 @@ function ManageInstallationBackups(): JSX.Element {
   async function RestoreBackupHandler(backup: BackupType | null): Promise<void> {
     if (!backup) return addNotification(t("features.backups.noBackupSelected"), "error")
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
+
+    // The restore wipes the Installation's folder, so one holding another managed folder is told
+    // here, before an archive is extracted only to be thrown away when the host refuses the swap.
+    const heldFolder = findHeldManagedFolder(installation, { settings, installations, gameVersions }, toFolderPlatform(await window.api.utils.getOs()))
+    if (heldFolder) return addNotification(t("features.backups.restoreHoldsManagedFolder", { path: heldFolder }), "error")
 
     const ports = createRestorePorts({
       startExtract,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { describe, it } from "vitest"
+import { afterEach, describe, it } from "vitest"
 
 import {
   assertAllowedApiUrl,
@@ -12,6 +12,7 @@ import {
   optimumTestOrigin,
   assertSafeFileName,
   assertSafeTaskId,
+  comparablePath,
   isArchiveSymlink,
   isPathGranted,
   isPathWithin,
@@ -270,5 +271,24 @@ describe("IPC boundary validators", () => {
     const start = performance.now()
     redactSensitiveText(input)
     assert.ok(performance.now() - start < 20, "absolute path redaction should stay well under 20 ms")
+  })
+})
+
+describe("comparablePath", () => {
+  const original = Object.getOwnPropertyDescriptor(process, "platform")
+
+  afterEach(() => {
+    if (original) Object.defineProperty(process, "platform", original)
+  })
+
+  it("folds case where the file system does, on Windows and macOS, and nowhere else", () => {
+    for (const [platform, folded] of [
+      ["win32", true],
+      ["darwin", true],
+      ["linux", false]
+    ] as const) {
+      Object.defineProperty(process, "platform", { value: platform, configurable: true })
+      assert.equal(comparablePath("/Users/p/Main") === comparablePath("/users/P/main"), folded, platform)
+    }
   })
 })
