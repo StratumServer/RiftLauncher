@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
@@ -1044,7 +1044,10 @@ describe("EXECUTE_GAME", () => {
     const event = await createTrustedEvent()
     await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installationFolder }))
 
-    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [["1", { sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token" }]])
+    // Dated by when the game wrote the file, which is what later tells it from a key an Installation merely held longer (#712).
+    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [
+      ["1", { sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token", updatedAt: statSync(join(installationFolder, "clientsettings.json")).mtimeMs }]
+    ])
 
     const { readFileSync } = await import("node:fs")
     const settings = JSON.parse(readFileSync(join(installationFolder, "clientsettings.json"), "utf-8"))
@@ -1220,7 +1223,12 @@ describe("EXECUTE_GAME", () => {
 
     assert.deepEqual(
       vi.mocked(saveAccountSecrets).mock.calls,
-      [["uid-b", { sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token" }]],
+      [
+        [
+          "uid-b",
+          { sessionKey: GAME_REFRESHED_KEY, sessionSignature: "game-session-signature", mptoken: "game-mp-token", updatedAt: statSync(join(installationFolder, "clientsettings.json")).mtimeMs }
+        ]
+      ],
       "the adopted session is stored under the uid it was issued for, and under no other"
     )
   })
@@ -1544,6 +1552,287 @@ describe("EXECUTE_GAME when the installation's clientsettings.json cannot be rea
     assert.ok(readFileSync(installation.settingsPath).equals(UNREADABLE_BYTES), "a refused target moves nothing")
     assert.deepEqual(keptCopies(installation.installationFolder), [])
     assert.equal(existsSync(installation.launchMarker), false)
+  })
+})
+
+/**
+ * Issue #712: one account, several Installations, each with its own clientsettings.json. A key in
+ * one of those files that differs from the launcher's is not necessarily newer, and the game's own
+ * login prompt in one Installation retires the keys the others hold. These drive the real handler,
+ * the real settings code and a stand-in game that is a shell script, against a store held in memory.
+ */
+describe.skipIf(process.platform === "win32")("EXECUTE_GAME session adoption across Installations", () => {
+  type StoredSession = { sessionKey: string; sessionSignature: string; mptoken: string | null; updatedAt?: number }
+
+  /** The launcher's store, one account, in place of the encrypted file. */
+  let store: StoredSession
+  let saves: [string, StoredSession][]
+
+  async function useInMemoryStore(initial: StoredSession): Promise<void> {
+    store = initial
+    saves = []
+    const accountStore = await import("@src/ipc/accountStore")
+    vi.mocked(accountStore.getAccountSecrets).mockImplementation(async () => store)
+    vi.mocked(accountStore.saveAccountSecrets).mockImplementation(async (id, secrets) => {
+      saves.push([id, secrets])
+      store = secrets as StoredSession
+      return "saved"
+    })
+  }
+
+  afterEach(async () => {
+    const accountStore = await import("@src/ipc/accountStore")
+    vi.mocked(accountStore.getAccountSecrets).mockImplementation(async () => ({ mptoken: null, sessionKey: "session-key", sessionSignature: "session-signature" }))
+    vi.mocked(accountStore.saveAccountSecrets).mockImplementation(async () => "saved" as const)
+  })
+
+  function setUp(installationNames: string[], gameScript: string): { gameVersionFolder: string; installations: string[] } {
+    const gameVersionFolder = join(versionsFolder, "1.20.0")
+    mkdirSync(gameVersionFolder, { recursive: true })
+    writeFileSync(join(gameVersionFolder, GAME_EXECUTABLE), gameScript)
+    chmodSync(join(gameVersionFolder, GAME_EXECUTABLE), 0o755)
+    writeConfig({
+      gameVersions: [{ version: "1.20.0", path: gameVersionFolder }] as unknown as ConfigType["gameVersions"],
+      accounts: [{ email: "player@example.com", playerName: "Player", playerUid: "1", playerEntitlements: null, hostGameServer: false }],
+      activeAccountId: "1"
+    })
+    const installations = installationNames.map((name) => {
+      const folder = join(managedFolder, name)
+      mkdirSync(folder, { recursive: true })
+      return folder
+    })
+    return { gameVersionFolder, installations }
+  }
+
+  function settingsOf(installation: string): { sessionkey: string; sessionsignature: string } {
+    return JSON.parse(readFileSync(join(installation, "clientsettings.json"), "utf-8")).stringSettings
+  }
+
+  function fileWithKey(key: string): string {
+    return JSON.stringify({ stringSettings: { sessionkey: key, sessionsignature: `sig-${key}`, mptoken: null, playeruid: "1", playername: "Player" } })
+  }
+
+  async function launch(gameVersionFolder: string, installation: string): Promise<void> {
+    const event = await createTrustedEvent()
+    const result = await executeGameHandler()(event, { version: "1.20.0", path: gameVersionFolder }, baseInstallation({ path: installation }))
+    assert.deepEqual(result, { ok: true, exitCode: 0 })
+  }
+
+  /**
+   * A game that behaves like the real one where it matters here: it is "logged in" only when the
+   * key in its settings file is the live one (kept in live.txt), and otherwise prompts, which
+   * issues a new key (the previous live one is retired) and saves it into that file.
+   */
+  function promptingGame(root: string): string {
+    return [
+      "#!/bin/sh",
+      'for a in "$@"; do case "$a" in --dataPath=*) D="${a#--dataPath=}";; esac; done',
+      'F="$D/clientsettings.json"',
+      `L='${join(root, "live.txt")}'; N='${join(root, "prompts.txt")}'`,
+      `K=$(sed -n 's/.*"sessionkey": *"\\([^"]*\\)".*/\\1/p' "$F")`,
+      'if [ "$K" != "$(cat "$L")" ]; then',
+      '  P=$(( $(cat "$N") + 1 )); echo "$P" > "$N"; NEW="issued-$P"; echo "$NEW" > "$L"',
+      '  sed -i "s/\\"sessionkey\\": *\\"[^\\"]*\\"/\\"sessionkey\\":\\"$NEW\\"/; s/\\"sessionsignature\\": *\\"[^\\"]*\\"/\\"sessionsignature\\":\\"sig-$NEW\\"/" "$F"',
+      "fi",
+      ""
+    ].join("\n")
+  }
+
+  it("does not hand the game a stale key from an Installation it was not last launched on, and keeps a fresh launcher login", async () => {
+    const { gameVersionFolder, installations } = setUp(["Main"], "#!/bin/sh\nexit 0\n")
+    const [main] = installations as [string]
+    // The Installation holds the key the launcher gave it long ago; the launcher logged in again since.
+    writeFileSync(join(main, "clientsettings.json"), fileWithKey("old-key"))
+    const longAgo = new Date(Date.now() - 3_600_000)
+    utimesSync(join(main, "clientsettings.json"), longAgo, longAgo)
+    await useInMemoryStore({ sessionKey: "fresh-login-key", sessionSignature: "sig-fresh", mptoken: null, updatedAt: Date.now() - 60_000 })
+
+    await launch(gameVersionFolder, main)
+
+    assert.equal(settingsOf(main).sessionkey, "fresh-login-key", "the game gets the key the launcher logged in with")
+    assert.deepEqual(saves, [], "the stale key is not stored over the fresh login")
+  })
+
+  it("adopts the key the game saves while it runs, once it exits, and dates it by the file", async () => {
+    const root = temporaryRoot
+    writeFileSync(join(root, "live.txt"), "stored-key\n")
+    writeFileSync(join(root, "prompts.txt"), "0\n")
+    const { gameVersionFolder, installations } = setUp(["Main"], promptingGame(root))
+    const [main] = installations as [string]
+    // The launcher's key is not the live one: the player logged in somewhere else.
+    writeFileSync(join(root, "live.txt"), "elsewhere\n")
+    await useInMemoryStore({ sessionKey: "stored-key", sessionSignature: "sig-stored", mptoken: null, updatedAt: Date.now() - 60_000 })
+
+    await launch(gameVersionFolder, main)
+
+    assert.equal(readFileSync(join(root, "prompts.txt"), "utf-8").trim(), "1", "the game prompted once")
+    assert.equal(settingsOf(main).sessionkey, "issued-1")
+    assert.equal(saves.length, 1, "the key the game issued is in the launcher's store before the next launch")
+    assert.deepEqual(saves[0], ["1", { sessionKey: "issued-1", sessionSignature: "sig-issued-1", mptoken: null, updatedAt: statSync(join(main, "clientsettings.json")).mtimeMs }])
+  })
+
+  it("settles after one prompt when the player alternates two Installations after logging in elsewhere", async () => {
+    const root = temporaryRoot
+    writeFileSync(join(root, "live.txt"), "k1\n")
+    writeFileSync(join(root, "prompts.txt"), "0\n")
+    const { gameVersionFolder, installations } = setUp(["A", "B"], promptingGame(root))
+    const [a, b] = installations as [string, string]
+    await useInMemoryStore({ sessionKey: "k1", sessionSignature: "sig-k1", mptoken: null, updatedAt: Date.now() - 60_000 })
+    await launch(gameVersionFolder, a)
+    await launch(gameVersionFolder, b)
+    assert.equal(readFileSync(join(root, "prompts.txt"), "utf-8").trim(), "0", "both Installations start logged in")
+
+    // The player logs in once somewhere else: k1 is retired and the launcher is not told.
+    writeFileSync(join(root, "live.txt"), "elsewhere\n")
+    for (const installation of [a, b, a, b, a, b]) await launch(gameVersionFolder, installation)
+
+    assert.equal(readFileSync(join(root, "prompts.txt"), "utf-8").trim(), "1", "one prompt, then every launch is signed in")
+  })
+
+  it("does not take the key an Installation holds for the game's own when the game left it as it found it", async () => {
+    // A game that only saves its settings: the key stays the one it was handed, the file is newer.
+    const { gameVersionFolder, installations } = setUp(["Main"], '#!/bin/sh\nfor a in "$@"; do case "$a" in --dataPath=*) D="${a#--dataPath=}";; esac; done\ntouch "$D/clientsettings.json"\n')
+    const [main] = installations as [string]
+    await useInMemoryStore({ sessionKey: "stored-key", sessionSignature: "sig-stored", mptoken: null, updatedAt: Date.now() - 60_000 })
+    const accountStore = await import("@src/ipc/accountStore")
+    // The player logs in again in the launcher while the game is running: the store changes under it.
+    vi.mocked(accountStore.getAccountSecrets).mockImplementationOnce(async () => store)
+    vi.mocked(accountStore.getAccountSecrets).mockImplementation(async () => ({ sessionKey: "login-during-play", sessionSignature: "sig-login", mptoken: null, updatedAt: Date.now() + 60_000 }))
+
+    await launch(gameVersionFolder, main)
+
+    assert.deepEqual(saves, [], "the launcher's newer login is not replaced by the key it handed the game")
+  })
+
+  it("adopts a key found at launch once, and does not adopt it again when the game exits", async () => {
+    const { gameVersionFolder, installations } = setUp(["Main"], '#!/bin/sh\nfor a in "$@"; do case "$a" in --dataPath=*) D="${a#--dataPath=}";; esac; done\ntouch "$D/clientsettings.json"\n')
+    const [main] = installations as [string]
+    writeFileSync(join(main, "clientsettings.json"), fileWithKey("game-wrote-this"))
+    await useInMemoryStore({ sessionKey: "stored-key", sessionSignature: "sig-stored", mptoken: null, updatedAt: Date.now() - 60_000 })
+
+    await launch(gameVersionFolder, main)
+
+    assert.deepEqual(
+      saves.map(([, secrets]) => secrets.sessionKey),
+      ["game-wrote-this"]
+    )
+  })
+
+  it("does not replace a newer session with a key the game saved before it", async () => {
+    // Two games running at once: the other one exited later and its key is already in the store.
+    const script = [
+      "#!/bin/sh",
+      'for a in "$@"; do case "$a" in --dataPath=*) D="${a#--dataPath=}";; esac; done',
+      `sed -i 's/"sessionkey": *"[^"]*"/"sessionkey":"saved-by-this-game"/' "$D/clientsettings.json"`,
+      ""
+    ].join("\n")
+    const { gameVersionFolder, installations } = setUp(["Main"], script)
+    const [main] = installations as [string]
+    await useInMemoryStore({ sessionKey: "stored-key", sessionSignature: "sig-stored", mptoken: null, updatedAt: Date.now() - 60_000 })
+    const accountStore = await import("@src/ipc/accountStore")
+    vi.mocked(accountStore.getAccountSecrets).mockImplementationOnce(async () => store)
+    vi.mocked(accountStore.getAccountSecrets).mockImplementation(async () => ({ sessionKey: "saved-by-the-other-game", sessionSignature: "sig-other", mptoken: null, updatedAt: Date.now() + 60_000 }))
+
+    await launch(gameVersionFolder, main)
+
+    assert.deepEqual(saves, [])
+  })
+
+  it("does not replace a login made during play with the key it adopted at launch", async () => {
+    // The Installation holds a key the game wrote after the launcher's session, so launch adopts it
+    // and the game starts with it. A login in the launcher while the game runs is newer than that.
+    const { gameVersionFolder, installations } = setUp(["Main"], '#!/bin/sh\nfor a in "$@"; do case "$a" in --dataPath=*) D="${a#--dataPath=}";; esac; done\ntouch "$D/clientsettings.json"\n')
+    const [main] = installations as [string]
+    writeFileSync(join(main, "clientsettings.json"), fileWithKey("game-wrote-this"))
+    await useInMemoryStore({ sessionKey: "stored-key", sessionSignature: "sig-stored", mptoken: null, updatedAt: Date.now() - 60_000 })
+    const accountStore = await import("@src/ipc/accountStore")
+    vi.mocked(accountStore.getAccountSecrets).mockImplementationOnce(async () => store)
+    vi.mocked(accountStore.getAccountSecrets).mockImplementation(async () => ({ sessionKey: "login-during-play", sessionSignature: "sig-login", mptoken: null, updatedAt: Date.now() + 60_000 }))
+
+    await launch(gameVersionFolder, main)
+
+    assert.deepEqual(
+      saves.map(([, secrets]) => secrets.sessionKey),
+      ["game-wrote-this"],
+      "only the adoption at launch, nothing over the login"
+    )
+  })
+
+  /** A game that records the key it was started with, then saves its settings as it closes, key unchanged. */
+  function recordingGame(root: string): string {
+    return [
+      "#!/bin/sh",
+      'for a in "$@"; do case "$a" in --dataPath=*) D="${a#--dataPath=}";; esac; done',
+      `sed -n 's/.*"sessionkey": *"\\([^"]*\\)".*/\\1/p' "$D/clientsettings.json" >> '${join(root, "seen.txt")}'; echo >> '${join(root, "seen.txt")}'`,
+      'touch "$D/clientsettings.json"',
+      ""
+    ].join("\n")
+  }
+
+  it("keeps a login made in the launcher during play through the next launch of the same Installation", async () => {
+    const root = temporaryRoot
+    const { gameVersionFolder, installations } = setUp(["Main"], recordingGame(root))
+    const [main] = installations as [string]
+    const file = join(main, "clientsettings.json")
+    await useInMemoryStore({ sessionKey: "stored-key", sessionSignature: "sig-stored", mptoken: null, updatedAt: Date.now() - 60_000 })
+    const accountStore = await import("@src/ipc/accountStore")
+    // Reads: 1 = first launch, 2 = first exit, 3 = second launch, 4 = second exit. The login lands
+    // just before the first exit read and just before the game's save, as in the issue.
+    let reads = 0
+    vi.mocked(accountStore.getAccountSecrets).mockImplementation(async () => {
+      if (++reads === 2) store = { sessionKey: "login-key", sessionSignature: "sig-login", mptoken: null, updatedAt: statSync(file).mtimeMs - 5 }
+      return store
+    })
+
+    await launch(gameVersionFolder, main)
+    await launch(gameVersionFolder, main)
+
+    assert.deepEqual(readFileSync(join(root, "seen.txt"), "utf-8").split("\n").filter(Boolean), ["stored-key", "login-key"], "the second launch hands the game the key the launcher logged in with")
+    assert.equal(store.sessionKey, "login-key")
+    assert.deepEqual(saves, [], "nothing replaced the login")
+  })
+
+  it("adopts both the key found at launch and the one the game issues during play", async () => {
+    const script = [
+      "#!/bin/sh",
+      'for a in "$@"; do case "$a" in --dataPath=*) D="${a#--dataPath=}";; esac; done',
+      `sed -i 's/"sessionkey": *"[^"]*"/"sessionkey":"ingame-key"/' "$D/clientsettings.json"`,
+      ""
+    ].join("\n")
+    const { gameVersionFolder, installations } = setUp(["Main"], script)
+    const [main] = installations as [string]
+    writeFileSync(join(main, "clientsettings.json"), fileWithKey("game-wrote-this"))
+    const anHourAgo = new Date(Date.now() - 3_600_000)
+    utimesSync(join(main, "clientsettings.json"), anHourAgo, anHourAgo)
+    await useInMemoryStore({ sessionKey: "stored-key", sessionSignature: "sig-stored", mptoken: null, updatedAt: Date.now() - 7_200_000 })
+
+    await launch(gameVersionFolder, main)
+
+    assert.deepEqual(
+      saves.map(([, secrets]) => secrets.sessionKey),
+      ["game-wrote-this", "ingame-key"]
+    )
+    assert.equal(settingsOf(main).sessionkey, "ingame-key", "the launcher does not lay its older key over the game's")
+  })
+
+  it("does not store a session again for an account removed while the game ran", async () => {
+    const script = [
+      "#!/bin/sh",
+      'for a in "$@"; do case "$a" in --dataPath=*) D="${a#--dataPath=}";; esac; done',
+      `sed -i 's/"sessionkey": *"[^"]*"/"sessionkey":"ingame-key"/' "$D/clientsettings.json"`,
+      ""
+    ].join("\n")
+    const { gameVersionFolder, installations } = setUp(["Main"], script)
+    const [main] = installations as [string]
+    await useInMemoryStore({ sessionKey: "stored-key", sessionSignature: "sig-stored", mptoken: null, updatedAt: Date.now() - 60_000 })
+    const accountStore = await import("@src/ipc/accountStore")
+    // REMOVE_ACCOUNT took the secrets out of the store while the game ran.
+    vi.mocked(accountStore.getAccountSecrets).mockImplementationOnce(async () => store)
+    vi.mocked(accountStore.getAccountSecrets).mockImplementation(async () => null)
+
+    await launch(gameVersionFolder, main)
+
+    assert.deepEqual(saves, [], "no secret is left in the store under a uid no account names")
   })
 })
 

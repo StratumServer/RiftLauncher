@@ -166,6 +166,17 @@ export async function saveConfig(config: ConfigType): Promise<boolean> {
   }
 }
 
+/**
+ * Changes the config held in memory without writing it. For a caller whose `saveConfig` failed and
+ * who is undoing its own change: `saveConfig` keeps what it was given in memory either way (a
+ * read-only session depends on that for its other changes), so a failed change the caller then
+ * abandons would otherwise ride along with the next save, whoever makes it. Changes the cache
+ * holds from other saves are left as they are.
+ */
+export function updateCachedConfig(update: (config: ConfigType) => ConfigType): void {
+  if (configCache) configCache = normalizeConfig(update(configCache))
+}
+
 export function flushConfigWrites(): Promise<void> | null {
   return scheduledConfigWrite
 }
@@ -658,6 +669,10 @@ function normalizeGameVersion(value: unknown): GameVersionType | null {
   // it never had. This flag is what keeps a player's own install off the delete path, so
   // dropping it silently on the next load would turn "remove from list" back into deletion.
   if (asBoolean(value.linked, false)) gameVersion.linked = true
+  // Written only while an install the launcher started has not finished, so no config that is
+  // not mid-install grows the field and none written before it needs migrating. A linked row is a
+  // folder the launcher never installed, so it can never be an unfinished install of its own.
+  else if (asBoolean(value.incomplete, false)) gameVersion.incomplete = true
   return gameVersion
 }
 

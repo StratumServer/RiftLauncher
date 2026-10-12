@@ -1,6 +1,7 @@
 import type { DeleteInstallationBackupFailure, DeleteInstallationBackupPorts } from "@domain/installations/backupDeletion"
 import type { RestoreInstallationBackupFailure, RestoreInstallationBackupPorts } from "@domain/installations/restore"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
+import { createInstallationLeasePort } from "@renderer/adapters/installationLease"
 import { TASK_NOTIFICATION_POLICIES, type TaskContextType } from "@renderer/contexts/TaskManagerContext"
 
 export interface RestorePortsOptions {
@@ -34,7 +35,8 @@ export function createRestorePorts({ startExtract, taskName, taskDescription }: 
         window.api.utils.setPreventAppClose("add", token, reason)
         return () => window.api.utils.setPreventAppClose("remove", token, "Finished backup restoration.")
       }
-    }
+    },
+    installationLease: createInstallationLeasePort()
   }
 }
 
