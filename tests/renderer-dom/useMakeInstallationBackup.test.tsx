@@ -78,7 +78,8 @@ describe("useMakeInstallationBackup failure notification", () => {
     installMockWindowApi({
       configManager: { getConfig: vi.fn(async () => createMockConfig({ backupsFolder: "/backups", installations: [anInstallation()] })) },
       pathsManager: {
-        checkPathExists: vi.fn(async () => true),
+        // Everything is there but the archive about to be written.
+        checkPathExists: vi.fn(async (path: string) => !path.includes("/Installations/")),
         // What the compress worker raises when assertRoomForArchive refuses the
         // destination, wrapped the way TaskManagerContext wraps it.
         compressOnPath: vi.fn(async () => {
@@ -124,7 +125,7 @@ describe("useMakeInstallationBackup with an archive missing from the Backups fol
     installMockWindowApi({
       configManager: { getConfig: vi.fn(async () => createMockConfig({ backupsFolder: "/backups", installations: [anInstallationAtItsLimit()] })) },
       pathsManager: {
-        checkPathExists: vi.fn(async (path: string) => path !== MISSING_ARCHIVE),
+        checkPathExists: vi.fn(async (path: string) => path !== MISSING_ARCHIVE && !path.includes("/Installations/")),
         deletePath: vi.fn(async (path: string) => path !== MISSING_ARCHIVE),
         compressOnPath: vi.fn(async () => true)
       }
@@ -171,7 +172,7 @@ describe("useMakeInstallationBackup with a stale record under the limit", () => 
         )
       },
       pathsManager: {
-        checkPathExists: vi.fn(async (path: string) => path !== MISSING_ARCHIVE),
+        checkPathExists: vi.fn(async (path: string) => path !== MISSING_ARCHIVE && !path.includes("/Installations/")),
         deletePath,
         compressOnPath: vi.fn(async () => true)
       }
@@ -237,5 +238,79 @@ describe("useMakeInstallationBackup with the Backups folder on a drive that is n
     // Dropping a record logs this line from the same handler that removes it from the Installation.
     expect(api.utils.logMessage).not.toHaveBeenCalledWith("info", expect.stringContaining("Deleted an old backup"))
     expect(result.current.installations[0]?.backups.map((backup) => backup.id)).toEqual(["backup-2", "backup-1"])
+  })
+})
+
+/**
+ * Issue #704. The oldest archives used to be deleted, and their records dropped, before the new one was
+ * compressed, so a refused backup (a linked Mods folder, a full drive) emptied a limit of 1.
+ */
+describe("useMakeInstallationBackup with a limit of 1", () => {
+  const OLD_ARCHIVE = "/backups/a/backup-1.tar.gz"
+
+  function aSingleBackupInstallation(): InstallationType {
+    return { ...anInstallation(), backupsLimit: 1, backups: [{ id: "backup-1", date: 1_700_000_000_000, path: OLD_ARCHIVE }] }
+  }
+
+  it("keeps the only backup, on disk and in the list, when the new one is refused", async () => {
+    const deletePath = vi.fn(async () => true)
+    const api = installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ backupsFolder: "/backups", installations: [aSingleBackupInstallation()] })) },
+      pathsManager: {
+        checkPathExists: vi.fn(async () => true),
+        deletePath,
+        compressOnPath: vi.fn(async () => {
+          throw new Error("Compression failed: Compression source contains an unsafe filesystem entry")
+        })
+      }
+    })
+
+    const { result } = renderHook(() => ({ makeBackup: useMakeInstallationBackup(), installations: useInstallations() }), { wrapper })
+    await waitFor(() => expect(result.current.installations).toHaveLength(1))
+
+    const outcome = await result.current.makeBackup("install-a")
+
+    expect(outcome).toEqual({ ok: false, reason: "compress-failed" })
+    expect(deletePath).not.toHaveBeenCalled()
+    expect(api.utils.logMessage).not.toHaveBeenCalledWith("info", expect.stringContaining("Deleted an old backup"))
+    expect(result.current.installations[0]?.backups.map((backup) => backup.id)).toEqual(["backup-1"])
+  })
+
+  it("lists the new backup and deletes the old one once the new one is made", async () => {
+    const deletePath = vi.fn(async () => true)
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ backupsFolder: "/backups", installations: [aSingleBackupInstallation()] })) },
+      pathsManager: { checkPathExists: vi.fn(async (path: string) => path === INSTALLATION_PATH || path === OLD_ARCHIVE), deletePath, compressOnPath: vi.fn(async () => true) }
+    })
+
+    const { result } = renderHook(() => ({ makeBackup: useMakeInstallationBackup(), installations: useInstallations() }), { wrapper })
+    await waitFor(() => expect(result.current.installations).toHaveLength(1))
+
+    const outcome = await result.current.makeBackup("install-a")
+
+    expect(outcome).toEqual({ ok: true })
+    expect(deletePath).toHaveBeenCalledWith(OLD_ARCHIVE)
+    await waitFor(() => expect(result.current.installations[0]?.backups.map((backup) => backup.id)).not.toContain("backup-1"))
+    expect(result.current.installations[0]?.backups).toHaveLength(1)
+  })
+
+  it("keeps the new backup and logs a warning when the old one cannot be deleted", async () => {
+    const api = installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ backupsFolder: "/backups", installations: [aSingleBackupInstallation()] })) },
+      pathsManager: {
+        checkPathExists: vi.fn(async (path: string) => path === INSTALLATION_PATH || path === OLD_ARCHIVE),
+        deletePath: vi.fn(async () => false),
+        compressOnPath: vi.fn(async () => true)
+      }
+    })
+
+    const { result } = renderHook(() => ({ makeBackup: useMakeInstallationBackup(), installations: useInstallations() }), { wrapper })
+    await waitFor(() => expect(result.current.installations).toHaveLength(1))
+
+    const outcome = await result.current.makeBackup("install-a")
+
+    expect(outcome).toEqual({ ok: true })
+    expect(api.utils.logMessage).toHaveBeenCalledWith("warn", expect.stringContaining("Pruning older backups encountered an error."))
+    await waitFor(() => expect(result.current.installations[0]?.backups).toHaveLength(2))
   })
 })

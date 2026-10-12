@@ -113,6 +113,19 @@ describe("parseStoredSecrets", () => {
     })
   })
 
+  it("keeps the time the session last changed, and reads a session stored without one", () => {
+    const base = { sessionKey: "fake-key", sessionSignature: "fake-signature", mptoken: null }
+
+    assert.deepEqual(parseStoredSecrets({ ...base, updatedAt: 1_700_000_000_000 }), { ...base, updatedAt: 1_700_000_000_000 })
+    assert.deepEqual(parseStoredSecrets(base), base)
+  })
+
+  it("drops a time that is not a finite number instead of refusing the session", () => {
+    const base = { sessionKey: "fake-key", sessionSignature: "fake-signature", mptoken: null }
+
+    for (const updatedAt of ["yesterday", null, Number.NaN, Infinity]) assert.deepEqual(parseStoredSecrets({ ...base, updatedAt }), base)
+  })
+
   it("returns null on an unreadable store, which logs the user out instead of failing the launch", () => {
     assert.equal(parseStoredSecrets(null), null)
     assert.equal(parseStoredSecrets("ciphertext"), null)

@@ -30,6 +30,12 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
   }
 }
 
+function trashButton(index: number): HTMLElement {
+  const button = screen.getAllByTitle("Delete Installation")[index]
+  if (!button) throw new Error(`No Delete Installation button at ${index}`)
+  return button
+}
+
 describe("ListInstallations", () => {
   it("leaves the Installation alone until the confirm dialog is accepted, then drops it", async () => {
     const user = userEvent.setup()
@@ -80,6 +86,86 @@ describe("ListInstallations", () => {
 
     await waitFor(() => expect(screen.queryByText("Are you sure you want to delete this Installation?")).toBeNull())
     expect(screen.getByText("Install A")).toBeTruthy()
+  })
+
+  describe("Delete data starts unticked on the next dialog", () => {
+    const QUESTION = "Are you sure you want to delete this Installation?"
+
+    async function tickThenClose(close: (user: ReturnType<typeof userEvent.setup>) => Promise<void>): Promise<void> {
+      const user = userEvent.setup()
+      installMockWindowApi({
+        configManager: {
+          getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(), anInstallation({ id: "install-b", name: "Install B", path: "/games/b" })] }))
+        }
+      })
+
+      renderWithProviders(
+        <TaskProvider>
+          <ListInstallations />
+        </TaskProvider>,
+        { route: "/installations" }
+      )
+
+      await screen.findByText("Install B")
+
+      await user.click(trashButton(0))
+      await screen.findByText(QUESTION)
+      await user.click(screen.getByLabelText("Delete data"))
+      expect((screen.getByLabelText("Delete data") as HTMLInputElement).checked).toBe(true)
+
+      await close(user)
+      await waitFor(() => expect(screen.queryByText(QUESTION)).toBeNull())
+
+      await user.click(trashButton(1))
+      await screen.findByText(QUESTION)
+    }
+
+    it("opens the next dialog unticked after Cancel", async () => {
+      await tickThenClose(async (user) => user.click(screen.getByTitle("Cancel")))
+      expect((screen.getByLabelText("Delete data") as HTMLInputElement).checked).toBe(false)
+    })
+
+    it("opens the next dialog unticked after Escape", async () => {
+      await tickThenClose(async (user) => user.keyboard("{Escape}"))
+      expect((screen.getByLabelText("Delete data") as HTMLInputElement).checked).toBe(false)
+    })
+
+    it("opens the next dialog unticked after a confirmed delete", async () => {
+      const user = userEvent.setup()
+      const deletePath = vi.fn(async () => true)
+      installMockWindowApi({
+        configManager: {
+          getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(), anInstallation({ id: "install-b", name: "Install B", path: "/games/b" })] }))
+        },
+        pathsManager: { deletePath, checkPathExists: vi.fn(async () => true) }
+      })
+
+      renderWithProviders(
+        <TaskProvider>
+          <ListInstallations />
+        </TaskProvider>,
+        { route: "/installations" }
+      )
+
+      await screen.findByText("Install B")
+
+      await user.click(trashButton(0))
+      await screen.findByText(QUESTION)
+      await user.click(screen.getByLabelText("Delete data"))
+      await user.click(screen.getByTitle("Delete"))
+      await waitFor(() => expect(screen.queryByText("Install A")).toBeNull())
+      await waitFor(() => expect(screen.queryByText(QUESTION)).toBeNull())
+      expect(deletePath).toHaveBeenCalledWith("/games/a")
+
+      await user.click(screen.getByTitle("Delete Installation"))
+      await screen.findByText(QUESTION)
+      expect((screen.getByLabelText("Delete data") as HTMLInputElement).checked).toBe(false)
+    })
+
+    it("opens the next dialog unticked after a click outside the dialog", async () => {
+      await tickThenClose(async (user) => user.click(document.body))
+      expect((screen.getByLabelText("Delete data") as HTMLInputElement).checked).toBe(false)
+    })
   })
 
   it("renders Manage Worlds beside Delete in the actions strip", async () => {

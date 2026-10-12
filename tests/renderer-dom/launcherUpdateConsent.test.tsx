@@ -439,6 +439,42 @@ describe("the restart once its banner is closed (#648)", () => {
 })
 
 /**
+ * Clicking "Restart and update" marks its notification answered, and an answered notification
+ * shows no buttons, so the click is also the last chance the player gets from that notification.
+ * When the main process refuses it because the game or a task holds the close guard (#702), it
+ * sends update-downloaded again after the refusal, and the restart has to be offered afresh:
+ * nothing installs when the launcher closes (#648), so without it the player could not restart
+ * in this session at all.
+ */
+describe("the restart after a refusal (#702)", () => {
+  it("is offered again in the Activity Center once the main process refuses the click, and installs from there", () => {
+    const { api, listeners } = installUpdaterApi()
+    renderUpdateSurfaces()
+
+    fireDownloaded(listeners)
+    act(() => {
+      vi.advanceTimersByTime(2_000)
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Restart and update" }))
+    expect(api.appUpdater.updateAndRestart).toHaveBeenCalledTimes(1)
+
+    // The click answered the notification, so the Activity Center has no restart button left.
+    openActivityCenter()
+    const center = screen.getByRole("region", { name: "Activity Center" })
+    expect(within(center).queryByRole("button", { name: "Restart and update" })).toBeNull()
+
+    // What the main process sends back when the guard is held.
+    fireDownloaded(listeners)
+    act(() => {
+      vi.advanceTimersByTime(2_000)
+    })
+    fireEvent.click(within(center).getByRole("button", { name: "Restart and update" }))
+
+    expect(api.appUpdater.updateAndRestart).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
  * Restart and update closes the launcher, installs the update without asking anything and opens
  * the new version by itself (#672). On Windows nothing is on screen for 13 to 30 s in between, and
  * a player who takes that for a crash and starts the launcher again lands in the middle of the
