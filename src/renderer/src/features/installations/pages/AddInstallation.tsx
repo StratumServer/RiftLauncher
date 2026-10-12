@@ -5,6 +5,7 @@ import { PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } f
 
 import { createInstallation, INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH } from "@domain/installations/create"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
+import { toFolderPlatform } from "@domain/paths"
 import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { INSTALLATION_ICONS } from "@renderer/utils/installationIcons"
 
@@ -84,7 +85,9 @@ function AddInslallation(): JSX.Element {
       mesaGlThread: fields.mesaGlThread,
       envVars: fields.envVars,
       launchWrapper: fields.launchWrapper.trim(),
-      foldersInUse: toFoldersInUse({ backupsFolder: settings.backupsFolder, installations, gameVersions })
+      foldersInUse: toFoldersInUse({ backupsFolder: settings.backupsFolder, installations, gameVersions }),
+      configuredFolders: [settings.defaultInstallationsFolder, settings.defaultVersionsFolder],
+      platform: toFolderPlatform(await window.api.utils.getOs())
     })
 
     if (!result.ok) {

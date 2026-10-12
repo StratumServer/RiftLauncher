@@ -18,14 +18,16 @@ import { useTranslation } from "react-i18next"
 import clsx from "clsx"
 
 import { deleteInstallation } from "@domain/installations/delete"
+import { toFolderPlatform } from "@domain/paths"
 import { getInstallationVersionStatus } from "@domain/installations/versionReference"
 import { installationIconSrc } from "@renderer/utils/installationIcons"
 
-import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useGameVersions, useCustomIcons, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
+import { findHeldManagedFolder } from "@renderer/features/installations/adapters/nesting"
 import { createDeleteInstallationPorts, describeDeleteInstallationFailure, toInstallationDeleteSnapshot } from "@renderer/features/installations/adapters/delete"
 import { useCheckPathExists, useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
 
@@ -44,6 +46,7 @@ function ListInslallations(): JSX.Element {
   const { addNotification } = useNotificationsContext()
   const installations = useInstallations()
   const gameVersions = useGameVersions()
+  const settings = useSettingsConfig()
   const customIcons = useCustomIcons()
   const configDispatch = useConfigDispatch()
 
@@ -68,6 +71,11 @@ function ListInslallations(): JSX.Element {
     const installation = installationToDelete
 
     try {
+      // Deleting the data wipes the folder, so one holding another managed folder is told here
+      // which to move, rather than the host refusing with a generic error.
+      const heldFolder = deleteData ? findHeldManagedFolder(installation, { settings, installations, gameVersions }, toFolderPlatform(await window.api.utils.getOs())) : null
+      if (heldFolder) return addNotification(t("features.installations.deleteHoldsManagedFolder", { path: heldFolder }), "error")
+
       const result = await deleteInstallation(createDeleteInstallationPorts(), { installation: toInstallationDeleteSnapshot(installation), deleteData })
 
       if (!result.ok) {

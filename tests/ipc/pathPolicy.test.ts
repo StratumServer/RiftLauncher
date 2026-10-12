@@ -294,6 +294,34 @@ describe("managed path policy: deletion and protected paths", () => {
     }
   })
 
+  it("refuses to delete a folder that holds a protected folder, another installation or a game version", async () => {
+    const outer = join(outsideFolder, "Outer")
+    const nested = join(outer, "Nested")
+    const nestedVersion = join(outer, "game", "1.21.0")
+    fse.ensureDirSync(nested)
+    fse.ensureDirSync(nestedVersion)
+    configState.config = buildConfig({
+      installations: [
+        { path: outer, backups: [] },
+        { path: nested, backups: [] }
+      ] as unknown as ConfigType["installations"],
+      gameVersions: [{ path: nestedVersion }] as unknown as ConfigType["gameVersions"]
+    })
+
+    await assert.rejects(() => policy.assertManagedDeletionPath(outer), /holds a managed folder/)
+    await assert.rejects(() => policy.assertManagedDeletionPath(join(outer, "game")), /holds a managed folder/)
+    // The inner entries themselves, and anything that holds nothing managed, still go.
+    assert.equal(await policy.assertManagedDeletionPath(nested), nested)
+    assert.equal(await policy.assertManagedDeletionPath(nestedVersion), nestedVersion)
+
+    // The Backups, Versions and Installations folders, moved inside an installation.
+    for (const folder of ["backupsFolder", "defaultVersionsFolder", "defaultInstallationsFolder"] as const) {
+      configState.config = buildConfig({ [folder]: join(mainInstallation, "inside") })
+      fse.ensureDirSync(join(mainInstallation, "inside"))
+      await assert.rejects(() => policy.assertManagedDeletionPath(mainInstallation), /holds a managed folder/, folder)
+    }
+  })
+
   it("deletes an installation, a game version and a backup archive", async () => {
     assert.equal(await policy.assertManagedDeletionPath(mainInstallation), mainInstallation)
     assert.equal(await policy.assertManagedDeletionPath(gameVersion), gameVersion)
