@@ -84,9 +84,11 @@ describe("ConfigProvider save health", () => {
       expect(notice).toBeTruthy()
       expect(screen.getByRole("alert").textContent).toMatch(/couldn't be saved to disk/i)
 
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(8_001)
-      })
+      for (const step of [8_001, 30_000]) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(step)
+        })
+      }
       expect(screen.getByText(/couldn't be saved to disk/i)).toBeTruthy()
 
       fireEvent.click(screen.getByRole("button", { name: "Discard notification" }))
