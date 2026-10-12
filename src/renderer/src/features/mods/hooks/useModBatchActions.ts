@@ -5,6 +5,7 @@ import { CONFIG_ACTIONS, useConfigDispatch, useSuspendedModUpdates } from "@rend
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 import { createModBatchPorts } from "@renderer/features/moddb/adapters/modsManager"
+import { isModWriting } from "@renderer/features/mods/hooks/modWrites"
 
 import { removeMods, setModsEnabled } from "@domain/mods/batch"
 import { modsFolderInUse } from "@domain/mods/install"
@@ -152,8 +153,13 @@ export function useModBatchActions(
     if (modsFolderInUse(installation)) return addNotification(t(action === "delete" ? "features.mods.cantDeleteWhileinUse" : "features.mods.cantToggleWhileinUse"), "error")
 
     // Only what the action would change is sent: no no-op calls, and the count is what really changed.
-    const targets = action === "delete" ? selected : selected.filter((iMod) => iMod.enabled !== (action === "enable"))
-    if (targets.length === 0 || runningRef.current) return
+    const wanted = action === "delete" ? selected : selected.filter((iMod) => iMod.enabled !== (action === "enable"))
+    // A Mod whose replacement is downloading keeps its old copy listed, and the swap expects that copy
+    // where it was. It is left out here, stays checked, and counts as one that did not go through.
+    const held = wanted.filter((iMod) => isModWriting(installation.id, iMod.modid))
+    const targets = wanted.filter((iMod) => !held.includes(iMod))
+    if (wanted.length === 0 || runningRef.current) return
+    if (targets.length === 0) return addNotification(t(action === "delete" ? "features.mods.cantDeleteWhileinUse" : "features.mods.cantToggleWhileinUse"), "error")
 
     runningRef.current = true
     setRunning(true)
@@ -171,10 +177,10 @@ export function useModBatchActions(
               targets.map((iMod) => ({ path: iMod.path, enabled: action === "enable" }))
             )
 
-      const failedPaths = results.flatMap((result) => (result.ok ? [] : [result.path]))
+      const failedPaths = [...results.flatMap((result) => (result.ok ? [] : [result.path])), ...held.map((iMod) => iMod.path)]
       const nameTaken = results.filter((result) => !result.ok && result.reason === "name-taken").length
       const failed = failedPaths.length
-      const done = results.length - failed
+      const done = results.length + held.length - failed
 
       logMods("info", `${LOG_TAG} [${action}] Batch ${action}: ${done} changed, ${failed} failed (name-taken ${nameTaken}, refused ${failed - nameTaken}).`)
 
@@ -189,7 +195,7 @@ export function useModBatchActions(
       } else if (done === 0) {
         addNotification(t("features.mods.modsBatchFailed"), "error")
       } else {
-        addNotification(t("features.mods.modsBatchPartial", { done, total: results.length, count: failed }), "warning")
+        addNotification(t("features.mods.modsBatchPartial", { done, total: results.length + held.length, count: failed }), "warning")
       }
 
       // What went through has a new name or is gone, so the failures are all that is left to hold.

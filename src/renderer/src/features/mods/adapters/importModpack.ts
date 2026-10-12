@@ -46,6 +46,7 @@ export function toModChangeSummaryEntry(report: ModpackImportEntryReport): ModCh
     fromVersion: report.fromVersion,
     toVersion: report.toVersion,
     assetid: report.assetid,
-    alreadyPresent: report.status === "already-present"
+    alreadyPresent: report.status === "already-present",
+    bothVersions: report.status === "new-version-cleanup-failed"
   }
 }

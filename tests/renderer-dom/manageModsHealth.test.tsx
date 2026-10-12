@@ -339,7 +339,8 @@ describe("ManageMods: the Installation check", () => {
     const summary = await screen.findByRole("dialog")
     expect(within(summary).getByText("v1.1.0")).toBeTruthy()
     expect(within(summary).getByText("Failed")).toBeTruthy()
-    expect(deletePath.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([ALPHA_PATH, BETA_PATH]))
+    // Beta's download died, so its old archive was never touched (#703). Alpha's was replaced.
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ALPHA_PATH])
     // Nothing rolls Alpha back over a Mod that did not make it: its new archive is left where it landed.
     expect(deletePath.mock.calls.map((call) => call[0])).not.toContain("/games/a/Mods/alpha-1.1.0.zip")
   })

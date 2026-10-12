@@ -77,6 +77,7 @@ export function useBulkUpdateMods(installation: InstallationType | undefined): B
           }
 
           const result = await installMod({
+            installationId: installation.id,
             installationPath: installation.path,
             outName: installation.name,
             modName: modToUpdate._mod.name,
@@ -90,18 +91,26 @@ export function useBulkUpdateMods(installation: InstallationType | undefined): B
             modid: modToUpdate.modid,
             fromVersion: modToUpdate.version,
             toVersion: result.ok ? release.modversion : null,
-            assetid: modToUpdate._mod.assetid
+            assetid: modToUpdate._mod.assetid,
+            bothVersions: !result.ok && result.reason === "new-version-cleanup-failed"
           })
         })
       )
 
       // One verdict, and it is the true one.
-      const failed = collected.filter((entry) => entry.toVersion === null).length
-      const updated = collected.length - failed
+      //
+      // A Mod that ended up with both versions on disk was not "left as it was", so it is counted
+      // apart from the failed ones and gets its own message. The per-Mod toast is silent in this flow.
+      const unchanged = collected.filter((entry) => entry.toVersion === null)
+      const bothVersions = unchanged.filter((entry) => entry.bothVersions).length
+      const failed = unchanged.length - bothVersions
+      const updated = collected.length - unchanged.length
 
-      if (failed === 0) addNotification(t("features.mods.modsUpdatedSuccessfully"), "success")
-      else if (updated === 0) addNotification(t("features.mods.errorUpdatingMods"), "error")
-      else addNotification(t("features.mods.modsPartiallyUpdated", { updated, failed }), "warning")
+      if (failed === 0 && bothVersions === 0) addNotification(t("features.mods.modsUpdatedSuccessfully"), "success")
+      else if (updated === 0 && failed > 0) addNotification(t("features.mods.errorUpdatingMods"), "error")
+      else if (failed > 0) addNotification(t("features.mods.modsPartiallyUpdated", { updated, failed }), "warning")
+
+      if (bothVersions > 0) addNotification(t("features.mods.modsLeftWithBothVersions", { count: bothVersions }), "error")
 
       setSummaryEntries(collected)
       setShowSummary(true)

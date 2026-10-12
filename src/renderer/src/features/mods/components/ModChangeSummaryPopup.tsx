@@ -45,7 +45,9 @@ function ModChangeSummaryPopup({ isOpen, close, title, entries }: Readonly<{ isO
                       <span className="flex items-center gap-1 text-sm">
                         <span className="text-zinc-400">{entry.fromVersion ? `v${entry.fromVersion}` : t("features.mods.summaryNew")}</span>
                         <PiArrowRightDuotone className="text-zinc-400 shrink-0" />
-                        <span className={toVersionColor(entry)}>{entry.toVersion ? `v${entry.toVersion}` : t("features.mods.summaryFailed")}</span>
+                        <span className={toVersionColor(entry)}>
+                          {entry.toVersion ? `v${entry.toVersion}` : t(entry.bothVersions ? "features.mods.summaryBothVersions" : "features.mods.summaryFailed")}
+                        </span>
                       </span>
                     )}
                   </TableCell>
