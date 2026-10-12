@@ -662,6 +662,37 @@ describe("MainMenu Play button", () => {
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
     expect(readProbe().gameVersionPlaying).toBe(false)
   })
+  // Automatic backups are off by default, so nothing else refuses the launch: the game would open
+  // the save a backup is reading or a restore is about to swap out from under it.
+  it.each([
+    ["_backuping", "There is a backup already in progress."],
+    ["_restoringBackup", "There's a Backup restoration already in progress."]
+  ] as const)("refuses Play while %s is set, even with automatic backups off", async (flag, message) => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn()
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            backupsFolder: "/backups",
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation({ backupsAuto: false, [flag]: true })],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText(message)
+    expect(executeGame).not.toHaveBeenCalled()
+    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
+    expect(readProbe().gameVersionPlaying).toBe(false)
+  })
 })
 
 describe("MainMenu quick-backup button", () => {

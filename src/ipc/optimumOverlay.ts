@@ -123,6 +123,20 @@ function readPatchedTargets(document: unknown): PatchedTarget[] | undefined {
   return targets
 }
 
+/**
+ * The hash of every assembly the patch recorded writing, keyed by its path in the
+ * game folder. Empty when the record is missing or not in the shape the patch
+ * writes, since a record that cannot be read vouches for nothing.
+ */
+export async function readRecordedPatchedHashes(gameDirectory: string): Promise<Map<string, string>> {
+  try {
+    const targets = readPatchedTargets(await fse.readJSON(join(gameDirectory, OPTIMUM_STATE_MANIFEST))) ?? []
+    return new Map(targets.map((target) => [join(...target.assembly.split("/")), target.patchedHash]))
+  } catch {
+    return new Map()
+  }
+}
+
 export type PatchedOutputVerification = { ok: true } | { ok: false; reason: "unverified" } | { ok: false; reason: "missing-assembly"; target: string; assembly: string }
 
 type OptimumReferenceVerification = { ok: true } | { ok: false; reason: "unverified" } | { ok: false; reason: "missing-assembly"; assembly: string }

@@ -1382,7 +1382,8 @@ describe("restoring or deleting an Installation that holds another managed folde
           extract: async (request, done) => (await runExtraction({ filePath: request.archivePath, outputPath: request.outputFolder, deleteArchive: false, isBackupArchive: true }), done({ ok: true }))
         },
         ids: { newId: () => "0f8fad5b-d9cb-469f-a165-70867728950e" },
-        closeGuard: { acquire: () => () => undefined }
+        closeGuard: { acquire: () => () => undefined },
+        installationLease: { acquire: async () => ({ ok: true, release: async () => undefined }) }
       },
       {
         installation: { id: "main", name: "Main", path: outer, backupsLimit: 3, compressionLevel: 6, backups: [], isBackingUp: false, isPlaying: false, isRestoringBackup: false },

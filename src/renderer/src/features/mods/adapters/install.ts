@@ -64,6 +64,8 @@ export function describeModInstallFailure(reason: InstallModFailure): ModInstall
       return { messageKey: "features.mods.cantUpdateWhileinUse", logged: false }
     case "old-version-delete-failed":
       return { messageKey: "features.mods.errorReplacingOldModVersion", logged: true }
+    case "new-version-cleanup-failed":
+      return { messageKey: "features.mods.errorRemovingNewModVersion", logged: true }
     case "download-failed":
       return { messageKey: null, logged: true }
   }

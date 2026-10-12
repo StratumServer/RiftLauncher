@@ -93,9 +93,14 @@ export function useLaunchGame(): LaunchGame {
     try {
       if (!installation) return addNotification(t("features.installations.noInstallationSelected"), "error")
       if (installation._playing) return addNotification(t("features.installations.gameAlreadyRunning"), "error")
-      // Update all deletes each old archive before downloading its replacement, so a game started
-      // mid-run would load a Mods folder with some of its Mods missing.
+      // Update all changes the Mods folder under a running game, and old and new archives briefly sit
+      // side by side, so a game started mid-run could load either.
       if (installation._updatingMods) return addNotification(t("features.mods.cantPlayWhileUpdatingMods"), "error")
+      // Same exclusion the other way round (backup.ts, restore.ts refuse while playing). It must hold
+      // with automatic backups off too: a restore swaps the save folder out from under the game, and
+      // a backup reads files the game is writing.
+      if (installation._backuping) return addNotification(t("features.backups.backupInProgress"), "error")
+      if (installation._restoringBackup) return addNotification(t("features.backups.restoreInProgress"), "error")
 
       const gameVersionToRun = installation.version ? gameVersions.find((gv) => gv.id === installation.gameVersionId) : undefined
       if (!gameVersionToRun) {

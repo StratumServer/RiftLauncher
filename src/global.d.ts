@@ -539,6 +539,8 @@ declare global {
     toVersion: string | null
     assetid?: number
     alreadyPresent?: boolean
+    /** True when the old and the new archive are both in the Mods folder and the player has to remove one. */
+    bothVersions?: boolean
   }
 
   /**
@@ -928,6 +930,12 @@ declare global {
    * - `backup-missing`: the folder carries no `.optimum/vanilla/` to restore the
    *   assemblies from.
    * - `restore-failed`: the copies back were refused by the file system.
+   * - `build-changed`: Add or Update Optimum found a `.optimum/vanilla/` that
+   *   holds an older build than the folder (it was updated in place), so
+   *   nothing was patched.
+   * - `build-unrecognized`: Remove Optimum found assemblies it can account for
+   *   next to ones it cannot (a patched file beside a newer original, or a file
+   *   that is not a managed image), so nothing was copied back.
    *
    * Nothing here is ever text the CLI wrote: its `message` and `detail` fields
    * carry absolute paths and are dropped where its output is read.
@@ -952,14 +960,20 @@ declare global {
     | "overlay-unverified"
     | "backup-missing"
     | "restore-failed"
+    | "build-changed"
+    | "build-unrecognized"
 
   /**
    * `rolledBack` says the folder was put back to its vanilla assemblies out of
    * the patch's own backup after the run failed. It is the difference between a
    * build that is simply unpatched and one holding two overlay versions at
    * once, and it is what the sentence the player reads is chosen on.
+   *
+   * `buildUpdated` on a successful restore says the game had been updated in place
+   * since Optimum was added: its assemblies were already original, so none were
+   * copied and only Optimum's leftovers were removed.
    */
-  type OptimumPatchResult = { ok: true } | { ok: false; reason: OptimumPatchFailureReason; rolledBack?: boolean; missingAssembly?: string }
+  type OptimumPatchResult = { ok: true; buildUpdated?: boolean } | { ok: false; reason: OptimumPatchFailureReason; rolledBack?: boolean; missingAssembly?: string }
 
   declare module "*.png" {
     const value: string

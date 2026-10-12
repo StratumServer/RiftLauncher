@@ -12,6 +12,7 @@ import {
   planModpackImport
 } from "../../../src/domain/mods/importModpack"
 import type { InstalledModSnapshot, ModpackEntry, ModpackImportEntryReport, ModpackInstallItem, ModpackModDetail, ModpackPlanItem, ModpackRelease } from "../../../src/domain/mods/importModpack"
+import { installMod } from "../../../src/domain/mods/install"
 import type { InstallModResult } from "../../../src/domain/mods/install"
 
 const GAME_VERSION = "1.20.4"
@@ -600,5 +601,28 @@ describe("planModpackImport, browse picks", () => {
     const item = onlyItem(plan([pickEntry], [], [], ["carryon"]))
 
     assert.deepEqual(item, { decision: "skip", modid: "carryon", requestedVersion: null, name: "carryon", reason: "lookup-failed", fromVersion: null })
+  })
+})
+
+describe("executeModpackImport over an installed copy, through the real installMod (#703)", () => {
+  it("keeps a disabled copy on disk when the download that would replace it fails", async () => {
+    const copy = "/inst/Mods/carryon-1.0.0.zip.disabled"
+    const disk = new Set([copy])
+    const ports = {
+      fileSystem: { exists: async (): Promise<boolean> => true, move: async (): Promise<boolean> => true, remove: async (path: string): Promise<boolean> => disk.delete(path) },
+      paths: { join: async (parts: string[]): Promise<string> => parts.join("/") },
+      downloader: { download: async (_request: unknown, done: (outcome: { ok: boolean; error?: string }) => void): Promise<void> => done({ ok: false, error: "socket hang up" }) }
+    }
+    const plan = planModpackImport({
+      entries: [{ modid: "carryon", version: "1.0.0" }],
+      installed: [{ modid: "carryon", name: "Carry On", version: "1.0.0", path: copy, enabled: false }],
+      gameVersion: "1.20.0",
+      details: new Map([["carryon", { name: "Carry On", releases: [{ mainfile: "https://mods.vintagestory.at/download?fileid=1", modidstr: "carryon", modversion: "1.0.0", tags: ["1.20.0"] }] }]])
+    })
+
+    const report = await executeModpackImport({ installer: { install: (item) => installMod(ports, { installationPath: "/inst", release: item.release, existing: item.existing }) } }, { plan })
+
+    assert.equal(report.entries[0]?.status, "download-failed")
+    assert.deepEqual([...disk], [copy])
   })
 })
