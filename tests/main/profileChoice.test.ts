@@ -1,12 +1,12 @@
 import assert from "node:assert/strict"
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 import * as ts from "typescript"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import { describePortableDecision, isTrustedPortableMarker, portablePathsForCurrentInstall, selectUserDataFolder } from "@src/main/profileChoice"
-import { PORTABLE_MARKER_FILE, PORTABLE_USER_DATA_FOLDER, RIFT_USER_DATA_FOLDER } from "@src/main/userDataMigration"
+import { LEGACY_USER_DATA_FOLDER, PORTABLE_MARKER_FILE, PORTABLE_USER_DATA_FOLDER, RIFT_USER_DATA_FOLDER } from "@src/main/userDataMigration"
 
 /**
  * Which profile folder the launcher opens, against a real folder layout in a temp directory.
@@ -124,6 +124,24 @@ describe("selectUserDataFolder", () => {
     assert.equal(selection.rejectedMarker, true)
     assert.equal(selection.setup.path, join(appDataPath, RIFT_USER_DATA_FOLDER))
     assert.equal(existsSync(dataPath()), false)
+  })
+
+  it("falls back to the default profile and refuses a symlinked legacy folder", () => {
+    writeFileSync(join(installPath, PORTABLE_MARKER_FILE), "not empty")
+    const appDataPath = join(workDir, "appData")
+    const externalLegacy = join(workDir, "external-legacy")
+    mkdirSync(externalLegacy, { recursive: true })
+    writeFileSync(join(externalLegacy, "config.json"), "{}", "utf8")
+    mkdirSync(appDataPath, { recursive: true })
+    symlinkSync(externalLegacy, join(appDataPath, LEGACY_USER_DATA_FOLDER), process.platform === "win32" ? "junction" : "dir")
+
+    const selection = selectUserDataFolder(appDataPath, { markerPath: join(installPath, PORTABLE_MARKER_FILE), dataPath: dataPath(), installPath })
+
+    assert.equal(selection.portableMode, false)
+    assert.equal(selection.rejectedMarker, true)
+    assert.equal(selection.setup.path, join(appDataPath, RIFT_USER_DATA_FOLDER))
+    assert.equal(selection.setup.outcome, "migration-failed")
+    assert.deepEqual(readdirSync(join(appDataPath, RIFT_USER_DATA_FOLDER)), [])
   })
 
   it("opens the default profile when there is no marker to read", () => {

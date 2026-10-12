@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { chmodSync, existsSync, truncateSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import fse from "fs-extra"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import {
@@ -52,6 +54,20 @@ function seedLegacyFolder(): void {
   writeFileSync(join(legacyPath(), "Icons", "custom.png"), "not really a png", "utf8")
   writeFileSync(join(legacyPath(), "Logs", "info.log"), "an old line", "utf8")
   writeFileSync(join(legacyPath(), "Cache", "ModCatalog", "catalog.json"), "[]", "utf8")
+}
+
+/**
+ * Makes only `targetPath` report another account as its owner. Mocking `process.getuid` instead
+ * would make a link foreign as well, and a check that reads the link rather than its target
+ * would still pass.
+ */
+function spyOnForeignOwnedTarget(targetPath: string): ReturnType<typeof vi.spyOn> {
+  const realTarget = realpathSync.native(targetPath)
+  const original = fse.statSync.bind(fse)
+  return vi.spyOn(fse, "statSync").mockImplementation(((path: string, ...rest: unknown[]) => {
+    const stats = (original as (...args: unknown[]) => fse.Stats)(path, ...rest)
+    return String(path) === realTarget ? Object.assign(stats, { uid: stats.uid + 1 }) : stats
+  }) as typeof fse.statSync)
 }
 
 beforeEach(() => {
@@ -303,6 +319,128 @@ describe("setUpUserDataFolder", () => {
     assert.equal(existsSync(`${dataPath}${PORTABLE_MIGRATION_TEMP_SUFFIX}`), false)
   })
 
+  it("refuses a symlinked VS Launcher folder and starts on an empty folder", () => {
+    const externalLegacyPath = join(appDataPath, "shared-legacy")
+    mkdirSync(join(externalLegacyPath, "Icons"), { recursive: true })
+    writeFileSync(join(externalLegacyPath, "config.json"), JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "abc" }), "utf8")
+    writeFileSync(join(externalLegacyPath, "Icons", "custom.png"), "custom icon", "utf8")
+    symlinkSync(externalLegacyPath, legacyPath(), process.platform === "win32" ? "junction" : "dir")
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "migration-failed")
+    assert.deepEqual(setup.copied, [])
+    assert.match(setup.failureReason ?? "", /link or junction/i)
+    assert.equal(existsSync(riftPath()), true)
+    assert.deepEqual(readdirSync(riftPath()), [])
+    assert.equal(readFileSync(join(externalLegacyPath, "config.json"), "utf8"), JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "abc" }))
+    assert.equal(existsSync(temporaryPath()), false)
+  })
+
+  it("refuses a symlinked Icons folder in the default VS Launcher migration", () => {
+    const externalIconsPath = join(appDataPath, "shared-icons")
+    mkdirSync(join(legacyPath(), "Icons"), { recursive: true })
+    mkdirSync(externalIconsPath, { recursive: true })
+    writeFileSync(join(externalIconsPath, "custom.png"), "keep-source-safe", "utf8")
+    symlinkSync(externalIconsPath, join(legacyPath(), "Icons", "shared"), process.platform === "win32" ? "junction" : "dir")
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "migration-failed")
+    assert.deepEqual(setup.copied, [])
+    assert.match(setup.failureReason ?? "", /symbolic link that cannot be copied safely/i)
+    assert.equal(existsSync(riftPath()), true)
+    assert.deepEqual(readdirSync(riftPath()), [])
+    assert.equal(existsSync(temporaryPath()), false)
+  })
+
+  it.skipIf(process.platform === "win32")("copies legacy config links as files in default migration", () => {
+    const externalConfigPath = join(appDataPath, "shared-config.json")
+    const originalConfig = JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "abc" })
+    writeFileSync(externalConfigPath, originalConfig, "utf8")
+    mkdirSync(legacyPath(), { recursive: true })
+    symlinkSync("../shared-config.json", join(legacyPath(), "config.json"), "file")
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "migrate")
+    assert.deepEqual(setup.copied, ["config.json"])
+    assert.equal(readFileSync(externalConfigPath, "utf8"), originalConfig)
+    assert.equal(lstatSync(join(riftPath(), "config.json")).isSymbolicLink(), false)
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), originalConfig)
+  })
+
+  it.skipIf(process.platform === "win32")("refuses a VS Launcher folder that belongs to another user in default migration", () => {
+    seedLegacyFolder()
+    const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
+
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migration-failed")
+      assert.deepEqual(setup.copied, [])
+      assert.equal(existsSync(riftPath()), true)
+      assert.deepEqual(readdirSync(riftPath()), [])
+    } finally {
+      getuid.mockRestore()
+    }
+  })
+
+  it("rejects a symlinked legacy VS Launcher folder in portable setup", () => {
+    const externalLegacyPath = join(appDataPath, "shared-legacy")
+    mkdirSync(join(externalLegacyPath, "Icons"), { recursive: true })
+    writeFileSync(join(externalLegacyPath, "config.json"), "{}", "utf8")
+    symlinkSync(externalLegacyPath, legacyPath(), process.platform === "win32" ? "junction" : "dir")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /Legacy profile is not a folder/i)
+    assert.equal(existsSync(dataPath), false)
+    assert.equal(existsSync(`${dataPath}${PORTABLE_MIGRATION_TEMP_SUFFIX}`), false)
+  })
+
+  it.skipIf(process.platform === "win32")("rejects a legacy VS Launcher folder that belongs to another user in portable setup", () => {
+    seedLegacyFolder()
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
+
+    try {
+      assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /Legacy profile belongs to another user/i)
+      assert.equal(existsSync(dataPath), false)
+    } finally {
+      getuid.mockRestore()
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("rejects a source RiftLauncher profile that belongs to another user in portable setup", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    writeFileSync(join(riftPath(), "config.json"), '{"source":true}', "utf8")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
+
+    try {
+      assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /Profile folder belongs to another user/i)
+      assert.equal(existsSync(dataPath), false)
+    } finally {
+      getuid.mockRestore()
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("rejects a symlinked source RiftLauncher profile whose target belongs to another user", () => {
+    const targetPath = join(appDataPath, "other-user-profile")
+    mkdirSync(targetPath, { recursive: true })
+    writeFileSync(join(targetPath, "config.json"), '{"source":true}', "utf8")
+    symlinkSync(targetPath, riftPath(), "dir")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
+
+    try {
+      assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /Profile folder belongs to another user/i)
+      assert.equal(existsSync(dataPath), false)
+    } finally {
+      getuid.mockRestore()
+    }
+  })
+
   it.skipIf(process.platform === "win32")("discards stale Chromium lock links during portable migration", () => {
     mkdirSync(riftPath(), { recursive: true })
     symlinkSync("stale-host-1234", join(riftPath(), "SingletonLock"), "file")
@@ -466,6 +604,137 @@ describe("setUpUserDataFolder", () => {
   })
 })
 
+describe("migration review regressions", () => {
+  it.skipIf(process.platform === "win32")("rejects a link to a foreign-owned profile in portable setup even when the link itself is ours", () => {
+    const targetPath = join(appDataPath, "other-user-profile")
+    mkdirSync(targetPath, { recursive: true })
+    writeFileSync(join(targetPath, "config.json"), '{"source":true}', "utf8")
+    writeFileSync(join(targetPath, "account-secrets.json"), "sealed:placeholder", "utf8")
+    symlinkSync(targetPath, riftPath(), "dir")
+    const dataPath = join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    const statSpy = spyOnForeignOwnedTarget(targetPath)
+
+    try {
+      assert.throws(() => setUpPortableUserDataFolder(appDataPath, dataPath), /Profile folder belongs to another user/i)
+      assert.equal(existsSync(dataPath), false)
+    } finally {
+      statSpy.mockRestore()
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("refuses to start on a linked default profile whose target is foreign-owned", () => {
+    const targetPath = join(appDataPath, "other-user-profile")
+    mkdirSync(targetPath, { recursive: true })
+    writeFileSync(join(targetPath, "config.json"), '{"source":true}', "utf8")
+    symlinkSync(targetPath, riftPath(), "dir")
+    const statSpy = spyOnForeignOwnedTarget(targetPath)
+
+    try {
+      assert.throws(() => setUpUserDataFolder(appDataPath), /Profile folder belongs to another user/i)
+    } finally {
+      statSpy.mockRestore()
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("uses a linked default profile whose target is the player's own folder", () => {
+    const targetPath = join(appDataPath, "own-profile")
+    mkdirSync(targetPath, { recursive: true })
+    writeFileSync(join(targetPath, "config.json"), '{"source":true}', "utf8")
+    symlinkSync(targetPath, riftPath(), "dir")
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "use-existing")
+    assert.equal(readFileSync(join(targetPath, "config.json"), "utf8"), '{"source":true}')
+  })
+
+  it("refuses an Icons directory link itself in both migration paths", () => {
+    const target = join(appDataPath, "external-icons")
+    mkdirSync(target)
+    mkdirSync(legacyPath())
+    symlinkSync(target, join(legacyPath(), "Icons"), process.platform === "win32" ? "junction" : "dir")
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migration-failed")
+    assert.match(setup.failureReason ?? "", /symbolic link/)
+    rmSync(riftPath(), { recursive: true })
+    assert.throws(() => setUpPortableUserDataFolder(appDataPath, join(appDataPath, "portable")), /symbolic link/)
+    assert.deepEqual(readdirSync(target), [])
+  })
+
+  it.skipIf(process.platform === "win32")("keeps Icons when a config link is dangling", () => {
+    mkdirSync(join(legacyPath(), "Icons"), { recursive: true })
+    writeFileSync(join(legacyPath(), "Icons", "custom.png"), "icon")
+    symlinkSync("missing.json", join(legacyPath(), "config.json"))
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migrate")
+    assert.deepEqual(setup.copied, ["Icons"])
+    assert.equal(readFileSync(join(riftPath(), "Icons", "custom.png"), "utf8"), "icon")
+    assert.equal(lstatSync(join(legacyPath(), "config.json")).isSymbolicLink(), true)
+  })
+
+  it.skipIf(process.platform === "win32")("rejects a config link to a FIFO without waiting for a writer", () => {
+    mkdirSync(legacyPath())
+    const fifo = join(appDataPath, "config-pipe")
+    execFileSync("mkfifo", [fifo])
+    symlinkSync(fifo, join(legacyPath(), "config.json"))
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migration-failed")
+    assert.match(setup.failureReason ?? "", /not a regular file/)
+  })
+
+  it.skipIf(process.platform !== "linux")("rejects a config link to a device", () => {
+    mkdirSync(legacyPath())
+    symlinkSync("/dev/zero", join(legacyPath(), "config.json"))
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migration-failed")
+    assert.match(setup.failureReason ?? "", /not a regular file/)
+  })
+
+  it("rejects an oversized regular config before reading it", () => {
+    mkdirSync(legacyPath())
+    const config = join(legacyPath(), "config.json")
+    writeFileSync(config, "")
+    truncateSync(config, 16 * 1024 * 1024 + 1)
+    const setup = setUpUserDataFolder(appDataPath)
+    assert.equal(setup.outcome, "migration-failed")
+    assert.match(setup.failureReason ?? "", /16 MiB/)
+    assert.ok((setup.failureReason ?? "").endsWith(config), setup.failureReason ?? "")
+    assert.deepEqual(readdirSync(riftPath()), [])
+  })
+
+  it.skipIf(process.platform === "win32")("refuses an existing foreign-owned default profile just as the portable path does", () => {
+    mkdirSync(riftPath())
+    writeFileSync(join(riftPath(), "config.json"), "{}")
+    const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
+    try {
+      assert.throws(() => setUpUserDataFolder(appDataPath), /Profile folder belongs to another user/)
+      assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), "{}")
+    } finally {
+      getuid.mockRestore()
+    }
+  })
+
+  it("names the profile's own config, not the migration copy, when the portable copy is refused", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    // The refusal names the profile after resolving it, which differs from the temp path when
+    // tmpdir() itself sits behind a symlink.
+    const configPath = join(realpathSync.native(riftPath()), "config.json")
+    writeFileSync(configPath, "")
+    truncateSync(configPath, 16 * 1024 * 1024 + 1)
+
+    assert.throws(
+      () => setUpPortableUserDataFolder(appDataPath, join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)),
+      (error: unknown) => {
+        const message = String(error)
+        assert.match(message, /16 MiB migration limit/)
+        assert.ok(message.endsWith(configPath), message)
+        assert.equal(message.includes(PORTABLE_MIGRATION_TEMP_SUFFIX), false, message)
+        return true
+      }
+    )
+  })
+})
+
 describe("describeUserDataSetup", () => {
   it("says which folder the launcher ended up on", () => {
     assert.equal(describeUserDataSetup({ path: "/x", outcome: "fresh", copied: [], cleanedStaleMigration: false }), "Created a new RiftLauncher user data folder.")
@@ -477,6 +746,19 @@ describe("describeUserDataSetup", () => {
     assert.equal(
       describeUserDataSetup({ path: "/x", outcome: "migration-failed", copied: [], cleanedStaleMigration: false }),
       "Could not copy the VS Launcher user data folder. Starting on an empty RiftLauncher folder."
+    )
+  })
+
+  it("includes the failure reason when a migration fails", () => {
+    assert.equal(
+      describeUserDataSetup({
+        path: "/x",
+        outcome: "migration-failed",
+        copied: [],
+        cleanedStaleMigration: false,
+        failureReason: "Legacy profile belongs to another user: /appData/VSLauncher"
+      }),
+      "Could not copy the VS Launcher user data folder (Legacy profile belongs to another user: /appData/VSLauncher). Starting on an empty RiftLauncher folder."
     )
   })
 
