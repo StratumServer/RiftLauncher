@@ -95,6 +95,11 @@ export function useLaunchGame(): LaunchGame {
       // Update all deletes each old archive before downloading its replacement, so a game started
       // mid-run would load a Mods folder with some of its Mods missing.
       if (installation._updatingMods) return addNotification(t("features.mods.cantPlayWhileUpdatingMods"), "error")
+      // Same exclusion the other way round (backup.ts, restore.ts refuse while playing). It must hold
+      // with automatic backups off too: a restore swaps the save folder out from under the game, and
+      // a backup reads files the game is writing.
+      if (installation._backuping) return addNotification(t("features.backups.backupInProgress"), "error")
+      if (installation._restoringBackup) return addNotification(t("features.backups.restoreInProgress"), "error")
 
       const gameVersionToRun = installation.version ? gameVersions.find((gv) => gv.id === installation.gameVersionId) : undefined
       if (!gameVersionToRun) {
