@@ -274,8 +274,12 @@ export interface ProcessProbe {
   run(request: ProcessProbeRequest): Promise<ProcessProbeOutcome>
 }
 
-/** A JSON document read back off disk. `undefined` means the file was not there. */
-export type JsonFileReadResult = { ok: true; document: unknown } | { ok: false; error?: string }
+/**
+ * A JSON document read back off disk. `undefined` means the file was not there.
+ * `modifiedAt` is when the file was last written (milliseconds since the epoch), absent for a file
+ * that was not there.
+ */
+export type JsonFileReadResult = { ok: true; document: unknown; modifiedAt?: number } | { ok: false; error?: string }
 
 export type JsonFileWriteResult = { ok: true } | { ok: false; error?: string }
 
