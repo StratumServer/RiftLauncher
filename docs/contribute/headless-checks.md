@@ -167,7 +167,9 @@ node scripts/smoke/optimum-dedicated-server.mjs /path/to/the/patched/game-folder
 
 The script requires the launcher's `.optimum/manifest.json`, creates a throwaway server data folder, generates a fresh server config,
 disables server listing and UPnP, binds to loopback on a free port, and waits for
-`Entering runphase RunGame` in `server-main.log`, then watches for five seconds and fails on an Optimum assembly load failure or an early exit. It lets the server resolve its own dependencies instead of requiring one DLL at the game root. It stops the server and removes the temporary
+`Entering runphase RunGame` in `server-main.log` or in the console output it captured, then watches for five seconds
+outside the start limit and fails on an Optimum load failure — a missing or unreadable assembly, or a type that cannot
+be resolved — or on an early exit. It lets the server resolve its own dependencies instead of requiring one DLL at the game root. It stops the server and removes the temporary
 data folder on either result. Set `VINTAGESTORY_SERVER` to the dedicated-server executable path
 when it is outside the game folder. Set `RIFTLAUNCHER_SERVER_SMOKE_TIMEOUT_MS` to change the
 120-second start limit.
