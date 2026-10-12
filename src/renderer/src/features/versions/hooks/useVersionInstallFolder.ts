@@ -7,7 +7,7 @@ import { usePickEmptyFolder } from "@renderer/features/installations/hooks/usePa
 export interface UseVersionInstallFolderResult {
   /** The folder the version installs into, either suggested or user picked. */
   folder: string
-  /** Opens the OS folder picker and, once one is picked, warns when it is not empty. */
+  /** Opens the OS folder picker and, once one is picked, refuses it when it is not empty: uninstalling deletes the whole folder. */
   browseFolder: () => Promise<void>
 }
 
@@ -36,7 +36,7 @@ export function useVersionInstallFolder(
   build: InstallBuild,
   foldersInUse: readonly string[]
 ): UseVersionInstallFolderResult {
-  const pickEmptyFolder = usePickEmptyFolder()
+  const pickEmptyFolder = usePickEmptyFolder(true)
 
   const [folder, setFolder] = useState<string>("")
   const [folderByUser, setFolderByUser] = useState<boolean>(false)
