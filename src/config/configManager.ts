@@ -165,6 +165,17 @@ export async function saveConfig(config: ConfigType): Promise<boolean> {
   }
 }
 
+/**
+ * Changes the config held in memory without writing it. For a caller whose `saveConfig` failed and
+ * who is undoing its own change: `saveConfig` keeps what it was given in memory either way (a
+ * read-only session depends on that for its other changes), so a failed change the caller then
+ * abandons would otherwise ride along with the next save, whoever makes it. Changes the cache
+ * holds from other saves are left as they are.
+ */
+export function updateCachedConfig(update: (config: ConfigType) => ConfigType): void {
+  if (configCache) configCache = normalizeConfig(update(configCache))
+}
+
 export function flushConfigWrites(): Promise<void> | null {
   return scheduledConfigWrite
 }

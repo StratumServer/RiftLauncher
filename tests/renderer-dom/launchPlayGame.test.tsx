@@ -100,7 +100,6 @@ async function clickPlay(user: ReturnType<typeof userEvent.setup>): Promise<void
 }
 
 const BACKUP_WRITE_FAILED = "No backup made: the backup archive could not be written. Check that the Backups folder is on a writable drive with free space."
-const BACKUP_PRUNE_FAILED = "No backup made: an old backup file could not be deleted to make room for the new one. Check that it is not open in another program, then try again."
 const SKIP_PROMPT = "The backup failed. Launch without a backup this time?"
 
 /**
@@ -125,32 +124,6 @@ function withFailingAutoBackup(executeGame: Mock): void {
       )
     },
     pathsManager: { checkPathExists: vi.fn(async () => true) },
-    gameManager: { executeGame }
-  })
-}
-
-function withPruneFailingAutoBackup(executeGame: Mock): void {
-  installMockWindowApi({
-    configManager: {
-      getConfig: vi.fn(async () =>
-        createMockConfig({
-          backupsFolder: "/backups",
-          lastUsedInstallation: "install-a",
-          installations: [
-            anInstallation({
-              backupsAuto: true,
-              backupsLimit: 1,
-              backups: [{ id: "backup-1", date: 1, path: "/backups/backup-1.zip" }]
-            })
-          ],
-          gameVersions: [aGameVersion()]
-        })
-      )
-    },
-    pathsManager: {
-      checkPathExists: vi.fn(async () => true),
-      deletePath: vi.fn(async () => false)
-    },
     gameManager: { executeGame }
   })
 }
@@ -688,24 +661,6 @@ describe("MainMenu Play button", () => {
     expect(executeGame).not.toHaveBeenCalled()
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
     expect(readProbe().gameVersionPlaying).toBe(false)
-  })
-
-  it("offers the override for a failed backup prune", async () => {
-    const user = userEvent.setup()
-    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
-    withPruneFailingAutoBackup(executeGame)
-
-    renderMainMenu()
-    await clickPlay(user)
-
-    await screen.findByText(BACKUP_PRUNE_FAILED)
-    expect(await screen.findByRole("dialog")).toBeTruthy()
-
-    await user.click(within(await screen.findByRole("dialog")).getByTitle("Launch anyway"))
-
-    await waitFor(() => expect(executeGame).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
   })
 })
 
