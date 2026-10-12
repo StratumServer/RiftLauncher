@@ -1,7 +1,9 @@
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
+import { folderIsInUse } from "@domain/paths"
 import { installGameVersion } from "@domain/versions/install"
+import { isInterruptedInstall } from "@domain/versions/interruptedInstall"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { CONFIG_ACTIONS, useGameVersions, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
 import { useTaskContext } from "@renderer/contexts/TaskManagerContext"
@@ -46,24 +48,45 @@ export function useInstallVersion(): (version: DownloadableGameVersionTypeType |
       downloadDescription: t("features.versions.gameVersionDownloadDesc", { version: version.version }),
       unpackDescription: t("features.versions.gameVersionExtractDesc", { version: version.version })
     })
-    const gameVersionId = crypto.randomUUID()
+    const platform = await window.api.utils.getOs()
+    const pathPlatform = platform === "win32" ? "win32" : "posix"
+
+    // The same version into the same folder as an install that was cut off: that row is picked
+    // up again instead of refused as "already installed", and keeps its id so the Installations
+    // pointing at it stay pointed at it.
+    const interrupted = installedGameVersions.find((gv) => isInterruptedInstall(gv) && gv.version === version.version && folderIsInUse(folder, [gv.path], pathPlatform))
+    const gameVersionId = interrupted?.id ?? crypto.randomUUID()
+    const others = interrupted ? installedGameVersions.filter((gv) => gv.id !== interrupted.id) : installedGameVersions
 
     const result = await installGameVersion(
       ports,
       {
-        platform: await window.api.utils.getOs(),
+        platform,
         version: toDownloadableGameVersion(version),
         targetFolder: folder,
-        installedVersions: installedGameVersions.map((gv) => ({ version: gv.version, path: gv.path })),
-        foldersInUse
+        installedVersions: others.map((gv) => ({ version: gv.version, path: gv.path })),
+        foldersInUse: interrupted ? foldersInUse.filter((used) => !folderIsInUse(used, [interrupted.path], pathPlatform)) : foldersInUse
       },
       {
         onRegistered: () => {
-          configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: { id: gameVersionId, label: version.version, version: version.version, path: folder, _installing: true } })
+          // `incomplete` is what reaches config.json: it stays until the install is seen to finish.
+          if (interrupted) configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: gameVersionId, updates: { _installing: true } } })
+          else
+            configDispatch({
+              type: CONFIG_ACTIONS.ADD_GAME_VERSION,
+              payload: { id: gameVersionId, label: version.version, version: version.version, path: folder, _installing: true, incomplete: true }
+            })
           navigate("/versions")
         },
-        onInstalled: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: gameVersionId, updates: { _installing: undefined } } }),
-        onDiscarded: () => configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: gameVersionId } })
+        onInstalled: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: gameVersionId, updates: { _installing: undefined, incomplete: undefined } } }),
+        // A row picked up again stays on the list as an interrupted install, so a second failure
+        // does not strand the Installations that still point at it.
+        onDiscarded: () =>
+          configDispatch(
+            interrupted
+              ? { type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: gameVersionId, updates: { _installing: undefined } } }
+              : { type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: gameVersionId } }
+          )
       }
     )
 

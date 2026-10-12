@@ -197,6 +197,38 @@ describe("AddVersion", () => {
       await waitFor(() => expect(folder.value).toBe("/versions/1.20.4-2"))
     })
 
+    /**
+     * An install cut off by a crash or a restart leaves its row behind (#710). The suggestion lands
+     * on that row's own folder, so Install picks it up again instead of adding a second row beside it.
+     * A finished build, or an unfinished one of another version, still steers the suggestion away.
+     */
+    describe("with an install that was cut off", () => {
+      async function expectSuggestion(gameVersions: { id: string; version: string; label: string; path: string; incomplete?: boolean }[], expected: string): Promise<void> {
+        installMockWindowApi({
+          configManager: { getConfig: vi.fn(async () => createMockConfig({ defaultVersionsFolder: "/versions", gameVersions })) },
+          netManager: { queryURL: vi.fn(async (url: string) => (url.endsWith("stable.json") ? JSON.stringify(STABLE) : JSON.stringify({}))) }
+        })
+
+        renderAddVersion()
+        await screen.findByText("1.20.4")
+
+        const folder = (await screen.findByPlaceholderText("VS Version folder")) as HTMLInputElement
+        await waitFor(() => expect(folder.value).toBe(expected))
+      }
+
+      it("suggests the folder of the interrupted row of the selected version", async () => {
+        await expectSuggestion([{ id: "cut-off", version: "1.20.4", label: "1.20.4", path: "/versions/1.20.4", incomplete: true }], "/versions/1.20.4")
+      })
+
+      it("steers away from a finished build of the same version", async () => {
+        await expectSuggestion([{ id: "done", version: "1.20.4", label: "1.20.4", path: "/versions/1.20.4" }], "/versions/1.20.4-2")
+      })
+
+      it("steers away from the interrupted row of another version", async () => {
+        await expectSuggestion([{ id: "other", version: "1.20.3", label: "1.20.3", path: "/versions/1.20.4", incomplete: true }], "/versions/1.20.4-2")
+      })
+    })
+
     it("disables the choice with one line when the machine has no build", async () => {
       withOptimum({ ok: false, reason: "unsupported-system" })
 

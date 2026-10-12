@@ -302,3 +302,38 @@ describe("SAVE_CONFIG", () => {
     assert.equal(JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8")).lastUsedInstallation, "still-here", "the config on disk from before the read failure is untouched")
   })
 })
+
+/**
+ * #710: the renderer saves a VS Version before its download starts, and a launcher cut off during
+ * the install (crash, power cut, update restart) never gets to say it finished. Whatever the
+ * save wrote is all the next start has to go on, so the real handler and the real file are used.
+ */
+describe("SAVE_CONFIG with an install that has not finished", () => {
+  it("still reads as an unfinished install on the next start", async () => {
+    const event = await createTrustedEvent()
+    const folder = join(appDataFolder, "RiftLauncherGameVersions", "1.22.7")
+    const installing = { id: "gv-1", label: "1.22.7", version: "1.22.7", path: folder, _installing: true, incomplete: true }
+
+    const result = await saveConfigHandler()(event, minimalConfig({ gameVersions: [installing] as unknown as GameVersionType[] }))
+    assert.deepEqual(result, { ok: true })
+
+    const onDisk = JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8"))
+    assert.deepEqual(onDisk.gameVersions, [{ id: "gv-1", label: "1.22.7", version: "1.22.7", path: folder, incomplete: true }])
+
+    vi.resetModules()
+    await import("@src/ipc/handlers/configHandlers")
+    const next = await getConfigHandler()(await createTrustedEvent())
+    assert.equal(next.gameVersions[0]?.incomplete, true)
+    assert.equal(next.gameVersions[0]?._installing, undefined)
+  })
+
+  it("writes a build that finished with no mark at all", async () => {
+    const event = await createTrustedEvent()
+    const folder = join(appDataFolder, "RiftLauncherGameVersions", "1.22.7")
+
+    await saveConfigHandler()(event, minimalConfig({ gameVersions: [{ id: "gv-1", label: "1.22.7", version: "1.22.7", path: folder }] }))
+
+    const onDisk = JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8"))
+    assert.equal("incomplete" in onDisk.gameVersions[0], false)
+  })
+})

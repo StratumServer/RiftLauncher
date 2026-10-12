@@ -55,7 +55,8 @@ function realPorts(now: () => number = () => Date.now()): MakeInstallationBackup
     clock: { now },
     ids: { newId: () => `new-id-${(issued += 1)}` },
     paths: { join: async (parts) => join(...parts) },
-    closeGuard: { acquire: () => () => undefined }
+    closeGuard: { acquire: () => () => undefined },
+    installationLease: { acquire: async () => ({ ok: true, release: async () => undefined }) }
   }
 }
 

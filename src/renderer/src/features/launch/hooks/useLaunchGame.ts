@@ -8,6 +8,7 @@ import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
 import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
+import { isInterruptedInstall } from "@domain/versions/interruptedInstall"
 import { getInstallationVersionStatus } from "@domain/installations/versionReference"
 import { logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
 
@@ -111,6 +112,7 @@ export function useLaunchGame(): LaunchGame {
         return addNotification(message, "error")
       }
       if (gameVersionToRun._installing) return addNotification(t("features.versions.versionInstalling", { version: installation.version }), "error")
+      if (isInterruptedInstall(gameVersionToRun)) return addNotification(t("features.versions.versionInterrupted", { version: installation.version }), "error")
       if (gameVersionToRun._deleting) return addNotification(t("features.versions.versionDeleting", { version: installation.version }), "error")
       if (gameVersionToRun._playing) return addNotification(t("features.versions.versionPlaying", { version: installation.version }), "error")
 

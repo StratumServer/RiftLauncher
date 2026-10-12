@@ -668,6 +668,10 @@ function normalizeGameVersion(value: unknown): GameVersionType | null {
   // it never had. This flag is what keeps a player's own install off the delete path, so
   // dropping it silently on the next load would turn "remove from list" back into deletion.
   if (asBoolean(value.linked, false)) gameVersion.linked = true
+  // Written only while an install the launcher started has not finished, so no config that is
+  // not mid-install grows the field and none written before it needs migrating. A linked row is a
+  // folder the launcher never installed, so it can never be an unfinished install of its own.
+  else if (asBoolean(value.incomplete, false)) gameVersion.incomplete = true
   return gameVersion
 }
 
