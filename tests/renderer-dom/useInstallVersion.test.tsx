@@ -6,7 +6,7 @@ import { MemoryRouter } from "react-router-dom"
 import { installGameVersion } from "@domain/versions/install"
 import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
-import { ConfigProvider, useGameVersions } from "@renderer/features/config/contexts/ConfigContext"
+import { ConfigProvider, useGameVersions, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useInstallVersion } from "@renderer/features/versions/hooks/useInstallVersion"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
@@ -84,8 +84,8 @@ describe("useInstallVersion", () => {
       return { ok: false, reason: "download-failed" }
     })
 
-    const { result } = renderHook(() => ({ install: useInstallVersion(), versions: useGameVersions() }), { wrapper })
-    await waitFor(() => expect(result.current.versions).toHaveLength(0))
+    const { result } = renderHook(() => ({ install: useInstallVersion(), versions: useGameVersions(), settings: useSettingsConfig() }), { wrapper })
+    await waitFor(() => expect(result.current.settings.schemaVersion).toBeGreaterThan(0))
 
     await act(async () => {
       await result.current.install(VERSION, "/versions/1.22.7")
@@ -103,14 +103,15 @@ describe("useInstallVersion", () => {
       return { ok: false, reason: "download-failed" }
     })
 
-    const { result } = renderHook(() => ({ install: useInstallVersion(), versions: useGameVersions() }), { wrapper })
-    await waitFor(() => expect(result.current.versions).toHaveLength(0))
+    const { result } = renderHook(() => ({ install: useInstallVersion(), versions: useGameVersions(), settings: useSettingsConfig() }), { wrapper })
+    await waitFor(() => expect(result.current.settings.schemaVersion).toBeGreaterThan(0))
 
     await act(async () => {
       await result.current.install(VERSION, "/versions/1.22.7")
     })
 
     expect(result.current.versions).toEqual([expect.objectContaining({ version: "1.22.7", _installing: true, incomplete: true })])
+    await waitFor(() => expect(api.configManager.saveConfig).toHaveBeenCalled())
     const saved = vi.mocked(api.configManager.saveConfig).mock.calls.at(-1)?.[0].gameVersions
     expect(saved).toEqual([expect.objectContaining({ version: "1.22.7", incomplete: true })])
   })
@@ -123,8 +124,8 @@ describe("useInstallVersion", () => {
       return { ok: true, path: "/versions/1.22.7" }
     })
 
-    const { result } = renderHook(() => ({ install: useInstallVersion(), versions: useGameVersions() }), { wrapper })
-    await waitFor(() => expect(result.current.versions).toHaveLength(0))
+    const { result } = renderHook(() => ({ install: useInstallVersion(), versions: useGameVersions(), settings: useSettingsConfig() }), { wrapper })
+    await waitFor(() => expect(result.current.settings.schemaVersion).toBeGreaterThan(0))
 
     await act(async () => {
       await result.current.install(VERSION, "/versions/1.22.7")
