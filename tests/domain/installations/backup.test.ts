@@ -20,15 +20,18 @@ let trace: string[] = []
  * calls. `refused` holds paths the host will not answer about at all, the way
  * assertManagedPath turns away one outside the folders the config names.
  */
-function fakeFileSystem(options: { exists?: boolean; removals?: Record<string, boolean>; missing?: readonly string[]; refused?: readonly string[] } = {}): FileSystem {
+function fakeFileSystem(options: { exists?: boolean; removals?: Record<string, boolean>; missing?: readonly string[]; refused?: readonly string[]; present?: readonly string[] } = {}): FileSystem {
   const removals = options.removals ?? {}
   const missing = new Set(options.missing ?? [])
   const refused = new Set(options.refused ?? [])
+  const present = new Set(options.present ?? [])
   return {
     exists: async (path: string): Promise<boolean> => {
       trace.push(`exists:${path}`)
       if (refused.has(path)) throw new TypeError("Unmanaged path")
       if (missing.has(path)) return false
+      // The archive a backup is about to write is new unless the test says a file is there.
+      if (path.startsWith("/backups/Installations/")) return present.has(path)
       return options.exists ?? true
     },
     remove: async (path: string): Promise<boolean> => {
@@ -106,6 +109,9 @@ function recordingEvents(): MakeInstallationBackupEvents {
     },
     onFinished: (): void => {
       trace.push("finished")
+    },
+    onBackupCreated: (created): void => {
+      trace.push(`created:${created.id}`)
     },
     onBackupDeleted: (deleted): void => {
       trace.push(`deleted:${deleted.id}`)
@@ -194,19 +200,29 @@ describe("makeInstallationBackup pruning", () => {
     )
   })
 
-  it("stops at the first failed deletion and reports the ones already done", async () => {
+  it("keeps the backup it made when an old one cannot be deleted, and reports the ones already gone", async () => {
     const installation = snapshot({ backupsLimit: 1, backups: [backup("b1"), backup("b2"), backup("b3")] })
     const ports = fakePorts({ fileSystem: fakeFileSystem({ removals: { "/backups/b2.tar.gz": false } }) })
 
     const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
 
-    // b3 came off, b2 could not, so prune stops and names b2 as the one it left behind.
-    assert.deepEqual(result, { ok: false, reason: "prune-failed", deletedBackupIds: ["b3"], detail: "b2" })
-    assert.equal(
-      trace.some((entry) => entry.startsWith("compress:")),
-      false
-    )
+    // b3 came off, b2 could not, so the prune stops there. The new archive is on disk and recorded, so it stands.
+    assert.equal(result.ok, true)
+    assert.equal(result.ok && result.backup.id, "generated-id-1")
+    assert.deepEqual(result.deletedBackupIds, ["b3"])
     assert.equal(trace.at(-2), "guard-release")
+    assert.equal(trace.at(-1), "finished")
+  })
+
+  it("keeps the backup it made when the prune throws", async () => {
+    const installation = snapshot({ backupsLimit: 1, backups: [backup("b1")] })
+    const fileSystem = { ...fakeFileSystem(), remove: async (): Promise<boolean> => Promise.reject(new Error("IPC refused")) }
+
+    const result = await makeInstallationBackup(fakePorts({ fileSystem }), { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.equal(result.ok && result.backup.id, "generated-id-1")
+    assert.deepEqual(result.deletedBackupIds, [])
     assert.equal(trace.at(-1), "finished")
   })
 
@@ -463,10 +479,12 @@ describe("makeInstallationBackup archiving", () => {
       "exists:/games/my-install",
       "guard-acquire:Making and installation backup.",
       "started",
+      "exists:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
+      "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
+      "created:generated-id-1",
       "exists:/backups/b1.tar.gz",
       "remove:/backups/b1.tar.gz",
       "deleted:b1",
-      "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
       "guard-release",
       "finished"
     ])
@@ -480,6 +498,104 @@ describe("makeInstallationBackup archiving", () => {
     assert.deepEqual(result, { ok: false, reason: "compress-failed", deletedBackupIds: [], detail: "7z exploded" })
     assert.equal(trace.at(-2), "guard-release")
     assert.equal(trace.at(-1), "finished")
+  })
+
+  it("leaves every older backup alone when the compression fails, whatever the limit", async () => {
+    const { archiver } = fakeArchiver({ outcome: { ok: false, error: "Compression source contains an unsafe filesystem entry" } })
+    // One archive past the limit of 1, the shape the old order emptied; b3's archive is already gone from disk.
+    const installation = snapshot({ backupsLimit: 1, backups: [backup("b1"), backup("b2"), backup("b3")] })
+    const ports = fakePorts({ archiver, fileSystem: fakeFileSystem({ missing: ["/backups/b3.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "compress-failed", deletedBackupIds: [], detail: "Compression source contains an unsafe filesystem entry" })
+    assert.deepEqual(
+      trace.filter((entry) => /^(remove|deleted|created|move):/.test(entry)),
+      []
+    )
+  })
+
+  it("records the new archive before it prunes anything", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2")] })
+
+    await makeInstallationBackup(fakePorts(), { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    const steps = trace.filter((entry) => /^(compress|created|remove|deleted):/.test(entry))
+    assert.deepEqual(
+      steps.map((entry) => entry.split(":")[0]),
+      ["compress", "created", "remove", "deleted"]
+    )
+  })
+
+  it("takes a new name when a record already holds the stamped path, even though no file is there", async () => {
+    const taken = "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz"
+    const { archiver, requests } = fakeArchiver()
+
+    const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot({ backupsLimit: 5, backups: [backup("b1", { path: taken })] }), backupsFolder: "/backups" })
+
+    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-16_01-20-00_2.tar.gz")
+    assert.equal(result.ok && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00_2.tar.gz")
+  })
+
+  it("takes a new name when a file already sits at the stamped path, and keeps counting up", async () => {
+    const stamped = "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00"
+    const { archiver, requests } = fakeArchiver()
+    const fileSystem = fakeFileSystem({ present: [`${stamped}.tar.gz`, `${stamped}_2.tar.gz`] })
+
+    await makeInstallationBackup(fakePorts({ archiver, fileSystem }), { installation: snapshot(), backupsFolder: "/backups" })
+
+    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-16_01-20-00_3.tar.gz")
+  })
+
+  it("refuses the backup, touching nothing, when no name is free", async () => {
+    const { archiver } = fakeArchiver()
+    const fileSystem = { ...fakeFileSystem(), exists: async (): Promise<boolean> => true }
+
+    const result = await makeInstallationBackup(
+      fakePorts({ archiver, fileSystem }),
+      { installation: snapshot({ backupsLimit: 1, backups: [backup("b1")] }), backupsFolder: "/backups" },
+      recordingEvents()
+    )
+
+    assert.equal(result.ok === false && result.reason, "compress-failed")
+    assert.equal(
+      trace.some((entry) => /^(compress|remove|created|deleted):/.test(entry)),
+      false
+    )
+  })
+
+  it("treats an archive path the host will not answer about as free", async () => {
+    const { archiver, requests } = fakeArchiver()
+    const fileSystem = fakeFileSystem({ refused: ["/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz"] })
+
+    await makeInstallationBackup(fakePorts({ archiver, fileSystem }), { installation: snapshot(), backupsFolder: "/backups" })
+
+    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-16_01-20-00.tar.gz")
+  })
+
+  it("tells the caller when the prune after a good backup fails or throws, and still succeeds", async () => {
+    const stuck = fakeFileSystem({ removals: { "/backups/b1.tar.gz": false } })
+    const throwing = { ...fakeFileSystem(), remove: async (): Promise<boolean> => Promise.reject(new Error("IPC refused")) }
+
+    for (const fileSystem of [stuck, throwing]) {
+      let incomplete = 0
+      const result = await makeInstallationBackup(
+        fakePorts({ fileSystem }),
+        { installation: snapshot({ backupsLimit: 1, backups: [backup("b1")] }), backupsFolder: "/backups" },
+        { onPruneIncomplete: () => (incomplete += 1) }
+      )
+
+      assert.equal(result.ok, true)
+      assert.equal(incomplete, 1)
+    }
+  })
+
+  it("does not call it incomplete when the prune got to the limit", async () => {
+    let incomplete = 0
+
+    await makeInstallationBackup(fakePorts(), { installation: snapshot({ backupsLimit: 1, backups: [backup("b1")] }), backupsFolder: "/backups" }, { onPruneIncomplete: () => (incomplete += 1) })
+
+    assert.equal(incomplete, 0)
   })
 
   it("treats an archiver that never reports as a failure", async () => {

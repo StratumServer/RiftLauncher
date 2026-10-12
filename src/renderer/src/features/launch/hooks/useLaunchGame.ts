@@ -123,12 +123,12 @@ export function useLaunchGame(): LaunchGame {
       if (installation.backupsAuto) {
         const backupOutcome = await makeInstallationBackup(installation.id)
 
-        // Only an archive compression or pruning failure is recoverable: the
+        // Only an archive compression failure is recoverable: the
         // installation still exists and the player can knowingly launch
         // without this backup (#338). Busy, playing, restoring, and missing
         // installation states are hard stops and must not offer an override.
         if (!backupOutcome.ok) {
-          const canLaunchWithoutBackup = backupOutcome.reason === "compress-failed" || backupOutcome.reason === "prune-failed"
+          const canLaunchWithoutBackup = backupOutcome.reason === "compress-failed"
           if (!canLaunchWithoutBackup) return
 
           const launchAnyway = await askToLaunchWithoutBackup()

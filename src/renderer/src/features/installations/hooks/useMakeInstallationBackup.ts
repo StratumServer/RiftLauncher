@@ -17,7 +17,7 @@ const LOG_TAG = "[front] [backups] [features/installations/hooks/useMakeInstalla
  * returned a launch-proceeds result; they now speak, but they must keep
  * returning `{ ok: true }`, or turning on automatic backups with, say, an
  * empty Backups folder would silently stop the launcher from ever launching
- * anything. A real failure (compress-failed, prune-failed) blocks the launch
+ * anything. A real failure (compress-failed) blocks the launch
  * until the player answers a prompt (#338).
  */
 const NON_BLOCKING_REASONS = new Set<MakeInstallationBackupFailure>(["installation-path-missing", "no-backups-folder", "backups-disabled"])
@@ -77,6 +77,8 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
       {
         onStarted: () => setBackuping(true),
         onFinished: () => setBackuping(false),
+        onBackupCreated: (backup) => configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION_BACKUP, payload: { id: installation.id, backup } }),
+        onPruneIncomplete: () => window.api.utils.logMessage("warn", `${LOG_TAG} Pruning older backups encountered an error.`),
         onBackupDeleted: (deleted) => {
           configDispatch({ type: CONFIG_ACTIONS.DELETE_INSTALLATION_BACKUP, payload: { id: installation.id, backupId: deleted.id } })
           window.api.utils.logMessage("info", `${LOG_TAG} Deleted an old backup.`)
@@ -84,10 +86,7 @@ export function useMakeInstallationBackup(): (installationId: string) => Promise
       }
     )
 
-    if (result.ok) {
-      configDispatch({ type: CONFIG_ACTIONS.ADD_INSTALLATION_BACKUP, payload: { id: installation.id, backup: result.backup } })
-      return { ok: true }
-    }
+    if (result.ok) return { ok: true }
 
     const { messageKey, logLine } = describeBackupFailure(result.reason, result.detail)
 
