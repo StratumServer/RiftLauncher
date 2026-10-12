@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import fse from "fs-extra"
 
 import { findHeldManagedFolder } from "../../src/renderer/src/features/installations/adapters/nesting"
+import { toFolderPlatform } from "@domain/paths"
 
 /**
  * Boundary coverage for the managed path policy (#11).
@@ -360,7 +361,7 @@ describe("managed path policy: deletion and protected paths", () => {
       const held = findHeldManagedFolder(
         { id: "v0", path: folder },
         { settings: config, installations: config.installations, gameVersions: config.gameVersions.filter((gameVersion) => (gameVersion as { id?: string }).id !== "v0") },
-        "posix"
+        toFolderPlatform(process.platform)
       )
 
       assert.equal(refused, expectedKept, `${label}: policy`)
