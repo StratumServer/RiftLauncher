@@ -79,7 +79,10 @@ describe("the play sessions store", () => {
     assert.deepEqual(JSON.parse(readFileSync(join(sessionsFolder, "main.json"), "utf-8")).format, PLAY_SESSIONS_FORMAT)
   })
 
-  it("keeps the newest first and drops the oldest past the cap", async () => {
+  // Twenty-one recordPlaySession calls are twenty-one atomic writes, each an fsynced
+  // temp file and a rename, and on a loaded Windows runner the set crossed the 5 s
+  // default once already. Headroom, not slack: a hang still fails, three times later.
+  it("keeps the newest first and drops the oldest past the cap", { timeout: 15_000 }, async () => {
     const { recordPlaySession, readPlaySessions } = await store()
 
     for (let index = 0; index <= MAX_SESSIONS_PER_INSTALLATION; index++) await recordPlaySession("main", session({ id: `s-${index}` }))
