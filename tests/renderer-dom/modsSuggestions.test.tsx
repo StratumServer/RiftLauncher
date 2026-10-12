@@ -28,6 +28,15 @@ const INSTALLATION: InstallationType = {
   envVars: ""
 }
 
+/**
+ * An ISO timestamp this many days before the run. The ranking scores recency against the wall
+ * clock with a 30 day half life, so a fixed date would drift out of the "Recently updated" band
+ * a little more each day; building it from now keeps the fixture exactly as fresh as intended.
+ */
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1_000).toISOString()
+}
+
 const CANDIDATE: DownloadableModOnListType = {
   modid: 123,
   assetid: 123,
@@ -44,7 +53,7 @@ const CANDIDATE: DownloadableModOnListType = {
   type: "mod",
   logo: "",
   tags: ["Tweak"],
-  lastreleased: "2026-09-14"
+  lastreleased: daysAgo(1)
 }
 
 const BACKFILL_CANDIDATE: DownloadableModOnListType = {
@@ -76,7 +85,7 @@ const DETAIL: DownloadableModType = {
       tags: ["1.22.7"],
       modidstr: "suggestioncandidate",
       modversion: "1.0.0",
-      created: "2026-09-14",
+      created: daysAgo(1),
       changelog: ""
     }
   ]

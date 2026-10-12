@@ -207,6 +207,13 @@ declare global {
     variant?: GameBuildVariantType
     /** Registered from a folder the launcher did not install, so removing it must only unregister it. */
     linked?: boolean
+    /**
+     * The launcher registered this row before its install ran and has not seen it finish. It is
+     * the one install flag that is written to config.json (`_installing` is not), so a row that
+     * still carries it when the launcher starts is an install that was cut off: the folder may
+     * be empty, partial or half copied.
+     */
+    incomplete?: boolean
     _installing?: boolean
     _deleting?: boolean
     _playing?: boolean

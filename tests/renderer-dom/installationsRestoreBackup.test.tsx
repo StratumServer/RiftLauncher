@@ -98,6 +98,50 @@ describe("ManageInstallationBackups", () => {
     await waitFor(() => expect(screen.queryByText("Are you sure you want to restore this Backup?")).toBeNull())
   })
 
+  it("reserves the Installation in the main process for the restore and gives it back afterwards", async () => {
+    const user = userEvent.setup()
+    const acquireLease = vi.fn<BridgeAPI["installationActivity"]["acquireLease"]>(async () => ({ ok: true }))
+    const releaseLease = vi.fn<BridgeAPI["installationActivity"]["releaseLease"]>(async () => undefined)
+    const extractOnPath = vi.fn<BridgeAPI["pathsManager"]["extractOnPath"]>(async () => true)
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallationWithBackup()] })) },
+      installationActivity: { acquireLease, releaseLease },
+      pathsManager: { checkPathExists: vi.fn(async () => true), movePath: vi.fn(async () => true), deletePath: vi.fn(async () => true), extractOnPath, changePerms: vi.fn(async () => true) }
+    })
+
+    renderManageBackups("install-a")
+
+    await user.click(await screen.findByTitle("Restore Backup"))
+    await screen.findByText("Are you sure you want to restore this Backup?")
+    await user.click(screen.getByTitle("Restore"))
+
+    await waitFor(() => expect(releaseLease).toHaveBeenCalledTimes(1))
+    expect(acquireLease).toHaveBeenCalledTimes(1)
+    expect(acquireLease.mock.calls[0]?.[0]).toBe("install-a")
+    expect(releaseLease.mock.calls[0]?.[0]).toBe(acquireLease.mock.calls[0]?.[1])
+    expect(extractOnPath).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not extract anything when the main process refuses the reservation", async () => {
+    const user = userEvent.setup()
+    const acquireLease = vi.fn<BridgeAPI["installationActivity"]["acquireLease"]>(async () => ({ ok: false, reason: "busy" }))
+    const extractOnPath = vi.fn<BridgeAPI["pathsManager"]["extractOnPath"]>(async () => true)
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallationWithBackup()] })) },
+      installationActivity: { acquireLease },
+      pathsManager: { checkPathExists: vi.fn(async () => true), movePath: vi.fn(async () => true), deletePath: vi.fn(async () => true), extractOnPath, changePerms: vi.fn(async () => true) }
+    })
+
+    renderManageBackups("install-a")
+
+    await user.click(await screen.findByTitle("Restore Backup"))
+    await screen.findByText("Are you sure you want to restore this Backup?")
+    await user.click(screen.getByTitle("Restore"))
+
+    await waitFor(() => expect(acquireLease).toHaveBeenCalledTimes(1))
+    expect(extractOnPath).not.toHaveBeenCalled()
+  })
+
   it("deletes the backup archive after the delete confirmation", async () => {
     const user = userEvent.setup()
     const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
