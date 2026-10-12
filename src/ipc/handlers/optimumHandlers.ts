@@ -108,7 +108,7 @@ ipcMain.handle(IPC_CHANNELS.OPTIMUM_MANAGER.RESTORE_VANILLA, async (event, id: u
   sendProgress(event, safeId, 0)
 
   try {
-    const result = await restoreVanillaBuild(safeGameDirectory)
+    const result = await restoreVanillaBuild(safeGameDirectory, { onlyIfPatched: true })
     if (!result.ok) logMessage("error", `${LOG_PREFIX} [RESTORE_VANILLA] [${safeId}] The build was left as it was: ${result.reason}.`)
     return result
   } catch (err) {

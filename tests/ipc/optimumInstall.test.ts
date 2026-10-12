@@ -1,9 +1,10 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import fse from "fs-extra"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import * as tar from "tar"
 
 import type { OptimumManifest } from "@domain/optimum/manifest"
@@ -398,6 +399,223 @@ describe("restoreVanillaBuild", () => {
     assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: false, reason: "backup-missing" })
   })
 
+  describe("when the player asked to remove Optimum", () => {
+    const REMOVE = { onlyIfPatched: true }
+    const LAYOUT = [
+      { live: ["VintagestoryLib.dll"], backup: ["VintagestoryLib.vanilla.dll"] },
+      { live: ["VintagestoryAPI.dll"], backup: ["VintagestoryAPI.vanilla.dll"] },
+      { live: ["Mods", "VSEssentials.dll"], backup: ["Mods", "VSEssentials.dll"] }
+    ]
+
+    /** A build as the game ships it: a managed image that references nothing of Optimum's. */
+    const original = (build: string, name: string): Buffer => makeManagedAssembly(["System.Runtime"], [`original ${build} ${name}`])
+    /** What the patch writes: a managed image that references an Optimum assembly. */
+    const patched = (overlay: string, name: string): Buffer => makeManagedAssembly(["System.Runtime", "Optimum.Api.Contracts"], [`overlay ${overlay} ${name}`])
+
+    const livePath = (parts: string[]): string => join(gameDirectory, ...parts)
+    const vanillaPath = (parts: string[]): string => join(gameDirectory, ".optimum", "vanilla", ...parts)
+
+    /** A build Optimum 0.3.14 patched: 1.22.7 originals in the backups, the overlay's assemblies live, and the record of their hashes. */
+    function patchedBuildWithRecord(): void {
+      mkdirSync(vanillaPath(["Mods"]), { recursive: true })
+      for (const { live, backup } of LAYOUT) {
+        writeFileSync(vanillaPath(backup), original("1.22.7", live.join("/")))
+        writeFileSync(livePath(live), patched("0.3.14", live.join("/")))
+      }
+      writeFileSync(livePath(["Optimum.Api.Contracts.dll"]), "contracts")
+      writeFileSync(livePath(["Optimum.GameContent.dll"]), "game content")
+      const targets = LAYOUT.map(({ live }) => ({ assembly: live.join("/"), patchedHash: `sha256:${sha256(readFileSync(livePath(live)))}` }))
+      writeFileSync(livePath([".optimum", "manifest.json"]), JSON.stringify({ optimumVersion: "0.3.14", targets }))
+    }
+
+    /** The official installer run over a linked folder: the new build's assemblies, and the state folder untouched. */
+    function updateInPlace(...assemblies: string[][]): void {
+      for (const live of assemblies) writeFileSync(livePath(live), original("1.22.8", live.join("/")))
+    }
+
+    function assertLeftAsFound(): void {
+      assert.deepEqual(readFileSync(vanillaPath(["VintagestoryLib.vanilla.dll"])), original("1.22.7", "VintagestoryLib.dll"))
+      assert.equal(existsSync(livePath([".optimum", "manifest.json"])), true)
+      assert.equal(existsSync(livePath(["Optimum.Api.Contracts.dll"])), true)
+    }
+
+    it("puts the originals back when the live assemblies are the ones the patch wrote", async () => {
+      patchedBuildWithRecord()
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.7", "VintagestoryLib.dll"))
+      assert.deepEqual(readFileSync(livePath(["Mods", "VSEssentials.dll"])), original("1.22.7", "Mods/VSEssentials.dll"))
+      assert.equal(existsSync(livePath([".optimum"])), false)
+    })
+
+    it("does not copy the older backups over a build updated in place, and drops them with Optimum's own files", async () => {
+      patchedBuildWithRecord()
+      updateInPlace(["VintagestoryLib.dll"], ["VintagestoryAPI.dll"], ["Mods", "VSEssentials.dll"])
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true, buildUpdated: true })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.8", "VintagestoryLib.dll"))
+      assert.deepEqual(readFileSync(livePath(["Mods", "VSEssentials.dll"])), original("1.22.8", "Mods/VSEssentials.dll"))
+      assert.equal(existsSync(livePath([".optimum"])), false)
+      assert.equal(existsSync(livePath(["Optimum.Api.Contracts.dll"])), false)
+      assert.equal(existsSync(livePath(["Optimum.GameContent.dll"])), false)
+    })
+
+    it("counts an update that left an assembly byte for byte as it was as an update", async () => {
+      patchedBuildWithRecord()
+      updateInPlace(["VintagestoryLib.dll"])
+      writeFileSync(livePath(["VintagestoryAPI.dll"]), original("1.22.7", "VintagestoryAPI.dll"))
+      writeFileSync(livePath(["Mods", "VSEssentials.dll"]), original("1.22.7", "Mods/VSEssentials.dll"))
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true, buildUpdated: true })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.8", "VintagestoryLib.dll"))
+    })
+
+    it("refuses a mix of an assembly the update replaced and ones the patch wrote, and changes nothing", async () => {
+      patchedBuildWithRecord()
+      updateInPlace(["Mods", "VSEssentials.dll"])
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: false, reason: "build-unrecognized" })
+      assertLeftAsFound()
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), patched("0.3.14", "VintagestoryLib.dll"))
+      assert.deepEqual(readFileSync(livePath(["Mods", "VSEssentials.dll"])), original("1.22.8", "Mods/VSEssentials.dll"))
+    })
+
+    it("refuses an assembly that is not a managed image and matches nothing, since nothing says what it is", async () => {
+      patchedBuildWithRecord()
+      writeFileSync(livePath(["VintagestoryAPI.dll"]), "not an assembly")
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: false, reason: "build-unrecognized" })
+      assertLeftAsFound()
+    })
+
+    it("accepts an assembly that is already its backup, so a second attempt after a partial restore still finishes", async () => {
+      patchedBuildWithRecord()
+      writeFileSync(livePath(["VintagestoryLib.dll"]), original("1.22.7", "VintagestoryLib.dll"))
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryAPI.dll"])), original("1.22.7", "VintagestoryAPI.dll"))
+    })
+
+    it("restores over a live assembly that is gone, since there is nothing newer to protect", async () => {
+      patchedBuildWithRecord()
+      rmSync(livePath(["VintagestoryLib.dll"]))
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.7", "VintagestoryLib.dll"))
+      assert.equal(existsSync(livePath([".optimum"])), false)
+    })
+
+    it("restores into a game folder that has no Mods folder, creating it", async () => {
+      patchedBuildWithRecord()
+      rmSync(livePath(["Mods"]), { recursive: true })
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+      assert.deepEqual(readFileSync(livePath(["Mods", "VSEssentials.dll"])), original("1.22.7", "Mods/VSEssentials.dll"))
+      assert.deepEqual(readdirSync(livePath(["Mods"])), ["VSEssentials.dll"])
+      assert.equal(existsSync(livePath([".optimum"])), false)
+    })
+
+    it("trusts the record over the assembly's own references, so a patched file that names no Optimum assembly still restores", async () => {
+      patchedBuildWithRecord()
+      const lib = original("overlay", "VintagestoryLib.dll")
+      writeFileSync(livePath(["VintagestoryLib.dll"]), lib)
+      const manifestPath = livePath([".optimum", "manifest.json"])
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { targets: { assembly: string; patchedHash: string }[] }
+      for (const target of manifest.targets) if (target.assembly === "VintagestoryLib.dll") target.patchedHash = `sha256:${sha256(lib)}`
+      writeFileSync(manifestPath, JSON.stringify(manifest))
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.7", "VintagestoryLib.dll"))
+    })
+
+    it("restores a build an interrupted Update Optimum left, whatever mix of the two overlays it holds", async () => {
+      patchedBuildWithRecord()
+      // The newer overlay replaced the core assembly and the run died before it recorded anything.
+      writeFileSync(livePath(["VintagestoryLib.dll"]), patched("0.3.15", "VintagestoryLib.dll"))
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.7", "VintagestoryLib.dll"))
+      assert.deepEqual(readFileSync(livePath(["VintagestoryAPI.dll"])), original("1.22.7", "VintagestoryAPI.dll"))
+    })
+
+    it("restores a build an interrupted Update Optimum left with every assembly replaced, since none matches the record", async () => {
+      patchedBuildWithRecord()
+      for (const { live } of LAYOUT) writeFileSync(livePath(live), patched("0.3.15", live.join("/")))
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+      assert.deepEqual(readFileSync(livePath(["Mods", "VSEssentials.dll"])), original("1.22.7", "Mods/VSEssentials.dll"))
+    })
+
+    it("restores a patched build whose record is gone, on what the assemblies themselves say", async () => {
+      patchedBuildWithRecord()
+      rmSync(livePath([".optimum", "manifest.json"]))
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.7", "VintagestoryLib.dll"))
+    })
+
+    it("does not look at the live files when a failed patch rolls itself back", async () => {
+      patchedBuildWithRecord()
+      updateInPlace(["VintagestoryLib.dll"])
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: true })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.7", "VintagestoryLib.dll"))
+      assert.equal(existsSync(livePath([".optimum"])), false)
+    })
+
+    describe("when the copy back is stopped partway", () => {
+      afterEach(() => {
+        vi.restoreAllMocks()
+      })
+
+      it("leaves the live assembly whole when a copy fails after writing part of it, and a second attempt finishes", async () => {
+        patchedBuildWithRecord()
+        const realCopy = fse.copyFile.bind(fse)
+        // What a full disk does: some bytes reach the destination, then the call fails.
+        vi.spyOn(fse, "copyFile").mockImplementationOnce(async (_from, to) => {
+          writeFileSync(String(to), original("1.22.7", "VintagestoryLib.dll").subarray(0, 40))
+          throw Object.assign(new Error("ENOSPC"), { code: "ENOSPC" })
+        })
+
+        assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: false, reason: "restore-failed" })
+        assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), patched("0.3.14", "VintagestoryLib.dll"))
+        assert.deepEqual(readdirSync(gameDirectory).sort(), [".optimum", "Mods", "Optimum.Api.Contracts.dll", "Optimum.GameContent.dll", "VintagestoryAPI.dll", "VintagestoryLib.dll"])
+        assertLeftAsFound()
+
+        vi.mocked(fse.copyFile).mockImplementation(realCopy)
+        assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+        assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.7", "VintagestoryLib.dll"))
+      })
+    })
+
+    needsTheFakeCli("refuses to update a build the game was updated over in place, and patches nothing", async () => {
+      const manifest = buildOverlay()
+      assert.deepEqual(await apply(manifest), { ok: true })
+      updateInPlace(["VintagestoryLib.dll"], ["VintagestoryAPI.dll"], ["Mods", "VSEssentials.dll"])
+
+      assert.deepEqual(await apply(manifest), { ok: false, reason: "build-changed" })
+      assert.deepEqual(readFileSync(livePath(["VintagestoryLib.dll"])), original("1.22.8", "VintagestoryLib.dll"))
+      assert.equal(readFileSync(vanillaPath(["VintagestoryLib.vanilla.dll"]), "utf8"), "vanilla lib")
+    })
+
+    needsTheFakeCli("then lets Optimum be added again once Remove Optimum has cleared what the update left", async () => {
+      const manifest = buildOverlay()
+      await apply(manifest)
+      updateInPlace(["VintagestoryLib.dll"], ["VintagestoryAPI.dll"], ["Mods", "VSEssentials.dll"])
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true, buildUpdated: true })
+      assert.deepEqual(await apply(manifest), { ok: true })
+      assert.deepEqual(readFileSync(vanillaPath(["VintagestoryLib.vanilla.dll"])), original("1.22.8", "VintagestoryLib.dll"))
+    })
+
+    needsTheFakeCli("restores a build the real flow patched and nothing touched since", async () => {
+      await apply(buildOverlay())
+
+      assert.deepEqual(await restoreVanillaBuild(gameDirectory, REMOVE), { ok: true })
+      assert.equal(readFileSync(livePath(["VintagestoryLib.dll"]), "utf8"), "vanilla lib")
+      assert.equal(existsSync(livePath([".optimum"])), false)
+    })
+  })
+
   describe("the game content assembly", () => {
     it("removes it when the patch put it in a build that had none", async () => {
       const vanilla = patchedBuild()
@@ -455,9 +673,9 @@ describe("restoreVanillaBuild", () => {
 
     it("keeps the state folder when it cannot be put back, so the backups are still there to try again", async () => {
       const vanilla = patchedBuild()
-      writeFileSync(join(gameDirectory, "Optimum.GameContent.dll"), "optimum game content")
-      // A folder where the backup should be is a copy that cannot be made, on every platform.
-      mkdirSync(join(vanilla, "Optimum.GameContent.dll"))
+      writeFileSync(join(vanilla, "Optimum.GameContent.dll"), "the build's own copy")
+      // A folder where the file should go is a replacement that cannot be made, on every platform.
+      mkdirSync(join(gameDirectory, "Optimum.GameContent.dll", "inside"), { recursive: true })
 
       assert.deepEqual(await restoreVanillaBuild(gameDirectory), { ok: false, reason: "restore-failed" })
       assert.equal(existsSync(join(vanilla, "VintagestoryLib.vanilla.dll")), true)
