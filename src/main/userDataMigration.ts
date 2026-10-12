@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs"
+import { constants, realpathSync } from "node:fs"
 import { basename, dirname, join, posix, relative, win32 } from "node:path"
 import fse from "fs-extra"
 
@@ -38,6 +38,8 @@ export interface UserDataSetup {
   readonly copied: readonly string[]
   /** Whether a half-finished copy from an earlier run was thrown away first. */
   readonly cleanedStaleMigration: boolean
+  /** Failure details when outcome is "migration-failed". */
+  readonly failureReason?: string
 }
 
 export interface PortableUserDataPaths {
@@ -120,6 +122,94 @@ export function getPortableUserDataPaths(platform: "win32" | "linux", executable
   }
 }
 
+/** Throws if a legacy profile path is a symlink, junction or owned by another user. */
+function assertTrustedLegacyProfile(legacyPath: string): void {
+  const legacyStats = ((): fse.Stats | null => {
+    try {
+      return fse.lstatSync(legacyPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+      throw error
+    }
+  })()
+
+  if (legacyStats) {
+    if (legacyStats.isSymbolicLink() || !legacyStats.isDirectory()) {
+      throw new Error(`Legacy profile is not a folder (link or junction): ${legacyPath}`)
+    }
+    if (!isOwnedByThisUser(legacyStats)) throw new Error(`Legacy profile belongs to another user: ${legacyPath}`)
+  }
+}
+
+/** Config copies accept regular files up to 16 MiB, including a config link's target. */
+const MAX_MIGRATED_CONFIG_BYTES = 16 * 1024 * 1024
+
+/**
+ * Reads a config a migration is about to carry over, refusing anything that is not a regular file
+ * of at most 16 MiB.
+ *
+ * `reportedPath` is the path its messages name. The portable copy reads a temporary copy of the
+ * profile, which is deleted before a player could look at it, so that call names the profile's own
+ * file instead.
+ */
+function readMigrationConfig(source: string, reportedPath = source): Buffer {
+  const descriptor = fse.openSync(source, constants.O_RDONLY | constants.O_NONBLOCK)
+  try {
+    const stats = fse.fstatSync(descriptor)
+    if (!stats.isFile()) throw new Error(`Config is not a regular file: ${reportedPath}`)
+    if (stats.size > MAX_MIGRATED_CONFIG_BYTES) throw new Error(`Config exceeds the 16 MiB migration limit: ${reportedPath}`)
+    const contents = Buffer.alloc(stats.size + 1)
+    let length = 0
+    while (length < contents.length) {
+      const count = fse.readSync(descriptor, contents, length, contents.length - length, null)
+      if (count === 0) break
+      length += count
+    }
+    if (length > stats.size) throw new Error(`Config changed size while it was read: ${reportedPath}`)
+    return contents.subarray(0, length)
+  } finally {
+    fse.closeSync(descriptor)
+  }
+}
+
+function assertOwnedSourceProfile(profilePath: string): void {
+  const stats = fse.statSync(profilePath)
+  if (!stats.isDirectory()) throw new Error(`Profile path is not a folder: ${profilePath}`)
+  if (!isOwnedByThisUser(stats)) throw new Error(`Profile folder belongs to another user: ${profilePath}`)
+}
+
+function copyLegacyUserDataEntries(legacyPath: string, temporaryPath: string, entries: readonly string[]): string[] {
+  const copied: string[] = []
+  for (const entry of entries) {
+    const source = join(legacyPath, entry)
+    try {
+      fse.lstatSync(source)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+      throw error
+    }
+
+    const destination = join(temporaryPath, entry)
+    if (entry === "config.json") {
+      try {
+        fse.writeFileSync(destination, readMigrationConfig(source))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+        throw error
+      }
+    } else {
+      fse.copySync(source, destination, {
+        filter: (sourceEntry) => {
+          if (!fse.lstatSync(sourceEntry).isSymbolicLink()) return true
+          throw new Error(`Legacy profile contains a symbolic link that cannot be copied safely: ${relative(legacyPath, sourceEntry)}`)
+        }
+      })
+    }
+    copied.push(entry)
+  }
+  return copied
+}
+
 /**
  * Picks the user-data folder and carries VS Launcher's data over the first time.
  *
@@ -151,33 +241,26 @@ export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
   if (plan.cleanStaleMigration) fse.removeSync(temporaryPath)
 
   if (plan.action !== "migrate") {
+    if (plan.action === "use-existing") assertOwnedSourceProfile(realpathSync.native(riftPath))
     fse.ensureDirSync(riftPath)
     return { path: riftPath, outcome: plan.action, copied: [], cleanedStaleMigration: plan.cleanStaleMigration }
   }
 
-  const copied: string[] = []
-
   try {
+    assertTrustedLegacyProfile(legacyPath)
     fse.ensureDirSync(temporaryPath)
-
-    for (const entry of plan.copy) {
-      const source = join(legacyPath, entry)
-      if (!fse.existsSync(source)) continue
-      fse.copySync(source, join(temporaryPath, entry))
-      copied.push(entry)
-    }
-
+    const copied = copyLegacyUserDataEntries(legacyPath, temporaryPath, plan.copy)
     fse.moveSync(temporaryPath, riftPath)
-  } catch {
+    return { path: riftPath, outcome: "migrate", copied, cleanedStaleMigration: plan.cleanStaleMigration }
+  } catch (error) {
     // A migration that cannot finish must not stop the launcher from starting.
-    // The leftover goes, the player gets an empty folder, and VS Launcher's own
-    // data is still there to try again from on the next run.
+    // The leftover goes, the player gets an empty folder, and deleting the empty
+    // RiftLauncher folder allows retrying once the issue is resolved.
     fse.removeSync(temporaryPath)
     fse.ensureDirSync(riftPath)
-    return { path: riftPath, outcome: "migration-failed", copied: [], cleanedStaleMigration: plan.cleanStaleMigration }
+    const failureReason = error instanceof Error ? error.message : String(error)
+    return { path: riftPath, outcome: "migration-failed", copied: [], cleanedStaleMigration: plan.cleanStaleMigration, failureReason }
   }
-
-  return { path: riftPath, outcome: "migrate", copied, cleanedStaleMigration: plan.cleanStaleMigration }
 }
 
 function migratePortableDefaultFolders(profilePath: string, sourceProfilePath: string, appDataPath: string, dataPath: string): void {
@@ -197,7 +280,7 @@ function migratePortableDefaultFolders(profilePath: string, sourceProfilePath: s
       throw error
     }
 
-    const contents = fse.readFileSync(isSymbolicLink ? join(sourceProfilePath, fileName) : configPath)
+    const contents = readMigrationConfig(isSymbolicLink ? join(sourceProfilePath, fileName) : configPath, join(sourceProfilePath, fileName))
     let output: Buffer | string = contents
     let changed = false
     try {
@@ -271,6 +354,8 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
   try {
     if (hasCurrentProfile) {
       const sourceProfilePath = realpathSync.native(currentProfilePath)
+      assertOwnedSourceProfile(sourceProfilePath)
+
       fse.copySync(sourceProfilePath, temporaryPath, {
         filter: (source) => {
           const profileEntry = relative(sourceProfilePath, source)
@@ -285,30 +370,9 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
       })
       migratePortableDefaultFolders(temporaryPath, sourceProfilePath, appDataPath, dataPath)
     } else {
+      assertTrustedLegacyProfile(legacyProfilePath)
       fse.ensureDirSync(temporaryPath)
-      for (const entry of MIGRATED_USER_DATA_ENTRIES) {
-        const source = join(legacyProfilePath, entry)
-        let sourceIsSymbolicLink = false
-        try {
-          sourceIsSymbolicLink = fse.lstatSync(source).isSymbolicLink()
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
-          throw error
-        }
-
-        const destination = join(temporaryPath, entry)
-        if (entry === "config.json" && sourceIsSymbolicLink) {
-          fse.writeFileSync(destination, fse.readFileSync(source))
-        } else {
-          fse.copySync(source, destination, {
-            filter: (sourceEntry) => {
-              if (!fse.lstatSync(sourceEntry).isSymbolicLink()) return true
-              throw new Error(`Legacy profile contains a symbolic link that cannot be copied safely: ${relative(legacyProfilePath, sourceEntry)}`)
-            }
-          })
-        }
-        copied.push(entry)
-      }
+      copied.push(...copyLegacyUserDataEntries(legacyProfilePath, temporaryPath, MIGRATED_USER_DATA_ENTRIES))
     }
 
     fse.moveSync(temporaryPath, dataPath)
@@ -337,7 +401,7 @@ export function describeUserDataSetup(setup: UserDataSetup): string {
     case "portable-profile-migrated":
       return `Copied the existing RiftLauncher profile to the portable data folder; the original was left untouched.${stale}`
     case "migration-failed":
-      return `Could not copy the VS Launcher user data folder. Starting on an empty RiftLauncher folder.${stale}`
+      return `Could not copy the VS Launcher user data folder${setup.failureReason ? ` (${setup.failureReason})` : ""}. Starting on an empty RiftLauncher folder.${stale}`
     case "fresh":
       return `Created a new RiftLauncher user data folder.${stale}`
     case "unavailable":
