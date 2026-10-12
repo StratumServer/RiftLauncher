@@ -516,7 +516,13 @@ describe("a gzipped tar whose entries fail to land", () => {
     }
 
     const result = await restoreInstallationBackup(
-      { fileSystem, extractor, ids: { newId: (): string => "token" }, closeGuard: { acquire: () => (): void => {} } },
+      {
+        fileSystem,
+        extractor,
+        ids: { newId: (): string => "token" },
+        closeGuard: { acquire: () => (): void => {} },
+        installationLease: { acquire: async () => ({ ok: true, release: (): void => {} }) }
+      },
       {
         installation: {
           id: "install-1",
