@@ -3,7 +3,7 @@ import { beforeEach, describe, it } from "vitest"
 
 import { makeInstallationBackup } from "../../../src/domain/installations/backup"
 import type { BackupRecord, InstallationSnapshot, MakeInstallationBackupEvents, MakeInstallationBackupPorts } from "../../../src/domain/installations/backup"
-import type { Archiver, CompressOutcome, CompressRequest, FileSystem } from "../../../src/domain/ports"
+import type { Archiver, CompressOutcome, CompressRequest, FileSystem, InstallationLease, InstallationLeaseOutcome } from "../../../src/domain/ports"
 
 // Local wall-clock 2025-08-16 01:20:00, whatever zone the runner is in: the archive name
 // carries the host's own clock now (see formatTimestampForFilename), so the expected stamp
@@ -58,6 +58,9 @@ function fakeArchiver(options: { outcome?: CompressOutcome; silent?: boolean } =
   return { archiver, requests }
 }
 
+/** A lease that always grants and says nothing; the tests that care about it pass their own. */
+const grantedLease: InstallationLease = { acquire: async (): Promise<InstallationLeaseOutcome> => ({ ok: true, release: (): void => {} }) }
+
 function fakePorts(overrides: Partial<MakeInstallationBackupPorts> = {}): MakeInstallationBackupPorts {
   let issued = 0
   return {
@@ -79,6 +82,7 @@ function fakePorts(overrides: Partial<MakeInstallationBackupPorts> = {}): MakeIn
         }
       }
     },
+    installationLease: grantedLease,
     ...overrides
   }
 }
@@ -604,5 +608,62 @@ describe("makeInstallationBackup archiving", () => {
     const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot(), backupsFolder: "/backups" })
 
     assert.equal(result.ok === false && result.reason, "compress-failed")
+  })
+})
+
+/** A host lease that records when it was taken and given back, and can be told to refuse. */
+function recordingLease(answer: InstallationLeaseOutcome | "grant" = "grant"): InstallationLease {
+  return {
+    acquire: async (installationId: string): Promise<InstallationLeaseOutcome> => {
+      trace.push(`lease-acquire:${installationId}`)
+      if (answer !== "grant") return answer
+      return {
+        ok: true,
+        release: (): void => {
+          trace.push("lease-release")
+        }
+      }
+    }
+  }
+}
+
+describe("makeInstallationBackup host reservation", () => {
+  it("holds the installation on the host from before the compression until after it", async () => {
+    const result = await makeInstallationBackup(fakePorts({ installationLease: recordingLease() }), { installation: snapshot(), backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    const kept = trace.filter((entry) => entry.startsWith("lease-") || entry.startsWith("compress:") || entry === "finished")
+    assert.equal(kept[0], "lease-acquire:installation-1")
+    assert.match(kept[1] ?? "", /^compress:/)
+    assert.deepEqual(kept.slice(2), ["lease-release", "finished"])
+  })
+
+  it("gives the installation back when the compression fails", async () => {
+    const archiver = fakeArchiver({ outcome: { ok: false, error: "7z exploded" } }).archiver
+
+    const result = await makeInstallationBackup(fakePorts({ installationLease: recordingLease(), archiver }), { installation: snapshot(), backupsFolder: "/backups" })
+
+    assert.equal(result.ok === false && result.reason, "compress-failed")
+    assert.equal(trace.at(-1), "lease-release")
+  })
+
+  it("refuses before pruning or compressing when a world operation holds the installation", async () => {
+    const result = await makeInstallationBackup(
+      fakePorts({ installationLease: recordingLease({ ok: false, reason: "busy" }) }),
+      { installation: snapshot(), backupsFolder: "/backups" },
+      recordingEvents()
+    )
+
+    assert.equal(result.ok === false && result.reason, "installation-busy")
+    assert.equal(
+      trace.some((entry) => entry.startsWith("compress:") || entry.startsWith("remove:") || entry.startsWith("guard-") || entry === "started"),
+      false
+    )
+  })
+
+  it("refuses when the host says a game is running on the installation", async () => {
+    const result = await makeInstallationBackup(fakePorts({ installationLease: recordingLease({ ok: false, reason: "playing" }) }), { installation: snapshot(), backupsFolder: "/backups" })
+
+    assert.equal(result.ok === false && result.reason, "installation-playing")
   })
 })

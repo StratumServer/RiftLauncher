@@ -1,6 +1,6 @@
 import { cleanFolderName, formatTimestampForFilename } from "../naming"
 import { parentFolder } from "../paths"
-import type { Archiver, Clock, CloseGuard, CompressOutcome, FileSystem, IdGenerator, PathBuilder } from "../ports"
+import type { Archiver, Clock, CloseGuard, CompressOutcome, FileSystem, IdGenerator, InstallationLease, PathBuilder } from "../ports"
 import { deleteInstallationBackup } from "./backupDeletion"
 
 /** Folder the launcher groups installation archives under, inside the backups folder. */
@@ -66,6 +66,7 @@ export interface MakeInstallationBackupPorts {
   ids: IdGenerator
   paths: PathBuilder
   closeGuard: CloseGuard
+  installationLease: InstallationLease
 }
 
 export interface MakeInstallationBackupInput {
@@ -232,6 +233,9 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
   if (!backupsFolder) return refuse("no-backups-folder")
   if (installation.backupsLimit <= 0) return refuse("backups-disabled")
 
+  const lease = await ports.installationLease.acquire(installation.id)
+  if (!lease.ok) return refuse(lease.reason === "playing" ? "installation-playing" : "installation-busy")
+
   const release = ports.closeGuard.acquire(BACKUP_CLOSE_GUARD_REASON)
   events.onStarted?.()
 
@@ -265,6 +269,7 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
     return { ok: true, backup, deletedBackupIds: pruned?.deletedBackupIds ?? [] }
   } finally {
     release()
+    lease.release()
     events.onFinished?.()
   }
 }
