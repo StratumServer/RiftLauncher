@@ -90,7 +90,6 @@
       "uninstallVersion": "卸载版本",
       "noVersionsFound": "未找到任何版本！",
       "areYouSureUninstall": "您确定要卸载游戏版本 {{version}} 吗？",
-      "uninstallingNotReversible": "卸载过程不可逆，但是您随时可以再次下载该版本。",
       "noVersionSelected": "未检测到任何版本!",
       "versionAlreadyInstalled": "版本 {{version}} 已经安装！",
       "noVersionFoundOnThatFolder": "无法自动识别该文件夹中的游戏版本。如果您确定其中已安装 Vintage Story，请在下方填写版本号。",

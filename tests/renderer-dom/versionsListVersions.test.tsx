@@ -6,6 +6,7 @@ import type { UninstallGameVersionFailure } from "@domain/versions/uninstall"
 import ListVersions from "@renderer/features/versions/pages/ListVersions"
 import { describeUninstallFailure } from "@renderer/features/versions/adapters/uninstall"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
+import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 import i18n, { changeLanguage } from "@renderer/i18n"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
@@ -121,6 +122,137 @@ describe("ListVersions", () => {
 
     await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
     expect(api.pathsManager.deletePath).toHaveBeenCalledWith("/versions/1.20.4")
+  })
+
+  it("names the folder the uninstall deletes and says everything in it goes", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/versions/1.20.4" }] })) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+    await user.click(screen.getByTitle("Delete Version"))
+
+    expect(await screen.findByText(/deletes the folder \/versions\/1\.20\.4 and everything in it/)).toBeTruthy()
+  })
+
+  /**
+   * #707: a version registered on a folder that also holds an Installation, another VS Version or a
+   * configured root cannot be deleted whole (the delete policy refuses), and used to fail the same
+   * way on every retry. It is removed from the list, its folder is kept, and the dialogs say so.
+   */
+  describe.each([
+    {
+      held: "an Installation",
+      config: { installations: [anInstallation({ id: "world", name: "World", path: "/games/MyWorlds", gameVersionId: "other" })] }
+    },
+    {
+      held: "another VS Version",
+      config: {
+        gameVersions: [
+          { version: "1.20.4", path: "/games" },
+          { version: "1.21.0", path: "/games/1.21.0" }
+        ]
+      }
+    },
+    { held: "a configured root", config: { defaultInstallationsFolder: "/games/Installations" } }
+  ])("a VS Version on a folder that holds $held", ({ config }) => {
+    it("keeps the folder, drops the entry and says why", async () => {
+      const user = userEvent.setup()
+      const api = installMockWindowApi({
+        configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/games" }], ...config })) },
+        pathsManager: { deletePath: vi.fn(async () => false) }
+      })
+
+      renderWithProviders(
+        <TaskProvider>
+          <ListVersions />
+          <NotificationsOverlay />
+        </TaskProvider>,
+        { route: "/versions" }
+      )
+
+      await screen.findByText("1.20.4")
+      await user.click(screen.getByTitle("Remove from List"))
+
+      expect(await screen.findByText(/The folder \/games stays where it is: it also holds Installations, other VS Versions or folders the launcher uses/)).toBeTruthy()
+      expect(screen.queryByText(/deletes the folder/)).toBeNull()
+
+      await user.click(screen.getAllByTitle("Remove from List").at(-1) as HTMLElement)
+
+      expect(await screen.findByText(/Its folder was kept because it also holds Installations/)).toBeTruthy()
+      await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+      expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+      expect(screen.queryByText(/An error occurred while uninstalling/)).toBeNull()
+    })
+  })
+
+  it("compares the folders without regard to case on macOS, as the host does", async () => {
+    installMockWindowApi({
+      utils: { getOs: vi.fn(async () => "darwin" as NodeJS.Platform) },
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [{ version: "1.20.4", path: "/games" }],
+            installations: [anInstallation({ id: "world", name: "World", path: "/Games/MyWorlds", gameVersionId: "other" })]
+          })
+        )
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+    await waitFor(() => expect(screen.queryByTitle("Delete Version")).toBeNull())
+    expect(screen.getByTitle("Remove from List")).toBeTruthy()
+  })
+
+  it("does not claim the in-use warning deletes a folder that holds an Installation", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [{ version: "1.20.4", path: "/games" }],
+            installations: [anInstallation({ id: "world", name: "Survival World", path: "/games/MyWorlds", gameVersionId: "gv-1" })]
+          })
+        )
+      },
+      pathsManager: { deletePath: vi.fn(async () => false) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+    await user.click(screen.getByTitle("Remove from List"))
+    await user.click(screen.getAllByTitle("Remove from List").at(-1) as HTMLElement)
+
+    await screen.findByText(/Survival World still uses this VS Version/)
+    await waitFor(() => expect(screen.queryByText("Are you sure you want to remove VS Version 1.20.4 from the list?")).toBeNull())
+    expect(screen.getByText(/The folder \/games stays where it is/)).toBeTruthy()
+    expect(screen.queryByText(/deletes the folder/)).toBeNull()
+
+    await user.click(screen.getByTitle("Delete anyway"))
+
+    await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
   })
 
   it("warns naming every installation still on that version, and cancelling deletes nothing", async () => {

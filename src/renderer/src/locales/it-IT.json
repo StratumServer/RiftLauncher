@@ -90,7 +90,6 @@
       "uninstallVersion": "Disinstalla versione",
       "noVersionsFound": "Nessuna versione trovata!",
       "areYouSureUninstall": "Sei sicuro di voler disinstallare la versione di VS {{version}}?",
-      "uninstallingNotReversible": "La disinstallazione non è reversibile ma puoi sempre scaricare la stessa versione!",
       "noVersionSelected": "Nessuna versione selezionata!",
       "versionAlreadyInstalled": "La Versione {{version}} è già installata!",
       "noVersionFoundOnThatFolder": "Nessuna versione di VS rilevata automaticamente in quella cartella. Se sei sicuro che Vintage Story sia installato lì, scrivi la versione qui sotto.",

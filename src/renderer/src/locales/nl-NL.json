@@ -90,7 +90,6 @@
       "uninstallVersion": "VS-versie de-installeren",
       "noVersionsFound": "Geen versie gevonden",
       "areYouSureUninstall": "Weet je zeker dat je VS-versie {{version}} wilt de-installeren?",
-      "uninstallingNotReversible": "Verwijderen kan niet ongedaan worden gemaakt, maar je kan deze versie opnieuw downloaden!",
       "noVersionSelected": "Geen versie geselecteerd",
       "versionAlreadyInstalled": "Versie {{version}} is al geinstalleerd!",
       "noVersionFoundOnThatFolder": "In die map is niet automatisch een VS-versie herkend. Als je zeker weet dat Vintage Story er staat, typ de versie dan hieronder in.",

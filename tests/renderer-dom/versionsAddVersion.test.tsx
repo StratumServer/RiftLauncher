@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 
 import AddVersion from "@renderer/features/versions/pages/AddVersion"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
+import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -67,6 +68,54 @@ describe("AddVersion", () => {
     expect(folder.readOnly).toBe(true)
     await user.type(folder, "/somewhere/else")
     expect(folder.value).toBe("/versions/1.20.4")
+  })
+
+  /** #707: a version is deleted whole on uninstall, so Browse must not hand it a folder that already holds the player's files. */
+  it("refuses a non-empty folder from Browse and keeps the suggested one", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ defaultVersionsFolder: "/versions" })) },
+      netManager: { queryURL: vi.fn(async (url: string) => (url.endsWith("stable.json") ? JSON.stringify(STABLE) : JSON.stringify({}))) },
+      utils: { selectFolderDialog: vi.fn(async () => ["/games"]) },
+      pathsManager: { checkPathEmpty: vi.fn(async () => false) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <AddVersion />
+        <NotificationsOverlay />
+      </TaskProvider>,
+      { route: "/versions/add" }
+    )
+
+    await user.click(await screen.findByText("1.20.4"))
+    const folder = (await screen.findByPlaceholderText("VS Version folder")) as HTMLInputElement
+    await waitFor(() => expect(folder.value).toBe("/versions/1.20.4"))
+
+    await user.click(screen.getByTitle("Browse"))
+
+    expect(await screen.findByText(/pick an empty folder/i)).toBeTruthy()
+    expect(folder.value).toBe("/versions/1.20.4")
+  })
+
+  it("takes an empty folder from Browse", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ defaultVersionsFolder: "/versions" })) },
+      netManager: { queryURL: vi.fn(async (url: string) => (url.endsWith("stable.json") ? JSON.stringify(STABLE) : JSON.stringify({}))) },
+      utils: { selectFolderDialog: vi.fn(async () => ["/games/vs"]) },
+      pathsManager: { checkPathEmpty: vi.fn(async () => true) }
+    })
+
+    renderAddVersion()
+
+    await user.click(await screen.findByText("1.20.4"))
+    const folder = (await screen.findByPlaceholderText("VS Version folder")) as HTMLInputElement
+    await waitFor(() => expect(folder.value).toBe("/versions/1.20.4"))
+
+    await user.click(screen.getByTitle("Browse"))
+
+    await waitFor(() => expect(folder.value).toBe("/games/vs"))
   })
 
   it("renders the failure sentence with no spinner when the catalog fetch fails", async () => {
