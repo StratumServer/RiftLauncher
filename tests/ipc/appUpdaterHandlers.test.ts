@@ -114,6 +114,8 @@ let temporaryRoot: string
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // clearAllMocks keeps an implementation a test installed, and the throwing one would leak into the tests after it.
+  mockState.quitAndInstall.mockReset()
   temporaryRoot = mkdtempSync(join(tmpdir(), "app-updater-handlers-"))
   mockState.userDataDir = join(temporaryRoot, "userData")
 })
@@ -315,5 +317,51 @@ describe("UPDATE_AND_RESTART", () => {
     await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
 
     assert.equal(mockState.quitAndInstall.mock.calls.length, 1)
+  })
+
+  // The game for a whole play session and each guarded task (Update all, a Mod download, a Version
+  // install, a backup, a restore, an Optimum patch) all hold the window's close guard the same way,
+  // through SET_PREVENT_APP_CLOSE, and the code never reads the description they log. So one holder
+  // stands for all of them. The click on the persistent "Restart and update" toast must not reach
+  // quitAndInstall (#702): it starts the installer and only then quits, and before-quit shuts the
+  // download, archive and query lanes for good before the window's close handler vetoes the quit.
+  it("refuses the restart while the close guard is held, and tells the renderer to say so and offer the restart again", async () => {
+    const handlers = await loadHandlers()
+    const { setShouldPreventClose } = await import("@src/utils/shouldPreventClose")
+    handlers.markUpdateDownloaded()
+    setShouldPreventClose("add", "task-1", "Started Update all.")
+    const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+
+    assert.equal(mockState.quitAndInstall.mock.calls.length, 0)
+    // The renderer marks the notification answered on the click and hides its button, so the
+    // second message is what brings the restart offer back.
+    assert.deepEqual((event.sender.send as ReturnType<typeof vi.fn>).mock.calls, [[IPC_CHANNELS.UTILS.PREVENTED_APP_CLOSE], [IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED]])
+  })
+
+  it("keeps the downloaded update on offer after a refusal, so a later click restarts once nothing is running", async () => {
+    const handlers = await loadHandlers()
+    const { setShouldPreventClose } = await import("@src/utils/shouldPreventClose")
+    handlers.markUpdateDownloaded()
+    setShouldPreventClose("add", "game-session", "Started playing Vintage Story.")
+    const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+    setShouldPreventClose("remove", "game-session", "Finished playing Vintage Story.")
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+
+    assert.equal(mockState.quitAndInstall.mock.calls.length, 1)
+    assert.deepEqual(mockState.quitAndInstall.mock.calls[0], [true, true])
+  })
+
+  it("does not tell the player anything when it restarts", async () => {
+    const handlers = await loadHandlers()
+    handlers.markUpdateDownloaded()
+    const event = (await createTrustedEvent()) as unknown as IpcMainEvent
+
+    await send(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, event)
+
+    assert.equal((event.sender.send as ReturnType<typeof vi.fn>).mock.calls.length, 0)
   })
 })

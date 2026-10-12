@@ -1,4 +1,4 @@
-import type { CloseGuard, ExtractOutcome, Extractor, FileSystem, IdGenerator } from "../ports"
+import type { CloseGuard, ExtractOutcome, Extractor, FileSystem, IdGenerator, InstallationLease } from "../ports"
 import type { BackupRecord, InstallationSnapshot } from "./backup"
 
 /** Reason handed to the close guard while a restore runs. */
@@ -41,6 +41,7 @@ export interface RestoreInstallationBackupPorts {
   extractor: Extractor
   ids: IdGenerator
   closeGuard: CloseGuard
+  installationLease: InstallationLease
 }
 
 export interface RestoreInstallationBackupInput {
@@ -102,6 +103,9 @@ export async function restoreInstallationBackup(
   if (installation.isRestoringBackup) return refuse("restore-in-progress")
   if (!(await ports.fileSystem.exists(backup.path))) return refuse("backup-file-missing")
 
+  const lease = await ports.installationLease.acquire(installation.id)
+  if (!lease.ok) return refuse(lease.reason === "playing" ? "installation-playing" : "installation-busy")
+
   const token = ports.ids.newId()
   const stagingPath = `${installation.path}${RESTORE_STAGING_SUFFIX}${token}`
   const replacedPath = `${installation.path}${RESTORE_REPLACED_SUFFIX}${token}`
@@ -138,6 +142,7 @@ export async function restoreInstallationBackup(
     return { ok: true }
   } finally {
     release()
+    lease.release()
     events.onFinished?.()
   }
 }

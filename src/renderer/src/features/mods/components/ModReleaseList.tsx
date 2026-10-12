@@ -158,6 +158,7 @@ function ModReleaseList({
                         // Deliberately not awaited: the caller leaves on the click and the download
                         // runs on in the task list, which is what this flow has always done.
                         void installMod({
+                          installationId: installation.installation.id,
                           installationPath: installation.installation.path,
                           outName: installation.installation.name,
                           modName: downloadableModToInstall.name || modName || String(modToInstall ?? ""),

@@ -105,7 +105,7 @@ The domain is consumed from both ends but depends on neither. The preload script
 
 Almost every domain service returns a discriminated union instead of throwing: `{ ok: true; ... }` or `{ ok: false; reason: <named union> }`. A few examples, picked because each names its reasons differently:
 
-- `src/domain/installations/backup.ts`: `MakeInstallationBackupResult = { ok: true; backup: BackupRecord; deletedBackupIds: string[] } | { ok: false; reason: MakeInstallationBackupFailure; deletedBackupIds: string[] }`, with `MakeInstallationBackupFailure` an 8-member union (`installation-busy`, `installation-playing`, `restore-in-progress`, `installation-path-missing`, `no-backups-folder`, `backups-disabled`, `prune-failed`, `compress-failed`).
+- `src/domain/installations/backup.ts`: `MakeInstallationBackupResult = { ok: true; backup: BackupRecord; deletedBackupIds: string[] } | { ok: false; reason: MakeInstallationBackupFailure; deletedBackupIds: string[] }`, with `MakeInstallationBackupFailure` a 7-member union (`installation-busy`, `installation-playing`, `restore-in-progress`, `installation-path-missing`, `no-backups-folder`, `backups-disabled`, `compress-failed`).
 - `src/domain/mods/moddb.ts`: `ModDbResponse<T> = { ok: true; payload: T } | { ok: false; reason: ModDbApiFailure; statusCode?: string }`.
 - `src/domain/config/migrations.ts`: a 6-member `ConfigMigrationOutcome` (`unreadable`, `already-current`, `migrated`, `future-schema`, `chain-broken`, `migration-failed`), each with a one-line comment on why it is not folded into another.
 
@@ -120,7 +120,6 @@ export function describeBackupFailure(reason: MakeInstallationBackupFailure): Ba
       return { messageKey: "features.backups.backupInProgress", logged: false }
     case "restore-in-progress":
       return { messageKey: "features.backups.restoreInProgress", logged: false }
-    case "prune-failed":
     case "compress-failed":
       return { messageKey: "features.backups.errorMakingBackup", logged: true }
     case "installation-path-missing":

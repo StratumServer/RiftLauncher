@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next"
 import { MAX_GAME_VERSION_LABEL_LENGTH } from "@domain/naming"
 import { toFolderPlatform, type FolderPlatform } from "@domain/paths"
 import { isUpdateAvailable, supportsGameVersion } from "@domain/optimum/plan"
+import { isInterruptedInstall } from "@domain/versions/interruptedInstall"
 import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
 import { CONFIG_ACTIONS, useConfigDispatch, useGameVersions, useInstallations, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
@@ -223,14 +224,27 @@ function ListVersions(): JSX.Element {
                 const optimumAction = optimumActionFor(gv)
                 const isBrokenOptimum = brokenOptimumVersions.has(gv.id)
                 // Everything that writes into the folder, or launches out of it,
-                // is refused while the launcher is writing into it itself.
+                // is refused while the launcher is writing into it itself. An install that was cut off
+                // refuses the same things except removal, which is the way out of it.
+                const interrupted = isInterruptedInstall(gv)
                 const busy = gv._installing === true
 
                 return (
                   <ListItem key={gv.id}>
                     <div className="w-full h-8 flex gap-2 p-1 justify-between items-center">
                       <div className="w-full min-w-0 flex items-center justify-center gap-2 text-start font-bold pl-1">
-                        <p className={isBrokenOptimum ? "w-full min-w-0 truncate" : "w-full"}>{gv.label}</p>
+                        <p className={isBrokenOptimum || interrupted ? "w-full min-w-0 truncate" : "w-full"}>{gv.label}</p>
+                        {interrupted && (
+                          <>
+                            <span className="sr-only">{t("features.versions.installInterruptedDesc")}</span>
+                            <span
+                              className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-red-400"
+                              title={t("features.versions.installInterruptedDesc")}
+                            >
+                              {t("features.versions.installInterrupted")}
+                            </span>
+                          </>
+                        )}
                         {isBrokenOptimum && (
                           <>
                             <span className="sr-only">{t("features.versions.optimumMissingAssembliesDesc")}</span>
@@ -253,14 +267,14 @@ function ListVersions(): JSX.Element {
                             className="p-1"
                             title={t(optimumAction === "add" ? "features.versions.addOptimum" : "features.versions.updateOptimumTo", { version: optimum.manifest?.optimumVersion ?? "" })}
                             variant="ghost"
-                            disabled={busy}
+                            disabled={busy || interrupted}
                             onClick={() => ApplyOptimumHandler(gv)}
                           >
                             <PiArrowCircleUpDuotone />
                           </NormalButton>
                         )}
                         {(gv.variant || optimumBackups.has(gv.id)) && (
-                          <NormalButton className="p-1" title={t("features.versions.restoreVanilla")} variant="ghost" disabled={busy} onClick={() => setVersionToRestore(gv)}>
+                          <NormalButton className="p-1" title={t("features.versions.restoreVanilla")} variant="ghost" disabled={busy || interrupted} onClick={() => setVersionToRestore(gv)}>
                             <PiArrowUUpLeftDuotone />
                           </NormalButton>
                         )}

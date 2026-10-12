@@ -59,6 +59,12 @@ function ListInslallations(): JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
+  // Every way out of the dialog (Cancel, Escape, a click outside, a finished delete) leaves it unticked, so the next one never inherits the choice.
+  function closeDeleteDialog(): void {
+    setInstallationToDelete(null)
+    setDeleteData(false)
+  }
+
   async function DeleteInstallationHandler(): Promise<void> {
     if (!installationToDelete) return addNotification(t("features.installations.noInstallationSelected"), "error")
 
@@ -93,8 +99,7 @@ function ListInslallations(): JSX.Element {
 
       addNotification(t("features.installations.installationSuccessfullyDeleted"), "success")
     } finally {
-      setInstallationToDelete(null)
-      setDeleteData(false)
+      closeDeleteDialog()
     }
   }
 
@@ -259,7 +264,7 @@ function ListInslallations(): JSX.Element {
         <ConfirmDialog
           title={t("features.installations.deleteInstallation")}
           isOpen={installationToDelete !== null}
-          close={() => setInstallationToDelete(null)}
+          close={closeDeleteDialog}
           question={t("features.installations.areYouSureDelete")}
           consequence={t("features.installations.deletingNotReversible")}
           confirmLabel={t("generic.delete")}

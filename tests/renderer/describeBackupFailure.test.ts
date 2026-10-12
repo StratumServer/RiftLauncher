@@ -28,10 +28,6 @@ describe("describeBackupFailure notification key", () => {
     assert.equal(describeBackupFailure("compress-failed", undefined).messageKey, "features.backups.compressWriteFailed")
   })
 
-  it("gives prune failures their own sentence", () => {
-    assert.equal(describeBackupFailure("prune-failed", "b2").messageKey, "features.backups.pruneFailed")
-  })
-
   it("keeps the existing keys for the reasons with no cause to carry", () => {
     assert.equal(describeBackupFailure("installation-busy").messageKey, "features.backups.backupInProgress")
     assert.equal(describeBackupFailure("installation-playing").messageKey, "features.backups.backupWhilePlaying")
@@ -47,10 +43,6 @@ describe("describeBackupFailure error-log line", () => {
     const { logLine } = describeBackupFailure("compress-failed", "Error compressing [PATH]: Error: Compression source is too large")
     assert.ok(logLine?.includes("compress-failed"))
     assert.ok(logLine?.includes("Compression source is too large"), `expected the cause in the log line, got: ${logLine}`)
-  })
-
-  it("logs only the reason for a prune failure, never the backup path it could not remove", () => {
-    assert.equal(describeBackupFailure("prune-failed", "b2").logLine, "Error creating backup: prune-failed")
   })
 
   it("logs the reason with no cause when there is none", () => {

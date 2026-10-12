@@ -151,7 +151,8 @@ export function useOptimumActions(): OptimumActions {
   }
 
   async function putVanillaBack(target: OptimumTarget): Promise<boolean> {
-    let restored: OptimumPatchResult = { ok: false, reason: "engine-internal" }
+    // Asserted rather than annotated, so the callback's assignment is not narrowed away below.
+    let restored = { ok: false, reason: "engine-internal" } as OptimumPatchResult
     await startOptimumPatch(
       t("features.versions.optimumRestoreTaskName"),
       t("features.versions.optimumRestoreDesc"),
@@ -167,7 +168,7 @@ export function useOptimumActions(): OptimumActions {
     if (!restored.ok) return refuse(restored)
 
     configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: target.id, updates: { variant: undefined, label: buildGameVersionLabel(target.version) } } })
-    addNotification(t("features.versions.optimumRestored"), "success")
+    addNotification(t(restored.buildUpdated ? "features.versions.optimumRestoredUpdated" : "features.versions.optimumRestored"), "success")
     return true
   }
 

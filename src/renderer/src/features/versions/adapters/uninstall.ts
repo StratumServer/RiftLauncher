@@ -1,7 +1,7 @@
 import type { GameVersionSnapshot, UninstallGameVersionFailure, UninstallGameVersionPorts } from "@domain/versions/uninstall"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 
-/** Wires the uninstall service onto the renderer. It only needs to remove a folder. */
+/** Wires the uninstall service onto the renderer. It removes a folder, after asking whether an unfinished install ever got one. */
 export function createUninstallPorts(): UninstallGameVersionPorts {
   return { fileSystem: createFileSystemPort() }
 }
@@ -13,7 +13,8 @@ export function toGameVersionSnapshot(version: GameVersionType): GameVersionSnap
     path: version.path,
     isPlaying: version._playing ?? false,
     isDeleting: version._deleting ?? false,
-    linked: version.linked === true
+    linked: version.linked === true,
+    incomplete: version.incomplete === true
   }
 }
 

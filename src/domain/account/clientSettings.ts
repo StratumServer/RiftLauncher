@@ -76,6 +76,8 @@ export interface AccountSessionFields {
   playerUid: string
   playerName: string
   hostGameServer: boolean
+  /** When this session last changed on the launcher's side (see {@link AccountSecrets.updatedAt}). Absent for a session stored before that was recorded. */
+  sessionUpdatedAt?: number
 }
 
 /**
@@ -145,22 +147,39 @@ export function mergeSessionIntoClientSettings(existingDocument: unknown, sessio
  * missing or different is left alone and overwritten, which is what the
  * launcher has always done.
  *
- * Known limit: newer is inferred, never verified. There is no endpoint here to ask
- * whether a key is still live, so "the game wrote it, so the service accepted
- * it" is the whole argument. If the adopted key was itself invalidated in the
- * meantime the player gets one more prompt and the game writes another one,
- * which still terminates. Validating before adopting needs a session-check
- * endpoint mapped first.
+ * ## Which key is newer
+ *
+ * A different `sessionkey` is not a newer one. Every Installation has its own
+ * settings file, so the one launched least recently holds the oldest key, and
+ * adopting it would put a retired key over the launcher's live one, or over a
+ * login the player has just made in the launcher (issue #712). What says
+ * "newer" is time: the launcher's session records when it last changed, and a
+ * key counts only when the file was written after that. A session stored
+ * before that was recorded has no date, and keeps the older rule (any
+ * different key) until the next login or adoption dates it. A dated session
+ * and a file that cannot say when it was written adopt nothing: writing the
+ * launcher's own key is what the launcher has always done, and the game's
+ * prompt covers the rest.
+ *
+ * Known limit: newer is still inferred, never verified. There is no endpoint
+ * here to ask whether a key is still live, so "the game wrote it after our
+ * session, so the service accepted it" is the whole argument. A game that
+ * saves its settings while holding an old key, in the middle of a login made
+ * elsewhere, can still look newer once, and the prompt that follows writes
+ * another one. Validating before adopting needs a session-check endpoint mapped
+ * first.
  */
-function sessionToAdopt(existingDocument: unknown, session: AccountSessionFields): AccountSecrets | null {
+function sessionToAdopt(existingDocument: unknown, session: AccountSessionFields, modifiedAt: number | undefined): AccountSecrets | null {
   const stringSettings = existingStringSettings(existingDocument)
   if (stringSettings.sessionkey === session.sessionKey) return null
   if (stringSettings.playeruid !== session.playerUid) return null
+  if (session.sessionUpdatedAt !== undefined && (modifiedAt === undefined || modifiedAt <= session.sessionUpdatedAt)) return null
 
   return parseStoredSecrets({
     sessionKey: stringSettings.sessionkey,
     sessionSignature: stringSettings.sessionsignature,
-    mptoken: stringSettings.mptoken
+    mptoken: stringSettings.mptoken,
+    updatedAt: modifiedAt
   })
 }
 
@@ -241,7 +260,7 @@ export async function writeClientSettingsSession(ports: WriteClientSettingsSessi
   const modPaths = input.modPaths ? repointModPaths(existing.document, input.modPaths) : { document: existing.document, outcome: "unchanged" as const }
   const notice = modPaths.outcome === "unchanged" ? {} : { modPaths: modPaths.outcome }
 
-  const adoptable = sessionToAdopt(existing.document, input.session)
+  const adoptable = sessionToAdopt(existing.document, input.session, existing.modifiedAt)
   if (adoptable) {
     if (modPaths.outcome !== "repointed") return { outcome: "adopted", secrets: adoptable, ...notice }
     const repointed = await ports.jsonFile.write(input.settingsPath, modPaths.document)
@@ -251,6 +270,42 @@ export async function writeClientSettingsSession(ports: WriteClientSettingsSessi
   const written = await ports.jsonFile.write(input.settingsPath, mergeSessionIntoClientSettings(modPaths.document, input.session))
 
   return written.ok ? { outcome: "written", ...notice } : { outcome: "write-failed" }
+}
+
+/**
+ * Settles the settings file with the launcher's store once the game has closed, and gives back
+ * the session the game saved while it ran when that one is worth keeping.
+ *
+ * Two things can have happened while the game ran, and they are told apart by `stored`, the
+ * launcher's session as it stands now, against `handed`, the session the game was started with
+ * (its `sessionUpdatedAt` is the date that session had then).
+ *
+ * The launcher's session changed (a login made in the launcher, or another game's adoption at its
+ * exit): it is newer than anything the file holds, so it is laid over the file and nothing is
+ * adopted. The game saves its settings as it closes, whatever key it holds, which makes the file
+ * younger than that login; left as it is, the next launch of this Installation would take the file
+ * for the newer one and throw the login away (issue #712). Writing the login into the file makes
+ * the two agree. A failed write costs that one launch, not more.
+ *
+ * Otherwise the game's own login prompt in one Installation retires the keys every other
+ * Installation holds, so the key it just saved is the only live one, and storing it now keeps the
+ * next launch from handing another Installation a retired key. A file still holding the key the
+ * game was handed has nothing to report, however recently the game saved its settings.
+ */
+export async function reconcileClientSettingsAfterPlay(
+  ports: WriteClientSettingsSessionPorts,
+  input: { settingsPath: string; handed: AccountSessionFields; stored: AccountSecrets }
+): Promise<AccountSecrets | null> {
+  const existing = await ports.jsonFile.read(input.settingsPath)
+  if (!existing.ok) return null
+
+  if ((input.stored.updatedAt ?? 0) > (input.handed.sessionUpdatedAt ?? 0)) {
+    const { sessionKey, sessionSignature, mptoken } = input.stored
+    await ports.jsonFile.write(input.settingsPath, mergeSessionIntoClientSettings(existing.document, { ...input.handed, sessionKey, sessionSignature, mptoken }))
+    return null
+  }
+
+  return sessionToAdopt(existing.document, { ...input.handed, sessionUpdatedAt: input.stored.updatedAt }, existing.modifiedAt)
 }
 
 /**

@@ -473,6 +473,70 @@ describe("ListVersions", () => {
     expect(api.pathsManager.deletePath).toHaveBeenCalledWith("/versions/1.20.4")
   })
 
+  // An install the launcher did not see finish (#710): marked as such, and removable so the player
+  // can install it again. A build that finished, or one still being installed, carries no such mark.
+  it("marks an interrupted install and lets the player remove it", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [
+              { id: "cut-off", label: "1.22.7", version: "1.22.7", path: "/versions/1.22.7", incomplete: true },
+              { id: "done", label: "1.22.6", version: "1.22.6", path: "/versions/1.22.6" },
+              { id: "running", label: "1.22.5", version: "1.22.5", path: "/versions/1.22.5", incomplete: true, _installing: true }
+            ]
+          })
+        )
+      },
+      pathsManager: { deletePath: vi.fn(async () => true), checkPathExists: vi.fn(async () => true) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.22.7")
+    expect(screen.getAllByText("Install interrupted")).toHaveLength(1)
+
+    const deleteButtons = screen.getAllByTitle("Delete Version")
+    expect((deleteButtons[0] as HTMLButtonElement).disabled).toBe(false)
+    await user.click(deleteButtons[0]!)
+    await user.click(await screen.findByTitle("Uninstall"))
+
+    await waitFor(() => expect(screen.queryByText("1.22.7")).toBeNull())
+    expect(api.pathsManager.deletePath).toHaveBeenCalledWith("/versions/1.22.7")
+  })
+
+  // Cut off before the first response, the folder was never created and the host refuses to delete
+  // a path it cannot find: the row has to go anyway (#710).
+  it("removes an interrupted install whose folder was never created", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ id: "cut-off", label: "1.22.7", version: "1.22.7", path: "/versions/1.22.7", incomplete: true }] }))
+      },
+      pathsManager: { deletePath: vi.fn(async () => false), checkPathExists: vi.fn(async () => false) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.22.7")
+    await user.click(screen.getByTitle("Delete Version"))
+    await user.click(await screen.findByTitle("Uninstall"))
+
+    await waitFor(() => expect(screen.queryByText("1.22.7")).toBeNull())
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+  })
+
   it("unregisters a linked version without deleting its folder", async () => {
     const user = userEvent.setup()
     const api = installMockWindowApi({

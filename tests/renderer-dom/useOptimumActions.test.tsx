@@ -173,6 +173,63 @@ describe("useOptimumActions", () => {
     ).toBeTruthy()
   })
 
+  // A failed rollback keeps the run's own reason and leaves `rolledBack` unset,
+  // so the same missing assembly reaches the adapter with a folder that still
+  // holds the patched assemblies, the Optimum contracts and `.optimum`. Naming
+  // the assembly there told the player their files were put back, which the row
+  // next to it contradicts: it reads Missing Optimum files and offers Remove.
+  it("does not claim the files were put back when the rollback itself failed", async () => {
+    const { result } = mountWith({
+      pathsManager: { downloadOnPath: vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz") },
+      optimumManager: { applyOverlay: vi.fn(async () => ({ ok: false, reason: "missing-assembly", missingAssembly: "Optimum.GameContent.dll" }) as OptimumPatchResult) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.actions.applyOptimum(TARGET, MANIFEST)
+    })
+
+    expect(await screen.findByText("The original files couldn't be put back. Check that nothing else is using this folder.")).toBeTruthy()
+    expect(screen.queryByText(/the original game files were put back/)).toBeNull()
+  })
+
+  // `rolledBack: false` is the same refusal with the flag stated rather than
+  // omitted, which is the shape a caller that knows it tried and failed sends.
+  it("treats an explicit rolledBack false the same as a missing flag", async () => {
+    const { result } = mountWith({
+      pathsManager: { downloadOnPath: vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz") },
+      optimumManager: { applyOverlay: vi.fn(async () => ({ ok: false, reason: "missing-assembly", missingAssembly: "Optimum.GameContent.dll", rolledBack: false }) as OptimumPatchResult) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.actions.applyOptimum(TARGET, MANIFEST)
+    })
+
+    expect(await screen.findByText("The original files couldn't be put back. Check that nothing else is using this folder.")).toBeTruthy()
+    expect(screen.queryByText(/the original game files were put back/)).toBeNull()
+  })
+
+  // Same sibling as the case above: `optimumInstall.ts:166` routes a failed
+  // run's own `output-unverified` through `rollBackFailedRun`, so it arrives
+  // with the restore unfinished too. Its sentence says what ran and what the
+  // folder holds and claims nothing about a restore, which is the property
+  // worth pinning: the refusal that names the folder must only do so truthfully.
+  it("describes an unverified run without claiming a restore when the rollback failed", async () => {
+    const { result } = mountWith({
+      pathsManager: { downloadOnPath: vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz") },
+      optimumManager: { applyOverlay: vi.fn(async () => ({ ok: false, reason: "output-unverified" }) as OptimumPatchResult) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.actions.applyOptimum(TARGET, MANIFEST)
+    })
+
+    expect(await screen.findByText("Optimum ran but the VS Version doesn't hold what it reported writing.")).toBeTruthy()
+    expect(screen.queryByText(/the original game files were put back/)).toBeNull()
+  })
+
   it("marks the build as being written to for as long as the patch runs", async () => {
     // Play, Delete and a second patch all read this flag. Without it the row is
     // live for the twenty minutes a patch can take to rewrite four assemblies.
@@ -242,5 +299,70 @@ describe("useOptimumActions", () => {
     expect(restored).toBe(false)
     expect(result.current.versions[0]).toMatchObject({ label: "1.22.7 Optimum 0.3.14" })
     expect(await screen.findByText("This VS Version carries no copy of its original files, so they can't be put back.")).toBeTruthy()
+  })
+
+  it("tells the player to remove Optimum and add it again, and keeps the row as Optimum, when Add or Update finds the backups belong to an older build", async () => {
+    const { result } = mountWith({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({ gameVersions: [{ id: "gv-1", version: "1.22.7", label: "1.22.7 Optimum 0.3.14", path: "/versions/1.22.7", variant: { name: "Optimum", version: "0.3.14" } }] })
+        )
+      },
+      pathsManager: { downloadOnPath: vi.fn(async () => "/userdata/Cache/Optimum/overlay.tar.gz") },
+      optimumManager: { applyOverlay: vi.fn(async () => ({ ok: false, reason: "build-changed" }) as OptimumPatchResult) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    let restored = true
+    await act(async () => {
+      restored = await result.current.actions.applyOptimum(TARGET, MANIFEST)
+    })
+
+    expect(restored).toBe(false)
+    expect(result.current.versions[0]).toMatchObject({ label: "1.22.7 Optimum 0.3.14" })
+    expect(await screen.findByText(/the backups Optimum kept may belong to an older build.*Remove Optimum from it, then add it again/)).toBeTruthy()
+  })
+
+  it("tells the player to reinstall, and keeps the row as Optimum, when Remove finds files it cannot account for", async () => {
+    const { result } = mountWith({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({ gameVersions: [{ id: "gv-1", version: "1.22.7", label: "1.22.7 Optimum 0.3.14", path: "/versions/1.22.7", variant: { name: "Optimum", version: "0.3.14" } }] })
+        )
+      },
+      optimumManager: { restoreVanilla: vi.fn(async () => ({ ok: false, reason: "build-unrecognized" }) as OptimumPatchResult) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    let restored = true
+    await act(async () => {
+      restored = await result.current.actions.restoreVanilla(TARGET)
+    })
+
+    expect(restored).toBe(false)
+    expect(result.current.versions[0]).toMatchObject({ label: "1.22.7 Optimum 0.3.14" })
+    expect(await screen.findByText(/neither what Optimum wrote nor an original build.*Reinstall the VS Version over this folder/)).toBeTruthy()
+  })
+
+  it("says the game was already original, and takes the variant off the row, when Remove finds a build updated in place", async () => {
+    const { result } = mountWith({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({ gameVersions: [{ id: "gv-1", version: "1.22.7", label: "1.22.7 Optimum 0.3.14", path: "/versions/1.22.7", variant: { name: "Optimum", version: "0.3.14" } }] })
+        )
+      },
+      optimumManager: { restoreVanilla: vi.fn(async () => ({ ok: true, buildUpdated: true }) as OptimumPatchResult) }
+    })
+    await waitFor(() => expect(result.current.versions).toHaveLength(1))
+
+    let restored = false
+    await act(async () => {
+      restored = await result.current.actions.restoreVanilla(TARGET)
+    })
+
+    expect(restored).toBe(true)
+    expect(result.current.versions[0]).toMatchObject({ label: "1.22.7" })
+    expect(result.current.versions[0]?.variant).toBeUndefined()
+    expect(await screen.findByText(/was updated after Optimum was added, so its game files were already the original ones/)).toBeTruthy()
   })
 })
