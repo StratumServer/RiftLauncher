@@ -143,13 +143,18 @@ describe("LOGIN", () => {
   it("returns the public account and stores the secrets on a first-pass success", async () => {
     transportAnswers(SUCCESS_BODY)
 
+    const before = Date.now()
     const result = await loginHandler()(trustedEvent, EMAIL, PASSWORD)
 
     assert.deepEqual(result, {
       status: "success",
       account: { email: EMAIL, playerName: "Placeholder Player", playerUid: "placeholder-uid", playerEntitlements: "singleplayer", hostGameServer: false }
     })
-    assert.deepEqual(vi.mocked(saveAccountSecrets).mock.calls, [["placeholder-uid", { sessionKey: "placeholder-session-key", sessionSignature: "placeholder-session-signature", mptoken: null }]])
+    const [uid, saved] = vi.mocked(saveAccountSecrets).mock.calls[0] ?? []
+    assert.equal(uid, "placeholder-uid")
+    // The login dates the session, which is how a key an Installation has held since before it is told from a newer one (#712).
+    assert.ok(saved?.updatedAt !== undefined && saved.updatedAt >= before && saved.updatedAt <= Date.now(), "the stored session carries the time of the login")
+    assert.deepEqual({ ...saved, updatedAt: undefined }, { sessionKey: "placeholder-session-key", sessionSignature: "placeholder-session-signature", mptoken: null, updatedAt: undefined })
   })
 
   it("sends nothing back to the renderer that the store is meant to hold", async () => {

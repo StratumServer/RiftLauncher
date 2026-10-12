@@ -64,7 +64,7 @@ async function settle(verdict: LoginVerdict): Promise<AccountLoginResult> {
       // saved overwrites its entry in place: a session refresh, not a duplicate.
       let outcome: AccountSaveOutcome
       try {
-        outcome = await saveAccountSecrets(verdict.credentials.publicAccount.playerUid, verdict.credentials.secrets)
+        outcome = await saveAccountSecrets(verdict.credentials.publicAccount.playerUid, { ...verdict.credentials.secrets, updatedAt: Date.now() })
       } catch (error) {
         // Only the narrow "could not even copy the unreadable file aside" case gets its own
         // wire status: anything else (no keyring, disk full) is a genuine storage failure and

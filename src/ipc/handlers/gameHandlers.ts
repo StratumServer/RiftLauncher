@@ -22,7 +22,7 @@ import { scanInstalledMods } from "@domain/mods/scanInstalled"
 import { createScanInstalledModsPorts } from "@src/ipc/adapters/modScan"
 import { buildGameLaunchPlan } from "@domain/versions/launch"
 import { joinTargetUrl, resolveServerBookmark } from "@domain/servers/bookmarks"
-import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, writeClientSettingsSession } from "@domain/account/clientSettings"
+import { CLIENT_SETTINGS_FILE_NAME, clearForeignClientSettingsSession, reconcileClientSettingsAfterPlay, writeClientSettingsSession, type AccountSessionFields } from "@domain/account/clientSettings"
 import { MODS_FOLDER_NAME } from "@domain/mods/folder"
 import {
   appendStderrScan,
@@ -127,7 +127,8 @@ function realJsonFile(): JsonFile {
     read: async (path: string): Promise<JsonFileReadResult> => {
       try {
         if (!(await fse.pathExists(path))) return { ok: true, document: undefined }
-        return { ok: true, document: await fse.readJSON(path, "utf-8") }
+        const document = await fse.readJSON(path, "utf-8")
+        return { ok: true, document, modifiedAt: (await fse.stat(path)).mtimeMs }
       } catch (err) {
         return { ok: false, error: getErrorMessage(err) }
       }
@@ -167,6 +168,22 @@ async function adoptRefreshedSession(accountId: string, secrets: AccountSecrets)
     logMessage("error", `${LOG_PREFIX} [EXECUTE_GAME] Could not store the session the game refreshed. Launching anyway.`)
     logMessage("debug", `${LOG_PREFIX} [EXECUTE_GAME] ${getErrorMessage(err)}`)
   }
+}
+
+/**
+ * Settles the settings file with the store once the game has closed, and stores the session the
+ * game saved into it while it ran (see {@link reconcileClientSettingsAfterPlay}, issue #712).
+ *
+ * `handed` is the session the game was started with. What the store holds is read again here, not
+ * taken from the launch: a login made in the launcher while the game ran is newer than anything the
+ * game saved. An account removed while the game ran has nothing in the store, and a session the
+ * game saved for it is not stored back under a uid nothing names any more.
+ */
+async function adoptSessionSavedDuringPlay(accountId: string, handed: { settingsPath: string; session: AccountSessionFields }): Promise<void> {
+  const stored = await getAccountSecrets(accountId)
+  if (!stored) return
+  const refreshed = await reconcileClientSettingsAfterPlay({ jsonFile: realJsonFile() }, { settingsPath: handed.settingsPath, handed: handed.session, stored })
+  if (refreshed) await adoptRefreshedSession(accountId, refreshed)
 }
 
 /**
@@ -346,6 +363,8 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
     return invalidExecutableResult()
   }
 
+  let handedSession: { settingsPath: string; session: AccountSessionFields } | undefined
+
   if (account && accountSecrets) {
     logMessage("info", `${LOG_PREFIX} [EXECUTE_GAME] Logged in. Setting session keys.`)
 
@@ -360,23 +379,18 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
 
     const modsPath = join(safeInstallation.path, MODS_FOLDER_NAME)
 
-    const written = await writeClientSettingsSession(
-      { jsonFile: realJsonFile() },
-      {
-        settingsPath,
-        session: {
-          mptoken: accountSecrets.mptoken,
-          sessionKey: accountSecrets.sessionKey,
-          sessionSignature: accountSecrets.sessionSignature,
-          email: account.email,
-          playerEntitlements: account.playerEntitlements,
-          playerUid: account.playerUid,
-          playerName: account.playerName,
-          hostGameServer: account.hostGameServer
-        },
-        modPaths: { installationPath: safeInstallation.path, modsPath }
-      }
-    )
+    const accountSession: AccountSessionFields = {
+      mptoken: accountSecrets.mptoken,
+      sessionKey: accountSecrets.sessionKey,
+      sessionSignature: accountSecrets.sessionSignature,
+      email: account.email,
+      playerEntitlements: account.playerEntitlements,
+      playerUid: account.playerUid,
+      playerName: account.playerName,
+      hostGameServer: account.hostGameServer,
+      sessionUpdatedAt: accountSecrets.updatedAt
+    }
+    const written = await writeClientSettingsSession({ jsonFile: realJsonFile() }, { settingsPath, session: accountSession, modPaths: { installationPath: safeInstallation.path, modsPath } })
 
     // Never logs what the file held: the path this installation was copied out of is untrusted
     // input and stays out of the log. The path we put there is our own and may be named.
@@ -388,9 +402,12 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
 
     switch (written.outcome) {
       case "written":
+        handedSession = { settingsPath, session: accountSession }
         break
       case "adopted":
         await adoptRefreshedSession(account.playerUid, written.secrets)
+        // The file keeps the game's key, so that is the one the game starts with.
+        handedSession = { settingsPath, session: { ...accountSession, sessionKey: written.secrets.sessionKey, sessionUpdatedAt: written.secrets.updatedAt } }
         break
       case "unreadable-settings":
       case "write-failed":
@@ -461,6 +478,7 @@ ipcMain.handle(IPC_CHANNELS.GAME_MANAGER.EXECUTE_GAME, async (event, version: un
   } finally {
     if (installationId) clearInstallationPlaying(installationId)
   }
+  if (account && handedSession && outcome.started) await adoptSessionSavedDuringPlay(account.playerUid, handedSession)
   if (session && installationId) {
     const stored = await recordPlaySession(installationId, session)
     const shape = session.partial ? "partial" : "complete"
