@@ -13,7 +13,7 @@
  * away from VS Launcher and nothing is ever deleted there: whatever that
  * installation still needs stays exactly where it was.
  *
- * Everything here is pure. It takes three answers about what exists on disk and
+ * Everything here is pure. It takes answers about what exists on disk and
  * returns what to do about it; probing and copying belong to the host.
  */
 
@@ -45,12 +45,23 @@ export const DEFAULT_INSTALLATIONS_FOLDER_NAME = "RiftLauncherInstallations"
 export const DEFAULT_VERSIONS_FOLDER_NAME = "RiftLauncherGameVersions"
 export const DEFAULT_BACKUPS_FOLDER_NAME = "RiftLauncherBackups"
 
+/**
+ * File a failed import leaves in the otherwise empty RiftLauncher folder.
+ *
+ * Its presence says "the VS Launcher data was never carried over", so the next start tries again.
+ * The import removes it on success, and the first config save that changes anything but the window
+ * position removes it too, which is the moment the folder stops being empty in any way that matters.
+ */
+export const IMPORT_PENDING_MARKER_FILE = "vs-launcher-import-pending"
+
 export type MigratedUserDataEntry = (typeof MIGRATED_USER_DATA_ENTRIES)[number]
 
 /** What the host found on disk, before anything is decided. */
 export interface UserDataProbe {
   /** Whether the RiftLauncher user-data folder is already there. */
   readonly riftExists: boolean
+  /** Whether that folder holds {@link IMPORT_PENDING_MARKER_FILE}, left by an import that failed. */
+  readonly riftImportPending: boolean
   /** Whether a VS Launcher user-data folder is there to copy from. */
   readonly vslExists: boolean
   /** Whether a temporary migration folder survived an earlier run. */
@@ -75,11 +86,12 @@ export type UserDataMigrationPlan =
   | (UserDataPlanBase & { readonly action: "fresh" })
 
 /**
- * Reads the three facts about the disk and says what the launcher should do.
+ * Reads the facts about the disk and says what the launcher should do.
  *
- * An existing RiftLauncher folder always wins: once the migration has run, the
+ * An existing RiftLauncher folder wins: once the migration has run, the
  * VS Launcher folder is somebody else's data and its later edits are none of
- * our business.
+ * our business. The one exception is a folder that still holds the failed-import
+ * marker: nothing was ever carried into it, so the import is tried again.
  *
  * @param probe What the host found on disk.
  * @returns The action to take, plus whether a stale temporary folder is in the way.
@@ -87,7 +99,8 @@ export type UserDataMigrationPlan =
 export function planUserDataMigration(probe: UserDataProbe): UserDataMigrationPlan {
   const cleanStaleMigration = probe.staleMigrationExists
 
-  if (probe.riftExists) return { action: "use-existing", cleanStaleMigration }
+  const importNotDone = probe.riftExists && probe.riftImportPending
+  if (probe.riftExists && !(importNotDone && probe.vslExists)) return { action: "use-existing", cleanStaleMigration }
   if (probe.vslExists) return { action: "migrate", cleanStaleMigration, copy: MIGRATED_USER_DATA_ENTRIES }
 
   return { action: "fresh", cleanStaleMigration }

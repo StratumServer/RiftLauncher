@@ -52,6 +52,34 @@ describe("config recovery notice (#554)", () => {
   })
 })
 
+describe("failed VS Launcher import notice (#708)", () => {
+  it("tells the player once that the import failed and will be tried at the next start", async () => {
+    // A copy of the provider of its own: the pulled notice is kept in a promise for the life of the module.
+    vi.resetModules()
+    const { NotificationsProvider: FreshProvider, useNotificationsContext: useFreshNotifications } = await import("@renderer/contexts/NotificationsContext")
+    let seen: NotificationType[] = []
+    function Probe(): null {
+      seen = useFreshNotifications().notifications
+      return null
+    }
+    const getConfigRecoveryNotice = vi.fn(async () => ({ kind: "import-failed" }) as ConfigRecoveryNotice)
+    installMockWindowApi({ configManager: { getConfigRecoveryNotice } })
+
+    render(
+      <FreshProvider>
+        <Probe />
+      </FreshProvider>
+    )
+
+    await waitFor(() => expect(seen).toHaveLength(1))
+    expect(seen[0]?.type).toBe("warning")
+    expect(seen[0]?.body).toBe(
+      "Your VS Launcher data couldn't be imported, so RiftLauncher started with an empty profile. It will try the import again the next time it starts, as long as you don't change anything in RiftLauncher before then. VS Launcher's own data was not changed."
+    )
+    expect(getConfigRecoveryNotice).toHaveBeenCalledTimes(1)
+  })
+})
+
 function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((resolveIt) => {

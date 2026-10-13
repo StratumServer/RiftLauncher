@@ -667,7 +667,7 @@ declare global {
 
   /**
    * What `getConfig` found on the read that mattered, pulled once by the renderer through
-   * GET_CONFIG_RECOVERY_NOTICE (#554). Two shapes:
+   * GET_CONFIG_RECOVERY_NOTICE (#554). Three shapes:
    *
    * - `kind: "unreadable"`: `config.json` parsed to bad JSON, or to valid JSON that is not an
    *   object. `restored` says whether a pre-migration backup was usable, or the launcher fell back
@@ -678,8 +678,10 @@ declare global {
    * - `kind: "read-failed"`: the file itself could not even be opened (permissions, a Windows
    *   sharing lock). Nothing says the document inside is corrupt, so there is nothing to preserve
    *   and no copy name to give: this session simply runs on defaults, in memory only.
+   * - `kind: "import-failed"`: the first-run copy of VS Launcher's data failed (#708). The launcher
+   *   started on an empty profile and leaves a marker so the next start tries the import again.
    */
-  type ConfigRecoveryNotice = { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null } | { kind: "read-failed" }
+  type ConfigRecoveryNotice = { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null } | { kind: "read-failed" } | { kind: "import-failed" }
 
   /**
    * Why COPY_TO_ICONS refused to put a picked file in the Icons folder. Every

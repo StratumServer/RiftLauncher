@@ -371,6 +371,11 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
         return
       }
 
+      if (notice.kind === "import-failed") {
+        addNotificationRef.current(t("notifications.body.userDataImportFailed"), "warning", { duration: null })
+        return
+      }
+
       const { restored, preserved, copyName } = notice
       const key = preserved
         ? restored

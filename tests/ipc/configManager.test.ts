@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { createRequire } from "node:module"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -41,6 +42,11 @@ import { DEFAULT_RECEIVE_BETA_UPDATES } from "@domain/appUpdate/betaUpdates"
 import { DEFAULT_ALLOW_BASIC_SESSION_STORE } from "@domain/account/sessionStorage"
 import { DEFAULT_MEASURE_PLAY_SESSIONS } from "@domain/sessions/sampling"
 import { CURRENT_CONFIG_SCHEMA, legacyGameVersionId } from "@domain/config/migrations"
+import { IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
+import { LEGACY_USER_DATA_FOLDER, RIFT_USER_DATA_FOLDER, setUpUserDataFolder } from "@src/main/userDataMigration"
+
+/** The graceful-fs that fs-extra renames through; it ships without types and is not a dependency of its own. */
+const gracefulFs = createRequire(import.meta.url)("graceful-fs") as typeof import("node:fs")
 
 let temporaryRoot: string
 let userDataFolder: string
@@ -1875,5 +1881,135 @@ describe("normalizeConfig: an account kept for this run only (#481)", () => {
       const config = normalizeConfig({ accounts: [{ ...savedAccount, sessionOnly: spelling }] })
       assert.deepEqual(config.accounts, [savedAccount], `sessionOnly: ${JSON.stringify(spelling)}`)
     }
+  })
+})
+
+/**
+ * #708: a start whose VS Launcher import failed leaves a marker in the empty profile, and the next
+ * start imports again unless the player has used the profile in between. Saves go through here, so
+ * this is where the marker has to go.
+ */
+describe("the failed-import marker and saveConfig", () => {
+  function markerPath(): string {
+    return join(userDataFolder, IMPORT_PENDING_MARKER_FILE)
+  }
+
+  beforeEach(() => {
+    writeFileSync(markerPath(), "", "utf-8")
+  })
+
+  it("survives the default config the launcher writes on a first start", async () => {
+    const { getConfig, flushConfigWrites } = await freshConfigManager()
+
+    await getConfig()
+    await flushConfigWrites()
+
+    assert.deepEqual(readdirSync(userDataFolder).sort(), ["config.json", IMPORT_PENDING_MARKER_FILE])
+  })
+
+  it("survives what a first start fills in by itself: the window, the changelog version and the ModDB answer", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    const config = await getConfig()
+
+    assert.equal(await saveConfig({ ...config, window: { width: 900, height: 600, x: 10, y: 20, maximized: true } }), true)
+    assert.equal(await saveConfig({ ...config, lastSeenChangelogVersion: "1.7.0" }), true)
+    assert.equal(await saveConfig({ ...config, moddbVisibility: { ...config.moddbVisibility, answeredVersion: "1.7.0" } }), true)
+
+    assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), true)
+  })
+
+  it("goes with the first save that holds something the player chose", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    const config = await getConfig()
+
+    assert.equal(await saveConfig({ ...config, favMods: [5] }), true)
+
+    assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), false)
+  })
+
+  it("is gone before the save that holds the player's choice is written", async () => {
+    const { getConfig, saveConfig, flushConfigWrites } = await freshConfigManager()
+    const config = await getConfig()
+    await flushConfigWrites()
+    const nodeFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs")
+    const original = nodeFs.rename
+    const markerAtWrite: boolean[] = []
+    const rename = vi.spyOn(nodeFs, "rename").mockImplementation(((from: string, to: string, callback: (error: NodeJS.ErrnoException | null) => void) => {
+      if (to.endsWith("config.json")) markerAtWrite.push(nodeFs.existsSync(markerPath()))
+      return original(from, to, callback)
+    }) as typeof nodeFs.rename)
+    try {
+      assert.equal(await saveConfig({ ...config, favMods: [5] }), true)
+    } finally {
+      rename.mockRestore()
+    }
+
+    assert.deepEqual(markerAtWrite, [false])
+  })
+
+  it("stays when that save does not reach the disk", async () => {
+    const { getConfig, saveConfig, flushConfigWrites } = await freshConfigManager()
+    const config = await getConfig()
+    await flushConfigWrites()
+    // A folder where config.json goes: the atomic rename onto it cannot succeed.
+    rmSync(join(userDataFolder, "config.json"))
+    mkdirSync(join(userDataFolder, "config.json", "inside"), { recursive: true })
+
+    assert.equal(await saveConfig({ ...config, favMods: [5] }), false)
+
+    assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), true)
+  })
+
+  it("hands the renderer one notice that the import failed, once", async () => {
+    const { noteUserDataImportFailed, takePendingConfigRecoveryNotice } = await freshConfigManager()
+
+    noteUserDataImportFailed()
+
+    assert.deepEqual(takePendingConfigRecoveryNotice(), { kind: "import-failed" })
+    assert.equal(takePendingConfigRecoveryNotice(), null)
+  })
+
+  it("keeps what the player did when the launcher starts again, and imports when they did nothing", async () => {
+    rmSync(userDataFolder, { recursive: true })
+    const legacy = join(appDataFolder, LEGACY_USER_DATA_FOLDER)
+    const rift = join(appDataFolder, RIFT_USER_DATA_FOLDER)
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, "config.json"), JSON.stringify(minimalConfig({ favMods: [1, 2, 3] })), "utf-8")
+    const original = gracefulFs.renameSync.bind(gracefulFs)
+    const rename = vi.spyOn(gracefulFs, "renameSync").mockImplementation(((from: string, to: string) => {
+      if (to === rift) throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC", syscall: "rename" })
+      return original(from, to)
+    }) as typeof gracefulFs.renameSync)
+    try {
+      assert.equal(setUpUserDataFolder(appDataFolder).outcome, "migration-failed")
+    } finally {
+      rename.mockRestore()
+    }
+
+    // First start: nothing but the defaults is saved, so the second start imports.
+    setElectronUserDataPath(rift)
+    const first = await freshConfigManager()
+    await first.getConfig()
+    await first.flushConfigWrites()
+    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "migrate")
+    assert.deepEqual((await (await freshConfigManager()).getConfig()).favMods, [1, 2, 3])
+
+    // A failed start again, then a start in which the player changes something.
+    rmSync(rift, { recursive: true })
+    const failing = vi.spyOn(gracefulFs, "renameSync").mockImplementation(((from: string, to: string) => {
+      if (to === rift) throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC", syscall: "rename" })
+      return original(from, to)
+    }) as typeof gracefulFs.renameSync)
+    try {
+      assert.equal(setUpUserDataFolder(appDataFolder).outcome, "migration-failed")
+    } finally {
+      failing.mockRestore()
+    }
+    const second = await freshConfigManager()
+    const config = await second.getConfig()
+    assert.equal(await second.saveConfig({ ...config, favMods: [9] }), true)
+
+    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "use-existing")
+    assert.deepEqual((await (await freshConfigManager()).getConfig()).favMods, [9])
   })
 })

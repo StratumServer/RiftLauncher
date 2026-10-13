@@ -2,7 +2,14 @@ import { constants, realpathSync } from "node:fs"
 import { basename, dirname, join, posix, relative, win32 } from "node:path"
 import fse from "fs-extra"
 
-import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, MIGRATED_USER_DATA_ENTRIES, planUserDataMigration } from "@domain/userData/migrationPlan"
+import {
+  DEFAULT_BACKUPS_FOLDER_NAME,
+  DEFAULT_INSTALLATIONS_FOLDER_NAME,
+  DEFAULT_VERSIONS_FOLDER_NAME,
+  IMPORT_PENDING_MARKER_FILE,
+  MIGRATED_USER_DATA_ENTRIES,
+  planUserDataMigration
+} from "@domain/userData/migrationPlan"
 import type { UserDataMigrationAction } from "@domain/userData/migrationPlan"
 
 /** Folder RiftLauncher keeps its own user data in, under the platform's appData. */
@@ -40,6 +47,10 @@ export interface UserDataSetup {
   readonly cleanedStaleMigration: boolean
   /** Failure details when outcome is "migration-failed". */
   readonly failureReason?: string
+  /** Whether a failed import left the marker that makes the next start try again. */
+  readonly importPending?: boolean
+  /** Set when a temporary copy folder could not be removed; the next start tries again. */
+  readonly temporaryFolderLeft?: boolean
 }
 
 export interface PortableUserDataPaths {
@@ -178,6 +189,83 @@ function assertOwnedSourceProfile(profilePath: string): void {
   if (!isOwnedByThisUser(stats)) throw new Error(`Profile folder belongs to another user: ${profilePath}`)
 }
 
+/** Errors worth waiting out: an antivirus scanner or an indexer holding the freshly copied files. */
+const TRANSIENT_MOVE_CODES = new Set(["EACCES", "EPERM", "EBUSY"])
+const MOVE_RETRY_WINDOW_MS = 3_000
+const FIRST_MOVE_RETRY_DELAY_MS = 50
+const MAX_MOVE_RETRY_DELAY_MS = 250
+
+/**
+ * `fse.moveSync` through graceful-fs `renameSync`, which unlike the async rename never retries on
+ * EPERM, EACCES or EBUSY. The profile is set up before anything else runs, so the wait is
+ * synchronous. The returned mover shares one budget of {@link MOVE_RETRY_WINDOW_MS} across every
+ * move of a setup, so startup waits that long in total however many entries are moved; the same
+ * delays as the config writer's.
+ */
+function createMoveWithRetry(): (source: string, destination: string, overwrite?: boolean) => void {
+  let waited = 0
+  let delay = FIRST_MOVE_RETRY_DELAY_MS
+  return (source, destination, overwrite = false) => {
+    for (;;) {
+      try {
+        fse.moveSync(source, destination, { overwrite })
+        return
+      } catch (error) {
+        if (!TRANSIENT_MOVE_CODES.has((error as NodeJS.ErrnoException).code ?? "") || waited >= MOVE_RETRY_WINDOW_MS) throw error
+        const pause = Math.min(delay, MOVE_RETRY_WINDOW_MS - waited)
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pause)
+        waited += pause
+        delay = Math.min(delay * 2, MAX_MOVE_RETRY_DELAY_MS)
+      }
+    }
+  }
+}
+
+/**
+ * Puts a finished import into a folder an earlier failed import left behind. That folder already
+ * holds the logs and Chromium state this launcher wrote since, so the entries go in one by one and
+ * the marker goes last: a copy that dies half way is simply tried again. config.json goes right
+ * before the marker: once it is VS Launcher's, the first config save of the session looks like a
+ * player's own choice and drops the marker, so every other entry has to be in place by then.
+ */
+function importIntoMarkedFolder(temporaryPath: string, targetPath: string, copied: readonly string[], move: ReturnType<typeof createMoveWithRetry>): void {
+  const configLast = [...copied].sort((a, b) => Number(a === "config.json") - Number(b === "config.json"))
+  for (const entry of configLast) move(join(temporaryPath, entry), join(targetPath, entry), true)
+  fse.removeSync(join(targetPath, IMPORT_PENDING_MARKER_FILE))
+  // The import is done by now; the next start cleans a stale temporary folder anyway.
+  removeTemporaryFolder(temporaryPath)
+}
+
+/** Leaves the empty folder a failed import ends on, with the marker that makes the next start try again. Whether the marker could be written. */
+function leaveMarkedEmptyFolder(folderPath: string): boolean {
+  fse.ensureDirSync(folderPath)
+  try {
+    fse.writeFileSync(join(folderPath, IMPORT_PENDING_MARKER_FILE), "")
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Removes a temporary copy folder, and says whether it is gone. fs-extra's `removeSync` does not
+ * wait out a lock, and the scanner that holds a copy long enough to fail the rename holds it for
+ * this too: a leftover must never stop the launcher from starting, the next start cleans it.
+ */
+function removeTemporaryFolder(folderPath: string): boolean {
+  try {
+    fse.removeSync(folderPath)
+  } catch {
+    /* best effort: whether it is gone is checked below */
+  }
+  return !fse.existsSync(folderPath)
+}
+
+/** What a copy into a path that still holds an earlier, unremovable leftover would mix in. */
+function staleFolderError(folderPath: string): Error {
+  return new Error(`A temporary folder from an earlier start could not be removed: ${folderPath}`)
+}
+
 function copyLegacyUserDataEntries(legacyPath: string, temporaryPath: string, entries: readonly string[]): string[] {
   const copied: string[] = []
   for (const entry of entries) {
@@ -231,35 +319,47 @@ export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
   const riftPath = join(appDataPath, RIFT_USER_DATA_FOLDER)
   const legacyPath = join(appDataPath, LEGACY_USER_DATA_FOLDER)
   const temporaryPath = join(appDataPath, MIGRATION_TEMP_FOLDER)
+  const markerPath = join(riftPath, IMPORT_PENDING_MARKER_FILE)
 
+  const riftExists = fse.existsSync(riftPath)
   const plan = planUserDataMigration({
-    riftExists: fse.existsSync(riftPath),
+    riftExists,
+    riftImportPending: riftExists && fse.existsSync(markerPath),
     vslExists: fse.existsSync(legacyPath),
     staleMigrationExists: fse.existsSync(temporaryPath)
   })
 
-  if (plan.cleanStaleMigration) fse.removeSync(temporaryPath)
+  const staleGone = !plan.cleanStaleMigration || removeTemporaryFolder(temporaryPath)
+  const cleanedStaleMigration = plan.cleanStaleMigration && staleGone
+  const staleLeft = staleGone ? {} : { temporaryFolderLeft: true }
+
+  // Outside the try below on purpose: a folder this player does not own is neither used nor
+  // written to, not even to leave a marker in it.
+  if (riftExists) assertOwnedSourceProfile(realpathSync.native(riftPath))
 
   if (plan.action !== "migrate") {
-    if (plan.action === "use-existing") assertOwnedSourceProfile(realpathSync.native(riftPath))
     fse.ensureDirSync(riftPath)
-    return { path: riftPath, outcome: plan.action, copied: [], cleanedStaleMigration: plan.cleanStaleMigration }
+    return { path: riftPath, outcome: plan.action, copied: [], cleanedStaleMigration, ...staleLeft }
   }
 
   try {
     assertTrustedLegacyProfile(legacyPath)
+    if (!staleGone) throw staleFolderError(temporaryPath)
     fse.ensureDirSync(temporaryPath)
     const copied = copyLegacyUserDataEntries(legacyPath, temporaryPath, plan.copy)
-    fse.moveSync(temporaryPath, riftPath)
-    return { path: riftPath, outcome: "migrate", copied, cleanedStaleMigration: plan.cleanStaleMigration }
+    const moveWithRetry = createMoveWithRetry()
+    if (riftExists) importIntoMarkedFolder(temporaryPath, riftPath, copied, moveWithRetry)
+    else moveWithRetry(temporaryPath, riftPath)
+    return { path: riftPath, outcome: "migrate", copied, cleanedStaleMigration }
   } catch (error) {
-    // A migration that cannot finish must not stop the launcher from starting.
-    // The leftover goes, the player gets an empty folder, and deleting the empty
-    // RiftLauncher folder allows retrying once the issue is resolved.
-    fse.removeSync(temporaryPath)
-    fse.ensureDirSync(riftPath)
+    // A migration that cannot finish must not stop the launcher from starting. The leftover goes
+    // and the player gets an empty folder, with a marker in it so the next start tries again from
+    // VS Launcher's folder, which was only ever read. A refusal to read a linked or foreign-owned
+    // legacy folder lands here too: retrying it costs one lstat and one log line per start.
+    const temporaryGone = removeTemporaryFolder(temporaryPath)
+    const importPending = leaveMarkedEmptyFolder(riftPath)
     const failureReason = error instanceof Error ? error.message : String(error)
-    return { path: riftPath, outcome: "migration-failed", copied: [], cleanedStaleMigration: plan.cleanStaleMigration, failureReason }
+    return { path: riftPath, outcome: "migration-failed", copied: [], cleanedStaleMigration, failureReason, importPending, ...(temporaryGone ? {} : { temporaryFolderLeft: true }) }
   }
 }
 
@@ -319,9 +419,16 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
     throw new Error("Portable profile or migration folder overlaps the NSIS install folder. Rename the install folder so updates cannot delete it.")
   }
 
-  const cleanedStaleMigration = fse.existsSync(temporaryPath)
+  const hadStaleMigration = fse.existsSync(temporaryPath)
+  const staleGone = !hadStaleMigration || removeTemporaryFolder(temporaryPath)
+  const cleanedStaleMigration = hadStaleMigration && staleGone
+  const staleLeft = staleGone ? {} : { temporaryFolderLeft: true }
 
-  if (cleanedStaleMigration) fse.removeSync(temporaryPath)
+  // A default folder that still holds the failed-import marker has no player data in it (the marker
+  // goes with the first save of anything the player chose), so VS Launcher's folder is imported instead.
+  const defaultIsMarked = fse.existsSync(join(currentProfilePath, IMPORT_PENDING_MARKER_FILE))
+  const hasCurrentProfile = fse.existsSync(currentProfilePath) && !defaultIsMarked
+  const hasLegacyProfile = !hasCurrentProfile && fse.existsSync(legacyProfilePath)
 
   // lstat, not stat: a link pointing at a folder elsewhere is not a portable profile, and a
   // profile folder owned by another account is not this player's either.
@@ -334,24 +441,28 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
     }
   })()
 
+  // A portable folder an earlier failed import left with the marker in it, while VS Launcher's
+  // folder is still there to import from: not set up yet, so the import is tried again into it.
+  let markedPortableFolder = false
   if (existingData) {
     if (!existingData.isDirectory()) throw new Error(`Portable data path is not a folder: ${dataPath}`)
     if (!isOwnedByThisUser(existingData)) throw new Error(`Portable data folder belongs to another user: ${dataPath}`)
-    if (fse.readdirSync(dataPath).length > 0) {
-      return { path: dataPath, outcome: "use-existing", copied: [], cleanedStaleMigration }
+    const entries = fse.readdirSync(dataPath)
+    markedPortableFolder = hasLegacyProfile && entries.includes(IMPORT_PENDING_MARKER_FILE)
+    if (!markedPortableFolder) {
+      if (entries.length > 0) return { path: dataPath, outcome: "use-existing", copied: [], cleanedStaleMigration, ...staleLeft }
+      fse.removeSync(dataPath)
     }
-    fse.removeSync(dataPath)
   }
 
-  const hasCurrentProfile = fse.existsSync(currentProfilePath)
-  const hasLegacyProfile = !hasCurrentProfile && fse.existsSync(legacyProfilePath)
   if (!hasCurrentProfile && !hasLegacyProfile) {
     fse.ensureDirSync(dataPath)
-    return { path: dataPath, outcome: "fresh", copied: [], cleanedStaleMigration }
+    return { path: dataPath, outcome: "fresh", copied: [], cleanedStaleMigration, ...staleLeft }
   }
 
   const copied: string[] = []
   try {
+    if (!staleGone) throw staleFolderError(temporaryPath)
     if (hasCurrentProfile) {
       const sourceProfilePath = realpathSync.native(currentProfilePath)
       assertOwnedSourceProfile(sourceProfilePath)
@@ -375,10 +486,26 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
       copied.push(...copyLegacyUserDataEntries(legacyProfilePath, temporaryPath, MIGRATED_USER_DATA_ENTRIES))
     }
 
-    fse.moveSync(temporaryPath, dataPath)
+    const moveWithRetry = createMoveWithRetry()
+    if (markedPortableFolder) importIntoMarkedFolder(temporaryPath, dataPath, copied, moveWithRetry)
+    else moveWithRetry(temporaryPath, dataPath)
   } catch (error) {
-    fse.removeSync(temporaryPath)
-    throw new Error(`Could not copy the existing profile to the portable data folder: ${String(error)}`)
+    const temporaryGone = removeTemporaryFolder(temporaryPath)
+    // Importing from VS Launcher only because the default folder holds the marker, or because this
+    // portable folder does, is a retry of an import that already failed once: it must not stop the
+    // launcher, which starts on an empty portable profile and tries again next time. Any other
+    // failed copy still stops the launcher, so a player's data is never split silently.
+    if (!hasLegacyProfile || !(defaultIsMarked || markedPortableFolder)) throw new Error(`Could not copy the existing profile to the portable data folder: ${String(error)}`)
+    const failureReason = error instanceof Error ? error.message : String(error)
+    return {
+      path: dataPath,
+      outcome: "migration-failed",
+      copied: [],
+      cleanedStaleMigration,
+      failureReason,
+      importPending: leaveMarkedEmptyFolder(dataPath),
+      ...(temporaryGone ? {} : { temporaryFolderLeft: true })
+    }
   }
 
   return {
@@ -391,7 +518,9 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
 
 /** One line for the startup log, describing what {@link setUpUserDataFolder} did. */
 export function describeUserDataSetup(setup: UserDataSetup): string {
-  const stale = setup.cleanedStaleMigration ? " Discarded an unfinished migration from an earlier run." : ""
+  const stale =
+    (setup.cleanedStaleMigration ? " Discarded an unfinished migration from an earlier run." : "") +
+    (setup.temporaryFolderLeft ? " A temporary copy folder could not be removed and is cleaned at the next start." : "")
 
   switch (setup.outcome) {
     case "use-existing":
@@ -401,7 +530,7 @@ export function describeUserDataSetup(setup: UserDataSetup): string {
     case "portable-profile-migrated":
       return `Copied the existing RiftLauncher profile to the portable data folder; the original was left untouched.${stale}`
     case "migration-failed":
-      return `Could not copy the VS Launcher user data folder${setup.failureReason ? ` (${setup.failureReason})` : ""}. Starting on an empty RiftLauncher folder.${stale}`
+      return `Could not copy the VS Launcher user data folder${setup.failureReason ? ` (${setup.failureReason})` : ""}. Starting on an empty RiftLauncher folder${setup.importPending ? ", and trying the import again at the next start" : ""}.${stale}`
     case "fresh":
       return `Created a new RiftLauncher user data folder.${stale}`
     case "unavailable":

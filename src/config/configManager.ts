@@ -1,6 +1,6 @@
 import { app } from "electron"
 import fse from "fs-extra"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
@@ -16,7 +16,7 @@ import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/d
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 import { isSafeWorldName } from "@domain/worlds/worlds"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
-import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME } from "@domain/userData/migrationPlan"
+import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
 
 const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
 
@@ -113,6 +113,60 @@ export function takePendingConfigRecoveryNotice(): ConfigRecoveryNotice | null {
   return notice
 }
 
+/** Queues the notice for a start whose VS Launcher import failed and will be tried again (#708). */
+export function noteUserDataImportFailed(): void {
+  pendingConfigRecoveryNotice = { kind: "import-failed" }
+}
+
+/**
+ * What a first start fills in on its own, without the player choosing anything: the window the
+ * first resize or move records, the changelog version the "what's new" dialog stamps, and the
+ * ModDB prompt's answer, which a retried import resets to "ask" rather than to a wrong answer.
+ */
+const FIRST_START_FIELDS: ReadonlySet<string> = new Set(["window", "lastSeenChangelogVersion", "moddbVisibility"])
+
+/** Whether a document holds nothing a player chose, so a failed VS Launcher import can still replace it. */
+function isUntouchedProfile(config: ConfigType): boolean {
+  const defaults = normalizeConfig(defaultConfig) as unknown as Record<string, unknown>
+  return Object.entries(config).every(([field, value]) => FIRST_START_FIELDS.has(field) || JSON.stringify(value) === JSON.stringify(defaults[field]))
+}
+
+/** Whether the failed-import marker is known to be gone, so later saves skip the check. */
+let importMarkerSettled = false
+
+/**
+ * Drops the failed-import marker once a save holds something the player chose. From then on the
+ * profile is theirs and a retried import would overwrite it, so the next start must not run one.
+ * Every config write goes through the queue below, which is why this is the one place that does it.
+ * It runs before the write: a marker that outlived a write holding the player's choices would let
+ * the next start import over them.
+ *
+ * @returns The marker's path when this call removed it, so a write that then fails can put it back.
+ */
+function settleImportMarker(saved: ConfigType): string | null {
+  if (importMarkerSettled || isUntouchedProfile(saved)) return null
+  const markerPath = join(dirname(configPath), IMPORT_PENDING_MARKER_FILE)
+  try {
+    const existed = fse.existsSync(markerPath)
+    fse.removeSync(markerPath)
+    importMarkerSettled = true
+    return existed ? markerPath : null
+  } catch (err) {
+    logMessage("warn", `${LOG_PREFIX} [settleImportMarker] Could not remove the failed-import marker: ${err}`)
+    return null
+  }
+}
+
+/** Puts the marker back after the write it was removed for failed: nothing the player chose reached the disk. */
+function restoreImportMarker(markerPath: string): void {
+  importMarkerSettled = false
+  try {
+    fse.writeFileSync(markerPath, "")
+  } catch (err) {
+    logMessage("warn", `${LOG_PREFIX} [restoreImportMarker] Could not put the failed-import marker back: ${err}`)
+  }
+}
+
 function scheduleConfigWrite(): Promise<void> {
   // Compared against null rather than tested for truthiness: the question is whether a write is already scheduled, not whether a promise is truthy (it always is).
   if (scheduledConfigWrite !== null) return scheduledConfigWrite
@@ -126,7 +180,13 @@ function scheduleConfigWrite(): Promise<void> {
       // Written as it stands: the only thing that ever reaches here is a normalizeConfig result,
       // and that builds a fixed literal field by field, so the renderer's session-only markers
       // (`_notifiedModUpdatesInstallations`, `_backgroundRevision`) are already gone.
-      await writeJsonAtomic(configPath, nextConfig, { spaces: 2 })
+      const droppedMarker = settleImportMarker(nextConfig)
+      try {
+        await writeJsonAtomic(configPath, nextConfig, { spaces: 2 })
+      } catch (err) {
+        if (droppedMarker !== null) restoreImportMarker(droppedMarker)
+        throw err
+      }
     }
   })
 

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
+import { createRequire } from "node:module"
 import { execFileSync } from "node:child_process"
 import { chmodSync, existsSync, truncateSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, sep } from "node:path"
 import fse from "fs-extra"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
@@ -19,6 +20,10 @@ import {
   setUpPortableUserDataFolder,
   setUpUserDataFolder
 } from "@src/main/userDataMigration"
+import { IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
+
+/** The graceful-fs that fs-extra renames through; it ships without types and is not a dependency of its own. */
+const gracefulFs = createRequire(import.meta.url)("graceful-fs") as typeof import("node:fs")
 
 /**
  * The user-data folder setup, against a real appData directory in a temp folder.
@@ -332,7 +337,7 @@ describe("setUpUserDataFolder", () => {
     assert.deepEqual(setup.copied, [])
     assert.match(setup.failureReason ?? "", /link or junction/i)
     assert.equal(existsSync(riftPath()), true)
-    assert.deepEqual(readdirSync(riftPath()), [])
+    assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
     assert.equal(readFileSync(join(externalLegacyPath, "config.json"), "utf8"), JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "abc" }))
     assert.equal(existsSync(temporaryPath()), false)
   })
@@ -350,7 +355,7 @@ describe("setUpUserDataFolder", () => {
     assert.deepEqual(setup.copied, [])
     assert.match(setup.failureReason ?? "", /symbolic link that cannot be copied safely/i)
     assert.equal(existsSync(riftPath()), true)
-    assert.deepEqual(readdirSync(riftPath()), [])
+    assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
     assert.equal(existsSync(temporaryPath()), false)
   })
 
@@ -380,7 +385,7 @@ describe("setUpUserDataFolder", () => {
       assert.equal(setup.outcome, "migration-failed")
       assert.deepEqual(setup.copied, [])
       assert.equal(existsSync(riftPath()), true)
-      assert.deepEqual(readdirSync(riftPath()), [])
+      assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
     } finally {
       getuid.mockRestore()
     }
@@ -595,7 +600,7 @@ describe("setUpUserDataFolder", () => {
     assert.equal(setup.outcome, "migration-failed")
     assert.deepEqual(setup.copied, [])
     assert.equal(existsSync(riftPath()), true)
-    assert.deepEqual(readdirSync(riftPath()), [])
+    assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
     assert.equal(existsSync(temporaryPath()), false)
 
     chmodSync(join(legacyPath(), "Icons"), 0o700)
@@ -699,7 +704,7 @@ describe("migration review regressions", () => {
     assert.equal(setup.outcome, "migration-failed")
     assert.match(setup.failureReason ?? "", /16 MiB/)
     assert.ok((setup.failureReason ?? "").endsWith(config), setup.failureReason ?? "")
-    assert.deepEqual(readdirSync(riftPath()), [])
+    assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
   })
 
   it.skipIf(process.platform === "win32")("refuses an existing foreign-owned default profile just as the portable path does", () => {
@@ -735,6 +740,667 @@ describe("migration review regressions", () => {
   })
 })
 
+/**
+ * A rename onto `destination`, or onto anything inside it, that fails with `code`, `times` times in a row, through the same
+ * graceful-fs `renameSync` that `fse.moveSync` ends in. Waiting is skipped and added up instead,
+ * so a failure that outlasts the retry window does not make the suite wait for it.
+ */
+function failRenamesInto(destination: string, code: string, times = Infinity): { attempts: () => number; sleptMs: () => number; restore: () => void } {
+  return failRenamesWhere([{ into: destination, code, times }])
+}
+
+/** Same, with a failure count of its own for each destination; the attempts are added up over all of them. */
+function failRenamesWhere(rules: { into: string; code: string; times: number }[]): { attempts: () => number; sleptMs: () => number; restore: () => void } {
+  const original = gracefulFs.renameSync.bind(gracefulFs)
+  let attempts = 0
+  let slept = 0
+  const seen = rules.map(() => 0)
+  const rename = vi.spyOn(gracefulFs, "renameSync").mockImplementation(((from: string, to: string) => {
+    const index = rules.findIndex((rule) => to === rule.into || to.startsWith(`${rule.into}${sep}`))
+    const rule = rules[index]
+    if (rule) {
+      attempts += 1
+      seen[index] = (seen[index] ?? 0) + 1
+      if ((seen[index] ?? 0) <= rule.times) throw Object.assign(new Error(`${rule.code}: operation not permitted, rename '${from}' -> '${to}'`), { code: rule.code, syscall: "rename" })
+    }
+    return original(from, to)
+  }) as typeof gracefulFs.renameSync)
+  const wait = vi.spyOn(Atomics, "wait").mockImplementation(((_array: Int32Array, _index: number, _value: number, timeout?: number) => {
+    slept += timeout ?? 0
+    return "timed-out"
+  }) as typeof Atomics.wait)
+  return {
+    attempts: () => attempts,
+    sleptMs: () => slept,
+    restore: () => {
+      rename.mockRestore()
+      wait.mockRestore()
+    }
+  }
+}
+
+/** `fse.removeSync` of the given folders fails with EBUSY, as when the scanner that held the rename still holds the copy. */
+function lockRemovalOf(...paths: string[]): { restore: () => void } {
+  const original = fse.removeSync.bind(fse)
+  const remove = vi.spyOn(fse, "removeSync").mockImplementation(((path: string) => {
+    if (paths.includes(String(path))) throw Object.assign(new Error(`EBUSY: resource busy or locked, rmdir '${String(path)}'`), { code: "EBUSY" })
+    return original(path)
+  }) as typeof fse.removeSync)
+  return { restore: () => remove.mockRestore() }
+}
+
+const SEEDED_CONFIG = JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "abc" })
+
+describe("a VS Launcher import that fails (#708)", () => {
+  it.each(["EPERM", "EACCES", "EBUSY"])("absorbs a final rename that fails once with %s", (code) => {
+    seedLegacyFolder()
+    const fault = failRenamesInto(riftPath(), code, 1)
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migrate")
+      assert.deepEqual(setup.copied, ["config.json", "Icons"])
+      assert.equal(fault.attempts(), 2)
+    } finally {
+      fault.restore()
+    }
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    assert.deepEqual(readdirSync(riftPath()).sort(), ["Icons", "config.json"])
+  })
+
+  it("gives up after a few seconds of a rename that never works, and leaves the marker in an empty folder", () => {
+    seedLegacyFolder()
+    const fault = failRenamesInto(riftPath(), "EPERM")
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migration-failed")
+      assert.equal(setup.importPending, true)
+      assert.match(setup.failureReason ?? "", /EPERM/)
+      assert.ok(fault.attempts() > 3, "the rename was tried more than a couple of times")
+      assert.ok(fault.sleptMs() <= 3_000, `waited ${fault.sleptMs()} ms`)
+      assert.ok(fault.sleptMs() >= 2_500, `waited ${fault.sleptMs()} ms`)
+    } finally {
+      fault.restore()
+    }
+    assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
+    assert.equal(existsSync(temporaryPath()), false)
+    assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+  })
+
+  it("imports at the next start, and leaves no marker behind", () => {
+    seedLegacyFolder()
+    const fault = failRenamesInto(riftPath(), "EPERM")
+    try {
+      assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+    } finally {
+      fault.restore()
+    }
+    // What the launcher itself wrote into the folder in between: its logs and Chromium's state.
+    mkdirSync(join(riftPath(), "Logs"))
+    writeFileSync(join(riftPath(), "Logs", "info.log"), "a line from the failed start", "utf8")
+    writeFileSync(join(riftPath(), "config.json"), JSON.stringify({ defaults: true }), "utf8")
+
+    const second = setUpUserDataFolder(appDataPath)
+
+    assert.equal(second.outcome, "migrate")
+    assert.deepEqual(second.copied, ["config.json", "Icons"])
+    assert.equal(second.importPending, undefined)
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    assert.equal(readFileSync(join(riftPath(), "Icons", "custom.png"), "utf8"), "not really a png")
+    assert.equal(readFileSync(join(riftPath(), "Logs", "info.log"), "utf8"), "a line from the failed start")
+    assert.equal(existsSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE)), false)
+    assert.equal(existsSync(temporaryPath()), false)
+    assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+  })
+
+  it("keeps the default config.json when the retry fails on Icons, so the next start imports both", () => {
+    seedLegacyFolder()
+    const first = failRenamesInto(riftPath(), "EPERM")
+    try {
+      assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+    } finally {
+      first.restore()
+    }
+    const defaults = JSON.stringify({ defaults: true })
+    writeFileSync(join(riftPath(), "config.json"), defaults, "utf8")
+
+    // Second start: Icons stays locked past the window.
+    const second = failRenamesInto(join(riftPath(), "Icons"), "EBUSY")
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migration-failed")
+      assert.equal(setup.importPending, true)
+    } finally {
+      second.restore()
+    }
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), defaults, "VS Launcher's config.json must not be in place while Icons is missing")
+    assert.equal(existsSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE)), true)
+
+    const third = setUpUserDataFolder(appDataPath)
+
+    assert.equal(third.outcome, "migrate")
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    assert.equal(readFileSync(join(riftPath(), "Icons", "custom.png"), "utf8"), "not really a png")
+    assert.equal(existsSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE)), false)
+  })
+
+  it("spends one wait budget on all the moves of a retry, not one per entry", () => {
+    seedLegacyFolder()
+    const first = failRenamesInto(riftPath(), "EPERM")
+    try {
+      assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+    } finally {
+      first.restore()
+    }
+    // Icons moves after 13 failures (2850 ms of waiting); config.json then never works.
+    const second = failRenamesWhere([
+      { into: join(riftPath(), "Icons"), code: "EPERM", times: 13 },
+      { into: join(riftPath(), "config.json"), code: "EPERM", times: Infinity }
+    ])
+    try {
+      assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+      assert.ok(second.sleptMs() >= 2_850, `waited ${second.sleptMs()} ms`)
+      assert.ok(second.sleptMs() <= 3_000, `waited ${second.sleptMs()} ms in all`)
+    } finally {
+      second.restore()
+    }
+  })
+
+  it("replaces an Icons folder the failed start left behind instead of merging into it", () => {
+    seedLegacyFolder()
+    mkdirSync(join(riftPath(), "Icons"), { recursive: true })
+    writeFileSync(join(riftPath(), "Icons", "stray.png"), "stray", "utf8")
+    writeFileSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE), "", "utf8")
+
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "migrate")
+
+    assert.deepEqual(readdirSync(join(riftPath(), "Icons")), ["custom.png"])
+  })
+
+  it("keeps trying while the failure lasts and never touches VS Launcher's folder", () => {
+    seedLegacyFolder()
+    const fault = failRenamesInto(riftPath(), "EBUSY")
+    try {
+      for (let start = 0; start < 3; start += 1) {
+        const setup = setUpUserDataFolder(appDataPath)
+        assert.equal(setup.outcome, "migration-failed")
+        assert.equal(setup.importPending, true)
+        assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
+      }
+    } finally {
+      fault.restore()
+    }
+    assert.deepEqual(readdirSync(legacyPath()).sort(), ["Cache", "Icons", "Logs", "account-secrets.json", "config.json"])
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "migrate")
+  })
+
+  it("does not retry a failure that cannot be a lock, and waits for nothing", () => {
+    seedLegacyFolder()
+    const fault = failRenamesInto(riftPath(), "ENOSPC")
+    try {
+      assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+      assert.equal(fault.attempts(), 1)
+      assert.equal(fault.sleptMs(), 0)
+    } finally {
+      fault.restore()
+    }
+    assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
+  })
+
+  it("starts on the folder the player has been using when the marker is gone", () => {
+    seedLegacyFolder()
+    const fault = failRenamesInto(riftPath(), "EPERM")
+    try {
+      assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+    } finally {
+      fault.restore()
+    }
+    // The first config save that holds something the player chose removes the marker.
+    const mine = JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "mine" })
+    writeFileSync(join(riftPath(), "config.json"), mine, "utf8")
+    rmSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE))
+
+    const second = setUpUserDataFolder(appDataPath)
+
+    assert.equal(second.outcome, "use-existing")
+    assert.deepEqual(second.copied, [])
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), mine)
+    assert.equal(existsSync(join(riftPath(), "Icons")), false)
+  })
+
+  it("keeps a marked folder as it is once VS Launcher's folder is gone", () => {
+    mkdirSync(riftPath())
+    writeFileSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE), "", "utf8")
+    writeFileSync(join(riftPath(), "config.json"), "{}", "utf8")
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "use-existing")
+    assert.deepEqual(readdirSync(riftPath()).sort(), ["config.json", IMPORT_PENDING_MARKER_FILE])
+  })
+
+  it("writes nothing into a marked folder that belongs to another account", () => {
+    seedLegacyFolder()
+    mkdirSync(riftPath())
+    writeFileSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE), "", "utf8")
+    const getuid = vi.spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 1)
+    try {
+      assert.throws(() => setUpUserDataFolder(appDataPath), /Profile folder belongs to another user/)
+    } finally {
+      getuid.mockRestore()
+    }
+    assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
+  })
+
+  it("retries a refusal of a linked VS Launcher folder at every start, and imports once it is a real folder", () => {
+    const externalLegacyPath = join(appDataPath, "shared-legacy")
+    mkdirSync(externalLegacyPath, { recursive: true })
+    writeFileSync(join(externalLegacyPath, "config.json"), SEEDED_CONFIG, "utf8")
+    symlinkSync(externalLegacyPath, legacyPath(), process.platform === "win32" ? "junction" : "dir")
+
+    for (let start = 0; start < 2; start += 1) {
+      const setup = setUpUserDataFolder(appDataPath)
+      assert.equal(setup.outcome, "migration-failed")
+      assert.match(setup.failureReason ?? "", /link or junction/i)
+      assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
+    }
+
+    rmSync(legacyPath(), { recursive: true })
+    mkdirSync(legacyPath())
+    writeFileSync(join(legacyPath(), "config.json"), SEEDED_CONFIG, "utf8")
+
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "migrate")
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+  })
+
+  it("still starts when the marker cannot be written, and says no retry is scheduled", () => {
+    seedLegacyFolder()
+    const fault = failRenamesInto(riftPath(), "EPERM")
+    const write = vi.spyOn(fse, "writeFileSync").mockImplementation(((path: string, ...rest: unknown[]) => {
+      if (String(path).endsWith(IMPORT_PENDING_MARKER_FILE)) throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" })
+      return (gracefulFs.writeFileSync as (...args: unknown[]) => void)(path, ...rest)
+    }) as typeof fse.writeFileSync)
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migration-failed")
+      assert.equal(setup.importPending, false)
+    } finally {
+      write.mockRestore()
+      fault.restore()
+    }
+    assert.deepEqual(readdirSync(riftPath()), [])
+  })
+
+  it("counts a retried import as done when only the empty temporary folder cannot be removed", () => {
+    seedLegacyFolder()
+    const fault = failRenamesInto(riftPath(), "EPERM")
+    try {
+      assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+    } finally {
+      fault.restore()
+    }
+    const original = fse.removeSync.bind(fse)
+    const remove = vi.spyOn(fse, "removeSync").mockImplementation(((path: string) => {
+      if (path === temporaryPath()) throw Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" })
+      return original(path)
+    }) as typeof fse.removeSync)
+    try {
+      assert.equal(setUpUserDataFolder(appDataPath).outcome, "migrate")
+    } finally {
+      remove.mockRestore()
+    }
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    assert.equal(existsSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE)), false)
+    // The next start cleans the leftover.
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "use-existing")
+    assert.equal(existsSync(temporaryPath()), false)
+  })
+
+  it("still starts when the temporary folder of a failed import cannot be removed either, and imports at the next start", () => {
+    seedLegacyFolder()
+    const fault = failRenamesInto(riftPath(), "EPERM")
+    const lock = lockRemovalOf(temporaryPath())
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migration-failed")
+      assert.equal(setup.importPending, true)
+      assert.equal(setup.temporaryFolderLeft, true)
+      assert.match(setup.failureReason ?? "", /EPERM/)
+      assert.match(describeUserDataSetup(setup), /could not be removed/)
+    } finally {
+      lock.restore()
+      fault.restore()
+    }
+    assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
+    assert.equal(existsSync(temporaryPath()), true)
+    // Whatever the leftover holds must not reach the profile.
+    writeFileSync(join(temporaryPath(), "Icons", "ghost.png"), "from the failed start", "utf8")
+
+    const second = setUpUserDataFolder(appDataPath)
+
+    assert.equal(second.outcome, "migrate")
+    assert.equal(second.cleanedStaleMigration, true)
+    assert.equal(second.temporaryFolderLeft, undefined)
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    assert.deepEqual(readdirSync(join(riftPath(), "Icons")), ["custom.png"])
+    assert.equal(existsSync(temporaryPath()), false)
+    assert.equal(existsSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE)), false)
+  })
+
+  it("starts on the marked empty folder, and copies nothing into it, while a leftover temporary folder stays locked", () => {
+    seedLegacyFolder()
+    mkdirSync(join(temporaryPath(), "Icons"), { recursive: true })
+    writeFileSync(join(temporaryPath(), "config.json"), JSON.stringify({ half: "written" }), "utf8")
+    writeFileSync(join(temporaryPath(), "Icons", "ghost.png"), "from an earlier start", "utf8")
+    const lock = lockRemovalOf(temporaryPath())
+    try {
+      for (let start = 0; start < 2; start += 1) {
+        const setup = setUpUserDataFolder(appDataPath)
+
+        assert.equal(setup.outcome, "migration-failed")
+        assert.equal(setup.importPending, true)
+        assert.equal(setup.temporaryFolderLeft, true)
+        assert.equal(setup.cleanedStaleMigration, false)
+        assert.match(setup.failureReason ?? "", /could not be removed/)
+        assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
+      }
+    } finally {
+      lock.restore()
+    }
+    assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+
+    const third = setUpUserDataFolder(appDataPath)
+
+    assert.equal(third.outcome, "migrate")
+    assert.equal(third.cleanedStaleMigration, true)
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    assert.deepEqual(readdirSync(join(riftPath(), "Icons")), ["custom.png"])
+  })
+
+  it("uses an existing profile as it is when a leftover temporary folder cannot be removed", () => {
+    mkdirSync(riftPath(), { recursive: true })
+    writeFileSync(join(riftPath(), "config.json"), "{}", "utf8")
+    mkdirSync(temporaryPath(), { recursive: true })
+    const lock = lockRemovalOf(temporaryPath())
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "use-existing")
+      assert.equal(setup.temporaryFolderLeft, true)
+      assert.match(describeUserDataSetup(setup), /could not be removed/)
+    } finally {
+      lock.restore()
+    }
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), "{}")
+  })
+
+  it("never leaves the marker after an import that worked", () => {
+    seedLegacyFolder()
+
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "migrate")
+
+    assert.equal(existsSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE)), false)
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "use-existing")
+    assert.equal(existsSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE)), false)
+  })
+
+  it("still lets a RiftLauncher folder without the marker win over VS Launcher's", () => {
+    seedLegacyFolder()
+    mkdirSync(riftPath())
+    writeFileSync(join(riftPath(), "config.json"), "{}", "utf8")
+
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "use-existing")
+
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), "{}")
+    assert.equal(existsSync(join(riftPath(), "Icons")), false)
+  })
+
+  describe("in a portable profile", () => {
+    function portableDataPath(): string {
+      return join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    }
+
+    it("absorbs a final rename that fails once", () => {
+      seedLegacyFolder()
+      const fault = failRenamesInto(portableDataPath(), "EPERM", 1)
+      try {
+        const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+        assert.equal(setup.outcome, "migrate")
+        assert.equal(fault.attempts(), 2)
+      } finally {
+        fault.restore()
+      }
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    })
+
+    it("imports VS Launcher's data instead of copying the empty profile a failed default import left", () => {
+      seedLegacyFolder()
+      const fault = failRenamesInto(riftPath(), "EPERM")
+      try {
+        assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+      } finally {
+        fault.restore()
+      }
+      assert.deepEqual(readdirSync(riftPath()), [IMPORT_PENDING_MARKER_FILE])
+
+      const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(setup.outcome, "migrate")
+      assert.deepEqual(setup.copied, ["config.json", "Icons"])
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+      assert.equal(existsSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE)), false)
+      assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "use-existing")
+    })
+
+    it("starts a fresh portable profile from a marked default profile when VS Launcher's folder is gone", () => {
+      mkdirSync(riftPath())
+      writeFileSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE), "", "utf8")
+
+      const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(setup.outcome, "fresh")
+      assert.deepEqual(readdirSync(portableDataPath()), [])
+    })
+
+    it("still copies a default profile that has no marker", () => {
+      seedLegacyFolder()
+      mkdirSync(riftPath())
+      writeFileSync(join(riftPath(), "config.json"), "{}", "utf8")
+
+      const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(setup.outcome, "portable-profile-migrated")
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), "{}")
+    })
+
+    it("starts on an empty marked portable profile when the import from VS Launcher's linked folder is refused, and imports once it is fixed", () => {
+      const externalLegacyPath = join(appDataPath, "shared-legacy")
+      mkdirSync(externalLegacyPath, { recursive: true })
+      writeFileSync(join(externalLegacyPath, "config.json"), SEEDED_CONFIG, "utf8")
+      symlinkSync(externalLegacyPath, legacyPath(), process.platform === "win32" ? "junction" : "dir")
+      assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+
+      for (let start = 0; start < 2; start += 1) {
+        const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+        assert.equal(setup.outcome, "migration-failed")
+        assert.equal(setup.importPending, true)
+        assert.match(setup.failureReason ?? "", /link or junction/i)
+        assert.deepEqual(readdirSync(portableDataPath()), [IMPORT_PENDING_MARKER_FILE])
+      }
+
+      rmSync(legacyPath(), { recursive: true })
+      seedLegacyFolder()
+      // What the launcher wrote into the folder while it ran empty.
+      mkdirSync(join(portableDataPath(), "Logs"))
+
+      const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(setup.outcome, "migrate")
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+      assert.equal(existsSync(join(portableDataPath(), "Logs")), true)
+      assert.equal(existsSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE)), false)
+      assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "use-existing")
+    })
+
+    it("starts on an empty marked portable profile when copying VS Launcher's folder fails after a failed default import", () => {
+      seedLegacyFolder()
+      const first = failRenamesInto(riftPath(), "EPERM")
+      try {
+        assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+      } finally {
+        first.restore()
+      }
+      const second = failRenamesInto(portableDataPath(), "EACCES")
+      try {
+        const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+        assert.equal(setup.outcome, "migration-failed")
+        assert.equal(setup.importPending, true)
+        assert.match(setup.failureReason ?? "", /EACCES/)
+        assert.ok(second.sleptMs() <= 3_000)
+      } finally {
+        second.restore()
+      }
+      assert.deepEqual(readdirSync(portableDataPath()), [IMPORT_PENDING_MARKER_FILE])
+      assert.equal(existsSync(`${portableDataPath()}${PORTABLE_MIGRATION_TEMP_SUFFIX}`), false)
+      assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+
+      assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "migrate")
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+      assert.equal(readdirSync(portableDataPath()).includes(IMPORT_PENDING_MARKER_FILE), false)
+    })
+
+    it("keeps a marked portable profile as it is once VS Launcher's folder is gone, and keeps one the player used", () => {
+      mkdirSync(portableDataPath(), { recursive: true })
+      writeFileSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE), "", "utf8")
+      writeFileSync(join(portableDataPath(), "config.json"), "{}", "utf8")
+
+      assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "use-existing")
+
+      // The player saved something: the marker is gone, so VS Launcher's folder is not read again.
+      seedLegacyFolder()
+      rmSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE))
+      assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "use-existing")
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), "{}")
+    })
+
+    it("refuses to start on a rename that never works, leaves no half profile, and imports at the next start", () => {
+      seedLegacyFolder()
+      const fault = failRenamesInto(portableDataPath(), "EPERM")
+      try {
+        assert.throws(() => setUpPortableUserDataFolder(appDataPath, portableDataPath()), /Could not copy the existing profile to the portable data folder.*EPERM/)
+        assert.ok(fault.sleptMs() <= 3_000)
+      } finally {
+        fault.restore()
+      }
+      assert.equal(existsSync(portableDataPath()), false)
+      assert.equal(existsSync(`${portableDataPath()}${PORTABLE_MIGRATION_TEMP_SUFFIX}`), false)
+
+      const second = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(second.outcome, "migrate")
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    })
+
+    it("still starts on an empty marked portable profile when the temporary folder of the failed import cannot be removed, and imports at the next start", () => {
+      seedLegacyFolder()
+      const first = failRenamesInto(riftPath(), "EPERM")
+      try {
+        assert.equal(setUpUserDataFolder(appDataPath).outcome, "migration-failed")
+      } finally {
+        first.restore()
+      }
+      const temporary = `${portableDataPath()}${PORTABLE_MIGRATION_TEMP_SUFFIX}`
+      const second = failRenamesInto(portableDataPath(), "EPERM")
+      const lock = lockRemovalOf(temporary)
+      try {
+        const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+        assert.equal(setup.outcome, "migration-failed")
+        assert.equal(setup.importPending, true)
+        assert.equal(setup.temporaryFolderLeft, true)
+        assert.match(setup.failureReason ?? "", /EPERM/)
+      } finally {
+        lock.restore()
+        second.restore()
+      }
+      assert.deepEqual(readdirSync(portableDataPath()), [IMPORT_PENDING_MARKER_FILE])
+      assert.equal(existsSync(temporary), true)
+      writeFileSync(join(temporary, "ghost.txt"), "from the failed start", "utf8")
+
+      const third = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(third.outcome, "migrate")
+      assert.equal(third.cleanedStaleMigration, true)
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+      assert.equal(existsSync(join(portableDataPath(), "ghost.txt")), false)
+      assert.equal(existsSync(temporary), false)
+      assert.equal(existsSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE)), false)
+    })
+
+    it("keeps stopping the start with the reason, creating no profile, when a portable import fails with no failed default import behind it, even if the temporary folder cannot be removed", () => {
+      seedLegacyFolder()
+      const temporary = `${portableDataPath()}${PORTABLE_MIGRATION_TEMP_SUFFIX}`
+      const fault = failRenamesInto(portableDataPath(), "EPERM")
+      const lock = lockRemovalOf(temporary)
+      try {
+        assert.throws(() => setUpPortableUserDataFolder(appDataPath, portableDataPath()), /Could not copy the existing profile to the portable data folder.*EPERM/)
+      } finally {
+        lock.restore()
+        fault.restore()
+      }
+      assert.equal(existsSync(portableDataPath()), false)
+
+      const second = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(second.outcome, "migrate")
+      assert.equal(second.cleanedStaleMigration, true)
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    })
+
+    it("stops the start with the reason, and does not copy into it, while a leftover portable temporary folder stays locked", () => {
+      seedLegacyFolder()
+      const temporary = `${portableDataPath()}${PORTABLE_MIGRATION_TEMP_SUFFIX}`
+      mkdirSync(temporary, { recursive: true })
+      writeFileSync(join(temporary, "ghost.txt"), "from an earlier start", "utf8")
+      const lock = lockRemovalOf(temporary)
+      try {
+        assert.throws(() => setUpPortableUserDataFolder(appDataPath, portableDataPath()), /Could not copy the existing profile to the portable data folder.*could not be removed/)
+      } finally {
+        lock.restore()
+      }
+      assert.equal(existsSync(portableDataPath()), false)
+
+      const second = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(second.outcome, "migrate")
+      assert.equal(existsSync(join(portableDataPath(), "ghost.txt")), false)
+    })
+
+    it("uses an existing portable profile as it is when a leftover temporary folder cannot be removed", () => {
+      mkdirSync(portableDataPath(), { recursive: true })
+      writeFileSync(join(portableDataPath(), "config.json"), "{}", "utf8")
+      const temporary = `${portableDataPath()}${PORTABLE_MIGRATION_TEMP_SUFFIX}`
+      mkdirSync(temporary, { recursive: true })
+      const lock = lockRemovalOf(temporary)
+      try {
+        const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+        assert.equal(setup.outcome, "use-existing")
+        assert.equal(setup.temporaryFolderLeft, true)
+      } finally {
+        lock.restore()
+      }
+    })
+  })
+})
+
 describe("describeUserDataSetup", () => {
   it("says which folder the launcher ended up on", () => {
     assert.equal(describeUserDataSetup({ path: "/x", outcome: "fresh", copied: [], cleanedStaleMigration: false }), "Created a new RiftLauncher user data folder.")
@@ -746,6 +1412,20 @@ describe("describeUserDataSetup", () => {
     assert.equal(
       describeUserDataSetup({ path: "/x", outcome: "migration-failed", copied: [], cleanedStaleMigration: false }),
       "Could not copy the VS Launcher user data folder. Starting on an empty RiftLauncher folder."
+    )
+  })
+
+  it("says the import will be tried again when the marker is in place", () => {
+    assert.equal(
+      describeUserDataSetup({ path: "/x", outcome: "migration-failed", copied: [], cleanedStaleMigration: false, failureReason: "EPERM: rename", importPending: true }),
+      "Could not copy the VS Launcher user data folder (EPERM: rename). Starting on an empty RiftLauncher folder, and trying the import again at the next start."
+    )
+  })
+
+  it("says a temporary folder is left to be cleaned at the next start", () => {
+    assert.equal(
+      describeUserDataSetup({ path: "/x", outcome: "use-existing", copied: [], cleanedStaleMigration: false, temporaryFolderLeft: true }),
+      "Using the existing RiftLauncher user data folder. A temporary copy folder could not be removed and is cleaned at the next start."
     )
   })
 
