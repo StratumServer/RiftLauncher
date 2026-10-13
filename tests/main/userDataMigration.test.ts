@@ -981,7 +981,7 @@ describe("a VS Launcher import that fails (#708)", () => {
     assert.deepEqual(readdirSync(riftPath()).sort(), ["config.json", IMPORT_PENDING_MARKER_FILE])
   })
 
-  it("writes nothing into a marked folder that belongs to another account", () => {
+  it.skipIf(process.platform === "win32")("writes nothing into a marked folder that belongs to another account", () => {
     seedLegacyFolder()
     mkdirSync(riftPath())
     writeFileSync(join(riftPath(), IMPORT_PENDING_MARKER_FILE), "", "utf8")
