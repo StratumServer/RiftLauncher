@@ -109,7 +109,11 @@ describe("holdsPlayerChoice (#708)", () => {
     ["not this time", { policy: "ask", answeredVersion: "1.7.0", countedVersions: [] }],
     ["a policy changed on the settings page", { policy: "never", answeredVersion: "", countedVersions: [] }],
     ["a count", { policy: "ask", answeredVersion: "", countedVersions: ["1.7.0"] }]
-  ])("counts the ModDB answer %s: nothing writes that field before the player does", (_name, moddbVisibility) => {
-    assert.equal(holdsPlayerChoice({ ...untouched, moddbVisibility }, untouched), true)
+  ])("does not count the ModDB answer %s: the prompt shows by itself on the empty profile, and the retry carries the answer over", (_name, moddbVisibility) => {
+    assert.equal(holdsPlayerChoice({ ...untouched, moddbVisibility }, untouched), false)
+  })
+
+  it("counts another choice next to a ModDB answer", () => {
+    assert.equal(holdsPlayerChoice({ ...untouched, moddbVisibility: { policy: "never", answeredVersion: "1.7.0", countedVersions: [] }, favMods: [5] }, untouched), true)
   })
 })

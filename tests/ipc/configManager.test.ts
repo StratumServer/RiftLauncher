@@ -1960,11 +1960,20 @@ describe("the failed-import marker and saveConfig", () => {
     ["a yes for this version only", { policy: "once", answeredVersion: "1.7.0", countedVersions: [] }],
     ["not this time", { policy: "ask", answeredVersion: "1.7.0", countedVersions: [] }],
     ["a policy changed on the settings page", { policy: "never", answeredVersion: "", countedVersions: [] }]
-  ] as const)("goes with a ModDB answer the player gave: %s", async (_name, answer) => {
+  ] as const)("survives a ModDB answer the player gave, which the retried import carries over: %s", async (_name, answer) => {
     const { getConfig, saveConfig } = await freshConfigManager()
     const config = await getConfig()
 
     assert.equal(await saveConfig({ ...config, moddbVisibility: { ...answer, countedVersions: [...answer.countedVersions] } }), true)
+
+    assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), true)
+  })
+
+  it("goes with a save that holds a ModDB answer next to something else the player chose", async () => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    const config = await getConfig()
+
+    assert.equal(await saveConfig({ ...config, favMods: [5], moddbVisibility: { policy: "never", answeredVersion: "1.7.0", countedVersions: [] } }), true)
 
     assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), false)
   })
@@ -2101,27 +2110,46 @@ describe("the failed-import marker and saveConfig", () => {
   it.each([
     ["never", NEVER, ALWAYS],
     ["always", ALWAYS, NEVER]
-  ])("keeps a ModDB answer of %s through the next start, whatever VS Launcher's config says", async (_name, mine, theirs) => {
-    importFailsOnce({ moddbVisibility: { ...theirs, countedVersions: [] } })
+  ])("carries a ModDB answer of %s into the import at the next start, whatever VS Launcher's config says", async (_name, mine, theirs) => {
+    importFailsOnce({ favMods: [1, 2, 3], moddbVisibility: { ...theirs, countedVersions: [] } })
     const session = await freshConfigManager()
     const config = await session.getConfig()
     assert.equal(await session.saveConfig({ ...config, moddbVisibility: { ...mine, answeredVersion: "1.7.0", countedVersions: [] } }), true)
     await session.flushConfigWrites()
 
-    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "use-existing")
+    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "migrate")
 
-    assert.equal((await (await freshConfigManager()).getConfig()).moddbVisibility.policy, mine.policy)
+    const loaded = await (await freshConfigManager()).getConfig()
+    assert.equal(loaded.moddbVisibility.policy, mine.policy)
+    assert.deepEqual(loaded.favMods, [1, 2, 3])
   })
 
-  it("keeps a ModDB policy changed on the settings page through the next start", async () => {
-    importFailsOnce({ moddbVisibility: { ...ALWAYS, countedVersions: [] } })
+  it("carries a ModDB policy changed on the settings page into the import at the next start", async () => {
+    importFailsOnce({ favMods: [1, 2, 3], moddbVisibility: { ...ALWAYS, countedVersions: [] } })
     const session = await freshConfigManager()
     const config = await session.getConfig()
     assert.equal(await session.saveConfig({ ...config, moddbVisibility: { ...config.moddbVisibility, policy: "never" } }), true)
+    await session.flushConfigWrites()
+
+    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "migrate")
+
+    const loaded = await (await freshConfigManager()).getConfig()
+    assert.equal(loaded.moddbVisibility.policy, "never")
+    assert.deepEqual(loaded.favMods, [1, 2, 3])
+  })
+
+  it("keeps a ModDB answer through the next start when the player also changed something else", async () => {
+    importFailsOnce({ favMods: [1, 2, 3], moddbVisibility: { ...ALWAYS, countedVersions: [] } })
+    const session = await freshConfigManager()
+    const config = await session.getConfig()
+    assert.equal(await session.saveConfig({ ...config, favMods: [9], moddbVisibility: { ...NEVER, answeredVersion: "1.7.0", countedVersions: [] } }), true)
+    await session.flushConfigWrites()
 
     assert.equal(setUpUserDataFolder(appDataFolder).outcome, "use-existing")
 
-    assert.equal((await (await freshConfigManager()).getConfig()).moddbVisibility.policy, "never")
+    const loaded = await (await freshConfigManager()).getConfig()
+    assert.equal(loaded.moddbVisibility.policy, "never")
+    assert.deepEqual(loaded.favMods, [9])
   })
 
   it("keeps the player's saved config at the next start when only the removal of the marker failed", async () => {

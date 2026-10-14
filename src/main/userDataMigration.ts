@@ -3,6 +3,7 @@ import { basename, dirname, join, posix, relative, win32 } from "node:path"
 import fse from "fs-extra"
 
 import { DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
+import { isRecord } from "@domain/records"
 import {
   DEFAULT_BACKUPS_FOLDER_NAME,
   DEFAULT_INSTALLATIONS_FOLDER_NAME,
@@ -224,19 +225,67 @@ function createMoveWithRetry(): (source: string, destination: string, overwrite?
 }
 
 /**
+ * Carries the ModDB answer a marked folder holds into the config.json an import is about to put
+ * there, on the temporary copy and before anything is moved into place. The prompt shows by itself
+ * on the empty profile a failed import leaves, so most players answer it before the retry; the
+ * answer must neither be lost to VS Launcher's copy nor reversed by it (a "never" restored to
+ * "always" is the worst case).
+ *
+ * Whatever VS Launcher's file holds for that field, or whether it has the field at all, the
+ * folder's answer wins when it differs from the default. A default answer, or a folder with no
+ * config.json, leaves VS Launcher's file byte for byte.
+ *
+ * Throws when the answer cannot be read or carried, so the import fails for this start (the marker
+ * stays, the profile is untouched, the next start tries again) rather than drops the answer.
+ *
+ * @param temporaryPath The temporary copy of VS Launcher's entries.
+ * @param markedFolderPath The marked folder whose config.json holds the answer.
+ * @param copied The entries copied into the temporary folder: with no config.json among them the folder's own stays in place and keeps its answer.
+ */
+function carryModDbAnswer(temporaryPath: string, markedFolderPath: string, copied: readonly string[]): void {
+  if (!copied.includes("config.json")) return
+  let current: unknown
+  try {
+    current = JSON.parse(fse.readFileSync(join(markedFolderPath, "config.json"), "utf-8").replace(/^\uFEFF/, ""))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw error
+  }
+  if (!isRecord(current)) throw new Error(`The marked folder's config.json is not a config document: ${markedFolderPath}`)
+  const answer = current["moddbVisibility"]
+  if (answer === undefined || JSON.stringify(answer) === JSON.stringify(DEFAULT_CONFIG_BASE.moddbVisibility)) return
+
+  const copiedConfigPath = join(temporaryPath, "config.json")
+  const copiedText = readMigrationConfig(copiedConfigPath).toString("utf8")
+  const config: unknown = JSON.parse(copiedText.replace(/^\uFEFF/, ""))
+  if (!isRecord(config)) throw new Error("VS Launcher's config.json is not a config document, so the ModDB answer cannot be carried into it")
+  const patched = Buffer.from(JSON.stringify({ ...config, moddbVisibility: answer }))
+  // The same limit the copy was held to, on what is written now: a document can grow when it is written back.
+  if (patched.length > MAX_MIGRATED_CONFIG_BYTES) throw new Error("Config exceeds the 16 MiB migration limit once the ModDB answer is carried into it")
+  fse.writeFileSync(copiedConfigPath, patched)
+}
+
+/**
  * Puts a finished import into a folder an earlier failed import left behind. That folder already
  * holds the logs and Chromium state this launcher wrote since, so the entries go in one by one and
  * the marker goes last: a copy that dies half way is simply tried again. config.json goes right
  * before the marker: once it is VS Launcher's, the first config save of the session looks like a
  * player's own choice and drops the marker, so every other entry has to be in place by then.
+ *
+ * The folder's ModDB answer is carried into the imported config.json first ({@link carryModDbAnswer}).
+ * The marker's removal is best effort: the import is done by then, and a marker left behind is read
+ * as stale at the next start, next to the config.json that was just put in place.
  */
 function importIntoMarkedFolder(temporaryPath: string, targetPath: string, copied: readonly string[], move: ReturnType<typeof createMoveWithRetry>): void {
+  carryModDbAnswer(temporaryPath, targetPath, copied)
   const configLast = [...copied].sort((a, b) => Number(a === "config.json") - Number(b === "config.json"))
   for (const entry of configLast) move(join(temporaryPath, entry), join(targetPath, entry), true)
-  fse.removeSync(join(targetPath, IMPORT_PENDING_MARKER_FILE))
+  dropStaleMarker(targetPath)
   // The import is done by now; the next start cleans a stale temporary folder anyway.
   removeTemporaryFolder(temporaryPath)
 }
+
+type ImportMarkerState = "none" | "pending" | "settled" | "unreadable"
 
 /**
  * What the failed-import marker in a folder still means, decided now from what is on disk:
@@ -254,8 +303,6 @@ function importIntoMarkedFolder(temporaryPath: string, targetPath: string, copie
  * @param folderPath The profile folder.
  * @param defaultFolderRoot Where this profile's session puts the default Installations, versions and backups folders, to tell a default from a changed one.
  */
-type ImportMarkerState = "none" | "pending" | "settled" | "unreadable"
-
 function importMarkerState(folderPath: string, defaultFolderRoot: string): ImportMarkerState {
   if (!fse.existsSync(join(folderPath, IMPORT_PENDING_MARKER_FILE))) return "none"
   let document: unknown
@@ -539,7 +586,11 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
 
     const moveWithRetry = createMoveWithRetry()
     if (markedPortableFolder) importIntoMarkedFolder(temporaryPath, dataPath, copied, moveWithRetry)
-    else moveWithRetry(temporaryPath, dataPath)
+    else {
+      // The marked default folder this import replaces is where the player's ModDB answer is.
+      if (defaultIsMarked) carryModDbAnswer(temporaryPath, currentProfilePath, copied)
+      moveWithRetry(temporaryPath, dataPath)
+    }
   } catch (error) {
     const temporaryGone = removeTemporaryFolder(temporaryPath)
     // Importing from VS Launcher only because the default folder holds the marker, or because this

@@ -59,12 +59,15 @@ export const IMPORT_PENDING_MARKER_FILE = "vs-launcher-import-pending"
 
 /**
  * What a first start fills in on its own, whatever the player did: the window the first resize or
- * move records, the changelog version the "what's new" dialog stamps, and the schema version the
- * launcher that wrote the file ran. Everything else in config.json is either a choice or the
- * default. That includes the ModDB answer: nothing writes it before the player does (the prompt,
- * the settings row, and a count that only an answer can owe).
+ * move records, the changelog version the "what's new" dialog stamps, the schema version the
+ * launcher that wrote the file ran, and the ModDB answer. That prompt shows by itself on the first
+ * launch of a version with no answer, so on the empty profile a failed import leaves it appears at
+ * once and almost every player answers it: counting the answer as use of the profile would end the
+ * retry for nearly everyone. The retry carries the answer into the imported config.json instead
+ * (see `importIntoMarkedFolder`), so it is neither lost nor reversed. Everything else in config.json
+ * is either a choice or the default.
  */
-const FIRST_START_FIELDS: ReadonlySet<string> = new Set(["schemaVersion", "window", "lastSeenChangelogVersion"])
+const FIRST_START_FIELDS: ReadonlySet<string> = new Set(["schemaVersion", "window", "lastSeenChangelogVersion", "moddbVisibility"])
 
 /**
  * Whether a config document holds something a player chose, so a failed VS Launcher import must

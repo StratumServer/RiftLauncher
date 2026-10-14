@@ -21,6 +21,7 @@ import {
   setUpUserDataFolder
 } from "@src/main/userDataMigration"
 import { DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
+import { normalizeModDbVisibility } from "@domain/moddbVisibility"
 import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
 
 /** The graceful-fs that fs-extra renames through; it ships without types and is not a dependency of its own. */
@@ -1443,12 +1444,8 @@ describe("a marked folder the player has used (#708)", () => {
   }
 
   it.each([
-    ["never, while VS Launcher's config says always", answer("never"), { moddbVisibility: { policy: "always", answeredVersion: "1.6.0", countedVersions: [] } }],
-    ["always, while VS Launcher's config says never", answer("always"), { moddbVisibility: { policy: "never", answeredVersion: "1.6.0", countedVersions: [] } }],
-    ["a yes for this version only", answer("once"), {}],
-    ["not this time", answer("ask"), {}],
-    ["a policy changed on the settings page", answer("never", ""), {}],
-    ["something else the player changed", { favMods: [5] }, {}]
+    ["something else the player changed", { favMods: [5] }, {}],
+    ["a ModDB answer next to something else the player changed", { favMods: [5], ...answer("never") }, { moddbVisibility: { policy: "always", answeredVersion: "1.6.0", countedVersions: [] } }]
   ])("keeps the profile and the choice: %s", (_name, choice, legacy) => {
     const mine = untouchedConfig(choice)
     markedFolder(mine, JSON.stringify(legacy))
@@ -1462,8 +1459,151 @@ describe("a marked folder the player has used (#708)", () => {
     assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), JSON.stringify(legacy))
   })
 
-  it("still starts, and keeps the profile, when the stale marker cannot be removed, and removes it once it can", () => {
+  const LEGACY_ALWAYS = { schemaVersion: 2, lastUsedInstallation: "abc", moddbVisibility: { policy: "always", answeredVersion: "1.6.0", countedVersions: ["1.6.0"] } }
+  const LEGACY_NEVER = { schemaVersion: 2, lastUsedInstallation: "abc", moddbVisibility: { policy: "never", answeredVersion: "1.6.0", countedVersions: [] } }
+
+  /** The config.json in `folder`, as the next session would read it. */
+  const importedConfig = (folder: string): Record<string, unknown> => JSON.parse(readFileSync(join(folder, "config.json"), "utf8")) as Record<string, unknown>
+
+  it.each([
+    ["never, while VS Launcher's config says always", answer("never"), LEGACY_ALWAYS],
+    ["always, while VS Launcher's config says never", answer("always"), LEGACY_NEVER],
+    ["a yes for this version only", answer("once"), LEGACY_NEVER],
+    ["not this time", answer("ask"), LEGACY_ALWAYS],
+    ["a policy changed on the settings page", answer("never", ""), LEGACY_ALWAYS],
+    ["a count that only an answer can owe", { moddbVisibility: { policy: "always", answeredVersion: "1.7.0", countedVersions: ["1.7.0"] } }, LEGACY_NEVER],
+    ["an answer over a VS Launcher config that has no such field", answer("never"), { schemaVersion: 2, lastUsedInstallation: "abc" }]
+  ])("imports at the next start and carries the ModDB answer over: %s", (_name, choice, legacy) => {
+    markedFolder(untouchedConfig(choice), JSON.stringify(legacy))
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "migrate")
+    assert.deepEqual(setup.copied, ["config.json", "Icons"])
+    const imported = importedConfig(riftPath())
+    assert.deepEqual(imported.moddbVisibility, choice.moddbVisibility)
+    assert.equal(normalizeModDbVisibility(imported.moddbVisibility, "1.7.0").policy, (choice.moddbVisibility as { policy: string }).policy)
+    assert.equal(imported.lastUsedInstallation, "abc", "VS Launcher's own data is what gets imported")
+    assert.equal(readFileSync(join(riftPath(), "Icons", "custom.png"), "utf8"), "not really a png")
+    assert.equal(existsSync(MARKER()), false)
+    assert.equal(existsSync(temporaryPath()), false)
+    assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), JSON.stringify(legacy), "VS Launcher's folder is only read")
+  })
+
+  it("leaves VS Launcher's config byte for byte when the marked folder holds the default answer", () => {
+    markedFolder(untouchedConfig(), JSON.stringify(LEGACY_ALWAYS))
+
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "migrate")
+
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), JSON.stringify(LEGACY_ALWAYS))
+  })
+
+  it("fails the import for this start, and touches nothing, when the current config.json cannot be read for its answer", () => {
     const mine = untouchedConfig(answer("never"))
+    markedFolder(mine, JSON.stringify(LEGACY_ALWAYS))
+    const original = fse.readFileSync.bind(fse)
+    let reads = 0
+    // The start-time check reads it fine; the read made for the import fails.
+    const read = vi.spyOn(fse, "readFileSync").mockImplementation(((path: string, ...rest: unknown[]) => {
+      if (String(path) === join(riftPath(), "config.json") && (reads += 1) > 1) throw Object.assign(new Error("EIO: i/o error"), { code: "EIO" })
+      return (original as (...args: unknown[]) => unknown)(path, ...rest)
+    }) as typeof fse.readFileSync)
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migration-failed")
+      assert.equal(setup.importPending, true)
+      assert.match(setup.failureReason ?? "", /EIO/)
+    } finally {
+      read.mockRestore()
+    }
+    assertNothingImported(mine)
+    assert.equal(existsSync(MARKER()), true)
+
+    const next = setUpUserDataFolder(appDataPath)
+
+    assert.equal(next.outcome, "migrate")
+    assert.equal((importedConfig(riftPath()).moddbVisibility as { policy: string }).policy, "never")
+  })
+
+  it("fails the import for this start, and touches nothing, when the patched config.json cannot be written", () => {
+    const mine = untouchedConfig(answer("never"))
+    markedFolder(mine, JSON.stringify(LEGACY_ALWAYS))
+    const original = fse.writeFileSync.bind(fse)
+    const write = vi.spyOn(fse, "writeFileSync").mockImplementation(((path: string, data: unknown, ...rest: unknown[]) => {
+      if (String(path) === join(temporaryPath(), "config.json") && String(data).includes('"never"')) throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" })
+      return (original as (...args: unknown[]) => void)(path, data, ...rest)
+    }) as typeof fse.writeFileSync)
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migration-failed")
+      assert.equal(setup.importPending, true)
+      assert.match(setup.failureReason ?? "", /ENOSPC/)
+    } finally {
+      write.mockRestore()
+    }
+    assertNothingImported(mine)
+    assert.equal(existsSync(MARKER()), true)
+
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "migrate")
+    assert.equal((importedConfig(riftPath()).moddbVisibility as { policy: string }).policy, "never")
+  })
+
+  it.each([
+    ["is not an object", "[]"],
+    ["is not JSON", '{"schemaVersion": 2, "last']
+  ])("fails the import for this start, and touches nothing, when VS Launcher's config.json %s and there is an answer to carry", (_name, legacy) => {
+    const mine = untouchedConfig(answer("never"))
+    markedFolder(mine, legacy)
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "migration-failed")
+    assert.equal(setup.importPending, true)
+    assertNothingImported(mine)
+    assert.equal(existsSync(MARKER()), true)
+    assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), legacy)
+  })
+
+  it("keeps the 16 MiB limit on the config.json it patches", () => {
+    const mine = untouchedConfig(answer("never"))
+    // 1e5 is three bytes in this file and six once it is written back, so the patched copy outgrows the limit.
+    const legacy = `{"favMods":[${Array.from({ length: 4_000_000 }, () => "1e5").join(",")}]}`
+    assert.ok(Buffer.byteLength(legacy) <= 16 * 1024 * 1024)
+    markedFolder(mine, legacy)
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "migration-failed")
+    assert.match(setup.failureReason ?? "", /16 MiB migration limit/)
+    assertNothingImported(mine)
+    assert.equal(existsSync(MARKER()), true)
+  })
+
+  it("counts the import as done when only the removal of the marker fails, and drops the stale marker at the next start", () => {
+    markedFolder(untouchedConfig(), SEEDED_CONFIG)
+    const lock = lockRemovalOf(MARKER())
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migrate")
+      assert.deepEqual(setup.copied, ["config.json", "Icons"])
+      assert.equal(setup.importPending, undefined)
+    } finally {
+      lock.restore()
+    }
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    assert.equal(existsSync(MARKER()), true)
+    assert.equal(existsSync(temporaryPath()), false)
+
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "use-existing")
+    assert.equal(existsSync(MARKER()), false)
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+  })
+
+  it("still starts, and keeps the profile, when the stale marker cannot be removed, and removes it once it can", () => {
+    const mine = untouchedConfig({ favMods: [5], ...answer("never") })
     markedFolder(mine)
     const lock = lockRemovalOf(MARKER())
     try {
@@ -1543,7 +1683,7 @@ describe("a marked folder the player has used (#708)", () => {
     }
 
     it("keeps a portable profile whose stale marker could not be removed, and removes the marker once it can", () => {
-      const mine = untouchedConfig(answer("never"), portableDataPath())
+      const mine = untouchedConfig({ favMods: [5], ...answer("never") }, portableDataPath())
       markedPortableFolder(mine)
       const lock = lockRemovalOf(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE))
       try {
@@ -1577,9 +1717,45 @@ describe("a marked folder the player has used (#708)", () => {
       assert.equal(existsSync(join(portableDataPath(), "Icons")), false)
     })
 
+    it("carries the ModDB answer of a marked portable profile into the import", () => {
+      markedPortableFolder(untouchedConfig(answer("never"), portableDataPath()))
+      writeFileSync(join(legacyPath(), "config.json"), JSON.stringify(LEGACY_ALWAYS), "utf8")
+
+      const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(setup.outcome, "migrate")
+      assert.deepEqual(importedConfig(portableDataPath()).moddbVisibility, answer("never").moddbVisibility)
+      assert.equal(importedConfig(portableDataPath()).lastUsedInstallation, "abc")
+      assert.equal(existsSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE)), false)
+    })
+
+    it("fails the import into a marked portable profile, and touches nothing, when the answer cannot be carried", () => {
+      const mine = untouchedConfig(answer("never"), portableDataPath())
+      markedPortableFolder(mine)
+      writeFileSync(join(legacyPath(), "config.json"), "[]", "utf8")
+
+      const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(setup.outcome, "migration-failed")
+      assert.equal(setup.importPending, true)
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), mine)
+      assert.equal(existsSync(join(portableDataPath(), "Icons")), false)
+      assert.equal(existsSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE)), true)
+    })
+
+    it("carries the ModDB answer of a marked default profile into the import that replaces it", () => {
+      markedFolder(untouchedConfig(answer("never")), JSON.stringify(LEGACY_ALWAYS))
+
+      const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(setup.outcome, "migrate")
+      assert.deepEqual(importedConfig(portableDataPath()).moddbVisibility, answer("never").moddbVisibility)
+      assert.equal(importedConfig(portableDataPath()).lastUsedInstallation, "abc")
+    })
+
     it("copies a default profile the player used, marker still there or not, instead of importing VS Launcher's folder", () => {
       seedLegacyFolder()
-      const mine = untouchedConfig(answer("never"))
+      const mine = untouchedConfig({ favMods: [5], ...answer("never") })
       mkdirSync(riftPath())
       writeFileSync(MARKER(), "", "utf8")
       writeFileSync(join(riftPath(), "config.json"), mine, "utf8")
