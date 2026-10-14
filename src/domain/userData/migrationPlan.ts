@@ -48,11 +48,36 @@ export const DEFAULT_BACKUPS_FOLDER_NAME = "RiftLauncherBackups"
 /**
  * File a failed import leaves in the otherwise empty RiftLauncher folder.
  *
- * Its presence says "the VS Launcher data was never carried over", so the next start tries again.
- * The import removes it on success, and the first config save that changes anything but the window
- * position removes it too, which is the moment the folder stops being empty in any way that matters.
+ * It says "the VS Launcher data was never carried over", but only together with the folder's
+ * config.json: the next start tries again when that file is absent or holds nothing the player
+ * chose ({@link holdsPlayerChoice}), and otherwise treats the marker as stale and drops it. The
+ * import removes it on success, and the first config save that holds a player's choice removes it
+ * too, best effort: a marker that outlives that save (a scanner holds it open) is harmless, since
+ * the start-time check reads what the save wrote.
  */
 export const IMPORT_PENDING_MARKER_FILE = "vs-launcher-import-pending"
+
+/**
+ * What a first start fills in on its own, whatever the player did: the window the first resize or
+ * move records, the changelog version the "what's new" dialog stamps, and the schema version the
+ * launcher that wrote the file ran. Everything else in config.json is either a choice or the
+ * default. That includes the ModDB answer: nothing writes it before the player does (the prompt,
+ * the settings row, and a count that only an answer can owe).
+ */
+const FIRST_START_FIELDS: ReadonlySet<string> = new Set(["schemaVersion", "window", "lastSeenChangelogVersion"])
+
+/**
+ * Whether a config document holds something a player chose, so a failed VS Launcher import must
+ * not replace it. One rule for both sides: the save path asks it of the config it is about to write
+ * (to drop the marker) and the start asks it of the config.json it finds (to decide whether to
+ * import into a marked folder).
+ *
+ * @param config The document, as saved or as read from disk.
+ * @param untouched What a first start writes when nobody chose anything, for the same fields.
+ */
+export function holdsPlayerChoice(config: Readonly<Record<string, unknown>>, untouched: Readonly<Record<string, unknown>>): boolean {
+  return Object.entries(config).some(([field, value]) => !FIRST_START_FIELDS.has(field) && JSON.stringify(value) !== JSON.stringify(untouched[field]))
+}
 
 export type MigratedUserDataEntry = (typeof MIGRATED_USER_DATA_ENTRIES)[number]
 
@@ -60,7 +85,10 @@ export type MigratedUserDataEntry = (typeof MIGRATED_USER_DATA_ENTRIES)[number]
 export interface UserDataProbe {
   /** Whether the RiftLauncher user-data folder is already there. */
   readonly riftExists: boolean
-  /** Whether that folder holds {@link IMPORT_PENDING_MARKER_FILE}, left by an import that failed. */
+  /**
+   * Whether that folder holds {@link IMPORT_PENDING_MARKER_FILE}, left by an import that failed,
+   * and its config.json has not been used since: absent, or holding no player choice.
+   */
   readonly riftImportPending: boolean
   /** Whether a VS Launcher user-data folder is there to copy from. */
   readonly vslExists: boolean

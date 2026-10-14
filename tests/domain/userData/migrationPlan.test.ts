@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { IMPORT_PENDING_MARKER_FILE, MIGRATED_USER_DATA_ENTRIES, planUserDataMigration } from "../../../src/domain/userData/migrationPlan"
+import { holdsPlayerChoice, IMPORT_PENDING_MARKER_FILE, MIGRATED_USER_DATA_ENTRIES, planUserDataMigration } from "../../../src/domain/userData/migrationPlan"
 import type { UserDataProbe } from "../../../src/domain/userData/migrationPlan"
 
 /**
@@ -74,5 +74,42 @@ describe("planUserDataMigration", () => {
       assert.equal(plan.cleanStaleMigration, input.staleMigrationExists)
       assert.equal(["use-existing", "migrate", "fresh"].includes(plan.action), true)
     }
+  })
+})
+
+describe("holdsPlayerChoice (#708)", () => {
+  const untouched = {
+    schemaVersion: 3,
+    favMods: [],
+    window: { width: 1280, height: 720, x: 0, y: 0, maximized: false },
+    lastSeenChangelogVersion: "",
+    moddbVisibility: { policy: "ask", answeredVersion: "", countedVersions: [] }
+  }
+
+  it("sees nothing chosen in the document a first start writes, or in an empty one", () => {
+    assert.equal(holdsPlayerChoice(untouched, untouched), false)
+    assert.equal(holdsPlayerChoice({}, untouched), false)
+  })
+
+  it("does not count what a first start fills in by itself: the window, the changelog version and the schema version", () => {
+    assert.equal(holdsPlayerChoice({ ...untouched, window: { width: 900, height: 600, x: 10, y: 20, maximized: true } }, untouched), false)
+    assert.equal(holdsPlayerChoice({ ...untouched, lastSeenChangelogVersion: "1.7.0" }, untouched), false)
+    assert.equal(holdsPlayerChoice({ ...untouched, schemaVersion: 2 }, untouched), false)
+  })
+
+  it("counts any other field that differs, an unknown field included", () => {
+    assert.equal(holdsPlayerChoice({ ...untouched, favMods: [5] }, untouched), true)
+    assert.equal(holdsPlayerChoice({ ...untouched, somethingNew: 1 }, untouched), true)
+  })
+
+  it.each([
+    ["never", { policy: "never", answeredVersion: "1.7.0", countedVersions: [] }],
+    ["always", { policy: "always", answeredVersion: "1.7.0", countedVersions: [] }],
+    ["a yes for this version only", { policy: "once", answeredVersion: "1.7.0", countedVersions: [] }],
+    ["not this time", { policy: "ask", answeredVersion: "1.7.0", countedVersions: [] }],
+    ["a policy changed on the settings page", { policy: "never", answeredVersion: "", countedVersions: [] }],
+    ["a count", { policy: "ask", answeredVersion: "", countedVersions: ["1.7.0"] }]
+  ])("counts the ModDB answer %s: nothing writes that field before the player does", (_name, moddbVisibility) => {
+    assert.equal(holdsPlayerChoice({ ...untouched, moddbVisibility }, untouched), true)
   })
 })

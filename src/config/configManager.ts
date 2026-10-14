@@ -16,7 +16,7 @@ import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/d
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 import { isSafeWorldName } from "@domain/worlds/worlds"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
-import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
+import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, holdsPlayerChoice, IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
 
 const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
 
@@ -118,17 +118,9 @@ export function noteUserDataImportFailed(): void {
   pendingConfigRecoveryNotice = { kind: "import-failed" }
 }
 
-/**
- * What a first start fills in on its own, without the player choosing anything: the window the
- * first resize or move records, the changelog version the "what's new" dialog stamps, and the
- * ModDB prompt's answer, which a retried import resets to "ask" rather than to a wrong answer.
- */
-const FIRST_START_FIELDS: ReadonlySet<string> = new Set(["window", "lastSeenChangelogVersion", "moddbVisibility"])
-
 /** Whether a document holds nothing a player chose, so a failed VS Launcher import can still replace it. */
 function isUntouchedProfile(config: ConfigType): boolean {
-  const defaults = normalizeConfig(defaultConfig) as unknown as Record<string, unknown>
-  return Object.entries(config).every(([field, value]) => FIRST_START_FIELDS.has(field) || JSON.stringify(value) === JSON.stringify(defaults[field]))
+  return !holdsPlayerChoice(config as unknown as Record<string, unknown>, normalizeConfig(defaultConfig) as unknown as Record<string, unknown>)
 }
 
 /** Whether the failed-import marker is known to be gone, so later saves skip the check. */
@@ -136,10 +128,12 @@ let importMarkerSettled = false
 
 /**
  * Drops the failed-import marker once a save holds something the player chose. From then on the
- * profile is theirs and a retried import would overwrite it, so the next start must not run one.
- * Every config write goes through the queue below, which is why this is the one place that does it.
- * It runs before the write: a marker that outlived a write holding the player's choices would let
- * the next start import over them.
+ * profile is theirs and a retried import would overwrite it. Every config write goes through the
+ * queue below, which is why this is the one place that does it.
+ *
+ * Best effort, and nothing depends on it: the next start decides from the config.json it finds
+ * (see `importMarkerState` in src/main/userDataMigration.ts), so a marker that cannot be removed
+ * (a scanner holds it open) is stale and is dropped there, never an import over this save.
  *
  * @returns The marker's path when this call removed it, so a write that then fails can put it back.
  */

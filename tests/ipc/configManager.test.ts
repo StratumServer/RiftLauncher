@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import fse from "fs-extra"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 
 import "./helpers/electronMock"
@@ -1942,15 +1943,30 @@ describe("the failed-import marker and saveConfig", () => {
     assert.deepEqual(readdirSync(userDataFolder).sort(), ["config.json", IMPORT_PENDING_MARKER_FILE])
   })
 
-  it("survives what a first start fills in by itself: the window, the changelog version and the ModDB answer", async () => {
+  it("survives what a first start fills in by itself: the window and the changelog version, and the ModDB field while nobody has answered", async () => {
     const { getConfig, saveConfig } = await freshConfigManager()
     const config = await getConfig()
 
     assert.equal(await saveConfig({ ...config, window: { width: 900, height: 600, x: 10, y: 20, maximized: true } }), true)
     assert.equal(await saveConfig({ ...config, lastSeenChangelogVersion: "1.7.0" }), true)
-    assert.equal(await saveConfig({ ...config, moddbVisibility: { ...config.moddbVisibility, answeredVersion: "1.7.0" } }), true)
+    assert.equal(await saveConfig({ ...config, moddbVisibility: defaultModDbVisibility() }), true)
 
     assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), true)
+  })
+
+  it.each([
+    ["never", { policy: "never", answeredVersion: "1.7.0", countedVersions: [] }],
+    ["always", { policy: "always", answeredVersion: "1.7.0", countedVersions: [] }],
+    ["a yes for this version only", { policy: "once", answeredVersion: "1.7.0", countedVersions: [] }],
+    ["not this time", { policy: "ask", answeredVersion: "1.7.0", countedVersions: [] }],
+    ["a policy changed on the settings page", { policy: "never", answeredVersion: "", countedVersions: [] }]
+  ] as const)("goes with a ModDB answer the player gave: %s", async (_name, answer) => {
+    const { getConfig, saveConfig } = await freshConfigManager()
+    const config = await getConfig()
+
+    assert.equal(await saveConfig({ ...config, moddbVisibility: { ...answer, countedVersions: [...answer.countedVersions] } }), true)
+
+    assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), false)
   })
 
   it("goes with the first save that holds something the player chose", async () => {
@@ -2046,5 +2062,97 @@ describe("the failed-import marker and saveConfig", () => {
 
     assert.equal(setUpUserDataFolder(appDataFolder).outcome, "use-existing")
     assert.deepEqual((await (await freshConfigManager()).getConfig()).favMods, [9])
+  })
+
+  /** The marker that cannot be removed: a scanner holds it open while the save of config.json goes through. */
+  function lockMarkerRemoval(folder: string): { restore: () => void } {
+    const original = fse.removeSync.bind(fse)
+    const remove = vi.spyOn(fse, "removeSync").mockImplementation(((path: string) => {
+      if (String(path) === join(folder, IMPORT_PENDING_MARKER_FILE)) throw Object.assign(new Error(`EBUSY: resource busy or locked, unlink '${String(path)}'`), { code: "EBUSY" })
+      return original(path)
+    }) as typeof fse.removeSync)
+    return { restore: () => remove.mockRestore() }
+  }
+
+  /** A VS Launcher folder whose config says `legacyConfig`, and a first RiftLauncher start whose import failed once. */
+  function importFailsOnce(legacyConfig: Partial<ConfigType>): string {
+    rmSync(userDataFolder, { recursive: true })
+    const legacy = join(appDataFolder, LEGACY_USER_DATA_FOLDER)
+    const rift = join(appDataFolder, RIFT_USER_DATA_FOLDER)
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, "config.json"), JSON.stringify(minimalConfig(legacyConfig)), "utf-8")
+    const original = gracefulFs.renameSync.bind(gracefulFs)
+    const rename = vi.spyOn(gracefulFs, "renameSync").mockImplementation(((from: string, to: string) => {
+      if (to === rift) throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC", syscall: "rename" })
+      return original(from, to)
+    }) as typeof gracefulFs.renameSync)
+    try {
+      assert.equal(setUpUserDataFolder(appDataFolder).outcome, "migration-failed")
+    } finally {
+      rename.mockRestore()
+    }
+    setElectronUserDataPath(rift)
+    return rift
+  }
+
+  const ALWAYS = { policy: "always", answeredVersion: "1.6.0", countedVersions: [] } as const
+  const NEVER = { policy: "never", answeredVersion: "1.6.0", countedVersions: [] } as const
+
+  it.each([
+    ["never", NEVER, ALWAYS],
+    ["always", ALWAYS, NEVER]
+  ])("keeps a ModDB answer of %s through the next start, whatever VS Launcher's config says", async (_name, mine, theirs) => {
+    importFailsOnce({ moddbVisibility: { ...theirs, countedVersions: [] } })
+    const session = await freshConfigManager()
+    const config = await session.getConfig()
+    assert.equal(await session.saveConfig({ ...config, moddbVisibility: { ...mine, answeredVersion: "1.7.0", countedVersions: [] } }), true)
+    await session.flushConfigWrites()
+
+    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "use-existing")
+
+    assert.equal((await (await freshConfigManager()).getConfig()).moddbVisibility.policy, mine.policy)
+  })
+
+  it("keeps a ModDB policy changed on the settings page through the next start", async () => {
+    importFailsOnce({ moddbVisibility: { ...ALWAYS, countedVersions: [] } })
+    const session = await freshConfigManager()
+    const config = await session.getConfig()
+    assert.equal(await session.saveConfig({ ...config, moddbVisibility: { ...config.moddbVisibility, policy: "never" } }), true)
+
+    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "use-existing")
+
+    assert.equal((await (await freshConfigManager()).getConfig()).moddbVisibility.policy, "never")
+  })
+
+  it("keeps the player's saved config at the next start when only the removal of the marker failed", async () => {
+    const rift = importFailsOnce({ favMods: [1, 2, 3] })
+    const session = await freshConfigManager()
+    const config = await session.getConfig()
+    const lock = lockMarkerRemoval(rift)
+    try {
+      assert.equal(await session.saveConfig({ ...config, favMods: [9] }), true)
+      await session.flushConfigWrites()
+
+      assert.equal(readdirSync(rift).includes(IMPORT_PENDING_MARKER_FILE), true, "the marker is still there")
+      assert.equal(setUpUserDataFolder(appDataFolder).outcome, "use-existing")
+    } finally {
+      lock.restore()
+    }
+
+    assert.deepEqual((await (await freshConfigManager()).getConfig()).favMods, [9])
+    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "use-existing")
+    assert.equal(readdirSync(rift).includes(IMPORT_PENDING_MARKER_FILE), false, "a start that can remove the stale marker does")
+  })
+
+  it("still imports at the next start after a first start that only saved what it fills in by itself", async () => {
+    importFailsOnce({ favMods: [1, 2, 3] })
+    const session = await freshConfigManager()
+    const config = await session.getConfig()
+    assert.equal(await session.saveConfig({ ...config, window: { width: 900, height: 600, x: 10, y: 20, maximized: true }, lastSeenChangelogVersion: "1.7.0" }), true)
+    await session.flushConfigWrites()
+
+    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "migrate")
+
+    assert.deepEqual((await (await freshConfigManager()).getConfig()).favMods, [1, 2, 3])
   })
 })

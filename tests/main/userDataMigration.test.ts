@@ -20,7 +20,8 @@ import {
   setUpPortableUserDataFolder,
   setUpUserDataFolder
 } from "@src/main/userDataMigration"
-import { IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
+import { DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
+import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
 
 /** The graceful-fs that fs-extra renames through; it ships without types and is not a dependency of its own. */
 const gracefulFs = createRequire(import.meta.url)("graceful-fs") as typeof import("node:fs")
@@ -791,6 +792,21 @@ function lockRemovalOf(...paths: string[]): { restore: () => void } {
 
 const SEEDED_CONFIG = JSON.stringify({ schemaVersion: 2, lastUsedInstallation: "abc" })
 
+/**
+ * The config.json a start that failed to import writes on its own, with nothing chosen by the
+ * player, laid out the way the launcher writes it. `overrides` are the player's choices.
+ */
+function untouchedConfig(overrides: Record<string, unknown> = {}, root = appDataPath): string {
+  return JSON.stringify({
+    schemaVersion: 3,
+    ...DEFAULT_CONFIG_BASE,
+    defaultInstallationsFolder: join(root, DEFAULT_INSTALLATIONS_FOLDER_NAME),
+    defaultVersionsFolder: join(root, DEFAULT_VERSIONS_FOLDER_NAME),
+    backupsFolder: join(root, DEFAULT_BACKUPS_FOLDER_NAME),
+    ...overrides
+  })
+}
+
 describe("a VS Launcher import that fails (#708)", () => {
   it.each(["EPERM", "EACCES", "EBUSY"])("absorbs a final rename that fails once with %s", (code) => {
     seedLegacyFolder()
@@ -839,7 +855,7 @@ describe("a VS Launcher import that fails (#708)", () => {
     // What the launcher itself wrote into the folder in between: its logs and Chromium's state.
     mkdirSync(join(riftPath(), "Logs"))
     writeFileSync(join(riftPath(), "Logs", "info.log"), "a line from the failed start", "utf8")
-    writeFileSync(join(riftPath(), "config.json"), JSON.stringify({ defaults: true }), "utf8")
+    writeFileSync(join(riftPath(), "config.json"), untouchedConfig(), "utf8")
 
     const second = setUpUserDataFolder(appDataPath)
 
@@ -862,7 +878,7 @@ describe("a VS Launcher import that fails (#708)", () => {
     } finally {
       first.restore()
     }
-    const defaults = JSON.stringify({ defaults: true })
+    const defaults = untouchedConfig()
     writeFileSync(join(riftPath(), "config.json"), defaults, "utf8")
 
     // Second start: Icons stays locked past the window.
@@ -1397,6 +1413,183 @@ describe("a VS Launcher import that fails (#708)", () => {
       } finally {
         lock.restore()
       }
+    })
+  })
+})
+
+/**
+ * The decision to import into a marked folder is made at the moment of importing, from what the
+ * folder holds: a marker that outlived a profile the player used (a scanner held it open when the
+ * save tried to remove it) must not send the next start over their saved config.
+ */
+describe("a marked folder the player has used (#708)", () => {
+  const MARKER = (): string => join(riftPath(), IMPORT_PENDING_MARKER_FILE)
+
+  const answer = (policy: string, answeredVersion = "1.7.0"): Record<string, unknown> => ({ moddbVisibility: { policy, answeredVersion, countedVersions: [] } })
+
+  /** A marked folder whose config.json is `config`, next to a VS Launcher folder whose config.json is `legacyConfig`. */
+  function markedFolder(config: string | null, legacyConfig = SEEDED_CONFIG): void {
+    seedLegacyFolder()
+    writeFileSync(join(legacyPath(), "config.json"), legacyConfig, "utf8")
+    mkdirSync(riftPath())
+    writeFileSync(MARKER(), "", "utf8")
+    if (config !== null) writeFileSync(join(riftPath(), "config.json"), config, "utf8")
+  }
+
+  function assertNothingImported(config: string): void {
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), config)
+    assert.equal(existsSync(join(riftPath(), "Icons")), false)
+    assert.equal(existsSync(temporaryPath()), false)
+  }
+
+  it.each([
+    ["never, while VS Launcher's config says always", answer("never"), { moddbVisibility: { policy: "always", answeredVersion: "1.6.0", countedVersions: [] } }],
+    ["always, while VS Launcher's config says never", answer("always"), { moddbVisibility: { policy: "never", answeredVersion: "1.6.0", countedVersions: [] } }],
+    ["a yes for this version only", answer("once"), {}],
+    ["not this time", answer("ask"), {}],
+    ["a policy changed on the settings page", answer("never", ""), {}],
+    ["something else the player changed", { favMods: [5] }, {}]
+  ])("keeps the profile and the choice: %s", (_name, choice, legacy) => {
+    const mine = untouchedConfig(choice)
+    markedFolder(mine, JSON.stringify(legacy))
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "use-existing")
+    assert.deepEqual(setup.copied, [])
+    assertNothingImported(mine)
+    assert.equal(existsSync(MARKER()), false, "the stale marker goes")
+    assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), JSON.stringify(legacy))
+  })
+
+  it("still starts, and keeps the profile, when the stale marker cannot be removed, and removes it once it can", () => {
+    const mine = untouchedConfig(answer("never"))
+    markedFolder(mine)
+    const lock = lockRemovalOf(MARKER())
+    try {
+      for (let start = 0; start < 2; start += 1) {
+        const setup = setUpUserDataFolder(appDataPath)
+
+        assert.equal(setup.outcome, "use-existing")
+        assertNothingImported(mine)
+        assert.equal(existsSync(MARKER()), true)
+      }
+    } finally {
+      lock.restore()
+    }
+
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "use-existing")
+    assert.equal(existsSync(MARKER()), false)
+    assertNothingImported(mine)
+  })
+
+  it("imports into a marked folder whose config.json is still the untouched one, whatever a first start filled in by itself", () => {
+    const filledIn = untouchedConfig({ schemaVersion: 2, window: { width: 900, height: 600, x: 10, y: 20, maximized: true }, lastSeenChangelogVersion: "1.7.0" })
+    markedFolder(filledIn)
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "migrate")
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+    assert.equal(readFileSync(join(riftPath(), "Icons", "custom.png"), "utf8"), "not really a png")
+    assert.equal(existsSync(MARKER()), false)
+  })
+
+  it("imports into a marked folder that has no config.json at all", () => {
+    markedFolder(null)
+
+    assert.equal(setUpUserDataFolder(appDataPath).outcome, "migrate")
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+  })
+
+  it.each([
+    ["a truncated document", '{"schemaVersion": 3, "favMo'],
+    ["an empty file", ""],
+    ["valid JSON that is not an object", "[]"],
+    ["a null document", "null"]
+  ])("never imports over a config.json that cannot be read as a config: %s", (_name, unreadable) => {
+    markedFolder(unreadable)
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "use-existing")
+    assert.equal(setup.importPending, undefined)
+    assertNothingImported(unreadable)
+    assert.equal(existsSync(MARKER()), true, "left for a later start, which can read the file")
+    assert.equal(readFileSync(join(legacyPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+  })
+
+  it("never imports over a config.json that cannot be opened as a file", () => {
+    markedFolder(null)
+    mkdirSync(join(riftPath(), "config.json"))
+
+    const setup = setUpUserDataFolder(appDataPath)
+
+    assert.equal(setup.outcome, "use-existing")
+    assert.equal(existsSync(join(riftPath(), "Icons")), false)
+    assert.equal(existsSync(MARKER()), true)
+  })
+
+  describe("in a portable profile", () => {
+    function portableDataPath(): string {
+      return join(appDataPath, "drive", PORTABLE_USER_DATA_FOLDER)
+    }
+
+    function markedPortableFolder(config: string): void {
+      seedLegacyFolder()
+      mkdirSync(portableDataPath(), { recursive: true })
+      writeFileSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE), "", "utf8")
+      writeFileSync(join(portableDataPath(), "config.json"), config, "utf8")
+    }
+
+    it("keeps a portable profile whose stale marker could not be removed, and removes the marker once it can", () => {
+      const mine = untouchedConfig(answer("never"), portableDataPath())
+      markedPortableFolder(mine)
+      const lock = lockRemovalOf(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE))
+      try {
+        const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+        assert.equal(setup.outcome, "use-existing")
+      } finally {
+        lock.restore()
+      }
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), mine)
+      assert.equal(existsSync(join(portableDataPath(), "Icons")), false)
+
+      assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "use-existing")
+      assert.equal(existsSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE)), false)
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), mine)
+    })
+
+    it("imports into a marked portable profile whose config.json is still the untouched one", () => {
+      markedPortableFolder(untouchedConfig({ lastSeenChangelogVersion: "1.7.0" }, portableDataPath()))
+
+      assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "migrate")
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), SEEDED_CONFIG)
+      assert.equal(existsSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE)), false)
+    })
+
+    it("never imports over an unreadable config.json in a marked portable profile", () => {
+      markedPortableFolder('{"schemaVersion": 3, "favMo')
+
+      assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "use-existing")
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), '{"schemaVersion": 3, "favMo')
+      assert.equal(existsSync(join(portableDataPath(), "Icons")), false)
+    })
+
+    it("copies a default profile the player used, marker still there or not, instead of importing VS Launcher's folder", () => {
+      seedLegacyFolder()
+      const mine = untouchedConfig(answer("never"))
+      mkdirSync(riftPath())
+      writeFileSync(MARKER(), "", "utf8")
+      writeFileSync(join(riftPath(), "config.json"), mine, "utf8")
+
+      const setup = setUpPortableUserDataFolder(appDataPath, portableDataPath())
+
+      assert.equal(setup.outcome, "portable-profile-migrated")
+      // The copy rewrites the default folder paths, so the answer is read rather than the bytes compared.
+      assert.equal(JSON.parse(readFileSync(join(portableDataPath(), "config.json"), "utf8")).moddbVisibility.policy, "never")
+      assert.equal(existsSync(join(portableDataPath(), "Icons")), false)
     })
   })
 })

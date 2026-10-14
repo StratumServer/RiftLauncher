@@ -2,10 +2,12 @@ import { constants, realpathSync } from "node:fs"
 import { basename, dirname, join, posix, relative, win32 } from "node:path"
 import fse from "fs-extra"
 
+import { DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 import {
   DEFAULT_BACKUPS_FOLDER_NAME,
   DEFAULT_INSTALLATIONS_FOLDER_NAME,
   DEFAULT_VERSIONS_FOLDER_NAME,
+  holdsPlayerChoice,
   IMPORT_PENDING_MARKER_FILE,
   MIGRATED_USER_DATA_ENTRIES,
   planUserDataMigration
@@ -236,6 +238,52 @@ function importIntoMarkedFolder(temporaryPath: string, targetPath: string, copie
   removeTemporaryFolder(temporaryPath)
 }
 
+/**
+ * What the failed-import marker in a folder still means, decided now from what is on disk:
+ *
+ * - `none`: no marker.
+ * - `pending`: a marker, and a config.json that is absent or holds nothing the player chose, so
+ *   the import still has to happen.
+ * - `settled`: a marker, and a config.json that holds a player's choice. The marker is stale (the
+ *   save that made the choice could not remove it) and the profile is theirs.
+ * - `unreadable`: a marker, and a config.json that cannot be read as a config document (unreadable
+ *   file, invalid or truncated JSON, not an object). It may hold anything, so it is never imported
+ *   over; the marker stays for a later start that can read it, and the launcher's own recovery
+ *   decides what the session runs on.
+ *
+ * @param folderPath The profile folder.
+ * @param defaultFolderRoot Where this profile's session puts the default Installations, versions and backups folders, to tell a default from a changed one.
+ */
+type ImportMarkerState = "none" | "pending" | "settled" | "unreadable"
+
+function importMarkerState(folderPath: string, defaultFolderRoot: string): ImportMarkerState {
+  if (!fse.existsSync(join(folderPath, IMPORT_PENDING_MARKER_FILE))) return "none"
+  let document: unknown
+  try {
+    // The same leading byte order mark strip the config loader does.
+    document = JSON.parse(fse.readFileSync(join(folderPath, "config.json"), "utf-8").replace(/^\uFEFF/, ""))
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "pending" : "unreadable"
+  }
+  if (typeof document !== "object" || document === null || Array.isArray(document)) return "unreadable"
+  const untouched = {
+    ...DEFAULT_CONFIG_BASE,
+    defaultInstallationsFolder: join(defaultFolderRoot, DEFAULT_INSTALLATIONS_FOLDER_NAME),
+    defaultVersionsFolder: join(defaultFolderRoot, DEFAULT_VERSIONS_FOLDER_NAME),
+    backupsFolder: join(defaultFolderRoot, DEFAULT_BACKUPS_FOLDER_NAME)
+  }
+  return holdsPlayerChoice(document as Record<string, unknown>, untouched) ? "settled" : "pending"
+}
+
+/** Removes a stale marker. Best effort: a marker that stays is read as stale again at the next start. */
+function dropStaleMarker(folderPath: string): void {
+  try {
+    fse.removeSync(join(folderPath, IMPORT_PENDING_MARKER_FILE))
+  } catch {
+    /* a scanner holding the file: the next start reads it as stale again */
+  }
+}
+
 /** Leaves the empty folder a failed import ends on, with the marker that makes the next start try again. Whether the marker could be written. */
 function leaveMarkedEmptyFolder(folderPath: string): boolean {
   fse.ensureDirSync(folderPath)
@@ -319,12 +367,12 @@ export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
   const riftPath = join(appDataPath, RIFT_USER_DATA_FOLDER)
   const legacyPath = join(appDataPath, LEGACY_USER_DATA_FOLDER)
   const temporaryPath = join(appDataPath, MIGRATION_TEMP_FOLDER)
-  const markerPath = join(riftPath, IMPORT_PENDING_MARKER_FILE)
 
   const riftExists = fse.existsSync(riftPath)
+  const markerState = riftExists ? importMarkerState(riftPath, appDataPath) : "none"
   const plan = planUserDataMigration({
     riftExists,
-    riftImportPending: riftExists && fse.existsSync(markerPath),
+    riftImportPending: markerState === "pending",
     vslExists: fse.existsSync(legacyPath),
     staleMigrationExists: fse.existsSync(temporaryPath)
   })
@@ -336,6 +384,7 @@ export function setUpUserDataFolder(appDataPath: string): UserDataSetup {
   // Outside the try below on purpose: a folder this player does not own is neither used nor
   // written to, not even to leave a marker in it.
   if (riftExists) assertOwnedSourceProfile(realpathSync.native(riftPath))
+  if (markerState === "settled") dropStaleMarker(riftPath)
 
   if (plan.action !== "migrate") {
     fse.ensureDirSync(riftPath)
@@ -424,9 +473,9 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
   const cleanedStaleMigration = hadStaleMigration && staleGone
   const staleLeft = staleGone ? {} : { temporaryFolderLeft: true }
 
-  // A default folder that still holds the failed-import marker has no player data in it (the marker
-  // goes with the first save of anything the player chose), so VS Launcher's folder is imported instead.
-  const defaultIsMarked = fse.existsSync(join(currentProfilePath, IMPORT_PENDING_MARKER_FILE))
+  // A default folder that still waits for its import (the marker, and a config.json holding nothing
+  // the player chose) has no player data in it, so VS Launcher's folder is imported instead.
+  const defaultIsMarked = importMarkerState(currentProfilePath, appDataPath) === "pending"
   const hasCurrentProfile = fse.existsSync(currentProfilePath) && !defaultIsMarked
   const hasLegacyProfile = !hasCurrentProfile && fse.existsSync(legacyProfilePath)
 
@@ -448,8 +497,10 @@ export function setUpPortableUserDataFolder(appDataPath: string, dataPath: strin
     if (!existingData.isDirectory()) throw new Error(`Portable data path is not a folder: ${dataPath}`)
     if (!isOwnedByThisUser(existingData)) throw new Error(`Portable data folder belongs to another user: ${dataPath}`)
     const entries = fse.readdirSync(dataPath)
-    markedPortableFolder = hasLegacyProfile && entries.includes(IMPORT_PENDING_MARKER_FILE)
+    const markerState = importMarkerState(dataPath, dataPath)
+    markedPortableFolder = hasLegacyProfile && markerState === "pending"
     if (!markedPortableFolder) {
+      if (markerState === "settled") dropStaleMarker(dataPath)
       if (entries.length > 0) return { path: dataPath, outcome: "use-existing", copied: [], cleanedStaleMigration, ...staleLeft }
       fse.removeSync(dataPath)
     }
