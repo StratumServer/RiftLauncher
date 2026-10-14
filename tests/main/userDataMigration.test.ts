@@ -757,7 +757,7 @@ function failRenamesWhere(rules: { into: string; code: string; times: number }[]
   let attempts = 0
   let slept = 0
   const seen = rules.map(() => 0)
-  const rename = vi.spyOn(gracefulFs, "renameSync").mockImplementation(((from: string, to: string) => {
+  const faulty = ((from: string, to: string) => {
     const index = rules.findIndex((rule) => to === rule.into || to.startsWith(`${rule.into}${sep}`))
     const rule = rules[index]
     if (rule) {
@@ -766,7 +766,10 @@ function failRenamesWhere(rules: { into: string; code: string; times: number }[]
       if ((seen[index] ?? 0) <= rule.times) throw Object.assign(new Error(`${rule.code}: operation not permitted, rename '${from}' -> '${to}'`), { code: rule.code, syscall: "rename" })
     }
     return original(from, to)
-  }) as typeof gracefulFs.renameSync)
+  }) as typeof gracefulFs.renameSync
+  // `fse.moveSync` renames through graceful-fs at call time; `fse.renameSync` is the same function copied when fs-extra loaded.
+  const rename = vi.spyOn(gracefulFs, "renameSync").mockImplementation(faulty)
+  const renameOfFse = vi.spyOn(fse, "renameSync").mockImplementation(faulty)
   const wait = vi.spyOn(Atomics, "wait").mockImplementation(((_array: Int32Array, _index: number, _value: number, timeout?: number) => {
     slept += timeout ?? 0
     return "timed-out"
@@ -776,6 +779,7 @@ function failRenamesWhere(rules: { into: string; code: string; times: number }[]
     sleptMs: () => slept,
     restore: () => {
       rename.mockRestore()
+      renameOfFse.mockRestore()
       wait.mockRestore()
     }
   }
@@ -1550,6 +1554,30 @@ describe("a marked folder the player has used (#708)", () => {
     assert.equal((importedConfig(riftPath()).moddbVisibility as { policy: string }).policy, "never")
   })
 
+  it("keeps the marked folder's config.json, and its answer, byte for byte when the rename of config.json never works, and imports with the answer at the next start", () => {
+    const mine = untouchedConfig(answer("never"))
+    markedFolder(mine, JSON.stringify(LEGACY_ALWAYS))
+    const fault = failRenamesWhere([{ into: join(riftPath(), "config.json"), code: "EPERM", times: Infinity }])
+    try {
+      const setup = setUpUserDataFolder(appDataPath)
+
+      assert.equal(setup.outcome, "migration-failed")
+      assert.equal(setup.importPending, true)
+      assert.ok(fault.sleptMs() <= 3_000, "the wait stays within the shared budget")
+    } finally {
+      fault.restore()
+    }
+    assert.equal(readFileSync(join(riftPath(), "config.json"), "utf8"), mine, "the answer is still there")
+    assert.equal(existsSync(MARKER()), true)
+
+    const next = setUpUserDataFolder(appDataPath)
+
+    assert.equal(next.outcome, "migrate")
+    assert.equal((importedConfig(riftPath()).moddbVisibility as { policy: string }).policy, "never")
+    assert.equal(importedConfig(riftPath()).lastUsedInstallation, "abc")
+    assert.equal(existsSync(MARKER()), false)
+  })
+
   it.each([
     ["is not an object", "[]"],
     ["is not JSON", '{"schemaVersion": 2, "last']
@@ -1741,6 +1769,24 @@ describe("a marked folder the player has used (#708)", () => {
       assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), mine)
       assert.equal(existsSync(join(portableDataPath(), "Icons")), false)
       assert.equal(existsSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE)), true)
+    })
+
+    it("keeps a marked portable profile's config.json, and its answer, when the rename of config.json never works, and imports with the answer at the next start", () => {
+      const mine = untouchedConfig(answer("never"), portableDataPath())
+      markedPortableFolder(mine)
+      writeFileSync(join(legacyPath(), "config.json"), JSON.stringify(LEGACY_ALWAYS), "utf8")
+      const fault = failRenamesWhere([{ into: join(portableDataPath(), "config.json"), code: "EPERM", times: Infinity }])
+      try {
+        assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "migration-failed")
+      } finally {
+        fault.restore()
+      }
+      assert.equal(readFileSync(join(portableDataPath(), "config.json"), "utf8"), mine)
+      assert.equal(existsSync(join(portableDataPath(), IMPORT_PENDING_MARKER_FILE)), true)
+
+      assert.equal(setUpPortableUserDataFolder(appDataPath, portableDataPath()).outcome, "migrate")
+      assert.deepEqual(importedConfig(portableDataPath()).moddbVisibility, answer("never").moddbVisibility)
+      assert.equal(importedConfig(portableDataPath()).lastUsedInstallation, "abc")
     })
 
     it("carries the ModDB answer of a marked default profile into the import that replaces it", () => {

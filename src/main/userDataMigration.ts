@@ -198,6 +198,9 @@ const MOVE_RETRY_WINDOW_MS = 3_000
 const FIRST_MOVE_RETRY_DELAY_MS = 50
 const MAX_MOVE_RETRY_DELAY_MS = 250
 
+/** `move` refuses an existing destination, `overwrite` removes it first, `replace` renames over a file without removing it. */
+type MoveMode = "move" | "overwrite" | "replace"
+
 /**
  * `fse.moveSync` through graceful-fs `renameSync`, which unlike the async rename never retries on
  * EPERM, EACCES or EBUSY. The profile is set up before anything else runs, so the wait is
@@ -205,13 +208,17 @@ const MAX_MOVE_RETRY_DELAY_MS = 250
  * move of a setup, so startup waits that long in total however many entries are moved; the same
  * delays as the config writer's.
  */
-function createMoveWithRetry(): (source: string, destination: string, overwrite?: boolean) => void {
+function createMoveWithRetry(): (source: string, destination: string, mode?: MoveMode) => void {
   let waited = 0
   let delay = FIRST_MOVE_RETRY_DELAY_MS
-  return (source, destination, overwrite = false) => {
+  return (source, destination, mode = "move") => {
     for (;;) {
       try {
-        fse.moveSync(source, destination, { overwrite })
+        // fs-extra's overwrite removes the destination before it renames: a rename that then never works, or a crash in
+        // between, would leave nothing there. "replace" renames over the existing file instead, which both POSIX and
+        // Windows allow, so the destination is either the old file or the new one.
+        if (mode === "replace") fse.renameSync(source, destination)
+        else fse.moveSync(source, destination, { overwrite: mode === "overwrite" })
         return
       } catch (error) {
         if (!TRANSIENT_MOVE_CODES.has((error as NodeJS.ErrnoException).code ?? "") || waited >= MOVE_RETRY_WINDOW_MS) throw error
@@ -279,7 +286,8 @@ function carryModDbAnswer(temporaryPath: string, markedFolderPath: string, copie
 function importIntoMarkedFolder(temporaryPath: string, targetPath: string, copied: readonly string[], move: ReturnType<typeof createMoveWithRetry>): void {
   carryModDbAnswer(temporaryPath, targetPath, copied)
   const configLast = [...copied].sort((a, b) => Number(a === "config.json") - Number(b === "config.json"))
-  for (const entry of configLast) move(join(temporaryPath, entry), join(targetPath, entry), true)
+  // The folder's own config.json holds the player's ModDB answer: it is replaced in one rename, never removed first.
+  for (const entry of configLast) move(join(temporaryPath, entry), join(targetPath, entry), entry === "config.json" ? "replace" : "overwrite")
   dropStaleMarker(targetPath)
   // The import is done by now; the next start cleans a stale temporary folder anyway.
   removeTemporaryFolder(temporaryPath)
