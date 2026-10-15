@@ -127,37 +127,23 @@ function isUntouchedProfile(config: ConfigType): boolean {
 let importMarkerSettled = false
 
 /**
- * Drops the failed-import marker once a save holds something the player chose. From then on the
- * profile is theirs and a retried import would overwrite it. Every config write goes through the
- * queue below, which is why this is the one place that does it.
+ * Drops the failed-import marker once a save holding something the player chose has reached the
+ * disk. From then on the profile is theirs and a retried import would overwrite it. Every config
+ * write goes through the queue below, which is why this is the one place that does it.
  *
+ * It runs after the write, never before: a launcher that exits before the atomic rename leaves
+ * the untouched config.json, and the marker next to it is what makes the next start import.
  * Best effort, and nothing depends on it: the next start decides from the config.json it finds
  * (see `importMarkerState` in src/main/userDataMigration.ts), so a marker that cannot be removed
  * (a scanner holds it open) is stale and is dropped there, never an import over this save.
- *
- * @returns The marker's path when this call removed it, so a write that then fails can put it back.
  */
-function settleImportMarker(saved: ConfigType): string | null {
-  if (importMarkerSettled || isUntouchedProfile(saved)) return null
-  const markerPath = join(dirname(configPath), IMPORT_PENDING_MARKER_FILE)
+function settleImportMarker(saved: ConfigType): void {
+  if (importMarkerSettled || isUntouchedProfile(saved)) return
   try {
-    const existed = fse.existsSync(markerPath)
-    fse.removeSync(markerPath)
+    fse.removeSync(join(dirname(configPath), IMPORT_PENDING_MARKER_FILE))
     importMarkerSettled = true
-    return existed ? markerPath : null
   } catch (err) {
     logMessage("warn", `${LOG_PREFIX} [settleImportMarker] Could not remove the failed-import marker: ${err}`)
-    return null
-  }
-}
-
-/** Puts the marker back after the write it was removed for failed: nothing the player chose reached the disk. */
-function restoreImportMarker(markerPath: string): void {
-  importMarkerSettled = false
-  try {
-    fse.writeFileSync(markerPath, "")
-  } catch (err) {
-    logMessage("warn", `${LOG_PREFIX} [restoreImportMarker] Could not put the failed-import marker back: ${err}`)
   }
 }
 
@@ -174,13 +160,8 @@ function scheduleConfigWrite(): Promise<void> {
       // Written as it stands: the only thing that ever reaches here is a normalizeConfig result,
       // and that builds a fixed literal field by field, so the renderer's session-only markers
       // (`_notifiedModUpdatesInstallations`, `_backgroundRevision`) are already gone.
-      const droppedMarker = settleImportMarker(nextConfig)
-      try {
-        await writeJsonAtomic(configPath, nextConfig, { spaces: 2 })
-      } catch (err) {
-        if (droppedMarker !== null) restoreImportMarker(droppedMarker)
-        throw err
-      }
+      await writeJsonAtomic(configPath, nextConfig, { spaces: 2 })
+      settleImportMarker(nextConfig)
     }
   })
 

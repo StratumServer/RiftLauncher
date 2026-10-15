@@ -1987,7 +1987,7 @@ describe("the failed-import marker and saveConfig", () => {
     assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), false)
   })
 
-  it("is gone before the save that holds the player's choice is written", async () => {
+  it("is still there when the save that holds the player's choice is written, and gone once it has reached the disk", async () => {
     const { getConfig, saveConfig, flushConfigWrites } = await freshConfigManager()
     const config = await getConfig()
     await flushConfigWrites()
@@ -2004,7 +2004,62 @@ describe("the failed-import marker and saveConfig", () => {
       rename.mockRestore()
     }
 
-    assert.deepEqual(markerAtWrite, [false])
+    assert.deepEqual(markerAtWrite, [true])
+    assert.equal(readdirSync(userDataFolder).includes(IMPORT_PENDING_MARKER_FILE), false)
+  })
+
+  it("leaves the marker next to the untouched config.json when the launcher exits before the atomic rename, and the next start imports", async () => {
+    const rift = importFailsOnce({ favMods: [1, 2, 3] })
+    const session = await freshConfigManager()
+    const config = await session.getConfig()
+    await session.flushConfigWrites()
+    const untouched = readFileSync(join(rift, "config.json"), "utf-8")
+    const nodeFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs")
+    // The process "exits" at the rename: the callback never comes, so nothing after it runs.
+    let reachedRename: () => void = () => undefined
+    const atRename = new Promise<void>((resolve) => {
+      reachedRename = resolve
+    })
+    const rename = vi.spyOn(nodeFs, "rename").mockImplementation(((_from: string, to: string) => {
+      if (to.endsWith("config.json")) reachedRename()
+    }) as unknown as typeof nodeFs.rename)
+    try {
+      void session.saveConfig({ ...config, favMods: [9] })
+      await atRename
+
+      assert.equal(readdirSync(rift).includes(IMPORT_PENDING_MARKER_FILE), true, "the marker is still there")
+      assert.equal(readFileSync(join(rift, "config.json"), "utf-8"), untouched)
+      assert.equal(setUpUserDataFolder(appDataFolder).outcome, "migrate")
+    } finally {
+      rename.mockRestore()
+    }
+
+    // Read off the disk: the write that "died" still holds write-file-atomic's queue for this file, so a second config manager could not save to it.
+    assert.deepEqual(JSON.parse(readFileSync(join(rift, "config.json"), "utf-8")).favMods, [1, 2, 3])
+  })
+
+  it("leaves the marker and the untouched config.json when the rename fails, and the next start imports", async () => {
+    const rift = importFailsOnce({ favMods: [1, 2, 3] })
+    const session = await freshConfigManager()
+    const config = await session.getConfig()
+    await session.flushConfigWrites()
+    const untouched = readFileSync(join(rift, "config.json"), "utf-8")
+    const nodeFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs")
+    const original = nodeFs.rename
+    const rename = vi.spyOn(nodeFs, "rename").mockImplementation(((from: string, to: string, callback: (error: NodeJS.ErrnoException | null) => void) => {
+      if (to.endsWith("config.json")) return callback(Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC", syscall: "rename" }))
+      return original(from, to, callback)
+    }) as typeof nodeFs.rename)
+    try {
+      assert.equal(await session.saveConfig({ ...config, favMods: [9] }), false)
+    } finally {
+      rename.mockRestore()
+    }
+
+    assert.equal(readdirSync(rift).includes(IMPORT_PENDING_MARKER_FILE), true)
+    assert.equal(readFileSync(join(rift, "config.json"), "utf-8"), untouched)
+    assert.equal(setUpUserDataFolder(appDataFolder).outcome, "migrate")
+    assert.deepEqual((await (await freshConfigManager()).getConfig()).favMods, [1, 2, 3])
   })
 
   it("stays when that save does not reach the disk", async () => {
