@@ -27,6 +27,11 @@ type PathPolicyOptions = {
    * disk, and the launcher refusing to list it is the bug.
    */
   allowSymlinks?: boolean
+  /**
+   * Set by a delete, never by a move: the backups and world backups of the Installation whose
+   * folder is the path are not counted as held, because they leave with it (#733).
+   */
+  ownArchivesLeave?: boolean
 }
 
 const approvedPaths: ApprovedPath[] = []
@@ -179,22 +184,30 @@ export async function assertManagedPath(value: unknown, name = "path", options: 
 }
 
 /**
- * @param options Left empty by every ordinary caller. `assertManagedModArchivePath` is the one that
- *   passes anything, and it pays for the relaxed walk with a check of its own.
+ * @param options Left empty by most callers. `assertManagedModArchivePath` passes the relaxed walk
+ *   (`allowSymlinks`) and pays for it with a check of its own; DELETE_PATH passes `ownArchivesLeave`,
+ *   because a delete of an Installation's folder takes its own archives and their records with it.
  */
 export async function assertManagedDeletionPath(value: unknown, options: PathPolicyOptions = {}): Promise<string> {
   const config = await getConfig()
   const pathValue = await assertManagedPath(value, "deletion path", { allowMissing: false, ...options })
   if (getProtectedPaths(config).some((protectedPath) => comparablePath(protectedPath) === comparablePath(pathValue))) throw new TypeError("Protected path")
-  // Removing or moving a folder takes everything under it. The protected folders and the other
-  // Installations and game versions the config names must not be under the path, so a restore or a
-  // delete of an Installation that holds one (a config from before nesting was refused) stops
-  // before anything moves. The path was vetted without symbolic links, but a managed folder can be
-  // reached through one, so each is compared where it really lives as well.
+  // Removing or moving a folder takes everything under it. The protected folders, the other
+  // Installations and game versions the config names, and the backup archives it lists must not be
+  // under the path, so a restore or a delete of an Installation that holds one (a config from
+  // before nesting was refused) stops before anything moves. The archives count wherever the Backups
+  // folder is set now: moving that setting leaves the archives already made where they were. The
+  // path was vetted without symbolic links, but a managed folder can be reached through one, so each
+  // is compared where it really lives as well.
   const entryPaths = [...config.installations, ...config.gameVersions].map((entry) => entry.path)
+  // A delete of an Installation's folder takes its own archives and their records with it, so those
+  // are not held. A move of that folder (the set-aside of a restore) keeps the records, so it counts them.
+  const archivePaths = config.installations
+    .filter((installation) => !(options.ownArchivesLeave && comparablePath(installation.path) === comparablePath(pathValue)))
+    .flatMap((installation) => [...installation.backups, ...(installation.worldBackups ?? [])].map((backup) => backup.path))
   // Two entries on one folder (a config from before case or equal paths were refused) are wiped together.
   if (entryPaths.filter((entryPath) => comparablePath(entryPath) === comparablePath(pathValue)).length > 1) throw new TypeError("Path is shared by managed entries")
-  for (const nestedPath of [...getProtectedPaths(config), ...entryPaths]) {
+  for (const nestedPath of [...getProtectedPaths(config), ...entryPaths, ...archivePaths]) {
     const isTarget = comparablePath(nestedPath) === comparablePath(pathValue)
     if (isPathWithin(pathValue, nestedPath, false) || (!isTarget && isPathWithin(pathValue, realPathOrSelf(nestedPath), true))) throw new TypeError("Path holds a managed folder")
   }

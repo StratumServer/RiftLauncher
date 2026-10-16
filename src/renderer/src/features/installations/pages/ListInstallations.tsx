@@ -27,7 +27,7 @@ import { useNotificationsContext } from "@renderer/contexts/NotificationsContext
 import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
-import { findHeldManagedFolder } from "@renderer/features/installations/adapters/nesting"
+import { describeHeldFolder, type HeldFolder } from "@renderer/features/installations/adapters/nesting"
 import { createDeleteInstallationPorts, describeDeleteInstallationFailure, toInstallationDeleteSnapshot } from "@renderer/features/installations/adapters/delete"
 import { useCheckPathExists, useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
 
@@ -65,6 +65,17 @@ function ListInslallations(): JSX.Element {
     setDeleteData(false)
   }
 
+  function deleteHeldMessage(held: HeldFolder): string {
+    const { path, archive, name } = held
+    if (held.kind === "config") return t("features.installations.deleteHoldsConfigFolder", { path })
+    if (held.kind === "installation") return t("features.installations.deleteHoldsInstallation", { path, name })
+    if (held.kind === "sameFolder") return t("features.installations.deleteHoldsSameFolder", { name })
+    if (held.kind === "version") return t("features.installations.deleteHoldsVersion", { path })
+    if (held.kind === "linkedVersion") return t("features.installations.deleteHoldsLinkedVersion", { path })
+    if (held.kind === "sameFolderVersion") return t("features.installations.deleteHoldsSameFolderVersion", { name })
+    return archive?.world === undefined ? t("features.installations.deleteHoldsBackupArchive", { path, ...archive }) : t("features.installations.deleteHoldsWorldBackup", { path, ...archive })
+  }
+
   async function DeleteInstallationHandler(): Promise<void> {
     if (!installationToDelete) return addNotification(t("features.installations.noInstallationSelected"), "error")
 
@@ -72,9 +83,10 @@ function ListInslallations(): JSX.Element {
 
     try {
       // Deleting the data wipes the folder, so one holding another managed folder is told here
-      // which to move, rather than the host refusing with a generic error.
-      const heldFolder = deleteData ? findHeldManagedFolder(installation, { settings, installations, gameVersions }, toFolderPlatform(await window.api.utils.getOs())) : null
-      if (heldFolder) return addNotification(t("features.installations.deleteHoldsManagedFolder", { path: heldFolder }), "error")
+      // which to move, rather than the host refusing with a generic error. Its own backups and
+      // world backups leave with it, so they are not what it holds. The message carries steps, so it stays up.
+      const held = deleteData ? describeHeldFolder(installation, { settings, installations, gameVersions }, toFolderPlatform(await window.api.utils.getOs()), { ignoreOwnArchives: true }) : null
+      if (held) return addNotification(deleteHeldMessage(held), "error", { duration: null })
 
       const result = await deleteInstallation(createDeleteInstallationPorts(), { installation: toInstallationDeleteSnapshot(installation), deleteData })
 
