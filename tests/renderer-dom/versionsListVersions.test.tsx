@@ -224,6 +224,36 @@ describe("ListVersions", () => {
     })
   })
 
+  /**
+   * The toast gives the reason the folder stays: a registered (linked) version was left alone, which is
+   * true whether or not anything else sits in the folder, while a folder that really holds other
+   * managed folders says so. Both leave the folder in place, so the dialogs read the same either way.
+   */
+  it("says a linked VS Version's folder was left alone, not that it holds other folders", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/games/MyVS", linked: true }] })) },
+      pathsManager: { deletePath: vi.fn(async () => false) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+        <NotificationsOverlay />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+    await user.click(screen.getByTitle("Remove from List"))
+    await user.click(screen.getAllByTitle("Remove from List").at(-1) as HTMLElement)
+
+    expect(await screen.findByText("VS Version 1.20.4 removed from the list. Its folder was left alone.")).toBeTruthy()
+    expect(screen.queryByText(/Its folder was kept because it also holds/)).toBeNull()
+    await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+  })
+
   it("compares the folders without regard to case on macOS, as the host does", async () => {
     installMockWindowApi({
       utils: { getOs: vi.fn(async () => "darwin" as NodeJS.Platform) },
