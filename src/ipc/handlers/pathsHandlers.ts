@@ -286,7 +286,7 @@ ipcMain.handle(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH, async (event, pathValue: 
   assertTrustedIpcSender(event)
 
   try {
-    const safePath = await assertManagedDeletionPath(pathValue)
+    const safePath = await assertManagedDeletionPath(pathValue, { ownArchivesLeave: true })
     logMessage("info", `${LOG_PREFIX} [DELETE_PATH] Deleting an approved path.`)
     await fse.remove(safePath)
     return true

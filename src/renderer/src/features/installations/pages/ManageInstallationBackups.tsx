@@ -9,7 +9,7 @@ import { toFolderPlatform } from "@domain/paths"
 import { installedModsTotal } from "@domain/mods/scanInstalled"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
 import { toBackupSnapshot, toInstallationSnapshot } from "@renderer/features/installations/adapters/backup"
-import { findHeldManagedFolder } from "@renderer/features/installations/adapters/nesting"
+import { describeHeldFolder, type HeldFolder } from "@renderer/features/installations/adapters/nesting"
 import { createBackupDeletionPorts, createRestorePorts, describeBackupDeletionFailure, describeRestoreFailure } from "@renderer/features/installations/adapters/restore"
 import { useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
 
@@ -50,14 +50,25 @@ function ManageInstallationBackups(): JSX.Element {
   const installation = installations.find((igv) => igv.id === id)
   const backups = installation?.backups
 
+  function restoreHeldMessage(held: HeldFolder): string {
+    const { path, archive, name } = held
+    if (held.kind === "config") return t("features.backups.restoreHoldsConfigFolder", { path })
+    if (held.kind === "installation") return t("features.backups.restoreHoldsInstallation", { path, name })
+    if (held.kind === "sameFolder") return t("features.backups.restoreHoldsSameFolder", { name })
+    if (held.kind === "version") return t("features.backups.restoreHoldsVersion", { path })
+    if (held.kind === "linkedVersion") return t("features.backups.restoreHoldsLinkedVersion", { path })
+    if (held.kind === "sameFolderVersion") return t("features.backups.restoreHoldsSameFolderVersion", { name })
+    return archive?.world === undefined ? t("features.backups.restoreHoldsBackupArchive", { path, ...archive }) : t("features.backups.restoreHoldsWorldBackup", { path, ...archive })
+  }
+
   async function RestoreBackupHandler(backup: BackupType | null): Promise<void> {
     if (!backup) return addNotification(t("features.backups.noBackupSelected"), "error")
     if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
 
     // The restore wipes the Installation's folder, so one holding another managed folder is told
     // here, before an archive is extracted only to be thrown away when the host refuses the swap.
-    const heldFolder = findHeldManagedFolder(installation, { settings, installations, gameVersions }, toFolderPlatform(await window.api.utils.getOs()))
-    if (heldFolder) return addNotification(t("features.backups.restoreHoldsManagedFolder", { path: heldFolder }), "error")
+    const held = describeHeldFolder(installation, { settings, installations, gameVersions }, toFolderPlatform(await window.api.utils.getOs()))
+    if (held) return addNotification(restoreHeldMessage(held), "error", { duration: null })
 
     const ports = createRestorePorts({
       startExtract,
