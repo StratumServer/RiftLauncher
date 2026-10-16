@@ -8,7 +8,7 @@ import type { GameVersionSnapshot, UninstallGameVersionEvents, UninstallGameVers
 let trace: string[] = []
 
 function version(overrides: Partial<GameVersionSnapshot> = {}): GameVersionSnapshot {
-  return { version: "1.20.4", path: "/games/1.20.4", isPlaying: false, isDeleting: false, linked: false, incomplete: false, ...overrides }
+  return { version: "1.20.4", path: "/games/1.20.4", isPlaying: false, isDeleting: false, linked: false, ...overrides }
 }
 
 function input(overrides: Partial<Omit<UninstallGameVersionInput, "version">> & { version?: GameVersionSnapshot } = {}): UninstallGameVersionInput {
@@ -73,7 +73,7 @@ describe("uninstallGameVersion in-use confirmation", () => {
     const result = await uninstallGameVersion(ports(), input({ usedByInstallations: [], confirmedInUse: false }), recordingEvents())
 
     assert.deepEqual(result, { ok: true, folderRemoved: true })
-    assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
+    assert.deepEqual(trace, ["started", "exists:/games/1.20.4", "remove:/games/1.20.4", "finished"])
   })
 
   it("refuses before any deletion when installations use it and that isn't confirmed", async () => {
@@ -87,7 +87,7 @@ describe("uninstallGameVersion in-use confirmation", () => {
     const result = await uninstallGameVersion(ports(), input({ usedByInstallations: ["Survival World"], confirmedInUse: true }), recordingEvents())
 
     assert.deepEqual(result, { ok: true, folderRemoved: true })
-    assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
+    assert.deepEqual(trace, ["started", "exists:/games/1.20.4", "remove:/games/1.20.4", "finished"])
   })
 })
 
@@ -98,14 +98,14 @@ describe("uninstallGameVersion", () => {
     const result = await uninstallGameVersion(hosts, input(), recordingEvents())
 
     assert.deepEqual(result, { ok: true, folderRemoved: true })
-    assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
+    assert.deepEqual(trace, ["started", "exists:/games/1.20.4", "remove:/games/1.20.4", "finished"])
   })
 
   it("reports a failed folder deletion so the version stays on the list", async () => {
     const result = await uninstallGameVersion(ports({ removed: false }), input(), recordingEvents())
 
     assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
-    assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
+    assert.deepEqual(trace, ["started", "exists:/games/1.20.4", "remove:/games/1.20.4", "finished"])
   })
 
   it("fires onFinished even when the deletion fails", async () => {
@@ -137,7 +137,7 @@ describe("uninstallGameVersion linked versions", () => {
     const result = await uninstallGameVersion(hosts, input({ version: version({ linked: false }) }), recordingEvents())
 
     assert.deepEqual(result, { ok: true, folderRemoved: true })
-    assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
+    assert.deepEqual(trace, ["started", "exists:/games/1.20.4", "remove:/games/1.20.4", "finished"])
   })
 
   it("refuses a linked version that is being played, same as any other", async () => {
@@ -156,36 +156,41 @@ describe("uninstallGameVersion linked versions", () => {
 })
 
 /**
- * An install cut off before its first byte landed (#710) is a row whose folder was never created.
- * The host refuses to delete a path it cannot find, so without this the row could be neither
- * played nor removed.
+ * A row whose folder is not there (an install cut off before its first byte landed (#710), a folder
+ * the player deleted by hand, a drive that is unplugged, an uninstall cut off before the list was
+ * saved) is dropped without asking the host to delete it. The host refuses to delete a path it
+ * cannot find, so without this the row could be neither played nor removed.
  */
-describe("uninstallGameVersion on an interrupted install", () => {
-  it("drops the row of an unfinished install whose folder was never created", async () => {
-    const result = await uninstallGameVersion(ports({ present: false, removed: false }), input({ version: version({ incomplete: true }) }), recordingEvents())
+describe("uninstallGameVersion when the folder is gone", () => {
+  it("drops the row of a version whose folder is gone, without asking the host to delete it", async () => {
+    const result = await uninstallGameVersion(ports({ present: false, removed: false }), input(), recordingEvents())
 
     assert.deepEqual(result, { ok: true, folderRemoved: true })
     assert.deepEqual(trace, ["started", "exists:/games/1.20.4", "finished"])
   })
 
-  it("still deletes the folder of an unfinished install when part of it landed", async () => {
-    const result = await uninstallGameVersion(ports({ present: true }), input({ version: version({ incomplete: true }) }), recordingEvents())
+  it("keeps a version on the list when its folder is there and cannot be deleted", async () => {
+    const result = await uninstallGameVersion(ports({ present: true, removed: false }), input(), recordingEvents())
 
-    assert.deepEqual(result, { ok: true, folderRemoved: true })
+    assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
     assert.deepEqual(trace, ["started", "exists:/games/1.20.4", "remove:/games/1.20.4", "finished"])
   })
 
-  it("keeps refusing a finished install whose folder cannot be deleted, missing or not", async () => {
-    const result = await uninstallGameVersion(ports({ present: false, removed: false }), input(), recordingEvents())
+  it("lets the same version go the next time after its folder was removed but the list was not saved", async () => {
+    const first = await uninstallGameVersion(ports({ present: false }), input({ usedByInstallations: ["Survival World"], confirmedInUse: true }), recordingEvents())
+    const again = await uninstallGameVersion(ports({ present: false }), input({ usedByInstallations: ["Survival World"], confirmedInUse: true }), recordingEvents())
 
-    assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
-    assert.deepEqual(trace, ["started", "remove:/games/1.20.4", "finished"])
-  })
-
-  it("keeps an unfinished install on the list when its folder is there and cannot be deleted", async () => {
-    const result = await uninstallGameVersion(ports({ present: true, removed: false }), input({ version: version({ incomplete: true }) }))
-
-    assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
+    assert.deepEqual(
+      [first, again],
+      [
+        { ok: true, folderRemoved: true },
+        { ok: true, folderRemoved: true }
+      ]
+    )
+    assert.equal(
+      trace.some((entry) => entry.startsWith("remove:")),
+      false
+    )
   })
 
   it("leaves the verdict to the delete when the folder check itself fails", async () => {
@@ -201,7 +206,7 @@ describe("uninstallGameVersion on an interrupted install", () => {
       }
     }
 
-    const result = await uninstallGameVersion(failing, input({ version: version({ incomplete: true }) }))
+    const result = await uninstallGameVersion(failing, input())
 
     assert.deepEqual(result, { ok: false, reason: "file-delete-failed" })
     assert.deepEqual(trace, ["remove:/games/1.20.4"])
