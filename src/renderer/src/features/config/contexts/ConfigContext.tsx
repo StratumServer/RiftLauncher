@@ -1,10 +1,11 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { configSaveFailureMessageKey, initialConfigSaveHealthState, updateConfigSaveHealth } from "@renderer/features/config/utils/saveHealth"
 import { CONFIG_ACTIONS, configReducer, initialState, type ConfigAction } from "@renderer/features/config/contexts/configReducer"
+import { dropRefusedPaths } from "@renderer/features/config/utils/refusedPaths"
 import { applyBackground } from "@renderer/utils/backgroundStyle"
 import { applyAccentColor } from "@renderer/utils/accentStyle"
 import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
@@ -60,6 +61,14 @@ const FavModsContext = createContext<number[] | null>(null)
 const SuspendedModUpdatesContext = createContext<string[] | null>(null)
 const CustomIconsContext = createContext<IconType[] | null>(null)
 const NotifiedModUpdatesContext = createContext<string[] | null>(null)
+const WaitForSaveContext = createContext<WaitForSave | null>(null)
+
+/**
+ * Resolves with whether a save of a state satisfying `isIn` went through. For a caller that has just
+ * dispatched a change and must not say it worked before main agreed: the save itself belongs to the
+ * provider's effect below, which sends the whole state on every change.
+ */
+type WaitForSave = (isIn: (config: ConfigType) => boolean) => Promise<boolean>
 
 const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Element => {
   const [config, configDispatch] = useReducer(configReducer, initialState)
@@ -76,6 +85,44 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
   // the reducer's defaults rather than anything a player chose, and the save effect below reads
   // this to keep those defaults off disk.
   const configReadFailedRef = useRef(false)
+  // What the state is now, for a save result that arrives after later changes have landed.
+  const latestConfigRef = useRef(config)
+  latestConfigRef.current = config
+  // Paths dropped in this session. Saves still in flight carried them, so their refusals come back
+  // after the entry is gone and must not read as saves that keep failing.
+  const droppedPathsRef = useRef(new Set<string>())
+  const saveWaitersRef = useRef<{ isIn: (config: ConfigType) => boolean; resolve: (saved: boolean) => void }[]>([])
+
+  // Stable, like the dispatcher: it only reads refs, and a new identity would re-render every consumer.
+  const waitForSave = useCallback<WaitForSave>((isIn) => {
+    // Nothing is saved in a session that could not read the config, so waiting would never end.
+    if (configReadFailedRef.current) return Promise.resolve(false)
+    return new Promise((resolve) => saveWaitersRef.current.push({ isIn, resolve }))
+  }, [])
+
+  /**
+   * Drops from the state what main refused, tells the player which entries went, and says
+   * whether the refusal is dealt with. One that names only entries dropped earlier is a late answer
+   * for a save sent before the drop: dealt with, and not a failure to count. One that names nothing
+   * the state holds and nothing dropped is left to the save health notice, since the paths main saw
+   * are not the ones the renderer holds.
+   */
+  async function dropRefusedEntries(refusedPaths: string[] | undefined): Promise<boolean> {
+    if (!refusedPaths || refusedPaths.length === 0) return false
+
+    const folders = latestConfigRef.current
+    const holdsRefusedFolder = [folders.defaultInstallationsFolder, folders.defaultVersionsFolder, folders.backupsFolder].some((folder) => refusedPaths.includes(folder))
+    const kept = holdsRefusedFolder ? await window.api.configManager.getConfig().catch(() => null) : null
+
+    const { names, dropped } = dropRefusedPaths(latestConfigRef.current, refusedPaths, kept)
+    if (names.length === 0) return refusedPaths.every((path) => droppedPathsRef.current.has(path))
+    for (const path of dropped) droppedPathsRef.current.add(path)
+
+    configDispatch({ type: CONFIG_ACTIONS.DROP_REFUSED_PATHS, payload: { paths: refusedPaths, kept } })
+    window.api.utils.logMessage("warn", `[front] [config] [features/config/contexts/ConfigContext.tsx] [ConfigProvider] Dropped ${names.length} entries main refused to save.`)
+    addNotification(t("notifications.body.configPathsNotKept", { names: names.join(", ") }), "error", { duration: null })
+    return true
+  }
 
   useEffect(() => {
     ;(async (): Promise<void> => {
@@ -111,7 +158,13 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
 
     // Still fire-and-forget in spirit: nothing here blocks the UI on a save.
     // The result is only observed to decide whether the player needs telling.
-    void window.api.configManager.saveConfig(config).then((result) => {
+    void window.api.configManager.saveConfig(config).then(async (result) => {
+      const waiters = saveWaitersRef.current.filter((waiter) => waiter.isIn(config))
+      saveWaitersRef.current = saveWaitersRef.current.filter((waiter) => !waiters.includes(waiter))
+      for (const waiter of waiters) waiter.resolve(result.ok)
+
+      if (!result.ok && result.reason === "unauthorized-path" && (await dropRefusedEntries(result.refusedPaths))) return
+
       const { state, notice } = updateConfigSaveHealth(saveHealthRef.current, result)
       saveHealthRef.current = state
       if (!notice) return
@@ -212,21 +265,23 @@ const ConfigProvider = ({ children }: { children: React.ReactNode }): JSX.Elemen
 
   return (
     <ConfigDispatchContext.Provider value={configDispatch}>
-      <NotifiedModUpdatesContext.Provider value={config._notifiedModUpdatesInstallations ?? EMPTY_NOTIFIED_MOD_UPDATES}>
-        <SettingsContext.Provider value={settings}>
-          <AccountListContext.Provider value={accountList}>
-            <InstallationsContext.Provider value={config.installations}>
-              <GameVersionsContext.Provider value={config.gameVersions}>
-                <FavModsContext.Provider value={config.favMods}>
-                  <SuspendedModUpdatesContext.Provider value={config.suspendedModUpdates}>
-                    <CustomIconsContext.Provider value={config.customIcons}>{children}</CustomIconsContext.Provider>
-                  </SuspendedModUpdatesContext.Provider>
-                </FavModsContext.Provider>
-              </GameVersionsContext.Provider>
-            </InstallationsContext.Provider>
-          </AccountListContext.Provider>
-        </SettingsContext.Provider>
-      </NotifiedModUpdatesContext.Provider>
+      <WaitForSaveContext.Provider value={waitForSave}>
+        <NotifiedModUpdatesContext.Provider value={config._notifiedModUpdatesInstallations ?? EMPTY_NOTIFIED_MOD_UPDATES}>
+          <SettingsContext.Provider value={settings}>
+            <AccountListContext.Provider value={accountList}>
+              <InstallationsContext.Provider value={config.installations}>
+                <GameVersionsContext.Provider value={config.gameVersions}>
+                  <FavModsContext.Provider value={config.favMods}>
+                    <SuspendedModUpdatesContext.Provider value={config.suspendedModUpdates}>
+                      <CustomIconsContext.Provider value={config.customIcons}>{children}</CustomIconsContext.Provider>
+                    </SuspendedModUpdatesContext.Provider>
+                  </FavModsContext.Provider>
+                </GameVersionsContext.Provider>
+              </InstallationsContext.Provider>
+            </AccountListContext.Provider>
+          </SettingsContext.Provider>
+        </NotifiedModUpdatesContext.Provider>
+      </WaitForSaveContext.Provider>
     </ConfigDispatchContext.Provider>
   )
 }
@@ -238,6 +293,9 @@ function requireProvider<T>(value: T | null, hook: string): T {
 
 /** Writes. Stable for the life of the provider, so subscribing to it never costs a render. */
 const useConfigDispatch = (): React.Dispatch<ConfigAction> => requireProvider(useContext(ConfigDispatchContext), "useConfigDispatch")
+
+/** For a caller that must know a change it dispatched was saved before it says so. See {@link WaitForSave}. */
+const useWaitForSave = (): WaitForSave => requireProvider(useContext(WaitForSaveContext), "useWaitForSave")
 
 const useInstallations = (): InstallationType[] => requireProvider(useContext(InstallationsContext), "useInstallations")
 
@@ -259,4 +317,16 @@ const useCustomIcons = (): IconType[] => requireProvider(useContext(CustomIconsC
 /** Ids of installations the player has already been told about mod updates for, this session. */
 const useNotifiedModUpdates = (): string[] => requireProvider(useContext(NotifiedModUpdatesContext), "useNotifiedModUpdates")
 
-export { ConfigProvider, useConfigDispatch, useInstallations, useGameVersions, useAccountList, useSettingsConfig, useFavMods, useSuspendedModUpdates, useCustomIcons, useNotifiedModUpdates }
+export {
+  ConfigProvider,
+  useConfigDispatch,
+  useWaitForSave,
+  useInstallations,
+  useGameVersions,
+  useAccountList,
+  useSettingsConfig,
+  useFavMods,
+  useSuspendedModUpdates,
+  useCustomIcons,
+  useNotifiedModUpdates
+}

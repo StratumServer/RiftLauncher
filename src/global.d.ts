@@ -644,11 +644,13 @@ declare global {
    * - `invalid-payload`: the argument was not even an object. Not reachable
    *   from the launcher's own UI, which always sends the config it holds in
    *   state; a defensive check against a malformed IPC call.
-   * - `unauthorized-path`: `assertConfigPathsAuthorized` refused because the
+   * - `unauthorized-path`: `unauthorizedConfigPaths` refused because the
    *   incoming config points at a folder outside the paths the launcher
    *   already manages, and the player has not approved it either. The most
-   *   likely real-world cause: a folder picked, moved, or edited outside the
-   *   launcher's own dialogs.
+   *   likely real-world cause: a folder picked, then used after its ten
+   *   minutes of approval ran out. The refused paths come back in
+   *   `refusedPaths`, so the renderer can drop those entries instead of
+   *   sending them again with every later save.
    * - `write-failed`: `saveConfig` queued the write and it threw (the
    *   temp-file write or the rename onto `config.json` failed), which
    *   `saveConfig` catches and reports as `false`. Disk full, permissions,
@@ -663,7 +665,7 @@ declare global {
   type SaveConfigFailureReason = "invalid-payload" | "unauthorized-path" | "write-failed" | "session-read-only"
 
   /** SAVE_CONFIG's verdict. `ok: false` means nothing was written to disk. */
-  type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason }
+  type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason; refusedPaths?: string[] }
 
   /**
    * What `getConfig` found on the read that mattered, pulled once by the renderer through

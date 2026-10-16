@@ -179,7 +179,67 @@ describe("SAVE_CONFIG", () => {
     })
 
     const result = await saveConfigHandler()(event, config)
-    assert.deepEqual(result, { ok: false, reason: "unauthorized-path" })
+    assert.deepEqual(result, { ok: false, reason: "unauthorized-path", refusedPaths: [outsideFolder] })
+  })
+
+  describe("a folder picked for a VS Version and added after its approval ran out (#731)", () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    async function pickThenSave(minutesLater: number, gameFolder: string): Promise<{ saved: SaveConfigResult; start: ConfigType }> {
+      const event = await createTrustedEvent()
+      const { registerUserSelectedPaths } = await import("@src/ipc/pathPolicy")
+      const start = await getConfigHandler()(event)
+
+      vi.useFakeTimers({ toFake: ["Date"] })
+      vi.setSystemTime(new Date("2026-10-16T10:00:00Z"))
+      registerUserSelectedPaths([gameFolder])
+      vi.setSystemTime(new Date(Date.parse("2026-10-16T10:00:00Z") + minutesLater * 60_000))
+      const withVersion: ConfigType = { ...start, gameVersions: [{ id: "v1", version: "1.21.5", label: "1.21.5", path: gameFolder, linked: true }] }
+      const saved = await saveConfigHandler()(event, withVersion)
+      vi.useRealTimers()
+      return { saved, start }
+    }
+
+    it("names the refused folder, and a save without that row goes through and is kept", async () => {
+      const gameFolder = join(temporaryRoot, "Games", "Vintagestory")
+      mkdirSync(gameFolder, { recursive: true })
+      const event = await createTrustedEvent()
+
+      const { saved, start } = await pickThenSave(11, gameFolder)
+      assert.deepEqual(saved, { ok: false, reason: "unauthorized-path", refusedPaths: [gameFolder] })
+
+      // What the renderer sends once it has dropped the row: the rest of the state, a favourite included.
+      assert.deepEqual(await saveConfigHandler()(event, { ...start, favMods: [42] }), { ok: true })
+      assert.deepEqual((await getConfigHandler()(event)).favMods, [42])
+      assert.deepEqual(JSON.parse(readFileSync(join(userDataFolder, "config.json"), "utf-8")).favMods, [42])
+    })
+
+    it("names only the folders that were refused", async () => {
+      const gameFolder = join(temporaryRoot, "Games", "Vintagestory")
+      const insideVersionsFolder = join(appDataFolder, "RiftLauncherGameVersions", "1.21.0")
+      mkdirSync(gameFolder, { recursive: true })
+      const event = await createTrustedEvent()
+      const start = await getConfigHandler()(event)
+
+      const saved = await saveConfigHandler()(event, {
+        ...start,
+        gameVersions: [
+          { id: "v1", version: "1.21.5", label: "1.21.5", path: gameFolder, linked: true },
+          { id: "v2", version: "1.21.0", label: "1.21.0", path: insideVersionsFolder }
+        ]
+      })
+      assert.deepEqual(saved, { ok: false, reason: "unauthorized-path", refusedPaths: [gameFolder] })
+    })
+
+    it("still saves the row when it is added within the ten minutes", async () => {
+      const gameFolder = join(temporaryRoot, "Games", "Vintagestory")
+      mkdirSync(gameFolder, { recursive: true })
+
+      const { saved } = await pickThenSave(9, gameFolder)
+      assert.deepEqual(saved, { ok: true })
+    })
   })
 
   it("saves an authorized config and reports ok: true", async () => {
@@ -293,8 +353,8 @@ describe("SAVE_CONFIG", () => {
     vi.spyOn(fse, "readFile").mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }))
 
     const event = await createTrustedEvent()
-    // Triggers the read failure that marks the session read-only (assertConfigPathsAuthorized's
-    // own getConfig() call inside SAVE_CONFIG below would otherwise be the first read).
+    // Triggers the read failure that marks the session read-only (SAVE_CONFIG's own getConfig() call
+    // below would otherwise be the first read).
     await getConfigHandler()(event)
 
     const result = await saveConfigHandler()(event, minimalConfig())

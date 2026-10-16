@@ -11,7 +11,7 @@ describe("invalidPayloadResult", () => {
 
 describe("unauthorizedPathResult", () => {
   it("names the path-authorization refusal", () => {
-    assert.deepEqual(unauthorizedPathResult(), { ok: false, reason: "unauthorized-path" })
+    assert.deepEqual(unauthorizedPathResult(["/a", "/b"]), { ok: false, reason: "unauthorized-path", refusedPaths: ["/a", "/b"] })
   })
 })
 

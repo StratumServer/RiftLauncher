@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom"
 import { buildGameVersionLabel } from "@domain/naming"
 import { folderIsInUse } from "@domain/paths"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
-import { CONFIG_ACTIONS, useGameVersions, useConfigDispatch } from "@renderer/features/config/contexts/ConfigContext"
+import { CONFIG_ACTIONS, useGameVersions, useConfigDispatch, useWaitForSave } from "@renderer/features/config/contexts/ConfigContext"
 
 const LOG_TAG = "[front] [versions] [features/versions/hooks/useLookForAVersion.ts] [useLookForAVersion > addVersion]"
 
@@ -32,6 +32,7 @@ export function useLookForAVersion(): UseLookForAVersionResult {
   const { addNotification } = useNotificationsContext()
   const gameVersions = useGameVersions()
   const configDispatch = useConfigDispatch()
+  const waitForSave = useWaitForSave()
   const navigate = useNavigate()
 
   const [folder, setFolder] = useState<string>("")
@@ -80,6 +81,16 @@ export function useLookForAVersion(): UseLookForAVersionResult {
       )
         return addNotification(t("features.versions.folderAlreadyInUse", { version }), "error")
 
+      // Main trusts a picked folder for ten minutes only, and refuses to save a version whose folder
+      // it no longer trusts. The same call that looked at the folder after the pick fails once that
+      // time is up, so ask again here and send the player back to pick it, rather than list a
+      // version that would never be saved.
+      try {
+        await window.api.gameManager.lookForAGameVersion(folder)
+      } catch {
+        return addNotification(t("features.versions.pickFolderAgain"), "error")
+      }
+
       const newGameVersion: GameVersionType = {
         id: crypto.randomUUID(),
         version,
@@ -88,7 +99,16 @@ export function useLookForAVersion(): UseLookForAVersionResult {
         linked: true
       }
 
+      const saved = waitForSave((config) => config.gameVersions.some((gameVersion) => gameVersion.id === newGameVersion.id))
       configDispatch({ type: CONFIG_ACTIONS.ADD_GAME_VERSION, payload: newGameVersion })
+      if (!(await saved)) {
+        // A refusal has already dropped the row; any other failure (the write itself, a read-only
+        // session) leaves it listed, to be saved by the next write that works. Take it out so that
+        // "wasn't added" is true and the folder can be added again.
+        configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: newGameVersion.id } })
+        return addNotification(t("features.versions.versionNotSaved"), "error")
+      }
+
       addNotification(t("features.versions.versionSuccessfullyAdded", { version }), "success")
       navigate("/versions")
     } catch (err) {

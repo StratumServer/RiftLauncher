@@ -68,10 +68,20 @@ Neither adapter is allowed to leak into the domain; both are allowed to import i
 ipcMain.handle(IPC_CHANNELS.CONFIG_MANAGER.SAVE_CONFIG, async (event, config: ConfigType): Promise<SaveConfigResult> => {
   assertTrustedIpcSender(event)
   if (!isRecord(config)) return invalidPayloadResult()
-  const normalizedConfig = normalizeConfig(config)
   const currentConfig = await getConfig()
-  if (!(await assertConfigPathsAuthorized(normalizedConfig, currentConfig))) return unauthorizedPathResult()
-  return saveOutcomeToResult(await saveConfig(normalizedConfig))
+  const requestedConfig = normalizeConfig(config)
+  const normalizedConfig = normalizeConfig({
+    ...requestedConfig,
+    installations: requestedConfig.installations.map((installation) => ({
+      ...installation,
+      worldBackups: currentConfig.installations.find((current) => current.id === installation.id)?.worldBackups ?? installation.worldBackups
+    }))
+  })
+  const refusedPaths = unauthorizedConfigPaths(normalizedConfig, currentConfig)
+  if (refusedPaths.length > 0) return unauthorizedPathResult(refusedPaths)
+  const saved = await saveConfig(normalizedConfig)
+  if (!saved && isConfigWriteSuppressed()) return sessionReadOnlyResult()
+  return saveOutcomeToResult(saved)
 })
 ```
 
