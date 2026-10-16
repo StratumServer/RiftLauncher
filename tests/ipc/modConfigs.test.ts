@@ -484,6 +484,7 @@ describe("collectModConfigs", () => {
     }
   })
 
+  // Writing and walking 2001 files can pass the 5 s default on a slow Windows runner.
   it("refuses a folder past the entry ceiling, and says the folder is too big rather than unreadable", async () => {
     const { MAX_MODPACK_ENTRIES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
     const folder = modConfigFolder()
@@ -493,7 +494,7 @@ describe("collectModConfigs", () => {
     const collected = await collectModConfigs(installationPath)
 
     assert.deepEqual(collected, { ok: false, reason: "too-many" })
-  })
+  }, 30_000)
 
   it("carries only the names it was given, so a file it cannot carry stops being the export's problem", async () => {
     const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
