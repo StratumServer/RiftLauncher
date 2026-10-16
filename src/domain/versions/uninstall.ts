@@ -9,8 +9,6 @@ export interface GameVersionSnapshot {
   isDeleting: boolean
   /** True when this folder was registered, not installed, by the launcher. See `uninstallGameVersion`. */
   linked: boolean
-  /** True when the launcher registered this row and never saw its install finish. See `uninstallGameVersion`. */
-  incomplete: boolean
 }
 
 /** Why a version was not uninstalled. */
@@ -55,10 +53,11 @@ export interface UninstallGameVersionEvents {
  * being played or still pinned by an installation is just as real a reason
  * to refuse.
  *
- * An `incomplete` version is an install that was cut off, and one cut off before the first
- * response never got a folder. The host refuses to delete a path it cannot find, so a row whose
- * folder is not there is dropped without asking it to: nothing is left to delete, and the row
- * would otherwise be one the player can neither play nor remove.
+ * Any other version whose folder is not there is dropped without asking the host to delete it.
+ * The host refuses to delete a path it cannot find, so the row would otherwise be one the player
+ * can neither play nor remove. That covers an install cut off before its first response (it never
+ * got a folder), a folder the player deleted by hand or that sat on a drive since unplugged, and
+ * an uninstall cut off after the folder was deleted but before the list was saved.
  *
  * @param ports Host capabilities the work runs on.
  * @param input The version to uninstall.
@@ -78,7 +77,7 @@ export async function uninstallGameVersion(ports: UninstallGameVersionPorts, inp
     if (version.linked) return { ok: true, folderRemoved: false }
 
     // A check that throws counts as "there", so the delete below answers for it.
-    if (version.incomplete && !(await ports.fileSystem.exists(version.path).catch(() => true))) return { ok: true, folderRemoved: true }
+    if (!(await ports.fileSystem.exists(version.path).catch(() => true))) return { ok: true, folderRemoved: true }
 
     if (!(await ports.fileSystem.remove(version.path))) return refuse("file-delete-failed")
 

@@ -103,7 +103,7 @@ describe("ListVersions", () => {
     const user = userEvent.setup()
     const api = installMockWindowApi({
       configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/versions/1.20.4" }] })) },
-      pathsManager: { deletePath: vi.fn(async () => true) }
+      pathsManager: { checkPathExists: vi.fn(async () => true), deletePath: vi.fn(async () => true) }
     })
 
     renderWithProviders(
@@ -122,6 +122,36 @@ describe("ListVersions", () => {
 
     await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
     expect(api.pathsManager.deletePath).toHaveBeenCalledWith("/versions/1.20.4")
+  })
+
+  it("drops a version whose folder is gone without asking the host to delete it", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/versions/1.20.4" }] })) },
+      pathsManager: { checkPathExists: vi.fn(async () => false), deletePath: vi.fn(async () => false) }
+    })
+
+    renderWithProviders(
+      <>
+        <TaskProvider>
+          <ListVersions />
+        </TaskProvider>
+        <NotificationsOverlay />
+      </>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+
+    await user.click(screen.getByTitle("Delete Version"))
+    await screen.findByText("Are you sure you want to uninstall VS Version 1.20.4?")
+    await user.click(screen.getByTitle("Uninstall"))
+
+    expect(await screen.findByText("VS Version 1.20.4 uninstalled successfully.")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+    expect(api.pathsManager.checkPathExists).toHaveBeenCalledWith("/versions/1.20.4")
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+    expect(screen.queryByText(/An error occurred while uninstalling/)).toBeNull()
   })
 
   it("names the folder the uninstall deletes and says everything in it goes", async () => {
@@ -266,7 +296,7 @@ describe("ListVersions", () => {
           })
         )
       },
-      pathsManager: { deletePath: vi.fn(async () => true) }
+      pathsManager: { checkPathExists: vi.fn(async () => true), deletePath: vi.fn(async () => true) }
     })
 
     renderWithProviders(
@@ -449,7 +479,7 @@ describe("ListVersions", () => {
           })
         )
       },
-      pathsManager: { deletePath: vi.fn(async () => true) }
+      pathsManager: { checkPathExists: vi.fn(async () => true), deletePath: vi.fn(async () => true) }
     })
 
     renderWithProviders(
@@ -541,7 +571,7 @@ describe("ListVersions", () => {
     const user = userEvent.setup()
     const api = installMockWindowApi({
       configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/games/vintagestory", linked: true }] })) },
-      pathsManager: { deletePath: vi.fn(async () => true) }
+      pathsManager: { checkPathExists: vi.fn(async () => true), deletePath: vi.fn(async () => true) }
     })
 
     renderWithProviders(
