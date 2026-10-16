@@ -50,6 +50,10 @@ vi.mock("@src/ipc/workerManager", () => ({
 
 vi.mock("child_process", () => ({ spawn: vi.fn() }))
 
+// The real loader would put the native addon in this process. Mocked so the order of
+// the load against acquireWorker can be asserted.
+vi.mock("@src/ipc/workers/nativeLzma2", () => ({ loadNativeLzma2DecoderFactory: vi.fn(async () => undefined) }))
+
 /** RUN_INSTALLER's own bound on the fallback spawn, mirrored from pathsHandlers.ts (not exported). */
 const RUN_INSTALLER_TIMEOUT_MS = 15 * 60 * 1_000
 
@@ -252,6 +256,38 @@ describe("RUN_INSTALLER on win32: payload extraction", () => {
       false,
       `expected no cleanup warning line, got: ${warnLines.join(" / ")}`
     )
+  })
+
+  it("loads the native LZMA2 addon on the main thread before the extraction worker starts", async () => {
+    // Node unloads an addon when the last worker that loaded it exits, and @napi-rs/lzma
+    // 1.5.1 crashes Windows when that happens (napi-rs/napi-rs#3443). The main thread
+    // must already hold it by the time the worker is acquired.
+    const installerPath = join(managedFolder, "setup.exe")
+    await writeVerifiedInstaller(installerPath)
+
+    const { loadNativeLzma2DecoderFactory } = await import("@src/ipc/workers/nativeLzma2")
+    const { acquireWorker } = await import("@src/ipc/workerManager")
+    let releaseLoad: () => void = () => undefined
+    vi.mocked(loadNativeLzma2DecoderFactory).mockImplementationOnce(
+      () =>
+        new Promise((resolvePromise) => {
+          releaseLoad = (): void => resolvePromise(undefined)
+        })
+    )
+
+    const event = await createTrustedEvent()
+    const workerPromise = nextTrackedWorker()
+    const resultPromise = handler<Promise<InstallerRunResult>>(IPC_CHANNELS.PATHS_MANAGER.RUN_INSTALLER)(event, "task-1", installerPath, versionsFolder, false)
+
+    await vi.waitFor(() => assert.equal(vi.mocked(loadNativeLzma2DecoderFactory).mock.calls.length, 1))
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20))
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 0, "the worker must wait for the main-thread load")
+
+    releaseLoad()
+    const worker = await workerPromise
+    assert.equal(vi.mocked(acquireWorker).mock.calls.length, 1)
+    worker.emit("message", { type: "finished", verdict: "extracted", filesWritten: 1, bytesWritten: 1 })
+    assert.deepEqual(await resultPromise, { ok: true })
   })
 
   it("still resolves ok, but logs a warning, when the payload reader reports a cleanup failure alongside extracted (#528)", async () => {
