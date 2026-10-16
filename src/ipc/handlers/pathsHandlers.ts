@@ -11,6 +11,7 @@ import { logMessage, getErrorMessage } from "@src/utils/logManager"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { acquireWorker } from "@src/ipc/workerManager"
+import { loadNativeLzma2DecoderFactory } from "@src/ipc/workers/nativeLzma2"
 import type { WorkerDisposition } from "@src/ipc/workerManager"
 import { ConcurrencyLimiter } from "@domain/concurrencyLimiter"
 import { assertAllowedDownloadUrl, assertBoolean, assertInteger, assertPath, assertSafeFileName, assertSafeTaskId, comparablePath, isRecord, MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
@@ -543,6 +544,13 @@ async function extractInstallerPayload(
   logMessage("info", `${LOG_PREFIX} [RUN_INSTALLER] [${safeId}] Extracting the installer payload instead of running it.`)
 
   try {
+    // Keep @napi-rs/lzma loaded on the main thread. Node unloads an addon when the last
+    // worker that loaded it exits, and napi-rs before 3.12.1 leaves its runtime threads
+    // running in the unloaded DLL (napi-rs/napi-rs#3443): 0xC0000005 on Windows right
+    // after the worker ends. A main-thread load is never unloaded. Remove once
+    // @napi-rs/lzma ships a build against napi 3.12.1 or later.
+    await loadNativeLzma2DecoderFactory()
+
     return await archiveConcurrency.run(() => {
       // Inside the slot, not before it: a 0 tick flips TaskManagerContext's task from
       // "pending" to "in-progress" at 0%, and a read still waiting for a slot has not
