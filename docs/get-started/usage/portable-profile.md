@@ -15,8 +15,6 @@ You switch it on with an empty file named `RiftLauncher.portable`. RiftLauncher 
 
 ### On Windows
 
-<!-- VERIFY: the manual Windows pass of the release candidate (#635) covers the portable profile; check these steps against its report before publishing. -->
-
 1. Install RiftLauncher in a folder on the drive you want, for example `D:\Games\RiftLauncher`. Your Windows account has to be able to create files in the folder above it, here `D:\Games`.
 2. Close RiftLauncher.
 3. Create an empty file named `RiftLauncher.portable` in that folder above, so here `D:\Games\RiftLauncher.portable`.
@@ -74,8 +72,6 @@ Keep the launcher and its data in a folder other people's accounts cannot write 
 
 ## Going back
 
-<!-- VERIFY: read from src/main/userDataMigration.ts (no marker means the default folder); not run by hand. -->
-
-Close RiftLauncher and delete `RiftLauncher.portable`. The next start uses the profile in your user folder again, as you left it when you went portable. Changes made in portable mode stay in `RiftLauncherData` and are not copied back.
+Close RiftLauncher and delete `RiftLauncher.portable`. The next start uses the profile in your user folder again: the Config page shows that folder under **Profile folder**, and its settings are the ones you had when you went portable. Whatever you changed while portable, such as the last Installation you used, stays in `RiftLauncherData`, which is left beside the launcher as it was. Nothing is copied back and nothing is deleted. Delete `RiftLauncherData` yourself if you no longer want it.
 
 The installation pages for [Windows](../installation/windows.md#portable-data-folder) and [Linux](../installation/linux.md#portable-data-folder) go into more detail.
