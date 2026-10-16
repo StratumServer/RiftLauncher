@@ -33,17 +33,4 @@ describe("native LZMA2 addon across worker teardown", () => {
     expect(status, stderr).toBe(0)
     expect(stdout).toContain("survived 100 cycles")
   }, 150_000)
-
-  // Detector for the upstream bug itself: it should crash within 100 cycles on Windows
-  // (20 of 20 runs upstream, about 1 in 4 per install in the field). Remove it once an
-  // @napi-rs/lzma built with napi 3.12.1 or later ships, since it would then fail by passing.
-  it.skipIf(process.platform !== "win32")(
-    "crashes without the main-thread load, which is why the launcher keeps one",
-    () => {
-      const { status } = run("nopin")
-
-      expect(status).not.toBe(0)
-    },
-    150_000
-  )
 })
