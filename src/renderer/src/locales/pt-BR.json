@@ -97,9 +97,9 @@
       "versionUninstalledSuccesfully": "Versão {{version}} desinstalada com sucesso!",
       "versionUninstallationFailed": "Ocorreu um erro ao desinstalar a versão {{version}}!",
       "versionNotInstalled": "Versão {{version}} não instalada!",
-      "versionNotInstalledPickAnother": "A Versão do VS desta Instalação ({{version}}) não está mais instalada. Escolha outra. Salvar sem escolher uma mantém como está.",
+      "versionNotInstalledPickAnother": "A Versão do VS desta Instalação ({{version}}) não está mais instalada. Escolha outra. Salvar sem escolher uma mantém como está agora.",
       "versionUnlinked": "Esta Instalação não está mais ligada a uma Versão do VS. Edite-a e escolha uma.",
-      "versionUnlinkedPickOne": "Esta Instalação não está mais ligada a uma Versão do VS. Edite-a e escolha uma. Salvar sem escolher uma mantém como está.",
+      "versionUnlinkedPickOne": "Esta Instalação não está mais ligada a uma Versão do VS. Edite-a e escolha uma. Salvar sem escolher uma mantém como está agora.",
       "noVersionSet": "Esta Instalação não tem Versão do VS definida.",
       "noVersionSetPickOne": "Esta Instalação não tem Versão do VS definida. Escolha uma para defini-la. Salvar sem escolher uma deixa indefinida.",
       "versionLeftUnchanged": "Todo o resto foi salvo, mas esta Instalação continua sem uma Versão do VS instalada.",
@@ -171,7 +171,8 @@
       "updateOptimumTo": "Atualizar o Optimum para {{version}}",
       "restoreVanilla": "Remover o Optimum",
       "areYouSureRestoreVanilla": "Você tem certeza que deseja remover o Optimum de {{version}}?",
-      "restoreVanillaIsPartial": "Os quatro arquivos do jogo que o Optimum substituiu voltam ao lugar, e a linha volta a mostrar a versão simples. Os shaders do Optimum e as linhas de idioma que ele adicionou continuam até você instalar esta Versão do VS de novo."
+      "restoreVanillaIsPartial": "Os quatro arquivos do jogo que o Optimum substituiu voltam ao lugar, e a linha volta a mostrar a versão simples. Os shaders do Optimum e as linhas de idioma que ele adicionou continuam até você instalar esta Versão do VS de novo.",
+      "uninstallingDeletesFolder": "Desinstalar exclui a pasta {{folder}} e todo o seu conteúdo. Esse processo é irreversível, mas você pode baixar a mesma versão do VS novamente."
     },
     "installations": {
       "noInstallationsFound": "Nenhuma instalação encontrada!",
