@@ -2,7 +2,7 @@
 // before any other import of the entry runs, and therefore before any log call can fix electron-log
 // to a folder nobody picked (#581). Nothing in its own graph may log at module scope.
 import { bootFailure, portableNote, userDataSetup } from "@src/main/bootUserData"
-import { logUserDataSetupUnlessBootFailed, reportBootFailure } from "@src/main/bootOutcome"
+import { logUserDataSetupUnlessBootFailed, reportBootFailure, reportFailedImportUnlessBootFailed } from "@src/main/bootOutcome"
 
 import { app, shell, BrowserWindow, protocol, net, session, Menu, ipcMain, dialog, screen } from "electron"
 import { dirname, join } from "node:path"
@@ -13,7 +13,7 @@ import { describeUserDataSetup } from "@src/main/userDataMigration"
 import fse from "fs-extra"
 import { readLinuxPackageType } from "@src/main/linuxPackageType"
 
-import { ensureConfig, flushConfigWrites, getConfig, saveConfig } from "@src/config/configManager"
+import { ensureConfig, flushConfigWrites, getConfig, noteUserDataImportFailed, saveConfig } from "@src/config/configManager"
 import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 import icon from "../../resources/icon.png?asset"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
@@ -60,6 +60,7 @@ Logger.transports.file.resolvePathFn = (variables, message): string => {
 }
 
 logUserDataSetupUnlessBootFailed(bootFailure, `${LOG_PREFIX} [setUpUserDataFolder] ${describeUserDataSetup(userDataSetup)}${portableNote}`, (message) => logMessage("info", message))
+reportFailedImportUnlessBootFailed(bootFailure, userDataSetup, noteUserDataImportFailed)
 
 /**
  * The one setting that has to be answered before Electron starts.

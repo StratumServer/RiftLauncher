@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { describe, it, vi } from "vitest"
 
-import { logUserDataSetupUnlessBootFailed, reportBootFailure } from "@src/main/bootOutcome"
+import { logUserDataSetupUnlessBootFailed, reportBootFailure, reportFailedImportUnlessBootFailed } from "@src/main/bootOutcome"
 
 describe("main process boot outcome", () => {
   it("does not write the normal setup log when boot failed", () => {
@@ -18,6 +20,26 @@ describe("main process boot outcome", () => {
     logUserDataSetupUnlessBootFailed(null, "profile setup", writeLog)
 
     assert.deepEqual(writeLog.mock.calls, [["profile setup"]])
+  })
+
+  it("tells the player about a failed import only when the next start will try it again", () => {
+    const report = vi.fn()
+
+    reportFailedImportUnlessBootFailed(null, { outcome: "migration-failed", importPending: true }, report)
+    assert.equal(report.mock.calls.length, 1)
+
+    reportFailedImportUnlessBootFailed(null, { outcome: "migration-failed", importPending: false }, report)
+    reportFailedImportUnlessBootFailed(null, { outcome: "migration-failed" }, report)
+    reportFailedImportUnlessBootFailed(null, { outcome: "migrate", importPending: true }, report)
+    reportFailedImportUnlessBootFailed({ detail: "profile unavailable" }, { outcome: "migration-failed", importPending: true }, report)
+    assert.equal(report.mock.calls.length, 1)
+  })
+
+  // src/main/index.ts cannot be imported in a test (it starts Electron), so, as in security-boundaries.test.ts, the source is read.
+  it("has the entry point queue the failed-import notice from the boot helper", () => {
+    const entry = readFileSync(resolve(__dirname, "../../src/main/index.ts"), "utf8")
+
+    assert.match(entry, /^reportFailedImportUnlessBootFailed\(bootFailure, userDataSetup, noteUserDataImportFailed\)$/m)
   })
 
   it("prints the full failure before showing it and exiting", () => {

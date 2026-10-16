@@ -13,7 +13,7 @@
  * away from VS Launcher and nothing is ever deleted there: whatever that
  * installation still needs stays exactly where it was.
  *
- * Everything here is pure. It takes three answers about what exists on disk and
+ * Everything here is pure. It takes answers about what exists on disk and
  * returns what to do about it; probing and copying belong to the host.
  */
 
@@ -45,12 +45,54 @@ export const DEFAULT_INSTALLATIONS_FOLDER_NAME = "RiftLauncherInstallations"
 export const DEFAULT_VERSIONS_FOLDER_NAME = "RiftLauncherGameVersions"
 export const DEFAULT_BACKUPS_FOLDER_NAME = "RiftLauncherBackups"
 
+/**
+ * File a failed import leaves in the otherwise empty RiftLauncher folder.
+ *
+ * It says "the VS Launcher data was never carried over", but only together with the folder's
+ * config.json: the next start tries again when that file is absent or holds nothing the player
+ * chose ({@link holdsPlayerChoice}), and otherwise treats the marker as stale and drops it. The
+ * import removes it on success, and the first config save that holds a player's choice removes it
+ * too, best effort: a marker that outlives that save (a scanner holds it open) is harmless, since
+ * the start-time check reads what the save wrote.
+ */
+export const IMPORT_PENDING_MARKER_FILE = "vs-launcher-import-pending"
+
+/**
+ * What a first start fills in on its own, whatever the player did: the window the first resize or
+ * move records, the changelog version the "what's new" dialog stamps, the schema version the
+ * launcher that wrote the file ran, and the ModDB answer. That prompt shows by itself on the first
+ * launch of a version with no answer, so on the empty profile a failed import leaves it appears at
+ * once and almost every player answers it: counting the answer as use of the profile would end the
+ * retry for nearly everyone. The retry carries the answer into the imported config.json instead
+ * (see `importIntoMarkedFolder`), so it is neither lost nor reversed. Everything else in config.json
+ * is either a choice or the default.
+ */
+const FIRST_START_FIELDS: ReadonlySet<string> = new Set(["schemaVersion", "window", "lastSeenChangelogVersion", "moddbVisibility"])
+
+/**
+ * Whether a config document holds something a player chose, so a failed VS Launcher import must
+ * not replace it. One rule for both sides: the save path asks it of the config it is about to write
+ * (to drop the marker) and the start asks it of the config.json it finds (to decide whether to
+ * import into a marked folder).
+ *
+ * @param config The document, as saved or as read from disk.
+ * @param untouched What a first start writes when nobody chose anything, for the same fields.
+ */
+export function holdsPlayerChoice(config: Readonly<Record<string, unknown>>, untouched: Readonly<Record<string, unknown>>): boolean {
+  return Object.entries(config).some(([field, value]) => !FIRST_START_FIELDS.has(field) && JSON.stringify(value) !== JSON.stringify(untouched[field]))
+}
+
 export type MigratedUserDataEntry = (typeof MIGRATED_USER_DATA_ENTRIES)[number]
 
 /** What the host found on disk, before anything is decided. */
 export interface UserDataProbe {
   /** Whether the RiftLauncher user-data folder is already there. */
   readonly riftExists: boolean
+  /**
+   * Whether that folder holds {@link IMPORT_PENDING_MARKER_FILE}, left by an import that failed,
+   * and its config.json has not been used since: absent, or holding no player choice.
+   */
+  readonly riftImportPending: boolean
   /** Whether a VS Launcher user-data folder is there to copy from. */
   readonly vslExists: boolean
   /** Whether a temporary migration folder survived an earlier run. */
@@ -75,11 +117,12 @@ export type UserDataMigrationPlan =
   | (UserDataPlanBase & { readonly action: "fresh" })
 
 /**
- * Reads the three facts about the disk and says what the launcher should do.
+ * Reads the facts about the disk and says what the launcher should do.
  *
- * An existing RiftLauncher folder always wins: once the migration has run, the
+ * An existing RiftLauncher folder wins: once the migration has run, the
  * VS Launcher folder is somebody else's data and its later edits are none of
- * our business.
+ * our business. The one exception is a folder that still holds the failed-import
+ * marker: nothing was ever carried into it, so the import is tried again.
  *
  * @param probe What the host found on disk.
  * @returns The action to take, plus whether a stale temporary folder is in the way.
@@ -87,7 +130,8 @@ export type UserDataMigrationPlan =
 export function planUserDataMigration(probe: UserDataProbe): UserDataMigrationPlan {
   const cleanStaleMigration = probe.staleMigrationExists
 
-  if (probe.riftExists) return { action: "use-existing", cleanStaleMigration }
+  const importNotDone = probe.riftExists && probe.riftImportPending
+  if (probe.riftExists && !(importNotDone && probe.vslExists)) return { action: "use-existing", cleanStaleMigration }
   if (probe.vslExists) return { action: "migrate", cleanStaleMigration, copy: MIGRATED_USER_DATA_ENTRIES }
 
   return { action: "fresh", cleanStaleMigration }

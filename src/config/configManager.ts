@@ -1,6 +1,6 @@
 import { app } from "electron"
 import fse from "fs-extra"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
@@ -16,7 +16,7 @@ import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/d
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 import { isSafeWorldName } from "@domain/worlds/worlds"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
-import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME } from "@domain/userData/migrationPlan"
+import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, holdsPlayerChoice, IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
 
 const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
 
@@ -113,6 +113,40 @@ export function takePendingConfigRecoveryNotice(): ConfigRecoveryNotice | null {
   return notice
 }
 
+/** Queues the notice for a start whose VS Launcher import failed and will be tried again (#708). */
+export function noteUserDataImportFailed(): void {
+  pendingConfigRecoveryNotice = { kind: "import-failed" }
+}
+
+/** Whether a document holds nothing a player chose, so a failed VS Launcher import can still replace it. */
+function isUntouchedProfile(config: ConfigType): boolean {
+  return !holdsPlayerChoice(config as unknown as Record<string, unknown>, normalizeConfig(defaultConfig) as unknown as Record<string, unknown>)
+}
+
+/** Whether the failed-import marker is known to be gone, so later saves skip the check. */
+let importMarkerSettled = false
+
+/**
+ * Drops the failed-import marker once a save holding something the player chose has reached the
+ * disk. From then on the profile is theirs and a retried import would overwrite it. Every config
+ * write goes through the queue below, which is why this is the one place that does it.
+ *
+ * It runs after the write, never before: a launcher that exits before the atomic rename leaves
+ * the untouched config.json, and the marker next to it is what makes the next start import.
+ * Best effort, and nothing depends on it: the next start decides from the config.json it finds
+ * (see `importMarkerState` in src/main/userDataMigration.ts), so a marker that cannot be removed
+ * (a scanner holds it open) is stale and is dropped there, never an import over this save.
+ */
+function settleImportMarker(saved: ConfigType): void {
+  if (importMarkerSettled || isUntouchedProfile(saved)) return
+  try {
+    fse.removeSync(join(dirname(configPath), IMPORT_PENDING_MARKER_FILE))
+    importMarkerSettled = true
+  } catch (err) {
+    logMessage("warn", `${LOG_PREFIX} [settleImportMarker] Could not remove the failed-import marker: ${err}`)
+  }
+}
+
 function scheduleConfigWrite(): Promise<void> {
   // Compared against null rather than tested for truthiness: the question is whether a write is already scheduled, not whether a promise is truthy (it always is).
   if (scheduledConfigWrite !== null) return scheduledConfigWrite
@@ -127,6 +161,7 @@ function scheduleConfigWrite(): Promise<void> {
       // and that builds a fixed literal field by field, so the renderer's session-only markers
       // (`_notifiedModUpdatesInstallations`, `_backgroundRevision`) are already gone.
       await writeJsonAtomic(configPath, nextConfig, { spaces: 2 })
+      settleImportMarker(nextConfig)
     }
   })
 
