@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 import { act, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+
+import { changeLanguage } from "@renderer/i18n"
 
 import { createMockConfig, installMockWindowApi, type WindowApiOverrides } from "./helpers/windowApi"
 import { mountManageMods } from "./helpers/mountManageMods"
@@ -218,6 +220,26 @@ describe("ManageMods details panel", () => {
     const betaInstalled = within(await screen.findByRole("complementary", { name: "Beta Mod" })).getByRole("region", { name: "Installed version" })
     expect(within(betaInstalled).getByText(NOT_LISTED)).toBeTruthy()
     expect(within(betaInstalled).queryByText(/Tagged|Likely|Untagged/)).toBeNull()
+  })
+
+  it("writes a release's date the way the launcher's language does", async () => {
+    const user = userEvent.setup()
+    renderManageMods()
+
+    await user.click(await detailsButtonFor("Alpha Mod"))
+
+    const aside = await screen.findByRole("complementary", { name: "Alpha Mod" })
+    expect(within(aside).getByText("5/1/2024")).toBeTruthy()
+
+    // The release is from 1 May 2024: English puts the month first, French the day.
+    onTestFinished(async () => {
+      await changeLanguage("en-US")
+    })
+    await act(async () => {
+      expect(await changeLanguage("fr-FR")).toBe(true)
+    })
+
+    expect(within(aside).getByText("01/05/2024")).toBeTruthy()
   })
 
   it("says a Mod is not on the ModDB when the ModDB answers 404 and keeps what its file says", async () => {

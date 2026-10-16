@@ -80,7 +80,7 @@ describe("Manage Mods: the Export Modpack mod config box", () => {
     await openTheExportMenu()
     expect(screen.queryByText("Include mod configs")).toBeNull()
 
-    await act(async () => void answer({ ok: true, configs: [{ name: "RoomSize.json", bytes: 2 }] }))
+    await act(async () => void answer({ ok: true, configs: [{ name: "RoomSize.json", bytes: 2 }], linked: [] }))
 
     const box = await screen.findByLabelText("Include mod configs", {}, { timeout: 3000 })
     expect((box as HTMLInputElement).checked).toBe(false)
@@ -99,12 +99,12 @@ describe("Manage Mods: the Export Modpack mod config box", () => {
     expect(box.checked).toBe(false)
     expect(box.disabled).toBe(true)
     const holder = box.closest("div")
-    expect(holder?.getAttribute("title")).toBe("This Installation is playing. The mod configs can be written once the game has closed.")
+    expect(holder?.getAttribute("title")).toBe("This Installation is playing. Its mod configs can be listed once the game has closed.")
   })
 
   it("stays away from an Installation with no mod configs at all", async () => {
     const { answer } = mountWithPendingConfigs()
-    await act(async () => void answer({ ok: true, configs: [] }))
+    await act(async () => void answer({ ok: true, configs: [], linked: [] }))
     await openTheExportMenu()
 
     expect(screen.queryByText("Include mod configs")).toBeNull()

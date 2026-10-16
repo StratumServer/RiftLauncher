@@ -59,8 +59,11 @@ export type ModProfileNameProblem = "empty" | "too-long" | "control-character" |
 
 export type ModProfileNameCheck = { ok: true; name: string } | { ok: false; problem: ModProfileNameProblem }
 
-/** Archive names the switch had to leave alone, grouped by Mod. */
-export type ModProfileSwitchSkippedMod = Readonly<{ modid: string; files: readonly string[] }>
+/**
+ * Archive names the switch had to leave alone, grouped by Mod. `missing` is set only when the folder
+ * holds no archive of the Mod at all, so the names are just what the profile recorded.
+ */
+export type ModProfileSwitchSkippedMod = Readonly<{ modid: string; files: readonly string[]; missing?: true }>
 
 /** What applying a profile to the folder takes: the renames, and what it had to leave alone. */
 export interface ModProfileSwitchPlan {
@@ -232,7 +235,7 @@ export function planModProfileSwitch(profile: ModProfile, mods: readonly Profile
     if (!group) continue
     for (const mod of folder.get(modid) ?? []) group.files.add(lastPathSegment(mod.path))
   }
-  const skippedMods = [...skippedByModid.values()].map(({ modid, files }) => ({ modid, files: [...files] }))
+  const skippedMods = [...skippedByModid].map(([key, { modid, files }]) => ({ modid, files: [...files], ...(missingModids.has(key) ? { missing: true as const } : {}) }))
 
   return {
     changes,

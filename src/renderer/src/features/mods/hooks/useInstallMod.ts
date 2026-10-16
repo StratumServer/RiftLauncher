@@ -4,12 +4,15 @@ import { installMod } from "@domain/mods/install"
 import type { InstallModResult, ModReleaseToInstall, InstalledModCopy } from "@domain/mods/install"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { TASK_NOTIFICATION_POLICIES, useTaskContext } from "@renderer/contexts/TaskManagerContext"
+import { claimModWrites, modWriteKey, releaseModWrites } from "@renderer/features/mods/hooks/modWrites"
 import { createModInstallPorts, describeModInstallFailure } from "@renderer/features/mods/adapters/install"
 import { logMods } from "@renderer/features/moddb/adapters/log"
 
 const LOG_TAG = "[front] [mods] [features/mods/hooks/useInstallMod.ts]"
 
 export interface InstallModOptions {
+  /** The installation's id, which keys the claim on the Mod being written. */
+  installationId: string
   /** The installation folder. Its Mods subfolder is where the archive lands. */
   installationPath: string
   /** Name of the installation, shown in the task list. */
@@ -42,7 +45,7 @@ export function useInstallMod(): (options: InstallModOptions) => Promise<Install
   const { startDownload } = useTaskContext()
 
   return async function runInstallMod(options: InstallModOptions): Promise<InstallModResult> {
-    const { installationPath, outName, modName, release, existing, disabled, installationBusy, feedback = "individual" } = options
+    const { installationId, installationPath, outName, modName, release, existing, disabled, installationBusy, feedback = "individual" } = options
 
     const labels = { name: modName, version: `v${release.modversion}`, out: outName }
 
@@ -53,7 +56,19 @@ export function useInstallMod(): (options: InstallModOptions) => Promise<Install
       notificationPolicy: feedback === "aggregate" ? TASK_NOTIFICATION_POLICIES.aggregate : TASK_NOTIFICATION_POLICIES.individual
     })
 
-    const result = await installMod(ports, { installationPath, release, existing, disabled, installationBusy })
+    // Every install of a Mod goes through here, so this is the one place a second install of it is
+    // kept out. The old archive stays on disk while the new one downloads; two installs would each
+    // delete it, and the second one's take-back would remove the archive the first just installed.
+    // Claimed before the first await, so two clicks in one tick cannot both pass.
+    const writeKeys = [modWriteKey(installationId, release.modidstr)]
+    let result: InstallModResult = { ok: false, reason: "installation-busy" }
+    if (claimModWrites(writeKeys)) {
+      try {
+        result = await installMod(ports, { installationPath, release, existing, disabled, installationBusy })
+      } finally {
+        releaseModWrites(writeKeys)
+      }
+    }
 
     if (result.ok) return result
 

@@ -15,6 +15,9 @@ declare global {
 
   type Unsubscribe = () => void
 
+  /** Whether the main process reserved the Installation, and why not when it did not. */
+  type InstallationLeaseResult = { ok: true } | { ok: false; reason: "playing" | "busy" }
+
   type BridgeAPI = {
     utils: {
       getAppVersion: () => Promise<string>
@@ -131,11 +134,17 @@ declare global {
       /** Drops one saved account's secrets, by its `playerUid`. */
       removeAccount: (accountId: string) => Promise<boolean>
     }
+    installationActivity: {
+      /** Reserves an Installation in the main process until `releaseLease` is called with the same token. */
+      acquireLease: (installationId: string, token: string) => Promise<InstallationLeaseResult>
+      releaseLease: (token: string) => Promise<void>
+    }
     worldsManager: {
       list: (installationId: string) => Promise<WorldListResult>
       backup: (installationId: string, worldName: string) => Promise<WorldBackupResult>
       restore: (installationId: string, backupId: string) => Promise<WorldOperationResult>
       delete: (installationId: string, worldName: string) => Promise<WorldOperationResult>
+      deleteBackup: (installationId: string, backupId: string) => Promise<WorldOperationResult>
       transfer: (sourceId: string, worldName: string, targetId: string, mode: "copy" | "move") => Promise<WorldTransferResult>
     }
   }

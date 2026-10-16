@@ -6,6 +6,8 @@ import { useLocation } from "react-router-dom"
 import MainMenu from "@renderer/components/layout/MainMenu"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
+import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import type { NotificationType } from "@renderer/contexts/NotificationsContext"
 import { useGameVersions, useInstallations } from "@renderer/features/config/contexts/ConfigContext"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
@@ -79,6 +81,14 @@ function readProbe(): ProbeState {
   return JSON.parse(screen.getByTestId("probe").textContent ?? "{}") as ProbeState
 }
 
+/** The notification records as the provider holds them, which is where the type of one (error, info) can be read. */
+let liveNotifications: NotificationType[] = []
+
+function NotificationsProbe(): null {
+  liveNotifications = useNotificationsContext().notifications
+  return null
+}
+
 /** Where MainMenu's own navigations land, the session report notice's action among them. */
 function WhereProbe(): JSX.Element {
   return <output data-testid="where">{useLocation().pathname}</output>
@@ -91,6 +101,7 @@ function renderMainMenu(): void {
       <MainMenu />
       <ConfigProbe />
       <WhereProbe />
+      <NotificationsProbe />
     </TaskProvider>
   )
 }
@@ -100,7 +111,6 @@ async function clickPlay(user: ReturnType<typeof userEvent.setup>): Promise<void
 }
 
 const BACKUP_WRITE_FAILED = "No backup made: the backup archive could not be written. Check that the Backups folder is on a writable drive with free space."
-const BACKUP_PRUNE_FAILED = "No backup made: an old backup file could not be deleted to make room for the new one. Check that it is not open in another program, then try again."
 const SKIP_PROMPT = "The backup failed. Launch without a backup this time?"
 
 /**
@@ -125,32 +135,6 @@ function withFailingAutoBackup(executeGame: Mock): void {
       )
     },
     pathsManager: { checkPathExists: vi.fn(async () => true) },
-    gameManager: { executeGame }
-  })
-}
-
-function withPruneFailingAutoBackup(executeGame: Mock): void {
-  installMockWindowApi({
-    configManager: {
-      getConfig: vi.fn(async () =>
-        createMockConfig({
-          backupsFolder: "/backups",
-          lastUsedInstallation: "install-a",
-          installations: [
-            anInstallation({
-              backupsAuto: true,
-              backupsLimit: 1,
-              backups: [{ id: "backup-1", date: 1, path: "/backups/backup-1.zip" }]
-            })
-          ],
-          gameVersions: [aGameVersion()]
-        })
-      )
-    },
-    pathsManager: {
-      checkPathExists: vi.fn(async () => true),
-      deletePath: vi.fn(async () => false)
-    },
     gameManager: { executeGame }
   })
 }
@@ -210,6 +194,27 @@ describe("MainMenu Play button", () => {
     await clickPlay(user)
 
     await screen.findByText("This Installation is no longer linked to a VS Version. Edit it and pick one.")
+    expect(executeGame).not.toHaveBeenCalled()
+  })
+
+  // An install the launcher did not see finish (#710) is on the list at the next start with a folder
+  // that may be empty or half copied, so Play says what happened instead of failing in the main
+  // process with a message that sends the player to a reinstall the launcher would then refuse.
+  it("refuses to launch a build whose install was cut off and says to remove it", async () => {
+    const user = userEvent.setup()
+    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ lastUsedInstallation: "install-a", installations: [anInstallation()], gameVersions: [aGameVersion({ incomplete: true })] }))
+      },
+      gameManager: { executeGame }
+    })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText("The install of VS Version 1.20.0 was cut off before it finished. Remove it on the VS Versions page, then install it again.")
     expect(executeGame).not.toHaveBeenCalled()
   })
 
@@ -324,6 +329,87 @@ describe("MainMenu Play button", () => {
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/installations/report/install-a"))
   })
 
+  /**
+   * Issue #691: EXECUTE_GAME moved an unreadable clientsettings.json aside and launched on a fresh
+   * one. The player's settings are back to the game's defaults, which is theirs to be told, along
+   * with where the old file went. The answer only arrives when the game closes, or when the launch
+   * fails after the move, and the file is in the Installation's folder either way, so the notice is
+   * shown whatever the outcome.
+   */
+  const SET_ASIDE_NAME = "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
+  const SET_ASIDE_NOTICE = `This Installation's game settings file couldn't be read, so it was set aside as ${SET_ASIDE_NAME} in the Installation's folder, and Vintage Story will use its default settings.`
+
+  function withExecuteGameAnswering(result: GameExecutionResult): void {
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation()],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      gameManager: { executeGame: vi.fn(async () => result) }
+    })
+  }
+
+  it("tells the player a game settings file was set aside, as an info notice naming it, and still records the playtime", async () => {
+    const user = userEvent.setup()
+    withExecuteGameAnswering({ ok: true, exitCode: 0, settingsSetAside: SET_ASIDE_NAME })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText(SET_ASIDE_NOTICE)
+    expect(liveNotifications.filter((notification) => notification.body === SET_ASIDE_NOTICE).map((notification) => notification.type)).toEqual(["info"])
+
+    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
+    expect(readProbe().lastTimePlayed).toBeGreaterThan(-1)
+  })
+
+  it("shows the set-aside notice and the exited-with-errors one when the game then leaves with an error", async () => {
+    const user = userEvent.setup()
+    withExecuteGameAnswering({ ok: true, exitCode: 1, settingsSetAside: SET_ASIDE_NAME })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText(SET_ASIDE_NOTICE)
+    await screen.findByText("Vintage Story exited with errors. The log has the details.")
+  })
+
+  it.each([
+    { reason: "launch-failed", message: "Something went wrong starting the game. The log has the details." },
+    { reason: "missing-dotnet", message: "This game version needs a .NET runtime that is not installed. Vintage Story needs .NET, not the launcher: install it and launch again." },
+    { reason: "installation-busy", message: "This Installation is busy managing a world. Try launching again in a moment." },
+    { reason: "session-write-failed", message: "Couldn't save your login to this installation. Try logging in again." }
+  ] as const)("names the set-aside file and still shows the $reason notice when the launch fails after the move", async ({ reason, message }) => {
+    const user = userEvent.setup()
+    withExecuteGameAnswering({ ok: false, reason, settingsSetAside: SET_ASIDE_NAME })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await screen.findByText(SET_ASIDE_NOTICE)
+    await screen.findByText(message)
+    expect(liveNotifications.filter((notification) => notification.body === SET_ASIDE_NOTICE).map((notification) => notification.type)).toEqual(["info"])
+    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
+    expect(readProbe().lastTimePlayed, "a launch that never ran credits no playtime").toBe(-1)
+  })
+
+  it("shows no set-aside notice for a launch that set nothing aside", async () => {
+    const user = userEvent.setup()
+    withExecuteGameAnswering({ ok: true, exitCode: 0 })
+
+    renderMainMenu()
+    await clickPlay(user)
+
+    await waitFor(() => expect(readProbe().lastTimePlayed).toBeGreaterThan(-1))
+    await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
+    expect(liveNotifications.filter((notification) => notification.body.includes("set aside"))).toEqual([])
+  })
+
   it("refuses to play an Installation with no VS Version set and names the state instead of a blank version", async () => {
     const user = userEvent.setup()
     const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
@@ -377,6 +463,10 @@ describe("MainMenu Play button", () => {
     { reason: "unsupported-platform", message: "Vintage Story can't run on this platform yet. Try it from Windows or Linux." },
     { reason: "no-executable", message: "Couldn't find Vintage Story in this version's folder. Try reinstalling it." },
     { reason: "session-write-failed", message: "Couldn't save your login to this installation. Try logging in again." },
+    {
+      reason: "client-settings-unreadable",
+      message: "This Installation's game settings file can't be read or moved aside. Rename clientsettings.json in the Installation's folder, then launch again."
+    },
     { reason: "invalid-request", message: "This installation's environment variables can't be used. Check them and try again." },
     { reason: "installation-busy", message: "This Installation is busy managing a world. Try launching again in a moment." },
     { reason: "launch-failed", message: "Something went wrong starting the game. The log has the details." }
@@ -668,23 +758,36 @@ describe("MainMenu Play button", () => {
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
     expect(readProbe().gameVersionPlaying).toBe(false)
   })
-
-  it("offers the override for a failed backup prune", async () => {
+  // Automatic backups are off by default, so nothing else refuses the launch: the game would open
+  // the save a backup is reading or a restore is about to swap out from under it.
+  it.each([
+    ["_backuping", "There is a backup already in progress."],
+    ["_restoringBackup", "There's a Backup restoration already in progress."]
+  ] as const)("refuses Play while %s is set, even with automatic backups off", async (flag, message) => {
     const user = userEvent.setup()
-    const executeGame = vi.fn(async () => ({ ok: true, exitCode: 0 }) as GameExecutionResult)
-    withPruneFailingAutoBackup(executeGame)
+    const executeGame = vi.fn()
+
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            backupsFolder: "/backups",
+            lastUsedInstallation: "install-a",
+            installations: [anInstallation({ backupsAuto: false, [flag]: true })],
+            gameVersions: [aGameVersion()]
+          })
+        )
+      },
+      gameManager: { executeGame }
+    })
 
     renderMainMenu()
     await clickPlay(user)
 
-    await screen.findByText(BACKUP_PRUNE_FAILED)
-    expect(await screen.findByRole("dialog")).toBeTruthy()
-
-    await user.click(within(await screen.findByRole("dialog")).getByTitle("Launch anyway"))
-
-    await waitFor(() => expect(executeGame).toHaveBeenCalledTimes(1))
+    await screen.findByText(message)
+    expect(executeGame).not.toHaveBeenCalled()
     await waitFor(() => expect(readProbe().installationPlaying).toBe(false))
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(readProbe().gameVersionPlaying).toBe(false)
   })
 })
 

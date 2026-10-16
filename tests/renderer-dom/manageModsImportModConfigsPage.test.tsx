@@ -71,7 +71,7 @@ function renderPage(): { importModpack: ReturnType<typeof vi.fn>; applyModConfig
       getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })),
       importModpack,
       applyModConfigs,
-      getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [...inFolder].map((name) => ({ name, bytes: 7 })) }))
+      getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [...inFolder].map((name) => ({ name, bytes: 7 })), linked: [] }))
     }
   })
 

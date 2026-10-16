@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { PiInfoDuotone, PiWarningDuotone, PiCheckCircleDuotone, PiProhibitInsetDuotone, PiXCircleDuotone } from "react-icons/pi"
 import { useTranslation } from "react-i18next"
@@ -116,7 +117,7 @@ function NotificationsOverlay(): JSX.Element {
     reconcilePause()
   }
 
-  return (
+  const region = (
     // Always-mounted polite live region: a queued toast inserted here minutes
     // later is still announced. A freshly mounted role="status" node is not.
     //
@@ -157,7 +158,7 @@ function NotificationsOverlay(): JSX.Element {
       onMouseLeave={handleMouseLeave}
       onFocusCapture={handleFocusCapture}
       onBlurCapture={handleBlurCapture}
-      className="w-[20rem] h-fit absolute flex flex-col items-end bottom-2 right-2 z-800 gap-2 pointer-events-none"
+      className="w-[20rem] h-fit fixed flex flex-col items-end bottom-2 right-2 z-800 gap-2 select-none pointer-events-none"
     >
       <AnimatePresence>
         {activeToasts.map(({ record, turn, paused }) => (
@@ -239,6 +240,16 @@ function NotificationsOverlay(): JSX.Element {
       </AnimatePresence>
     </div>
   )
+
+  // Into the body, beside the application's root and not inside it. An open dialog hides
+  // everything in the root from assistive technology and from the pointer (#624), and a banner is
+  // where the login dialog says why it failed, so the banners have to sit outside what gets
+  // hidden. Headless UI leaves any other top-level node alone and counts a click on it as a click
+  // inside the dialog, which is also why discarding a banner no longer closes the dialog under
+  // it. The region is fixed rather than absolute because the root clips what slides in from the
+  // right and the body does not: an absolute banner would widen the page while it is off screen.
+  // It carries its own select-none now that the root's no longer reaches it.
+  return createPortal(region, document.body)
 }
 
 export default NotificationsOverlay

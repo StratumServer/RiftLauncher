@@ -73,6 +73,10 @@ function UnreadableMods({ mods }: Readonly<{ mods: readonly ErrorInstalledModTyp
  * starts collapsed, for #431's reason: nothing pushes the Mod list off the first screen except the
  * one category whose outcome is close to certain.
  *
+ * The line beside the title counts everything the panel holds, the Mods it could not check and the
+ * archives it could not read included, so a collapsed panel never reads clean over a check that was
+ * cut short (#609). A folder with nothing to count draws no panel, which leaves no clean line to write.
+ *
  * @param installedMods Everything the last scan read, disabled copies included.
  * @param unreadableMods Archives the scan could not read at all, counted and named on request.
  * @param gameVersion The Installation's game version, without a leading "v".
@@ -228,9 +232,14 @@ function ModHealthPanel({
           </FormButton>
 
           <p className="text-zinc-400">
-            {findings.length < 1
-              ? t("features.mods.healthClean")
-              : [problems > 0 && t("features.mods.healthProblems", { count: problems }), updates > 0 && t("features.mods.healthUpdates", { count: updates })].filter(Boolean).join(", ")}
+            {[
+              problems > 0 && t("features.mods.healthProblems", { count: problems }),
+              updates > 0 && t("features.mods.healthUpdates", { count: updates }),
+              notChecked.length > 0 && t("features.mods.healthNotCheckedCount", { count: notChecked.length }),
+              unreadableMods.length > 0 && t("features.mods.healthUnreadableCount", { count: unreadableMods.length })
+            ]
+              .filter(Boolean)
+              .join(", ")}
           </p>
         </div>
 

@@ -24,6 +24,13 @@ export type AccountSecrets = {
   sessionKey: string
   sessionSignature: string
   mptoken: string | null
+  /**
+   * When this session became the launcher's own, in milliseconds since the epoch: set at login, and
+   * for an adopted session to when the game wrote it. Absent on a session stored before this field
+   * existed. Several Installations each keep a settings file, and this is what tells a key the game
+   * wrote after the launcher's session from one an Installation has simply held for longer.
+   */
+  updatedAt?: number
 }
 
 /** One account, split along the line the renderer is not allowed to cross. */
@@ -186,7 +193,8 @@ export function parseStoredSecrets(value: unknown): AccountSecrets | null {
     return {
       sessionKey: accountString(value.sessionKey, "session key"),
       sessionSignature: accountString(value.sessionSignature, "session signature"),
-      mptoken: nullableAccountString(value.mptoken, "multiplayer token")
+      mptoken: nullableAccountString(value.mptoken, "multiplayer token"),
+      ...(typeof value.updatedAt === "number" && Number.isFinite(value.updatedAt) ? { updatedAt: value.updatedAt } : {})
     }
   } catch {
     return null

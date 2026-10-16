@@ -5,11 +5,12 @@ import {
   CLIENT_SETTINGS_FILE_NAME,
   clearForeignClientSettingsSession,
   mergeSessionIntoClientSettings,
+  reconcileClientSettingsAfterPlay,
   removeSessionFromClientSettings,
   writeClientSettingsSession
 } from "../../../src/domain/account/clientSettings"
 import type { AccountSessionFields } from "../../../src/domain/account/clientSettings"
-import type { JsonFile, JsonFileReadResult, JsonFileWriteResult } from "../../../src/domain/ports"
+import type { JsonFile, JsonFileReadResult, JsonFileSetAsideResult, JsonFileWriteResult } from "../../../src/domain/ports"
 
 const SETTINGS_PATH = `/data/survival/${CLIENT_SETTINGS_FILE_NAME}`
 
@@ -42,21 +43,41 @@ function stringSettingsOf(document: Record<string, unknown>): Record<string, unk
   return document.stringSettings as Record<string, unknown>
 }
 
+/** What the host names a file it set aside, as it answers one. The domain never builds this name. */
+const KEPT_NAME = "clientsettings.unreadable-2026-10-07T12-34-56-789Z.json"
+
 interface FakeJsonFile {
   jsonFile: JsonFile
   writes: { path: string; document: unknown }[]
+  /** The paths asked to be set aside, in order. */
+  setAsides: string[]
+  /** Every write and set-aside in the order they happened, which is what tells a file kept from a file overwritten. */
+  events: string[]
 }
 
-function fakeJsonFile(read: JsonFileReadResult = { ok: true, document: undefined }, write: JsonFileWriteResult = { ok: true }): FakeJsonFile {
+/** The host cannot move the file: the default, so a test that is not about set-asides never sees one succeed. */
+const CANNOT_SET_ASIDE: JsonFileSetAsideResult = { ok: false }
+
+function fakeJsonFile(read: JsonFileReadResult = { ok: true, document: undefined }, write: JsonFileWriteResult = { ok: true }, setAside: JsonFileSetAsideResult = CANNOT_SET_ASIDE): FakeJsonFile {
   const writes: { path: string; document: unknown }[] = []
+  const setAsides: string[] = []
+  const events: string[] = []
 
   return {
     writes,
+    setAsides,
+    events,
     jsonFile: {
       read: async () => read,
       write: async (path: string, document: unknown): Promise<JsonFileWriteResult> => {
         writes.push({ path, document })
+        events.push("write")
         return write
+      },
+      setAside: async (path: string): Promise<JsonFileSetAsideResult> => {
+        setAsides.push(path)
+        events.push("set-aside")
+        return setAside
       }
     }
   }
@@ -188,13 +209,14 @@ describe("writeClientSettingsSession", () => {
     assert.deepEqual(writes[0]?.document, { stringSettings: WRITTEN_SESSION })
   })
 
-  it("writes nothing when the settings file exists but cannot be read", async () => {
-    const { jsonFile, writes } = fakeJsonFile({ ok: false, error: "Unexpected token }" })
+  it("writes nothing when the settings file cannot be read and cannot be set aside either", async () => {
+    const { jsonFile, writes, setAsides } = fakeJsonFile({ ok: false, error: "Unexpected token }" })
 
     const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
 
     assert.deepEqual(result, { outcome: "unreadable-settings" })
-    assert.deepEqual(writes, [])
+    assert.deepEqual(setAsides, [SETTINGS_PATH], "keeping the file is tried before giving up on it")
+    assert.deepEqual(writes, [], "a file that could not be kept must never be written over")
   })
 
   it("reports a write that did not happen", async () => {
@@ -203,6 +225,77 @@ describe("writeClientSettingsSession", () => {
     const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
 
     assert.deepEqual(result, { outcome: "write-failed" })
+  })
+})
+
+/**
+ * Issue #691: a power cut left an installation's settings file as something that is not JSON, and
+ * every launch after it stopped on it, with a message that told the player to log in again, which
+ * cannot fix a file. The file is now set aside whole and the launch goes on as if it had never been
+ * there, so these pin both halves: what is kept, and what happens next.
+ */
+describe("writeClientSettingsSession when the settings file cannot be read", () => {
+  const UNREADABLE: JsonFileReadResult = { ok: false, error: "Unexpected token }" }
+
+  it("sets the file aside, then writes the session into a fresh one", async () => {
+    const { jsonFile, writes, setAsides } = fakeJsonFile(UNREADABLE, { ok: true }, { ok: true, name: KEPT_NAME })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "written", setAside: KEPT_NAME })
+    assert.deepEqual(setAsides, [SETTINGS_PATH])
+    assert.equal(writes.length, 1)
+    assert.equal(writes[0]?.path, SETTINGS_PATH)
+    assert.deepEqual(writes[0]?.document, { stringSettings: WRITTEN_SESSION }, "exactly what a missing file gets")
+  })
+
+  it("sets the file aside before anything is written, since the write would otherwise replace it", async () => {
+    const { jsonFile, events } = fakeJsonFile(UNREADABLE, { ok: true }, { ok: true, name: KEPT_NAME })
+
+    await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(events, ["set-aside", "write"])
+  })
+
+  it("carries on as with a missing file when the mod folder list is being checked too", async () => {
+    const { jsonFile, writes } = fakeJsonFile(UNREADABLE, { ok: true }, { ok: true, name: KEPT_NAME })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION, modPaths: { installationPath: "/data/survival", modsPath: "/data/survival/Mods" } })
+
+    assert.deepEqual(result, { outcome: "written", setAside: KEPT_NAME }, "there is no list to repoint, and nothing is said about one")
+    assert.deepEqual(writes[0]?.document, { stringSettings: WRITTEN_SESSION })
+  })
+
+  it("refuses, writing nothing, when the file cannot be set aside", async () => {
+    const { jsonFile, writes, events } = fakeJsonFile(UNREADABLE, { ok: true }, { ok: false })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "unreadable-settings" })
+    assert.deepEqual(writes, [])
+    assert.deepEqual(events, ["set-aside"])
+  })
+
+  it("still names the kept file when the fresh one then cannot be written", async () => {
+    const { jsonFile } = fakeJsonFile(UNREADABLE, { ok: false, error: "ENOSPC" }, { ok: true, name: KEPT_NAME })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.deepEqual(result, { outcome: "write-failed", setAside: KEPT_NAME })
+  })
+
+  it("never sets aside a file it could read, nor one that is not there", async () => {
+    for (const read of [
+      { ok: true, document: { intSettings: { maxFps: 60 } } },
+      { ok: true, document: undefined }
+    ] satisfies JsonFileReadResult[]) {
+      const { jsonFile, setAsides } = fakeJsonFile(read, { ok: true }, { ok: true, name: KEPT_NAME })
+
+      const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+      assert.deepEqual(result, { outcome: "written" })
+      assert.deepEqual(setAsides, [])
+    }
   })
 })
 
@@ -283,6 +376,135 @@ describe("writeClientSettingsSession when the game refreshed the session itself"
 
     assert.deepEqual(result, { outcome: "written" })
     assert.deepEqual(writes[0]?.document, { intSettings: { maxFps: 60 }, stringSettings: { language: "es-es", ...WRITTEN_SESSION } })
+  })
+})
+
+/**
+ * Several Installations, one account (issue #712). Each Installation has its own settings file, so
+ * a key that differs from the launcher's is not necessarily newer: the Installation launched least
+ * recently holds an older one. The launcher's session carries the time it last changed, and the
+ * file's modification time is what says whether the game wrote after that.
+ */
+describe("writeClientSettingsSession when the file's key may be older than the launcher's", () => {
+  const GAME_KEY = { ...WRITTEN_SESSION, mptoken: "game-mp-token", sessionkey: "game-session-key", sessionsignature: "game-session-signature" }
+  const SESSION_SET_AT = 1_000_000
+
+  it("writes the launcher's key over one the file has held since before the launcher's session changed", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: SESSION_SET_AT - 1 })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: { ...SESSION, sessionUpdatedAt: SESSION_SET_AT } })
+
+    assert.deepEqual(result, { outcome: "written" })
+    assert.equal(stringSettingsOf(writes[0]?.document as Record<string, unknown>).sessionkey, "session-key")
+  })
+
+  it("treats a file written at the very instant the launcher's session changed as not newer", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: SESSION_SET_AT })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: { ...SESSION, sessionUpdatedAt: SESSION_SET_AT } })
+
+    assert.deepEqual(result, { outcome: "written" })
+  })
+
+  it("adopts a key the game wrote after the launcher's session changed, and dates the adoption by the file", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: SESSION_SET_AT + 1 })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: { ...SESSION, sessionUpdatedAt: SESSION_SET_AT } })
+
+    assert.deepEqual(result, {
+      outcome: "adopted",
+      secrets: { sessionKey: "game-session-key", sessionSignature: "game-session-signature", mptoken: "game-mp-token", updatedAt: SESSION_SET_AT + 1 }
+    })
+    assert.deepEqual(writes, [])
+  })
+
+  it("keeps adopting without a date on the launcher's session, as a store written before dates existed", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: 5 })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: SESSION })
+
+    assert.equal(result.outcome, "adopted")
+  })
+
+  it("does not adopt when the launcher's session is dated and the file cannot say when it was written", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY } })
+
+    const result = await writeClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, session: { ...SESSION, sessionUpdatedAt: SESSION_SET_AT } })
+
+    assert.deepEqual(result, { outcome: "written" })
+  })
+})
+
+describe("reconcileClientSettingsAfterPlay", () => {
+  const GAME_KEY = { ...WRITTEN_SESSION, mptoken: "game-mp-token", sessionkey: "game-session-key", sessionsignature: "game-session-signature" }
+  const HANDED: AccountSessionFields = { ...SESSION, sessionUpdatedAt: 10 }
+  const STORED = { sessionKey: "session-key", sessionSignature: "session-signature", mptoken: "mp-token", updatedAt: 10 }
+
+  it("hands back a key the game wrote after the launcher's session changed, and writes nothing", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: 20 })
+
+    const result = await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: STORED })
+
+    assert.deepEqual(result, { sessionKey: "game-session-key", sessionSignature: "game-session-signature", mptoken: "game-mp-token", updatedAt: 20 })
+    assert.deepEqual(writes, [])
+  })
+
+  it("hands back nothing for the key the launcher handed the game, however recently the game saved its settings", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: WRITTEN_SESSION }, modifiedAt: 99 })
+
+    assert.equal(await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: STORED }), null)
+    assert.deepEqual(writes, [])
+  })
+
+  it("hands back nothing for a key older than the launcher's session, or for an unreadable file", async () => {
+    const older = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: 5 })
+    const unreadable = fakeJsonFile({ ok: false })
+
+    assert.equal(await reconcileClientSettingsAfterPlay({ jsonFile: older.jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: STORED }), null)
+    assert.equal(await reconcileClientSettingsAfterPlay({ jsonFile: unreadable.jsonFile }, { settingsPath: SETTINGS_PATH, handed: SESSION, stored: STORED }), null)
+    assert.deepEqual([...older.writes, ...unreadable.writes], [])
+  })
+
+  it("lays a login made in the launcher during play over the file, so the file no longer looks newer than it (#712)", async () => {
+    // The game saved its settings 5 ms after the login, holding the key it was handed.
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: { ...WRITTEN_SESSION, language: "es-es" }, intSettings: { maxFps: 60 } }, modifiedAt: 105 })
+    const login = { sessionKey: "login-key", sessionSignature: "login-signature", mptoken: null, updatedAt: 100 }
+
+    const result = await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: login })
+
+    assert.equal(result, null, "nothing to adopt over the login")
+    assert.equal(writes.length, 1)
+    const written = writes[0]?.document as Record<string, unknown>
+    assert.deepEqual(stringSettingsOf(written), { ...WRITTEN_SESSION, language: "es-es", sessionkey: "login-key", sessionsignature: "login-signature", mptoken: null })
+    assert.deepEqual(written.intSettings, { maxFps: 60 })
+  })
+
+  it("does the same when the file holds a key the game issued, since the launcher's session is the one it can date", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: GAME_KEY }, modifiedAt: 105 })
+
+    const result = await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: { ...STORED, sessionKey: "login-key", updatedAt: 100 } })
+
+    assert.equal(result, null)
+    assert.equal(stringSettingsOf(writes[0]?.document as Record<string, unknown>).sessionkey, "login-key")
+  })
+
+  it("treats a session stored without a date as unchanged when it was handed without one", async () => {
+    const { jsonFile, writes } = fakeJsonFile({ ok: true, document: { stringSettings: WRITTEN_SESSION }, modifiedAt: 99 })
+
+    assert.equal(
+      await reconcileClientSettingsAfterPlay(
+        { jsonFile },
+        { settingsPath: SETTINGS_PATH, handed: SESSION, stored: { sessionKey: "session-key", sessionSignature: "session-signature", mptoken: "mp-token" } }
+      ),
+      null
+    )
+    assert.deepEqual(writes, [])
+  })
+
+  it("does not fail when the file cannot be written", async () => {
+    const { jsonFile } = fakeJsonFile({ ok: true, document: { stringSettings: WRITTEN_SESSION }, modifiedAt: 105 }, { ok: false })
+
+    assert.equal(await reconcileClientSettingsAfterPlay({ jsonFile }, { settingsPath: SETTINGS_PATH, handed: HANDED, stored: { ...STORED, sessionKey: "login-key", updatedAt: 100 } }), null)
   })
 })
 
@@ -369,13 +591,42 @@ describe("clearForeignClientSettingsSession", () => {
     assert.deepEqual(writes, [])
   })
 
-  it("reports the settings file as unreadable rather than guessing", async () => {
-    const { jsonFile, writes } = fakeJsonFile({ ok: false, error: "Unexpected token }" })
+  it("reports the settings file as unreadable rather than guessing when it cannot be set aside either", async () => {
+    const { jsonFile, writes, setAsides } = fakeJsonFile({ ok: false, error: "Unexpected token }" })
 
     const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
 
     assert.deepEqual(result, { outcome: "unreadable-settings" })
+    assert.deepEqual(setAsides, [SETTINGS_PATH])
     assert.deepEqual(writes, [])
+  })
+
+  /**
+   * Issue #691 again, from the side that has no session of its own to write. The file is set
+   * aside and nothing takes its place: no file carries no session, which is what this function
+   * exists to guarantee, so the launch goes on with none.
+   */
+  it("sets an unreadable file aside and writes nothing, since no file holds no foreign session", async () => {
+    const { jsonFile, writes, setAsides } = fakeJsonFile({ ok: false, error: "Unexpected token }" }, { ok: true }, { ok: true, name: KEPT_NAME })
+
+    const result = await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+    assert.deepEqual(result, { outcome: "not-foreign", setAside: KEPT_NAME })
+    assert.deepEqual(setAsides, [SETTINGS_PATH])
+    assert.deepEqual(writes, [])
+  })
+
+  it("never sets aside a file it could read, nor one that is not there", async () => {
+    for (const read of [
+      { ok: true, document: { stringSettings: FOREIGN_SESSION } },
+      { ok: true, document: undefined }
+    ] satisfies JsonFileReadResult[]) {
+      const { jsonFile, setAsides } = fakeJsonFile(read, { ok: true }, { ok: true, name: KEPT_NAME })
+
+      await clearForeignClientSettingsSession({ jsonFile }, { settingsPath: SETTINGS_PATH, playerUid: OUR_UID })
+
+      assert.deepEqual(setAsides, [])
+    }
   })
 
   it("reports a clear that did not land", async () => {

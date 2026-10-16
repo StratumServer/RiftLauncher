@@ -68,10 +68,14 @@ export interface ModProfiles {
  * read the folder records and applies nothing: its empty list is not what the folder holds.
  *
  * Known limits: a download already in flight when a switch starts still lands enabled, and so becomes
- * part of the profile being switched to. Updating one Mod from its row removes the old archive before
- * the new one lands without marking the folder busy, so a profile created or duplicated in that window
- * leaves that Mod out. Everything that starts during a switch is refused, because the switch holds
- * `_updatingMods`.
+ * part of the profile being switched to. Updating one Mod from its row does not mark the folder busy.
+ * The old archive stays on disk while the new one downloads, so a profile created or duplicated then
+ * still has the Mod; the only window left is the instant between the rename and the delete, when both
+ * archives are present. A switch that renames the old archive during the download (foo-1.0.zip to
+ * foo-1.0.zip.disabled) makes the delete after it fail, because DELETE_PATH refuses a missing path:
+ * the new archive is taken back out and the player gets errorReplacingOldModVersion. The folder ends
+ * up as the profile wants, at the old version. Everything that starts during a switch is refused,
+ * because the switch holds `_updatingMods`.
  */
 export function useModProfiles(installation: InstallationType | undefined): ModProfiles {
   const { t } = useTranslation()
@@ -144,8 +148,8 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
   /** One write at a time, and none unless the file is one this build may write. */
   async function exclusive(task: (path: string) => Promise<void>): Promise<void> {
     if (!installationPath || status !== "ready" || workingRef.current) return
-    // A capture now would miss a Mod Update all has removed and not yet replaced, and a write during a
-    // restore lands in a folder about to be swapped out.
+    // A capture now would take a folder Update all is changing under it, with old and new archives
+    // side by side, and a write during a restore lands in a folder about to be swapped out.
     if (installation && modsFolderInUse(installation)) return addNotification(t("features.mods.cantChangeProfilesWhileInUse"), "error")
     workingRef.current = true
     setWorking(true)
@@ -219,6 +223,7 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
     const turnedOn = plan.changes.filter((change, index) => change.enabled && results[index]?.ok).length
     const turnedOff = results.length - failed - turnedOn
     logMods("info", `${LOG_TAG} [switchTo] Profile switch: ${turnedOn} on, ${turnedOff} off, ${failed} failed, ${plan.missing} missing, ${plan.unresolved} unresolved.`)
+    const skipped = plan.missing + plan.unresolved
 
     // Nothing is rolled back. Every rename is atomic, so the folder is valid, and with no profile
     // active the next switch cannot record this mix into either profile.
@@ -234,15 +239,17 @@ export function useModProfiles(installation: InstallationType | undefined): ModP
         group.files.add(file)
         failedByModid.set(key, group)
       }
-      setSwitchReport({ groups: [...failedByModid.values()].map(({ modid, files }) => ({ modid, files: [...files] })) })
-      return addNotification(t("features.mods.profileSwitchPartial", { profile: target.name, count: failed, ...RAW_NAME }), "warning")
+      // Mods the profile lists and the folder cannot match are part of the difference too: counted
+      // and named beside the failures, as they are when nothing fails.
+      const failedGroups = [...failedByModid.values()].map(({ modid, files }) => ({ modid, files: [...files] }))
+      setSwitchReport({ groups: [...failedGroups, ...(plan.skippedMods ?? [])] })
+      return addNotification(t("features.mods.profileSwitchPartial", { profile: target.name, count: failed + skipped, ...RAW_NAME }), "warning")
     }
 
     if (!(await save(path, finishModProfileSwitch(begun, target.id)))) {
       return addNotification(t("features.mods.profileSwitchNotRecorded", { profile: target.name, ...RAW_NAME }), "warning")
     }
 
-    const skipped = plan.missing + plan.unresolved
     const counts = { profile: target.name, on: turnedOn, off: turnedOff, ...RAW_NAME }
     if (skipped > 0) setSwitchReport({ groups: plan.skippedMods ?? [] })
     addNotification(skipped > 0 ? t("features.mods.profileSwitchedWithSkipped", { ...counts, count: skipped }) : t("features.mods.profileSwitched", counts), "success")

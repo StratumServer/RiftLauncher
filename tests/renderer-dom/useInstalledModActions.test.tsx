@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest"
 import { act, renderHook, screen, waitFor } from "@testing-library/react"
 
 import { modWriteKey, quickInstallKey, useInstalledModActions } from "@renderer/features/mods/hooks/useInstalledModActions"
+import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
+import { useModBatchActions } from "@renderer/features/mods/hooks/useModBatchActions"
 import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
 import { ConfigProvider } from "@renderer/features/config/contexts/ConfigContext"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
@@ -335,6 +337,30 @@ describe("useInstalledModActions: update and quick install", () => {
     expect(result.current.busyPaths).toEqual([])
   })
 
+  it("leaves the installed archive alone when the download of its update fails (#703)", async () => {
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async () => {
+      throw new Error("The transfer died.")
+    })
+    const { result } = renderActions(anInstallation(), async () => {}, { pathsManager: { deletePath, downloadOnPath } })
+
+    await act(() => result.current.updateMod(disabledCopy, alphaRelease))
+
+    expect(downloadOnPath).toHaveBeenCalledTimes(1)
+    expect(deletePath).not.toHaveBeenCalled()
+  })
+
+  it("removes the old archive once the new one has landed (#703)", async () => {
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => true)
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => `${outputPath}/${fileName}`)
+    const { result } = renderActions(anInstallation(), async () => {}, { pathsManager: { deletePath, downloadOnPath } })
+
+    await act(() => result.current.updateMod(disabledCopy, alphaRelease))
+
+    expect(deletePath).toHaveBeenCalledWith(DISABLED_PATH)
+    expect(deletePath.mock.invocationCallOrder[0]).toBeGreaterThan(downloadOnPath.mock.invocationCallOrder[0] as number)
+  })
+
   it.each(HOLDERS)("refuses to install while %o, before asking the ModDB anything", async (holder) => {
     const queryURL = vi.fn<BridgeAPI["netManager"]["queryURL"]>(async () => alphaDetail)
     const { result } = renderActions(anInstallation(holder), async () => {}, { netManager: { queryURL } })
@@ -502,5 +528,195 @@ describe("useInstalledModActions: update and quick install", () => {
     expect(installLines).not.toContain("/games/a")
     // The download task says it failed; that is the update's one notification.
     expect(await screen.findByText(/Couldn't download Alpha Mod/)).toBeTruthy()
+  })
+})
+
+/*
+ * The old archive stays on disk, listed and actionable, while its replacement downloads (#703). Anything
+ * that touches it then races the swap: the delete that follows the download fails on a missing path and
+ * the take-back removes the archive that was just installed.
+ */
+describe("useInstalledModActions: the old copy while its update downloads (#703)", () => {
+  const alphaRelease: DownloadableModReleaseType = {
+    releaseid: 1,
+    mainfile: "https://mods.example/alpha-1.5.0.zip",
+    filename: "alpha-1.5.0.zip",
+    fileid: 1,
+    downloads: 0,
+    tags: ["1.20.0"],
+    modidstr: "alpha",
+    modversion: "1.5.0",
+    created: "2026-01-01",
+    changelog: ""
+  }
+
+  /** A folder modelled as a set of paths, an update whose download is held open, and the hook acting on it. */
+  function updatingFolder(): {
+    files: Set<string>
+    download: ReturnType<typeof deferred<void>>
+    setModEnabled: ReturnType<typeof vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>>
+    deletePath: ReturnType<typeof vi.fn<BridgeAPI["pathsManager"]["deletePath"]>>
+    downloadOnPath: ReturnType<typeof vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>>
+    overrides: WindowApiOverrides
+  } {
+    const files = new Set([ENABLED_PATH])
+    const download = deferred<void>()
+    const setModEnabled = vi.fn<BridgeAPI["modsManager"]["setModEnabled"]>(async (path: string) => {
+      files.delete(path)
+      files.add(`${path}.disabled`)
+      return { ok: true, path: `${path}.disabled` }
+    })
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async (path: string) => files.delete(path))
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => {
+      await download.promise
+      files.add(`${outputPath}/${fileName}`)
+      return `${outputPath}/${fileName}`
+    })
+    return { files, download, setModEnabled, deletePath, downloadOnPath, overrides: { modsManager: { setModEnabled }, pathsManager: { deletePath, downloadOnPath } } }
+  }
+
+  /**
+   * An update started on a page that was then left, and a fresh page over the same folder: its busy
+   * set is empty, and its scan lists the old copy like any other.
+   */
+  async function pageOpenedMidUpdate(folder: ReturnType<typeof updatingFolder>): Promise<{ result: ReturnType<typeof renderActions>["result"]; updating: Promise<void> }> {
+    const leftPage = renderActions(anInstallation(), async () => {}, folder.overrides)
+    let updating!: Promise<void>
+    act(() => {
+      updating = leftPage.result.current.updateMod(enabledCopy, alphaRelease)
+    })
+    await waitFor(() => expect(folder.downloadOnPath).toHaveBeenCalledTimes(1))
+    leftPage.unmount()
+
+    return { result: renderHook(() => useInstalledModActions(anInstallation(), async () => {}), { wrapper }).result, updating }
+  }
+
+  it("refuses to turn the old copy off while the update downloads, so the swap still finds it", async () => {
+    const folder = updatingFolder()
+    const { result, updating } = await pageOpenedMidUpdate(folder)
+
+    await act(() => result.current.toggleEnabled(enabledCopy))
+    expect(folder.setModEnabled).not.toHaveBeenCalled()
+
+    await act(async () => {
+      folder.download.resolve()
+      await updating
+    })
+    expect([...folder.files]).toEqual(["/games/a/Mods/alpha-1.5.0.zip"])
+    expect(screen.queryByText(/still on disk/)).toBeNull()
+    expect(screen.queryByText(/Close Vintage Story/)).toBeNull()
+  })
+
+  it("refuses to delete the old copy while the update downloads, so nothing is told it was left alone when it is gone", async () => {
+    const folder = updatingFolder()
+    const { result, updating } = await pageOpenedMidUpdate(folder)
+
+    act(() => result.current.requestDelete(enabledCopy))
+    await act(() => result.current.confirmDelete())
+    expect(folder.deletePath).not.toHaveBeenCalled()
+    expect(screen.queryByText("Mod deleted successfully")).toBeNull()
+
+    await act(async () => {
+      folder.download.resolve()
+      await updating
+    })
+    expect(folder.deletePath).toHaveBeenCalledTimes(1)
+    expect([...folder.files]).toEqual(["/games/a/Mods/alpha-1.5.0.zip"])
+    expect(screen.queryByText(/still on disk/)).toBeNull()
+  })
+
+  it("tells the player both versions are on disk when neither the old archive nor the take-back can be deleted", async () => {
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => false)
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => `${outputPath}/${fileName}`)
+    const { result } = renderActions(anInstallation(), async () => {}, { pathsManager: { deletePath, downloadOnPath } })
+
+    await act(() => result.current.updateMod(enabledCopy, alphaRelease))
+
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ENABLED_PATH, "/games/a/Mods/alpha-1.5.0.zip"])
+    expect(await screen.findByText(/now holds two versions of Alpha Mod/)).toBeTruthy()
+    expect(screen.queryByText(/is still on disk, so it was left alone/)).toBeNull()
+    expect(loggedText()).toContain("new-version-cleanup-failed")
+  })
+
+  it("lets the old copy be acted on again once the update has settled", async () => {
+    const folder = updatingFolder()
+    folder.download.resolve()
+    const { result } = renderActions(anInstallation(), async () => {}, folder.overrides)
+
+    await act(() => result.current.updateMod(enabledCopy, alphaRelease))
+    expect(result.current.isBusy(modWriteKey("install-a", "alpha"))).toBe(false)
+
+    const updated: InstalledModType = { ...enabledCopy, version: "1.5.0", path: "/games/a/Mods/alpha-1.5.0.zip" }
+    await act(() => result.current.toggleEnabled(updated))
+    expect(folder.setModEnabled).toHaveBeenCalledWith("/games/a/Mods/alpha-1.5.0.zip", false)
+  })
+
+  it("keeps a second install of the Mod out, whichever caller starts it, and loses neither version to the first", async () => {
+    const folder = updatingFolder()
+    installMockWindowApi(folder.overrides)
+    const { result } = renderHook(() => useInstallMod(), { wrapper })
+    const options = {
+      installationId: "install-a",
+      installationPath: "/games/a",
+      outName: "Install A",
+      modName: "Alpha Mod",
+      release: { mainfile: alphaRelease.mainfile, modidstr: "alpha", modversion: "1.5.0" },
+      existing: { path: ENABLED_PATH, version: "1.0.0" }
+    }
+
+    let first!: Promise<{ ok: boolean }>
+    act(() => {
+      first = result.current(options)
+    })
+    await waitFor(() => expect(folder.downloadOnPath).toHaveBeenCalledTimes(1))
+
+    let second: { ok: boolean; reason?: string } | undefined
+    await act(async () => {
+      second = await result.current(options)
+    })
+    expect(second).toEqual({ ok: false, reason: "installation-busy" })
+    expect(folder.downloadOnPath).toHaveBeenCalledTimes(1)
+
+    let landed: { ok: boolean } | undefined
+    await act(async () => {
+      folder.download.resolve()
+      landed = await first
+    })
+    expect(landed?.ok).toBe(true)
+    expect([...folder.files]).toEqual(["/games/a/Mods/alpha-1.5.0.zip"])
+
+    // Released at the end, so the Mod can be installed again.
+    await act(async () => {
+      expect((await result.current({ ...options, existing: undefined })).ok).toBe(true)
+    })
+  })
+
+  it("leaves a Mod whose update is downloading out of a batch delete, keeps it checked, and removes the rest", async () => {
+    const folder = updatingFolder()
+    const betaCopy: InstalledModType = { name: "Beta Mod", modid: "beta", version: "1.0.0", path: "/games/a/Mods/beta-1.0.0.zip", enabled: true }
+    folder.files.add(betaCopy.path)
+    installMockWindowApi(folder.overrides)
+    const mods = [enabledCopy, betaCopy]
+    const { result } = renderHook(() => ({ actions: useInstalledModActions(anInstallation(), async () => {}), batch: useModBatchActions(anInstallation(), mods, mods, async () => {}) }), { wrapper })
+
+    let updating!: Promise<void>
+    act(() => {
+      updating = result.current.actions.updateMod(enabledCopy, alphaRelease)
+    })
+    await waitFor(() => expect(folder.downloadOnPath).toHaveBeenCalledTimes(1))
+
+    act(() => result.current.batch.toggleAllShown())
+    await act(() => result.current.batch.remove())
+
+    expect(folder.deletePath.mock.calls.map((call) => call[0])).toEqual([betaCopy.path])
+    expect(result.current.batch.isChecked(ENABLED_PATH)).toBe(true)
+    expect(result.current.batch.isChecked(betaCopy.path)).toBe(false)
+    expect(await screen.findByText(/1 of 2 Mods went through/)).toBeTruthy()
+
+    await act(async () => {
+      folder.download.resolve()
+      await updating
+    })
+    expect([...folder.files]).toEqual(["/games/a/Mods/alpha-1.5.0.zip"])
   })
 })

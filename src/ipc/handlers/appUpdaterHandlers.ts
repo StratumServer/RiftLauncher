@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from "../ipcChannels"
 import { isTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { loadAutoUpdater } from "@src/utils/autoUpdaterLoader"
 import { logMessage } from "@src/utils/logManager"
+import { getShouldPreventClose } from "@src/utils/shouldPreventClose"
 
 /**
  * Two one-way flags the renderer cannot set: only the updater's own events
@@ -78,10 +79,40 @@ ipcMain.on(IPC_CHANNELS.APP_UPDATER.DOWNLOAD_UPDATE, (event) => {
 // offer, which only main/index.ts's canAutoUpdate-ok branch arranges. A build that cannot install
 // an update therefore never loads the module through here either, however many times the renderer
 // sends the channel.
+//
+// The arguments are (isSilent, isForceRunAfter), and both are true on purpose (#668). Not silent,
+// the Windows installer (oneClick: false in electron-builder.yml) opens its assisted wizard and
+// waits on two pages, install mode and then Finish, while the launcher is already gone.
+// electron-updater also drops isForceRunAfter when not silent, and that installer acts on
+// --force-run only when silent, so the restart would rest on the Finish page's "Run RiftLauncher"
+// box staying ticked. Silent, it updates the existing install in place and starts the launcher
+// again. The Linux updaters ignore isSilent and start the launcher again on isForceRunAfter, and
+// macOS never gets here.
+//
+// The close guard is checked first and the click is refused while it is held, with the same
+// message the window's close handler sends. quitAndInstall starts the installer before it asks the
+// app to quit, and the quit has side effects that cannot be taken back: before-quit kills the
+// workers and shuts the download, archive and query lanes for good, and only afterwards does the
+// window's close handler veto the quit. On Windows the silent installer then force-kills the
+// launcher and the game it started; on Linux the launcher survives with its lanes shut, and every
+// later Mod update deletes the old archive and fails to download the new one. `updateDownloaded`
+// is left set, and UPDATE_DOWNLOADED is sent again: the renderer marks the notification answered on
+// the click and hides its button for good, so without a new one the player could not restart in
+// this session. The renderer treats the event as idempotent and offers the restart afresh.
 ipcMain.on(IPC_CHANNELS.APP_UPDATER.UPDATE_AND_RESTART, (event) => {
   if (!isTrustedIpcSender(event) || !updateDownloaded) return
   void loadAutoUpdater()
-    .then((autoUpdater) => autoUpdater.quitAndInstall(false, true))
+    .then((autoUpdater) => {
+      if (getShouldPreventClose()) {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(IPC_CHANNELS.UTILS.PREVENTED_APP_CLOSE)
+          event.sender.send(IPC_CHANNELS.APP_UPDATER.UPDATE_DOWNLOADED)
+        }
+        logMessage("info", "[back] [appUpdater] [ipc/handlers/appUpdaterHandlers.ts] [UPDATE_AND_RESTART] Restart refused: the app cannot close yet.")
+        return
+      }
+      autoUpdater.quitAndInstall(true, true)
+    })
     .catch(() => {
       updateDownloaded = false
     })

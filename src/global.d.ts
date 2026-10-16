@@ -207,6 +207,13 @@ declare global {
     variant?: GameBuildVariantType
     /** Registered from a folder the launcher did not install, so removing it must only unregister it. */
     linked?: boolean
+    /**
+     * The launcher registered this row before its install ran and has not seen it finish. It is
+     * the one install flag that is written to config.json (`_installing` is not), so a row that
+     * still carries it when the launcher starts is an install that was cut off: the folder may
+     * be empty, partial or half copied.
+     */
+    incomplete?: boolean
     _installing?: boolean
     _deleting?: boolean
     _playing?: boolean
@@ -235,7 +242,7 @@ declare global {
   }
 
   type WorldListResult = { ok: true; worlds: WorldType[] } | { ok: false; reason: string }
-  type WorldBackupResult = { ok: true; backup: WorldBackupType } | { ok: false; reason: string }
+  type WorldBackupResult = { ok: true; backup: WorldBackupType; deletedBackupIds?: string[] } | { ok: false; reason: string }
   type WorldOperationResult = { ok: true } | { ok: false; reason: string }
   type WorldTransferResult = { ok: true; targetWorldName: string; warning?: "different-version" } | { ok: false; reason: string }
 
@@ -532,6 +539,8 @@ declare global {
     toVersion: string | null
     assetid?: number
     alreadyPresent?: boolean
+    /** True when the old and the new archive are both in the Mods folder and the player has to remove one. */
+    bothVersions?: boolean
   }
 
   /**
@@ -543,7 +552,14 @@ declare global {
    *
    * - `unsupported-platform` / `no-executable`: {@link BuildGameLaunchPlanFailure}.
    * - `session-write-failed`: the account session could not be written into
-   *   the installation's clientsettings.json (unreadable or unwritable file).
+   *   the installation's clientsettings.json (an unwritable file).
+   * - `client-settings-unreadable`: the installation's clientsettings.json is
+   *   there and holds nothing the launcher can read, and it could not be moved
+   *   aside either (#691). Its own reason because logging in again cannot fix
+   *   it and renaming the file can, which is what the notice says. A file that
+   *   could be moved aside is not a refusal: the launch goes ahead and the
+   *   result carries {@link GameExecutionResult}'s `settingsSetAside`, whatever
+   *   becomes of the launch after that.
    * - `launch-failed`: the executable failed its last check before spawning,
    *   or the spawn itself failed.
    * - `invalid-request`: the installation's own start environment variables
@@ -554,7 +570,15 @@ declare global {
    *   reason drawn from the game's own output, and a fixed token: what the
    *   host printed (the version, the paths) never leaves the verbose log.
    */
-  type GameExecutionFailureReason = "unsupported-platform" | "no-executable" | "session-write-failed" | "launch-failed" | "invalid-request" | "installation-busy" | "missing-dotnet"
+  type GameExecutionFailureReason =
+    | "unsupported-platform"
+    | "no-executable"
+    | "session-write-failed"
+    | "client-settings-unreadable"
+    | "launch-failed"
+    | "invalid-request"
+    | "installation-busy"
+    | "missing-dotnet"
 
   /**
    * EXECUTE_GAME's verdict.
@@ -564,8 +588,16 @@ declare global {
    * read as a launch failure, since Vintage Story exits non-zero often enough
    * that treating it as one would blame a player for closing their own game.
    * `ok: false` means the game never ran at all.
+   *
+   * `settingsSetAside` is the bare name of the copy of an unreadable
+   * clientsettings.json that this launch moved aside before it did anything
+   * else (#691), in the Installation's own folder, so the player can be told
+   * their game settings were reset and where the old file went. Absent for
+   * every launch that set nothing aside. It rides on every answer a launch can
+   * give once the move has happened, a failure as much as an exit: the file is
+   * in the folder either way, and its generated name is only known here.
    */
-  type GameExecutionResult = { ok: true; exitCode: number | null } | { ok: false; reason: GameExecutionFailureReason }
+  type GameExecutionResult = { ok: true; exitCode: number | null; settingsSetAside?: string } | { ok: false; reason: GameExecutionFailureReason; settingsSetAside?: string }
 
   /** The session report as the domain builds it. Declared by reference so the shape has one home (src/domain/gameLogs/report.ts). */
   type SessionReportType = import("@domain/gameLogs/report").SessionReport
@@ -612,11 +644,13 @@ declare global {
    * - `invalid-payload`: the argument was not even an object. Not reachable
    *   from the launcher's own UI, which always sends the config it holds in
    *   state; a defensive check against a malformed IPC call.
-   * - `unauthorized-path`: `assertConfigPathsAuthorized` refused because the
+   * - `unauthorized-path`: `unauthorizedConfigPaths` refused because the
    *   incoming config points at a folder outside the paths the launcher
    *   already manages, and the player has not approved it either. The most
-   *   likely real-world cause: a folder picked, moved, or edited outside the
-   *   launcher's own dialogs.
+   *   likely real-world cause: a folder picked, then used after its ten
+   *   minutes of approval ran out. The refused paths come back in
+   *   `refusedPaths`, so the renderer can drop those entries instead of
+   *   sending them again with every later save.
    * - `write-failed`: `saveConfig` queued the write and it threw (the
    *   temp-file write or the rename onto `config.json` failed), which
    *   `saveConfig` catches and reports as `false`. Disk full, permissions,
@@ -631,11 +665,11 @@ declare global {
   type SaveConfigFailureReason = "invalid-payload" | "unauthorized-path" | "write-failed" | "session-read-only"
 
   /** SAVE_CONFIG's verdict. `ok: false` means nothing was written to disk. */
-  type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason }
+  type SaveConfigResult = { ok: true } | { ok: false; reason: SaveConfigFailureReason; refusedPaths?: string[] }
 
   /**
    * What `getConfig` found on the read that mattered, pulled once by the renderer through
-   * GET_CONFIG_RECOVERY_NOTICE (#554). Two shapes:
+   * GET_CONFIG_RECOVERY_NOTICE (#554). Three shapes:
    *
    * - `kind: "unreadable"`: `config.json` parsed to bad JSON, or to valid JSON that is not an
    *   object. `restored` says whether a pre-migration backup was usable, or the launcher fell back
@@ -646,8 +680,10 @@ declare global {
    * - `kind: "read-failed"`: the file itself could not even be opened (permissions, a Windows
    *   sharing lock). Nothing says the document inside is corrupt, so there is nothing to preserve
    *   and no copy name to give: this session simply runs on defaults, in memory only.
+   * - `kind: "import-failed"`: the first-run copy of VS Launcher's data failed (#708). The launcher
+   *   started on an empty profile and leaves a marker so the next start tries the import again.
    */
-  type ConfigRecoveryNotice = { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null } | { kind: "read-failed" }
+  type ConfigRecoveryNotice = { kind: "unreadable"; restored: boolean; preserved: boolean; copyName: string | null } | { kind: "read-failed" } | { kind: "import-failed" }
 
   /**
    * Why COPY_TO_ICONS refused to put a picked file in the Icons folder. Every
@@ -725,10 +761,17 @@ declare global {
    * to list. `bytes` is the size on THIS Installation's disk, which is not the size the pack's own
    * entry claims: the digest is what says whether the two hold the same bytes, and a size cannot.
    *
+   * `linked` names the links the folder holds, whether they point at a file or at a folder. The
+   * names have the shape of `configs` (relative, `/` between directories) but not its `.json` rule:
+   * a link to a folder is called what the folder is. The launcher never writes through a link, so an
+   * apply refuses a config at one of these names and any config below one. They are kept out of
+   * `configs`, which the export builds its rows from and can only carry what it reads, and they are
+   * names and nothing else: no link was read or followed to where it points.
+   *
    * - `playing`: the game owns the folder. Vintage Story documents its configs as human-editable
    *   "only while the game is not running", so this is the game's rule, not the launcher's.
    */
-  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
+  type ModConfigsReadResult = { ok: true; configs: ModConfigListingEntry[]; linked: string[] } | { ok: false; reason: "playing" | "mod-config-unreadable" }
 
   /** Why one file of an apply did not land. Every value names a step that refused it, never a guess. */
   type ApplyFailureReason = "copy-failed" | "not-landed" | "digest-mismatch" | "write-failed"
@@ -740,13 +783,13 @@ declare global {
    * (the preload's own signature, its declaration and the renderer adapter) and a reason added to
    * one copy of a union is a reason the other two refuse to compare against.
    *
-   * - `too-large` is the pack's own byte ceiling. The other five are the config folder's, and each of
-   *   them names a file where one file is what went wrong.
-   * - `bad-name` and `collides` exist because the export and the import have to agree about which
-   *   keys a pack may hold: a name Windows would refuse, and two names differing only in case, are
-   *   both legal on the file system the file was created on and both unusable in a pack.
+   * - `too-large` is the pack's own byte ceiling. `unreadable-config` and `too-many` describe the
+   *   folder as a whole.
+   * - `not-utf8`, `bad-name`, `hidden-character`, and `collides` name the file a pack cannot carry:
+   *   its bytes are not text, its name is unusable on Windows, it contains hidden Unicode, or it
+   *   collides with another name on a case-insensitive file system.
    */
-  type ExportModpackRefusal = "unreadable-config" | "not-utf8" | "bad-name" | "collides" | "too-many" | "too-large"
+  type ExportModpackRefusal = "unreadable-config" | "not-utf8" | "bad-name" | "hidden-character" | "collides" | "too-many" | "too-large"
 
   /**
    * What one apply did, file by file.
@@ -914,6 +957,12 @@ declare global {
    * - `backup-missing`: the folder carries no `.optimum/vanilla/` to restore the
    *   assemblies from.
    * - `restore-failed`: the copies back were refused by the file system.
+   * - `build-changed`: Add or Update Optimum found a `.optimum/vanilla/` that
+   *   holds an older build than the folder (it was updated in place), so
+   *   nothing was patched.
+   * - `build-unrecognized`: Remove Optimum found assemblies it can account for
+   *   next to ones it cannot (a patched file beside a newer original, or a file
+   *   that is not a managed image), so nothing was copied back.
    *
    * Nothing here is ever text the CLI wrote: its `message` and `detail` fields
    * carry absolute paths and are dropped where its output is read.
@@ -933,18 +982,25 @@ declare global {
     | "timed-out"
     | "runtime-missing"
     | "output-unverified"
+    | "missing-assembly"
     | "manifest-unavailable"
     | "overlay-unverified"
     | "backup-missing"
     | "restore-failed"
+    | "build-changed"
+    | "build-unrecognized"
 
   /**
    * `rolledBack` says the folder was put back to its vanilla assemblies out of
    * the patch's own backup after the run failed. It is the difference between a
    * build that is simply unpatched and one holding two overlay versions at
    * once, and it is what the sentence the player reads is chosen on.
+   *
+   * `buildUpdated` on a successful restore says the game had been updated in place
+   * since Optimum was added: its assemblies were already original, so none were
+   * copied and only Optimum's leftovers were removed.
    */
-  type OptimumPatchResult = { ok: true } | { ok: false; reason: OptimumPatchFailureReason; rolledBack?: boolean }
+  type OptimumPatchResult = { ok: true; buildUpdated?: boolean } | { ok: false; reason: OptimumPatchFailureReason; rolledBack?: boolean; missingAssembly?: string }
 
   declare module "*.png" {
     const value: string

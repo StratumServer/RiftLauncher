@@ -39,6 +39,30 @@ describe("the verdict, which is the whole first line the player reads", () => {
     assert.deepEqual(reportFor("mod-exception-main.log").verdict, { kind: "errors" })
   })
 
+  it("surfaces fatal exceptions in the verdict and entries when there is no crash file", () => {
+    const report = buildSessionReport({
+      mainLog: {
+        fileName: "client-main.log",
+        text: "1.1.2026 0:00:00 [Fatal] System.IO.FileNotFoundException: Could not load file or assembly 'Optimum.GameContent, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'."
+      }
+    })
+
+    assert.deepEqual(report.verdict, { kind: "errors" })
+    assert.equal(report.unattributed.length, 1)
+    assert.equal(report.unattributed[0]?.severity, "Fatal")
+    assert.match(report.unattributed[0]?.text ?? "", /Optimum\.GameContent/)
+  })
+
+  it("keeps an Optimum fatal visible in the report and clipboard after twelve warnings", () => {
+    const warnings = Array.from({ length: 12 }, (_, index) => `1.1.2026 0:00:00 [Warning] Other warning ${index}`).join("\n")
+    const fatal = "1.1.2026 0:00:00 [Fatal] System.IO.FileNotFoundException: Could not load Optimum.GameContent"
+    const report = buildSessionReport({ mainLog: { fileName: "client-main.log", text: `${warnings}\n${fatal}` } })
+
+    assert.equal(report.unattributed.length, 12)
+    assert.equal(report.unattributed[0]?.severity, "Fatal")
+    assert.match(formatReportText(report), /\[Fatal\].*Optimum\.GameContent/)
+  })
+
   it("says nothing was logged for a clean session", () => {
     assert.deepEqual(reportFor("normal-session-main.log").verdict, { kind: "clean" })
   })

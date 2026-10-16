@@ -13,6 +13,8 @@ export interface UninstallGameVersionOptions {
   usedByInstallations?: readonly string[]
   /** Whether the caller already showed the in-use warning and got a yes. */
   confirmedInUse?: boolean
+  /** The folder holds Installations, other VS Versions or launcher folders: the version leaves the list and the folder stays. */
+  keepFolder?: boolean
 }
 
 /**
@@ -27,12 +29,12 @@ export function useUninstallGameVersion(): (version: GameVersionType, options?: 
   const configDispatch = useConfigDispatch()
 
   return async function uninstallVersion(version, options = {}) {
-    const { usedByInstallations = [], confirmedInUse = false } = options
+    const { usedByInstallations = [], confirmedInUse = false, keepFolder = false } = options
     const displayName = version.label || version.version
 
     const result = await uninstallGameVersion(
       createUninstallPorts(),
-      { version: toGameVersionSnapshot(version), usedByInstallations, confirmedInUse },
+      { version: toGameVersionSnapshot(keepFolder ? { ...version, linked: true } : version), usedByInstallations, confirmedInUse },
       {
         onStarted: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: version.id, updates: { _deleting: true } } }),
         onFinished: () => configDispatch({ type: CONFIG_ACTIONS.EDIT_GAME_VERSION, payload: { id: version.id, updates: { _deleting: false } } })
@@ -41,7 +43,10 @@ export function useUninstallGameVersion(): (version: GameVersionType, options?: 
 
     if (result.ok) {
       configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: version.id } })
-      const messageKey = result.folderRemoved ? "features.versions.versionUninstalledSuccesfully" : "features.versions.versionUnlinkedSuccessfully"
+      // A registered (linked) version was left alone, whatever else its folder holds, as the dialog says. Only an installed
+      // version whose folder holds Installations, other VS Versions or launcher folders is kept for that reason.
+      const keptKey = keepFolder && !version.linked ? "features.versions.versionRemovedFolderHoldsOthers" : "features.versions.versionUnlinkedSuccessfully"
+      const messageKey = result.folderRemoved ? "features.versions.versionUninstalledSuccesfully" : keptKey
       addNotification(t(messageKey, { version: displayName }), "success")
       return result
     }

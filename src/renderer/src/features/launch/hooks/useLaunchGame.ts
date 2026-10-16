@@ -8,6 +8,7 @@ import { useExternalLinks } from "@renderer/hooks/useExternalLinks"
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
 import { useAppInfo } from "@renderer/features/info/hooks/useAppInfo"
 import { pickPlayOutcomeNotification } from "@renderer/utils/playOutcomeNotifications"
+import { isInterruptedInstall } from "@domain/versions/interruptedInstall"
 import { getInstallationVersionStatus } from "@domain/installations/versionReference"
 import { logLaunch, preventAppClose, runGame } from "@renderer/features/launch/adapters/launch"
 
@@ -92,9 +93,14 @@ export function useLaunchGame(): LaunchGame {
     try {
       if (!installation) return addNotification(t("features.installations.noInstallationSelected"), "error")
       if (installation._playing) return addNotification(t("features.installations.gameAlreadyRunning"), "error")
-      // Update all deletes each old archive before downloading its replacement, so a game started
-      // mid-run would load a Mods folder with some of its Mods missing.
+      // Update all changes the Mods folder under a running game, and old and new archives briefly sit
+      // side by side, so a game started mid-run could load either.
       if (installation._updatingMods) return addNotification(t("features.mods.cantPlayWhileUpdatingMods"), "error")
+      // Same exclusion the other way round (backup.ts, restore.ts refuse while playing). It must hold
+      // with automatic backups off too: a restore swaps the save folder out from under the game, and
+      // a backup reads files the game is writing.
+      if (installation._backuping) return addNotification(t("features.backups.backupInProgress"), "error")
+      if (installation._restoringBackup) return addNotification(t("features.backups.restoreInProgress"), "error")
 
       const gameVersionToRun = installation.version ? gameVersions.find((gv) => gv.id === installation.gameVersionId) : undefined
       if (!gameVersionToRun) {
@@ -111,6 +117,7 @@ export function useLaunchGame(): LaunchGame {
         return addNotification(message, "error")
       }
       if (gameVersionToRun._installing) return addNotification(t("features.versions.versionInstalling", { version: installation.version }), "error")
+      if (isInterruptedInstall(gameVersionToRun)) return addNotification(t("features.versions.versionInterrupted", { version: installation.version }), "error")
       if (gameVersionToRun._deleting) return addNotification(t("features.versions.versionDeleting", { version: installation.version }), "error")
       if (gameVersionToRun._playing) return addNotification(t("features.versions.versionPlaying", { version: installation.version }), "error")
 
@@ -123,12 +130,12 @@ export function useLaunchGame(): LaunchGame {
       if (installation.backupsAuto) {
         const backupOutcome = await makeInstallationBackup(installation.id)
 
-        // Only an archive compression or pruning failure is recoverable: the
+        // Only an archive compression failure is recoverable: the
         // installation still exists and the player can knowingly launch
         // without this backup (#338). Busy, playing, restoring, and missing
         // installation states are hard stops and must not offer an override.
         if (!backupOutcome.ok) {
-          const canLaunchWithoutBackup = backupOutcome.reason === "compress-failed" || backupOutcome.reason === "prune-failed"
+          const canLaunchWithoutBackup = backupOutcome.reason === "compress-failed"
           if (!canLaunchWithoutBackup) return
 
           const launchAnyway = await askToLaunchWithoutBackup()
@@ -157,6 +164,13 @@ export function useLaunchGame(): LaunchGame {
         // game ran. The reducer stamps the list it currently holds.
         if (serverId) configDispatch({ type: CONFIG_ACTIONS.STAMP_SERVER_LAUNCH, payload: { id: installation.id, serverId, when: finishedPlaying } })
       }
+
+      // The launch moved an unreadable clientsettings.json aside (#691), so the player's game
+      // settings are back to the defaults. That is theirs to be told, with where the old file went,
+      // and it is told whatever became of the launch after the move: the file is in the folder
+      // whether the game ran, failed to start or never got the Installation, and the name is only
+      // in this answer. It is also told separately from how the launch ended, which has its own notice.
+      if (result.settingsSetAside) addNotification(t("notifications.body.gameClientSettingsSetAside", { file: result.settingsSetAside }), "info")
 
       const outcomeNotification = pickPlayOutcomeNotification(result, os)
       if (outcomeNotification) {

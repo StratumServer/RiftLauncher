@@ -122,6 +122,71 @@ function githubRelease(overrides: Record<string, unknown> = {}): Record<string, 
   }
 }
 
+/** A user the way GitHub embeds one: nineteen fields, most of them URL templates, about 1.1 KB. One sits in every release (`author`) and in every asset (`uploader`), which is most of what a release weighs. */
+function githubUser(): Record<string, unknown> {
+  const api = "https://api.github.com/users/github-actions%5Bbot%5D"
+  return {
+    login: "github-actions[bot]",
+    id: 41898282,
+    node_id: "MDM6Qm90NDE4OTgyODI=",
+    avatar_url: "https://avatars.githubusercontent.com/in/15368?v=4",
+    gravatar_id: "",
+    url: api,
+    html_url: "https://github.com/apps/github-actions",
+    followers_url: `${api}/followers`,
+    following_url: `${api}/following{/other_user}`,
+    gists_url: `${api}/gists{/gist_id}`,
+    starred_url: `${api}/starred{/owner}{/repo}`,
+    subscriptions_url: `${api}/subscriptions`,
+    organizations_url: `${api}/orgs`,
+    repos_url: `${api}/repos`,
+    events_url: `${api}/events{/privacy}`,
+    received_events_url: `${api}/received_events`,
+    type: "Bot",
+    user_view_type: "public",
+    site_admin: false
+  }
+}
+
+/** One release asset as the API lists it, about 1.7 KB with its uploader. */
+function githubAsset(tag: string, index: number): Record<string, unknown> {
+  const name = `riftlauncher-${tag}-${index}.AppImage`
+  return {
+    url: `https://api.github.com/repos/StratumServer/RiftLauncher/releases/assets/${603220663 + index}`,
+    id: 603220663 + index,
+    node_id: "RA_kwDOT5RKrs4j9Gq3",
+    name,
+    label: "",
+    uploader: githubUser(),
+    content_type: "application/octet-stream",
+    state: "uploaded",
+    size: 105890298,
+    digest: `sha256:${"8f".repeat(32)}`,
+    download_count: 193,
+    created_at: "2026-10-01T12:30:03Z",
+    updated_at: "2026-10-01T12:30:03Z",
+    browser_download_url: `https://github.com/StratumServer/RiftLauncher/releases/download/${tag}/${name}`
+  }
+}
+
+/** About 10 KB of notes, the length of the longest ones published so far (beta.11 and beta.12). */
+const TEN_KB_NOTES = "- Something players asked about now works as described.\n".repeat(180)
+
+/**
+ * Ten releases the way GitHub's API sends them, as a response body: each with its author, 10 KB of
+ * notes and sixteen assets, twice what a release carries today, which makes the answer about
+ * 390 KB. The real one measured 203 KB, with eight assets and notes of 1.4 to 9.7 KB per release.
+ */
+function githubTenReleasesAnswer(): string {
+  const releases = Array.from({ length: 10 }, (_, index) => {
+    const tag = `v1.7.0-beta.${10 - index}`
+    const assets = Array.from({ length: 16 }, (_, asset) => githubAsset(tag, asset))
+    return githubRelease({ tag_name: tag, name: tag, body: TEN_KB_NOTES, prerelease: true, author: githubUser(), assets })
+  })
+
+  return JSON.stringify(releases)
+}
+
 describe("FETCH_RELEASE_NOTES ipcMain.handle wrapper", () => {
   beforeEach(async () => {
     mockState.userDataDir = mkdtempSync(join(tmpdir(), "riftlauncher-release-notes-"))
@@ -239,7 +304,28 @@ describe("FETCH_RELEASE_NOTES ipcMain.handle wrapper", () => {
 
   it("answers too-large for a response over the byte cap", async () => {
     const handler = getIpcHandler<FetchReleaseNotesHandler>(IPC_CHANNELS.NET_MANAGER.FETCH_RELEASE_NOTES)
-    respondWith({ kind: "success", body: "[]", headers: { "content-length": String(300 * 1024) } })
+    respondWith({ kind: "success", body: "[]", headers: { "content-length": String(1024 * 1024 + 1) } })
+
+    assert.deepEqual(await handler(await createTrustedEvent()), { ok: false, reason: "too-large" })
+  })
+
+  it("accepts a ten-release answer of about 400 KB shaped like GitHub's, which the old 256 KiB cap refused (#611)", async () => {
+    const handler = getIpcHandler<FetchReleaseNotesHandler>(IPC_CHANNELS.NET_MANAGER.FETCH_RELEASE_NOTES)
+    const body = githubTenReleasesAnswer()
+    assert.ok(Buffer.byteLength(body) > 256 * 1024, "the fixture must be larger than the old cap, or this test proves nothing")
+    respondWith({ kind: "success", body })
+
+    const result = await handler(await createTrustedEvent())
+
+    assert.equal(result.ok, true)
+    assert.equal(result.ok && result.releases.length, 10)
+  })
+
+  it("answers too-large for a ten-release answer that is one byte over 1 MiB, with no length declared up front", async () => {
+    const handler = getIpcHandler<FetchReleaseNotesHandler>(IPC_CHANNELS.NET_MANAGER.FETCH_RELEASE_NOTES)
+    const answer = githubTenReleasesAnswer()
+    // Trailing whitespace keeps it valid JSON, so only its size can be what refuses it.
+    respondWith({ kind: "success", body: answer + " ".repeat(1024 * 1024 + 1 - Buffer.byteLength(answer)) })
 
     assert.deepEqual(await handler(await createTrustedEvent()), { ok: false, reason: "too-large" })
   })

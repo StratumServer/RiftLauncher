@@ -1,5 +1,6 @@
 import { cleanFolderName, formatTimestampForFilename } from "../naming"
-import type { Archiver, Clock, CloseGuard, CompressOutcome, FileSystem, IdGenerator, PathBuilder } from "../ports"
+import { parentFolder } from "../paths"
+import type { Archiver, Clock, CloseGuard, CompressOutcome, FileSystem, IdGenerator, InstallationLease, PathBuilder } from "../ports"
 import { deleteInstallationBackup } from "./backupDeletion"
 
 /** Folder the launcher groups installation archives under, inside the backups folder. */
@@ -52,7 +53,6 @@ export type MakeInstallationBackupFailure =
   | "installation-path-missing"
   | "no-backups-folder"
   | "backups-disabled"
-  | "prune-failed"
   | "compress-failed"
 
 export type MakeInstallationBackupResult =
@@ -66,6 +66,7 @@ export interface MakeInstallationBackupPorts {
   ids: IdGenerator
   paths: PathBuilder
   closeGuard: CloseGuard
+  installationLease: InstallationLease
 }
 
 export interface MakeInstallationBackupInput {
@@ -80,8 +81,12 @@ export interface MakeInstallationBackupInput {
 export interface MakeInstallationBackupEvents {
   /** Fired once the work is committed to, right after the close guard is held. */
   onStarted?(): void
-  /** Fired for each pruned archive, in deletion order. */
+  /** Fired once the new archive is complete, before any old one is pruned, so the caller records it first. */
+  onBackupCreated?(backup: BackupRecord): void
+  /** Fired for each backup dropped: records whose archive was already gone first, then the pruned archives, oldest first. */
   onBackupDeleted?(backup: BackupRecord): void
+  /** Fired when the prune after a successful backup failed or threw, so the caller can leave a trace. The backup itself stands. */
+  onPruneIncomplete?(): void
   /** Fired once the work is over, success or not, after the close guard is released. */
   onFinished?(): void
 }
@@ -93,22 +98,66 @@ function refuse(reason: MakeInstallationBackupFailure, deletedBackupIds: string[
 }
 
 /** What pruning removed, and whether it got all the way to the limit. */
-type PruneOutcome = { ok: true; deletedBackupIds: string[] } | { ok: false; reason: "prune-failed"; deletedBackupIds: string[]; failedBackupId: string }
+export type PruneOutcome = { ok: true; deletedBackupIds: string[] } | { ok: false; reason: "prune-failed"; deletedBackupIds: string[]; failedBackupId: string }
+
+/** What is known of one record's archive: it is on disk, it is gone from a folder that is still there, or its folder cannot be reached to say. */
+export type ArchiveState = "on-disk" | "gone" | "unreachable"
+
+/**
+ * Tells an archive that was deleted from one that cannot be checked.
+ *
+ * An archive that is not there is only gone when the folder that held it is still
+ * there: the file was taken out. A folder that is missing too is a drive that is
+ * unplugged, a share that is offline or a Backups folder that moved, and the
+ * archives may all be where they were. The same goes for a path the host will not
+ * answer about, which is what a Backups folder changed in Config leaves behind.
+ * Not knowing is never read as gone.
+ */
+export async function archiveState(fileSystem: Pick<FileSystem, "exists">, backup: BackupRecord): Promise<ArchiveState> {
+  try {
+    if (await fileSystem.exists(backup.path)) return "on-disk"
+
+    const folder = parentFolder(backup.path)
+    return folder !== undefined && (await fileSystem.exists(folder)) ? "gone" : "unreachable"
+  } catch {
+    return "unreachable"
+  }
+}
 
 /**
  * Removes archives from the oldest end until the installation has room for one
  * more under its limit.
  *
+ * Only the archives still on disk count. A record whose archive is gone from a
+ * folder that is still there comes off first, by the same "already gone counts as
+ * deleted" rule deleteInstallationBackup applies: counted with the rest, it would
+ * hold a slot and send the walk below onto an archive that is still there (#610).
+ * A record whose folder cannot be reached, a drive that is unplugged or a Backups
+ * folder that moved, holds no slot either, but it stays as it is: it is never
+ * deleted and never reported, so it is still listed when the drive comes back.
+ *
  * Archives are held newest first, so the walk runs backwards from the end.
  * Whatever came off is reported either way, since a caller that gives up
  * halfway still has to mirror the deletions that did happen.
  */
-async function pruneOldestBackups(fileSystem: FileSystem, installation: InstallationSnapshot, events: MakeInstallationBackupEvents): Promise<PruneOutcome> {
+export async function pruneOldestBackups(
+  fileSystem: Pick<FileSystem, "exists" | "remove">,
+  installation: Pick<InstallationSnapshot, "backups" | "backupsLimit">,
+  events: MakeInstallationBackupEvents = {}
+): Promise<PruneOutcome> {
   const deletedBackupIds: string[] = []
-  let remaining = installation.backups.length
+
+  const states = await Promise.all(installation.backups.map((backup) => archiveState(fileSystem, backup)))
+  const archives = installation.backups.filter((_, index) => states[index] === "on-disk")
+  for (const backup of installation.backups.filter((_, index) => states[index] === "gone")) {
+    deletedBackupIds.push(backup.id)
+    events.onBackupDeleted?.(backup)
+  }
+
+  let remaining = archives.length
 
   while (remaining > 0 && remaining >= installation.backupsLimit) {
-    const oldest = installation.backups[remaining - 1]
+    const oldest = archives[remaining - 1]
     if (!oldest) break
     remaining--
 
@@ -130,8 +179,43 @@ async function pruneOldestBackups(fileSystem: FileSystem, installation: Installa
   return { ok: true, deletedBackupIds }
 }
 
+/** How many names are tried for one second's archive before giving up. */
+const MAX_ARCHIVE_NAME_ATTEMPTS = 1000
+
 /**
- * Prunes old archives then compresses an installation into a new one.
+ * Picks the file name of a new archive: the stamped one, or the stamped one with
+ * `_2`, `_3`... when that path is already a recorded backup or a file on disk.
+ *
+ * Stamps have a resolution of one second, so two backups of a small installation
+ * in the same second would otherwise share a path. The compression overwrites an
+ * archive in place, and a failed one removes the file it was writing, so a shared
+ * path loses the older backup, or the prune that follows deletes the new one.
+ * A path the host refuses to answer about counts as free: the compression refuses
+ * the same path and reports it as a failed backup.
+ */
+async function freeArchiveName(
+  ports: MakeInstallationBackupPorts,
+  installation: InstallationSnapshot,
+  outputFolder: string,
+  stem: string
+): Promise<{ fileName: string; archivePath: string } | undefined> {
+  const recorded = new Set(installation.backups.map((backup) => backup.path))
+  for (let attempt = 1; attempt <= MAX_ARCHIVE_NAME_ATTEMPTS; attempt++) {
+    const fileName = `${attempt === 1 ? stem : `${stem}_${attempt}`}.tar.gz`
+    const archivePath = await ports.paths.join([outputFolder, fileName])
+    if (!recorded.has(archivePath) && !(await ports.fileSystem.exists(archivePath).catch(() => false))) return { fileName, archivePath }
+  }
+  return undefined
+}
+
+/**
+ * Compresses an installation into a new archive, then prunes the old ones.
+ *
+ * Nothing is deleted unless the new archive is complete and has been handed to
+ * `onBackupCreated`: a backup that fails (a symlink in the folder, a full drive, a
+ * file another program holds) leaves every older backup where it was, which with a
+ * limit of 1 is the player's only one. A prune that fails afterwards does not undo
+ * the backup that was made; whatever is left over is pruned by the next one.
  *
  * @param ports Host capabilities the work runs on.
  * @param input The installation snapshot plus the folder archives live in.
@@ -149,14 +233,13 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
   if (!backupsFolder) return refuse("no-backups-folder")
   if (installation.backupsLimit <= 0) return refuse("backups-disabled")
 
+  const lease = await ports.installationLease.acquire(installation.id)
+  if (!lease.ok) return refuse(lease.reason === "playing" ? "installation-playing" : "installation-busy")
+
   const release = ports.closeGuard.acquire(BACKUP_CLOSE_GUARD_REASON)
   events.onStarted?.()
 
   try {
-    const pruned = await pruneOldestBackups(ports.fileSystem, installation, events)
-    const { deletedBackupIds } = pruned
-    if (!pruned.ok) return refuse(pruned.reason, deletedBackupIds, pruned.failedBackupId)
-
     const date = ports.clock.now()
     // Falls back to a slice of the installation id when the name sanitises
     // away to nothing (e.g. "***"), so the archive never ends up as a bare
@@ -165,21 +248,28 @@ export async function makeInstallationBackup(ports: MakeInstallationBackupPorts,
     const dateStamp = formatTimestampForFilename(date)
     // Backups were zips up to 1.7.0-beta.4 and the restore still reads those, by
     // the extension recorded with each one. New ones are gzipped tar.
-    const fileName = `${cleanInstallationName}_${dateStamp}.tar.gz`
-
     const outputFolder = await ports.paths.join([backupsFolder, INSTALLATIONS_BACKUP_SUBFOLDER, cleanInstallationName])
-    const archivePath = await ports.paths.join([outputFolder, fileName])
+    const name = await freeArchiveName(ports, installation, outputFolder, `${cleanInstallationName}_${dateStamp}`)
+    if (!name) return refuse("compress-failed", [], "No free archive name.")
+    const { fileName, archivePath } = name
 
     let outcome: CompressOutcome = { ok: false, error: "The archiver never reported an outcome." }
     await ports.archiver.compress({ sourcePath: installation.path, outputFolder, fileName, compressionLevel: installation.compressionLevel }, (reported) => {
       outcome = reported
     })
 
-    if (!outcome.ok) return refuse("compress-failed", deletedBackupIds, outcome.error)
+    if (!outcome.ok) return refuse("compress-failed", [], outcome.error)
 
-    return { ok: true, backup: { id: ports.ids.newId(), date, path: archivePath }, deletedBackupIds }
+    const backup = { id: ports.ids.newId(), date, path: archivePath }
+    events.onBackupCreated?.(backup)
+
+    // The archive exists and is recorded, so nothing below may turn this into a failure.
+    const pruned = await pruneOldestBackups(ports.fileSystem, installation, events).catch(() => undefined)
+    if (!pruned?.ok) events.onPruneIncomplete?.()
+    return { ok: true, backup, deletedBackupIds: pruned?.deletedBackupIds ?? [] }
   } finally {
     release()
+    lease.release()
     events.onFinished?.()
   }
 }

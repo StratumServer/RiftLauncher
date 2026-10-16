@@ -8,11 +8,13 @@
  */
 
 import fse from "fs-extra"
-import { join } from "node:path"
+import { randomUUID } from "node:crypto"
+import { dirname, join } from "node:path"
 
+import { readOptimumAssemblyReferences } from "@domain/optimum/assemblyReferences"
 import type { OptimumManifest } from "@domain/optimum/manifest"
-import { cliFileName, OPTIMUM_STATE_FOLDER, OPTIMUM_VANILLA_FOLDER, supportsGameVersion } from "@domain/optimum/plan"
-import { OPTIMUM_CONTRACTS_ASSEMBLY, sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
+import { cliFileName, OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_GAME_CONTENT_ASSEMBLY, OPTIMUM_STATE_FOLDER, OPTIMUM_VANILLA_FOLDER, supportsGameVersion } from "@domain/optimum/plan"
+import { readRecordedPatchedHashes, sha256File, verifyPatchedOutput, verifyStagedOverlay } from "@src/ipc/optimumOverlay"
 import { isOptimumRuntimeAvailable, runOptimumCli } from "@src/ipc/optimumPatch"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 
@@ -144,6 +146,11 @@ export async function applyOptimumOverlay(options: ApplyOverlayOptions): Promise
   // Optimum never claimed.
   if (!supportsGameVersion(manifest, gameVersion)) return refuse("unsupported-version")
 
+  // The patch sources every assembly from `.optimum/vanilla/` once it exists, so a
+  // folder the game was updated in place over would be patched from the older
+  // build, and the record it writes would make that look intended.
+  if ((await readLiveBuild(gameDirectory)) !== "patched") return refuse("build-changed")
+
   const staged = await stageOverlay(manifest, archivePath, overlayDirectory)
   if (!staged.ok) return staged
 
@@ -157,7 +164,14 @@ export async function applyOptimumOverlay(options: ApplyOverlayOptions): Promise
   const run = await runOptimumCli({ overlayDirectory, gameDirectory, mode: "patch", stderrLogPath, onProgress, platform })
   if (!run.ok) return rollBackFailedRun(gameDirectory, run)
 
-  if (!(await verifyPatchedOutput(gameDirectory, manifest))) return rollBackFailedRun(gameDirectory, refuse("output-unverified"))
+  const verification = await verifyPatchedOutput(gameDirectory, manifest)
+  if (!verification.ok) {
+    if (verification.reason === "missing-assembly") {
+      logMessage("error", `${LOG_PREFIX} [OVERLAY] ${verification.target} references missing ${verification.assembly}.`)
+      return rollBackFailedRun(gameDirectory, { ...refuse("missing-assembly"), missingAssembly: verification.assembly })
+    }
+    return rollBackFailedRun(gameDirectory, refuse("output-unverified"))
+  }
 
   return { ok: true }
 }
@@ -176,13 +190,92 @@ export async function applyOptimumOverlay(options: ApplyOverlayOptions): Promise
  * no backup to restore from (a run that failed before it wrote anything) keeps
  * the plain refusal.
  */
-async function rollBackFailedRun(gameDirectory: string, failure: { ok: false; reason: OptimumPatchFailureReason }): Promise<OptimumPatchResult> {
+async function rollBackFailedRun(gameDirectory: string, failure: { ok: false; reason: OptimumPatchFailureReason; missingAssembly?: string }): Promise<OptimumPatchResult> {
   const restored = await restoreVanillaBuild(gameDirectory)
   return restored.ok ? { ...failure, rolledBack: true } : failure
 }
 
 /**
- * Puts the four assemblies back and takes the launcher's own marks off.
+ * What the live assemblies are, measured against the backups in `.optimum/vanilla/`.
+ *
+ * A linked official install can be updated in place after Optimum was added: the
+ * installer rewrites the game and leaves `.optimum/` where it was, so the backups
+ * are the older build's. Writing them back, or patching from them (the patch
+ * takes its source from the backup whenever one exists), would put old core
+ * assemblies next to the new executable and assets.
+ *
+ * Each live assembly that has a backup is `patched` when it is gone or unreadable
+ * (nothing newer to protect), already equals its backup, hashes to what the patch
+ * recorded, or is a managed image that references an Optimum assembly. The last
+ * one is what a patch that was killed between two files leaves: a new overlay's
+ * assembly next to the old overlay's, under a record that was never rewritten, so
+ * its hash matches nothing. A managed image without such a reference that is not
+ * the backup is a build the patch never saw: `updated`. Anything else, including
+ * a mix of the two, is `unrecognized`.
+ */
+async function readLiveBuild(gameDirectory: string): Promise<"patched" | "updated" | "unrecognized"> {
+  const vanillaFolder = join(gameDirectory, VANILLA_FOLDER)
+  const recorded = await readRecordedPatchedHashes(gameDirectory)
+  const hash = (path: string): Promise<string | undefined> => sha256File(path).catch(() => undefined)
+
+  let patched = false
+  let updated = false
+  for (const entry of VANILLA_BACKUPS) {
+    const backup = await hash(join(vanillaFolder, entry.backup))
+    if (backup === undefined) continue
+
+    const path = join(gameDirectory, entry.live)
+    const live = await hash(path)
+    if (live === undefined || live === backup) continue
+    if (live === recorded.get(entry.live)) {
+      patched = true
+      continue
+    }
+
+    const references = readOptimumAssemblyReferences(await fse.readFile(path).catch(() => Buffer.alloc(0)))
+    if (!references) return "unrecognized"
+    if (references.length > 0) patched = true
+    else updated = true
+  }
+
+  if (!updated) return "patched"
+  return patched ? "unrecognized" : "updated"
+}
+
+/**
+ * Copies `from` over `to` without ever leaving `to` half written.
+ *
+ * The copy goes to a sibling first and is renamed over the target, so a launcher
+ * killed mid-copy, or a copy that fails and has libuv unlink its destination
+ * (ENOSPC), leaves the target whole: the file that was there, which a second
+ * attempt then accepts as the patched build it still is.
+ */
+async function replaceFile(from: string, to: string): Promise<void> {
+  const temporary = `${to}.restore-${randomUUID()}`
+  try {
+    // fse.copy made the parent folder; a game folder with no Mods/ must still restore.
+    await fse.ensureDir(dirname(to))
+    await fse.copyFile(from, temporary)
+    await fse.rename(temporary, to)
+  } catch (error) {
+    await fse.remove(temporary).catch(() => undefined)
+    throw error
+  }
+}
+
+/**
+ * Puts the four assemblies back, takes the two Optimum assemblies the patch left
+ * at the game root back out, and takes the launcher's own marks off.
+ *
+ * The contracts assembly is always removed. `Optimum.GameContent.dll` is put
+ * back from the copy of an earlier file in the vanilla folder when there is one,
+ * as in Optimum's own rollback (`RestoreGameContentAsset` in `GamePatcher.cs`),
+ * and removed when there is not: the patch writes a marker instead of a copy
+ * when the build had no such file, and a build patched by an overlay that never
+ * shipped it has nothing to remove. A file with neither is the one place the two
+ * differ, Optimum's rollback leaving it and this taking it out, since the file
+ * is Optimum's. It is done before the state folder goes, since the copy lives
+ * there, so a failure leaves the backups for a second try.
  *
  * Partial by construction, and the dialog says so: the overlaid shaders, the
  * merged language keys and anything else written into `assets/` stay until the
@@ -191,8 +284,15 @@ async function rollBackFailedRun(gameDirectory: string, failure: { ok: false; re
  * sentence.
  *
  * @param gameDirectory The game folder, already through `assertManagedPath`.
+ * @param options `onlyIfPatched` is what Remove Optimum passes. A failed patch
+ *   rolling itself back does not, since its live files may be half written. Then
+ *   a build the game was updated over in place (every assembly a managed image
+ *   with no Optimum reference) is not written over: the backups only hold the
+ *   older build, so they are dropped with the Optimum assemblies and `buildUpdated`
+ *   says the files were already original. A mix of patched and updated files, or
+ *   one that is not a managed image, is refused with `build-unrecognized`.
  */
-export async function restoreVanillaBuild(gameDirectory: string): Promise<OptimumPatchResult> {
+export async function restoreVanillaBuild(gameDirectory: string, options: { onlyIfPatched?: boolean } = {}): Promise<OptimumPatchResult> {
   const vanillaFolder = join(gameDirectory, VANILLA_FOLDER)
 
   const present = await Promise.all(VANILLA_BACKUPS.map((entry) => fse.pathExists(join(vanillaFolder, entry.backup))))
@@ -201,17 +301,27 @@ export async function restoreVanillaBuild(gameDirectory: string): Promise<Optimu
   // assemblies alone would leave a build that is neither patched nor vanilla.
   if (VANILLA_BACKUPS.some((entry, index) => entry.required && !present[index])) return refuse("backup-missing")
 
+  const live = options.onlyIfPatched ? await readLiveBuild(gameDirectory) : "patched"
+  if (live === "unrecognized") return refuse("build-unrecognized")
+  const updated = live === "updated"
+
   try {
     for (const [index, entry] of VANILLA_BACKUPS.entries()) {
-      if (!present[index]) continue
-      await fse.copy(join(vanillaFolder, entry.backup), join(gameDirectory, entry.live), { overwrite: true })
+      if (updated || !present[index]) continue
+      await replaceFile(join(vanillaFolder, entry.backup), join(gameDirectory, entry.live))
     }
 
     await fse.remove(join(gameDirectory, OPTIMUM_CONTRACTS_ASSEMBLY))
+
+    const gameContentBackup = join(vanillaFolder, OPTIMUM_GAME_CONTENT_ASSEMBLY)
+    const gameContent = join(gameDirectory, OPTIMUM_GAME_CONTENT_ASSEMBLY)
+    if (!updated && (await fse.pathExists(gameContentBackup))) await replaceFile(gameContentBackup, gameContent)
+    else await fse.remove(gameContent)
+
     await fse.remove(join(gameDirectory, OPTIMUM_STATE_FOLDER))
   } catch {
     return refuse("restore-failed")
   }
 
-  return { ok: true }
+  return updated ? { ok: true, buildUpdated: true } : { ok: true }
 }

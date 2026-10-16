@@ -16,7 +16,16 @@ import { clearAppEventListeners, createTrustedEvent, createUntrustedEvent, emitA
 // own value import of "electron" resolves, or `shell` comes back undefined.
 import { shell } from "electron"
 
+import fse from "fs-extra"
+
+import { deleteInstallationBackup } from "@domain/installations/backupDeletion"
+import { deleteInstallation } from "@domain/installations/delete"
+import { restoreInstallationBackup } from "@domain/installations/restore"
+import { uninstallGameVersion } from "@domain/versions/uninstall"
+import type { FileSystem } from "@domain/ports"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
+import { runCompression } from "@src/ipc/workers/compression"
+import { runExtraction } from "@src/ipc/workers/extraction"
 import { MAX_CUSTOM_ICON_BYTES } from "@src/ipc/validation"
 import { CURRENT_CONFIG_SCHEMA } from "@domain/config/migrations"
 
@@ -1343,5 +1352,586 @@ describe("EXTRACT_ON_PATH: telling a backup apart from a downloaded archive", ()
     const payload = await dispatchedPayload(archivePath, join(managedFolder, "Survival"))
 
     assert.equal(payload.isBackupArchive, true)
+  })
+})
+
+/**
+ * Restoring or deleting an Installation wipes its whole folder (#713), so the host has to refuse
+ * when the folder holds another managed one. These drive the real restore and delete services
+ * over the real DELETE_PATH and MOVE_PATH handlers, the way the renderer wires them, on real
+ * folders and a real archive.
+ */
+describe("restoring or deleting an Installation that holds another managed folder", () => {
+  let outer: string
+  let inner: string
+  let archive: string
+
+  /** The FileSystem port the renderer builds, with the two writing calls going through the handlers. */
+  async function hostFileSystem(): Promise<FileSystem> {
+    const event = await createTrustedEvent()
+    return {
+      exists: async (path) => fse.pathExists(path),
+      remove: (path) => handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH)(event, path),
+      move: (from, to) => handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.MOVE_PATH)(event, from, to)
+    }
+  }
+
+  async function restoreOuter(fileSystem: FileSystem): ReturnType<typeof restoreInstallationBackup> {
+    return restoreInstallationBackup(
+      {
+        fileSystem,
+        extractor: {
+          extract: async (request, done) => (await runExtraction({ filePath: request.archivePath, outputPath: request.outputFolder, deleteArchive: false, isBackupArchive: true }), done({ ok: true }))
+        },
+        ids: { newId: () => "0f8fad5b-d9cb-469f-a165-70867728950e" },
+        closeGuard: { acquire: () => () => undefined },
+        installationLease: { acquire: async () => ({ ok: true, release: async () => undefined }) }
+      },
+      {
+        installation: { id: "main", name: "Main", path: outer, backupsLimit: 3, compressionLevel: 6, backups: [], isBackingUp: false, isPlaying: false, isRestoringBackup: false },
+        backup: { id: "b", date: 1, path: archive }
+      }
+    )
+  }
+
+  beforeEach(async () => {
+    outer = join(managedFolder, "Main")
+    inner = join(outer, "Installations", "Modded")
+    archive = join(temporaryRoot, "elsewhere", "Main_old.tar.gz")
+    mkdirSync(join(outer, "Saves"), { recursive: true })
+    writeFileSync(join(outer, "Saves", "main.vcdbs"), "main world, now")
+    // Main was backed up before anything was nested in it.
+    await runCompression({ inputPath: outer, outputPath: join(temporaryRoot, "elsewhere"), outputFileName: "Main_old.tar.gz" })
+    mkdirSync(join(inner, "Saves"), { recursive: true })
+    writeFileSync(join(inner, "Saves", "modded.vcdbs"), "modded world")
+  })
+
+  const installationsOf = (...paths: string[]): ConfigType["installations"] =>
+    paths.map((path, index) => ({ id: `i${index}`, name: `I${index}`, path, backups: index === 0 ? [{ id: "b", date: 1, path: archive }] : [] })) as unknown as ConfigType["installations"]
+
+  it("restores an Installation that holds nothing else managed, through the staging and set-aside siblings", async () => {
+    fse.removeSync(inner)
+    writeConfig({ installations: installationsOf(outer) })
+
+    assert.deepEqual(await restoreOuter(await hostFileSystem()), { ok: true })
+
+    assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+    assert.deepEqual(fse.readdirSync(managedFolder), ["Main"])
+  })
+
+  it("refuses to restore an Installation that holds another Installation, and leaves both untouched", async () => {
+    writeConfig({ installations: installationsOf(outer, inner) })
+
+    const result = await restoreOuter(await hostFileSystem())
+
+    assert.equal(result.ok, false)
+    assert.equal(fse.readFileSync(join(inner, "Saves", "modded.vcdbs"), "utf-8"), "modded world")
+    assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+    assert.deepEqual(fse.readdirSync(managedFolder), ["Main"], "no staging or set-aside folder is left beside it")
+  })
+
+  // What the refusal message tells the player: an Installation moved out by hand stays listed inside, and keeps blocking, until its entry is replaced by one at the new folder.
+  it("keeps refusing after the Installation inside is moved out by hand, until its entry points at the new folder", async () => {
+    writeConfig({ installations: installationsOf(outer, inner) })
+    const movedOut = join(temporaryRoot, "moved-out")
+    fse.moveSync(inner, movedOut)
+
+    assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+    assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+
+    writeConfig({ installations: installationsOf(outer, movedOut) })
+    ;(await import("@src/config/configManager")).updateCachedConfig((config) => ({ ...config, installations: installationsOf(outer, movedOut) }))
+
+    assert.deepEqual(await restoreOuter(await hostFileSystem()), { ok: true })
+    assert.equal(fse.readFileSync(join(movedOut, "Saves", "modded.vcdbs"), "utf-8"), "modded world")
+  })
+
+  it("refuses to restore an Installation that holds the Backups folder, and keeps every archive", async () => {
+    const nestedBackups = join(outer, "Backups")
+    const nestedArchive = join(nestedBackups, "Installations", "Modded", "Modded_x.tar.gz")
+    mkdirSync(join(nestedBackups, "Installations", "Modded"), { recursive: true })
+    writeFileSync(nestedArchive, "modded backup")
+    writeConfig({ backupsFolder: nestedBackups, installations: installationsOf(outer) })
+
+    const result = await restoreOuter(await hostFileSystem())
+
+    assert.equal(result.ok, false)
+    assert.equal(fse.readFileSync(nestedArchive, "utf-8"), "modded backup")
+  })
+
+  /**
+   * #733: moving the Backups setting out of an Installation (what the refusal above tells the player
+   * to do) leaves the archives already made where they were, and the config still lists them. A
+   * restore or delete that wipes the folder takes them with it and reports success.
+   */
+  describe("when a listed backup archive sits inside the folder", () => {
+    let otherArchive: string
+    let worldArchive: string
+    let other: string
+
+    beforeEach(() => {
+      other = join(managedFolder, "Other")
+      mkdirSync(other, { recursive: true })
+      // The Backups setting is back outside every Installation, but the archives made while it sat inside Main stayed.
+      const oldBackups = join(outer, "Backups", "Installations")
+      otherArchive = join(oldBackups, "Other", "Other_1.tar.gz")
+      worldArchive = join(oldBackups, "Other", "Worlds", "Other_world_1.tar.gz")
+      mkdirSync(join(oldBackups, "Other", "Worlds"), { recursive: true })
+      writeFileSync(otherArchive, "other installation backup")
+      writeFileSync(worldArchive, "other world backup")
+      fse.removeSync(inner)
+    })
+
+    const configWith = (mainBackups: object[], otherRecords: object): ConfigType["installations"] =>
+      [
+        { id: "main", name: "Main", path: outer, backups: mainBackups },
+        { id: "other", name: "Other", path: other, backups: [], ...otherRecords }
+      ] as unknown as ConfigType["installations"]
+    const mainRecords = [{ id: "b", date: 1, path: archive }]
+    /** The record drop the Backups page saves after a delete: the host reads it from its cached config. */
+    async function saveRenderedInstallations(installations: ConfigType["installations"]): Promise<void> {
+      const { updateCachedConfig } = await import("@src/config/configManager")
+      updateCachedConfig((config) => ({ ...config, installations }))
+    }
+
+    it("refuses to restore, and keeps the folder and the archive of another Installation", async () => {
+      writeConfig({ installations: configWith(mainRecords, { backups: [{ id: "bo", date: 1, path: otherArchive }] }) })
+
+      assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+
+      assert.equal(fse.readFileSync(otherArchive, "utf-8"), "other installation backup")
+      assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+      assert.deepEqual(fse.readdirSync(managedFolder).sort(), ["Main", "Other"], "no staging or set-aside folder is left beside it")
+    })
+
+    it("refuses to restore when the archive is a world backup", async () => {
+      writeConfig({ installations: configWith(mainRecords, { worldBackups: [{ id: "wo", date: 1, path: worldArchive, worldName: "w.vcdbs" }] }) })
+
+      assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+
+      assert.equal(fse.readFileSync(worldArchive, "utf-8"), "other world backup")
+      assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+    })
+
+    it("refuses to restore when the archive is one of the Installation's own", async () => {
+      const ownArchive = join(outer, "Backups", "Installations", "Main", "Main_2.tar.gz")
+      mkdirSync(join(outer, "Backups", "Installations", "Main"), { recursive: true })
+      writeFileSync(ownArchive, "newer own backup")
+      writeConfig({ installations: configWith([...mainRecords, { id: "b2", date: 2, path: ownArchive }], {}) })
+
+      assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+
+      assert.equal(fse.readFileSync(ownArchive, "utf-8"), "newer own backup")
+    })
+
+    it("refuses to delete the Installation with its data, and keeps the archives", async () => {
+      writeConfig({ installations: configWith(mainRecords, { backups: [{ id: "bo", date: 1, path: otherArchive }], worldBackups: [{ id: "wo", date: 1, path: worldArchive, worldName: "w.vcdbs" }] }) })
+      const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+
+      assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+
+      assert.equal(fse.readFileSync(otherArchive, "utf-8"), "other installation backup")
+      assert.equal(fse.readFileSync(worldArchive, "utf-8"), "other world backup")
+    })
+
+    // Round four: a delete with data takes the Installation's own backups and world backups with it, and their records leave with the entry.
+    describe("when only the Installation's own archives sit inside it", () => {
+      let ownBackup: string
+      let ownWorldBackup: string
+      const ownWorldId = "6c1f1c34-72f4-4b43-9b6e-0d4e7a4f6a11"
+
+      beforeEach(() => {
+        ownBackup = join(outer, "Backups", "Installations", "Main", "Main_2.tar.gz")
+        ownWorldBackup = join(outer, "Backups", "Worlds", `${ownWorldId}.tar.gz`)
+        for (const file of [ownBackup, ownWorldBackup]) {
+          mkdirSync(join(file, ".."), { recursive: true })
+          writeFileSync(file, "own archive")
+        }
+      })
+
+      const ownRecords = (): ConfigType["installations"] =>
+        [
+          { id: "main", name: "Main", path: outer, backups: [{ id: "b2", date: 2, path: ownBackup }], worldBackups: [{ id: ownWorldId, date: 2, path: ownWorldBackup, worldName: "w.vcdbs" }] }
+        ] as unknown as ConfigType["installations"]
+      const snapshot = (): Parameters<typeof deleteInstallation>[1]["installation"] => ({
+        path: outer,
+        backups: [{ id: "b2", path: ownBackup }],
+        worldBackups: [{ id: ownWorldId, path: ownWorldBackup }],
+        isPlaying: false,
+        isBackingUp: false,
+        isRestoringBackup: false
+      })
+
+      it("deletes the Installation with its data, and the records leave with it", async () => {
+        writeConfig({ installations: ownRecords() })
+
+        assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot(), deleteData: true }), { ok: true, failedBackupPaths: [] })
+
+        assert.equal(fse.pathExistsSync(outer), false)
+      })
+
+      it("still refuses a restore, which keeps the records and would erase the files", async () => {
+        writeConfig({ installations: ownRecords() })
+
+        assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+
+        assert.equal(fse.readFileSync(ownBackup, "utf-8"), "own archive")
+        assert.equal(fse.readFileSync(ownWorldBackup, "utf-8"), "own archive")
+      })
+
+      it("still refuses the delete when an archive of another Installation sits inside as well", async () => {
+        writeConfig({ installations: [...ownRecords(), { id: "other", name: "Other", path: other, backups: [{ id: "bo", date: 1, path: otherArchive }] }] as unknown as ConfigType["installations"] })
+
+        assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot(), deleteData: true }), { ok: false, reason: "data-delete-failed" })
+
+        assert.equal(fse.readFileSync(otherArchive, "utf-8"), "other installation backup")
+        assert.equal(fse.readFileSync(ownBackup, "utf-8"), "own archive")
+      })
+    })
+
+    it("still deletes one of the listed archives through DELETE_PATH", async () => {
+      writeConfig({ installations: configWith(mainRecords, { backups: [{ id: "bo", date: 1, path: otherArchive }] }) })
+
+      assert.equal(await (await hostFileSystem()).remove(otherArchive), true)
+      assert.equal(fse.pathExistsSync(otherArchive), false)
+    })
+
+    // What the refusal message tells the player: delete the listed backup from the launcher, and the restore goes through.
+    it("restores once the listed archive is deleted from the launcher, the file removed and the record dropped", async () => {
+      writeConfig({ installations: configWith(mainRecords, { backups: [{ id: "bo", date: 1, path: otherArchive }] }) })
+      assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+
+      const deleted = await deleteInstallationBackup({ fileSystem: await hostFileSystem() }, { backup: { id: "bo", path: otherArchive, isDeleting: false, isRestoring: false } })
+      assert.deepEqual(deleted, { ok: true })
+      await saveRenderedInstallations(configWith(mainRecords, {}))
+
+      assert.equal(fse.pathExistsSync(otherArchive), false)
+      assert.deepEqual(await restoreOuter(await hostFileSystem()), { ok: true })
+    })
+
+    // The message says an archive moved by hand stays listed and keeps blocking, and that deleting it from the launcher clears it.
+    it("keeps refusing while the record of an archive moved by hand is listed, until that entry is deleted from the launcher", async () => {
+      writeConfig({ installations: configWith(mainRecords, { backups: [{ id: "bo", date: 1, path: otherArchive }] }) })
+      fse.moveSync(otherArchive, join(temporaryRoot, "kept-by-hand.tar.gz"))
+
+      assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+      assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+
+      const deleted = await deleteInstallationBackup({ fileSystem: await hostFileSystem() }, { backup: { id: "bo", path: otherArchive, isDeleting: false, isRestoring: false } })
+      assert.deepEqual(deleted, { ok: true })
+      await saveRenderedInstallations(configWith(mainRecords, {}))
+
+      assert.deepEqual(await restoreOuter(await hostFileSystem()), { ok: true })
+      assert.equal(fse.readFileSync(join(temporaryRoot, "kept-by-hand.tar.gz"), "utf-8"), "other installation backup")
+    })
+
+    it("still restores once no listed archive sits inside, with unlisted files left in the way", async () => {
+      writeConfig({ installations: configWith(mainRecords, {}) })
+
+      assert.deepEqual(await restoreOuter(await hostFileSystem()), { ok: true })
+      assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+    })
+  })
+
+  /**
+   * Round four: every way out a refusal message names, followed to the end for a restore and for a
+   * delete with data. Each test is refused first, does what the message says with the real services
+   * and handlers, and then the restore or the delete goes through with nothing listed erased.
+   */
+  describe("the way out each refusal names", () => {
+    const actions = ["restore", "delete"] as const
+    type Action = (typeof actions)[number]
+    let current: Partial<ConfigType>
+
+    const mainEntry = (): object => ({ id: "main", name: "Main", path: outer, backups: [{ id: "b", date: 1, path: archive }] })
+    const as = (installations: object[]): ConfigType["installations"] => installations as unknown as ConfigType["installations"]
+
+    /** The config the player starts from, on disk like a launch would find it. */
+    function start(config: Partial<ConfigType>): void {
+      current = config
+      writeConfig(config)
+    }
+
+    /** A setting or list the player changes in the launcher: the host reads it from its cached config. */
+    async function change(changes: Partial<ConfigType>): Promise<void> {
+      current = { ...current, ...changes }
+      writeConfig(current)
+      const { updateCachedConfig } = await import("@src/config/configManager")
+      updateCachedConfig((config) => ({ ...config, ...changes }))
+    }
+
+    async function attempt(action: Action): Promise<boolean> {
+      const fileSystem = await hostFileSystem()
+      if (action === "restore") return (await restoreOuter(fileSystem)).ok
+      const snapshot = { path: outer, backups: [{ id: "b", path: archive }], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+      return (await deleteInstallation({ fileSystem }, { installation: snapshot, deleteData: true })).ok
+    }
+
+    /** A refused attempt changed nothing: the Installation is as it was and no set-aside folder is left. */
+    function assertUntouched(): void {
+      assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+      assert.deepEqual(
+        fse.readdirSync(managedFolder).filter((name) => name !== "Other"),
+        ["Main"]
+      )
+    }
+
+    function assertDone(action: Action): void {
+      if (action === "delete") assert.equal(fse.pathExistsSync(outer), false)
+      else assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+    }
+
+    describe.each(actions)("%s", (action) => {
+      it("a listed backup: copy the file elsewhere, delete that backup from the launcher, then it goes through", async () => {
+        const other = join(managedFolder, "Other")
+        const otherArchive = join(outer, "Backups", "Installations", "Other", "Other_1.tar.gz")
+        const entries = (backups: object[]): ConfigType["installations"] => as([mainEntry(), { id: "other", name: "Other", path: other, backups }])
+        mkdirSync(join(otherArchive, ".."), { recursive: true })
+        mkdirSync(other)
+        writeFileSync(otherArchive, "other installation backup")
+        fse.removeSync(inner)
+        start({ installations: entries([{ id: "bo", date: 1, path: otherArchive }]) })
+
+        assert.equal(await attempt(action), false)
+        assertUntouched()
+
+        const kept = join(temporaryRoot, "kept", "Other_1.tar.gz")
+        fse.copySync(otherArchive, kept)
+        assert.deepEqual(await deleteInstallationBackup({ fileSystem: await hostFileSystem() }, { backup: { id: "bo", path: otherArchive, isDeleting: false, isRestoring: false } }), { ok: true })
+        await change({ installations: entries([]) })
+
+        assert.equal(await attempt(action), true)
+        assertDone(action)
+        assert.equal(fse.readFileSync(kept, "utf-8"), "other installation backup")
+      })
+
+      it("a listed world backup: copy the file elsewhere, delete that backup from the Worlds page, then it goes through", async () => {
+        const other = join(managedFolder, "Other")
+        const worldId = "6c1f1c34-72f4-4b43-9b6e-0d4e7a4f6a11"
+        const worldArchive = join(outer, "Backups", "Worlds", `${worldId}.tar.gz`)
+        const entries = (worldBackups: object[]): ConfigType["installations"] => as([mainEntry(), { id: "other", name: "Other", path: other, backups: [], worldBackups }])
+        mkdirSync(join(worldArchive, ".."), { recursive: true })
+        mkdirSync(other)
+        writeFileSync(worldArchive, "other world backup")
+        fse.removeSync(inner)
+        start({ installations: entries([{ id: worldId, date: 1, path: worldArchive, worldName: "w.vcdbs" }]) })
+        await import("@src/ipc/handlers/worldsHandlers")
+
+        assert.equal(await attempt(action), false)
+        assertUntouched()
+
+        const kept = join(temporaryRoot, "kept", "world.tar.gz")
+        fse.copySync(worldArchive, kept)
+        assert.deepEqual(await handler<Promise<unknown>>(IPC_CHANNELS.WORLDS_MANAGER.DELETE_BACKUP)(await createTrustedEvent(), "other", worldId), { ok: true })
+        assert.equal(fse.pathExistsSync(worldArchive), false)
+
+        assert.equal(await attempt(action), true)
+        assertDone(action)
+        assert.equal(fse.readFileSync(kept, "utf-8"), "other world backup")
+      })
+
+      it("another Installation: move its folder out by hand, remove its entry without deleting data, add it again from the new folder", async () => {
+        const modded = { id: "modded", name: "Modded", path: inner, backups: [] }
+        const movedOut = join(temporaryRoot, "moved-out")
+        start({ installations: as([mainEntry(), modded]) })
+
+        assert.equal(await attempt(action), false)
+        assertUntouched()
+
+        fse.moveSync(inner, movedOut)
+        const snapshot = { path: inner, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+        assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: false }), { ok: true, failedBackupPaths: [] })
+        await change({ installations: as([mainEntry()]) })
+        await change({ installations: as([mainEntry(), { ...modded, id: "modded-again", path: movedOut }]) })
+
+        assert.equal(await attempt(action), true)
+        assertDone(action)
+        assert.equal(fse.readFileSync(join(movedOut, "Saves", "modded.vcdbs"), "utf-8"), "modded world")
+      })
+
+      it.each([
+        ["Backups", "backupsFolder", (): string => join(outer, "Backups"), (): string => backupsFolder],
+        ["Installations", "defaultInstallationsFolder", (): string => join(outer, "Installations"), (): string => managedFolder],
+        ["VS Versions", "defaultVersionsFolder", (): string => join(outer, "Versions"), (): string => versionsFolder]
+      ] as const)("the %s folder from Config: change that setting to a folder outside, then it goes through", async (_name, setting, inside, outside) => {
+        fse.removeSync(inner)
+        mkdirSync(inside(), { recursive: true })
+        start({ installations: as([mainEntry()]), [setting]: inside() })
+
+        assert.equal(await attempt(action), false)
+        assertUntouched()
+
+        await change({ [setting]: outside() })
+
+        assert.equal(await attempt(action), true)
+        assertDone(action)
+      })
+
+      it("a VS Version: uninstall it from the VS Versions page, then it goes through", async () => {
+        const version = { id: "gv", version: "1.21.0", path: join(outer, "Versions", "1.21.0") }
+        fse.removeSync(inner)
+        mkdirSync(version.path, { recursive: true })
+        writeFileSync(join(version.path, "Vintagestory.dll"), "game")
+        start({ installations: as([mainEntry()]), gameVersions: [version] as unknown as ConfigType["gameVersions"] })
+
+        assert.equal(await attempt(action), false)
+        assertUntouched()
+        assert.equal(fse.pathExistsSync(version.path), true)
+
+        // Built apart from the call so the same test compiles whether or not GameVersionSnapshot still has `incomplete`.
+        const snapshot = { ...version, isPlaying: false, isDeleting: false, linked: false, incomplete: false }
+        const uninstalled = await uninstallGameVersion({ fileSystem: await hostFileSystem() }, { version: snapshot, usedByInstallations: [], confirmedInUse: false })
+        assert.deepEqual(uninstalled, { ok: true, folderRemoved: true })
+        await change({ gameVersions: [] })
+
+        assert.equal(await attempt(action), true)
+        assertDone(action)
+      })
+
+      // Uninstalling a linked version only drops the row and leaves its files, so "uninstall it first" would let the next restore or delete erase the game folder.
+      it("a linked VS Version: move its folder out by hand, remove it from the list, add it again from the new folder, then it goes through", async () => {
+        const version = { id: "gv", version: "1.21.0", path: join(outer, "MyVS"), linked: true }
+        const movedOut = join(temporaryRoot, "moved-game")
+        fse.removeSync(inner)
+        mkdirSync(version.path, { recursive: true })
+        writeFileSync(join(version.path, "Vintagestory.dll"), "game")
+        start({ installations: as([mainEntry()]), gameVersions: [version] as unknown as ConfigType["gameVersions"] })
+        const snapshot = { ...version, isPlaying: false, isDeleting: false, incomplete: false }
+        const removeFromList = async (): Promise<unknown> => uninstallGameVersion({ fileSystem: await hostFileSystem() }, { version: snapshot, usedByInstallations: [], confirmedInUse: false })
+
+        assert.equal(await attempt(action), false)
+        assertUntouched()
+        fse.moveSync(version.path, movedOut)
+        assert.deepEqual(await removeFromList(), { ok: true, folderRemoved: false })
+        await change({ gameVersions: [{ ...version, path: movedOut }] as unknown as ConfigType["gameVersions"] })
+
+        assert.equal(await attempt(action), true)
+        assertDone(action)
+        assert.equal(fse.readFileSync(join(movedOut, "Vintagestory.dll"), "utf-8"), "game")
+      })
+
+      // The version sits on this Installation's own folder, so no move by hand is possible: the page keeps the folder (keepFolder) and only drops the row, which is what lifts the refusal.
+      it.each([false, true])("a VS Version on the Installation's own folder (linked: %s): remove it from the VS Versions page, then it goes through", async (linked) => {
+        const version = { id: "gv", version: "1.21.0", label: "1.21.0", path: outer, linked }
+        fse.removeSync(inner)
+        writeFileSync(join(outer, "Vintagestory.dll"), "game")
+        start({ installations: as([mainEntry()]), gameVersions: [version] as unknown as ConfigType["gameVersions"] })
+
+        assert.equal(await attempt(action), false)
+        assertUntouched()
+        assert.equal(fse.readFileSync(join(outer, "Vintagestory.dll"), "utf-8"), "game")
+
+        const snapshot = { ...version, linked: true, isPlaying: false, isDeleting: false, incomplete: false }
+        const removed = await uninstallGameVersion({ fileSystem: await hostFileSystem() }, { version: snapshot, usedByInstallations: [], confirmedInUse: false })
+        assert.deepEqual(removed, { ok: true, folderRemoved: false })
+        assert.equal(fse.readFileSync(join(outer, "Vintagestory.dll"), "utf-8"), "game")
+        await change({ gameVersions: [] })
+
+        assert.equal(await attempt(action), true)
+        assertDone(action)
+      })
+
+      it("another Installation on the same folder: remove the entry of that other one without deleting data, then it goes through", async () => {
+        const twin = { id: "twin", name: "Twin", path: outer, backups: [] }
+        fse.removeSync(inner)
+        start({ installations: as([mainEntry(), twin]) })
+
+        assert.equal(await attempt(action), false)
+        assertUntouched()
+
+        const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+        assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: false }), { ok: true, failedBackupPaths: [] })
+        assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+        await change({ installations: as([mainEntry()]) })
+
+        assert.equal(await attempt(action), true)
+        assertDone(action)
+      })
+    })
+  })
+
+  it("refuses to restore an Installation that holds the Installations folder or the VS Versions folder", async () => {
+    for (const folders of [{ defaultInstallationsFolder: join(outer, "Installations") }, { defaultVersionsFolder: join(outer, "Versions") }]) {
+      writeConfig({ installations: installationsOf(outer), ...folders })
+      assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+      assert.equal(fse.readFileSync(join(inner, "Saves", "modded.vcdbs"), "utf-8"), "modded world")
+    }
+  })
+
+  it("refuses to delete an Installation with its data while it holds another Installation, but deletes the inner one", async () => {
+    writeConfig({ installations: installationsOf(outer, inner) })
+    const fileSystem = await hostFileSystem()
+    const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+
+    assert.deepEqual(await deleteInstallation({ fileSystem }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+    assert.equal(fse.pathExistsSync(join(inner, "Saves", "modded.vcdbs")), true)
+
+    assert.deepEqual(await deleteInstallation({ fileSystem }, { installation: { ...snapshot, path: inner }, deleteData: true }), { ok: true, failedBackupPaths: [] })
+    assert.equal(fse.pathExistsSync(inner), false)
+  })
+
+  it("deletes an Installation with its data when nothing else managed sits inside it", async () => {
+    fse.removeSync(inner)
+    writeConfig({ installations: installationsOf(outer) })
+    const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+
+    assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: true, failedBackupPaths: [] })
+    assert.equal(fse.pathExistsSync(outer), false)
+  })
+
+  it("refuses to delete or restore an Installation whose folder another Installation shares, and keeps both", async () => {
+    // The macOS pair "Creative World" and "creative world", or hand-edited duplicates: one folder, two records.
+    fse.removeSync(inner)
+    writeConfig({ installations: installationsOf(outer, outer) })
+    const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+
+    assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+    assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+    assert.equal(fse.readFileSync(join(outer, "Saves", "main.vcdbs"), "utf-8"), "main world, now")
+  })
+
+  it("refuses to delete an Installation whose folder is also a VS Version", async () => {
+    fse.removeSync(inner)
+    writeConfig({ installations: installationsOf(outer), gameVersions: [{ id: "g", label: "1.20.0", version: "1.20.0", path: outer }] as unknown as ConfigType["gameVersions"] })
+    const snapshot = { path: outer, backups: [], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+
+    assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+    assert.equal(fse.pathExistsSync(join(outer, "Saves", "main.vcdbs")), true)
+  })
+
+  it("sees a managed folder reached through a symbolic link", async () => {
+    // The Backups folder is set to a path that goes through a link pointing into the Installation.
+    const link = join(temporaryRoot, "link")
+    symlinkSync(outer, link)
+    const archiveBehindLink = join(outer, "Backups", "Main_x.tar.gz")
+    mkdirSync(join(outer, "Backups"), { recursive: true })
+    writeFileSync(archiveBehindLink, "backup")
+    writeConfig({ backupsFolder: join(link, "Backups"), installations: installationsOf(outer) })
+    const snapshot = { path: outer, backups: [{ id: "x", path: archiveBehindLink }], isPlaying: false, isBackingUp: false, isRestoringBackup: false }
+
+    assert.deepEqual(await deleteInstallation({ fileSystem: await hostFileSystem() }, { installation: snapshot, deleteData: true }), { ok: false, reason: "data-delete-failed" })
+    assert.equal(fse.readFileSync(archiveBehindLink, "utf-8"), "backup")
+  })
+
+  it("still refuses when the Installation inside is itself a link out of the folder", async () => {
+    const elsewhere = join(temporaryRoot, "elsewhere-inner")
+    mkdirSync(elsewhere, { recursive: true })
+    const linked = join(outer, "linked")
+    symlinkSync(elsewhere, linked)
+    writeConfig({ installations: installationsOf(outer, linked) })
+
+    assert.equal((await restoreOuter(await hostFileSystem())).ok, false)
+    assert.equal(fse.pathExistsSync(linked), true)
+  })
+
+  it("refuses DELETE_PATH and MOVE_PATH on a folder above a VS Version", async () => {
+    const version = join(outer, "game", "1.20.0")
+    mkdirSync(version, { recursive: true })
+    writeConfig({ installations: installationsOf(outer), gameVersions: [{ id: "g", label: "1.20.0", version: "1.20.0", path: version }] as unknown as ConfigType["gameVersions"] })
+    const event = await createTrustedEvent()
+
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.DELETE_PATH)(event, outer), false)
+    assert.equal(await handler<Promise<boolean>>(IPC_CHANNELS.PATHS_MANAGER.MOVE_PATH)(event, outer, join(managedFolder, "Renamed")), false)
+    assert.equal(fse.pathExistsSync(version), true)
   })
 })

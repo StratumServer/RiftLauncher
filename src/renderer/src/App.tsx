@@ -9,7 +9,7 @@ import { ConfigProvider, useSettingsConfig } from "@renderer/features/config/con
 import { NotificationsProvider } from "@renderer/contexts/NotificationsContext"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
 
-import { changeLanguage } from "./i18n"
+import { restoreStoredLanguage } from "./i18n"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 
 import MainMenu from "@renderer/components/layout/MainMenu"
@@ -40,8 +40,7 @@ function App(): JSX.Element {
   useEffect(() => {
     document.documentElement.dataset.uiscale = window.localStorage.getItem("uiScale") || "100"
 
-    const lang = window.localStorage.getItem("lang")
-    if (lang) void changeLanguage(lang)
+    void restoreStoredLanguage()
   }, [])
 
   return (

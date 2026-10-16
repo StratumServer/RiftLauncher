@@ -1,12 +1,13 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest"
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
 import ManageInstallationWorlds from "@renderer/features/installations/pages/ManageInstallationWorlds"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
+import i18n, { changeLanguage } from "@renderer/i18n"
 
-import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
+import { createMockConfig, installMockWindowApi, type MockedBridgeAPI } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
 
 function anInstallation(worldBackups: WorldBackupType[] = [{ id: "backup-1", date: 1, path: "/backups/backup-1.tar.gz", worldName: "World.vcdbs" }]): InstallationType {
@@ -33,7 +34,8 @@ function anInstallation(worldBackups: WorldBackupType[] = [{ id: "backup-1", dat
 function renderWorlds(
   deleteWorld: BridgeAPI["worldsManager"]["delete"],
   restoreWorld: BridgeAPI["worldsManager"]["restore"] = vi.fn(async () => ({ ok: true as const })),
-  worldBackups?: WorldBackupType[]
+  worldBackups?: WorldBackupType[],
+  deleteBackup: BridgeAPI["worldsManager"]["deleteBackup"] = vi.fn(async () => ({ ok: true as const }))
 ): void {
   installMockWindowApi({
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation(worldBackups)] })) },
@@ -43,6 +45,7 @@ function renderWorlds(
         worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
       })),
       delete: deleteWorld,
+      deleteBackup,
       restore: restoreWorld
     }
   })
@@ -332,13 +335,44 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     const moveButton = (await screen.findByRole("button", { name: "Move world" })) as HTMLButtonElement
     const deleteButton = (await screen.findByRole("button", { name: "Delete" })) as HTMLButtonElement
     const restoreButton = (await screen.findByRole("button", { name: "Restore" })) as HTMLButtonElement
+    const deleteBackupButton = (await screen.findByRole("button", { name: "Delete backup" })) as HTMLButtonElement
 
     expect(backupButton.disabled).toBe(true)
     expect(copyButton.disabled).toBe(true)
     expect(moveButton.disabled).toBe(true)
     expect(deleteButton.disabled).toBe(true)
     expect(restoreButton.disabled).toBe(true)
+    expect(deleteBackupButton.disabled).toBe(true)
   })
+  // Deleting or restoring a world rewrites the Saves folder: a running backup would read it torn and a
+  // restore would swap the change away. Backing a world up only reads, so that button stays enabled.
+  it.each(["_backuping", "_restoringBackup"] as const)("disables Delete world and Restore world while the installation has %s set", async (flag) => {
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [{ ...anInstallation(), [flag]: true }] })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 1 }]
+        }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const deleteButton = (await screen.findByRole("button", { name: "Delete" })) as HTMLButtonElement
+    const restoreButton = (await screen.findByRole("button", { name: "Restore" })) as HTMLButtonElement
+    const backupButton = (await screen.findByRole("button", { name: "Back up this world" })) as HTMLButtonElement
+
+    expect(deleteButton.disabled).toBe(true)
+    expect(restoreButton.disabled).toBe(true)
+    expect(backupButton.disabled).toBe(false)
+  })
+
   it("disables transfer buttons for a playing target installation", async () => {
     const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b", _playing: true }
     installMockWindowApi({
@@ -369,6 +403,44 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
       expect((copyButton as HTMLButtonElement).disabled).toBe(true)
       expect((moveButton as HTMLButtonElement).disabled).toBe(true)
       expect((backupButton as HTMLButtonElement).disabled).toBe(false)
+    })
+  })
+
+  // A restore swaps the extracted backup in and deletes the old folder, and a backup reads the folder
+  // while it is written: a world moved or copied in or out meanwhile is thrown away or torn.
+  it.each([
+    ["target", "_backuping"],
+    ["target", "_restoringBackup"],
+    ["source", "_backuping"],
+    ["source", "_restoringBackup"]
+  ] as const)("disables transfer buttons when the %s installation has %s set", async (side, flag) => {
+    const second = { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b" }
+    const first = anInstallation()
+    const installations = side === "target" ? [first, { ...second, [flag]: true }] : [{ ...first, [flag]: true }, second]
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations })) },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 0 }]
+        }))
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const copyButton = await screen.findByRole("button", { name: "Copy world" })
+    const moveButton = await screen.findByRole("button", { name: "Move world" })
+    await userEvent.selectOptions(await screen.findByRole("combobox"), "install-b")
+
+    await waitFor(() => {
+      expect((copyButton as HTMLButtonElement).disabled).toBe(true)
+      expect((moveButton as HTMLButtonElement).disabled).toBe(true)
     })
   })
 
@@ -620,6 +692,147 @@ describe("ManageInstallationWorlds deletion confirmation", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(deleteButton))
   })
+
+  it("prompts before deleting a world backup and does not delete when cancelled", async () => {
+    const user = userEvent.setup()
+    const deleteBackup = vi.fn<BridgeAPI["worldsManager"]["deleteBackup"]>(async () => ({ ok: true as const }))
+    renderWorlds(
+      vi.fn(async () => ({ ok: true as const })),
+      undefined,
+      undefined,
+      deleteBackup
+    )
+
+    const deleteBackupButton = await screen.findByTitle("Delete backup")
+    await user.click(deleteBackupButton)
+
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(/Permanently delete this backup of World\.vcdbs from/)).not.toBeNull()
+    expect(within(dialog).getByText("Deletion is not reversible so you'll not be able to restore your worlds, data and other info using this Backup anymore.")).not.toBeNull()
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(deleteBackup).not.toHaveBeenCalled()
+  })
+
+  it("deletes a world backup when confirmed and removes it from the list", async () => {
+    const user = userEvent.setup()
+    const deleteBackup = vi.fn<BridgeAPI["worldsManager"]["deleteBackup"]>(async () => ({ ok: true as const }))
+    renderWorlds(
+      vi.fn(async () => ({ ok: true as const })),
+      undefined,
+      undefined,
+      deleteBackup
+    )
+
+    expect(await screen.findByTitle("Delete backup")).not.toBeNull()
+    await user.click(await screen.findByTitle("Delete backup"))
+
+    const dialog = await screen.findByRole("dialog")
+    const confirmButton = within(dialog).getByRole("button", { name: "Delete" })
+    await user.click(confirmButton)
+
+    await waitFor(() => expect(deleteBackup).toHaveBeenCalledWith("install-a", "backup-1"))
+    await waitFor(() => expect(screen.queryByTitle("Delete backup")).toBeNull())
+  })
+
+  it("shows consequence warning on backup confirmation when older backups will be pruned", async () => {
+    const user = userEvent.setup()
+    const backupWorld = vi.fn<BridgeAPI["worldsManager"]["backup"]>(async () => ({
+      ok: true as const,
+      backup: { id: "backup-new", date: 4, path: "/backups/backup-new.tar.gz", worldName: "World.vcdbs" },
+      deletedBackupIds: ["backup-1"]
+    }))
+    const existing = [
+      { id: "backup-3", date: 3, path: "/backups/backup-3.tar.gz", worldName: "World.vcdbs" },
+      { id: "backup-2", date: 2, path: "/backups/backup-2.tar.gz", worldName: "World.vcdbs" },
+      { id: "backup-1", date: 1, path: "/backups/backup-1.tar.gz", worldName: "World.vcdbs" }
+    ]
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            installations: [{ ...anInstallation(existing), backupsLimit: 3 }]
+          })
+        )
+      },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 3 }]
+        })),
+        delete: vi.fn(async () => ({ ok: true as const })),
+        backup: backupWorld
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    await user.click(await screen.findByTitle("Back up this world"))
+
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Back up World.vcdbs now?")).not.toBeNull()
+    expect(within(dialog).getByText("The oldest backup of this world will be deleted to stay within the backup limit.")).not.toBeNull()
+  })
+
+  it("warns when deleting the last remaining copy of a world that has no live save", async () => {
+    const user = userEvent.setup()
+    const deleteBackup = vi.fn<BridgeAPI["worldsManager"]["deleteBackup"]>(async () => ({ ok: true as const }))
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            installations: [anInstallation([{ id: "backup-orphan", date: 1, path: "/backups/backup-orphan.tar.gz", worldName: "DeadWorld.vcdbs" }])]
+          })
+        )
+      },
+      worldsManager: {
+        list: vi.fn(async () => ({
+          ok: true as const,
+          worlds: []
+        })),
+        delete: vi.fn(async () => ({ ok: true as const })),
+        deleteBackup
+      }
+    })
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>,
+      { route: "/installations/worlds/install-a" }
+    )
+
+    const deleteBackupButton = await screen.findByTitle("Delete backup")
+    await user.click(deleteBackupButton)
+
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(/This is the only remaining copy of this world\./)).not.toBeNull()
+  })
+
+  it("shows an error notification when delete backup fails", async () => {
+    const user = userEvent.setup()
+    const deleteBackup = vi.fn<BridgeAPI["worldsManager"]["deleteBackup"]>(async () => ({ ok: false as const, reason: "operation-failed" }))
+    renderWorlds(
+      vi.fn(async () => ({ ok: true as const })),
+      undefined,
+      undefined,
+      deleteBackup
+    )
+
+    await user.click(await screen.findByTitle("Delete backup"))
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }))
+
+    await waitFor(() => expect(deleteBackup).toHaveBeenCalledWith("install-a", "backup-1"))
+    expect(await screen.findByText("The world operation failed. Nothing else was changed.")).not.toBeNull()
+    expect(screen.getByTitle("Delete backup")).not.toBeNull()
+  })
 })
 it("does not refetch in a loop when listing fails", async () => {
   const list = vi.fn(async () => ({ ok: false as const, reason: "saves-unavailable" }))
@@ -640,4 +853,104 @@ it("does not refetch in a loop when listing fails", async () => {
 
   await new Promise((resolve) => setTimeout(resolve, 150))
   expect(list).toHaveBeenCalledTimes(1)
+})
+
+/**
+ * A crash or a power cut leaves the world's SQLite journal files, `-wal` and `-shm`, beside it in
+ * Saves, and the main process refuses every change to that world while they are there (#692;
+ * tests/ipc/worldsHandlers.test.ts pins the refusal with real files). Nothing has the world open
+ * then, so the old answer, "This world is active. Close Vintage Story and try again.", sent the
+ * player to close a game that was already closed. The refusal stays, and the sentence now names
+ * both causes and both ways out, so this is what each action on the page shows for it.
+ */
+const JOURNAL_REFUSAL = [
+  {
+    language: "en-US",
+    sentence: "This world is open in Vintage Story, or was not closed cleanly after a crash or a power cut. Close the game, or open the world in it once and quit normally, then try again."
+  },
+  {
+    language: "fr-FR",
+    sentence:
+      "Ce monde est ouvert dans Vintage Story, ou n'a pas été fermé correctement après un plantage ou une coupure de courant. Fermez le jeu, ou ouvrez ce monde une fois dans le jeu et quittez-le normalement, puis réessayez."
+  }
+] as const
+
+type Player = ReturnType<typeof userEvent.setup>
+
+/** Opens a row action's confirmation and confirms it. The labels are read in the language on screen, so the same steps drive English and French. */
+async function confirmRowAction(user: Player, key: string, fill?: (dialog: HTMLElement) => Promise<void>): Promise<void> {
+  await user.click(await screen.findByTitle(i18n.t(key)))
+  const dialog = await screen.findByRole("dialog")
+  await fill?.(dialog)
+  await user.click(within(dialog).getByRole("button", { name: i18n.t(key) }))
+}
+
+/** Each action that can come back "world-has-sidecars", the bridge call it makes, and the clicks that get there. Copy and move share one call site, so copy stands for both. */
+const REFUSED_ACTIONS: { action: string; call: "backup" | "restore" | "transfer" | "delete"; run: (user: Player) => Promise<void> }[] = [
+  { action: "backing up", call: "backup", run: (user) => confirmRowAction(user, "features.worlds.backup") },
+  { action: "restoring", call: "restore", run: (user) => confirmRowAction(user, "generic.restore") },
+  {
+    action: "copying",
+    call: "transfer",
+    run: async (user) => {
+      await user.selectOptions(await screen.findByRole("combobox"), "install-b")
+      await confirmRowAction(user, "features.worlds.copy")
+    }
+  },
+  { action: "deleting", call: "delete", run: (user) => confirmRowAction(user, "generic.delete", (dialog) => user.type(within(dialog).getByRole("textbox"), "World.vcdbs")) }
+]
+
+/** Manage Worlds for an Installation that is not running, whose one world the main process refuses to touch because its journal files are still there. */
+function renderWorldWithLeftoverJournal(): MockedBridgeAPI {
+  const refusal = { ok: false as const, reason: "world-has-sidecars" }
+  const api = installMockWindowApi({
+    configManager: {
+      getConfig: vi.fn(async () =>
+        createMockConfig({
+          installations: [
+            { ...anInstallation(), _playing: false },
+            { ...anInstallation(), id: "install-b", name: "Install B", path: "/games/b", gameVersionId: "version-b" }
+          ]
+        })
+      )
+    },
+    worldsManager: {
+      list: vi.fn(async () => ({ ok: true as const, worlds: [{ name: "World.vcdbs", size: 5, lastModified: 1, isDefault: false, backupCount: 1 }] })),
+      backup: vi.fn(async () => refusal),
+      restore: vi.fn(async () => refusal),
+      transfer: vi.fn(async () => refusal),
+      delete: vi.fn(async () => refusal)
+    }
+  })
+
+  renderWithProviders(
+    <>
+      <NotificationsOverlay />
+      <Routes>
+        <Route path="/installations/worlds/:id" element={<ManageInstallationWorlds />} />
+      </Routes>
+    </>,
+    { route: "/installations/worlds/install-a" }
+  )
+  return api
+}
+
+describe.each(JOURNAL_REFUSAL)("a world left with its journal files and no game running, in $language (#692)", ({ language, sentence }) => {
+  beforeEach(async () => {
+    expect(await changeLanguage(language)).toBe(true)
+    // After the test, which is after the cleanup that unmounts the page: a language switch on a
+    // mounted page would re-render it outside act().
+    onTestFinished(async () => {
+      await changeLanguage("en-US")
+    })
+  })
+
+  it.each(REFUSED_ACTIONS)("shows the sentence for a crash or a power cut when $action is refused", async ({ call, run }) => {
+    const api = renderWorldWithLeftoverJournal()
+
+    await run(userEvent.setup())
+
+    expect(await screen.findByText(sentence)).not.toBeNull()
+    expect(api.worldsManager[call]).toHaveBeenCalledTimes(1)
+  })
 })

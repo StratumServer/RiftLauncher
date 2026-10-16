@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Input } from "@headlessui/react"
 import { PiCheckCircleDuotone, PiWarningDuotone, PiXCircleDuotone } from "react-icons/pi"
 
 import { useExportModpack } from "@renderer/features/mods/hooks/useExportModpack"
 import { useModConfigs } from "@renderer/features/mods/hooks/useModConfigs"
+import { diagnoseModConfigKey, findCollidingModConfigKeys, showDefaultIgnorables } from "@domain/mods/modConfigs"
 
 import PopupDialogPanel from "@renderer/components/ui/PopupDialogPanel"
 import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponents"
@@ -17,16 +18,16 @@ import { ButtonsWrapper, FormButton } from "@renderer/components/ui/FormComponen
  * some Mods, an API key, and the pack is a file they are about to hand to somebody. So the tick opens
  * this, every file gets a row, and the pack carries the rows that are left ticked.
  *
- * Everything starts ticked, which is the one place this deliberately parts company with
+ * Files start ticked by default, which is the one place this deliberately parts company with
  * `ImportModConfigsDialog` next door. There a tick meant overwriting a file the player may have spent
  * an evening on, so it started clear. Here the tick means sharing a file the player has already said
- * they want to share by ticking the box that opened this dialog, and a dialog that started with
- * everything clear would turn "include my configs" into a list to assemble by hand. The warning is
- * what makes that safe, and every row is a way to say no to one of them.
+ * they want to share by ticking the box that opened this dialog. The warning is what makes that safe,
+ * and every row is a way to say no to one of them.
  *
- * This is also the way around a file the pack cannot carry. A config that is not UTF-8, or whose name
- * Windows refuses, stops the whole export, and until this dialog existed the only answer was to go
- * and rename or delete it: the refusal named the file and nothing offered to leave it out.
+ * Files that a pack cannot carry (a name Windows refuses or that carries hidden Unicode characters,
+ * or a name that collides with another config in letter case) and symbolic links display why under
+ * their name. Unsupported and linked rows are disabled, while colliding rows start unticked: unticking
+ * a colliding config leaves it out of the export instead of failing.
  */
 function ExportModConfigsDialog({
   open,
@@ -49,6 +50,11 @@ function ExportModConfigsDialog({
   const { listing, refresh } = useModConfigs(installation.path)
   const [chosen, setChosen] = useState<readonly string[]>([])
 
+  const collidingLower = useMemo(() => {
+    if (!listing?.ok) return new Set<string>()
+    return findCollidingModConfigKeys(listing.configs.map((entry) => entry.name))
+  }, [listing])
+
   useEffect(() => {
     // Asked again on every open, because this dialog outlives the page's own listing: a config the
     // game wrote since the page loaded would otherwise be missing from the rows and would travel in
@@ -58,8 +64,12 @@ function ExportModConfigsDialog({
 
   useEffect(() => {
     if (!open) return
-    setChosen(listing?.ok ? listing.configs.map((entry) => entry.name) : [])
-  }, [open, listing])
+    if (!listing?.ok) {
+      setChosen([])
+      return
+    }
+    setChosen(listing.configs.filter((entry) => diagnoseModConfigKey(entry.name, collidingLower) === undefined).map((entry) => entry.name))
+  }, [open, listing, collidingLower])
 
   /**
    * Closes first and exports after, so the save dialog is the only thing in front of the player.
@@ -83,7 +93,7 @@ function ExportModConfigsDialog({
           <p>{listing.reason === "playing" ? t("features.mods.exportModConfigsPlaying") : t("features.mods.exportModConfigsUnreadable")}</p>
         ) : (
           <>
-            <p>{t("features.mods.exportModConfigsDesc", { count: listing.configs.length })}</p>
+            <p>{chosen.length === 0 ? t("features.mods.exportModConfigsDescZero") : t("features.mods.exportModConfigsDesc", { count: chosen.length })}</p>
 
             <p className="flex items-start gap-2 text-sm text-zinc-300">
               <PiWarningDuotone className="mt-0.5 shrink-0" />
@@ -91,16 +101,38 @@ function ExportModConfigsDialog({
             </p>
 
             <ul className="w-full max-h-[20rem] overflow-y-auto flex flex-col gap-1 text-left">
-              {listing.configs.map((entry) => (
-                <li key={entry.name} className="flex items-center gap-2 rounded-sm bg-zinc-950/50 px-2 py-1">
-                  <Input
-                    id={`export-mod-config-${entry.name}`}
-                    type="checkbox"
-                    checked={chosen.includes(entry.name)}
-                    onChange={(e) => setChosen((current) => (e.target.checked ? [...current, entry.name] : current.filter((key) => key !== entry.name)))}
-                  />
-                  <label htmlFor={`export-mod-config-${entry.name}`} className="flex-1 overflow-hidden">
-                    <span className="block truncate font-bold">{entry.name}</span>
+              {listing.configs.map((entry) => {
+                const issue = diagnoseModConfigKey(entry.name, collidingLower)
+                return (
+                  <li key={entry.name} className="flex items-center gap-2 rounded-sm bg-zinc-950/50 px-2 py-1">
+                    <Input
+                      id={`export-mod-config-${entry.name}`}
+                      type="checkbox"
+                      checked={chosen.includes(entry.name)}
+                      disabled={issue === "bad-name" || issue === "hidden-character"}
+                      onChange={(e) => setChosen((current) => (e.target.checked ? [...current, entry.name] : current.filter((key) => key !== entry.name)))}
+                    />
+                    <label htmlFor={`export-mod-config-${entry.name}`} className="flex-1 overflow-hidden">
+                      <span className="block truncate font-bold">{entry.name}</span>
+                      {issue && (
+                        <span className="block truncate text-sm text-zinc-300">
+                          {issue === "hidden-character"
+                            ? showDefaultIgnorables(entry.name)
+                            : issue === "bad-name"
+                              ? t("features.mods.exportModConfigsBadName")
+                              : t("features.mods.exportModConfigsCollides")}
+                        </span>
+                      )}
+                    </label>
+                  </li>
+                )
+              })}
+              {listing.linked.map((name) => (
+                <li key={`linked-${name}`} className="flex items-center gap-2 rounded-sm bg-zinc-950/50 px-2 py-1">
+                  <Input id={`export-mod-config-${name}`} type="checkbox" checked={false} disabled />
+                  <label htmlFor={`export-mod-config-${name}`} className="flex-1 overflow-hidden">
+                    <span className="block truncate font-bold">{name}</span>
+                    <span className="block truncate text-sm text-zinc-300">{t("features.mods.exportModConfigsLinked")}</span>
                   </label>
                 </li>
               ))}

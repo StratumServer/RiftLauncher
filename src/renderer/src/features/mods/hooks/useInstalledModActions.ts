@@ -8,6 +8,7 @@ import { setModEnabled } from "@renderer/features/moddb/adapters/modsManager"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
 import { useInstallMod } from "@renderer/features/mods/hooks/useInstallMod"
+import { getModWritesSnapshot, isModWriting, modWriteKey, subscribeModWrites } from "@renderer/features/mods/hooks/modWrites"
 import { useQueryMod } from "@renderer/features/mods/hooks/useQueryMod"
 
 import { newestCompatibleRelease } from "@domain/mods/compatibility"
@@ -52,43 +53,7 @@ export function quickInstallKey(modid: number): string {
   return `moddb:${modid}`
 }
 
-/** The busy key of a download on its way into one Installation's Mods folder, by the modid it writes. */
-export function modWriteKey(installationId: string, modid: string): string {
-  return `write:${installationId}:${modid.toLowerCase()}`
-}
-
-/*
- * Downloads in flight, by modWriteKey. Kept outside any one page because a download outlives the page
- * that started it. An update deletes the old archive before the new one has its name, so a page
- * opened meanwhile scans no copy of the Mod and would offer Install next to the archive on its way:
- * two archives declaring one modid. A fresh page has an empty busy set; this is what it asks instead.
- */
-const modWrites = new Set<string>()
-const modWriteListeners = new Set<() => void>()
-let modWritesSnapshot: readonly string[] = []
-
-function subscribeModWrites(listener: () => void): () => void {
-  modWriteListeners.add(listener)
-  return () => modWriteListeners.delete(listener)
-}
-
-function publishModWrites(): void {
-  modWritesSnapshot = [...modWrites]
-  for (const listener of modWriteListeners) listener()
-}
-
-/** Claims every key or none, so two writes of one Mod into one folder never overlap. */
-function claimModWrites(keys: readonly string[]): boolean {
-  if (keys.some((key) => modWrites.has(key))) return false
-  for (const key of keys) modWrites.add(key)
-  publishModWrites()
-  return true
-}
-
-function releaseModWrites(keys: readonly string[]): void {
-  for (const key of keys) modWrites.delete(key)
-  publishModWrites()
-}
+export { modWriteKey }
 
 /**
  * The per-Mod actions an Installation's Mods folder offers: enable or disable, suspend updates, and
@@ -116,7 +81,7 @@ export function useInstalledModActions(installation: InstallationType | undefine
   // rendered anything, so the thing it has to be tested against is written synchronously.
   const busyRef = useRef(new Set<string>())
   const [busyPaths, setBusyPaths] = useState<readonly string[]>([])
-  const writes = useSyncExternalStore(subscribeModWrites, () => modWritesSnapshot)
+  const writes = useSyncExternalStore(subscribeModWrites, getModWritesSnapshot)
 
   const latest = useRef({ installation, refresh, t, addNotification, suspendedModUpdates, configDispatch, modToDelete, installMod, queryMod })
   useLayoutEffect(() => {
@@ -149,6 +114,9 @@ export function useInstalledModActions(installation: InstallationType | undefine
       const { installation, refresh, t, addNotification } = latest.current
       if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
       if (modsFolderInUse(installation)) return addNotification(t("features.mods.cantToggleWhileinUse"), "error")
+      // The old copy stays listed while its replacement downloads. Renaming it now would make the
+      // delete that follows the download miss it, and the new archive would be taken back out.
+      if (isModWriting(installation.id, copy.modid)) return
       if (!claim(copy.path)) return
 
       try {
@@ -187,6 +155,8 @@ export function useInstalledModActions(installation: InstallationType | undefine
       if (!target) return addNotification(t("features.mods.noModSelected"), "error")
       if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
       if (modsFolderInUse(installation)) return addNotification(t("features.mods.cantDeleteWhileinUse"), "error")
+      // Same as the toggle: the replacement is on its way and expects the old copy where it was.
+      if ("modid" in target && isModWriting(installation.id, target.modid)) return
       if (!claim(target.path)) return
 
       try {
@@ -218,11 +188,10 @@ export function useInstalledModActions(installation: InstallationType | undefine
       if (!installation) return addNotification(t("features.installations.noInstallationFound"), "error")
       if (modsFolderInUse(installation)) return addNotification(t("features.mods.cantUpdateWhileinUse"), "error")
       if (!claim(copy.path)) return
-      const writeKeys = [modWriteKey(installation.id, copy.modid)]
-      if (!claimModWrites(writeKeys)) return release(copy.path)
 
       try {
         await installMod({
+          installationId: installation.id,
           installationPath: installation.path,
           outName: installation.name,
           modName: copy.name,
@@ -232,7 +201,6 @@ export function useInstalledModActions(installation: InstallationType | undefine
         })
         await refresh()
       } finally {
-        releaseModWrites(writeKeys)
         release(copy.path)
       }
     }
@@ -248,14 +216,10 @@ export function useInstalledModActions(installation: InstallationType | undefine
         return "done"
       }
       const key = quickInstallKey(mod.modid)
-      if (!claim(key)) return "done"
       // Refused, not queued, while any download of this Mod is on its way into this folder: the last
-      // scan cannot see an archive that has no name yet.
-      const writeKeys = mod.modidstrs.map((modid) => modWriteKey(installation.id, modid))
-      if (!claimModWrites(writeKeys)) {
-        release(key)
-        return "done"
-      }
+      // scan cannot see what that download is about to change. installMod claims the key itself.
+      if (mod.modidstrs.some((modid) => isModWriting(installation.id, modid))) return "done"
+      if (!claim(key)) return "done"
 
       try {
         const lookup = await queryMod({ modid: mod.modid })
@@ -272,6 +236,7 @@ export function useInstalledModActions(installation: InstallationType | undefine
         // meanwhile cannot be checked and counts as taken.
         const { installMod, refresh, installation: current } = latest.current
         await installMod({
+          installationId: installation.id,
           installationPath: installation.path,
           outName: installation.name,
           modName: mod.name,
@@ -281,7 +246,6 @@ export function useInstalledModActions(installation: InstallationType | undefine
         await refresh()
         return "done"
       } finally {
-        releaseModWrites(writeKeys)
         release(key)
       }
     }

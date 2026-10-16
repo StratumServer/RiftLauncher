@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
-import { describe, it } from "vitest"
+import { describe, it, onTestFinished } from "vitest"
 
 import {
   collectPluralFamilies,
@@ -28,21 +29,83 @@ import {
  *      in en-US (the "added the code, forgot the key" mistake)
  *   2. a locale file (including en-US.json) that is structurally broken
  *   3. a translated string that drops, adds or alters a {{placeholder}} or a
- *      <tag> of its en-US original, or is empty: translations arrive from
- *      Hosted Weblate in bulk now, and nobody reads 300 Belarusian strings
- *      in review
+ *      <tag> of its en-US original, or that shows as nothing (not a string, or
+ *      only whitespace): translations arrive from Hosted Weblate in bulk now,
+ *      and nobody reads 300 Belarusian strings in review. An exact empty
+ *      string is not one of these outside en-US and fr-FR (#680): Weblate
+ *      writes a plural form it has not had translated yet that way, and the
+ *      launcher shows the English sentence for it
  * Everything else -- how far behind a locale is, or which keys it has that
  * en-US no longer does -- is reported so humans (and future tooling) can
  * act on it, but it never fails the suite.
  */
 
-function readLocaleJson(file: string): unknown {
-  return JSON.parse(readFileSync(join(LOCALES_DIR, file), "utf8"))
+function readLocaleJson(file: string, dir: string = LOCALES_DIR): unknown {
+  return JSON.parse(readFileSync(join(dir, file), "utf8"))
 }
 
 /** The {{interpolations}} and <components /> a string carries, sorted so order never matters. */
 function markers(value: unknown): string[] {
   return typeof value === "string" ? (value.match(/\{\{[^}]+\}\}|<\/?[A-Za-z][^>]*>/g) ?? []).sort() : []
+}
+
+/**
+ * Every string in the locale files of `dir` whose placeholders or component tags differ from the
+ * en-US string it translates, as `file: key (...)`. A folder, not the launcher's own, so the checks
+ * below can be shown on files made for the purpose.
+ *
+ * A value that is exactly "" is skipped (#680): it is a form nobody has translated yet, which
+ * Hosted Weblate writes that way and the launcher answers with the English sentence, so there is
+ * no translated text whose placeholders could differ.
+ */
+function placeholderMismatchesIn(dir: string): string[] {
+  const enUS = flattenTranslationObject(readLocaleJson("en-US.json", dir))
+
+  return listLocaleFiles(dir)
+    .filter((file) => file !== "en-US.json")
+    .flatMap((file) => {
+      const locale = flattenTranslationObject(readLocaleJson(file, dir))
+
+      const shared = Object.keys(enUS)
+        .filter((key) => key in locale && locale[key] !== "")
+        .filter((key) => markers(enUS[key]).join("|") !== markers(locale[key]).join("|"))
+        .map((key) => `${file}: ${key} (en-US: ${markers(enUS[key]).join(" ") || "none"}; locale: ${markers(locale[key]).join(" ") || "none"})`)
+
+      const ownGrammar = Object.keys(locale)
+        .filter((key) => !(key in enUS) && locale[key] !== "")
+        .flatMap((key) => {
+          const suffix = PLURAL_SUFFIXES.find((candidate) => key.endsWith(candidate))
+          const other = suffix ? `${key.slice(0, -suffix.length)}_other` : undefined
+          if (other === undefined || !(other in enUS)) return []
+          if (markers(enUS[other]).join("|") === markers(locale[key]).join("|")) return []
+
+          return [`${file}: ${key} (en-US _other: ${markers(enUS[other]).join(" ") || "none"}; locale: ${markers(locale[key]).join(" ") || "none"})`]
+        })
+
+      return [...shared, ...ownGrammar]
+    })
+}
+
+// The one file an empty value still fails in: fr-FR is kept complete on purpose (issue #411). en-US,
+// the source, is not looked at below, and its own check refuses an empty value too.
+const KEPT_COMPLETE = "fr-FR.json"
+
+/**
+ * `file: key` for every value in the locale files of `dir`, en-US aside, that cannot be shown: not a
+ * string, or a string that is only whitespace, which renders as a blank sentence.
+ *
+ * An exact "" is a gap, not a mistake, in every file but the one kept complete (#680). Hosted Weblate
+ * writes a plural form it has not had translated yet that way, and i18n.ts sets returnEmptyString to
+ * false, so exactly that value shows the English sentence instead of nothing.
+ */
+function unusableValuesIn(dir: string): string[] {
+  return listLocaleFiles(dir)
+    .filter((file) => file !== "en-US.json")
+    .flatMap((file) =>
+      Object.entries(flattenTranslationObject(readLocaleJson(file, dir)))
+        .filter(([, value]) => typeof value !== "string" || (value === "" ? file === KEPT_COMPLETE : value.trim().length === 0))
+        .map(([key]) => `${file}: ${key}`)
+    )
 }
 
 describe("t() keys referenced in src/renderer/** exist in en-US.json", () => {
@@ -255,44 +318,88 @@ describe("every locale keeps what en-US interpolates", () => {
   // to its en-US original here. Which keys a locale has is still its own
   // business (the coverage snapshot above reports the lag). A plural form of
   // the locale's own grammar, such as a Russian _few, has no English twin and
-  // is held to the English _other form.
-  const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
-  const otherFiles = listLocaleFiles().filter((file) => file !== "en-US.json")
-
+  // is held to the English _other form. A value that is exactly "" has nothing
+  // to compare (#680): Weblate writes a form it has not had translated yet that
+  // way, and the English sentence shows for it.
   it("carries the same placeholders and component tags as the en-US string it translates", () => {
-    const mismatched = otherFiles.flatMap((file) => {
-      const locale = flattenTranslationObject(readLocaleJson(file))
-
-      const shared = Object.keys(enUS)
-        .filter((key) => key in locale)
-        .filter((key) => markers(enUS[key]).join("|") !== markers(locale[key]).join("|"))
-        .map((key) => `${file}: ${key} (en-US: ${markers(enUS[key]).join(" ") || "none"}; locale: ${markers(locale[key]).join(" ") || "none"})`)
-
-      const ownGrammar = Object.keys(locale)
-        .filter((key) => !(key in enUS))
-        .flatMap((key) => {
-          const suffix = PLURAL_SUFFIXES.find((candidate) => key.endsWith(candidate))
-          const other = suffix ? `${key.slice(0, -suffix.length)}_other` : undefined
-          if (other === undefined || !(other in enUS)) return []
-          if (markers(enUS[other]).join("|") === markers(locale[key]).join("|")) return []
-
-          return [`${file}: ${key} (en-US _other: ${markers(enUS[other]).join(" ") || "none"}; locale: ${markers(locale[key]).join(" ") || "none"})`]
-        })
-
-      return [...shared, ...ownGrammar]
-    })
+    const mismatched = placeholderMismatchesIn(LOCALES_DIR)
 
     assert.deepEqual(mismatched, [], `strings whose placeholders differ from en-US: ${mismatched.join(" | ")}`)
   })
 
-  it("has no value that is not a string or is empty, in any locale", () => {
-    const unusable = otherFiles.flatMap((file) =>
-      Object.entries(flattenTranslationObject(readLocaleJson(file)))
-        .filter(([, value]) => typeof value !== "string" || value.trim().length === 0)
-        .map(([key]) => `${file}: ${key}`)
-    )
+  it("has no value that is not a string or is blank, and no empty one in a locale kept complete", () => {
+    // An exact "" passes everywhere but fr-FR (#680). en-US has its own check above. Whitespace does not
+    // pass anywhere: i18next only treats exactly "" as missing, so it would render as a blank sentence.
+    const unusable = unusableValuesIn(LOCALES_DIR)
 
-    assert.deepEqual(unusable, [], `locale values that are not a non-empty string: ${unusable.join(", ")}`)
+    assert.deepEqual(unusable, [], `locale values that are not a usable string: ${unusable.join(", ")}`)
+  })
+})
+
+describe("an empty translation is a gap in a locale Weblate maintains (#680)", () => {
+  // Hosted Weblate writes a plural form it has not had translated yet as "", and i18n.ts treats exactly that
+  // value as missing, so the English sentence shows. The folders below hold what it leaves behind when a
+  // language only has the old sentence of a family so far: the sentence moves into _one and the other forms
+  // the language selects are empty. The two checks run on them the way they run on the launcher's own files.
+  const FAMILY = "features.versions.versionInUseByInstallations"
+  const forms = (values: Record<string, unknown>): object => ({
+    features: { versions: Object.fromEntries(Object.entries(values).map(([form, value]) => [`versionInUseByInstallations_${form}`, value])) }
+  })
+  const EN_US = forms({ one: "{{installations}} still uses this VS Version.", other: "{{installations}} still use this VS Version." })
+
+  function localesWith(files: Record<string, unknown>): string {
+    const dir = mkdtempSync(join(tmpdir(), "i18n-parity-"))
+    onTestFinished(() => rmSync(dir, { recursive: true, force: true }))
+    for (const [file, content] of Object.entries({ "en-US.json": EN_US, ...files })) writeFileSync(join(dir, file), JSON.stringify(content))
+    return dir
+  }
+
+  it("lets an exact empty string through the value check", () => {
+    const dir = localesWith({
+      "de-DE.json": forms({ one: "{{installations}} nutzen diese VS-Version noch.", other: "" }),
+      "ru-RU.json": forms({ one: "{{installations}} ещё используют эту версию VS.", few: "", many: "" })
+    })
+
+    assert.deepEqual(unusableValuesIn(dir), [])
+  })
+
+  it("lets it through the placeholder check too, for a form with an English twin and for one without", () => {
+    // _other has an English twin. A Russian _few has none and is held to the English _other.
+    const dir = localesWith({
+      "de-DE.json": forms({ one: "{{installations}} nutzen diese VS-Version noch.", other: "" }),
+      "ru-RU.json": forms({ one: "{{installations}} ещё используют эту версию VS.", few: "", many: "" })
+    })
+
+    assert.deepEqual(placeholderMismatchesIn(dir), [])
+  })
+
+  it("still holds the translated forms next to it to their placeholders", () => {
+    const dir = localesWith({ "de-DE.json": forms({ one: "Die VS-Version wird noch genutzt.", other: "" }) })
+
+    assert.deepEqual(placeholderMismatchesIn(dir), [`de-DE.json: ${FAMILY}_one (en-US: {{installations}}; locale: none)`])
+  })
+
+  it("still refuses a value that is only whitespace, which renders as a blank sentence", () => {
+    const dir = localesWith({ "de-DE.json": forms({ one: "{{installations}} nutzen diese VS-Version noch.", other: "  " }) })
+
+    assert.deepEqual(unusableValuesIn(dir), [`de-DE.json: ${FAMILY}_other`])
+    // It is no gap either: the placeholder check still compares it with the English original.
+    assert.equal(placeholderMismatchesIn(dir).length, 1)
+  })
+
+  it("still refuses a value that is not a string", () => {
+    const dir = localesWith({ "de-DE.json": { a: null, b: 3, c: ["x"] } })
+
+    assert.deepEqual(unusableValuesIn(dir), ["de-DE.json: a", "de-DE.json: b", "de-DE.json: c"])
+  })
+
+  it("still refuses an empty string in fr-FR, which is kept complete, while de-DE may have one", () => {
+    const dir = localesWith({
+      "de-DE.json": forms({ one: "{{installations}} nutzen diese VS-Version noch.", other: "" }),
+      "fr-FR.json": forms({ one: "{{installations}} utilise encore cette version de VS.", many: "", other: "{{installations}} utilisent encore cette version de VS." })
+    })
+
+    assert.deepEqual(unusableValuesIn(dir), [`fr-FR.json: ${FAMILY}_many`])
   })
 })
 
@@ -300,7 +407,9 @@ describe("fr-FR stays in step with en-US", () => {
   // French is kept complete on purpose (issue #411): a slice that adds an
   // en-US key adds its French one in the same PR, so the next feature can't
   // land half-translated. The other locales are not held to this yet -- the
-  // coverage snapshot above reports how far behind each of them is.
+  // coverage snapshot above reports how far behind each of them is. That is
+  // also why an empty value, which Weblate may leave in the other locales as a
+  // gap (#680), still fails for French: here and in the value check above.
   const enUS = flattenTranslationObject(readLocaleJson("en-US.json"))
   const frFR = flattenTranslationObject(readLocaleJson("fr-FR.json"))
 

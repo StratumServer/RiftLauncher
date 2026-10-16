@@ -30,7 +30,7 @@ function renderManageMods(overrides: WindowApiOverrides = {}): ReturnType<typeof
     configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
     modsManager: {
       getInstalledMods: vi.fn(async () => ({ mods: [], errors: [] })),
-      getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [] })),
+      getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [], linked: [] })),
       ...overrides.modsManager
     }
   })

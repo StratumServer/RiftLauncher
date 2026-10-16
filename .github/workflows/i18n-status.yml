@@ -44,7 +44,7 @@ jobs:
               echo 'The status page is out of date. Refresh it with `npm run i18n:status -- --write docs/contribute/translation-status.md`.'
               echo
             fi
-            echo 'Drafted values are the machine-drafted ones still waiting for a native review, listed per locale in `src/renderer/src/locales/drafted.json`. See #496.'
+            echo 'The links open the strings Weblate marks Needs editing for each language: the machine drafts made before Weblate, plus any string whose English changed since it was translated. See #496.'
           } > comment.md
 
       # One comment per pull request, found by its marker and edited in place.

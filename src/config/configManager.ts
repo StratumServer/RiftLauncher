@@ -1,6 +1,6 @@
 import { app } from "electron"
 import fse from "fs-extra"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
 import { logMessage } from "@src/utils/logManager"
 import { parseLegacyAccount, toPublicAccount } from "@domain/account/credentials"
@@ -8,6 +8,7 @@ import { adoptLegacySingleAccountSecrets, saveAccountSecrets } from "@src/ipc/ac
 import { isRecord, toWireBuildVariant } from "@src/ipc/validation"
 import { clampConfigSchema, CURRENT_CONFIG_SCHEMA, isUsableGameVersion, migrateConfigDocument, repairGameVersionIdentity } from "@domain/config/migrations"
 import { normalizeAccentColorId } from "@domain/accentColors"
+import { unreadableCopyName } from "@domain/naming"
 import { normalizeBackgroundId } from "@domain/backgrounds"
 import { normalizeModDbVisibility } from "@domain/moddbVisibility"
 import { normalizeReceiveBetaUpdates } from "@domain/appUpdate/betaUpdates"
@@ -15,7 +16,7 @@ import { DEFAULT_COMPRESSION_LEVEL, DEFAULT_CONFIG_BASE } from "@domain/config/d
 import { normalizeServerBookmarks } from "@domain/servers/bookmarks"
 import { isSafeWorldName } from "@domain/worlds/worlds"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
-import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME } from "@domain/userData/migrationPlan"
+import { DEFAULT_BACKUPS_FOLDER_NAME, DEFAULT_INSTALLATIONS_FOLDER_NAME, DEFAULT_VERSIONS_FOLDER_NAME, holdsPlayerChoice, IMPORT_PENDING_MARKER_FILE } from "@domain/userData/migrationPlan"
 
 const LOG_PREFIX = "[back] [config] [config/configManager.ts]"
 
@@ -112,6 +113,40 @@ export function takePendingConfigRecoveryNotice(): ConfigRecoveryNotice | null {
   return notice
 }
 
+/** Queues the notice for a start whose VS Launcher import failed and will be tried again (#708). */
+export function noteUserDataImportFailed(): void {
+  pendingConfigRecoveryNotice = { kind: "import-failed" }
+}
+
+/** Whether a document holds nothing a player chose, so a failed VS Launcher import can still replace it. */
+function isUntouchedProfile(config: ConfigType): boolean {
+  return !holdsPlayerChoice(config as unknown as Record<string, unknown>, normalizeConfig(defaultConfig) as unknown as Record<string, unknown>)
+}
+
+/** Whether the failed-import marker is known to be gone, so later saves skip the check. */
+let importMarkerSettled = false
+
+/**
+ * Drops the failed-import marker once a save holding something the player chose has reached the
+ * disk. From then on the profile is theirs and a retried import would overwrite it. Every config
+ * write goes through the queue below, which is why this is the one place that does it.
+ *
+ * It runs after the write, never before: a launcher that exits before the atomic rename leaves
+ * the untouched config.json, and the marker next to it is what makes the next start import.
+ * Best effort, and nothing depends on it: the next start decides from the config.json it finds
+ * (see `importMarkerState` in src/main/userDataMigration.ts), so a marker that cannot be removed
+ * (a scanner holds it open) is stale and is dropped there, never an import over this save.
+ */
+function settleImportMarker(saved: ConfigType): void {
+  if (importMarkerSettled || isUntouchedProfile(saved)) return
+  try {
+    fse.removeSync(join(dirname(configPath), IMPORT_PENDING_MARKER_FILE))
+    importMarkerSettled = true
+  } catch (err) {
+    logMessage("warn", `${LOG_PREFIX} [settleImportMarker] Could not remove the failed-import marker: ${err}`)
+  }
+}
+
 function scheduleConfigWrite(): Promise<void> {
   // Compared against null rather than tested for truthiness: the question is whether a write is already scheduled, not whether a promise is truthy (it always is).
   if (scheduledConfigWrite !== null) return scheduledConfigWrite
@@ -126,6 +161,7 @@ function scheduleConfigWrite(): Promise<void> {
       // and that builds a fixed literal field by field, so the renderer's session-only markers
       // (`_notifiedModUpdatesInstallations`, `_backgroundRevision`) are already gone.
       await writeJsonAtomic(configPath, nextConfig, { spaces: 2 })
+      settleImportMarker(nextConfig)
     }
   })
 
@@ -163,6 +199,17 @@ export async function saveConfig(config: ConfigType): Promise<boolean> {
     logMessage("debug", `${LOG_PREFIX} [saveConfig] ${err}`)
     return false
   }
+}
+
+/**
+ * Changes the config held in memory without writing it. For a caller whose `saveConfig` failed and
+ * who is undoing its own change: `saveConfig` keeps what it was given in memory either way (a
+ * read-only session depends on that for its other changes), so a failed change the caller then
+ * abandons would otherwise ride along with the next save, whoever makes it. Changes the cache
+ * holds from other saves are left as they are.
+ */
+export function updateCachedConfig(update: (config: ConfigType) => ConfigType): void {
+  if (configCache) configCache = normalizeConfig(update(configCache))
 }
 
 export function flushConfigWrites(): Promise<void> | null {
@@ -309,9 +356,10 @@ function isFileExistsError(error: unknown): boolean {
 /**
  * Copies the unreadable `config.json` aside, byte for byte, before anything else touches it, so a
  * parse failure never destroys the only copy of a player's settings (#554). Named from the current
- * instant, sanitized for a Windows-safe filename, with a numeric suffix appended until a free name
- * is found: a second failure right behind the first (same millisecond, under a fast test clock or
- * a fast retry) still gets its own copy rather than silently losing to a name collision.
+ * instant (see `unreadableCopyName`, which an Installation's own unreadable settings file shares,
+ * #691), with a numeric suffix appended until a free name is found: a second failure right behind
+ * the first (same millisecond, under a fast test clock or a fast retry) still gets its own copy
+ * rather than silently losing to a name collision.
  *
  * Uses `fs.copyFile` with `COPYFILE_EXCL` rather than fs-extra's own `copy`: fs-extra 11's `copy`
  * throws a plain `Error` with no `code` when `errorOnExist` trips, which a `code === "EEXIST"`
@@ -324,10 +372,9 @@ function isFileExistsError(error: unknown): boolean {
  * for some other reason, or a thousand names in the same instant were all taken).
  */
 async function preserveUnreadableConfig(): Promise<string | null> {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+  const now = Date.now()
   for (let attempt = 0; attempt < 1_000; attempt++) {
-    const suffix = attempt === 0 ? "" : `-${attempt}`
-    const name = `config.unreadable-${stamp}${suffix}.json`
+    const name = unreadableCopyName("config", now, attempt)
     try {
       await fse.copyFile(configPath, join(app.getPath("userData"), name), fse.constants.COPYFILE_EXCL)
       return name
@@ -614,7 +661,12 @@ function normalizeInstallation(value: unknown): InstallationType | null {
           .filter((backup): backup is BackupType => backup !== null)
           .slice(0, 100)
       : [],
-    worldBackups: Array.isArray(value.worldBackups) ? value.worldBackups.map(normalizeWorldBackup).filter((backup): backup is WorldBackupType => backup !== null) : [],
+    worldBackups: Array.isArray(value.worldBackups)
+      ? value.worldBackups
+          .map(normalizeWorldBackup)
+          .filter((backup): backup is WorldBackupType => backup !== null)
+          .slice(0, 1_000)
+      : [],
     lastTimePlayed: asNumber(value.lastTimePlayed, defaultInstallation.lastTimePlayed, -1, Number.MAX_SAFE_INTEGER),
     totalTimePlayed: asNumber(value.totalTimePlayed, defaultInstallation.totalTimePlayed, 0, Number.MAX_SAFE_INTEGER),
     mesaGlThread: asBoolean(value.mesaGlThread, defaultInstallation.mesaGlThread),
@@ -652,6 +704,10 @@ function normalizeGameVersion(value: unknown): GameVersionType | null {
   // it never had. This flag is what keeps a player's own install off the delete path, so
   // dropping it silently on the next load would turn "remove from list" back into deletion.
   if (asBoolean(value.linked, false)) gameVersion.linked = true
+  // Written only while an install the launcher started has not finished, so no config that is
+  // not mid-install grows the field and none written before it needs migrating. A linked row is a
+  // folder the launcher never installed, so it can never be an unfinished install of its own.
+  else if (asBoolean(value.incomplete, false)) gameVersion.incomplete = true
   return gameVersion
 }
 

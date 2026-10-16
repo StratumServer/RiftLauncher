@@ -35,9 +35,13 @@ export interface InstalledModCopy {
  * `old-version-delete-failed` is the one that used to be invisible. The delete result was thrown
  * away and the download ran regardless, so a file the host would not remove left two archives
  * declaring the same modid in one folder. Vintage Story loads both, and which one wins is anybody's
- * guess.
+ * guess. It now means the new archive was fetched, the old one would not go, and the new one was
+ * taken back out.
+ *
+ * `new-version-cleanup-failed` is that same case when the take-back fails too: the folder holds both
+ * versions, and the player is the only one who can remove one.
  */
-export type InstallModFailure = "installation-busy" | "old-version-delete-failed" | "download-failed"
+export type InstallModFailure = "installation-busy" | "old-version-delete-failed" | "new-version-cleanup-failed" | "download-failed"
 
 export type InstallModResult =
   | {
@@ -81,7 +85,7 @@ export function modsFolderInUse(installation: Pick<InstallationType, "_backuping
  * happen.
  */
 export interface InstallModEvents {
-  /** Fired once the replaced copy is off the disk, before anything is fetched. */
+  /** Fired once the replaced copy is off the disk, which is after the new archive has landed. */
   onExistingRemoved?(path: string): void
   /** Fired when the download is about to start, so a caller can show the mod as working. */
   onDownloadStarted?(fileName: string): void
@@ -105,10 +109,19 @@ export function modArchiveFileName(release: ModReleaseToInstall, disabled = fals
 /**
  * Puts one mod release in an installation's Mods folder, replacing the copy already there.
  *
- * The replacement is strictly ordered: the old archive goes first, and only a confirmed deletion
- * earns the download. Installing over a copy the host refused to remove is how a Mods folder ends up
- * with two versions of one mod, which is a worse outcome than not updating it at all, so a refused
- * deletion stops this mod and says so.
+ * The new archive is fetched first and the old one goes only once the new one is on disk, so a
+ * download that fails or times out leaves the installed mod exactly as it was. The old order,
+ * delete then download, lost the mod whenever the download died, and Update all started every
+ * deletion within milliseconds while the downloads waited in a queue.
+ *
+ * The folder still never keeps two versions of one mod. When the old archive then refuses to go, the
+ * new one is taken back out and the install stops, since two archives of one modid are worse than
+ * not updating. Two cases differ from that order:
+ * - The new archive lands on the old one's own path (same version, same state): the download's
+ *   rename already replaced it, and deleting afterwards would delete the new file.
+ * - The two paths differ only by letter case: on a case-insensitive volume they are one file, so
+ *   the download would replace it and a delete after it would remove the new archive. That case
+ *   keeps the old order, delete first.
  *
  * @param ports Host capabilities the work runs on.
  * @param input The release, where it goes, and what it replaces.
@@ -120,10 +133,16 @@ export async function installMod(ports: InstallModPorts, input: InstallModInput,
 
   const folder = await modsFolder(ports.paths, input.installationPath)
   const fileName = modArchiveFileName(input.release, input.disabled)
+  const { existing } = input
 
-  if (input.existing) {
-    if (!(await ports.fileSystem.remove(input.existing.path))) return refuse("old-version-delete-failed")
-    events.onExistingRemoved?.(input.existing.path)
+  // A case-only match is one file on a case-insensitive volume. On the others it is two names of one
+  // version, and deleting the old one first is no worse than the order it replaces.
+  const target = await ports.paths.join([folder, fileName])
+  const sameFileOnDisk = existing !== undefined && existing.path !== target && existing.path.toLowerCase() === target.toLowerCase()
+
+  if (existing && sameFileOnDisk) {
+    if (!(await ports.fileSystem.remove(existing.path))) return refuse("old-version-delete-failed")
+    events.onExistingRemoved?.(existing.path)
   }
 
   events.onDownloadStarted?.(fileName)
@@ -134,6 +153,18 @@ export async function installMod(ports: InstallModPorts, input: InstallModInput,
   })
 
   if (!downloaded.ok || !downloaded.filePath) return refuse("download-failed")
+
+  // Judged against where the download says it landed, the form the scan reads paths in, rather than
+  // against the path joined here: a spelling that differs while naming the same file would otherwise
+  // delete the archive that was just written.
+  if (existing && !sameFileOnDisk && existing.path !== downloaded.filePath) {
+    if (!(await ports.fileSystem.remove(existing.path))) {
+      // Taken back out so the folder does not end up with both versions.
+      if (!(await ports.fileSystem.remove(downloaded.filePath))) return refuse("new-version-cleanup-failed")
+      return refuse("old-version-delete-failed")
+    }
+    events.onExistingRemoved?.(existing.path)
+  }
 
   return { ok: true, fileName, path: downloaded.filePath }
 }

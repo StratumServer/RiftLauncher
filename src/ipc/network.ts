@@ -52,8 +52,9 @@ type BoundedRequestOptions = {
   /**
    * Overrides REQUEST_TIMEOUT_MS as the overall wall-clock ceiling, for a caller that needs a
    * tighter bound (fetchReleaseNotes) or, through a UrlRule's own `timeoutMs`, a wider one (the
-   * mods/authors catalog). `requestBoundedBuffer`'s fixed 15s inactivity window is untouched
-   * either way: it only ever shrinks the effective bound, never widens past this value.
+   * ModDB catalog and detail lookups). The inactivity window starts when response headers arrive
+   * and remains capped at REQUEST_TIMEOUT_MS; the wider ceiling lets a request wait longer for its
+   * first response without letting a response stall indefinitely.
    */
   timeoutMs?: number
 }
@@ -152,10 +153,10 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
   const method = options.method ?? "GET"
   const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
-  // Never wider than REQUEST_TIMEOUT_MS: a caller that widens the overall ceiling (the
-  // mods/authors catalog rules, up to 90s) still gets cut after 15s of dead air, and a caller
-  // that tightens it (fetchReleaseNotes's 5s) stays bounded by that tighter value, since the
-  // overall timeout below always fires first in that case regardless of this one.
+  // The inactivity window applies once response headers arrive. A caller that widens the overall
+  // ceiling (ModDB catalog/detail rules, up to 90s) can wait for those headers without a 15s
+  // cutoff, then still gets cut after 15s of dead air. A caller that tightens the overall ceiling
+  // (fetchReleaseNotes's 5s) stays bounded by that tighter value.
   const inactivityMs = Math.min(REQUEST_TIMEOUT_MS, timeoutMs)
 
   return new Promise((resolve, reject) => {
@@ -176,7 +177,7 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
     // Reset on every chunk (see collectBounded's onData), so a response that keeps sending
     // bytes, however slowly, is never cut for being slow, only for going quiet this long or
     // for outliving overallTimeout above.
-    let inactivityTimeout: ReturnType<typeof setTimeout>
+    let inactivityTimeout: ReturnType<typeof setTimeout> | undefined
     const resetInactivity = (): void => {
       clearTimeout(inactivityTimeout)
       inactivityTimeout = setTimeout(() => {
@@ -184,8 +185,6 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
         finish(new Error("Network request timed out"))
       }, inactivityMs)
     }
-    resetInactivity()
-
     const finish = (error?: Error): void => {
       if (settled) return
       settled = true
@@ -199,7 +198,10 @@ export function requestBoundedBuffer(url: URL, options: BoundedRequestOptions = 
       }
     }
 
-    request.on("response", (response) => collectBounded(response, maxBytes, chunks, () => request.abort(), finish, resetInactivity))
+    request.on("response", (response) => {
+      resetInactivity()
+      collectBounded(response, maxBytes, chunks, () => request.abort(), finish, resetInactivity)
+    })
 
     request.on("error", (error) => finish(error))
     request.on("login", (_authInfo, callback) => callback())

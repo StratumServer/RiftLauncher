@@ -11,6 +11,7 @@ import { readModSide, type ModSide } from "@domain/mods/modinfo"
 import { useModReleaseCatalog } from "@renderer/features/mods/hooks/useModReleaseCatalog"
 import { useExternalLinks } from "@renderer/features/mods/hooks/useExternalLinks"
 import { COMPATIBILITY_STYLE } from "@renderer/features/mods/components/ModReleaseList"
+import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import { ListWrapper } from "@renderer/components/ui/List"
 import { NormalButton } from "@renderer/components/ui/Buttons"
@@ -30,13 +31,6 @@ const RELEASE_ROW_FILL = "bg-zinc-950/50"
  * the whole page; add a "read the rest on the ModDB" line if a real Mod ever runs this long.
  */
 const MAX_DESCRIPTION_PARAGRAPHS = 200
-
-/** A release's date in the player's language, or nothing when the ModDB sent none that parses. */
-function releaseDate(created: unknown, language: string | undefined): string | undefined {
-  if (typeof created !== "string") return undefined
-  const date = new Date(created)
-  return Number.isNaN(date.getTime()) ? undefined : date.toLocaleDateString(language)
-}
 
 function Fact({ label, children }: Readonly<{ label: string; children: ReactNode }>): JSX.Element {
   return (
@@ -80,6 +74,7 @@ function InstalledModDetails({
   onClose: () => void
 }>): JSX.Element {
   const { t, i18n } = useTranslation()
+  const { formatDate } = useDateFormat()
   const { openModOnModDb } = useExternalLinks()
   const headingId = useId()
   const releasesId = useId()
@@ -197,7 +192,7 @@ function InstalledModDetails({
                 {/* Read-only: the row's Update button and its popup stay the one way to change version. */}
                 <ul aria-labelledby={releasesId} className="flex flex-col gap-1">
                   {detail.releases.map((release, index) => {
-                    const date = releaseDate(release.created, i18n.resolvedLanguage)
+                    const date = formatDate(release.created)
                     return (
                       <li key={index} className={clsx("flex flex-col gap-1 rounded-sm p-2 text-sm", RELEASE_ROW_FILL)}>
                         <p className="flex gap-2 items-baseline">

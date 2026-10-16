@@ -6,6 +6,8 @@ import {
   cliFileName,
   hostRid,
   isUpdateAvailable,
+  OPTIMUM_DEPLOYED_ASSEMBLIES,
+  OPTIMUM_ASSEMBLY_SEARCH_FOLDERS,
   optimumManifestDownloadUrl,
   optimumManifestFileName,
   overlayCacheFolder,
@@ -51,6 +53,16 @@ describe("supportsGameVersion", () => {
   it("refuses anything that is not a version rather than matching it as text", () => {
     assert.equal(supportsGameVersion(manifest(), "1.22"), false)
     assert.equal(supportsGameVersion(manifest(), ""), false)
+  })
+})
+
+describe("the Optimum assemblies every patched row needs", () => {
+  it("requires contracts and GameContent without a version split", () => {
+    assert.deepEqual(OPTIMUM_DEPLOYED_ASSEMBLIES, ["Optimum.Api.Contracts.dll", "Optimum.GameContent.dll"])
+  })
+
+  it("checks the folders Vintage Story searches for managed assemblies", () => {
+    assert.deepEqual(OPTIMUM_ASSEMBLY_SEARCH_FOLDERS, ["", "Lib", "Mods"])
   })
 })
 

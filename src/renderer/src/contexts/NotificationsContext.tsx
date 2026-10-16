@@ -5,6 +5,7 @@ import { survivesBulkClear } from "@domain/notifications/bulkClear"
 import { duplicateToastId, type RepeatableToast } from "@domain/notifications/duplicateToast"
 import { type FailureReason } from "@domain/notifications/failureReason"
 import { MAX_VISIBLE_TOASTS, backlogToastDuration, capNotificationRecords, waitingBehindStack } from "@domain/notifications/toastQueue"
+import { restoreStoredLanguage } from "@renderer/i18n"
 
 export type NotificationTypes = "success" | "error" | "info" | "warning"
 export type NotificationPresentation = "toast" | "center" | "both"
@@ -253,6 +254,12 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
   }, [stack, records])
 
   // Only a banner on screen owns a timer. Queued messages cannot expire unseen.
+  //
+  // This runs again whenever `records` changes, and a click that does so (a repeat folding into the
+  // record still waiting here) renders ahead of the update this effect queued the first time, so the
+  // second run sees the same queue and the same stack and admits the same id. That is why the update
+  // checks what the stack really holds: one id twice gives two banners one key, and one of them can
+  // no longer be closed (#613).
   useEffect(() => {
     if (toastQueue.length === 0) return
     const live = toastQueue.filter((id) => records.some((record) => record.id === id))
@@ -262,7 +269,12 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
       return
     }
     const waiting = live.length - admitted.length
-    setStack((current) => [...current, ...admitted.map((id) => ({ id, turn: backlogToastDuration(records.find((record) => record.id === id)?.options?.duration ?? null, waiting) }))])
+    setStack((current) => [
+      ...current,
+      ...admitted
+        .filter((id) => !current.some((entry) => entry.id === id))
+        .map((id) => ({ id, turn: backlogToastDuration(records.find((record) => record.id === id)?.options?.duration ?? null, waiting) }))
+    ])
     setToastQueue(live.slice(admitted.length))
   }, [stack, records, toastQueue])
 
@@ -346,11 +358,21 @@ const NotificationsProvider = ({ children }: { children: React.ReactNode }): JSX
     // `ready-to-show` handler), and a push sent with nobody subscribed yet is simply lost. Pulling
     // once on mount instead means whatever is waiting is still there however late this asks.
     let cancelled = false
-    void fetchConfigRecoveryNoticeOnce().then((notice) => {
+    void fetchConfigRecoveryNoticeOnce().then(async (notice) => {
       if (cancelled || !notice) return
+
+      // The record keeps the finished sentence, like every other notification, and the renderer
+      // reaches the stored language a moment after its first render: translating before that lands
+      // would leave this one in English for good (#619).
+      await restoreStoredLanguage()
 
       if (notice.kind === "read-failed") {
         addNotificationRef.current(t("notifications.body.configReadFailed"), "warning", { duration: null })
+        return
+      }
+
+      if (notice.kind === "import-failed") {
+        addNotificationRef.current(t("notifications.body.userDataImportFailed"), "warning", { duration: null })
         return
       }
 

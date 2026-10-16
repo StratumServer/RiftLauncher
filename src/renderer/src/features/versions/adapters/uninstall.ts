@@ -1,7 +1,7 @@
 import type { GameVersionSnapshot, UninstallGameVersionFailure, UninstallGameVersionPorts } from "@domain/versions/uninstall"
 import { createFileSystemPort } from "@renderer/adapters/fileSystem"
 
-/** Wires the uninstall service onto the renderer. It only needs to remove a folder. */
+/** Wires the uninstall service onto the renderer. It removes a folder, after checking the folder is still there. */
 export function createUninstallPorts(): UninstallGameVersionPorts {
   return { fileSystem: createFileSystemPort() }
 }
@@ -48,8 +48,10 @@ export function describeUninstallFailure(reason: UninstallGameVersionFailure): U
     case "version-in-use":
       // Not a hard failure: ListVersions catches this reason before it gets here
       // and shows the delete-anyway warning instead of a notification. This case
-      // only exists so the switch stays exhaustive.
-      return { messageKey: "features.versions.versionInUseByInstallations", logged: false }
+      // only exists so the switch stays exhaustive. It keys to the warning's title
+      // and not to its sentence, which is a plural family that needs a count and
+      // the installations' names: a notification passes neither.
+      return { messageKey: "features.versions.versionInUse", logged: false }
     case "version-busy":
     case "file-delete-failed":
       return { messageKey: "features.versions.versionUninstallationFailed", logged: true }

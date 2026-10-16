@@ -51,6 +51,8 @@ From there just open it like any other app. All three update themselves the same
 
 For example the Desktop, the you'll be able to open it whenever you want.
 
+While you're at it, rename the file to `RiftLauncher.AppImage`, or to any name without a version number in it. An update replaces a file named like that in place, so shortcuts to it keep working; a file named after its version is deleted and the update writes a new one named after the new version, which breaks every shortcut to the old name.
+
 {% hint style="warning" %}
 Some users reported that AppImage Launcher is breaking automaitc updates so if you want to use it make sure to download the latest RiftLauncher version when it's published!
 {% endhint %}
@@ -62,7 +64,7 @@ Some users reported that AppImage Launcher is breaking automaitc updates so if y
 This should be done by default by sometimes you've to manually do it.
 
 ```sh
-chmod +x ./riftlauncher-X.X.X.AppImage
+chmod +x ./RiftLauncher.AppImage
 ```
 
 {% endstep %}
@@ -93,6 +95,8 @@ On the next launch, RiftLauncher creates a `RiftLauncherData` folder beside the 
 This marker is supported for AppImages. `.deb`, `.rpm` and `.pacman` installs continue to keep their profile in the usual Linux data folder.
 
 The single-instance lock stays separate from the portable profile, in the normal app data folder as `RiftLauncher.singleton`.
+
+Portable mode moves the profile only. A downloaded update is not stored in the portable data folder: it goes to `~/.cache/riftlauncher-updater/pending`, or under `$XDG_CACHE_HOME` when that variable is set. When you restart to update, RiftLauncher deletes the old AppImage and moves the new one into the folder that held it. That cache folder and the AppImage's own folder therefore both have to be writable. The portable data folder already needs the AppImage's folder, and the single-instance lock already needs your home folder.
 
 ---
 
@@ -335,7 +339,7 @@ Be clear about the trade. With that setting on, your session is written to disk 
 
 By default, Linux builds store their config, game-version list and installations in `/home/username/.config/RiftLauncher/`. An AppImage with the `RiftLauncher.portable` marker instead keeps its profile beside the AppImage in `RiftLauncherData`. Debian, RPM and pacman packages continue to use the default location.
 
-If you're coming from VS Launcher, its folder is `/home/username/.config/VSLauncher/` and RiftLauncher never writes to it. On first launch, if no RiftLauncher profile exists yet, RiftLauncher copies VS Launcher's `config.json` and installation icons into its profile. This migration also runs when RiftLauncher uses its default folder. If a RiftLauncher profile already exists, portable setup copies that profile instead. The originals are never modified.
+If you're coming from VS Launcher, its folder is `/home/username/.config/VSLauncher/` and RiftLauncher never writes to it. On first launch, if no RiftLauncher profile exists yet, RiftLauncher copies VS Launcher's `config.json` and installation icons into its profile. This migration also runs when RiftLauncher uses its default folder. If a RiftLauncher profile already exists, portable setup copies that profile instead, unless it is only the empty profile a failed VS Launcher copy left behind: then portable setup imports VS Launcher's data. The originals are never modified. Legacy folders that are symbolic links, junctions, or owned by another user are not copied. When the copy fails or is refused on a normal start, RiftLauncher starts on an empty profile, shows a notice that the import failed, and tries again at each start as long as you have not changed anything in RiftLauncher, so resolve the link or ownership and launch again. In portable mode a failed copy shows the reason and RiftLauncher doesn't start, and the next launch tries again; the exception is the import that replaces an empty profile left by a failed copy, which starts on an empty portable profile with that same notice and tries again at each start. A link inside `Icons`, or a `config.json` that is not a regular file of at most 16 MiB, stops the copy the same way, and the default profile starts empty. A `config.json` link that points at nothing is skipped when a VS Launcher folder is migrated; a portable copy of an existing profile stops instead. If a `RiftLauncher` profile folder already exists but belongs to another account, RiftLauncher refuses to start until you give the folder back to your own account, for example with `sudo chown -R "$USER" ~/.config/RiftLauncher`.
 
 The copy skips Chromium's regenerable caches, including `Cache/Cache_Data` and `Cache/No_Vary_Search`, but keeps saved background images in `Cache/Backgrounds`. It does not move game files or custom folder paths: `config.json` stores absolute paths, so the portable folder cannot be moved afterwards without editing them. A portable folder carried to another machine keeps its settings and installations but not its saved sessions, because those live in the system keyring of the machine and account where they were saved. Linux also requires the empty marker file and the portable data folder to be owned by the account running RiftLauncher; another account cannot use that profile.
 

@@ -18,7 +18,7 @@ export type UninstallGameVersionFailure = "version-playing" | "version-busy" | "
 export type UninstallGameVersionResult = { ok: true; folderRemoved: boolean } | { ok: false; reason: UninstallGameVersionFailure }
 
 export interface UninstallGameVersionPorts {
-  fileSystem: Pick<FileSystem, "remove">
+  fileSystem: Pick<FileSystem, "exists" | "remove">
 }
 
 export interface UninstallGameVersionInput {
@@ -53,6 +53,12 @@ export interface UninstallGameVersionEvents {
  * being played or still pinned by an installation is just as real a reason
  * to refuse.
  *
+ * Any other version whose folder is not there is dropped without asking the host to delete it.
+ * The host refuses to delete a path it cannot find, so the row would otherwise be one the player
+ * can neither play nor remove. That covers an install cut off before its first response (it never
+ * got a folder), a folder the player deleted by hand or that sat on a drive since unplugged, and
+ * an uninstall cut off after the folder was deleted but before the list was saved.
+ *
  * @param ports Host capabilities the work runs on.
  * @param input The version to uninstall.
  * @param events Hooks the caller uses to mirror progress into its own state.
@@ -69,6 +75,9 @@ export async function uninstallGameVersion(ports: UninstallGameVersionPorts, inp
 
   try {
     if (version.linked) return { ok: true, folderRemoved: false }
+
+    // A check that throws counts as "there", so the delete below answers for it.
+    if (!(await ports.fileSystem.exists(version.path).catch(() => true))) return { ok: true, folderRemoved: true }
 
     if (!(await ports.fileSystem.remove(version.path))) return refuse("file-delete-failed")
 

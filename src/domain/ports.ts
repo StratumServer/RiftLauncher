@@ -274,10 +274,17 @@ export interface ProcessProbe {
   run(request: ProcessProbeRequest): Promise<ProcessProbeOutcome>
 }
 
-/** A JSON document read back off disk. `undefined` means the file was not there. */
-export type JsonFileReadResult = { ok: true; document: unknown } | { ok: false; error?: string }
+/**
+ * A JSON document read back off disk. `undefined` means the file was not there.
+ * `modifiedAt` is when the file was last written (milliseconds since the epoch), absent for a file
+ * that was not there.
+ */
+export type JsonFileReadResult = { ok: true; document: unknown; modifiedAt?: number } | { ok: false; error?: string }
 
 export type JsonFileWriteResult = { ok: true } | { ok: false; error?: string }
+
+/** `name` is the bare file name the file is now kept under, in the folder it was in. */
+export type JsonFileSetAsideResult = { ok: true; name: string } | { ok: false }
 
 /**
  * Reads and writes whole JSON documents the launcher shares with another
@@ -293,12 +300,25 @@ export type JsonFileWriteResult = { ok: true } | { ok: false; error?: string }
  * so a read-modify-write service creates the file on its first run without
  * having to ask whether it exists. A file that exists but holds no readable
  * JSON IS a failure, because overwriting it would destroy whatever it holds.
+ * {@link JsonFile.setAside} is the way out of that failure: it moves the file out
+ * of the way without destroying it, and a path with nothing at it is the missing
+ * file this port already handles.
  */
 export interface JsonFile {
   /** Never rejects: an unreadable file resolves `ok: false`. */
   read(path: string): Promise<JsonFileReadResult>
   /** Never rejects: a write that did not happen resolves `ok: false`. */
   write(path: string, document: unknown): Promise<JsonFileWriteResult>
+  /**
+   * Moves the file at `path` out of the way, into the folder it is in and under a name of the
+   * host's own choosing, and resolves that bare name. Never rejects: a file that could not be moved
+   * resolves `ok: false` and is still where it was.
+   *
+   * Only for a file `read` failed on: a missing one has nothing to move. The file is moved whole,
+   * never rewritten and never deleted, so whatever it holds is still there for its owner to
+   * recover, and nothing that already exists is overwritten to make room for it.
+   */
+  setAside(path: string): Promise<JsonFileSetAsideResult>
 }
 
 /** One reading of a running process, as the host's own bookkeeping answers it. */
@@ -380,4 +400,20 @@ export type ReleaseCloseGuard = () => void
 /** Keeps the application from quitting while work is in flight. */
 export interface CloseGuard {
   acquire(reason: string): ReleaseCloseGuard
+}
+
+/** Why the host would not reserve an installation: a game is running on it, or another operation holds it. */
+export type InstallationLeaseRefusal = "playing" | "busy"
+
+/** The host's answer to a reservation. On success `release` hands the installation back and is safe to call twice. */
+export type InstallationLeaseOutcome = { ok: true; release: () => void } | { ok: false; reason: InstallationLeaseRefusal }
+
+/**
+ * Reserves an installation on the host side for the whole of one operation that rewrites its
+ * folder. World moves, world backups and launches check the same reservation, so none of them can
+ * run on an installation another operation is replacing. A flag the caller keeps for itself
+ * does not do that: the host never sees it.
+ */
+export interface InstallationLease {
+  acquire(installationId: string): Promise<InstallationLeaseOutcome>
 }

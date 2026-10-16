@@ -60,6 +60,16 @@ describe("WhatsNewDialog", () => {
     expect(await screen.findByText("A bullet from the release notes")).toBeTruthy()
   })
 
+  it("shows what a code span holds as escaped text, never as an element", async () => {
+    const body = "To check a download yourself: `certutil -hashfile <file> SHA256` on Windows, never `<img src=x onerror=alert(1)>`."
+    mountWith({ releases: [releaseFixture({ body })] })
+
+    const notes = await screen.findByText("To check a download yourself: certutil -hashfile <file> SHA256 on Windows, never <img src=x onerror=alert(1)>.")
+
+    expect(notes.children).toHaveLength(0)
+    expect(notes.innerHTML).toBe("To check a download yourself: certutil -hashfile &lt;file&gt; SHA256 on Windows, never &lt;img src=x onerror=alert(1)&gt;.")
+  })
+
   it("never appears when the running version is already the one last seen", async () => {
     const api = mountWith({ lastSeenChangelogVersion: "1.1.0", version: "1.1.0" })
 

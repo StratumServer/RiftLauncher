@@ -18,13 +18,16 @@ import { useTranslation } from "react-i18next"
 import clsx from "clsx"
 
 import { deleteInstallation } from "@domain/installations/delete"
+import { toFolderPlatform } from "@domain/paths"
 import { getInstallationVersionStatus } from "@domain/installations/versionReference"
 import { installationIconSrc } from "@renderer/utils/installationIcons"
 
-import { useInstallations, useGameVersions, useCustomIcons, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
+import { useInstallations, useGameVersions, useCustomIcons, useSettingsConfig, useConfigDispatch, CONFIG_ACTIONS } from "@renderer/features/config/contexts/ConfigContext"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
+import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import { useMakeInstallationBackup } from "@renderer/features/installations/hooks/useMakeInstallationBackup"
+import { describeHeldFolder, type HeldFolder } from "@renderer/features/installations/adapters/nesting"
 import { createDeleteInstallationPorts, describeDeleteInstallationFailure, toInstallationDeleteSnapshot } from "@renderer/features/installations/adapters/delete"
 import { useCheckPathExists, useOpenPathInExplorer } from "@renderer/features/installations/hooks/usePathActions"
 
@@ -39,9 +42,11 @@ const LOG_TAG = "[front] [installations] [features/installations/pages/ListInsta
 
 function ListInslallations(): JSX.Element {
   const { t } = useTranslation()
+  const { formatDateTime } = useDateFormat()
   const { addNotification } = useNotificationsContext()
   const installations = useInstallations()
   const gameVersions = useGameVersions()
+  const settings = useSettingsConfig()
   const customIcons = useCustomIcons()
   const configDispatch = useConfigDispatch()
 
@@ -54,12 +59,35 @@ function ListInslallations(): JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
+  // Every way out of the dialog (Cancel, Escape, a click outside, a finished delete) leaves it unticked, so the next one never inherits the choice.
+  function closeDeleteDialog(): void {
+    setInstallationToDelete(null)
+    setDeleteData(false)
+  }
+
+  function deleteHeldMessage(held: HeldFolder): string {
+    const { path, archive, name } = held
+    if (held.kind === "config") return t("features.installations.deleteHoldsConfigFolder", { path })
+    if (held.kind === "installation") return t("features.installations.deleteHoldsInstallation", { path, name })
+    if (held.kind === "sameFolder") return t("features.installations.deleteHoldsSameFolder", { name })
+    if (held.kind === "version") return t("features.installations.deleteHoldsVersion", { path })
+    if (held.kind === "linkedVersion") return t("features.installations.deleteHoldsLinkedVersion", { path })
+    if (held.kind === "sameFolderVersion") return t("features.installations.deleteHoldsSameFolderVersion", { name })
+    return archive?.world === undefined ? t("features.installations.deleteHoldsBackupArchive", { path, ...archive }) : t("features.installations.deleteHoldsWorldBackup", { path, ...archive })
+  }
+
   async function DeleteInstallationHandler(): Promise<void> {
     if (!installationToDelete) return addNotification(t("features.installations.noInstallationSelected"), "error")
 
     const installation = installationToDelete
 
     try {
+      // Deleting the data wipes the folder, so one holding another managed folder is told here
+      // which to move, rather than the host refusing with a generic error. Its own backups and
+      // world backups leave with it, so they are not what it holds. The message carries steps, so it stays up.
+      const held = deleteData ? describeHeldFolder(installation, { settings, installations, gameVersions }, toFolderPlatform(await window.api.utils.getOs()), { ignoreOwnArchives: true }) : null
+      if (held) return addNotification(deleteHeldMessage(held), "error", { duration: null })
+
       const result = await deleteInstallation(createDeleteInstallationPorts(), { installation: toInstallationDeleteSnapshot(installation), deleteData })
 
       if (!result.ok) {
@@ -83,8 +111,7 @@ function ListInslallations(): JSX.Element {
 
       addNotification(t("features.installations.installationSuccessfullyDeleted"), "success")
     } finally {
-      setInstallationToDelete(null)
-      setDeleteData(false)
+      closeDeleteDialog()
     }
   }
 
@@ -142,7 +169,7 @@ function ListInslallations(): JSX.Element {
                       </div>
 
                       <div className="w-full flex gap-1 items-center justify-start text-sm text-zinc-400">
-                        <p>{installation.lastTimePlayed === -1 ? t("generic.notPlayedYet") : new Date(installation.lastTimePlayed).toLocaleString("es")}</p>
+                        <p>{installation.lastTimePlayed === -1 ? t("generic.notPlayedYet") : formatDateTime(installation.lastTimePlayed)}</p>
 
                         <span>·</span>
 
@@ -249,7 +276,7 @@ function ListInslallations(): JSX.Element {
         <ConfirmDialog
           title={t("features.installations.deleteInstallation")}
           isOpen={installationToDelete !== null}
-          close={() => setInstallationToDelete(null)}
+          close={closeDeleteDialog}
           question={t("features.installations.areYouSureDelete")}
           consequence={t("features.installations.deletingNotReversible")}
           confirmLabel={t("generic.delete")}

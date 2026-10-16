@@ -97,6 +97,26 @@ describe("i18next resolves every plural form inside the locale itself", () => {
     assert.deepEqual(failures, [], `plural forms i18next selects but the locale does not carry: ${failures.join(" | ")}`)
   })
 
+  it("keeps a family a locale still holds as one bare sentence on screen in that language, for every count", () => {
+    // Plural forms reach a language through Weblate one language at a time, so a family en-US has already
+    // split can sit in another locale as the single sentence it always had. i18next looks for the suffixed
+    // form first and then for the bare key inside the same language, which is what stops that sentence from
+    // falling through to English (or to the key) for a count the locale has no form for.
+    const families = [...collectPluralFamilies(flattenTranslationObject(readLocaleJson("en-US.json"))).keys()]
+
+    const failures = localeFiles.flatMap((file) => {
+      const locale = basename(file, ".json")
+      const flattened = flattenTranslationObject(readLocaleJson(file))
+      const i18n = instanceFor(locale)
+
+      return families
+        .filter((family) => typeof flattened[family] === "string")
+        .flatMap((family) => PROBE_COUNTS.filter((count) => i18n.t(family, { count }) === family).map((count) => `${locale}: ${family}, count ${count} renders the key`))
+    })
+
+    assert.deepEqual(failures, [], `bare sentences i18next does not reach: ${failures.join(" | ")}`)
+  })
+
   it("renders Russian error and warning counts in Russian, not English (the count of 2 Zaldaryon reproduced)", () => {
     // The named case from the review on PR #506, pinned on its own so the
     // regression stays readable next to the sweep above.

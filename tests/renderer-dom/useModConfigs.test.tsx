@@ -16,8 +16,8 @@ import { installMockWindowApi } from "./helpers/windowApi"
 describe("useModConfigs", () => {
   it("is undefined before the answer and undefined again when the Installation changes", async () => {
     const answers: ModConfigsReadResult[] = [
-      { ok: true, configs: [{ name: "a.json", bytes: 2 }] },
-      { ok: true, configs: [] }
+      { ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] },
+      { ok: true, configs: [], linked: [] }
     ]
     const getModConfigs = vi.fn(async () => answers[getModConfigs.mock.calls.length === 1 ? 0 : 1] as ModConfigsReadResult)
     installMockWindowApi({ modsManager: { getModConfigs } })
@@ -25,12 +25,12 @@ describe("useModConfigs", () => {
     const { result, rerender } = renderHook(({ path }) => useModConfigs(path), { initialProps: { path: "/games/a" } })
     expect(result.current.listing).toBeUndefined()
 
-    await waitFor(() => expect(result.current.listing).toEqual({ ok: true, configs: [{ name: "a.json", bytes: 2 }] }))
+    await waitFor(() => expect(result.current.listing).toEqual({ ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] }))
 
     rerender({ path: "/games/b" })
     // The old answer is not left standing for an Installation it says nothing about.
     expect(result.current.listing).toBeUndefined()
-    await waitFor(() => expect(result.current.listing).toEqual({ ok: true, configs: [] }))
+    await waitFor(() => expect(result.current.listing).toEqual({ ok: true, configs: [], linked: [] }))
   })
 
   it("turns a failed question into the named refusal, not an unhandled rejection and not an empty folder", async () => {
@@ -50,7 +50,7 @@ describe("useModConfigs", () => {
 
     const { result, unmount } = renderHook(() => useModConfigs("/games/a"))
     unmount()
-    await act(async () => void answer({ ok: true, configs: [{ name: "a.json", bytes: 2 }] }))
+    await act(async () => void answer({ ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] }))
 
     expect(result.current.listing).toBeUndefined()
   })

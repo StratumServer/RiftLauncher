@@ -112,11 +112,16 @@ const api: BridgeAPI = {
     login: (email: string, password: string, twoFactorCode?: string): Promise<AccountLoginResult> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.LOGIN, email, password, twoFactorCode),
     removeAccount: (accountId: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT_MANAGER.REMOVE_ACCOUNT, accountId)
   },
+  installationActivity: {
+    acquireLease: (installationId: string, token: string): Promise<InstallationLeaseResult> => ipcRenderer.invoke(IPC_CHANNELS.INSTALLATION_ACTIVITY.ACQUIRE_LEASE, installationId, token),
+    releaseLease: (token: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.INSTALLATION_ACTIVITY.RELEASE_LEASE, token)
+  },
   worldsManager: {
     list: (installationId: string): Promise<WorldListResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.LIST, installationId),
     backup: (installationId: string, worldName: string): Promise<WorldBackupResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.BACKUP, installationId, worldName),
     restore: (installationId: string, backupId: string): Promise<WorldOperationResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.RESTORE, installationId, backupId),
     delete: (installationId: string, worldName: string): Promise<WorldOperationResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.DELETE, installationId, worldName),
+    deleteBackup: (installationId: string, backupId: string): Promise<WorldOperationResult> => ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.DELETE_BACKUP, installationId, backupId),
     transfer: (sourceId: string, worldName: string, targetId: string, mode: "copy" | "move"): Promise<WorldTransferResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.WORLDS_MANAGER.TRANSFER, sourceId, worldName, targetId, mode)
   }

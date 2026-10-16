@@ -36,6 +36,24 @@ export const OPTIMUM_STATE_FOLDER = ".optimum"
 /** Where the patch keeps its copy of the untouched assemblies, under {@link OPTIMUM_STATE_FOLDER}. */
 export const OPTIMUM_VANILLA_FOLDER = "vanilla"
 
+/** The assembly Optimum patches have required since the first published overlay. */
+export const OPTIMUM_CONTRACTS_ASSEMBLY = "Optimum.Api.Contracts.dll"
+
+/** The assembly referenced by patched VSEssentials since overlay packaging began. */
+export const OPTIMUM_GAME_CONTENT_ASSEMBLY = "Optimum.GameContent.dll"
+
+/**
+ * Files that every supported Optimum overlay requires at the game root.
+ *
+ * Patched VSEssentials has referenced GameContent since overlays first shipped.
+ * Releases 0.3.18 and 0.3.19 both omit that file; it is included starting with
+ * the release after Optimum#131.
+ */
+export const OPTIMUM_DEPLOYED_ASSEMBLIES = [OPTIMUM_CONTRACTS_ASSEMBLY, OPTIMUM_GAME_CONTENT_ASSEMBLY] as const
+
+/** Game-relative folders the launcher checks for required assemblies. */
+export const OPTIMUM_ASSEMBLY_SEARCH_FOLDERS = ["", "Lib", "Mods"] as const
+
 /**
  * The runtime identifier for a host, or undefined when Optimum publishes no
  * overlay for it.

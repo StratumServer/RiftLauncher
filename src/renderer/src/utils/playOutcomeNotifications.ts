@@ -54,6 +54,8 @@ export function pickPlayOutcomeNotification(result: GameExecutionResult, os: str
       return { key: "notifications.body.gameLaunchNoExecutable" }
     case "session-write-failed":
       return { key: "notifications.body.gameLaunchSessionWriteFailed" }
+    case "client-settings-unreadable":
+      return { key: "notifications.body.gameLaunchClientSettingsUnreadable" }
     case "invalid-request":
       return { key: "notifications.body.gameLaunchInvalidEnvironment" }
     case "installation-busy":

@@ -76,6 +76,23 @@ describe("the session report page", () => {
     expect(screen.getByText("named by the log line")).toBeTruthy()
   })
 
+  it("renders fatal log lines with the error colour", async () => {
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ installations: [anInstallation()] })) },
+      gameManager: {
+        getGameLogReport: vi.fn(async () => ({
+          ok: true as const,
+          report: aReport({ unattributed: [{ clock: "00:00:00", severity: "Fatal", text: "Missing Optimum.GameContent", continuation: [] }] })
+        }))
+      }
+    })
+    renderReport()
+    await userEvent.setup().click(await screen.findByText("Anything else"))
+    const severity = await screen.findByText("[Fatal]")
+    expect(severity.className).toContain("text-red-")
+    expect(severity.className).not.toContain("text-amber-")
+  })
+
   it("waits visibly, then says so in place when there are no logs to read yet", async () => {
     const deferred: { answer: (answer: GameLogReportResult) => void } = { answer: () => undefined }
     const held = new Promise<GameLogReportResult>((resolve) => {

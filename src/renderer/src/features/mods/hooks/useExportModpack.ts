@@ -15,7 +15,7 @@ export function useExportModpack(): ({
   installation: InstallationType
   includeServers?: boolean
   includeConfigs?: boolean
-  /** Which config files the pack carries, or undefined for all of them. Ignored unless `includeConfigs`. */
+  /** Which config files the pack carries. Ignored unless `includeConfigs`. */
   configNames?: readonly string[]
 }) => Promise<void> {
   const { t } = useTranslation()
@@ -54,6 +54,10 @@ export function useExportModpack(): ({
     }
     if (result.reason === "bad-name") {
       addNotification(t("features.mods.exportModpackConfigBadName", { name: result.name ?? "" }), "error")
+      return
+    }
+    if (result.reason === "hidden-character") {
+      addNotification(t("features.mods.exportModpackConfigHiddenCharacter", { name: result.name ?? "" }), "error")
       return
     }
     if (result.reason === "collides") {

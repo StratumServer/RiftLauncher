@@ -61,14 +61,15 @@ function ManageModsActionBar({
   const [includeConfigs, setIncludeConfigs] = useState(false)
   // Which files the pack carries, asked in a dialog of its own rather than decided here. The tick
   // above is the intent; this is the list it turns into, and it stays shut for a pack with no
-  // configs to list.
-  const [pickConfigs, setPickConfigs] = useState(false)
+  // configs to list. Which pack it was opened for is kept too, so the normal export and the server
+  // export answer the same question with the same dialog.
+  const [pickConfigs, setPickConfigs] = useState<"all" | "server" | undefined>(undefined)
   const { listing: modConfigs } = useModConfigs(installation.path)
   const configCount = modConfigs?.ok ? modConfigs.configs.length : 0
   // One literal branch per reason rather than a lookup keyed by the reason: a computed key is one
   // the locale parity test cannot see, which is how a missing translation ships. Two reasons, not
   // three: a read no longer takes the operation lease, so `busy` is not something a listing can be.
-  const modConfigRefusal = !modConfigs || modConfigs.ok ? undefined : modConfigs.reason === "playing" ? t("features.mods.importModConfigsPlaying") : t("features.mods.importModConfigsUnreadable")
+  const modConfigRefusal = !modConfigs || modConfigs.ok ? undefined : modConfigs.reason === "playing" ? t("features.mods.exportModConfigsPlaying") : t("features.mods.exportModConfigsUnreadable")
 
   // A modpack is the set someone else is meant to be able to play, so a Mod the player turned off
   // is not in it. Both exports read this list, and both are greyed out by it: a folder whose Mods
@@ -78,6 +79,9 @@ function ManageModsActionBar({
   // The server export ships this list and is greyed out by this list. Deriving it twice is how a
   // search that leaves only client Mods once produced a live button and a `{ mods: [] }` manifest.
   const serverMods = enabledMods.filter((iMod) => isServerMod(iMod.side))
+
+  // The server pack is the same Installation under another name, which is what the manifest carries.
+  const serverInstallation = { ...installation, name: `${installation.name} (Server)` }
 
   return (
     <StickyMenuGroupWrapper type="centered">
@@ -151,7 +155,7 @@ function ManageModsActionBar({
                             // box is a question the player has not finished answering: which of these
                             // files travels. Exporting straight from here is what put every config in
                             // a pack with nothing shown but a checkbox.
-                            if (includeConfigs) setPickConfigs(true)
+                            if (includeConfigs) setPickConfigs("all")
                             else exportModpack({ installedMods: enabledMods, installation, includeServers })
                           }}
                           disabled={enabledMods.length === 0}
@@ -168,7 +172,13 @@ function ManageModsActionBar({
                           title={t("features.mods.exportServerModpack")}
                           variant="ghost"
                           className={clsx(MENU_OPTION_STYLES, "odd:bg-zinc-800/30 even:bg-zinc-950/30")}
-                          onClick={() => exportModpack({ installedMods: serverMods, installation: { ...installation, name: `${installation.name} (Server)` }, includeServers })}
+                          onClick={() => {
+                            // The same rule as the export above: a ticked box is a question the
+                            // picker answers, and the pack is never written with the box ticked and
+                            // no config in it behind a success toast.
+                            if (includeConfigs) setPickConfigs("server")
+                            else exportModpack({ installedMods: serverMods, installation: serverInstallation, includeServers })
+                          }}
                           disabled={serverMods.length === 0}
                         >
                           <div className="w-full flex items-center gap-2">
@@ -219,7 +229,8 @@ function ManageModsActionBar({
 
         {/* A refusal is drawn, not hidden. Rendering nothing for it is the same as drawing an empty
             folder, and the difference is a sentence the player could have acted on. The sentences are
-            the import dialog's, because the three reasons are the same three. */}
+            the export picker's own, because this box is that picker's door and a sentence about a
+            write that never started would answer a question nobody asked. */}
         {(configCount > 0 || modConfigRefusal !== undefined) && (
           <div className="flex items-center gap-2 h-8 px-1" title={modConfigRefusal ?? t("features.mods.includeConfigsInExport")}>
             <Input id="export-include-configs" type="checkbox" checked={includeConfigs} disabled={modConfigRefusal !== undefined} onChange={(e) => setIncludeConfigs(e.target.checked)} />
@@ -243,7 +254,13 @@ function ManageModsActionBar({
         </FormButton>
       </StickyMenuGroup>
 
-      <ExportModConfigsDialog open={pickConfigs} installation={installation} installedMods={enabledMods} includeServers={includeServers} close={() => setPickConfigs(false)} />
+      <ExportModConfigsDialog
+        open={pickConfigs !== undefined}
+        installation={pickConfigs === "server" ? serverInstallation : installation}
+        installedMods={pickConfigs === "server" ? serverMods : enabledMods}
+        includeServers={includeServers}
+        close={() => setPickConfigs(undefined)}
+      />
     </StickyMenuGroupWrapper>
   )
 }

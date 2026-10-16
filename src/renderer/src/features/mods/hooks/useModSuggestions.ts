@@ -73,10 +73,9 @@ export function useModSuggestions({
       return
     }
 
-    // Folded rows fetch nothing, but they must not settle into the "loaded and empty" state: that
-    // is what unmounts the section below (see ModSuggestions.tsx) and drops focus off the chevron
-    // on unfold. Keeping loading true here means the first render after unfolding already shows the
-    // spinner, so the section stays mounted throughout.
+    // Folded rows fetch nothing, but keeping loading true here ensures that the first render
+    // after unfolding immediately displays the loading spinner rather than flashing the
+    // empty suggestions message while the fetch gets underway.
     if (folded) {
       setSuggestions([])
       setLoading(true)

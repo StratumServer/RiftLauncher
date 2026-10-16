@@ -77,10 +77,31 @@ export async function changeLanguage(language: string): Promise<boolean> {
   return true
 }
 
+// The document language sets how a screen reader pronounces the text (WCAG 3.1.1), so it follows
+// i18next itself, which every switch goes through. Registered before init because, with inline
+// resources, init emits languageChanged for the starting language straight away.
+i18n.on("languageChanged", (language) => {
+  document.documentElement.lang = language
+})
+
 i18n.use(initReactI18next).init({
   resources,
   lng: "en-US",
-  fallbackLng: "en-US"
+  fallbackLng: "en-US",
+  // An empty value, such as a plural form Weblate has not had translated yet, counts as missing, so the English sentence shows instead of nothing.
+  returnEmptyString: false,
+  // React escapes whatever it renders as text, so i18next escaping the values too shows a player "Bob&#39;s World".
+  interpolation: { escapeValue: false }
 })
+
+/**
+ * Applies the language the picker stored. i18next starts in en-US and gets there a moment after
+ * the first render, so whatever turns a key into a finished sentence at startup has to wait for
+ * this before it does.
+ */
+export async function restoreStoredLanguage(): Promise<boolean> {
+  const language = window.localStorage.getItem("lang")
+  return language ? changeLanguage(language) : true
+}
 
 export default i18n

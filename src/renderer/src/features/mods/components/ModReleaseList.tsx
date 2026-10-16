@@ -8,6 +8,7 @@ import type { ModCompatibilityVerdict } from "@domain/mods/compatibility"
 import { summarizeGameVersionTags } from "@domain/mods/gameVersionRanges"
 import { useNotificationsContext } from "@renderer/contexts/NotificationsContext"
 import { toInstalledModCopy, toModReleaseToInstall } from "@renderer/features/mods/adapters/install"
+import { useDateFormat } from "@renderer/hooks/useDateFormat"
 
 import { useInstallMod } from "../hooks/useInstallMod"
 import { useGameVersionsLookup } from "../hooks/useModDbLookups"
@@ -77,6 +78,7 @@ function ModReleaseList({
   className?: string
 }>): JSX.Element {
   const { t } = useTranslation()
+  const { formatDate } = useDateFormat()
   const { addNotification } = useNotificationsContext()
 
   const installMod = useInstallMod()
@@ -125,7 +127,7 @@ function ModReleaseList({
             return (
               <TableBodyRow key={release.releaseid}>
                 <TableCell className="w-2/12">{release.modversion}</TableCell>
-                <TableCell className="w-3/12">{new Date(release.created).toLocaleDateString("es")}</TableCell>
+                <TableCell className="w-3/12">{formatDate(release.created)}</TableCell>
                 {/*
                  * Plain wrapping text, not the read-only input this used to be: a release can carry
                  * eight game versions and the input clipped the list mid-item with no tooltip and no
@@ -156,6 +158,7 @@ function ModReleaseList({
                         // Deliberately not awaited: the caller leaves on the click and the download
                         // runs on in the task list, which is what this flow has always done.
                         void installMod({
+                          installationId: installation.installation.id,
                           installationPath: installation.installation.path,
                           outName: installation.installation.name,
                           modName: downloadableModToInstall.name || modName || String(modToInstall ?? ""),

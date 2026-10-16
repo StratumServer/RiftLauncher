@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, screen, waitFor } from "@testing-library/react"
+import { fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Route, Routes } from "react-router-dom"
 
@@ -305,6 +305,66 @@ describe("ListMods", () => {
     })
     expect(star().getAttribute("class") ?? "").not.toContain("text-yellow-400")
     expect(star().querySelector('path[opacity="0.2"]')).not.toBeNull()
+  })
+
+  // #617: the favorites filter ran inside the search, against the favorites that search had closed
+  // over. A star turned off while the filter was on changed the card but not the list, which kept the
+  // Mod until the next search.
+  it("drops a card from the favorites-only list as soon as its star is turned off", async () => {
+    const user = userEvent.setup()
+    const catalog = {
+      statuscode: "200",
+      mods: [
+        MOD_RESPONSE.mods[0],
+        { ...MOD_RESPONSE.mods[0], modid: 456, assetid: 456, name: "Primitive Survival", modidstrs: ["primitivesurvival"] },
+        { ...MOD_RESPONSE.mods[0], modid: 789, assetid: 789, name: "Client Only Tool", modidstrs: ["clientonlytool"] }
+      ]
+    }
+    const queryURL = vi.fn(async (url: string) => {
+      if (url.includes("/api/mods")) return JSON.stringify(catalog)
+      return JSON.stringify({ statuscode: "200", authors: [], gameversions: [], tags: [] })
+    })
+    const modRequests = (): number => queryURL.mock.calls.filter(([url]) => url.includes("/api/mods")).length
+
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ favMods: [123, 456] })) },
+      netManager: { queryURL }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListMods />
+      </TaskProvider>,
+      { route: "/mods" }
+    )
+
+    const star = (name: string): HTMLElement => within(screen.getByText(name).closest("li")!).getByTitle("Favorite")
+
+    await screen.findByText("Client Only Tool", {}, { timeout: 3000 })
+    // The star is lit once the favorites have loaded, so the filter below starts from the full set.
+    await waitFor(() => expect(star("Better Ruins").getAttribute("aria-pressed")).toBe("true"))
+
+    await user.click(screen.getByTitle("Show favorite Mods only"))
+    await waitFor(() => expect(screen.queryByText("Client Only Tool")).toBeNull(), { timeout: 3000 })
+    const requestsBefore = modRequests()
+
+    await user.click(star("Better Ruins"))
+
+    // The list follows the favorites it holds now: the card goes, the other favorite stays, and the
+    // ModDB is not asked again for it.
+    await waitFor(() => expect(screen.queryByText("Better Ruins")).toBeNull(), { timeout: 3000 })
+    expect(screen.getByText("Primitive Survival")).toBeTruthy()
+    expect(modRequests()).toBe(requestsBefore)
+
+    // With the filter off the same search result shows every Mod again, and starring one back
+    // moves nothing else.
+    await user.click(screen.getByTitle("Show favorite Mods only"))
+    await screen.findByText("Better Ruins")
+    await user.click(star("Better Ruins"))
+    await waitFor(() => expect(star("Better Ruins").getAttribute("aria-pressed")).toBe("true"))
+    expect(screen.getByText("Primitive Survival")).toBeTruthy()
+    expect(screen.getByText("Client Only Tool")).toBeTruthy()
+    expect(modRequests()).toBe(requestsBefore)
   })
 
   it("re-reads the installed markers when a mod download finishes", async () => {

@@ -3,7 +3,7 @@ import { beforeEach, describe, it } from "vitest"
 
 import { makeInstallationBackup } from "../../../src/domain/installations/backup"
 import type { BackupRecord, InstallationSnapshot, MakeInstallationBackupEvents, MakeInstallationBackupPorts } from "../../../src/domain/installations/backup"
-import type { Archiver, CompressOutcome, CompressRequest, FileSystem } from "../../../src/domain/ports"
+import type { Archiver, CompressOutcome, CompressRequest, FileSystem, InstallationLease, InstallationLeaseOutcome } from "../../../src/domain/ports"
 
 // Local wall-clock 2025-08-16 01:20:00, whatever zone the runner is in: the archive name
 // carries the host's own clock now (see formatTimestampForFilename), so the expected stamp
@@ -14,17 +14,24 @@ const FIXED_NOW = new Date(2025, 7, 16, 1, 20, 0).getTime()
 let trace: string[] = []
 
 /**
- * `missing` holds archive paths that are no longer on disk: the host refuses to
- * delete a path it cannot find (assertManagedDeletionPath in ipc/pathPolicy.ts
- * runs with allowMissing false), so those answer false to both calls.
+ * `missing` holds paths that are no longer on disk, an archive or a whole folder:
+ * the host refuses to delete a path it cannot find (assertManagedDeletionPath in
+ * ipc/pathPolicy.ts runs with allowMissing false), so those answer false to both
+ * calls. `refused` holds paths the host will not answer about at all, the way
+ * assertManagedPath turns away one outside the folders the config names.
  */
-function fakeFileSystem(options: { exists?: boolean; removals?: Record<string, boolean>; missing?: readonly string[] } = {}): FileSystem {
+function fakeFileSystem(options: { exists?: boolean; removals?: Record<string, boolean>; missing?: readonly string[]; refused?: readonly string[]; present?: readonly string[] } = {}): FileSystem {
   const removals = options.removals ?? {}
   const missing = new Set(options.missing ?? [])
+  const refused = new Set(options.refused ?? [])
+  const present = new Set(options.present ?? [])
   return {
     exists: async (path: string): Promise<boolean> => {
       trace.push(`exists:${path}`)
+      if (refused.has(path)) throw new TypeError("Unmanaged path")
       if (missing.has(path)) return false
+      // The archive a backup is about to write is new unless the test says a file is there.
+      if (path.startsWith("/backups/Installations/")) return present.has(path)
       return options.exists ?? true
     },
     remove: async (path: string): Promise<boolean> => {
@@ -51,6 +58,9 @@ function fakeArchiver(options: { outcome?: CompressOutcome; silent?: boolean } =
   return { archiver, requests }
 }
 
+/** A lease that always grants and says nothing; the tests that care about it pass their own. */
+const grantedLease: InstallationLease = { acquire: async (): Promise<InstallationLeaseOutcome> => ({ ok: true, release: (): void => {} }) }
+
 function fakePorts(overrides: Partial<MakeInstallationBackupPorts> = {}): MakeInstallationBackupPorts {
   let issued = 0
   return {
@@ -72,11 +82,12 @@ function fakePorts(overrides: Partial<MakeInstallationBackupPorts> = {}): MakeIn
         }
       }
     },
+    installationLease: grantedLease,
     ...overrides
   }
 }
 
-function backup(id: string, overrides: { isDeleting?: boolean; isRestoring?: boolean } = {}): BackupRecord & { isDeleting?: boolean; isRestoring?: boolean } {
+function backup(id: string, overrides: { isDeleting?: boolean; isRestoring?: boolean; path?: string } = {}): BackupRecord & { isDeleting?: boolean; isRestoring?: boolean } {
   return { id, date: 1, path: `/backups/${id}.tar.gz`, ...overrides }
 }
 
@@ -102,6 +113,9 @@ function recordingEvents(): MakeInstallationBackupEvents {
     },
     onFinished: (): void => {
       trace.push("finished")
+    },
+    onBackupCreated: (created): void => {
+      trace.push(`created:${created.id}`)
     },
     onBackupDeleted: (deleted): void => {
       trace.push(`deleted:${deleted.id}`)
@@ -190,19 +204,29 @@ describe("makeInstallationBackup pruning", () => {
     )
   })
 
-  it("stops at the first failed deletion and reports the ones already done", async () => {
+  it("keeps the backup it made when an old one cannot be deleted, and reports the ones already gone", async () => {
     const installation = snapshot({ backupsLimit: 1, backups: [backup("b1"), backup("b2"), backup("b3")] })
     const ports = fakePorts({ fileSystem: fakeFileSystem({ removals: { "/backups/b2.tar.gz": false } }) })
 
     const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
 
-    // b3 came off, b2 could not, so prune stops and names b2 as the one it left behind.
-    assert.deepEqual(result, { ok: false, reason: "prune-failed", deletedBackupIds: ["b3"], detail: "b2" })
-    assert.equal(
-      trace.some((entry) => entry.startsWith("compress:")),
-      false
-    )
+    // b3 came off, b2 could not, so the prune stops there. The new archive is on disk and recorded, so it stands.
+    assert.equal(result.ok, true)
+    assert.equal(result.ok && result.backup.id, "generated-id-1")
+    assert.deepEqual(result.deletedBackupIds, ["b3"])
     assert.equal(trace.at(-2), "guard-release")
+    assert.equal(trace.at(-1), "finished")
+  })
+
+  it("keeps the backup it made when the prune throws", async () => {
+    const installation = snapshot({ backupsLimit: 1, backups: [backup("b1")] })
+    const fileSystem = { ...fakeFileSystem(), remove: async (): Promise<boolean> => Promise.reject(new Error("IPC refused")) }
+
+    const result = await makeInstallationBackup(fakePorts({ fileSystem }), { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.equal(result.ok && result.backup.id, "generated-id-1")
+    assert.deepEqual(result.deletedBackupIds, [])
     assert.equal(trace.at(-1), "finished")
   })
 
@@ -255,12 +279,153 @@ describe("makeInstallationBackup pruning", () => {
     const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
 
     assert.equal(result.ok, true)
-    // The stale record comes off with the archives: reporting it as deleted is
-    // what drops it from the installation, so it stops taking a slot.
-    assert.deepEqual(result.deletedBackupIds, ["b6"])
+    // Four archives are on disk against a limit of six, so none has to go. Both
+    // stale records come off: reporting a record as deleted is what drops it from
+    // the installation, so it stops taking a slot.
+    assert.deepEqual(result.deletedBackupIds, ["b5", "b6"])
     assert.equal(
       trace.some((entry) => entry.startsWith("compress:")),
       true
+    )
+  })
+
+  it("keeps the only archive on disk when a record whose archive is gone holds the other slot", async () => {
+    // #610: a limit of two, two backups made, then the newer archive deleted from the Backups
+    // folder by hand. Counting records, the prune took the older one, the last archive left.
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b2"), backup("b1")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/backups/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b2"])
+    // The stale record comes off with no delete call, and b1 is never touched.
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      ["deleted:b2"]
+    )
+  })
+
+  it("counts only the archives on disk against the limit, wherever the stale record sits", async () => {
+    // Three archives are on disk (b1, b3, b4) against a limit of three, so room for the new one
+    // takes exactly one removal, the oldest, whatever b2 did to the number of records.
+    const installation = snapshot({ backupsLimit: 3, backups: [backup("b1"), backup("b2"), backup("b3"), backup("b4")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/backups/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b2", "b4"])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      ["deleted:b2", "remove:/backups/b4.tar.gz", "deleted:b4"]
+    )
+  })
+
+  it("drops every record, without a delete call, when all the archives were deleted by hand", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/backups/b1.tar.gz", "/backups/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b1", "b2"])
+    assert.equal(
+      trace.some((entry) => entry.startsWith("remove:")),
+      false
+    )
+    assert.equal(
+      trace.some((entry) => entry.startsWith("compress:")),
+      true
+    )
+  })
+
+  it("keeps a live archive past a stale record and a deletion in flight", async () => {
+    // b1 is gone from disk and b3 is on its way out through a manual delete, so b2 is the one
+    // archive that stays and nothing makes it go.
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2"), backup("b3", { isDeleting: true })] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/backups/b1.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b1"])
+    assert.equal(
+      trace.some((entry) => entry.startsWith("remove:")),
+      false
+    )
+  })
+
+  it("keeps a record whose folder is not there, uncounted, and deletes nothing because of it", async () => {
+    // The Backups folder sits on a drive that is not connected. Nothing says its archive is gone,
+    // and the archive that is on disk must not be deleted to make room for a record that holds no slot.
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b2", { path: "/drive/b2.tar.gz" }), backup("b1")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/drive", "/drive/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, [])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      []
+    )
+    assert.equal(trace.includes("exists:/drive"), true)
+  })
+
+  it("leaves every record alone when the drive holding the archives is not connected", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1", { path: "/drive/b1.tar.gz" }), backup("b2", { path: "/drive/b2.tar.gz" })] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/drive", "/drive/b1.tar.gz", "/drive/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, [])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      []
+    )
+    assert.equal(
+      trace.some((entry) => entry.startsWith("compress:")),
+      true
+    )
+  })
+
+  it("tells gone, unreachable and live records apart in one list", async () => {
+    // b3 was deleted by hand from a folder that is still there. b2 and b6 sit on a drive that is not.
+    // Only b3 comes off the list, and the three archives on disk (b1, b4, b5) are at the limit of three,
+    // so the oldest of them goes.
+    const installation = snapshot({
+      backupsLimit: 3,
+      backups: [backup("b1"), backup("b2", { path: "/drive/b2.tar.gz" }), backup("b3"), backup("b4"), backup("b5"), backup("b6", { path: "/drive/b6.tar.gz" })]
+    })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/drive", "/drive/b2.tar.gz", "/drive/b6.tar.gz", "/backups/b3.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, ["b3", "b5"])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      ["deleted:b3", "remove:/backups/b5.tar.gz", "deleted:b5"]
+    )
+    // A folder is only asked about when its archive is missing: b3, b2 and b6.
+    assert.deepEqual(trace.filter((entry) => entry === "exists:/backups" || entry === "exists:/drive").sort(), ["exists:/backups", "exists:/drive", "exists:/drive"])
+  })
+
+  it("reads a path the host will not answer about as unreachable", async () => {
+    // A Backups folder changed in Config leaves b3 in a folder the host no longer manages, and asking
+    // about it is refused. The host refuses b2's own path too. Neither proves a deleted file, so both stay.
+    const installation = snapshot({ backupsLimit: 3, backups: [backup("b3", { path: "/old-backups/b3.tar.gz" }), backup("b2"), backup("b1")] })
+    const ports = fakePorts({ fileSystem: fakeFileSystem({ missing: ["/old-backups/b3.tar.gz"], refused: ["/old-backups", "/backups/b2.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.deletedBackupIds, [])
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("remove:") || entry.startsWith("deleted:")),
+      []
     )
   })
 
@@ -318,9 +483,12 @@ describe("makeInstallationBackup archiving", () => {
       "exists:/games/my-install",
       "guard-acquire:Making and installation backup.",
       "started",
+      "exists:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
+      "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
+      "created:generated-id-1",
+      "exists:/backups/b1.tar.gz",
       "remove:/backups/b1.tar.gz",
       "deleted:b1",
-      "compress:/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz",
       "guard-release",
       "finished"
     ])
@@ -336,11 +504,166 @@ describe("makeInstallationBackup archiving", () => {
     assert.equal(trace.at(-1), "finished")
   })
 
+  it("leaves every older backup alone when the compression fails, whatever the limit", async () => {
+    const { archiver } = fakeArchiver({ outcome: { ok: false, error: "Compression source contains an unsafe filesystem entry" } })
+    // One archive past the limit of 1, the shape the old order emptied; b3's archive is already gone from disk.
+    const installation = snapshot({ backupsLimit: 1, backups: [backup("b1"), backup("b2"), backup("b3")] })
+    const ports = fakePorts({ archiver, fileSystem: fakeFileSystem({ missing: ["/backups/b3.tar.gz"] }) })
+
+    const result = await makeInstallationBackup(ports, { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "compress-failed", deletedBackupIds: [], detail: "Compression source contains an unsafe filesystem entry" })
+    assert.deepEqual(
+      trace.filter((entry) => /^(remove|deleted|created|move):/.test(entry)),
+      []
+    )
+  })
+
+  it("records the new archive before it prunes anything", async () => {
+    const installation = snapshot({ backupsLimit: 2, backups: [backup("b1"), backup("b2")] })
+
+    await makeInstallationBackup(fakePorts(), { installation, backupsFolder: "/backups" }, recordingEvents())
+
+    const steps = trace.filter((entry) => /^(compress|created|remove|deleted):/.test(entry))
+    assert.deepEqual(
+      steps.map((entry) => entry.split(":")[0]),
+      ["compress", "created", "remove", "deleted"]
+    )
+  })
+
+  it("takes a new name when a record already holds the stamped path, even though no file is there", async () => {
+    const taken = "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz"
+    const { archiver, requests } = fakeArchiver()
+
+    const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot({ backupsLimit: 5, backups: [backup("b1", { path: taken })] }), backupsFolder: "/backups" })
+
+    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-16_01-20-00_2.tar.gz")
+    assert.equal(result.ok && result.backup.path, "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00_2.tar.gz")
+  })
+
+  it("takes a new name when a file already sits at the stamped path, and keeps counting up", async () => {
+    const stamped = "/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00"
+    const { archiver, requests } = fakeArchiver()
+    const fileSystem = fakeFileSystem({ present: [`${stamped}.tar.gz`, `${stamped}_2.tar.gz`] })
+
+    await makeInstallationBackup(fakePorts({ archiver, fileSystem }), { installation: snapshot(), backupsFolder: "/backups" })
+
+    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-16_01-20-00_3.tar.gz")
+  })
+
+  it("refuses the backup, touching nothing, when no name is free", async () => {
+    const { archiver } = fakeArchiver()
+    const fileSystem = { ...fakeFileSystem(), exists: async (): Promise<boolean> => true }
+
+    const result = await makeInstallationBackup(
+      fakePorts({ archiver, fileSystem }),
+      { installation: snapshot({ backupsLimit: 1, backups: [backup("b1")] }), backupsFolder: "/backups" },
+      recordingEvents()
+    )
+
+    assert.equal(result.ok === false && result.reason, "compress-failed")
+    assert.equal(
+      trace.some((entry) => /^(compress|remove|created|deleted):/.test(entry)),
+      false
+    )
+  })
+
+  it("treats an archive path the host will not answer about as free", async () => {
+    const { archiver, requests } = fakeArchiver()
+    const fileSystem = fakeFileSystem({ refused: ["/backups/Installations/My-Install-Test/My-Install-Test_2025-08-16_01-20-00.tar.gz"] })
+
+    await makeInstallationBackup(fakePorts({ archiver, fileSystem }), { installation: snapshot(), backupsFolder: "/backups" })
+
+    assert.equal(requests[0]?.fileName, "My-Install-Test_2025-08-16_01-20-00.tar.gz")
+  })
+
+  it("tells the caller when the prune after a good backup fails or throws, and still succeeds", async () => {
+    const stuck = fakeFileSystem({ removals: { "/backups/b1.tar.gz": false } })
+    const throwing = { ...fakeFileSystem(), remove: async (): Promise<boolean> => Promise.reject(new Error("IPC refused")) }
+
+    for (const fileSystem of [stuck, throwing]) {
+      let incomplete = 0
+      const result = await makeInstallationBackup(
+        fakePorts({ fileSystem }),
+        { installation: snapshot({ backupsLimit: 1, backups: [backup("b1")] }), backupsFolder: "/backups" },
+        { onPruneIncomplete: () => (incomplete += 1) }
+      )
+
+      assert.equal(result.ok, true)
+      assert.equal(incomplete, 1)
+    }
+  })
+
+  it("does not call it incomplete when the prune got to the limit", async () => {
+    let incomplete = 0
+
+    await makeInstallationBackup(fakePorts(), { installation: snapshot({ backupsLimit: 1, backups: [backup("b1")] }), backupsFolder: "/backups" }, { onPruneIncomplete: () => (incomplete += 1) })
+
+    assert.equal(incomplete, 0)
+  })
+
   it("treats an archiver that never reports as a failure", async () => {
     const { archiver } = fakeArchiver({ silent: true })
 
     const result = await makeInstallationBackup(fakePorts({ archiver }), { installation: snapshot(), backupsFolder: "/backups" })
 
     assert.equal(result.ok === false && result.reason, "compress-failed")
+  })
+})
+
+/** A host lease that records when it was taken and given back, and can be told to refuse. */
+function recordingLease(answer: InstallationLeaseOutcome | "grant" = "grant"): InstallationLease {
+  return {
+    acquire: async (installationId: string): Promise<InstallationLeaseOutcome> => {
+      trace.push(`lease-acquire:${installationId}`)
+      if (answer !== "grant") return answer
+      return {
+        ok: true,
+        release: (): void => {
+          trace.push("lease-release")
+        }
+      }
+    }
+  }
+}
+
+describe("makeInstallationBackup host reservation", () => {
+  it("holds the installation on the host from before the compression until after it", async () => {
+    const result = await makeInstallationBackup(fakePorts({ installationLease: recordingLease() }), { installation: snapshot(), backupsFolder: "/backups" }, recordingEvents())
+
+    assert.equal(result.ok, true)
+    const kept = trace.filter((entry) => entry.startsWith("lease-") || entry.startsWith("compress:") || entry === "finished")
+    assert.equal(kept[0], "lease-acquire:installation-1")
+    assert.match(kept[1] ?? "", /^compress:/)
+    assert.deepEqual(kept.slice(2), ["lease-release", "finished"])
+  })
+
+  it("gives the installation back when the compression fails", async () => {
+    const archiver = fakeArchiver({ outcome: { ok: false, error: "7z exploded" } }).archiver
+
+    const result = await makeInstallationBackup(fakePorts({ installationLease: recordingLease(), archiver }), { installation: snapshot(), backupsFolder: "/backups" })
+
+    assert.equal(result.ok === false && result.reason, "compress-failed")
+    assert.equal(trace.at(-1), "lease-release")
+  })
+
+  it("refuses before pruning or compressing when a world operation holds the installation", async () => {
+    const result = await makeInstallationBackup(
+      fakePorts({ installationLease: recordingLease({ ok: false, reason: "busy" }) }),
+      { installation: snapshot(), backupsFolder: "/backups" },
+      recordingEvents()
+    )
+
+    assert.equal(result.ok === false && result.reason, "installation-busy")
+    assert.equal(
+      trace.some((entry) => entry.startsWith("compress:") || entry.startsWith("remove:") || entry.startsWith("guard-") || entry === "started"),
+      false
+    )
+  })
+
+  it("refuses when the host says a game is running on the installation", async () => {
+    const result = await makeInstallationBackup(fakePorts({ installationLease: recordingLease({ ok: false, reason: "playing" }) }), { installation: snapshot(), backupsFolder: "/backups" })
+
+    assert.equal(result.ok === false && result.reason, "installation-playing")
   })
 })

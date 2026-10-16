@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -87,6 +87,11 @@ describe("cachemodimg protocol handler", () => {
     assert.equal(first.status, 200)
     const firstBytes = Buffer.from(await first.arrayBuffer())
     writeFileSync(filePath, replacement)
+    // A real refresh lands long after the first read. Written back to back, the two copies can
+    // share one timestamp tick (seen on a Windows runner), and same size plus same times is,
+    // to the revision check, the same file. Move the times on the way a later write would.
+    const later = new Date(statSync(filePath).mtimeMs + 2000)
+    utimesSync(filePath, later, later)
     const second = await handler(request("/aa.png"))
 
     assert.deepEqual(firstBytes, original)

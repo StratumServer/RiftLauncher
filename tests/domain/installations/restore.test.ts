@@ -4,7 +4,7 @@ import { beforeEach, describe, it } from "vitest"
 import { restoreInstallationBackup } from "../../../src/domain/installations/restore"
 import type { RestoreInstallationBackupEvents, RestoreInstallationBackupPorts } from "../../../src/domain/installations/restore"
 import type { BackupRecord, InstallationSnapshot } from "../../../src/domain/installations/backup"
-import type { ExtractOutcome, ExtractRequest, Extractor, FileSystem } from "../../../src/domain/ports"
+import type { ExtractOutcome, ExtractRequest, Extractor, FileSystem, InstallationLease, InstallationLeaseOutcome } from "../../../src/domain/ports"
 
 const TOKEN = "token-1"
 const INSTALLATION_PATH = "/games/my-install"
@@ -61,6 +61,9 @@ function fakeExtractor(options: { outcome?: ExtractOutcome; silent?: boolean; di
   return { extractor, requests }
 }
 
+/** A lease that always grants and says nothing; the tests that care about it pass their own. */
+const grantedLease: InstallationLease = { acquire: async (): Promise<InstallationLeaseOutcome> => ({ ok: true, release: (): void => {} }) }
+
 function fakePorts(overrides: Partial<RestoreInstallationBackupPorts> = {}): RestoreInstallationBackupPorts {
   return {
     fileSystem: fakeFileSystem(),
@@ -74,6 +77,7 @@ function fakePorts(overrides: Partial<RestoreInstallationBackupPorts> = {}): Res
         }
       }
     },
+    installationLease: grantedLease,
     ...overrides
   }
 }
@@ -282,5 +286,93 @@ describe("restoreInstallationBackup failure tree", () => {
     assert.deepEqual(result, { ok: false, reason: "set-aside-failed", strandedPath: null })
     assert.equal(trace.includes(`left:${STAGING_PATH}`), true)
     assert.equal(trace.at(-1), "finished")
+  })
+})
+
+/** A host lease that records when it was taken and given back, and can be told to refuse. */
+function recordingLease(answer: InstallationLeaseOutcome | "grant" = "grant"): InstallationLease {
+  return {
+    acquire: async (installationId: string): Promise<InstallationLeaseOutcome> => {
+      trace.push(`lease-acquire:${installationId}`)
+      if (answer !== "grant") return answer
+      return {
+        ok: true,
+        release: (): void => {
+          trace.push("lease-release")
+        }
+      }
+    }
+  }
+}
+
+describe("restoreInstallationBackup host reservation", () => {
+  it("holds the installation on the host for the whole swap and gives it back last", async () => {
+    const ports = fakePorts({ installationLease: recordingLease() })
+
+    const result = await restoreInstallationBackup(ports, { installation: snapshot(), backup: archive }, recordingEvents())
+
+    assert.deepEqual(result, { ok: true })
+    assert.deepEqual(
+      trace.filter((entry) => entry.startsWith("lease-") || entry.startsWith("move:") || entry === "finished"),
+      ["lease-acquire:installation-1", `move:${INSTALLATION_PATH}->${REPLACED_PATH}`, `move:${STAGING_PATH}->${INSTALLATION_PATH}`, "lease-release", "finished"]
+    )
+  })
+
+  it("gives the installation back when the extraction fails", async () => {
+    const disk = new Set([INSTALLATION_PATH, ARCHIVE_PATH])
+    const ports = fakePorts({ installationLease: recordingLease(), fileSystem: fakeFileSystem({ present: [...disk] }), extractor: fakeExtractor({ outcome: { ok: false, error: "bad" } }).extractor })
+
+    const result = await restoreInstallationBackup(ports, { installation: snapshot(), backup: archive })
+
+    assert.equal(result.ok === false && result.reason, "extract-failed")
+    assert.equal(trace.at(-1), "lease-release")
+  })
+
+  it("gives the installation back when the extractor throws", async () => {
+    const extractor: Extractor = {
+      extract: async (): Promise<void> => {
+        throw new Error("the worker died")
+      }
+    }
+    const ports = fakePorts({ installationLease: recordingLease(), extractor })
+
+    await assert.rejects(restoreInstallationBackup(ports, { installation: snapshot(), backup: archive }), /the worker died/)
+    assert.equal(trace.at(-1), "lease-release")
+  })
+
+  it("refuses without extracting when a world operation holds the installation", async () => {
+    const ports = fakePorts({ installationLease: recordingLease({ ok: false, reason: "busy" }) })
+
+    const result = await restoreInstallationBackup(ports, { installation: snapshot(), backup: archive }, recordingEvents())
+
+    assert.deepEqual(result, { ok: false, reason: "installation-busy", strandedPath: null })
+    assert.deepEqual(
+      trace.filter((entry) => !entry.startsWith("exists:")),
+      ["lease-acquire:installation-1"]
+    )
+  })
+
+  it("refuses without extracting when the host says a game is running on it", async () => {
+    const ports = fakePorts({ installationLease: recordingLease({ ok: false, reason: "playing" }) })
+
+    const result = await restoreInstallationBackup(ports, { installation: snapshot(), backup: archive })
+
+    assert.equal(result.ok === false && result.reason, "installation-playing")
+    assert.equal(
+      trace.some((entry) => entry.startsWith("extract:") || entry.startsWith("guard-")),
+      false
+    )
+  })
+
+  it("does not reserve the host for a restore the renderer already refused", async () => {
+    const ports = fakePorts({ installationLease: recordingLease() })
+
+    await restoreInstallationBackup(ports, { installation: snapshot({ isBackingUp: true }), backup: archive })
+    await restoreInstallationBackup(ports, { installation: snapshot(), backup: { ...archive, path: "/missing.tar.gz" } })
+
+    assert.equal(
+      trace.some((entry) => entry.startsWith("lease-")),
+      false
+    )
   })
 })

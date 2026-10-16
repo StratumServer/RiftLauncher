@@ -9,11 +9,14 @@ import { ATOMIC_WRITE_TEMP_SUFFIX_MAX, writeTextAtomic } from "@src/ipc/atomicJs
 import { isInstallationPlaying, tryAcquireInstallationOperation } from "@src/ipc/installationActivity"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertConfiguredInstallationPath, assertManagedPath } from "@src/ipc/pathPolicy"
-import { assertBoundedString, assertSafeFileName, assertString, comparablePath, isRecord } from "@src/ipc/validation"
+import { assertBoundedString, assertString, comparablePath, isRecord } from "@src/ipc/validation"
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { describeBackupSpaceShortfall } from "@domain/installations/backupCapacity"
 import { MOD_CONFIG_FOLDER_NAME } from "@domain/mods/folder"
+import { assertModConfigKey, HIDDEN_UNICODE_NAME_CHARACTER, isValidModConfigKey, MAX_MOD_CONFIG_KEY_LENGTH, showDefaultIgnorables } from "@domain/mods/modConfigs"
 import { cleanFolderName, formatTimestampForFilename } from "@domain/naming"
+
+export { assertModConfigKey, HIDDEN_UNICODE_NAME_CHARACTER, isValidModConfigKey, MAX_MOD_CONFIG_KEY_LENGTH, showDefaultIgnorables }
 
 const LOG_PREFIX = "[back] [mods] [ipc/handlers/modConfigs.ts]"
 
@@ -34,36 +37,18 @@ export const MAX_MODPACK_ENTRIES = 2_000
  */
 export const MAX_MODPACK_BYTES = 8 * 1024 * 1024
 
-/** The longest whole key a pack may use. Each of its segments is held to assertSafeFileName's 255. */
-const MAX_MOD_CONFIG_KEY_LENGTH = 512
-
 /**
- * The longest path Windows takes without the `\\?\` prefix, in characters.
+ * The legacy MAX_PATH limit (260 characters) on Windows.
  *
- * Not the launcher's own `MAX_PATH_LENGTH` (src/ipc/validation.ts, 4096), which is the bound on
- * what a caller may send over IPC. Past this a write fails with an error that names nothing, so a
- * pack that would land there is refused as a named failure instead of half-written. The documented
- * way past it is the `\\?\` prefix, which this launcher does not use: it is the path a player would
- * never type, and `write-file-atomic` builds its own temporary name beside the target, which is why
- * a path is only writable here if `ATOMIC_WRITE_TEMP_SUFFIX_MAX` is still room at the end of it.
+ * Even though modern Node and .NET runtimes can namespace paths with the `\\?\` prefix or handle
+ * longer paths when LongPathsEnabled is enabled, this limit is kept as a cautious compatibility
+ * guard for external scripts, tools, and legacy tooling that interact with installation folders
+ * without extended-path awareness. Past this length, a pack entry is refused proactively with a
+ * named error instead of risking unhandled IO failures down the line. `write-file-atomic` also
+ * constructs its temporary filename beside the target, so a path is only writable here if
+ * `ATOMIC_WRITE_TEMP_SUFFIX_MAX` still fits within the bound.
  */
 const WINDOWS_LEGACY_MAX_PATH = 260
-
-/**
- * Names Windows refuses to create a file under, with or without an extension: the DOS device names
- * that predate NTFS and still work, and the numbered variants of the two port families. `¹` is not a
- * digit to Windows either, which is why it is spelled out rather than written as a range.
- */
-const WINDOWS_RESERVED_BASE_NAME = /^(con|prn|aux|nul|clock\$|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i
-
-/**
- * Characters no Windows file name may hold, and the control characters no file system should.
- *
- * The control-character half is the point of the rule, so the lint that objects to a control range
- * inside a character class is the rule being wrong here.
- */
-// eslint-disable-next-line no-control-regex
-const WINDOWS_FORBIDDEN_CHARACTER = /[?*<>|":\u0000-\u001f\u007f]/
 
 /** How many times a recovery folder name may be bumped before the apply gives up. */
 const MAX_RECOVERY_FOLDER_ATTEMPTS = 32
@@ -76,51 +61,6 @@ const SETTINGS_BACKUP_PREFIX = "settings_"
 
 /** The record an apply leaves in its recovery folder, so a half-finished run is still readable. */
 const APPLIED_RECORD_NAME = "applied.txt"
-
-/**
- * A pack key has to be a relative path of `.json` names below `ModConfig`, written the way every
- * other archive in this launcher writes one: forward slashes, because a pack is read on every
- * platform and `path.sep` would bake in the platform that exported it. The repo already has this
- * rule written down for archive entries (src/ipc/validation.ts), and a key that came from somewhere
- * else is exactly as untrusted as an archive entry.
- *
- * Every segment is held to what `assertSafeFileName` already allows, and the rest is what Windows
- * adds on top of that: a device name, a character it will not put in a name, a space or a dot at
- * the end. Those are refused here rather than discovered on a Windows machine by everybody else.
- *
- * @param value Key as a pack or a dialog sent it.
- * @returns The key, unchanged, once every rule has passed.
- * @throws TypeError, naming the rule that refused it.
- */
-export function assertModConfigKey(value: unknown): string {
-  const key = assertString(value, "mod config key", MAX_MOD_CONFIG_KEY_LENGTH)
-  const segments = key.split("/")
-
-  // Only the last segment is the file. The ones before it are folders, made by the game and by
-  // players, and `ConfigureEverything/Client/RoomSize.json` is what a real ModConfig folder looks
-  // like: holding the ones before it to the .json rule would refuse every nested config there is.
-  const fileName = segments.at(-1) ?? ""
-  if (!fileName.toLowerCase().endsWith(".json")) throw new TypeError("Mod config keys must name a .json file")
-  // Everything ahead of the extension is the part Windows looks at when it decides whether a name is
-  // a device, or is a name that differs from another in a way no file manager will show.
-  const stem = fileName.slice(0, -".json".length)
-
-  for (const segment of segments) {
-    // Covers the empty segment a leading, doubled or trailing slash produces, "." and "..", the
-    // backslash a pack written on Windows may carry, and anything over 255 characters.
-    assertSafeFileName(segment, "mod config key")
-
-    if (WINDOWS_FORBIDDEN_CHARACTER.test(segment)) throw new TypeError("Invalid mod config key")
-    // A device name and a trailing dot or space are not visible in a file manager, so two keys that
-    // differ only by one are one file on Windows and the second write is the only one to land. The
-    // regex's own optional extension is what lets a folder called Client past and a folder called
-    // nul not, which is the same line Windows draws.
-    const tail = segment === fileName ? stem : segment
-    if (WINDOWS_RESERVED_BASE_NAME.test(segment) || /[. ]$/.test(tail)) throw new TypeError("Invalid mod config key")
-  }
-
-  return key
-}
 
 /**
  * Checks one settings entry's shape and returns it rebuilt from named fields.
@@ -194,17 +134,17 @@ export function parseModpackSettings(value: unknown): { ok: true; settings: Reco
 /**
  * Parses the config names a player ticked in the export picker.
  *
- * `undefined` means every config, which is what the export checkbox asks for on its own: it is also
- * what the renderer sends when the folder held nothing to tick. An empty list is a different answer
- * and means the player unticked everything, which produces a pack with no settings block at all
- * rather than a pack with all of them.
+ * An empty list means the player unticked everything, which produces a pack with no settings block
+ * at all. When configs are included, the export caller requires an explicit list of chosen names;
+ * an absent list (`undefined` or `null`) returns `undefined`, which the export handler refuses as
+ * an unprompted sweep.
  *
  * Nothing here validates a name as a path, and nothing needs to: these names are matched against the
  * keys `walkModConfigs` produced, so a name that matches nothing is dropped and no name can reach a
  * file the walk did not find. A shape that is not a list of strings is a malformed request rather
  * than a refusal, because nothing about the folder or the pack can produce one.
  *
- * @param value The request's config names, or `undefined` when the caller did not narrow them.
+ * @param value The request's config names.
  * @throws {TypeError} When the value is neither absent nor a list of strings.
  */
 export function parseChosenConfigNames(value: unknown): readonly string[] | undefined {
@@ -240,20 +180,25 @@ export type ExportModpackConfigFailure = Exclude<ExportModpackRefusal, "too-larg
  *
  * The folder is reached through `assertManagedPath`, so it is inside a managed installation and has
  * no symbolic link in any of its existing ancestors, and every file is read with `lstat` so a link
- * *inside* the folder is skipped rather than followed out of it. A `.json` extension is what makes a
- * file a candidate at all, compared without case because Windows does not.
+ * *inside* the folder is set aside rather than followed out of it. A `.json` extension is what makes
+ * a file a candidate at all, compared without case because Windows does not.
+ *
+ * A link is not a file, but it is not nothing either: the apply refuses a config at its name and
+ * below it, so the walk reports it by name for the import dialog to say so. That is all it does with
+ * one. It is neither opened nor followed, which is why the folder a link points at is never listed.
  *
  * @param installationPath An installation folder, already asserted as a configured one.
  * @param options.readText Read each file's bytes. Off for the import dialog, which shows names and
  *   sizes and has no use for the contents.
  * @param options.only The keys to look at, or undefined for all of them. Filtered before the read,
- *   so a pack the player narrowed down does not read the files they left out of it.
- * @returns The files, relative to the folder with `/` between directories.
+ *   so a pack the player narrowed down does not read the files they left out of it. It narrows the
+ *   files and never the links, which are a fact about the folder and not a choice of the player's.
+ * @returns The files and the links, each relative to the folder with `/` between directories.
  * @throws When the folder cannot be listed, or a file cannot be read.
  */
-async function walkModConfigs(installationPath: string, options: { readText: boolean; only?: ReadonlySet<string> }): Promise<CollectedConfig[]> {
+async function walkModConfigs(installationPath: string, options: { readText: boolean; only?: ReadonlySet<string> }): Promise<{ files: CollectedConfig[]; linked: string[] }> {
   const root = join(installationPath, MOD_CONFIG_FOLDER_NAME)
-  if (!(await fse.pathExists(root))) return []
+  if (!(await fse.pathExists(root))) return { files: [], linked: [] }
 
   const safeRoot = await assertManagedPath(root, "mod config folder")
   const rootStats = await fse.lstat(safeRoot)
@@ -262,6 +207,9 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
   if (!rootStats.isDirectory()) throw new Error("The ModConfig folder is not a folder")
 
   const found: CollectedConfig[] = []
+  const linked: string[] = []
+  // The one shape a name leaves this walk in, for a file and for a link: relative, `/` between directories.
+  const keyOf = (path: string): string => relative(safeRoot, path).replaceAll("\\", "/")
 
   const visit = async (folder: string): Promise<void> => {
     const entries = await fse.readdir(folder, { withFileTypes: true })
@@ -271,15 +219,22 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
         await visit(entryPath)
         continue
       }
-      // `isFile()` is false for a link, and that is the answer we want: reading through one would
-      // let a link in the folder hand the launcher a file from anywhere on the disk.
+      // `isDirectory()` and `isFile()` are both false for a link, and that is the answer we want:
+      // reading through one would let a link in the folder hand the launcher a file from anywhere on
+      // the disk, and descending into one would list a folder from anywhere on it. It is named and
+      // nothing more, and whatever it is called: a folder that is a link has no reason to end in
+      // `.json`, and the pack's names that sit under it are refused all the same.
+      if (entry.isSymbolicLink()) {
+        linked.push(keyOf(entryPath))
+        continue
+      }
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) continue
 
       const stats = await fse.lstat(entryPath)
       // No key rule here. This walk answers "what is in the folder", and a folder can hold a name
       // that is legal on the file system it was created on and unusable in a pack; the caller that
       // builds a pack is the one that has to say so, because only it can name the file.
-      const key = relative(safeRoot, entryPath).replaceAll("\\", "/")
+      const key = keyOf(entryPath)
       // Before the read and before the ceiling, so a narrowed pack neither reads nor counts what it
       // left out. The keys are the walk's own, which is why the caller can pass the player's
       // selection through without validating it as a path: a name that matches nothing matches
@@ -297,7 +252,7 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
   }
 
   await visit(safeRoot)
-  return found
+  return { files: found, linked }
 }
 
 /**
@@ -322,7 +277,7 @@ export async function collectModConfigs(
 ): Promise<{ ok: true; settings: Record<string, ModConfigEntry> } | { ok: false; reason: ExportModpackConfigFailure; name?: string }> {
   let files: CollectedConfig[]
   try {
-    files = await walkModConfigs(installationPath, { readText: true, only: chosenNames ? new Set(chosenNames) : undefined })
+    files = (await walkModConfigs(installationPath, { readText: true, only: chosenNames ? new Set(chosenNames) : undefined })).files
   } catch (err) {
     if (err instanceof RangeError) {
       logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] The ModConfig folder holds more files than a modpack may carry.`)
@@ -345,6 +300,9 @@ export async function collectModConfigs(
       assertModConfigKey(file.name)
     } catch (err) {
       logMessage("debug", `${LOG_PREFIX} [EXPORT_MODPACK] ${getErrorMessage(err)}`)
+      if ([...file.name].some((character) => HIDDEN_UNICODE_NAME_CHARACTER.test(character))) {
+        return { ok: false, reason: "hidden-character", name: showDefaultIgnorables(file.name) }
+      }
       return { ok: false, reason: "bad-name", name: file.name }
     }
     const lower = file.name.toLowerCase()
@@ -391,6 +349,10 @@ async function installationRecordAt(installationPath: string): Promise<{ record:
  * load, so it opened on "the folder could not be read" with no rows and a disabled button. A read
  * does not need to exclude a read, and it does need to stay out of a folder the game is writing,
  * which is the one thing `playing` says.
+ *
+ * Besides the files it names the links in the folder, for the import dialog alone. A name a link
+ * sits at is not a name this Installation "has no file at", and the dialog has to be able to tell
+ * the two apart before the apply refuses it.
  */
 ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_MOD_CONFIGS, async (event, installationPath: unknown): Promise<ModConfigsReadResult> => {
   assertTrustedIpcSender(event)
@@ -403,8 +365,8 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_MOD_CONFIGS, async (event, installa
       return { ok: false, reason: "playing" }
     }
 
-    const files = await walkModConfigs(installation, { readText: false })
-    return { ok: true, configs: files.map(({ name, bytes }) => ({ name, bytes })) }
+    const { files, linked } = await walkModConfigs(installation, { readText: false })
+    return { ok: true, configs: files.map(({ name, bytes }) => ({ name, bytes })), linked }
   } catch (err) {
     logMessage("error", `${LOG_PREFIX} [GET_MOD_CONFIGS] Could not list the ModConfig folder.`)
     logMessage("debug", `${LOG_PREFIX} [GET_MOD_CONFIGS] ${getErrorMessage(err)}`)
@@ -419,6 +381,56 @@ type PendingConfig = {
   text: string
   sha256: string
   bytes: number
+}
+
+type ConfigDestinationResolution = { ok: true; destination: string } | { ok: false; reason: "ambiguous" | "not-directory" }
+type ModConfigDirectoryEntry = { name: string; isDirectory(): boolean }
+type ModConfigDirectoryIndex = Map<string, ModConfigDirectoryEntry[]>
+
+/**
+ * Finds the spelling already on disk for a config path.
+ *
+ * Packs can move between case-sensitive and case-insensitive filesystems. When the requested
+ * spelling is absent, use a unique case-folded match at each path component so an import replaces
+ * the player's existing file instead of creating a second file beside it. If the disk already has
+ * multiple case variants and none exactly matches the pack, refuse the entry rather than choosing
+ * one arbitrarily.
+ */
+async function resolveConfigDestination(root: string, key: string, directories: Map<string, ModConfigDirectoryIndex>): Promise<ConfigDestinationResolution> {
+  const segments = key.split("/")
+  let current = root
+
+  for (const [index, segment] of segments.entries()) {
+    const folder = await fse.lstat(current).catch(() => undefined)
+    if (!folder) return { ok: true, destination: join(current, ...segments.slice(index)) }
+    if (folder.isSymbolicLink() || !folder.isDirectory()) return { ok: false, reason: "not-directory" }
+
+    let indexByName = directories.get(current)
+    if (!indexByName) {
+      // Re-check the real spelling before listing it. The case-folded path the pack asked for may
+      // have been absent, so validating only that spelling would miss a linked existing directory.
+      await assertManagedPath(current, "mod config folder")
+      indexByName = new Map<string, ModConfigDirectoryEntry[]>()
+      for (const entry of await fse.readdir(current, { withFileTypes: true })) {
+        const foldedName = entry.name.toLowerCase()
+        const matches = indexByName.get(foldedName) ?? []
+        matches.push(entry)
+        indexByName.set(foldedName, matches)
+      }
+      directories.set(current, indexByName)
+    }
+
+    const matches = indexByName.get(segment.toLowerCase()) ?? []
+    if (matches.length === 0) return { ok: true, destination: join(current, ...segments.slice(index)) }
+
+    const exact = matches.find((entry) => entry.name === segment)
+    if (matches.length > 1 && !exact) return { ok: false, reason: "ambiguous" }
+    const selected = exact ?? matches[0]!
+    if (index < segments.length - 1 && !selected.isDirectory()) return { ok: false, reason: "not-directory" }
+    current = join(current, selected.name)
+  }
+
+  return { ok: true, destination: current }
 }
 
 /**
@@ -555,8 +567,8 @@ async function pruneRecoveryFolders(parent: string, limit: number, keep: string)
  *     the pack's own bytes, which is exactly the folder a player reaches for when something is
  *     wrong;
  *  8. the writes happen, one file at a time, each naming its own failure;
- *  9. a record of what landed is written, so a run that was killed part way through still says
- *     which half it got through;
+ *  9. a record of what landed is written into the recovery folder if existing files were
+ *     displaced, so a run that was killed part way through still says which half it got through;
  *  10. the recovery folders past the limit are pruned, non-fatally, and only by a run that
  *     displaced something: a run that wrote nothing has no newest folder to keep, and one that
  *     removed the folder it created has nothing left to name.
@@ -612,6 +624,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
     const failed: { name: string; reason: ApplyFailureReason }[] = []
     const kinds = new Map<string, "new" | "replace">()
     const refused = new Set<string>()
+    const configDirectories = new Map<string, ModConfigDirectoryIndex>()
 
     // Before anything is read, copied or created: every destination folder has to be a folder inside
     // the Installation with no symbolic link in its existing ancestors. Without this pass the checks
@@ -623,6 +636,15 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
     // is refused before a single copy is made.
     for (const entry of pending) {
       try {
+        const resolution = await resolveConfigDestination(modConfigRoot, entry.key, configDirectories)
+        if (!resolution.ok) {
+          logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${resolution.reason}`)
+          failed.push({ name: entry.key, reason: "write-failed" })
+          refused.add(entry.key)
+          continue
+        }
+        entry.destination = resolution.destination
+
         // The call is the check: it walks the components that exist and refuses a path that leaves
         // the Installation. What it resolves is not read, and a log line may not name it either.
         await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
@@ -681,7 +703,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       }
 
       kinds.set(entry.key, "replace")
-      const backupPath = join(await recoveryFolderFor(), ...entry.key.split("/"))
+      const backupPath = join(await recoveryFolderFor(), relative(modConfigRoot, entry.destination))
       // The recovery copy is the first thing opened for a file that already exists, and it is not
       // opened under the destination: it carries the backups root, the Installation's backup folder
       // and the recovery folder itself, so it is usually the longer of the two. Measured here rather
@@ -732,6 +754,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
       }
     }
 
+    const appliedRecords: string[] = []
     for (const entry of pending) {
       if (refused.has(entry.key)) continue
 
@@ -743,27 +766,27 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         await assertManagedPath(dirname(entry.destination), "mod config folder", { allowMissing: true })
         await writeTextAtomic(entry.destination, entry.text)
         applied.push({ name: entry.key, kind: kinds.get(entry.key) ?? "new" })
+        appliedRecords.push(relative(modConfigRoot, entry.destination).replaceAll("\\", "/"))
       } catch (err) {
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
         failed.push({ name: entry.key, reason: "write-failed" })
       }
     }
 
-    if (applied.length > 0 && recoveryFolder) {
-      const landed = applied.map((entry) => entry.name).join("\n")
+    const hasReplaced = applied.some((entry) => entry.kind === "replace")
+
+    // The backup limit is spent by what a run actually displaced, so the prune waits until the write
+    // loop is done and only runs when something was actually replaced. An apply that wrote nothing,
+    // or wrote only new files without displacing existing ones, does not cost the player the
+    // recovery folder that would have taken them back to prior state.
+    if (hasReplaced && recoveryFolder) {
+      const landed = appliedRecords.join("\n")
       await writeTextAtomic(join(recoveryFolder, APPLIED_RECORD_NAME), `${landed}\n`).catch((err: unknown) => {
         logMessage("error", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not write the applied record.`)
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
       })
-    }
-
-    // The backup limit is spent by what a run actually displaced, so the prune waits until the write
-    // loop is done and only runs when something landed. An apply that wrote nothing because every
-    // file was refused, or every write died, no longer costs the player the recovery folder that
-    // would have taken them back to.
-    if (applied.length > 0) {
       try {
-        if (recoveryFolder) await pruneRecoveryFolders(dirname(recoveryFolder), record.backupsLimit, recoveryFolder)
+        await pruneRecoveryFolders(dirname(recoveryFolder), record.backupsLimit, recoveryFolder)
       } catch (err) {
         // Non-fatal: the backups this run needed are already written. A prune that cannot finish is
         // about old folders piling up, which is the next backup's problem and the log's business.
@@ -771,11 +794,11 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.APPLY_MOD_CONFIGS, async (event, instal
         logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] ${getErrorMessage(err)}`)
       }
     } else if (recoveryFolder) {
-      // A recovery folder with nothing in it reads as a way back when there is nothing to go back
-      // to, so it is dropped rather than left to the next run's prune. The result must not name it
-      // either: `backupFolder` is what the dialog offers as the place to look.
+      // A recovery folder with nothing displaced reads as a way back when there is nothing to go
+      // back to (or only holds files from write failures that were never replaced), so it is dropped
+      // rather than left to the next run's prune. The result must not name it either.
       await fse.remove(recoveryFolder).catch((err: unknown) => {
-        logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not remove the empty recovery folder. ${getErrorMessage(err)}`)
+        logMessage("debug", `${LOG_PREFIX} [APPLY_MOD_CONFIGS] Could not remove the unneeded recovery folder. ${getErrorMessage(err)}`)
       })
       recoveryFolder = null
     }

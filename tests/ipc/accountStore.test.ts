@@ -156,6 +156,15 @@ describe("saveAccountSecrets", () => {
     assert.deepEqual(await reader.getAccountSecrets("uid-a"), ACCOUNT_A)
   })
 
+  it("keeps the time the session last changed through a cold read", async () => {
+    const writer = await loadStore()
+    await writer.saveAccountSecrets("uid-a", { ...ACCOUNT_A, updatedAt: 1_700_000_000_000 })
+
+    const reader = await loadStore()
+
+    assert.deepEqual(await reader.getAccountSecrets("uid-a"), { ...ACCOUNT_A, updatedAt: 1_700_000_000_000 })
+  })
+
   it("keeps two accounts independent: saving one leaves the other exactly as it was", async () => {
     const writer = await loadStore()
     await writer.saveAccountSecrets("uid-a", ACCOUNT_A)

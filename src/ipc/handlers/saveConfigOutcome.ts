@@ -14,9 +14,9 @@ export function invalidPayloadResult(): SaveConfigResult {
   return { ok: false, reason: "invalid-payload" }
 }
 
-/** `assertConfigPathsAuthorized` refused the incoming config's paths. */
-export function unauthorizedPathResult(): SaveConfigResult {
-  return { ok: false, reason: "unauthorized-path" }
+/** `unauthorizedConfigPaths` refused the incoming config's paths, and these are the ones. */
+export function unauthorizedPathResult(refusedPaths: readonly string[]): SaveConfigResult {
+  return { ok: false, reason: "unauthorized-path", refusedPaths: [...refusedPaths] }
 }
 
 /** `saveConfig` refused to write at all: see `configManager.ts`'s `configWriteSuppressed`. */

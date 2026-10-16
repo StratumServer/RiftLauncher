@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
@@ -42,6 +43,47 @@ function entry(text: string): ModConfigEntry {
 
 function modConfigFolder(): string {
   return join(installationPath, "ModConfig")
+}
+
+/**
+ * A ModConfig folder with links in it, and a folder outside the Installation for them to point at.
+ *
+ * The links are the four places one can sit: at a name a pack carries and pointing at a file, at a
+ * name a pack carries and pointing at a folder, as a folder a pack's names sit under, and inside a
+ * real folder. What is outside holds bytes the launcher has no business reading, and `real.json` is
+ * the one plain config that is there.
+ */
+function makeLinkedModConfigFolder(): { outside: string } {
+  const outside = join(temporaryRoot, "outside")
+  mkdirSync(join(outside, "folder"), { recursive: true })
+  writeFileSync(join(outside, "theirs.json"), "theirs", "utf-8")
+  writeFileSync(join(outside, "folder", "inner.json"), "inner", "utf-8")
+  mkdirSync(join(modConfigFolder(), "Client"), { recursive: true })
+  writeFileSync(join(modConfigFolder(), "real.json"), "{}", "utf-8")
+  symlinkSync(join(outside, "theirs.json"), join(modConfigFolder(), "file-link.json"))
+  symlinkSync(join(outside, "folder"), join(modConfigFolder(), "folder-link.json"))
+  symlinkSync(join(outside, "folder"), join(modConfigFolder(), "Shared"))
+  symlinkSync(join(outside, "theirs.json"), join(modConfigFolder(), "Client", "nested-link.json"))
+  return { outside }
+}
+
+/** Enables NTFS's per-directory case-sensitive mode or probes case-sensitivity on non-Windows volumes. */
+function enableCaseSensitiveDirectory(path: string): boolean {
+  if (process.platform === "win32") {
+    return spawnSync("fsutil.exe", ["file", "setCaseSensitiveInfo", path, "enable"], { encoding: "utf-8" }).status === 0
+  }
+  const probeUpper = join(path, ".probe-case.tmp")
+  const probeLower = join(path, ".probe-CASE.tmp")
+  try {
+    writeFileSync(probeUpper, "a")
+    writeFileSync(probeLower, "b")
+    const isSensitive = existsSync(probeUpper) && existsSync(probeLower) && readFileSync(probeUpper, "utf8") === "a"
+    rmSync(probeUpper, { force: true })
+    rmSync(probeLower, { force: true })
+    return isSensitive
+  } catch {
+    return false
+  }
 }
 
 function writeConfig(overrides: { backupsFolder?: string; backupsLimit?: number; alsoInstall?: { id: string; name: string; path: string; backupsLimit: number } } = {}): void {
@@ -165,6 +207,35 @@ describe("assertModConfigKey", () => {
     assert.throws(() => assertModConfigKey("what?.json"), /Invalid mod config key/)
     assert.equal(assertModConfigKey("ROOM.JSON"), "ROOM.JSON")
   })
+
+  it("refuses bidi controls and zero-width characters that disguise a name", async () => {
+    const { assertModConfigKey } = await import("@src/ipc/handlers/modConfigs")
+
+    // Right-to-left override and bidi controls:
+    assert.throws(() => assertModConfigKey("safe\u202Egnp.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("\u202Eevil.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("folder\u202A/config.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("bidi\u061C.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("isolate\u2066.json"), /Invalid mod config key/)
+
+    // Zero-width space and invisible format characters:
+    assert.throws(() => assertModConfigKey("zero\u200Bwidth.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("non\u200Cjoiner.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("joiner\u200D.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("word\u2060joiner.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("bom\uFEFF.json"), /Invalid mod config key/)
+    assert.throws(() => assertModConfigKey("mongolian\u180Espace.json"), /Invalid mod config key/)
+  })
+
+  it("refuses representative default-ignorable characters in file and folder segments", async () => {
+    const { assertModConfigKey } = await import("@src/ipc/handlers/modConfigs")
+    const hiddenCharacters = ["\u034F", "\u115F", "\u17B4", "\u180B", "\u180F", "\u2065", "\u3164", "\uFE0F", "\uFFA0", "\uFFF0", "\u{E0000}", "\u{E0080}", "\u{E0100}", "\u{E0FFF}"]
+
+    for (const hidden of hiddenCharacters) {
+      assert.throws(() => assertModConfigKey(`Client/config${hidden}.json`), /Invalid mod config key/)
+      assert.throws(() => assertModConfigKey(`Client/Sub${hidden}/config.json`), /Invalid mod config key/)
+    }
+  })
 })
 
 describe("parseModpackSettings", () => {
@@ -197,6 +268,18 @@ describe("parseModpackSettings", () => {
     const good = parseModpackSettings({ "a.json": entry("{}") })
     assert.equal(good.ok, true)
     assert.deepEqual(Object.keys(good.ok && good.settings), ["a.json"])
+  })
+
+  it("refuses a pack carrying bidi controls or zero-width characters in a key and names it", async () => {
+    const { parseModpackSettings } = await import("@src/ipc/handlers/modConfigs")
+
+    const bidiRefused = parseModpackSettings({ "safe\u202Egnp.json": entry("{}") })
+    assert.equal(bidiRefused.ok, false)
+    assert.deepEqual(bidiRefused.ok === false && bidiRefused.refused, { reason: "bad-key", name: "safe\u202Egnp.json" })
+
+    const zeroWidthRefused = parseModpackSettings({ "zero\u200Bwidth.json": entry("{}") })
+    assert.equal(zeroWidthRefused.ok, false)
+    assert.deepEqual(zeroWidthRefused.ok === false && zeroWidthRefused.refused, { reason: "bad-key", name: "zero\u200Bwidth.json" })
   })
 
   it("refuses two keys that are one file on a case-insensitive filesystem", async () => {
@@ -339,6 +422,16 @@ describe("collectModConfigs", () => {
     assert.deepEqual(collected, { ok: false, reason: "bad-name", name: "trailing .json" })
   })
 
+  it("shows default-ignorable code points in the export refusal", async () => {
+    const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
+    mkdirSync(modConfigFolder(), { recursive: true })
+    writeFileSync(join(modConfigFolder(), "config\u034F.json"), "{}", "utf-8")
+
+    const collected = await collectModConfigs(installationPath)
+
+    assert.deepEqual(collected, { ok: false, reason: "hidden-character", name: "config<U+034F>.json" })
+  })
+
   it.skipIf(process.platform === "win32")("refuses two names that differ only in case, and says which one it found second", async () => {
     // Imported here, not at the top: beforeEach resets the module registry, so a top-level import
     // would be a second copy of this module, holding its own state the handlers never see.
@@ -391,6 +484,7 @@ describe("collectModConfigs", () => {
     }
   })
 
+  // Writing and walking 2001 files can pass the 5 s default on a slow Windows runner.
   it("refuses a folder past the entry ceiling, and says the folder is too big rather than unreadable", async () => {
     const { MAX_MODPACK_ENTRIES, collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
     const folder = modConfigFolder()
@@ -400,7 +494,7 @@ describe("collectModConfigs", () => {
     const collected = await collectModConfigs(installationPath)
 
     assert.deepEqual(collected, { ok: false, reason: "too-many" })
-  })
+  }, 30_000)
 
   it("carries only the names it was given, so a file it cannot carry stops being the export's problem", async () => {
     const { collectModConfigs } = await import("@src/ipc/handlers/modConfigs")
@@ -453,7 +547,7 @@ describe("parseChosenConfigNames", () => {
     assert.deepEqual(parseChosenConfigNames([]), [])
   })
 
-  it("reads no list and a null as the same thing, which is every config", async () => {
+  it("returns undefined for an omitted list and for null", async () => {
     const { parseChosenConfigNames } = await import("@src/ipc/handlers/modConfigs")
 
     assert.equal(parseChosenConfigNames(undefined), undefined)
@@ -476,7 +570,7 @@ describe("GET_MOD_CONFIGS", () => {
     const event = await createTrustedEvent()
 
     const listed = await getModConfigsHandler()(event, installationPath)
-    assert.deepEqual(listed, { ok: true, configs: [{ name: "a.json", bytes: 2 }] })
+    assert.deepEqual(listed, { ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] })
 
     // Imported here and not at the top of the file: beforeEach resets the module registry, and a
     // top-level import would be a second, unrelated copy of the playing set the handler never sees.
@@ -497,12 +591,159 @@ describe("GET_MOD_CONFIGS", () => {
 
     const [first, second] = await Promise.all([getModConfigsHandler()(event, installationPath), getModConfigsHandler()(event, installationPath)])
 
-    assert.deepEqual(first, { ok: true, configs: [{ name: "a.json", bytes: 2 }] })
-    assert.deepEqual(second, { ok: true, configs: [{ name: "a.json", bytes: 2 }] })
+    assert.deepEqual(first, { ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] })
+    assert.deepEqual(second, { ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] })
+  })
+
+  it("names the links in the folder, to a file or to a folder, without reading or following any of them (#621)", async () => {
+    // The walk left a link out altogether, so the import dialog was told nothing about the name and
+    // called it one this Installation has no file at: it ticked the row, and the apply then refused it.
+    // A link is not a config and the listing must not offer it as one, since the export builds its
+    // rows from the same list; it is a name the dialog has to be told about, and told only by name.
+    const { outside } = makeLinkedModConfigFolder()
+    const event = await createTrustedEvent()
+    const fse = (await import("fs-extra")).default
+    const readFile = vi.spyOn(fse, "readFile")
+    const stat = vi.spyOn(fse, "stat")
+
+    try {
+      const listed = await getModConfigsHandler()(event, installationPath)
+
+      assert.equal(listed.ok, true)
+      if (!listed.ok) return
+      assert.deepEqual(listed.configs, [{ name: "real.json", bytes: 2 }])
+      // `Shared` is a folder that is a link: it is named, and nothing under it is listed.
+      assert.deepEqual([...listed.linked].sort(), ["Client/nested-link.json", "Shared", "file-link.json", "folder-link.json"])
+      // Names are all the listing is for. Neither a read nor a `stat` (which follows) may have been
+      // asked about a link, or about anything outside the Installation.
+      assert.deepEqual(
+        readFile.mock.calls.filter(([path]) => String(path).startsWith(outside) || String(path).startsWith(modConfigFolder())),
+        []
+      )
+      assert.deepEqual(
+        stat.mock.calls.filter(([path]) => String(path).startsWith(outside) || String(path).startsWith(modConfigFolder())),
+        []
+      )
+    } finally {
+      readFile.mockRestore()
+      stat.mockRestore()
+    }
   })
 })
 
 describe("APPLY_MOD_CONFIGS", () => {
+  it("replaces a differently-cased config on a case-sensitive filesystem and backs it up", async (context) => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    if (!enableCaseSensitiveDirectory(modConfigFolder())) {
+      context.skip()
+      return
+    }
+    writeFileSync(join(modConfigFolder(), "Config.json"), "old", "utf-8")
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "config.json", ...entry("new") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "config.json", kind: "replace" }])
+    assert.deepEqual(applied.failed, [])
+    assert.deepEqual(readdirSync(modConfigFolder()), ["Config.json"])
+    assert.equal(readFileSync(join(modConfigFolder(), "Config.json"), "utf-8"), "new")
+    assert.notEqual(applied.backupFolder, "")
+    assert.equal(readFileSync(join(applied.backupFolder, "Config.json"), "utf-8"), "old")
+    assert.match(readFileSync(join(applied.backupFolder, "applied.txt"), "utf-8"), /^Config\.json$/m)
+  })
+
+  it("resolves case differences in parent folders as well as the config filename", async (context) => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    if (!enableCaseSensitiveDirectory(modConfigFolder())) {
+      context.skip()
+      return
+    }
+    const clientFolder = join(modConfigFolder(), "Client")
+    mkdirSync(clientFolder)
+    if (!enableCaseSensitiveDirectory(clientFolder)) {
+      context.skip()
+      return
+    }
+    writeFileSync(join(clientFolder, "Config.json"), "old", "utf-8")
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "client/config.json", ...entry("new") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "client/config.json", kind: "replace" }])
+    assert.deepEqual(readdirSync(clientFolder), ["Config.json"])
+    assert.equal(readFileSync(join(clientFolder, "Config.json"), "utf-8"), "new")
+    assert.equal(readFileSync(join(applied.backupFolder, "Client", "Config.json"), "utf-8"), "old")
+    assert.match(readFileSync(join(applied.backupFolder, "applied.txt"), "utf-8"), /^Client\/Config\.json$/m)
+  })
+
+  it("imports configs into an Installation that has no ModConfig folder yet", async () => {
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [
+      { name: "Client/a.json", ...entry("alpha") },
+      { name: "b.json", ...entry("beta") }
+    ])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [
+      { name: "Client/a.json", kind: "new" },
+      { name: "b.json", kind: "new" }
+    ])
+    assert.deepEqual(applied.failed, [])
+    assert.equal(readFileSync(join(modConfigFolder(), "Client", "a.json"), "utf-8"), "alpha")
+    assert.equal(readFileSync(join(modConfigFolder(), "b.json"), "utf-8"), "beta")
+    assert.equal(applied.backupFolder, "")
+  })
+
+  it("prefers the exact case match when multiple case variants already exist on disk", async (context) => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    if (!enableCaseSensitiveDirectory(modConfigFolder())) {
+      context.skip()
+      return
+    }
+    writeFileSync(join(modConfigFolder(), "Config.json"), "capital", "utf-8")
+    writeFileSync(join(modConfigFolder(), "config.json"), "lower", "utf-8")
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "config.json", ...entry("new-lower") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "config.json", kind: "replace" }])
+    assert.deepEqual(applied.failed, [])
+    assert.equal(readFileSync(join(modConfigFolder(), "Config.json"), "utf-8"), "capital")
+    assert.equal(readFileSync(join(modConfigFolder(), "config.json"), "utf-8"), "new-lower")
+    assert.equal(readFileSync(join(applied.backupFolder, "config.json"), "utf-8"), "lower")
+  })
+
+  it("refuses an ambiguous case-folded match on disk without changing either file", async (context) => {
+    mkdirSync(modConfigFolder(), { recursive: true })
+    if (!enableCaseSensitiveDirectory(modConfigFolder())) {
+      context.skip()
+      return
+    }
+    writeFileSync(join(modConfigFolder(), "Config.json"), "first", "utf-8")
+    writeFileSync(join(modConfigFolder(), "CONFIG.json"), "second", "utf-8")
+    const event = await createTrustedEvent()
+
+    const applied = await applyModConfigsHandler()(event, installationPath, [{ name: "config.json", ...entry("new") }])
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.failed, [{ name: "config.json", reason: "write-failed" }])
+    assert.deepEqual(applied.applied, [])
+    assert.equal(applied.backupFolder, "")
+    assert.deepEqual(readdirSync(modConfigFolder()).sort(), ["CONFIG.json", "Config.json"])
+    assert.equal(readFileSync(join(modConfigFolder(), "Config.json"), "utf-8"), "first")
+    assert.equal(readFileSync(join(modConfigFolder(), "CONFIG.json"), "utf-8"), "second")
+    assert.deepEqual(recoveryFolders(), [])
+  })
+
   it("writes a new file, backs up what it replaced, and records what landed", async () => {
     mkdirSync(modConfigFolder(), { recursive: true })
     writeFileSync(join(modConfigFolder(), "a.json"), "old", "utf-8")
@@ -600,11 +841,15 @@ describe("APPLY_MOD_CONFIGS", () => {
     writeFileSync(join(outside, "secret.json"), "theirs", "utf-8")
     mkdirSync(modConfigFolder(), { recursive: true })
     symlinkSync(outside, join(modConfigFolder(), "link"))
+    writeFileSync(join(modConfigFolder(), "regular.json"), "old-regular", "utf-8")
     const event = await createTrustedEvent()
 
+    // Mixed pack: regular.json lands and displaces an existing file, so a recovery folder is retained.
+    // The link destinations are refused, so no file or bytes from outside may appear in that backup.
     const applied = await applyModConfigsHandler()(event, installationPath, [
       { name: "link/secret.json", ...entry("mine") },
-      { name: "link/deep/er/x.json", ...entry("mine") }
+      { name: "link/deep/er/x.json", ...entry("mine") },
+      { name: "regular.json", ...entry("new-regular") }
     ])
 
     assert.equal(applied.ok, true)
@@ -613,12 +858,30 @@ describe("APPLY_MOD_CONFIGS", () => {
       { name: "link/secret.json", reason: "write-failed" },
       { name: "link/deep/er/x.json", reason: "write-failed" }
     ])
-    assert.deepEqual(applied.applied, [])
+    assert.deepEqual(applied.applied, [{ name: "regular.json", kind: "replace" }])
     assert.equal(readFileSync(join(outside, "secret.json"), "utf-8"), "theirs")
     assert.equal(existsSync(join(outside, "deep")), false)
-    // Nothing was displaced, so there is nothing to go back to and no folder claiming otherwise.
-    assert.equal(applied.backupFolder, "")
-    assert.deepEqual(recoveryFolders(), [])
+    assert.equal(readFileSync(join(modConfigFolder(), "regular.json"), "utf-8"), "new-regular")
+
+    assert.notEqual(applied.backupFolder, "")
+    assert.equal(existsSync(applied.backupFolder), true)
+    assert.equal(readFileSync(join(applied.backupFolder, "regular.json"), "utf-8"), "old-regular")
+    assert.equal(existsSync(join(applied.backupFolder, "link")), false)
+    assert.equal(existsSync(join(applied.backupFolder, "secret.json")), false)
+
+    const walkFiles = (dir: string): string[] => {
+      const paths: string[] = []
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) paths.push(...walkFiles(full))
+        else paths.push(full)
+      }
+      return paths
+    }
+    const backupFiles = walkFiles(applied.backupFolder)
+    for (const file of backupFiles) {
+      assert.ok(!readFileSync(file).includes(Buffer.from("theirs")), `file ${file} must not contain outside bytes`)
+    }
   })
 
   it("refuses a ModConfig that is a file rather than a folder", async () => {
@@ -651,6 +914,61 @@ describe("APPLY_MOD_CONFIGS", () => {
     assert.equal(applied.backupFolder, "")
     assert.equal(readFileSync(join(outside, "theirs.json"), "utf-8"), "theirs")
     assert.deepEqual(recoveryFolders(), [])
+  })
+
+  it("still refuses every name the listing calls a link, at the name or below it, and reads, copies and writes nothing through one (#621)", async () => {
+    // The import dialog now leaves these names unticked, but a request can name anything, so the apply
+    // is the one that holds the line and this is the test that it still does, for a link to a file, a
+    // link to a folder, a name below a folder that is a link and a link inside a real folder. The
+    // plain name beside them is there to show the refusal is per name.
+    const { outside } = makeLinkedModConfigFolder()
+    const event = await createTrustedEvent()
+    const fse = (await import("fs-extra")).default
+    const readFile = vi.spyOn(fse, "readFile")
+    const copy = vi.spyOn(fse, "copy")
+
+    try {
+      const applied = await applyModConfigsHandler()(event, installationPath, [
+        { name: "file-link.json", ...entry("mine") },
+        { name: "folder-link.json", ...entry("mine") },
+        { name: "Shared/inner.json", ...entry("mine") },
+        { name: "Client/nested-link.json", ...entry("mine") },
+        { name: "fresh.json", ...entry("mine") }
+      ])
+
+      assert.equal(applied.ok, true)
+      if (applied.ok !== true) return
+      assert.deepEqual(applied.failed.map((failure) => failure.name).sort(), ["Client/nested-link.json", "Shared/inner.json", "file-link.json", "folder-link.json"])
+      assert.ok(
+        applied.failed.every((failure) => failure.reason === "write-failed"),
+        "a link is refused as a file that could not be written"
+      )
+      assert.deepEqual(applied.applied, [{ name: "fresh.json", kind: "new" }])
+      assert.equal(applied.backupFolder, "")
+      assert.deepEqual(recoveryFolders(), [])
+
+      // Nothing was opened for reading or copied, so nothing outside can have reached a backup.
+      assert.deepEqual(
+        readFile.mock.calls.filter(([path]) => String(path).startsWith(outside) || String(path).startsWith(modConfigFolder())),
+        []
+      )
+      assert.deepEqual(copy.mock.calls, [])
+
+      // And nothing was written: the outside is as it was, the links are still links, and no
+      // temporary file was left beside one.
+      assert.equal(readFileSync(join(outside, "theirs.json"), "utf-8"), "theirs")
+      assert.deepEqual(readdirSync(join(outside, "folder")), ["inner.json"])
+      assert.equal(readFileSync(join(outside, "folder", "inner.json"), "utf-8"), "inner")
+      for (const link of ["file-link.json", "folder-link.json", "Shared", join("Client", "nested-link.json")]) {
+        assert.equal(lstatSync(join(modConfigFolder(), link)).isSymbolicLink(), true, `${link} is no longer a link`)
+      }
+      assert.deepEqual(readdirSync(join(modConfigFolder(), "Client")), ["nested-link.json"])
+      assert.deepEqual(readdirSync(outside).sort(), ["folder", "theirs.json"])
+      assert.equal(readFileSync(join(modConfigFolder(), "fresh.json"), "utf-8"), "mine")
+    } finally {
+      readFile.mockRestore()
+      copy.mockRestore()
+    }
   })
 
   it("refuses with no backups folder rather than writing over something it cannot copy", async () => {
@@ -818,6 +1136,56 @@ describe("APPLY_MOD_CONFIGS", () => {
     }
   })
 
+  it("does not prune older recovery folders when a partial import displaces no file", async () => {
+    writeConfig({ backupsLimit: 1 })
+    const parent = join(backupsFolder, "Settings", "test-inst-1")
+    const older = join(parent, "settings_20200101-000000")
+    mkdirSync(older, { recursive: true })
+    writeFileSync(join(older, "old.json"), "older-content", "utf-8")
+    utimesSync(older, new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"))
+
+    mkdirSync(modConfigFolder(), { recursive: true })
+    const lockedDir = join(modConfigFolder(), "Locked")
+    mkdirSync(lockedDir, { recursive: true })
+    const lockedFile = join(lockedDir, "a.json")
+    writeFileSync(lockedFile, "theirs", "utf-8")
+
+    // On Windows, the read-only attribute prevents atomic rename/write.
+    // On POSIX, directory permissions prevent writing.
+    if (process.platform === "win32") {
+      chmodSync(lockedFile, 0o444)
+    } else {
+      chmodSync(lockedDir, 0o555)
+    }
+
+    let applied: Awaited<ReturnType<ReturnType<typeof applyModConfigsHandler>>>
+    try {
+      applied = await applyModConfigsHandler()(await createTrustedEvent(), installationPath, [
+        { name: "Locked/a.json", ...entry("new-locked") },
+        { name: "fresh.json", ...entry("new-fresh") }
+      ])
+    } finally {
+      if (process.platform === "win32") {
+        chmodSync(lockedFile, 0o666)
+      } else {
+        chmodSync(lockedDir, 0o777)
+      }
+    }
+
+    assert.equal(applied.ok, true)
+    if (applied.ok !== true) return
+    assert.deepEqual(applied.applied, [{ name: "fresh.json", kind: "new" }])
+    assert.deepEqual(applied.failed, [{ name: "Locked/a.json", reason: "write-failed" }])
+    assert.equal(readFileSync(join(modConfigFolder(), "fresh.json"), "utf-8"), "new-fresh")
+    assert.equal(readFileSync(lockedFile, "utf-8"), "theirs")
+
+    // Nothing was displaced, so no recovery folder is offered and the older backup is not pruned.
+    assert.equal(applied.backupFolder, "")
+    assert.equal(existsSync(older), true)
+    assert.equal(readFileSync(join(older, "old.json"), "utf-8"), "older-content")
+    assert.deepEqual(recoveryFolders(), ["settings_20200101-000000"])
+  })
+
   // One config in a directory the player can no longer read is a failure of that file, not of the
   // other forty-nine in the pack. Before this, the `readFile` that backs it up rejected the whole
   // invoke, so nothing was written and the player was told nothing at all.
@@ -884,6 +1252,17 @@ describe("APPLY_MOD_CONFIGS", () => {
     writeConfig()
     mkdirSync(modConfigFolder(), { recursive: true })
     const { ATOMIC_WRITE_TEMP_SUFFIX_MAX } = await import("@src/ipc/atomicJsonFile")
+    const wfa = (await import("write-file-atomic")) as unknown as { _getTmpname?: (filename: string) => string }
+    const _getTmpname = wfa._getTmpname
+    assert.equal(typeof _getTmpname, "function", "write-file-atomic must expose _getTmpname for temp name validation")
+    let maxSuffix = 0
+    for (let i = 0; i < 500; i++) {
+      const tmp = _getTmpname!("x")
+      const suffixLen = tmp.length - 1
+      if (suffixLen > maxSuffix) maxSuffix = suffixLen
+    }
+    assert.ok(maxSuffix <= ATOMIC_WRITE_TEMP_SUFFIX_MAX, "write-file-atomic suffix must not exceed ATOMIC_WRITE_TEMP_SUFFIX_MAX")
+    assert.equal(ATOMIC_WRITE_TEMP_SUFFIX_MAX, 11)
     const longest = 260 - ATOMIC_WRITE_TEMP_SUFFIX_MAX
     const ofLength = (total: number): string => {
       const room = total - modConfigFolder().length - 1 - "/x.json".length
@@ -914,7 +1293,8 @@ describe("APPLY_MOD_CONFIGS", () => {
    * promised.
    */
   it("refuses a file whose backup path is past what Windows can open, and leaves its config alone", async () => {
-    writeConfig({ backupsFolder: join(temporaryRoot, "Backups", "B".repeat(200)) })
+    const customBackups = join(temporaryRoot, "Backups", "B".repeat(200))
+    writeConfig({ backupsFolder: customBackups })
     mkdirSync(modConfigFolder(), { recursive: true })
     writeFileSync(join(modConfigFolder(), "a.json"), '{"n":1}', "utf-8")
 
@@ -926,8 +1306,9 @@ describe("APPLY_MOD_CONFIGS", () => {
     assert.deepEqual(applied.applied, [])
     assert.equal(readFileSync(join(modConfigFolder(), "a.json"), "utf-8"), '{"n":1}')
     assert.equal(applied.backupFolder, "", "nothing was displaced, so nothing may be offered as a way back")
-    const settings = join(temporaryRoot, "Backups", "Settings")
-    assert.ok(!existsSync(settings) || readdirSync(settings).length === 0, "no recovery folder may be made for a copy that was refused before it opened")
+    const settings = join(customBackups, "Settings")
+    const instFolder = join(settings, "test-inst-1")
+    assert.ok(!existsSync(instFolder) || readdirSync(instFolder).length === 0, "no recovery folder may be retained for a copy that was refused before it opened")
   })
 
   /**

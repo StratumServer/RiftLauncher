@@ -217,6 +217,33 @@ describe("releaseNotesToBlocks", () => {
     assert.deepEqual(releaseNotesToBlocks("<div><div><span>x</span></div></div>"), [{ kind: "paragraph", text: "x" }])
   })
 
+  it("keeps a placeholder written in angle brackets inside a code span", () => {
+    // The sentence from the beta.13 notes: both `<file>` used to vanish and a lone backtick was left after sha256sum.
+    assert.deepEqual(releaseNotesToBlocks("To check a download yourself: `certutil -hashfile <file> SHA256` on Windows, `sha256sum <file>` on Linux."), [
+      { kind: "paragraph", text: "To check a download yourself: certutil -hashfile <file> SHA256 on Windows, sha256sum <file> on Linux." }
+    ])
+  })
+
+  it("keeps a script tag written inside a code span as text, and the notes after it", () => {
+    // Left to the whole-body script strip, the unclosed `<script>` ate everything up to the end of the body.
+    assert.deepEqual(releaseNotesToBlocks("Never paste `<script>alert(1)</script>` into a name, and a lone `<script>` is only text.\n\nStill here."), [
+      { kind: "paragraph", text: "Never paste <script>alert(1)</script> into a name, and a lone <script> is only text." },
+      { kind: "paragraph", text: "Still here." }
+    ])
+  })
+
+  it("keeps a comment opener written inside a code span instead of dropping the rest of the notes", () => {
+    assert.deepEqual(releaseNotesToBlocks("A comment starts with `<!--`.\n\nStill here."), [
+      { kind: "paragraph", text: "A comment starts with <!--." },
+      { kind: "paragraph", text: "Still here." }
+    ])
+  })
+
+  it("still strips raw HTML outside a code span, next to one that holds a tag", () => {
+    assert.deepEqual(releaseNotesToBlocks("Plain <b>bold</b> text."), [{ kind: "paragraph", text: "Plain bold text." }])
+    assert.deepEqual(releaseNotesToBlocks("Type `<b>` to get <b>bold</b> text."), [{ kind: "paragraph", text: "Type <b> to get bold text." }])
+  })
+
   it("slices the input at 64 KiB, so nothing past it reaches a block", () => {
     const markdown = `# Kept\n\n${"filler ".repeat(12_000)}\n\nPAST-THE-CAP`
 

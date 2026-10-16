@@ -1,5 +1,5 @@
 import type { IdGenerator } from "../ports"
-import { folderIsInUse } from "../paths"
+import { firstHeldFolder, folderIsInUse, folderOverlapsInUse, type FolderPlatform } from "../paths"
 import { refuse } from "../refusal"
 
 /** Bounds an installation name must fall within. */
@@ -37,7 +37,7 @@ export function validateInstallationFields(input: InstallationFieldsInput): Inst
 }
 
 /** Why an installation was not created. */
-export type CreateInstallationFailure = InstallationFieldsFailure | "folder-in-use"
+export type CreateInstallationFailure = InstallationFieldsFailure | "folder-in-use" | "folder-nested"
 
 export type CreateInstallationResult = { ok: true; installation: CreatedInstallation } | { ok: false; reason: CreateInstallationFailure }
 
@@ -60,8 +60,14 @@ export interface CreateInstallationInput {
   launchWrapper?: string
   /** Folders the launcher already uses for backups, versions or other installations. */
   foldersInUse: readonly string[]
-  /** Host platform for path normalization. Defaults to posix when absent. */
-  platform?: "win32" | "posix"
+  /**
+   * The Installations and VS Versions folders from Config. An Installation folder may sit inside
+   * them, as the default layout does, but may not be one or hold one: wiping it would take the
+   * folders with it. Left out, nothing is checked.
+   */
+  configuredFolders?: readonly string[]
+  /** Host platform for path normalization. Read off the path's shape when absent, which cannot tell macOS from Linux. */
+  platform?: FolderPlatform
 }
 
 /** The record built for a fresh installation, ready for the caller to add to its list. */
@@ -99,6 +105,9 @@ export function createInstallation(ports: CreateInstallationPorts, input: Create
   if (!fields.ok) return refuse(fields.reason)
 
   if (folderIsInUse(input.path, input.foldersInUse, input.platform)) return refuse("folder-in-use")
+  // Restoring or deleting the outer folder takes the inner one with it, backups included.
+  if (folderOverlapsInUse(input.path, input.foldersInUse, input.platform)) return refuse("folder-nested")
+  if (input.configuredFolders && firstHeldFolder(input.path, input.configuredFolders, input.platform)) return refuse("folder-nested")
 
   return {
     ok: true,

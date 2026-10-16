@@ -1,4 +1,74 @@
 import writeFileAtomic from "write-file-atomic"
+import { resolve } from "node:path"
+import { performance } from "node:perf_hooks"
+
+const TRANSIENT_RENAME_CODES = new Set(["EACCES", "EPERM", "EBUSY"])
+const RENAME_RETRY_WINDOW_MS = 3_000
+const INITIAL_RENAME_RETRY_DELAY_MS = 50
+const MAX_RENAME_RETRY_DELAY_MS = 250
+
+/**
+ * write-file-atomic serializes each rename, then releases its queue if the rename fails. Keep
+ * this outer queue around the whole retry window so a later save cannot land before an older
+ * save's retry and then be overwritten by it.
+ */
+const pendingAtomicWrites = new Map<string, Promise<void>>()
+
+function atomicWriteQueueKey(filePath: string): string {
+  const absolutePath = resolve(filePath)
+  return process.platform === "win32" ? absolutePath.toLowerCase() : absolutePath
+}
+
+function queueAtomicWrite(filePath: string, write: () => Promise<void>): Promise<void> {
+  const key = atomicWriteQueueKey(filePath)
+  const previous = pendingAtomicWrites.get(key) ?? Promise.resolve()
+  const current = previous.catch(() => undefined).then(write)
+  pendingAtomicWrites.set(key, current)
+
+  const release = (): void => {
+    if (pendingAtomicWrites.get(key) === current) pendingAtomicWrites.delete(key)
+  }
+  void current.then(release, release)
+
+  return current
+}
+
+function isTransientRenameError(error: unknown): error is NodeJS.ErrnoException {
+  if (typeof error !== "object" || error === null) return false
+  const { code, syscall } = error as NodeJS.ErrnoException
+  return syscall === "rename" && TRANSIENT_RENAME_CODES.has(code ?? "")
+}
+
+async function wait(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolveWait) => setTimeout(resolveWait, milliseconds))
+}
+
+async function writeWithRenameRetry(filePath: string, data: string | Uint8Array, mode?: number): Promise<void> {
+  const deadline = performance.now() + RENAME_RETRY_WINDOW_MS
+  let retryDelay = INITIAL_RENAME_RETRY_DELAY_MS
+
+  for (;;) {
+    try {
+      // write-file-atomic mutates its options when it reads the existing file's mode, so each
+      // attempt needs a fresh object.
+      await writeFileAtomic(filePath, data, mode === undefined ? {} : { mode })
+      return
+    } catch (error) {
+      if (!isTransientRenameError(error)) throw error
+
+      const remaining = deadline - performance.now()
+      if (remaining <= 0) throw error
+      await wait(Math.min(retryDelay, remaining))
+      if (performance.now() >= deadline) throw error
+
+      retryDelay = Math.min(retryDelay * 2, MAX_RENAME_RETRY_DELAY_MS)
+    }
+  }
+}
+
+function writeAtomic(filePath: string, data: string | Uint8Array, mode?: number): Promise<void> {
+  return queueAtomicWrite(filePath, () => writeWithRenameRetry(filePath, data, mode))
+}
 
 /**
  * Writes JSON to disk the way every persistence path in this app should: to a
@@ -25,7 +95,7 @@ import writeFileAtomic from "write-file-atomic"
  */
 export async function writeJsonAtomic(filePath: string, data: unknown, options: { mode?: number; spaces?: number } = {}): Promise<void> {
   const json = JSON.stringify(data, undefined, options.spaces)
-  await writeFileAtomic(filePath, json, options.mode === undefined ? {} : { mode: options.mode })
+  await writeAtomic(filePath, json, options.mode)
 }
 
 /**
@@ -51,5 +121,5 @@ export const ATOMIC_WRITE_TEMP_SUFFIX_MAX = 11
  * @param options.mode Exact file mode for the destination (subject to umask).
  */
 export async function writeTextAtomic(filePath: string, text: string, options: { mode?: number } = {}): Promise<void> {
-  await writeFileAtomic(filePath, Buffer.from(text, "utf8"), options.mode === undefined ? {} : { mode: options.mode })
+  await writeAtomic(filePath, Buffer.from(text, "utf8"), options.mode)
 }

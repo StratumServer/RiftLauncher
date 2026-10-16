@@ -2,9 +2,12 @@ import { describe, expect, it, onTestFinished, vi } from "vitest"
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
+import type { UninstallGameVersionFailure } from "@domain/versions/uninstall"
 import ListVersions from "@renderer/features/versions/pages/ListVersions"
+import { describeUninstallFailure } from "@renderer/features/versions/adapters/uninstall"
 import { TaskProvider } from "@renderer/contexts/TaskManagerContext"
-import { changeLanguage } from "@renderer/i18n"
+import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
+import i18n, { changeLanguage } from "@renderer/i18n"
 
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { renderWithProviders } from "./helpers/render"
@@ -28,6 +31,46 @@ function anInstallation(overrides: Partial<InstallationType> = {}): Installation
     envVars: "",
     ...overrides
   }
+}
+
+/** The two buttons that lead to the in-use warning, as each language labels them. */
+const DELETE_BUTTONS = {
+  "en-US": { remove: "Delete Version", uninstall: "Uninstall" },
+  "fr-FR": { remove: "Supprimer la version", uninstall: "Désinstaller" }
+} as const
+
+/**
+ * Sets the launcher to `language`, then takes the 1.20.4 build that every Installation in `names` runs on
+ * through Delete and Uninstall, up to the in-use warning. The caller reads the warning.
+ */
+async function openInUseWarning(language: keyof typeof DELETE_BUTTONS, names: string[]): Promise<void> {
+  expect(await changeLanguage(language)).toBe(true)
+  onTestFinished(async () => {
+    await changeLanguage("en-US")
+  })
+
+  const user = userEvent.setup()
+  installMockWindowApi({
+    configManager: {
+      getConfig: vi.fn(async () =>
+        createMockConfig({
+          gameVersions: [{ version: "1.20.4", path: "/versions/1.20.4" }],
+          installations: names.map((name, index) => anInstallation({ id: `install-${index}`, name }))
+        })
+      )
+    }
+  })
+
+  renderWithProviders(
+    <TaskProvider>
+      <ListVersions />
+    </TaskProvider>,
+    { route: "/versions" }
+  )
+
+  await screen.findByText("1.20.4")
+  await user.click(screen.getByTitle(DELETE_BUTTONS[language].remove))
+  await user.click(await screen.findByTitle(DELETE_BUTTONS[language].uninstall))
 }
 
 describe("ListVersions", () => {
@@ -60,7 +103,7 @@ describe("ListVersions", () => {
     const user = userEvent.setup()
     const api = installMockWindowApi({
       configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/versions/1.20.4" }] })) },
-      pathsManager: { deletePath: vi.fn(async () => true) }
+      pathsManager: { checkPathExists: vi.fn(async () => true), deletePath: vi.fn(async () => true) }
     })
 
     renderWithProviders(
@@ -81,6 +124,197 @@ describe("ListVersions", () => {
     expect(api.pathsManager.deletePath).toHaveBeenCalledWith("/versions/1.20.4")
   })
 
+  it("drops a version whose folder is gone without asking the host to delete it", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/versions/1.20.4" }] })) },
+      pathsManager: { checkPathExists: vi.fn(async () => false), deletePath: vi.fn(async () => false) }
+    })
+
+    renderWithProviders(
+      <>
+        <TaskProvider>
+          <ListVersions />
+        </TaskProvider>
+        <NotificationsOverlay />
+      </>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+
+    await user.click(screen.getByTitle("Delete Version"))
+    await screen.findByText("Are you sure you want to uninstall VS Version 1.20.4?")
+    await user.click(screen.getByTitle("Uninstall"))
+
+    expect(await screen.findByText("VS Version 1.20.4 uninstalled successfully.")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+    expect(api.pathsManager.checkPathExists).toHaveBeenCalledWith("/versions/1.20.4")
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+    expect(screen.queryByText(/An error occurred while uninstalling/)).toBeNull()
+  })
+
+  it("names the folder the uninstall deletes and says everything in it goes", async () => {
+    const user = userEvent.setup()
+    installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/versions/1.20.4" }] })) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+    await user.click(screen.getByTitle("Delete Version"))
+
+    expect(await screen.findByText(/deletes the folder \/versions\/1\.20\.4 and everything in it/)).toBeTruthy()
+  })
+
+  /**
+   * #707: a version registered on a folder that also holds an Installation, another VS Version or a
+   * configured root cannot be deleted whole (the delete policy refuses), and used to fail the same
+   * way on every retry. It is removed from the list, its folder is kept, and the dialogs say so.
+   */
+  describe.each([
+    {
+      held: "an Installation",
+      config: { installations: [anInstallation({ id: "world", name: "World", path: "/games/MyWorlds", gameVersionId: "other" })] }
+    },
+    {
+      held: "another VS Version",
+      config: {
+        gameVersions: [
+          { version: "1.20.4", path: "/games" },
+          { version: "1.21.0", path: "/games/1.21.0" }
+        ]
+      }
+    },
+    { held: "a configured root", config: { defaultInstallationsFolder: "/games/Installations" } }
+  ])("a VS Version on a folder that holds $held", ({ config }) => {
+    it("keeps the folder, drops the entry and says why", async () => {
+      const user = userEvent.setup()
+      const api = installMockWindowApi({
+        configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/games" }], ...config })) },
+        pathsManager: { deletePath: vi.fn(async () => false) }
+      })
+
+      renderWithProviders(
+        <TaskProvider>
+          <ListVersions />
+          <NotificationsOverlay />
+        </TaskProvider>,
+        { route: "/versions" }
+      )
+
+      await screen.findByText("1.20.4")
+      await user.click(screen.getByTitle("Remove from List"))
+
+      expect(await screen.findByText(/The folder \/games stays where it is: it also holds Installations, other VS Versions or folders the launcher uses/)).toBeTruthy()
+      expect(screen.queryByText(/deletes the folder/)).toBeNull()
+
+      await user.click(screen.getAllByTitle("Remove from List").at(-1) as HTMLElement)
+
+      expect(await screen.findByText(/Its folder was kept because it also holds Installations/)).toBeTruthy()
+      await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+      expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+      expect(screen.queryByText(/An error occurred while uninstalling/)).toBeNull()
+    })
+  })
+
+  /**
+   * The toast gives the reason the folder stays: a registered (linked) version was left alone, which is
+   * true whether or not anything else sits in the folder, while a folder that really holds other
+   * managed folders says so. Both leave the folder in place, so the dialogs read the same either way.
+   */
+  it("says a linked VS Version's folder was left alone, not that it holds other folders", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/games/MyVS", linked: true }] })) },
+      pathsManager: { deletePath: vi.fn(async () => false) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+        <NotificationsOverlay />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+    await user.click(screen.getByTitle("Remove from List"))
+    await user.click(screen.getAllByTitle("Remove from List").at(-1) as HTMLElement)
+
+    expect(await screen.findByText("VS Version 1.20.4 removed from the list. Its folder was left alone.")).toBeTruthy()
+    expect(screen.queryByText(/Its folder was kept because it also holds/)).toBeNull()
+    await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+  })
+
+  it("compares the folders without regard to case on macOS, as the host does", async () => {
+    installMockWindowApi({
+      utils: { getOs: vi.fn(async () => "darwin" as NodeJS.Platform) },
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [{ version: "1.20.4", path: "/games" }],
+            installations: [anInstallation({ id: "world", name: "World", path: "/Games/MyWorlds", gameVersionId: "other" })]
+          })
+        )
+      }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+    await waitFor(() => expect(screen.queryByTitle("Delete Version")).toBeNull())
+    expect(screen.getByTitle("Remove from List")).toBeTruthy()
+  })
+
+  it("does not claim the in-use warning deletes a folder that holds an Installation", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [{ version: "1.20.4", path: "/games" }],
+            installations: [anInstallation({ id: "world", name: "Survival World", path: "/games/MyWorlds", gameVersionId: "gv-1" })]
+          })
+        )
+      },
+      pathsManager: { deletePath: vi.fn(async () => false) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.20.4")
+    await user.click(screen.getByTitle("Remove from List"))
+    await user.click(screen.getAllByTitle("Remove from List").at(-1) as HTMLElement)
+
+    await screen.findByText(/Survival World still uses this VS Version/)
+    await waitFor(() => expect(screen.queryByText("Are you sure you want to remove VS Version 1.20.4 from the list?")).toBeNull())
+    expect(screen.getByText(/The folder \/games stays where it is/)).toBeTruthy()
+    expect(screen.queryByText(/deletes the folder/)).toBeNull()
+
+    await user.click(screen.getByTitle("Delete anyway"))
+
+    await waitFor(() => expect(screen.queryByText("1.20.4")).toBeNull())
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+  })
+
   it("warns naming every installation still on that version, and cancelling deletes nothing", async () => {
     const user = userEvent.setup()
     const api = installMockWindowApi({
@@ -92,7 +326,7 @@ describe("ListVersions", () => {
           })
         )
       },
-      pathsManager: { deletePath: vi.fn(async () => true) }
+      pathsManager: { checkPathExists: vi.fn(async () => true), deletePath: vi.fn(async () => true) }
     })
 
     renderWithProviders(
@@ -191,6 +425,44 @@ describe("ListVersions", () => {
     expect(warning.textContent).not.toMatch(/\b(and|more)\b/i)
   })
 
+  // The warning names the Installations on the build and says what deleting it does to them, so the verb
+  // and the pronouns go by how many there are: one Installation is "it", two are "they". Only en-US and
+  // fr-FR have the singular so far; the other languages keep their one sentence until Weblate brings theirs.
+  it.each([
+    {
+      language: "en-US",
+      count: 1,
+      sentence: "Alpha still uses this VS Version. Deleting it now means it won't launch until you point it at another one."
+    },
+    {
+      language: "en-US",
+      count: 2,
+      sentence: "Alpha, Beta still use this VS Version. Deleting it now means they won't launch until you point them at another one."
+    },
+    {
+      language: "fr-FR",
+      count: 1,
+      sentence: "Alpha utilise encore cette version de VS. La supprimer maintenant l'empêchera de démarrer tant que vous ne lui en aurez pas indiqué une autre."
+    },
+    {
+      language: "fr-FR",
+      count: 2,
+      sentence: "Alpha, Beta utilisent encore cette version de VS. La supprimer maintenant les empêchera de démarrer tant que vous ne leur en aurez pas indiqué une autre."
+    }
+  ] as const)("words the in-use warning for $count Installation(s) in $language so the verb and the pronouns agree", async ({ language, count, sentence }) => {
+    await openInUseWarning(language, ["Alpha", "Beta"].slice(0, count))
+
+    await screen.findByText(sentence)
+  })
+
+  it("counts the installations folded into 'and N more' as well, so six of them still read as plural", async () => {
+    // Five names are spelled out and one is folded. Counting only the folded one would read as a single
+    // installation and pick the singular sentence for a version that six of them run on.
+    await openInUseWarning("en-US", ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta"])
+
+    await screen.findByText("Alpha, Beta, Gamma, Delta, Epsilon and 1 more still use this VS Version. Deleting it now means they won't launch until you point them at another one.")
+  })
+
   it("checks installations against the selected build id when version numbers are shared", async () => {
     const user = userEvent.setup()
     installMockWindowApi({
@@ -222,7 +494,7 @@ describe("ListVersions", () => {
     await screen.findByText("Are you sure you want to uninstall VS Version Vanilla?")
     await user.click(screen.getByTitle("Uninstall"))
 
-    await screen.findByText("Vanilla World still use this VS Version. Deleting it now means they won't launch until you point them at another one.")
+    await screen.findByText("Vanilla World still uses this VS Version. Deleting it now means it won't launch until you point it at another one.")
     expect(screen.queryByText(/Optimum World still use/)).toBeNull()
   })
 
@@ -237,7 +509,7 @@ describe("ListVersions", () => {
           })
         )
       },
-      pathsManager: { deletePath: vi.fn(async () => true) }
+      pathsManager: { checkPathExists: vi.fn(async () => true), deletePath: vi.fn(async () => true) }
     })
 
     renderWithProviders(
@@ -261,11 +533,75 @@ describe("ListVersions", () => {
     expect(api.pathsManager.deletePath).toHaveBeenCalledWith("/versions/1.20.4")
   })
 
+  // An install the launcher did not see finish (#710): marked as such, and removable so the player
+  // can install it again. A build that finished, or one still being installed, carries no such mark.
+  it("marks an interrupted install and lets the player remove it", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () =>
+          createMockConfig({
+            gameVersions: [
+              { id: "cut-off", label: "1.22.7", version: "1.22.7", path: "/versions/1.22.7", incomplete: true },
+              { id: "done", label: "1.22.6", version: "1.22.6", path: "/versions/1.22.6" },
+              { id: "running", label: "1.22.5", version: "1.22.5", path: "/versions/1.22.5", incomplete: true, _installing: true }
+            ]
+          })
+        )
+      },
+      pathsManager: { deletePath: vi.fn(async () => true), checkPathExists: vi.fn(async () => true) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.22.7")
+    expect(screen.getAllByText("Install interrupted")).toHaveLength(1)
+
+    const deleteButtons = screen.getAllByTitle("Delete Version")
+    expect((deleteButtons[0] as HTMLButtonElement).disabled).toBe(false)
+    await user.click(deleteButtons[0]!)
+    await user.click(await screen.findByTitle("Uninstall"))
+
+    await waitFor(() => expect(screen.queryByText("1.22.7")).toBeNull())
+    expect(api.pathsManager.deletePath).toHaveBeenCalledWith("/versions/1.22.7")
+  })
+
+  // Cut off before the first response, the folder was never created and the host refuses to delete
+  // a path it cannot find: the row has to go anyway (#710).
+  it("removes an interrupted install whose folder was never created", async () => {
+    const user = userEvent.setup()
+    const api = installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ id: "cut-off", label: "1.22.7", version: "1.22.7", path: "/versions/1.22.7", incomplete: true }] }))
+      },
+      pathsManager: { deletePath: vi.fn(async () => false), checkPathExists: vi.fn(async () => false) }
+    })
+
+    renderWithProviders(
+      <TaskProvider>
+        <ListVersions />
+      </TaskProvider>,
+      { route: "/versions" }
+    )
+
+    await screen.findByText("1.22.7")
+    await user.click(screen.getByTitle("Delete Version"))
+    await user.click(await screen.findByTitle("Uninstall"))
+
+    await waitFor(() => expect(screen.queryByText("1.22.7")).toBeNull())
+    expect(api.pathsManager.deletePath).not.toHaveBeenCalled()
+  })
+
   it("unregisters a linked version without deleting its folder", async () => {
     const user = userEvent.setup()
     const api = installMockWindowApi({
       configManager: { getConfig: vi.fn(async () => createMockConfig({ gameVersions: [{ version: "1.20.4", path: "/games/vintagestory", linked: true }] })) },
-      pathsManager: { deletePath: vi.fn(async () => true) }
+      pathsManager: { checkPathExists: vi.fn(async () => true), deletePath: vi.fn(async () => true) }
     })
 
     renderWithProviders(
@@ -667,5 +1003,127 @@ describe("ListVersions", () => {
       // it to leave too: what has to be gone is the action on the row.
       await waitFor(() => expect(screen.queryByTitle("Remove Optimum")).toBeNull())
     })
+
+    it("flags an Optimum build missing required assemblies and keeps Remove Optimum available", async () => {
+      withRows(
+        [
+          {
+            version: "1.22.7",
+            path: "/versions/optimum-broken",
+            label: "1.22.7 Optimum 0.3.19",
+            variant: { name: "Optimum", version: "0.3.19" }
+          }
+        ],
+        { ok: true, manifest: anOptimumManifest({ optimumVersion: "0.3.19" }) },
+        {
+          pathsManager: {
+            checkPathExists: vi.fn(async (path: string) => path === "/versions/optimum-broken/Optimum.Api.Contracts.dll")
+          }
+        }
+      )
+
+      renderList()
+      await screen.findByText("1.22.7 Optimum 0.3.19")
+
+      expect(await screen.findByText("Missing Optimum files")).toBeTruthy()
+      expect(screen.getByTitle("Remove Optimum")).toBeTruthy()
+      const badge = screen.getByText("Missing Optimum files")
+      expect(badge.getAttribute("title")).toBe("This VS Version is missing a file Optimum needs, so it cannot enter a world. Remove Optimum to put the original game files back.")
+      expect(screen.getByText("This VS Version is missing a file Optimum needs, so it cannot enter a world. Remove Optimum to put the original game files back.")).toBeTruthy()
+    })
+
+    it("accepts required assemblies in Lib and Mods, not only at the build root", async () => {
+      withRows(
+        [{ version: "1.22.7", path: "/versions/optimum-libraries", label: "1.22.7 Optimum 0.3.19", variant: { name: "Optimum", version: "0.3.19" } }],
+        { ok: true, manifest: anOptimumManifest({ optimumVersion: "0.3.19" }) },
+        {
+          pathsManager: {
+            checkPathExists: vi.fn(async (path: string) => path === "/versions/optimum-libraries/Lib/Optimum.Api.Contracts.dll" || path === "/versions/optimum-libraries/Mods/Optimum.GameContent.dll")
+          }
+        }
+      )
+
+      renderList()
+      await screen.findByText("1.22.7 Optimum 0.3.19")
+
+      expect(screen.queryByText("Missing Optimum files")).toBeNull()
+      const label = screen.getByText("1.22.7 Optimum 0.3.19")
+      expect(label.closest("p")?.classList.contains("w-full")).toBe(true)
+      expect(label.closest("p")?.parentElement?.classList.contains("justify-center")).toBe(true)
+    })
+
+    it("checks backups-only Optimum rows and keeps their removal action", async () => {
+      withRows(
+        [{ version: "1.22.7", path: "/versions/unregistered-optimum" }],
+        { ok: true, manifest: anOptimumManifest() },
+        {
+          pathsManager: {
+            checkPathExists: vi.fn(async (path: string) => path === "/versions/unregistered-optimum/.optimum/vanilla" || path === "/versions/unregistered-optimum/Lib/Optimum.Api.Contracts.dll")
+          }
+        }
+      )
+
+      renderList()
+      await screen.findByText("1.22.7")
+
+      expect(await screen.findByText("Missing Optimum files")).toBeTruthy()
+      expect(screen.getByTitle("Remove Optimum")).toBeTruthy()
+    })
+
+    it("does not call a build broken when its assembly folders cannot be inspected", async () => {
+      withRows(
+        [{ version: "1.22.7", path: "/versions/unreadable", label: "1.22.7 Optimum 0.3.19", variant: { name: "Optimum", version: "0.3.19" } }],
+        { ok: true, manifest: anOptimumManifest({ optimumVersion: "0.3.19" }) },
+        { pathsManager: { checkPathExists: vi.fn(async () => Promise.reject(new Error("access denied"))) } }
+      )
+
+      renderList()
+      await screen.findByText("1.22.7 Optimum 0.3.19")
+
+      await waitFor(() => expect(screen.queryByText("Missing Optimum files")).toBeNull())
+    })
+
+    it("does not flag an intact Optimum build when all required assemblies are present", async () => {
+      withRows(
+        [
+          {
+            version: "1.22.7",
+            path: "/versions/optimum-intact",
+            label: "1.22.7 Optimum 0.3.19",
+            variant: { name: "Optimum", version: "0.3.19" }
+          }
+        ],
+        { ok: true, manifest: anOptimumManifest({ optimumVersion: "0.3.19" }) },
+        {
+          pathsManager: {
+            checkPathExists: vi.fn(async () => true)
+          }
+        }
+      )
+
+      renderList()
+      await screen.findByText("1.22.7 Optimum 0.3.19")
+
+      expect(screen.queryByText("Missing Optimum files")).toBeNull()
+      expect(screen.getByTitle("Remove Optimum")).toBeTruthy()
+    })
+  })
+})
+
+describe("describeUninstallFailure", () => {
+  // useUninstallGameVersion renders the key as t(messageKey, { version }): no count and no installation
+  // names. A plural family needs a count to pick a form and comes out as its raw key without one, and a
+  // placeholder other than {{version}} stays unfilled. tests/i18n cannot see this, since the key reaches
+  // t() through a variable.
+  it("keys every refusal to a sentence that renders with nothing but the version's name", () => {
+    const reasons: UninstallGameVersionFailure[] = ["version-playing", "version-busy", "version-in-use", "file-delete-failed"]
+
+    for (const reason of reasons) {
+      const { messageKey } = describeUninstallFailure(reason)
+      const sentence = i18n.t(messageKey, { version: "1.20.4" })
+
+      expect(sentence, `${reason} renders as the raw key ${messageKey}`).not.toBe(messageKey)
+      expect(sentence, `${reason} leaves a placeholder unfilled`).not.toContain("{{")
+    }
   })
 })

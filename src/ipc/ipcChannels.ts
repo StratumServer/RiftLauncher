@@ -84,11 +84,16 @@ export const IPC_CHANNELS = {
     LOGIN: "account-login",
     REMOVE_ACCOUNT: "account-remove"
   },
+  INSTALLATION_ACTIVITY: {
+    ACQUIRE_LEASE: "installation-activity-acquire-lease",
+    RELEASE_LEASE: "installation-activity-release-lease"
+  },
   WORLDS_MANAGER: {
     LIST: "worlds-list",
     BACKUP: "worlds-backup",
     RESTORE: "worlds-restore",
     DELETE: "worlds-delete",
+    DELETE_BACKUP: "worlds-delete-backup",
     TRANSFER: "worlds-transfer"
   }
 }
