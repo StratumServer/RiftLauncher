@@ -247,7 +247,14 @@ export async function assertConfiguredInstallationPath(value: unknown): Promise<
   return pathValue
 }
 
-export async function assertConfigPathsAuthorized(nextConfig: ConfigType, currentConfig: ConfigType): Promise<boolean> {
+/**
+ * The paths in `nextConfig` that nothing authorizes: neither a folder or entry the current config
+ * already names, nor a place the user just picked in a native dialog. Empty means the save may go on.
+ *
+ * Named rather than counted so SAVE_CONFIG can tell the renderer which entries to drop. One refused
+ * path left in the renderer's state is refused again by every later save, which carries the whole state.
+ */
+export function unauthorizedConfigPaths(nextConfig: ConfigType, currentConfig: ConfigType): string[] {
   const existingGrants = getConfigDeclarationGrants(currentConfig)
   const candidatePaths = [
     nextConfig.defaultInstallationsFolder,
@@ -259,8 +266,5 @@ export async function assertConfigPathsAuthorized(nextConfig: ConfigType, curren
     ...nextConfig.gameVersions.map((gameVersion) => gameVersion.path)
   ]
 
-  return candidatePaths.every((candidatePath) => {
-    if (!candidatePath) return false
-    return isPathGranted(existingGrants, candidatePath) || isUserApprovedPath(candidatePath)
-  })
+  return candidatePaths.filter((candidatePath) => !candidatePath || !(isPathGranted(existingGrants, candidatePath) || isUserApprovedPath(candidatePath)))
 }

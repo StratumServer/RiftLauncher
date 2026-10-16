@@ -2,7 +2,7 @@ import { ipcMain } from "electron"
 import { IPC_CHANNELS } from "@src/ipc/ipcChannels"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { isRecord } from "@src/ipc/validation"
-import { assertConfigPathsAuthorized } from "@src/ipc/pathPolicy"
+import { unauthorizedConfigPaths } from "@src/ipc/pathPolicy"
 import { invalidPayloadResult, saveOutcomeToResult, sessionReadOnlyResult, unauthorizedPathResult } from "@src/ipc/handlers/saveConfigOutcome"
 
 import { getConfig, isConfigWriteSuppressed, normalizeConfig, saveConfig, takePendingConfigRecoveryNotice } from "@src/config/configManager"
@@ -35,7 +35,8 @@ ipcMain.handle(IPC_CHANNELS.CONFIG_MANAGER.SAVE_CONFIG, async (event, config: Co
       worldBackups: currentConfig.installations.find((current) => current.id === installation.id)?.worldBackups ?? installation.worldBackups
     }))
   })
-  if (!(await assertConfigPathsAuthorized(normalizedConfig, currentConfig))) return unauthorizedPathResult()
+  const refusedPaths = unauthorizedConfigPaths(normalizedConfig, currentConfig)
+  if (refusedPaths.length > 0) return unauthorizedPathResult(refusedPaths)
   const saved = await saveConfig(normalizedConfig)
   if (!saved && isConfigWriteSuppressed()) return sessionReadOnlyResult()
   return saveOutcomeToResult(saved)

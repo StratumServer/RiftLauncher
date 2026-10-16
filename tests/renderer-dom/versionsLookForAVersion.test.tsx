@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen, waitFor } from "@testing-library/react"
+import { act, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
+import { CONFIG_ACTIONS, useConfigDispatch, useGameVersions } from "@renderer/features/config/contexts/ConfigContext"
 import LookForAVersion from "@renderer/features/versions/pages/LookForAVersion"
 import NotificationsOverlay from "@renderer/components/layout/NotificationsOverlay"
 
@@ -258,5 +259,167 @@ describe("LookForAVersion", () => {
     expect(addedVersion).toBeTruthy()
     expect(addedVersion!.linked).toBe(true)
     expect(addedVersion!.path).toBe("/external/1.20.4")
+  })
+
+  describe("a folder whose approval ran out (#731)", () => {
+    const SUCCESS = "That VS Version was successfully added."
+
+    /** A change the player makes after Add, saved with the whole state like every other. */
+    function FavouriteAMod(): JSX.Element {
+      const configDispatch = useConfigDispatch()
+      return <button onClick={() => configDispatch({ type: CONFIG_ACTIONS.ADD_FAV_MOD, payload: { modid: 42 } })}>favourite a mod</button>
+    }
+
+    /** Main's answer to a save naming a path nobody trusts any more, with the refused paths in it. */
+    function refusing(untrusted: string): (config: ConfigType) => Promise<SaveConfigResult> {
+      return async (config) => (config.gameVersions.some((gameVersion) => gameVersion.path === untrusted) ? { ok: false, reason: "unauthorized-path", refusedPaths: [untrusted] } : { ok: true })
+    }
+
+    it("asks for the folder to be picked again, and adds nothing, when main no longer trusts the folder at Add", async () => {
+      const user = userEvent.setup()
+      const saveConfig = vi.fn(async (_config: ConfigType) => ({ ok: true }) as SaveConfigResult)
+      // The pick was looked at in time; ten minutes later the same call is refused.
+      const lookForAGameVersion = vi
+        .fn()
+        .mockResolvedValueOnce({ exists: true as const, installedGameVersion: "1.20.4" })
+        .mockRejectedValue(new TypeError("Unmanaged game version path"))
+      installMockWindowApi({ utils: { selectFolderDialog: vi.fn(async () => ["/external/1.20.4"]) }, gameManager: { lookForAGameVersion }, configManager: { saveConfig } })
+
+      renderWithProviders(
+        <>
+          <LookForAVersion />
+          <NotificationsOverlay />
+        </>,
+        { route: "/versions/look-for-a-version" }
+      )
+
+      await user.click(screen.getByTitle("Browse"))
+      await screen.findByDisplayValue("/external/1.20.4")
+      await user.click(screen.getByTitle("Add"))
+
+      expect(await screen.findByText(/only trusts a folder for ten minutes/)).toBeTruthy()
+      expect(screen.queryByText(SUCCESS)).toBeNull()
+      expect(saveConfig.mock.calls.some(([config]) => (config as ConfigType).gameVersions.length > 0)).toBe(false)
+    })
+
+    it("does not say the version was added when the save is refused, names it, and keeps later saves going through", async () => {
+      const user = userEvent.setup()
+      const saveConfig = vi.fn(refusing("/external/1.20.4"))
+      installMockWindowApi({
+        utils: { selectFolderDialog: vi.fn(async () => ["/external/1.20.4"]) },
+        gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.20.4" })) },
+        configManager: { saveConfig }
+      })
+
+      renderWithProviders(
+        <>
+          <LookForAVersion />
+          <FavouriteAMod />
+          <NotificationsOverlay />
+        </>,
+        { route: "/versions/look-for-a-version" }
+      )
+
+      await user.click(screen.getByTitle("Browse"))
+      await screen.findByDisplayValue("/external/1.20.4")
+      await user.click(screen.getByTitle("Add"))
+
+      expect(await screen.findByText(/Couldn't keep 1\.20\.4/)).toBeTruthy()
+      expect(screen.queryByText(SUCCESS)).toBeNull()
+
+      await user.click(screen.getByRole("button", { name: "favourite a mod" }))
+      await waitFor(() => expect(saveConfig.mock.calls.at(-1)?.[0]).toMatchObject({ favMods: [42] }))
+      const lastSaved = saveConfig.mock.calls.at(-1)?.[0] as unknown as ConfigType
+      expect(lastSaved.gameVersions).toEqual([])
+      await act(async () => {})
+      expect(screen.queryByText(/Re-pick it on the Config page/)).toBeNull()
+    })
+
+    it("says the version was added only once the save has gone through", async () => {
+      const user = userEvent.setup()
+      let finishSave: (result: SaveConfigResult) => void = () => {}
+      const saveConfig = vi.fn(
+        (config: ConfigType) =>
+          new Promise<SaveConfigResult>((resolve) => {
+            if (config.gameVersions.length > 0) finishSave = resolve
+            else resolve({ ok: true })
+          })
+      )
+      installMockWindowApi({
+        utils: { selectFolderDialog: vi.fn(async () => ["/external/1.20.4"]) },
+        gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.20.4" })) },
+        configManager: { saveConfig }
+      })
+
+      renderWithProviders(
+        <>
+          <LookForAVersion />
+          <NotificationsOverlay />
+        </>,
+        { route: "/versions/look-for-a-version" }
+      )
+
+      await user.click(screen.getByTitle("Browse"))
+      await screen.findByDisplayValue("/external/1.20.4")
+      await user.click(screen.getByTitle("Add"))
+      await waitFor(() => expect(saveConfig.mock.calls.some(([config]) => config.gameVersions.length > 0)).toBe(true))
+      expect(screen.queryByText(SUCCESS)).toBeNull()
+
+      await act(async () => finishSave({ ok: true }))
+      expect(await screen.findByText(SUCCESS)).toBeTruthy()
+    })
+
+    it("takes the version back out when the write fails, so Add works again for the same folder", async () => {
+      const user = userEvent.setup()
+      let writeFails = true
+      const saveConfig = vi.fn(async (config: ConfigType) =>
+        writeFails && config.gameVersions.length > 0 ? ({ ok: false, reason: "write-failed" } as SaveConfigResult) : ({ ok: true } as SaveConfigResult)
+      )
+      installMockWindowApi({
+        utils: { selectFolderDialog: vi.fn(async () => ["/external/1.20.4"]) },
+        gameManager: { lookForAGameVersion: vi.fn(async () => ({ exists: true as const, installedGameVersion: "1.20.4" })) },
+        configManager: { saveConfig }
+      })
+
+      function ListedVersions(): JSX.Element {
+        return (
+          <p>
+            versions:{" "}
+            {useGameVersions()
+              .map((gameVersion) => gameVersion.version)
+              .join(",") || "none"}
+          </p>
+        )
+      }
+
+      renderWithProviders(
+        <>
+          <LookForAVersion />
+          <ListedVersions />
+          <NotificationsOverlay />
+        </>,
+        { route: "/versions/look-for-a-version" }
+      )
+
+      await user.click(screen.getByTitle("Browse"))
+      await screen.findByDisplayValue("/external/1.20.4")
+      await user.click(screen.getByTitle("Add"))
+
+      expect(await screen.findByText("That VS Version couldn't be saved, so it wasn't added.")).toBeTruthy()
+      expect(screen.queryByText(SUCCESS)).toBeNull()
+      // What the message says is true: the row is not listed, and the next save does not carry it.
+      await screen.findByText("versions: none")
+      await waitFor(() => expect(saveConfig.mock.calls.at(-1)?.[0].gameVersions).toEqual([]))
+
+      // The player picks the folder again once the disk works, and Add goes through.
+      writeFails = false
+      await user.click(screen.getByTitle("Browse"))
+      await screen.findByDisplayValue("/external/1.20.4")
+      await user.click(screen.getByTitle("Add"))
+
+      expect(await screen.findByText(SUCCESS)).toBeTruthy()
+      expect(screen.queryByText("That folder is already in use.")).toBeNull()
+      expect(saveConfig.mock.calls.at(-1)?.[0].gameVersions).toHaveLength(1)
+    })
   })
 })

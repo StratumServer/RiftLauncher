@@ -1,9 +1,11 @@
 import { DEFAULT_CONFIG_BASE } from "@domain/config/defaults"
 import { type ModDbVisibilityState } from "@domain/moddbVisibility"
 import { MAX_DISMISSED_MOD_SUGGESTIONS } from "@domain/mods/suggestions"
+import { dropRefusedPaths, type KeptFolders } from "../utils/refusedPaths"
 
 export enum CONFIG_ACTIONS {
   SET_CONFIG = "SET_CONFIG",
+  DROP_REFUSED_PATHS = "DROP_REFUSED_PATHS",
 
   SET_LAST_USED_INSTALLATION = "SET_LAST_USED_INSTALLATION",
   SET_DEFAULT_INSTALLATIONS_FOLDER = "SET_DEFAULT_INSTALLATIONS_FOLDER",
@@ -51,6 +53,15 @@ export enum CONFIG_ACTIONS {
 export interface SetConfig {
   type: CONFIG_ACTIONS.SET_CONFIG
   payload: ConfigType
+}
+
+/**
+ * Drops the entries SAVE_CONFIG refused (see refusedPaths.ts), so they are not sent again with the
+ * next save. `kept` is main's copy of the three folders, for a refused folder to go back to.
+ */
+export interface DropRefusedPaths {
+  type: CONFIG_ACTIONS.DROP_REFUSED_PATHS
+  payload: { paths: string[]; kept: KeptFolders | null }
 }
 
 export interface SetLastUsedInstallation {
@@ -335,6 +346,7 @@ export interface AddNotifiedModUpdate {
 
 export type ConfigAction =
   | SetConfig
+  | DropRefusedPaths
   | SetLastUsedInstallation
   | SetDefaultInstllationsFolder
   | SetDefaultVersionsFolder
@@ -381,6 +393,8 @@ export const configReducer = (config: ConfigType, action: ConfigAction): ConfigT
   switch (action.type) {
     case CONFIG_ACTIONS.SET_CONFIG:
       return action.payload
+    case CONFIG_ACTIONS.DROP_REFUSED_PATHS:
+      return dropRefusedPaths(config, action.payload.paths, action.payload.kept).config
     case CONFIG_ACTIONS.SET_LAST_USED_INSTALLATION:
       return { ...config, lastUsedInstallation: action.payload }
     case CONFIG_ACTIONS.SET_DEFAULT_INSTALLATIONS_FOLDER:

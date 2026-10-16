@@ -584,7 +584,7 @@ describe("managed path policy: paths the user picked in a native dialog", () => 
 
 describe("config path authorization", () => {
   async function authorizes(next: Partial<ConfigType>): Promise<boolean> {
-    return policy.assertConfigPathsAuthorized(buildConfig(next), buildConfig())
+    return policy.unauthorizedConfigPaths(buildConfig(next), buildConfig()).length === 0
   }
 
   it("accepts a config that leaves every path where it already is", async () => {
@@ -605,7 +605,7 @@ describe("config path authorization", () => {
     const currentConfig = buildConfig({ backupsFolder: movedFolder })
     const nextConfig = buildConfig({ backupsFolder: movedFolder })
 
-    assert.equal(await policy.assertConfigPathsAuthorized(nextConfig, currentConfig), true)
+    assert.deepEqual(policy.unauthorizedConfigPaths(nextConfig, currentConfig), [])
   })
 
   it("refuses an installation declared inside the launcher's own folders", async () => {
@@ -624,7 +624,7 @@ describe("config path authorization", () => {
       installations: [{ path: join(backupArchive, "unpacked"), backups: [] }] as unknown as ConfigType["installations"]
     })
 
-    assert.equal(await policy.assertConfigPathsAuthorized(nextConfig, currentConfig), false)
+    assert.deepEqual(policy.unauthorizedConfigPaths(nextConfig, currentConfig), [join(backupArchive, "unpacked")])
   })
 
   it("refuses a path nobody picked and no folder covers", async () => {
