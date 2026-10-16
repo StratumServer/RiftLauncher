@@ -43,7 +43,9 @@ export function useUninstallGameVersion(): (version: GameVersionType, options?: 
 
     if (result.ok) {
       configDispatch({ type: CONFIG_ACTIONS.DELETE_GAME_VERSION, payload: { id: version.id } })
-      const keptKey = keepFolder ? "features.versions.versionRemovedFolderHoldsOthers" : "features.versions.versionUnlinkedSuccessfully"
+      // A registered (linked) version was left alone, whatever else its folder holds, as the dialog says. Only an installed
+      // version whose folder holds Installations, other VS Versions or launcher folders is kept for that reason.
+      const keptKey = keepFolder && !version.linked ? "features.versions.versionRemovedFolderHoldsOthers" : "features.versions.versionUnlinkedSuccessfully"
       const messageKey = result.folderRemoved ? "features.versions.versionUninstalledSuccesfully" : keptKey
       addNotification(t(messageKey, { version: displayName }), "success")
       return result
