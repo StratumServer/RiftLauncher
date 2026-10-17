@@ -29,6 +29,14 @@ describe("accent presets", () => {
     assert.equal(amber?.dark, themeHex("vsd"))
   })
 
+  it("never spells a brand stop as a hex outside the @theme block, so every surface follows the accent", () => {
+    const css = readFileSync(STYLES_CSS, "utf8")
+    const outsideTheme = css.replace(/@theme\s*\{[\s\S]*?\n\}/, "")
+    for (const stop of [themeHex("vsl"), themeHex("vs"), themeHex("vsd")]) {
+      assert.equal(outsideTheme.toLowerCase().includes(stop), false, `styles.css hard-codes ${stop}; use the matching var(--color-*) so the accent preset applies`)
+    }
+  })
+
   it("gives every preset a unique id, a name and three distinct, well-formed hex stops", () => {
     const seen = new Set<string>()
     for (const preset of ACCENT_PRESETS) {
