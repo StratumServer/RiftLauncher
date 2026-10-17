@@ -124,5 +124,5 @@ html[data-uiscale="150"] {
 
 *::-webkit-scrollbar-thumb {
   border-radius: 5px;
-  background-color: #7e501e;
+  background-color: var(--color-vs);
 }
