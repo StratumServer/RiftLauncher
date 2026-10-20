@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "vitest"
 
-import { createInstallation, validateInstallationFields } from "../../../src/domain/installations/create"
+import { createInstallation, isValidBackupsLimit, validateInstallationFields } from "../../../src/domain/installations/create"
 import type { CreateInstallationInput, CreateInstallationPorts } from "../../../src/domain/installations/create"
 
 function ports(overrides: Partial<CreateInstallationPorts> = {}): CreateInstallationPorts {
@@ -68,6 +68,24 @@ describe("validateInstallationFields", () => {
     const result = validateInstallationFields({ name: "Valid Name", startParams: "--some-other-flag" })
 
     assert.deepEqual(result, { ok: true })
+  })
+})
+
+describe("isValidBackupsLimit", () => {
+  it("accepts 0 (backups disabled) and positive integers", () => {
+    assert.equal(isValidBackupsLimit(0), true)
+    assert.equal(isValidBackupsLimit(1), true)
+    assert.equal(isValidBackupsLimit(3), true)
+    assert.equal(isValidBackupsLimit(10), true)
+  })
+
+  it("refuses negative numbers, fractions, NaN and infinities", () => {
+    assert.equal(isValidBackupsLimit(-1), false)
+    assert.equal(isValidBackupsLimit(-0.5), false)
+    assert.equal(isValidBackupsLimit(1.5), false)
+    assert.equal(isValidBackupsLimit(Number.NaN), false)
+    assert.equal(isValidBackupsLimit(Number.POSITIVE_INFINITY), false)
+    assert.equal(isValidBackupsLimit(Number.NEGATIVE_INFINITY), false)
   })
 })
 
@@ -164,6 +182,12 @@ describe("createInstallation", () => {
     const result = createInstallation(ports(), input({ gameVersionId: "gv-optimum" }))
 
     assert.equal(result.ok && result.installation.gameVersionId, "gv-optimum")
+  })
+
+  it("preserves a backupsLimit of 0 on the built installation record", () => {
+    const result = createInstallation(ports(), input({ backupsLimit: 0 }))
+
+    assert.equal(result.ok && result.installation.backupsLimit, 0)
   })
 
   it("mints a fresh id on every call", () => {
