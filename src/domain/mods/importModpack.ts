@@ -190,6 +190,21 @@ function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | un
 }
 
 /**
+ * Drops later entries that repeat an earlier entry's modid, keeping manifest order.
+ *
+ * An Installation with two enabled copies of one Mod exports both into the manifest. Planning both
+ * would download the Mod twice against one folder read and key two table rows by the same modid.
+ */
+export function deduplicateModpackEntries(entries: readonly ModpackEntry[]): ModpackEntry[] {
+  const seen = new Set<string>()
+  return entries.filter((entry) => {
+    if (seen.has(entry.modid)) return false
+    seen.add(entry.modid)
+    return true
+  })
+}
+
+/**
  * The entries that still need a ModDB lookup.
  *
  * The caller fetches these and hands the details back to {@link planModpackImport}. It exists so
@@ -197,7 +212,7 @@ function satisfyingCopy(entry: ModpackEntry, existing: InstalledModSnapshot | un
  * interleaved loop achieved by checking the folder before querying.
  */
 export function modpackEntriesToResolve(entries: readonly ModpackEntry[], installed: readonly InstalledModSnapshot[]): ModpackEntry[] {
-  return entries.filter((entry) => !entry.severalCopies && satisfyingCopy(entry, installedFor(installed, entry.modid)) === undefined)
+  return deduplicateModpackEntries(entries).filter((entry) => !entry.severalCopies && satisfyingCopy(entry, installedFor(installed, entry.modid)) === undefined)
 }
 
 /**
@@ -207,7 +222,7 @@ export function modpackEntriesToResolve(entries: readonly ModpackEntry[], instal
  * user agrees to anything, which is before a single ModDB page has been fetched.
  */
 export function modpackDowngrades(entries: readonly ModpackEntry[], installed: readonly InstalledModSnapshot[]): ModpackEntry[] {
-  return entries.filter((entry) => {
+  return deduplicateModpackEntries(entries).filter((entry) => {
     const existing = installedFor(installed, entry.modid)
     // A browse pick names no version, and its plan never goes below the copy installed.
     return entry.version !== undefined && existing !== undefined && compareVersions(entry.version, existing.version) < 0
@@ -381,7 +396,7 @@ function planEntry(entry: ModpackEntry, input: ModpackPlanInput): ModpackPlanIte
  * @returns One item per manifest entry, in manifest order.
  */
 export function planModpackImport(input: ModpackPlanInput): ModpackImportPlan {
-  const items = input.entries.map((entry) => planEntry(entry, input))
+  const items = deduplicateModpackEntries(input.entries).map((entry) => planEntry(entry, input))
 
   return { items, downgrades: items.filter((item): item is ModpackInstallItem => item.decision === "install" && item.downgrade) }
 }

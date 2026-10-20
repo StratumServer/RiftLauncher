@@ -627,8 +627,9 @@ describe("useInstalledModActions: the old copy while its update downloads (#703)
 
   it("tells the player both versions are on disk when neither the old archive nor the take-back can be deleted", async () => {
     const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => false)
+    const checkPathExists = vi.fn<BridgeAPI["pathsManager"]["checkPathExists"]>(async () => true)
     const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => `${outputPath}/${fileName}`)
-    const { result } = renderActions(anInstallation(), async () => {}, { pathsManager: { deletePath, downloadOnPath } })
+    const { result } = renderActions(anInstallation(), async () => {}, { pathsManager: { deletePath, checkPathExists, downloadOnPath } })
 
     await act(() => result.current.updateMod(enabledCopy, alphaRelease))
 
@@ -636,6 +637,21 @@ describe("useInstalledModActions: the old copy while its update downloads (#703)
     expect(await screen.findByText(/now holds two versions of Alpha Mod/)).toBeTruthy()
     expect(screen.queryByText(/is still on disk, so it was left alone/)).toBeNull()
     expect(loggedText()).toContain("new-version-cleanup-failed")
+  })
+
+  it("keeps the newly downloaded archive and shows downloaded when the old archive path is already gone (#735)", async () => {
+    const deletePath = vi.fn<BridgeAPI["pathsManager"]["deletePath"]>(async () => false)
+    const checkPathExists = vi.fn<BridgeAPI["pathsManager"]["checkPathExists"]>(async () => false)
+    const downloadOnPath = vi.fn<BridgeAPI["pathsManager"]["downloadOnPath"]>(async (_id, _url, outputPath, fileName) => `${outputPath}/${fileName}`)
+    const { result } = renderActions(anInstallation(), async () => {}, { pathsManager: { deletePath, checkPathExists, downloadOnPath } })
+
+    await act(() => result.current.updateMod(enabledCopy, alphaRelease))
+
+    expect(deletePath.mock.calls.map((call) => call[0])).toEqual([ENABLED_PATH])
+    expect(checkPathExists).toHaveBeenCalledWith(ENABLED_PATH)
+    expect(await screen.findByText("Downloaded Alpha Mod Mod v1.5.0 on Install A.")).toBeTruthy()
+    expect(screen.queryByText(/is still on disk/)).toBeNull()
+    expect(screen.queryByText(/now holds two versions/)).toBeNull()
   })
 
   it("lets the old copy be acted on again once the update has settled", async () => {

@@ -107,6 +107,17 @@ export function modArchiveFileName(release: ModReleaseToInstall, disabled = fals
 }
 
 /**
+ * Removes the archive a new install is replacing, or accepts that an earlier install already did.
+ *
+ * `DELETE_PATH` refuses a path that does not exist, so a `false` return from `remove` means either
+ * the host could not delete the file or the file is already gone. Asking `exists` only after a
+ * refused `remove` separates the two without an extra IPC call on every normal update (#735).
+ */
+async function removeReplacedCopy(fileSystem: FileSystem, path: string): Promise<boolean> {
+  return (await fileSystem.remove(path)) || !(await fileSystem.exists(path))
+}
+
+/**
  * Puts one mod release in an installation's Mods folder, replacing the copy already there.
  *
  * The new archive is fetched first and the old one goes only once the new one is on disk, so a
@@ -141,7 +152,7 @@ export async function installMod(ports: InstallModPorts, input: InstallModInput,
   const sameFileOnDisk = existing !== undefined && existing.path !== target && existing.path.toLowerCase() === target.toLowerCase()
 
   if (existing && sameFileOnDisk) {
-    if (!(await ports.fileSystem.remove(existing.path))) return refuse("old-version-delete-failed")
+    if (!(await removeReplacedCopy(ports.fileSystem, existing.path))) return refuse("old-version-delete-failed")
     events.onExistingRemoved?.(existing.path)
   }
 
@@ -158,7 +169,7 @@ export async function installMod(ports: InstallModPorts, input: InstallModInput,
   // against the path joined here: a spelling that differs while naming the same file would otherwise
   // delete the archive that was just written.
   if (existing && !sameFileOnDisk && existing.path !== downloaded.filePath) {
-    if (!(await ports.fileSystem.remove(existing.path))) {
+    if (!(await removeReplacedCopy(ports.fileSystem, existing.path))) {
       // Taken back out so the folder does not end up with both versions.
       if (!(await ports.fileSystem.remove(downloaded.filePath))) return refuse("new-version-cleanup-failed")
       return refuse("old-version-delete-failed")

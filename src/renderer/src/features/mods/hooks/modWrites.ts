@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react"
+
 /** The busy key of a download on its way into one Installation's Mods folder, by the modid it writes. */
 export function modWriteKey(installationId: string, modid: string): string {
   return `write:${installationId}:${modid.toLowerCase()}`
@@ -20,6 +22,11 @@ export function subscribeModWrites(listener: () => void): () => void {
 
 export function getModWritesSnapshot(): readonly string[] {
   return modWritesSnapshot
+}
+
+/** Subscribes a component to the current set of in-flight Mod write keys. */
+export function useModWrites(): readonly string[] {
+  return useSyncExternalStore(subscribeModWrites, getModWritesSnapshot)
 }
 
 /** True while a download of this Mod is on its way into this Installation's Mods folder. */

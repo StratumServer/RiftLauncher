@@ -21,14 +21,15 @@ beforeEach(() => {
   trace = []
 })
 
-function fakeFileSystem(options: { removes?: boolean; refuses?: string[] } = {}): FileSystem {
+function fakeFileSystem(options: { removes?: boolean; refuses?: string[]; missing?: string[] } = {}): FileSystem {
   return {
-    exists: async (): Promise<boolean> => {
-      throw new Error("The install flow must not ask what exists.")
+    exists: async (path: string): Promise<boolean> => {
+      trace.push(`exists:${path}`)
+      return !options.missing?.includes(path)
     },
     remove: async (path: string): Promise<boolean> => {
       trace.push(`remove:${path}`)
-      if (options.refuses?.includes(path)) return false
+      if (options.refuses?.includes(path) || options.missing?.includes(path)) return false
       return options.removes ?? true
     },
     move: async (): Promise<boolean> => {
@@ -149,7 +150,35 @@ describe("installMod", () => {
     const result = await installMod(fakePorts({ fileSystem: fakeFileSystem({ refuses: [oldPath] }), downloader }), input({ existing: { path: oldPath, version: "1.9.0" } }), recordingEvents())
 
     assert.deepEqual(result, { ok: false, reason: "old-version-delete-failed" })
-    assert.deepEqual(trace, ["download-started:carryon-2.0.1.zip", `download:${RELEASE.mainfile}->${MODS_FOLDER}/carryon-2.0.1.zip`, `remove:${oldPath}`, `remove:${MODS_FOLDER}/carryon-2.0.1.zip`])
+    assert.deepEqual(trace, [
+      "download-started:carryon-2.0.1.zip",
+      `download:${RELEASE.mainfile}->${MODS_FOLDER}/carryon-2.0.1.zip`,
+      `remove:${oldPath}`,
+      `exists:${oldPath}`,
+      `remove:${MODS_FOLDER}/carryon-2.0.1.zip`
+    ])
+  })
+
+  it("keeps the new archive when removing the old copy fails because an earlier install already deleted it (#735)", async () => {
+    const oldPath = `${MODS_FOLDER}/carryon-1.9.0.zip`
+    const newPath = `${MODS_FOLDER}/carryon-2.0.1.zip`
+    const { downloader } = fakeDownloader()
+
+    const result = await installMod(fakePorts({ fileSystem: fakeFileSystem({ missing: [oldPath] }), downloader }), input({ existing: { path: oldPath, version: "1.9.0" } }), recordingEvents())
+
+    assert.deepEqual(result, { ok: true, fileName: "carryon-2.0.1.zip", path: newPath })
+    assert.deepEqual(trace, ["download-started:carryon-2.0.1.zip", `download:${RELEASE.mainfile}->${newPath}`, `remove:${oldPath}`, `exists:${oldPath}`, `existing-removed:${oldPath}`])
+  })
+
+  it("proceeds with a case-only replacement when the old copy was already deleted before the download (#735)", async () => {
+    const sameFile = `${MODS_FOLDER}/CarryOn-2.0.1.zip`
+    const newPath = `${MODS_FOLDER}/carryon-2.0.1.zip`
+    const { downloader } = fakeDownloader()
+
+    const result = await installMod(fakePorts({ fileSystem: fakeFileSystem({ missing: [sameFile] }), downloader }), input({ existing: { path: sameFile, version: "2.0.1" } }), recordingEvents())
+
+    assert.deepEqual(result, { ok: true, fileName: "carryon-2.0.1.zip", path: newPath })
+    assert.deepEqual(trace, [`remove:${sameFile}`, `exists:${sameFile}`, `existing-removed:${sameFile}`, "download-started:carryon-2.0.1.zip", `download:${RELEASE.mainfile}->${newPath}`])
   })
 
   it("reports both versions left in the folder when the take-back fails too (#703)", async () => {

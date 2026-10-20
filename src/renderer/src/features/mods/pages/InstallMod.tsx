@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 
 import { useInstallations, useSettingsConfig } from "@renderer/features/config/contexts/ConfigContext"
 import { useGetInstalledMods } from "@renderer/features/mods/hooks/useGetInstalledMods"
+import { modWriteKey, useModWrites } from "@renderer/features/mods/hooks/modWrites"
 import { useModReleaseCatalog } from "@renderer/features/mods/hooks/useModReleaseCatalog"
 import ModReleaseList from "@renderer/features/mods/components/ModReleaseList"
 
@@ -30,6 +31,9 @@ function InstallMod(): JSX.Element {
 
   const getInstalledMods = useGetInstalledMods()
   const [installedMods, setInstalledMods] = useState<InstalledModType[]>([])
+  const writes = useModWrites()
+  const installationWritePrefix = installation ? modWriteKey(installation.id, "") : null
+  const hasActiveInstallationWrite = installationWritePrefix !== null && writes.some((key) => key.startsWith(installationWritePrefix))
 
   const { mod, loading, failed, retry } = useModReleaseCatalog(modid ?? null)
 
@@ -44,7 +48,7 @@ function InstallMod(): JSX.Element {
     return (): void => {
       current = false
     }
-  }, [installation, getInstalledMods])
+  }, [installation, getInstalledMods, hasActiveInstallationWrite])
 
   // A release names the modid the file actually declares, which is what an installed copy is keyed
   // by, so the old copy is found through the releases rather than through the ModDB's numeric id.
