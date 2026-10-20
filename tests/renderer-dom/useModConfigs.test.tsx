@@ -54,4 +54,49 @@ describe("useModConfigs", () => {
 
     expect(result.current.listing).toBeUndefined()
   })
+
+  it("shares one listing across callers mounted for the same Installation and updates all of them on refresh (#591)", async () => {
+    const firstListing: ModConfigsReadResult = { ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] }
+    const refreshedListing: ModConfigsReadResult = {
+      ok: true,
+      configs: [
+        { name: "a.json", bytes: 2 },
+        { name: "b.json", bytes: 4 }
+      ],
+      linked: []
+    }
+    const getModConfigs = vi.fn<() => Promise<ModConfigsReadResult>>().mockResolvedValueOnce(firstListing).mockResolvedValueOnce(refreshedListing)
+    installMockWindowApi({ modsManager: { getModConfigs } })
+
+    const first = renderHook(() => useModConfigs("/games/a"))
+    const second = renderHook(() => useModConfigs("/games/a"))
+
+    await waitFor(() => expect(first.result.current.listing).toEqual(firstListing))
+    expect(second.result.current.listing).toEqual(firstListing)
+    expect(getModConfigs).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      second.result.current.refresh()
+    })
+
+    await waitFor(() => expect(first.result.current.listing).toEqual(refreshedListing))
+    expect(second.result.current.listing).toEqual(refreshedListing)
+    expect(getModConfigs).toHaveBeenCalledTimes(2)
+  })
+
+  it("drops the cached listing once every caller for that Installation has unmounted (#591)", async () => {
+    const firstVisit: ModConfigsReadResult = { ok: true, configs: [{ name: "a.json", bytes: 2 }], linked: [] }
+    const secondVisit: ModConfigsReadResult = { ok: true, configs: [{ name: "b.json", bytes: 4 }], linked: [] }
+    const getModConfigs = vi.fn<() => Promise<ModConfigsReadResult>>().mockResolvedValueOnce(firstVisit).mockResolvedValueOnce(secondVisit)
+    installMockWindowApi({ modsManager: { getModConfigs } })
+
+    const first = renderHook(() => useModConfigs("/games/a"))
+    await waitFor(() => expect(first.result.current.listing).toEqual(firstVisit))
+    first.unmount()
+
+    const next = renderHook(() => useModConfigs("/games/a"))
+    expect(next.result.current.listing).toBeUndefined()
+    await waitFor(() => expect(next.result.current.listing).toEqual(secondVisit))
+    expect(getModConfigs).toHaveBeenCalledTimes(2)
+  })
 })

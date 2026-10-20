@@ -34,7 +34,7 @@ function anInstallation(): InstallationType {
  * answering one of two leaves the other waiting, and which of the two the box belongs to is the
  * question being tested.
  */
-function mountWithPendingConfigs(): { answer: (value: ModConfigsReadResult) => void } {
+function mountWithPendingConfigs(): { answer: (value: ModConfigsReadResult) => void; getModConfigs: ReturnType<typeof vi.fn> } {
   const pending: ((value: ModConfigsReadResult) => void)[] = []
   const getModConfigs = vi.fn(() => new Promise<ModConfigsReadResult>((resolve) => pending.push(resolve)))
 
@@ -45,6 +45,7 @@ function mountWithPendingConfigs(): { answer: (value: ModConfigsReadResult) => v
 
   mountManageMods()
   return {
+    getModConfigs,
     answer: (value) => {
       for (const resolve of pending.splice(0)) resolve(value)
     }
@@ -108,5 +109,15 @@ describe("Manage Mods: the Export Modpack mod config box", () => {
     await openTheExportMenu()
 
     expect(screen.queryByText("Include mod configs")).toBeNull()
+  })
+
+  it("walks the Installation's ModConfig folder once on page load (#591)", async () => {
+    const { answer, getModConfigs } = mountWithPendingConfigs()
+    await openTheExportMenu()
+    await act(async () => void answer({ ok: true, configs: [{ name: "RoomSize.json", bytes: 2 }], linked: [] }))
+
+    await screen.findByLabelText("Include mod configs", {}, { timeout: 3000 })
+    expect(getModConfigs).toHaveBeenCalledTimes(1)
+    expect(getModConfigs).toHaveBeenCalledWith("/games/a")
   })
 })
