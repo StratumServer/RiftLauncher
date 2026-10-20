@@ -352,4 +352,17 @@ describe("Manage Mods: the mod config export picker", () => {
       await changeLanguage("en-US")
     }
   })
+
+  it("says the Installation is playing when the game starts before the chosen configs are exported (#593)", async () => {
+    mountWithConfigs([ROOM_SIZE], { success: false, reason: "playing" })
+    await askForConfigs()
+    await openThePicker()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByText("Export the chosen configs", {}, { timeout: 3000 }))
+
+    await waitFor(() => {
+      expect(screen.getByText("This Installation is playing. Its mod configs can be listed once the game has closed.")).toBeTruthy()
+    })
+  })
 })

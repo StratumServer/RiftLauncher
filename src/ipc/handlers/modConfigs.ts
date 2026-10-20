@@ -157,8 +157,8 @@ export function parseChosenConfigNames(value: unknown): readonly string[] | unde
   return value as readonly string[]
 }
 
-/** One file found under an installation's `ModConfig` folder, with its bytes when they were read. */
-type CollectedConfig = ModConfigListingEntry & { raw: Buffer | undefined }
+/** One file found under an installation's `ModConfig` folder, with its path and `lstat` byte size. */
+type ListedConfig = ModConfigListingEntry & { entryPath: string }
 /**
  * The digest of exactly the bytes a file holds, which is also the digest a pack's entry claims.
  *
@@ -169,11 +169,11 @@ function digestOf(bytes: Buffer): string {
 }
 
 /**
- * What export refuses to put in a pack, and the two that are the pack's own fault rather than the
- * player's. `not-utf8` is a file the launcher cannot carry without lying about it: see
- * {@link collectModConfigs}.
+ * What export refuses to put in a pack, including `playing` and `too-large` when a config read is
+ * refused before or during byte collection. `not-utf8` is a file the launcher cannot carry without
+ * lying about it: see {@link collectModConfigs}.
  */
-export type ExportModpackConfigFailure = Exclude<ExportModpackRefusal, "too-large">
+export type ExportModpackConfigFailure = ExportModpackRefusal
 
 /**
  * Walks an installation's `ModConfig` folder.
@@ -188,15 +188,14 @@ export type ExportModpackConfigFailure = Exclude<ExportModpackRefusal, "too-larg
  * one. It is neither opened nor followed, which is why the folder a link points at is never listed.
  *
  * @param installationPath An installation folder, already asserted as a configured one.
- * @param options.readText Read each file's bytes. Off for the import dialog, which shows names and
- *   sizes and has no use for the contents.
- * @param options.only The keys to look at, or undefined for all of them. Filtered before the read,
- *   so a pack the player narrowed down does not read the files they left out of it. It narrows the
- *   files and never the links, which are a fact about the folder and not a choice of the player's.
+ * @param options.only The keys to look at, or undefined for all of them. Filtered before `lstat`,
+ *   so a pack the player narrowed down does not stat or read the files they left out of it. It
+ *   narrows the files and never the links, which are a fact about the folder and not a choice of
+ *   the player's.
  * @returns The files and the links, each relative to the folder with `/` between directories.
- * @throws When the folder cannot be listed, or a file cannot be read.
+ * @throws When the folder cannot be listed.
  */
-async function walkModConfigs(installationPath: string, options: { readText: boolean; only?: ReadonlySet<string> }): Promise<{ files: CollectedConfig[]; linked: string[] }> {
+async function walkModConfigs(installationPath: string, options: { only?: ReadonlySet<string> } = {}): Promise<{ files: ListedConfig[]; linked: string[] }> {
   const root = join(installationPath, MOD_CONFIG_FOLDER_NAME)
   if (!(await fse.pathExists(root))) return { files: [], linked: [] }
 
@@ -206,7 +205,7 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
   // nothing, so it is refused here while there is still a reason to give.
   if (!rootStats.isDirectory()) throw new Error("The ModConfig folder is not a folder")
 
-  const found: CollectedConfig[] = []
+  const found: ListedConfig[] = []
   const linked: string[] = []
   // The one shape a name leaves this walk in, for a file and for a link: relative, `/` between directories.
   const keyOf = (path: string): string => relative(safeRoot, path).replaceAll("\\", "/")
@@ -230,12 +229,11 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
       }
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) continue
 
-      const stats = await fse.lstat(entryPath)
       // No key rule here. This walk answers "what is in the folder", and a folder can hold a name
       // that is legal on the file system it was created on and unusable in a pack; the caller that
       // builds a pack is the one that has to say so, because only it can name the file.
       const key = keyOf(entryPath)
-      // Before the read and before the ceiling, so a narrowed pack neither reads nor counts what it
+      // Before `lstat` and before the ceiling, so a narrowed pack neither stats nor counts what it
       // left out. The keys are the walk's own, which is why the caller can pass the player's
       // selection through without validating it as a path: a name that matches nothing matches
       // nothing, and no name can reach a file this walk did not find.
@@ -244,10 +242,8 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
       // carry" from "the folder could not be read" without matching on a sentence.
       if (found.length >= MAX_MODPACK_ENTRIES) throw new RangeError("Too many mod configs")
 
-      // Read as bytes and never as text. The export has to know whether the bytes are UTF-8 before
-      // it decodes anything, and it has to digest the bytes it read rather than text that came back
-      // out of a decoder; `readFile(path, "utf-8")` is the call that made both impossible.
-      found.push({ name: key, bytes: stats.size, raw: options.readText ? await fse.readFile(entryPath) : undefined })
+      const stats = await fse.lstat(entryPath)
+      found.push({ name: key, bytes: stats.size, entryPath })
     }
   }
 
@@ -275,9 +271,14 @@ export async function collectModConfigs(
   installationPath: string,
   chosenNames?: readonly string[]
 ): Promise<{ ok: true; settings: Record<string, ModConfigEntry> } | { ok: false; reason: ExportModpackConfigFailure; name?: string }> {
-  let files: CollectedConfig[]
+  let files: ListedConfig[]
   try {
-    files = (await walkModConfigs(installationPath, { readText: true, only: chosenNames ? new Set(chosenNames) : undefined })).files
+    const { record } = await installationRecordAt(installationPath)
+    if (isInstallationPlaying(record.id)) {
+      logMessage("info", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: playing.`)
+      return { ok: false, reason: "playing" }
+    }
+    files = (await walkModConfigs(installationPath, { only: chosenNames ? new Set(chosenNames) : undefined })).files
   } catch (err) {
     if (err instanceof RangeError) {
       logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] The ModConfig folder holds more files than a modpack may carry.`)
@@ -288,13 +289,12 @@ export async function collectModConfigs(
     return { ok: false, reason: "unreadable-config" }
   }
 
-  const settings: Record<string, ModConfigEntry> = {}
   // The two ends of a pack have to agree about which keys exist, or the export writes a pack the
-  // import drops whole. Both rules below are the import's rules, run here so that the file to
-  // complain about is known while the pack is being built rather than on somebody else's machine.
-  // A name Windows would refuse is legal on the file system it was created on, so refusing the
-  // export is the only way to name it: the player can rename one file, and cannot rename a folder.
+  // import drops whole. Both rules below are the import's rules, run here together with the pack's
+  // byte ceiling before any file is opened for reading, so an unusable key or an oversized file
+  // never allocates a buffer in memory.
   const folded = new Set<string>()
+  let lstatBytes = 0
   for (const file of files) {
     try {
       assertModConfigKey(file.name)
@@ -309,14 +309,41 @@ export async function collectModConfigs(
     if (folded.has(lower)) return { ok: false, reason: "collides", name: file.name }
     folded.add(lower)
 
+    lstatBytes += file.bytes
+    if (file.bytes > MAX_MODPACK_BYTES || lstatBytes > MAX_MODPACK_BYTES) {
+      logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-large.`)
+      return { ok: false, reason: "too-large" }
+    }
+  }
+
+  const settings: Record<string, ModConfigEntry> = {}
+  let readBytes = 0
+  for (const file of files) {
+    // Read as bytes and never as text. The export has to know whether the bytes are UTF-8 before
+    // it decodes anything, and it has to digest the bytes it read rather than text that came back
+    // out of a decoder; `readFile(path, "utf-8")` is the call that made both impossible.
+    let raw: Buffer
+    try {
+      raw = await fse.readFile(file.entryPath)
+    } catch (err) {
+      logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Could not read the ModConfig folder.`)
+      logMessage("debug", `${LOG_PREFIX} [EXPORT_MODPACK] ${getErrorMessage(err)}`)
+      return { ok: false, reason: "unreadable-config" }
+    }
+
+    readBytes += raw.byteLength
+    if (raw.byteLength > MAX_MODPACK_BYTES || readBytes > MAX_MODPACK_BYTES) {
+      logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-large.`)
+      return { ok: false, reason: "too-large" }
+    }
+
     // `isUtf8` and not a length comparison. A byte sequence cut short decodes to one U+FFFD and
     // re-encodes to three bytes, so a file whose last character was truncated passed a
     // `Buffer.byteLength(text, "utf8") !== bytes` test and travelled as `EF BF BD` under a digest
     // computed over the altered text. A NUL is refused in the same breath because the importer's own
     // string guard refuses one, and a single such file would take the pack's whole settings block
     // down with it on the other side.
-    const raw = file.raw
-    if (!raw || !isUtf8(raw) || raw.includes(0)) return { ok: false, reason: "not-utf8", name: file.name }
+    if (!isUtf8(raw) || raw.includes(0)) return { ok: false, reason: "not-utf8", name: file.name }
     // The digest is over the bytes that were read, which are the bytes the file holds and the bytes
     // the import compares against. Nothing is re-encoded anywhere in this path.
     settings[file.name] = { sha256: digestOf(raw), text: raw.toString("utf8") }
@@ -365,7 +392,7 @@ ipcMain.handle(IPC_CHANNELS.MODS_MANAGER.GET_MOD_CONFIGS, async (event, installa
       return { ok: false, reason: "playing" }
     }
 
-    const { files, linked } = await walkModConfigs(installation, { readText: false })
+    const { files, linked } = await walkModConfigs(installation)
     return { ok: true, configs: files.map(({ name, bytes }) => ({ name, bytes })), linked }
   } catch (err) {
     logMessage("error", `${LOG_PREFIX} [GET_MOD_CONFIGS] Could not list the ModConfig folder.`)
