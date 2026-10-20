@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path"
 import { IPC_CHANNELS } from "../ipcChannels"
 import { createModImageStorePort, createScanInstalledModsPorts, MAX_MOD_IMAGE_BYTES, pruneModIconCache } from "@src/ipc/adapters/modScan"
 import { writeJsonAtomic } from "@src/ipc/atomicJsonFile"
-import { collectModConfigs, MAX_MODPACK_BYTES, MAX_MODPACK_ENTRIES, parseChosenConfigNames, parseModpackSettings } from "@src/ipc/handlers/modConfigs"
+import { collectModConfigs, MAX_MODPACK_BYTES, MAX_MODPACK_ENTRIES, maxExportableModConfigs, parseChosenConfigNames, parseModpackSettings } from "@src/ipc/handlers/modConfigs"
 import type { ExportModpackConfigFailure } from "@src/ipc/handlers/modConfigs"
 import { assertTrustedIpcSender } from "@src/ipc/ipcSecurity"
 import { assertConfiguredInstallationPath, assertManagedModArchivePath, assertManagedPath, registerUserSelectedPaths } from "@src/ipc/pathPolicy"
@@ -282,7 +282,7 @@ ipcMain.handle(
           logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: ${collected.reason}.`)
           return { success: false, reason: collected.reason, name: collected.name }
         }
-        if (safeManifest.mods.length + (safeManifest.servers?.length ?? 0) + Object.keys(collected.settings).length > MAX_MODPACK_ENTRIES) {
+        if (Object.keys(collected.settings).length > maxExportableModConfigs(safeManifest.mods.length, safeManifest.servers?.length ?? 0)) {
           logMessage("error", `${LOG_PREFIX} [EXPORT_MODPACK] Refused: too-many.`)
           return { success: false, reason: "too-many" }
         }

@@ -13,20 +13,32 @@ import { assertBoundedString, assertString, comparablePath, isRecord } from "@sr
 import { getErrorMessage, logMessage } from "@src/utils/logManager"
 import { describeBackupSpaceShortfall } from "@domain/installations/backupCapacity"
 import { MOD_CONFIG_FOLDER_NAME } from "@domain/mods/folder"
-import { assertModConfigKey, HIDDEN_UNICODE_NAME_CHARACTER, isValidModConfigKey, MAX_MOD_CONFIG_KEY_LENGTH, showDefaultIgnorables } from "@domain/mods/modConfigs"
+import {
+  assertModConfigKey,
+  defaultChosenModConfigs,
+  HIDDEN_UNICODE_NAME_CHARACTER,
+  isValidModConfigKey,
+  MAX_MOD_CONFIG_KEY_LENGTH,
+  MAX_MOD_CONFIG_LISTING_ENTRIES,
+  MAX_MODPACK_ENTRIES,
+  maxExportableModConfigs,
+  showDefaultIgnorables
+} from "@domain/mods/modConfigs"
 import { cleanFolderName, formatTimestampForFilename } from "@domain/naming"
 
-export { assertModConfigKey, HIDDEN_UNICODE_NAME_CHARACTER, isValidModConfigKey, MAX_MOD_CONFIG_KEY_LENGTH, showDefaultIgnorables }
+export {
+  assertModConfigKey,
+  defaultChosenModConfigs,
+  HIDDEN_UNICODE_NAME_CHARACTER,
+  isValidModConfigKey,
+  MAX_MOD_CONFIG_KEY_LENGTH,
+  MAX_MOD_CONFIG_LISTING_ENTRIES,
+  MAX_MODPACK_ENTRIES,
+  maxExportableModConfigs,
+  showDefaultIgnorables
+}
 
 const LOG_PREFIX = "[back] [mods] [ipc/handlers/modConfigs.ts]"
-
-/**
- * How many rows a pack may carry, whatever they are rows of.
- *
- * It is the bound on mods, on servers and on settings together, because it exists to keep the dialog
- * a person is asked to read from growing without end, not to police any one field.
- */
-export const MAX_MODPACK_ENTRIES = 2_000
 
 /**
  * The ceiling on one modpack file, and the reason it is not the 2 MiB it used to be: since #363 a
@@ -208,6 +220,8 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
 
   const found: CollectedConfig[] = []
   const linked: string[] = []
+  const maxFound = options.readText ? MAX_MODPACK_ENTRIES : MAX_MOD_CONFIG_LISTING_ENTRIES
+  let visitedEntries = 0
   // The one shape a name leaves this walk in, for a file and for a link: relative, `/` between directories.
   const keyOf = (path: string): string => relative(safeRoot, path).replaceAll("\\", "/")
 
@@ -225,12 +239,16 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
       // nothing more, and whatever it is called: a folder that is a link has no reason to end in
       // `.json`, and the pack's names that sit under it are refused all the same.
       if (entry.isSymbolicLink()) {
+        if (visitedEntries >= MAX_MOD_CONFIG_LISTING_ENTRIES) throw new RangeError("Too many mod configs")
+        visitedEntries += 1
         linked.push(keyOf(entryPath))
         continue
       }
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) continue
 
-      const stats = await fse.lstat(entryPath)
+      if (visitedEntries >= MAX_MOD_CONFIG_LISTING_ENTRIES) throw new RangeError("Too many mod configs")
+      visitedEntries += 1
+
       // No key rule here. This walk answers "what is in the folder", and a folder can hold a name
       // that is legal on the file system it was created on and unusable in a pack; the caller that
       // builds a pack is the one that has to say so, because only it can name the file.
@@ -242,8 +260,9 @@ async function walkModConfigs(installationPath: string, options: { readText: boo
       if (options.only && !options.only.has(key)) continue
       // RangeError, and not Error, so the pack builder below can tell "the folder is too big to
       // carry" from "the folder could not be read" without matching on a sentence.
-      if (found.length >= MAX_MODPACK_ENTRIES) throw new RangeError("Too many mod configs")
+      if (found.length >= maxFound) throw new RangeError("Too many mod configs")
 
+      const stats = await fse.lstat(entryPath)
       // Read as bytes and never as text. The export has to know whether the bytes are UTF-8 before
       // it decodes anything, and it has to digest the bytes it read rather than text that came back
       // out of a decoder; `readFile(path, "utf-8")` is the call that made both impossible.

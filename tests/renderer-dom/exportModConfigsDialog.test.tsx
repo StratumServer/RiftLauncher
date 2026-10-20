@@ -3,6 +3,8 @@ import { act, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import i18n, { changeLanguage } from "@renderer/i18n"
+import ExportModConfigsDialog from "@renderer/features/mods/components/ExportModConfigsDialog"
+import { renderWithProviders } from "./helpers/render"
 import { createMockConfig, installMockWindowApi } from "./helpers/windowApi"
 import { mountManageMods } from "./helpers/mountManageMods"
 
@@ -351,5 +353,80 @@ describe("Manage Mods: the mod config export picker", () => {
     } finally {
       await changeLanguage("en-US")
     }
+  })
+
+  it("opens the picker on a folder past the pack entry ceiling, shows the total count, starts unticked, and exports the chosen subset (#590)", async () => {
+    const manyConfigs: ModConfigListingEntry[] = Array.from({ length: 2_001 }, (_, index) => ({
+      name: `c${index}.json`,
+      bytes: 12
+    }))
+    const { exportModpack } = mountWithConfigs(manyConfigs)
+
+    await askForConfigs()
+    await openThePicker()
+
+    expect(screen.getByText("This Installation has 2001 files in its ModConfig folder.")).toBeTruthy()
+    expect(screen.getByText("No mod config files are selected to travel in this modpack.")).toBeTruthy()
+    const applyButton = (await screen.findByText("Export the chosen configs", {}, { timeout: 3000 })).closest("button") as HTMLButtonElement
+    expect(applyButton.disabled).toBe(true)
+
+    const firstBox = await rowFor("c0.json")
+    const lastBox = await rowFor("c2000.json")
+    expect(firstBox.checked).toBe(false)
+    expect(lastBox.checked).toBe(false)
+
+    const user = userEvent.setup()
+    await user.click(firstBox)
+    await user.click(lastBox)
+    expect(screen.getByText("This modpack will carry 2 mod config files from this Installation. Untick the ones it should not carry.")).toBeTruthy()
+    expect(applyButton.disabled).toBe(false)
+
+    await user.click(applyButton)
+    expect(exportModpack).toHaveBeenCalledWith(expect.objectContaining({}), "/games/a", true, ["c0.json", "c2000.json"])
+  })
+
+  it("caps how many configs can be ticked in the picker to the remaining pack capacity (#590)", async () => {
+    const mods: InstalledModType[] = Array.from({ length: 1_998 }, (_, index) => ({
+      name: `Mod ${index}`,
+      modid: `mod${index}`,
+      version: "1.0.0",
+      path: `/games/a/Mods/mod${index}-1.0.0.zip`,
+      enabled: true,
+      authors: ["Ann"],
+      contributors: []
+    }))
+    const installationWithServer: InstallationType = {
+      ...anInstallation(),
+      servers: [{ id: "srv-1", name: "Main Server", host: "127.0.0.1", port: 42420, lastLaunched: 0 }]
+    }
+    const exportModpack = vi.fn(async () => ({ success: true, path: "/out/pack.json" }))
+
+    installMockWindowApi({
+      modsManager: {
+        getModConfigs: vi.fn(async (): Promise<ModConfigsReadResult> => ({ ok: true, configs: [ROOM_SIZE, SERVER_LIST], linked: [] })),
+        exportModpack
+      }
+    })
+    renderWithProviders(<ExportModConfigsDialog open installation={installationWithServer} installedMods={mods} includeServers close={vi.fn()} />)
+
+    // 1998 mods + 1 server leaves room for at most 1 config out of the 2 valid configs in the folder.
+    expect(await screen.findByText("This Installation has 2 files in its ModConfig folder.", {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.getByText("No mod config files are selected to travel in this modpack.")).toBeTruthy()
+
+    const roomBox = await rowFor(ROOM_SIZE.name)
+    const serverBox = await rowFor(SERVER_LIST.name)
+    expect(roomBox.checked).toBe(false)
+    expect(serverBox.checked).toBe(false)
+    expect(roomBox.disabled).toBe(false)
+    expect(serverBox.disabled).toBe(false)
+
+    const user = userEvent.setup()
+    await user.click(roomBox)
+    expect(roomBox.checked).toBe(true)
+    expect(serverBox.disabled).toBe(true)
+
+    await user.click(roomBox)
+    expect(roomBox.checked).toBe(false)
+    expect(serverBox.disabled).toBe(false)
   })
 })
