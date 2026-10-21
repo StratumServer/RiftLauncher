@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PiFloppyDiskBackDuotone, PiMagnifyingGlassDuotone, PiXCircleDuotone } from "react-icons/pi"
 
-import { createInstallation, INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH } from "@domain/installations/create"
+import { createInstallation, INSTALLATION_NAME_MAX_LENGTH, INSTALLATION_NAME_MIN_LENGTH, isValidBackupsLimit } from "@domain/installations/create"
 import { DEFAULT_COMPRESSION_LEVEL } from "@domain/config/defaults"
 import { toFolderPlatform } from "@domain/paths"
 import { compareGameVersionsDesc } from "@renderer/utils/gameVersionOrder"
@@ -70,7 +70,8 @@ function AddInslallation(): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   const handleAddInstallation = async (): Promise<void> => {
-    if (!fields.name || !path || !fields.version || !fields.backupsLimit || fields.backupsAuto === undefined) return addNotification(t("notifications.body.missingFields"), "error")
+    if (!fields.name || !path || !fields.version || !isValidBackupsLimit(fields.backupsLimit) || fields.backupsAuto === undefined)
+      return addNotification(t("notifications.body.missingFields"), "error")
 
     const result = createInstallation(createCreateInstallationPorts(), {
       name: fields.name,

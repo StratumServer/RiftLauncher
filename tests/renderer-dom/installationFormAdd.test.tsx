@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen, waitFor } from "@testing-library/react"
+import { fireEvent, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Routes, Route } from "react-router-dom"
 
@@ -147,5 +147,66 @@ describe("AddInstallation", () => {
 
     await screen.findByText("That folder is already in use.")
     expect(screen.queryByText("installations-list")).toBeNull()
+  })
+
+  it("accepts a Backups max amount of 0 and saves the Installation with backups turned off", async () => {
+    const user = userEvent.setup()
+    const ensurePathExists = vi.fn(async () => true)
+    const savedConfigs: ConfigType[] = []
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }] })),
+        saveConfig: vi.fn(async (config: ConfigType) => {
+          savedConfigs.push(config)
+          return { ok: true } as SaveConfigResult
+        })
+      },
+      pathsManager: { ensurePathExists }
+    })
+
+    renderAddInstallation()
+
+    await waitFor(() => expect((screen.getByPlaceholderText("Installation folder") as HTMLInputElement).value).not.toBe(""))
+    await user.click(await screen.findByText("1.20.0"))
+
+    const backupsInput = screen.getByPlaceholderText("Backups max amount")
+    await user.clear(backupsInput)
+    await user.type(backupsInput, "0")
+    expect((backupsInput as HTMLInputElement).value).toBe("0")
+
+    await user.click(screen.getByTitle("Add"))
+
+    await screen.findByText("Installation added successfully.")
+    await screen.findByText("installations-list")
+    await waitFor(() => expect(savedConfigs.some((config) => config.installations.some((installation) => installation.backupsLimit === 0))).toBe(true))
+  })
+
+  it("refuses a negative, fractional or above-100 Backups max amount and stays on the form", async () => {
+    const user = userEvent.setup()
+    const ensurePathExists = vi.fn(async () => true)
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ defaultInstallationsFolder: "/installations", gameVersions: [{ id: "gv-1", label: "1.20.0", version: "1.20.0", path: "/versions/1.20.0" }] })),
+        saveConfig
+      },
+      pathsManager: { ensurePathExists }
+    })
+
+    renderAddInstallation()
+
+    await waitFor(() => expect((screen.getByPlaceholderText("Installation folder") as HTMLInputElement).value).not.toBe(""))
+    await user.click(await screen.findByText("1.20.0"))
+
+    const backupsInput = screen.getByPlaceholderText("Backups max amount")
+    for (const invalidValue of ["-1", "1.5", "101"]) {
+      fireEvent.change(backupsInput, { target: { value: invalidValue } })
+      await user.click(screen.getByTitle("Add"))
+
+      await screen.findByText("Fill in every field before saving.")
+      expect(screen.queryByText("installations-list")).toBeNull()
+      expect(ensurePathExists).not.toHaveBeenCalled()
+      expect(saveConfig).not.toHaveBeenCalled()
+    }
   })
 })

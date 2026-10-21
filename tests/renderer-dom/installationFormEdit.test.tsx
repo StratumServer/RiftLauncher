@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen, waitFor } from "@testing-library/react"
+import { fireEvent, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Routes, Route, Link, useParams } from "react-router-dom"
 
@@ -413,5 +413,82 @@ describe("EditInstallation", () => {
     await screen.findByText("installations-list")
     await waitFor(() => expect(savedConfigs.some((config) => config.installations.some((installation) => installation.version === "1.22.6" && installation.gameVersionId === "gv-1"))).toBe(true))
     expect(screen.queryByText(VERSION_LEFT_UNCHANGED)).toBeNull()
+  })
+
+  it("saves a Backups max amount of 0 and lets an Installation already at 0 be edited", async () => {
+    const user = userEvent.setup()
+    const savedConfigs: ConfigType[] = []
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: GAME_VERSIONS, installations: [anInstallation({ backupsLimit: 3 })] })),
+        saveConfig: vi.fn(async (config: ConfigType) => {
+          savedConfigs.push(config)
+          return { ok: true } as SaveConfigResult
+        })
+      }
+    })
+
+    await openEditInstallation("install-a")
+
+    await screen.findByDisplayValue("Install A")
+    const backupsInput = screen.getByPlaceholderText("Backups max amount")
+    await user.clear(backupsInput)
+    await user.type(backupsInput, "0")
+    expect((backupsInput as HTMLInputElement).value).toBe("0")
+
+    await user.click(screen.getByTitle("Save"))
+
+    await screen.findByText("Installation edited successfully.")
+    await screen.findByText("installations-list")
+    await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.backupsLimit === 0)).toBe(true))
+
+    // Reopen the Installation now that its limit is 0 and edit another field.
+    await user.click(await screen.findByRole("link", { name: "open-install-a" }))
+    const nameInput = await screen.findByDisplayValue("Install A")
+    expect((screen.getByPlaceholderText("Backups max amount") as HTMLInputElement).value).toBe("0")
+
+    await user.clear(nameInput)
+    await user.type(nameInput, "Still Zero Backups")
+    await user.click(screen.getByTitle("Save"))
+
+    await screen.findByText("installations-list")
+    await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.name === "Still Zero Backups" && config.installations[0]?.backupsLimit === 0)).toBe(true))
+
+    // Raising the limit from 0 back to a positive number saves as well.
+    await user.click(await screen.findByRole("link", { name: "open-install-a" }))
+    await screen.findByDisplayValue("Still Zero Backups")
+    const reopenedBackupsInput = screen.getByPlaceholderText("Backups max amount")
+    await user.clear(reopenedBackupsInput)
+    await user.type(reopenedBackupsInput, "4")
+    await user.click(screen.getByTitle("Save"))
+
+    await screen.findByText("installations-list")
+    await waitFor(() => expect(savedConfigs.some((config) => config.installations[0]?.backupsLimit === 4)).toBe(true))
+  })
+
+  it("refuses a negative, fractional or above-100 Backups max amount and stays on the form", async () => {
+    const user = userEvent.setup()
+    const saveConfig = vi.fn(async () => ({ ok: true }) as SaveConfigResult)
+    installMockWindowApi({
+      configManager: {
+        getConfig: vi.fn(async () => createMockConfig({ gameVersions: GAME_VERSIONS, installations: [anInstallation({ backupsLimit: 3 })] })),
+        saveConfig
+      }
+    })
+
+    await openEditInstallation("install-a")
+
+    await screen.findByDisplayValue("Install A")
+    saveConfig.mockClear()
+
+    const backupsInput = screen.getByPlaceholderText("Backups max amount")
+    for (const invalidValue of ["-1", "1.5", "101"]) {
+      fireEvent.change(backupsInput, { target: { value: invalidValue } })
+      await user.click(screen.getByTitle("Save"))
+
+      await screen.findByText("Fill in every field before saving.")
+      expect(screen.queryByText("installations-list")).toBeNull()
+      expect(saveConfig).not.toHaveBeenCalled()
+    }
   })
 })
