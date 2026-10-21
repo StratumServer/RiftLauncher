@@ -289,4 +289,65 @@ describe("the inno extract worker's own failure describer", () => {
       rmSync(workspace, { recursive: true, force: true })
     }
   })
+
+  describe("cancel", () => {
+    it("aborts the running task's signal, and posts cancelled under its token once the handler settled", async () => {
+      const { serveTasks } = await import("@src/ipc/workers/workerHost")
+      let finishCleanup: (() => void) | undefined
+      serveTasks(
+        (_payload, _onProgress, signal) =>
+          new Promise((resolve) => {
+            signal.addEventListener("abort", () => {
+              finishCleanup = (): void => resolve({})
+            })
+          }),
+        () => "failed"
+      )
+
+      port.emit("message", { type: "task", token: 4, payload: {} })
+      port.emit("message", { type: "cancel", token: 4 })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      // The handler has seen the abort but not finished its cleanup, so nothing is confirmed yet.
+      assert.equal(finishCleanup !== undefined, true)
+      assert.equal(
+        port.postMessage.mock.calls.some((call) => (call[0] as { type?: string }).type === "cancelled"),
+        false
+      )
+
+      finishCleanup?.()
+      await vi.waitFor(() => assert.deepEqual(lastMessage(), { type: "cancelled", token: 4 }))
+    })
+
+    it("confirms at once a cancel for a token nothing is running under", async () => {
+      const { serveTasks } = await import("@src/ipc/workers/workerHost")
+      serveTasks(
+        async () => ({}),
+        () => "failed"
+      )
+
+      port.emit("message", { type: "cancel", token: 9 })
+
+      await vi.waitFor(() => assert.deepEqual(lastMessage(), { type: "cancelled", token: 9 }))
+    })
+
+    it("leaves a task running under another token alone", async () => {
+      const { serveTasks } = await import("@src/ipc/workers/workerHost")
+      let aborted = false
+      serveTasks(
+        (_payload, _onProgress, signal) =>
+          new Promise(() => {
+            signal.addEventListener("abort", () => {
+              aborted = true
+            })
+          }),
+        () => "failed"
+      )
+
+      port.emit("message", { type: "task", token: 1, payload: {} })
+      port.emit("message", { type: "cancel", token: 2 })
+      await vi.waitFor(() => assert.deepEqual(lastMessage(), { type: "cancelled", token: 2 }))
+
+      assert.equal(aborted, false)
+    })
+  })
 })

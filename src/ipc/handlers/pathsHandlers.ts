@@ -140,6 +140,9 @@ const WORKER_POOL_MAX_IDLE: Record<string, number> = {
   RUN_INSTALLER: 0
 }
 
+/** The worker scripts that answer a `cancel` message once their task has stopped, see serveTasks. */
+const CANCELLABLE_WORKERS: ReadonlySet<string> = new Set([innoExtractWorker])
+
 type WorkerMessage = {
   type: unknown
   token?: unknown
@@ -167,7 +170,7 @@ function runTrackedWorker<T>(
   operation: string,
   onFinished: (message: WorkerMessage) => T
 ): Promise<T> {
-  const lease = acquireWorker(workerPath, WORKER_POOL_MAX_IDLE[operation] ?? 0)
+  const lease = acquireWorker(workerPath, WORKER_POOL_MAX_IDLE[operation] ?? 0, { cancellable: CANCELLABLE_WORKERS.has(workerPath) })
   const worker = lease.worker
 
   return new Promise((resolvePromise, rejectPromise) => {
@@ -177,8 +180,10 @@ function runTrackedWorker<T>(
       () => {
         // Never reused: the abandoned task is still running inside this thread (still
         // holding a socket or an open archive), so its eventual message could still arrive
-        // after some later task has been dispatched to the same worker.
-        rejectOnce(new Error(`${operation} timed out`), "discard")
+        // after some later task has been dispatched to the same worker. "cancel" is a discard
+        // that first asks a worker in CANCELLABLE_WORKERS to stop and let go of its native
+        // stream, which ending the thread under it would abort the launcher for (#758).
+        rejectOnce(new Error(`${operation} timed out`), "cancel")
       },
       WORKER_TIMEOUTS_MS[operation] ?? 30 * 60 * 1_000
     )

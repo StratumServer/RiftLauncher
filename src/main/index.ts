@@ -458,18 +458,17 @@ app.on("window-all-closed", () => {
 let isWaitingForConfigFlush = false
 
 app.on("before-quit", (event) => {
-  terminateActiveWorkers()
+  // Null unless an Inno extraction is running: that worker is asked to stop and let go of its
+  // native stream first, because ending the thread under it aborts the launcher (#758).
+  const workersEnding = terminateActiveWorkers()
 
   if (isWaitingForConfigFlush) return
   const pendingConfigWrite = flushConfigWrites()
-  if (pendingConfigWrite === null) return
+  if (pendingConfigWrite === null && workersEnding === null) return
 
   event.preventDefault()
   isWaitingForConfigFlush = true
-  void pendingConfigWrite.then(
-    () => app.quit(),
-    () => app.quit()
-  )
+  void Promise.allSettled([pendingConfigWrite, workersEnding]).then(() => app.quit())
 })
 
 async function saveCurrentWindowState(): Promise<void> {

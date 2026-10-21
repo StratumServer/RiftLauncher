@@ -7,6 +7,21 @@ type NativeDecompressStream = (input: ReadableStream<Uint8Array>, options: { dic
 /** Keep each callback within the domain stream's fixed staging buffer. */
 const NATIVE_OUTPUT_BYTES = 2 * 1024 * 1024
 
+/**
+ * How long `close` keeps a cancelled native stream before its caller may go on and end the thread (#758).
+ *
+ * `reader.cancel()` resolves before the addon's own task has let go of the callbacks it holds into
+ * this thread, and the addon exposes nothing that says when it has. Ending the worker in that gap
+ * makes napi 3.10.5 panic while it drops those references ("Call custom GC in FunctionRef::drop
+ * failed InvalidArg") and the whole launcher aborts. Measured on Node 22 with @napi-rs/lzma 1.5.1,
+ * a stream ended 3 ms in: 10 ms before the thread ended aborted 10 runs of 10, 20 ms aborted 1 in
+ * 10, 30 ms none, and with eight busy processes competing for the CPU 20 ms aborted 6 in 10 while
+ * 50 ms and 150 ms none. 100 ms is more than three times the idle figure and twice the loaded one.
+ * Only a stream closed before its end pays it, and every caller is already on a failure or
+ * cancellation path.
+ */
+export const NATIVE_SETTLE_MS = 100
+
 /** A native codec failure that is safe to retry with the TypeScript decoder. */
 export class NativeLzma2Error extends Error {
   constructor(message: string) {
@@ -118,7 +133,9 @@ class NativeLzma2Decoder implements Lzma2DecoderPort {
     if (this.ended) return
     this.ended = true
     const reader = this.reader
-    if (reader) await reader.cancel().catch(() => undefined)
+    if (!reader) return
+    await reader.cancel().catch(() => undefined)
+    await new Promise<void>((resolve) => setTimeout(resolve, NATIVE_SETTLE_MS))
   }
 
   /**

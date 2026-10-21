@@ -8,8 +8,12 @@
 
 import type { Worker } from "node:worker_threads"
 
-/** Whether a finished task's worker goes back in the pool or gets terminated. */
-export type WorkerDisposition = "reuse" | "discard"
+/**
+ * Whether a finished task's worker goes back in the pool or gets terminated. `cancel` is for a
+ * worker whose task is still running and that was acquired as cancellable: it is asked to stop the
+ * task and let go of what it holds, and is terminated once it confirms or after the grace period.
+ */
+export type WorkerDisposition = "reuse" | "discard" | "cancel"
 
 export interface WorkerLease {
   /** The worker itself, for the caller's own message/error/exit listeners. */
@@ -25,7 +29,11 @@ export interface WorkerLease {
 interface PooledWorker {
   worker: Worker
   scriptPath: string
-  state: "busy" | "idle" | "dead"
+  state: "busy" | "idle" | "cancelling" | "dead"
+  cancellable: boolean
+  token: number
+  /** Set while a cancel is in flight; settles once the worker confirmed or was terminated. */
+  ending: Promise<void> | undefined
   tasksRun: number
   idleTimer: ReturnType<typeof setTimeout> | undefined
 }
@@ -33,6 +41,15 @@ interface PooledWorker {
 export interface WorkerPoolOptions {
   idleTimeoutMs?: number
   maxTasksPerWorker?: number
+  cancelGraceMs?: number
+}
+
+export interface AcquireOptions {
+  /**
+   * The worker script answers a `cancel` message with `cancelled` once its task has stopped (see
+   * `serveTasks`). Only such a worker may be released as `cancel` or have `terminateAll` wait on it.
+   */
+  cancellable?: boolean
 }
 
 /**
@@ -54,11 +71,20 @@ const IDLE_WORKER_TIMEOUT_MS = 30_000
  */
 const MAX_TASKS_PER_WORKER = 50
 
+/**
+ * How long a cancelled worker gets to stop its task and let go of what it holds before its thread
+ * is terminated anyway. Stopping the Inno extraction takes its next installer read, the native
+ * stream's settle time and removing the staging folder, so this is generous on purpose: past it
+ * the thread is ended whatever state it is in, as it always was before the cancel existed.
+ */
+const CANCEL_GRACE_MS = 5_000
+
 export class WorkerPool {
   private readonly idle = new Map<string, PooledWorker[]>()
   private readonly live = new Set<PooledWorker>()
   private readonly idleTimeoutMs: number
   private readonly maxTasksPerWorker: number
+  private readonly cancelGraceMs: number
   private nextToken = 0
   private shuttingDown = false
 
@@ -68,6 +94,7 @@ export class WorkerPool {
   ) {
     this.idleTimeoutMs = options.idleTimeoutMs ?? IDLE_WORKER_TIMEOUT_MS
     this.maxTasksPerWorker = options.maxTasksPerWorker ?? MAX_TASKS_PER_WORKER
+    this.cancelGraceMs = options.cancelGraceMs ?? CANCEL_GRACE_MS
   }
 
   /**
@@ -80,7 +107,7 @@ export class WorkerPool {
    *
    * @param maxIdle How many workers of this script may sit idle at once. 0 never pools.
    */
-  acquire(scriptPath: string, maxIdle: number): WorkerLease {
+  acquire(scriptPath: string, maxIdle: number, options: AcquireOptions = {}): WorkerLease {
     // Same asymmetry the ConcurrencyLimiter fix closes upstream: returnWorker already
     // refuses to re-idle a worker once shuttingDown, but nothing stopped acquire() itself
     // from spawning a brand-new thread after terminateAll() had already run.
@@ -88,7 +115,9 @@ export class WorkerPool {
 
     const pooled = this.take(scriptPath)
     pooled.state = "busy"
+    pooled.cancellable = options.cancellable === true
     const token = ++this.nextToken
+    pooled.token = token
     let released = false
 
     return {
@@ -105,11 +134,24 @@ export class WorkerPool {
     }
   }
 
-  /** Kills every worker, idle or mid-task, and stops pooling. Call on app quit. */
-  terminateAll(): void {
+  /**
+   * Kills every worker, idle or mid-task, and stops pooling. Call on app quit.
+   *
+   * A busy worker that was acquired as cancellable is asked to stop its task first, and the
+   * returned promise settles once each of those confirmed or ran out of grace, and is null when
+   * there was none. Every other worker is terminated before this returns, exactly as before, so a
+   * caller that ignores the promise still gets the old behavior for them.
+   */
+  terminateAll(): Promise<void> | null {
     this.shuttingDown = true
-    for (const pooled of this.live) this.forget(pooled)
+    const ending: Promise<void>[] = []
+    for (const pooled of [...this.live]) {
+      if (pooled.state === "busy" && pooled.cancellable) ending.push(this.endGracefully(pooled))
+      else if (pooled.state === "cancelling" && pooled.ending) ending.push(pooled.ending)
+      else this.forget(pooled)
+    }
     this.idle.clear()
+    return ending.length > 0 ? Promise.all(ending).then(() => undefined) : null
   }
 
   get idleWorkerCount(): number {
@@ -135,7 +177,7 @@ export class WorkerPool {
 
   private spawn(scriptPath: string): PooledWorker {
     const worker = this.createWorker(scriptPath)
-    const pooled: PooledWorker = { worker, scriptPath, state: "busy", tasksRun: 0, idleTimer: undefined }
+    const pooled: PooledWorker = { worker, scriptPath, state: "busy", cancellable: false, token: 0, ending: undefined, tasksRun: 0, idleTimer: undefined }
 
     // Permanent, never removed, for two reasons: a worker that dies while idle has to
     // leave the pool immediately, or the next acquire hands out a dead thread whose
@@ -154,7 +196,12 @@ export class WorkerPool {
     if (pooled.state === "dead") return
     pooled.tasksRun++
 
-    if (disposition === "discard" || this.shuttingDown || pooled.tasksRun >= this.maxTasksPerWorker) {
+    if (disposition === "cancel" && pooled.cancellable) {
+      void this.endGracefully(pooled)
+      return
+    }
+
+    if (disposition === "cancel" || disposition === "discard" || this.shuttingDown || pooled.tasksRun >= this.maxTasksPerWorker) {
       this.forget(pooled)
       return
     }
@@ -175,6 +222,36 @@ export class WorkerPool {
     idleTimer.unref()
     pooled.idleTimer = idleTimer
     idleList.push(pooled)
+  }
+
+  /**
+   * Asks a busy worker to stop its task and terminates it once it says `cancelled`, exits, or the
+   * grace period ends. The worker stays in `live` until then, so `terminateAll` can still find it.
+   */
+  private endGracefully(pooled: PooledWorker): Promise<void> {
+    if (pooled.ending) return pooled.ending
+    if (pooled.state === "dead") return Promise.resolve()
+
+    pooled.state = "cancelling"
+    const token = pooled.token
+    pooled.ending = new Promise<void>((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer)
+        pooled.worker.off("message", onMessage)
+        pooled.worker.off("exit", done)
+        this.forget(pooled)
+        resolve()
+      }
+      const onMessage = (message: unknown): void => {
+        const candidate = message as { type?: unknown; token?: unknown } | null
+        if (candidate?.type === "cancelled" && candidate.token === token) done()
+      }
+      const timer = setTimeout(done, this.cancelGraceMs)
+      pooled.worker.on("message", onMessage)
+      pooled.worker.on("exit", done)
+      pooled.worker.postMessage({ type: "cancel", token })
+    })
+    return pooled.ending
   }
 
   /** Idempotent: a crashing worker's "error" and "exit" listeners both land here for the same death. */

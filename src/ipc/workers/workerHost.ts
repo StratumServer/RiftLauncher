@@ -21,7 +21,15 @@ export type ProgressReporter = (progress: number) => void
 /** What a finished task hands back. Merged into the "finished" message. */
 export type TaskResult = Record<string, unknown> | void
 
-export type TaskHandler = (payload: Record<string, unknown>, onProgress: ProgressReporter) => Promise<TaskResult> | TaskResult
+/**
+ * Aborted when the parent sends `cancel` for the running task. A handler that holds something
+ * that must be let go of before its thread ends (the native LZMA2 stream, #758) stops at its next
+ * safe point and cleans up; one that ignores it just runs to its end, and the parent's grace
+ * period decides how long it waits.
+ */
+export type TaskSignal = AbortSignal
+
+export type TaskHandler = (payload: Record<string, unknown>, onProgress: ProgressReporter, signal: TaskSignal) => Promise<TaskResult> | TaskResult
 
 /**
  * Turns a rejection into the message text the parent sees. Per worker on purpose:
@@ -32,6 +40,13 @@ export type TaskHandler = (payload: Record<string, unknown>, onProgress: Progres
 export type FailureDescriber = (error: unknown) => string
 
 type TaskMessage = { type: "task"; token: number; payload: Record<string, unknown> }
+type CancelMessage = { type: "cancel"; token: number }
+
+function isCancelMessage(value: unknown): value is CancelMessage {
+  if (typeof value !== "object" || value === null) return false
+  const message = value as Partial<CancelMessage>
+  return message.type === "cancel" && typeof message.token === "number"
+}
 
 function isTaskMessage(value: unknown): value is TaskMessage {
   if (typeof value !== "object" || value === null) return false
@@ -44,8 +59,19 @@ export function serveTasks(handler: TaskHandler, describeFailure: FailureDescrib
   if (!port) throw new Error("Worker started outside a worker thread")
 
   let busy = false
+  let running: { token: number; abort: () => void; settled: Promise<void> } | undefined
 
   port.on("message", (message: unknown) => {
+    // The parent wants this thread's task stopped before it ends the thread. `cancelled` goes out
+    // once the handler has settled (so its own cleanup is done), or at once when there is nothing
+    // running under that token.
+    if (isCancelMessage(message)) {
+      const task = running?.token === message.token ? running : undefined
+      task?.abort()
+      void (task?.settled ?? Promise.resolve()).then(() => port.postMessage({ type: "cancelled", token: message.token }))
+      return
+    }
+
     // Only the pool ever posts here, so anything else is dropped rather than answered:
     // there is no token to answer it under.
     if (!isTaskMessage(message)) return
@@ -60,11 +86,21 @@ export function serveTasks(handler: TaskHandler, describeFailure: FailureDescrib
 
     busy = true
     let settled = false
+    const controller = new AbortController()
+    let markSettled: () => void = () => {}
+    running = {
+      token,
+      abort: (): void => controller.abort(),
+      settled: new Promise<void>((resolve) => {
+        markSettled = resolve
+      })
+    }
 
     const finish = (result: TaskResult): void => {
       if (settled) return
       settled = true
       busy = false
+      markSettled()
       // The spread comes first on purpose: a handler's result cannot overwrite the real
       // type or token with a field of its own.
       port.postMessage(result ? { ...result, type: "finished", token } : { type: "finished", token })
@@ -74,6 +110,7 @@ export function serveTasks(handler: TaskHandler, describeFailure: FailureDescrib
       if (settled) return
       settled = true
       busy = false
+      markSettled()
       port.postMessage({ type: "error", token, message: describeFailure(error) })
     }
 
@@ -86,7 +123,7 @@ export function serveTasks(handler: TaskHandler, describeFailure: FailureDescrib
     }
 
     try {
-      const outcome = handler(message.payload, onProgress)
+      const outcome = handler(message.payload, onProgress, controller.signal)
       if (outcome instanceof Promise) void outcome.then(finish, failTask)
       else finish(outcome)
     } catch (error) {

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { createNativeLzma2DecoderFactory } from "@src/ipc/workers/nativeLzma2"
+import { createNativeLzma2DecoderFactory, NATIVE_SETTLE_MS } from "@src/ipc/workers/nativeLzma2"
 
 function inputOver(bytes: Uint8Array): { readExactly(length: number): Promise<Uint8Array> } {
   let at = 0
@@ -82,6 +82,69 @@ describe("native LZMA2 adapter", () => {
     await decoder.close?.()
 
     expect(cancelled).toBe(true)
+  })
+
+  // Ending the worker thread right after the cancel aborts the launcher with napi 3.10.5 (#758): the
+  // addon's task is still dropping its callbacks into the thread when the thread goes.
+  describe("settling after a cancel (#758)", () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    function openMidStream(): ReturnType<ReturnType<typeof createNativeLzma2DecoderFactory>> {
+      const factory = createNativeLzma2DecoderFactory(
+        () =>
+          new ReadableStream<Uint8Array>({
+            start(controller): void {
+              controller.enqueue(Uint8Array.of(1))
+            }
+          })
+      )
+      return factory(0, () => {})
+    }
+
+    it("keeps close pending for the settle time after cancelling a stream that has not ended", async () => {
+      vi.useFakeTimers()
+      const decoder = openMidStream()
+      await decoder.decodeChunk(inputOver(new Uint8Array(0)))
+
+      let closed = false
+      const closing = decoder.close?.().then(() => {
+        closed = true
+      })
+      await vi.advanceTimersByTimeAsync(NATIVE_SETTLE_MS - 1)
+      expect(closed).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      await closing
+      expect(closed).toBe(true)
+    })
+
+    it("does not wait when the stream already ended", async () => {
+      vi.useFakeTimers()
+      const factory = createNativeLzma2DecoderFactory(
+        () =>
+          new ReadableStream<Uint8Array>({
+            start(controller): void {
+              controller.close()
+            }
+          })
+      )
+      const decoder = factory(0, () => {})
+      while (!decoder.finished) await decoder.decodeChunk(inputOver(new Uint8Array(0)))
+
+      await decoder.close?.()
+
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it("does not wait when no native stream was ever opened", async () => {
+      vi.useFakeTimers()
+
+      await openMidStream().close?.()
+
+      expect(vi.getTimerCount()).toBe(0)
+    })
   })
 
   it("drains buffered native output in bounded pieces", async () => {

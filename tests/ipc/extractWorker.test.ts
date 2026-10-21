@@ -29,6 +29,9 @@ async function extractionTaskHandler(): Promise<TaskHandler> {
   return serveTasks.mock.calls[0]?.[0] as TaskHandler
 }
 
+/** The signal serveTasks hands every handler; this worker ignores it. */
+const NEVER_ABORTED = new AbortController().signal
+
 const PAYLOAD = { filePath: "/backups/Survival_2026-09-04.tar.gz", outputPath: "/installations/Survival", deleteZip: false, unwrapSingleRootFolder: false }
 
 beforeEach(() => {
@@ -39,7 +42,7 @@ describe("extractWorker", () => {
   it("carries the main process's backup decision through to the extraction", async () => {
     const handle = await extractionTaskHandler()
 
-    await handle({ ...PAYLOAD, isBackupArchive: true }, () => {})
+    await handle({ ...PAYLOAD, isBackupArchive: true }, () => {}, NEVER_ABORTED)
 
     assert.equal(runExtraction.mock.calls[0]?.[0].isBackupArchive, true)
   })
@@ -47,7 +50,7 @@ describe("extractWorker", () => {
   it("carries a downloaded archive through as one, so the strict pair is what it gets", async () => {
     const handle = await extractionTaskHandler()
 
-    await handle({ ...PAYLOAD, filePath: "/versions/vs_client_linux-x64_1.22.6.tar.gz", isBackupArchive: false }, () => {})
+    await handle({ ...PAYLOAD, filePath: "/versions/vs_client_linux-x64_1.22.6.tar.gz", isBackupArchive: false }, () => {}, NEVER_ABORTED)
 
     assert.equal(runExtraction.mock.calls[0]?.[0].isBackupArchive, false)
   })
@@ -56,7 +59,7 @@ describe("extractWorker", () => {
     const handle = await extractionTaskHandler()
     const onProgress = (): void => {}
 
-    await handle({ ...PAYLOAD, deleteZip: true, unwrapSingleRootFolder: true, isBackupArchive: false }, onProgress)
+    await handle({ ...PAYLOAD, deleteZip: true, unwrapSingleRootFolder: true, isBackupArchive: false }, onProgress, NEVER_ABORTED)
 
     assert.deepEqual(runExtraction.mock.calls[0]?.[0], {
       filePath: PAYLOAD.filePath,
